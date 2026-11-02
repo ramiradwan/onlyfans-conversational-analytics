@@ -109,6 +109,15 @@ def start_grant_refresh() -> None:
 
 _findings_configuration = None
 _UNSET_FINDINGS = object()
+_dependency_configuration = None
+try:
+    from app.services.nlp_setup import preparation_configuration
+    _dependency_configuration = preparation_configuration(_capability_license_store, settings.auth_database_path.parent)
+    if _dependency_configuration is not None and settings.canonical_persistence_backend != "sqlite":
+        _dependency_configuration = None
+        logger.warning("nlp_dependency_event reason_code=projection_configuration_unavailable")
+except Exception:
+    logger.warning("nlp_dependency_event reason_code=release_configuration_unavailable")
 
 
 def configure_analytics_runtime(*, findings=_UNSET_FINDINGS):
@@ -124,6 +133,7 @@ def configure_analytics_runtime(*, findings=_UNSET_FINDINGS):
         canonical_database=transport_manager.canonical_database,
         activation=transport_manager.projection_activation,
         findings=requested_findings,
+        dependencies=_dependency_configuration,
         post_commit_rebuild_enabled=(
             settings.canonical_persistence_backend == "sqlite"
         ),
@@ -245,7 +255,7 @@ if os.environ.get("LOCAL_PROVISIONING_HANDOFF_TOKEN") is not None:
 async def start_optional_dependencies():
     from app.services.nlp_dependencies import dependency_service
     dependencies = dependency_service()
-    if dependencies is not None:
+    if dependencies is not None and _dependency_configuration is None:
         try:
             await asyncio.to_thread(dependencies.start)
         except Exception:
@@ -292,7 +302,9 @@ async def shutdown_event():
     from app.services.nlp_dependencies import dependency_service
     dependencies = dependency_service()
     dependency_drained = dependencies is None
-    if dependencies is not None and drained:
+    if _dependency_configuration is not None:
+        dependency_drained = drained and dependencies is None
+    elif dependencies is not None and drained:
         try:
             dependency_drained = await asyncio.to_thread(dependencies.close, max(0, deadline-time.monotonic()))
         except Exception:

@@ -157,6 +157,18 @@ class ComponentDescriptor(Descriptor):
                     names != ["message_topics"] or self.tasks[0].score_policy.kind != "none" or
                     self.inference_threads not in (2, 8)):
                 raise ValueError("instruction topic adapter mismatch")
+        if self.adapter.adapter_id == "encoder_topics":
+            if (self.adapter.adapter_version != "1" or
+                    self.adapter.architecture != "encoder-cls-v1" or
+                    self.adapter.artifact_format != "onnx-encoder-classification.v1" or
+                    self.adapter.tokenizer_format != "huggingface-tokenizer-json.v1" or
+                    names != ["message_topics"] or
+                    self.tasks[0].score_policy.kind not in ("probability", "none") or
+                    self.tasks[0].score_policy.calibration != "not_calibrated" or
+                    not 1 <= len(self.executed_labels) <= 64 or
+                    any(label.task != "message_topics" for label in self.executed_labels) or
+                    self.inference_threads != 2 or self.max_windows != 1):
+                raise ValueError("encoder topic adapter mismatch")
         return self
 
 
@@ -250,6 +262,16 @@ class AnalysisProfile(Descriptor):
             if component.artifact_closure_sha256 != artifact_closure_digest(closure):
                 raise ValueError("component artifact closure mismatch")
             data = [artifacts[asset_id] for asset_id in component.artifact_ids]
+            if component.adapter.adapter_id == "encoder_topics":
+                expected = {
+                    "weights": "onnx-encoder-classification.v1",
+                    "tokenizer": "huggingface-tokenizer-json.v1",
+                    "configuration": "encoder-topic-config.v1",
+                }
+                if (len(data) != len(expected) or
+                        {asset.role for asset in data} != set(expected) or
+                        any(asset.format_id != expected[asset.role] for asset in data)):
+                    raise ValueError("encoder topic artifact closure mismatch")
             if "weights" not in {asset.role for asset in data}:
                 raise ValueError("missing component data")
             tokenizers = tuple(asset for asset in data if asset.role == "tokenizer")

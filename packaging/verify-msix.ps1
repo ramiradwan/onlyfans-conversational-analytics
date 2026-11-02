@@ -72,6 +72,77 @@ function Assert-ClosedObject {
     foreach ($key in $Object.Keys) { if ($key -cnotin $Fields) { throw 'Unexpected object field' } }
 }
 
+function Assert-NlpPreparation {
+    param([byte[]] $Bytes, [byte[]] $DesktopBytes, $Profile)
+    $value = Convert-CheckedJson $Bytes 65536
+    $desktop = Convert-CheckedJson $DesktopBytes 65536
+    Assert-ClosedObject $value @('schema', 'desktop_release_sha256', 'engine', 'profiles',
+        'distribution_base_url', 'trusted_keys', 'resource_policy', 'minimum_free_bytes')
+    if ($value.schema -isnot [string] -or $value.schema -cne 'nlp-preparation-release.v1' -or
+        $value.desktop_release_sha256 -isnot [string] -or
+        $Profile.schema -cne 'ofca-msix-package-profile/v2' -or $Profile.purpose -cne 'qualification' -or
+        $Profile.distribution -cne 'direct-appinstaller' -or
+        $Profile.servicing.installed_artifact.kind -cne 'related_bundle' -or
+        $value.desktop_release_sha256 -cne (Get-ByteDigest $DesktopBytes)) { throw 'Invalid NLP preparation release binding' }
+    $engine = $value.engine
+    Assert-ClosedObject $engine @('package_name', 'package_family', 'core_package_name', 'core_package_version',
+        'publisher', 'package_version', 'related_set_id', 'engine_version', 'platform', 'worker_protocol', 'engine_build_sha256')
+    foreach ($name in @('package_name', 'package_family', 'core_package_name', 'core_package_version',
+        'package_version', 'related_set_id', 'engine_version')) {
+        if ($engine[$name] -isnot [string] -or $engine[$name] -cnotmatch '^[A-Za-z0-9_.:-]{1,160}$') { throw 'Invalid NLP Engine identity' }
+    }
+    $related = $Profile.servicing.installed_artifact
+    if ($engine.publisher -isnot [string] -or $engine.platform -isnot [string] -or $engine.worker_protocol -isnot [string] -or
+        $engine.package_name -cne $related.engine.identity.name -or $engine.package_family -cne $related.engine.identity.family -or
+        $engine.publisher -cne $related.engine.identity.publisher -or $engine.publisher.Length -gt 512 -or
+        $engine.package_version -cne $related.engine.package_version -or $engine.related_set_id -cne $related.related_set_id -or
+        $engine.core_package_name -cne $Profile.identity.name -or $engine.core_package_version -cne $desktop.package_version -or
+        $engine.platform -cne 'windows-x64' -or $engine.worker_protocol -cne 'nlp-worker.v2' -or
+        $engine.engine_build_sha256 -isnot [string] -or $engine.engine_build_sha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'NLP Engine differs from the related package' }
+    if ($value.profiles -isnot [array] -or $value.profiles.Count -lt 1 -or $value.profiles.Count -gt 8) { throw 'Invalid NLP profile selection' }
+    $previous = ''
+    foreach ($digest in $value.profiles) {
+        if ($digest -isnot [string] -or $digest -cnotmatch '^[a-f0-9]{64}$' -or
+            [StringComparer]::Ordinal.Compare($previous, $digest) -ge 0) { throw 'Invalid NLP profile selection' }
+        $previous = $digest
+    }
+    $base = $value.distribution_base_url
+    $uri = $null
+    if ($base -isnot [string] -or $base.Length -gt 2048 -or $base -match '[\\\x00-\x20]' -or -not $base.EndsWith('/') -or
+        -not [Uri]::TryCreate($base, [UriKind]::Absolute, [ref]$uri) -or $uri.Scheme -cne 'https' -or
+        -not $uri.Host -or $uri.Port -ne 443 -or $uri.UserInfo -or $uri.Query -or $uri.Fragment) { throw 'Invalid NLP distribution origin' }
+    $policy = $value.resource_policy
+    Assert-ClosedObject $policy @('download_bytes', 'installed_bytes', 'temporary_bytes', 'transition_peak_memory_bytes', 'inference_threads')
+    foreach ($name in $policy.Keys) {
+        $minimum = if ($name -ceq 'temporary_bytes') { 0 } else { 1 }
+        if ($policy[$name] -isnot [long] -or $policy[$name] -lt $minimum -or $policy[$name] -gt 9007199254740991) { throw 'Invalid NLP resource policy' }
+    }
+    if ($value.minimum_free_bytes -isnot [long] -or $value.minimum_free_bytes -lt 1 -or
+        $value.minimum_free_bytes -gt 9007199254740991) { throw 'Invalid NLP free-space reserve' }
+    if ($value.trusted_keys -isnot [array] -or $value.trusted_keys.Count -lt 1 -or $value.trusted_keys.Count -gt 8) { throw 'Invalid NLP trust set' }
+    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($key in $value.trusted_keys) {
+        Assert-ClosedObject $key @('kid', 'jwk')
+        Assert-ClosedObject $key.jwk @('kty', 'crv', 'x', 'y')
+        if ($key.kid -isnot [string] -or $key.kid -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$' -or -not $seen.Add($key.kid) -or
+            $key.jwk.kty -isnot [string] -or $key.jwk.crv -isnot [string] -or
+            $key.jwk.kty -cne 'EC' -or $key.jwk.crv -cne 'P-256') { throw 'Invalid NLP public key' }
+        $point = [Security.Cryptography.ECPoint]::new()
+        foreach ($coordinate in @('x', 'y')) {
+            $encoded = $key.jwk[$coordinate]
+            if ($encoded -isnot [string] -or $encoded -cnotmatch '^[A-Za-z0-9_-]{43}$') { throw 'Invalid NLP key encoding' }
+            $decoded = [Convert]::FromBase64String($encoded.Replace('-', '+').Replace('_', '/') + '=')
+            if ([Convert]::ToBase64String($decoded).TrimEnd('=').Replace('+', '-').Replace('/', '_') -cne $encoded) { throw 'Noncanonical NLP key encoding' }
+            if ($coordinate -ceq 'x') { $point.X = $decoded } else { $point.Y = $decoded }
+        }
+        $parameters = [Security.Cryptography.ECParameters]::new()
+        $parameters.Curve = [Security.Cryptography.ECCurve+NamedCurves]::nistP256
+        $parameters.Q = $point
+        $verifier = [Security.Cryptography.ECDsa]::Create()
+        try { $verifier.ImportParameters($parameters) } finally { $verifier.Dispose() }
+    }
+}
+
 function Convert-Version {
     param($Value)
     if ($Value -isnot [string] -or $Value -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
@@ -257,6 +328,21 @@ function Test-MsixPayload {
             $record.size -isnot [long] -or $record.size -lt 0 -or $record.size -gt 4294967295 -or -not $aliases.Add($record.path)) { throw 'Invalid inventory record or path alias' }
         $expected.Add($record.path, $record)
     }
+    $installerFiles = @{
+        'MSIX.AppInstaller.Data/MSIXAppInstallerData.xml' = '1c2b7e284d851ff36f66b65fe9904475ef59511953bc462625efcd63f248c3f3'
+        'MSIX.AppInstaller.Data/Assets/InstallerLogo.png' = '1c0bfd69df22eceed592239c9235cc1eeb82845cc764973b3d0db7f07cbd6b11'
+        'Assets/InstallerLogo.png' = '1c0bfd69df22eceed592239c9235cc1eeb82845cc764973b3d0db7f07cbd6b11'
+    }
+    foreach ($name in $installerFiles.Keys) {
+        if (-not $expected.ContainsKey($name) -or $expected[$name].sha256 -cne $installerFiles[$name]) {
+            throw 'App Installer presentation differs from the approved assets'
+        }
+    }
+    foreach ($name in $expected.Keys) {
+        if ($name.StartsWith('MSIX.AppInstaller.Data/', [StringComparison]::OrdinalIgnoreCase) -and -not $installerFiles.ContainsKey($name)) {
+            throw 'App Installer presentation has extra or missing files'
+        }
+    }
     if (-not ('Ofca.Msix.IdentityReader' -as [type])) { Add-Type -Path (Join-Path $msixConfiguration 'ReadPackageIdentity.cs') }
     $signatureArchive = $null
     $archive = [IO.Compression.ZipFile]::OpenRead([IO.Path]::GetFullPath($Package))
@@ -270,6 +356,9 @@ function Test-MsixPayload {
             $installedPath = [Ofca.Msix.IdentityReader]::DecodePartName($entry.FullName)
             if ($installedPath -match '(^/|[\\:\x00-\x1f]|//|(^|/)\.{1,2}(/|$)|/$)' -or
                 -not $installedPath -or -not $names.Add($installedPath)) { throw 'Package path alias or unsafe installed path' }
+            if ($installedPath -ieq 'app/nlp-preparation-release.json' -and $entry.FullName -cne 'app/nlp-preparation-release.json') {
+                throw 'NLP preparation path differs from its fixed location'
+            }
             if ($installedPath -cin $footprints) {
                 if ($entry.FullName -cne $installedPath) { throw 'Package footprint alias' }
                 continue
@@ -336,6 +425,11 @@ function Test-MsixPayload {
                     $set.engine.package_version -cne $layout.engine.package_version -or
                     -not (Test-ReleaseJsonEqual $set.engine.identity $layout.engine.identity)) { throw 'V2 unsigned related inventory differs' }
             }
+        }
+        $preparationEntry = $archive.GetEntry('app/nlp-preparation-release.json')
+        if ($null -ne $preparationEntry) {
+            Assert-NlpPreparation (Read-ZipBytes $preparationEntry 65536) `
+                (Read-ZipBytes ($archive.GetEntry('app/desktop-release.json')) 65536) $profile
         }
         $signatureArchive = $archive
         if ($SignatureContainer) { $signatureArchive = [IO.Compression.ZipFile]::OpenRead($SignatureContainer) }

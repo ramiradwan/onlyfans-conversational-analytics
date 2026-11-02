@@ -63,7 +63,8 @@
         "tools/packaged-signing-rule/**",
         "tools/legal-release-bindings/**",
         "tools/packaging_policy.py",
-        "tools/msix_packaging.py"
+        "tools/msix_packaging.py",
+        "tools/optional_engine_packaging.py"
       ],
       "role": "Windows packaging scripts, installer definitions, PyInstaller spec, runtime file closure manifests, and release signing verification tools.",
       "authority": "authoritative",
@@ -636,6 +637,7 @@
         "app/analytics/nlp_processing.py",
         "app/analytics/nlp_execution.py",
         "app/analytics/nlp_runtime.py",
+        "app/analytics/nlp_dependency_runtime.py",
         "app/analytics/pipeline.py",
         "app/analytics/licensed_pipeline.py",
         "app/analytics/graph_*.py",
@@ -859,10 +861,12 @@
     {
       "id": "nlp-dependency-lifecycle",
       "path_patterns": [
+        "app/nlp/preparation.py",
         "app/services/nlp_dependencies.py",
-        "app/services/nlp_distribution.py"
+        "app/services/nlp_distribution.py",
+        "app/services/nlp_setup.py"
       ],
-      "role": "Explicit authenticated profile acquisition, durable withdrawal and account selection coordination; availability grants no release approval.",
+      "role": "Release-bound preparation, explicit authenticated profile acquisition, durable withdrawal and account selection coordination; availability grants no analysis authority.",
       "authority": "authoritative",
       "zone": "red",
       "protected_invariants": [

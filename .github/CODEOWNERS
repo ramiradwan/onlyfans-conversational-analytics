@@ -4,6 +4,7 @@
 /attestation/ @ramiradwan
 /packaging/build-windows.ps1 @ramiradwan
 /packaging/new-agent-bundle.ps1 @ramiradwan
+/packaging/build-optional-engine.ps1 @ramiradwan
 /packaging/sqlcipher/ @ramiradwan
 /requirements.txt @ramiradwan
 /requirements-dev.txt @ramiradwan
@@ -20,3 +21,4 @@
 /tests/test_visual_capture_workflow.py @ramiradwan
 /tests/test_workflow_action_pinning.py @ramiradwan
 /tools/engineering_attestation.py @ramiradwan
+/tools/optional_engine_packaging.py @ramiradwan

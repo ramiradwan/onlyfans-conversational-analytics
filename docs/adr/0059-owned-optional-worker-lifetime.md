@@ -23,3 +23,5 @@ Inherited query handles keep the outer Job object alive. Closing the launcher's 
 ## Consequences
 
 Optional package admission, data authenticity, resource policy, analysis authorization and result validation remain separate checks. The default service has no Engine provider or approved profile. This boundary changes neither resource limits nor task availability. Installed startup, cancellation, parent loss and servicing require actual Windows qualification before activation.
+
+Explicit profile acquisition and preparation may observe the exact Engine identity supplied by an authenticated, release-admitted profile. The host independently validates that identity against protected installed metadata. Observation creates no inference worker and shares the provider's deadline, cancellation, serialization and drain ownership. Startup, status and metadata planning do not observe code or prepare models. Qualification-only preparation composition follows ADR 0057 and grants no analysis authority.

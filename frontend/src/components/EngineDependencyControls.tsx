@@ -13,6 +13,9 @@ const states: Record<EngineStatus['state'], string> = {
   installed: 'Engine installation verified.', failed: 'Engine installation did not complete.',
   recovery_pending: 'Engine installation needs attention. Another installation cannot start.',
 };
+type ControlContext = { account: string | null; api: EngineAcquisitionApi; selection: EngineSelection };
+type Fence = { kind: 'ownership'; recovery: { context: ControlContext; operationId: string } | null }
+  | { kind: 'uncertain' } | null;
 export function EngineDependencyControls({ account, api = engineAcquisitionApi, selection = 'module' }: {
   account: string | null; api?: EngineAcquisitionApi; selection?: EngineSelection;
 }) {
@@ -23,7 +26,7 @@ export function EngineDependencyControls({ account, api = engineAcquisitionApi, 
   const setQuote = (value: EngineReview | null) => setReviewed(value === null ? null : { context, value });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
-  const [fence, setFence] = useState<'ownership' | 'uncertain' | null>(null);
+  const [fence, setFence] = useState<Fence>(null);
   const uncertainAfter = useRef<string | null>(null);
   const [revision, setRevision] = useState(0);
   const lifetime = useRef<AbortController | null>(null);
@@ -34,11 +37,26 @@ export function EngineDependencyControls({ account, api = engineAcquisitionApi, 
   const active = () => Boolean(account && supported && lifetime.current && current(lifetime.current.signal));
   const observe = (value: EngineStatus) => {
     setStatus(value);
-    if (value.state === 'recovery_pending') setFence('ownership');
-    // A real recorded terminal outcome may resolve an uncertain command response.
-    else if (value.operation_id && value.operation_id !== uncertainAfter.current && !value.in_flight && ['installed', 'failed'].includes(value.state)) {
-      setFence((current) => current === 'uncertain' ? null : current);
-    }
+    setFence((previous) => {
+      if (value.state === 'recovery_pending') {
+        if (previous?.kind === 'ownership') {
+          return previous.recovery?.context === context && previous.recovery.operationId === value.operation_id
+            ? previous : { kind: 'ownership', recovery: null };
+        }
+        const operationId = value.operation_id;
+        return { kind: 'ownership', recovery: operationId && (previous?.kind !== 'uncertain' || operationId !== uncertainAfter.current)
+          ? { context, operationId } : null };
+      }
+      if (previous?.kind === 'ownership') {
+        const sameOperation = previous.recovery?.context === context && previous.recovery.operationId === value.operation_id;
+        if (sameOperation && value.state === 'installed' && value.installed && !value.in_flight && value.reason === null && value.hresult === null) return null;
+        return sameOperation && value.state !== 'failed' ? previous : { kind: 'ownership', recovery: null };
+      }
+      // A real recorded terminal outcome may resolve an uncertain command response.
+      if (previous?.kind === 'uncertain' && value.operation_id && value.operation_id !== uncertainAfter.current
+        && !value.in_flight && ['installed', 'failed'].includes(value.state)) return null;
+      return previous;
+    });
   };
   useEffect(() => {
     const controller = new AbortController(); lifetime.current = controller;
@@ -82,7 +100,7 @@ export function EngineDependencyControls({ account, api = engineAcquisitionApi, 
         setQuote(value);
       }
     }
-    catch (cause) { if (current(signal)) { setError(true); if (cause instanceof EngineAcquisitionError && cause.kind === 'ownership') setFence('ownership'); } }
+    catch (cause) { if (current(signal)) { setError(true); if (cause instanceof EngineAcquisitionError && cause.kind === 'ownership') setFence({ kind: 'ownership', recovery: null }); } }
     finally { if (current(signal)) setBusy(false); }
   };
   const start = async () => {
@@ -90,11 +108,11 @@ export function EngineDependencyControls({ account, api = engineAcquisitionApi, 
     const signal = lifetime.current!.signal; const digest = quote.review_digest;
     setBusy(true); setError(false); setQuote(null);
     uncertainAfter.current = status?.operation_id ?? null;
-    setFence('uncertain');
+    setFence({ kind: 'uncertain' });
     try { const value = await api.start(digest, signal); if (current(signal)) { observe(value); setRevision((n) => n + 1); } }
     catch (cause) { if (current(signal)) { setError(true); if (cause instanceof EngineAcquisitionError && cause.kind === 'stale_review') setFence(null);
     else {
-      setFence(cause instanceof EngineAcquisitionError && cause.kind === 'ownership' ? 'ownership' : 'uncertain');
+      setFence(cause instanceof EngineAcquisitionError && cause.kind === 'ownership' ? { kind: 'ownership', recovery: null } : { kind: 'uncertain' });
     } } }
     finally { if (current(signal)) setBusy(false); }
   };
@@ -103,7 +121,7 @@ export function EngineDependencyControls({ account, api = engineAcquisitionApi, 
     const signal = lifetime.current!.signal; const id = status.operation_id;
     setBusy(true); setError(false); setQuote(null);
     try { const value = await api.cancel(id, signal); if (current(signal)) { observe(value); setRevision((n) => n + 1); } }
-    catch { if (current(signal)) { setError(true); setFence('ownership'); } }
+    catch { if (current(signal)) { setError(true); setFence({ kind: 'ownership', recovery: null }); } }
     finally { if (current(signal)) setBusy(false); }
   };
   return <Panel component="section" aria-label="Text analysis Engine" data-journey-state="textanalysis.engine_controls">

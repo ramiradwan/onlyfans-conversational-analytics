@@ -48,6 +48,11 @@ export interface NlpDependenciesApi {
   observe(id: string, signal?: AbortSignal): Promise<NlpDependencyObservation>;
   command(input: NlpDependencyCommand, signal?: AbortSignal): Promise<NlpDependencyResult>;
 }
+export class NlpDependenciesHttpError extends Error {
+  constructor(readonly status: number) {
+    super('Text analysis settings could not be updated.');
+  }
+}
 export function parseNlpDependencyPlan(value: unknown): NlpDependencyPlan { return plan.parse(value); }
 
 export function createNlpDependenciesApi(options: {
@@ -57,7 +62,7 @@ export function createNlpDependenciesApi(options: {
   const endpoint = '/api/v1/nlp/dependencies';
   const token = options.getCsrfToken ?? (() => document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? null);
   async function read(response: Response): Promise<unknown> {
-    if (!response.ok) throw new Error('Text analysis settings could not be updated.');
+    if (!response.ok) throw new NlpDependenciesHttpError(response.status);
     try { return await response.json(); } catch { throw new Error('Text analysis settings are unavailable.'); }
   }
   return {

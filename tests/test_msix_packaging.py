@@ -86,14 +86,18 @@ try {
     return json.loads(result.stdout)
 
 
-@pytest.fixture
-def stage(tmp_path):
+def _msix_stage(tmp_path):
     root = _stage_runtime_tree(tmp_path)
     (root / "release-manifest.json").write_bytes(msix.canonical_json({
         "schema": "ofca-release-manifest/v1", "version": "0.7.5", "architecture": "x64",
         "source_commit": "1" * 40,
     }))
     return root
+
+
+@pytest.fixture
+def stage(tmp_path):
+    return _msix_stage(tmp_path)
 
 
 @pytest.mark.parametrize("mutation", [
@@ -837,6 +841,9 @@ def test_real_sdk_wrapper_preserves_related_bundle_release_version(stage, tmp_pa
     engine_stage = tmp_path / "engine-payload"
     (engine_stage / "worker").mkdir(parents=True)
     shutil.copyfile(executable, engine_stage / optional.WORKER_PATH)
+    (engine_stage / "worker/worker-release.json").write_bytes(msix.canonical_json(dict(
+        schema="nlp-engine-release.v1", artifacts=[], adapters=[], engine=dict(vars(relation),
+            related_set_id=selected["servicing"]["installed_artifact"]["related_set_id"]))))
     shutil.copytree(msix.CONFIG_ROOT / "Assets", engine_stage / "Assets")
     (engine_stage / "AppxManifest.xml").write_bytes(optional.optional_manifest(
         relation, minimum_os="10.0.26100.0", tested_os="10.0.26340.0"))
@@ -1016,3 +1023,55 @@ def test_verified_direct_family_is_derived_by_windows(tmp_path):
     for phase in ("script-entry", "add-type-complete", "windows-read-start", "exit"):
         assert f"ofca-msix-identity-probe:{phase}:" in diagnostic
     assert "ofca-msix-identity-probe:windows-read-complete:" not in diagnostic
+
+
+@pytest.fixture(scope="module")
+def sealed_installer_presentation(tmp_path_factory):
+    root = tmp_path_factory.mktemp("installer-presentation")
+    working = root / "msix-output"
+    msix.prepare_payload(_msix_stage(root), working, PROFILE_PATH)
+    _write_inert_digests(working / "payload/app")
+    msix.seal_payload(working, PROFILE_PATH, Path(sys.executable))
+    return working
+
+
+@pytest.mark.parametrize("path", list(msix.INSTALLER_FILES))
+@pytest.mark.parametrize("mutation", ["change", "remove", "extra"])
+def test_installer_presentation_is_sealed_and_independently_verified(
+        sealed_installer_presentation, tmp_path, path, mutation):
+    working = tmp_path / "msix-output"
+    shutil.copytree(sealed_installer_presentation, working)
+    payload = working / "payload"
+    for name, digest in msix.INSTALLER_FILES.items():
+        assert msix.sha256(payload / name) == digest
+    target = payload / path
+    if mutation == "change":
+        target.write_bytes(b"changed presentation")
+    elif mutation == "remove":
+        target.unlink()
+    else:
+        (payload / "MSIX.AppInstaller.Data/extra.xml").write_bytes(b"extra")
+    with pytest.raises(ValueError, match="App Installer presentation"):
+        msix.seal_payload(working, PROFILE_PATH, Path(sys.executable))
+    inventory_path = working / "inventory.json"
+    inventory = json.loads(inventory_path.read_text())
+    inventory["files"] = [msix.file_record(item, item.relative_to(payload).as_posix())
+                          for item in payload.rglob("*") if item.is_file()]
+    inventory_path.write_bytes(msix.canonical_json(inventory))
+    package = tmp_path / "changed-presentation.msix"
+    with zipfile.ZipFile(package, "w") as archive:
+        for item in payload.rglob("*"):
+            if item.is_file():
+                archive.write(item, item.relative_to(payload).as_posix())
+        archive.writestr("AppxBlockMap.xml", b"negative-test-footprint")
+        archive.writestr("[Content_Types].xml", b"negative-test-footprint")
+    with pytest.raises(ValueError, match="App Installer presentation"):
+        msix.verify_archive(package, inventory_path, PROFILE_PATH)
+    if os.name != "nt":
+        return
+    result = subprocess.run([
+        "pwsh", "-NoProfile", "-NonInteractive", "-File", str(ROOT / "packaging/verify-msix.ps1"),
+        "-Package", str(package), "-Inventory", str(inventory_path), "-PackageProfile", str(PROFILE_PATH),
+        "-AllowQualification", "-VerificationMode", "DirectSigned",
+    ], capture_output=True, text=True, check=False, timeout=120)
+    assert result.returncode == 2 and "App Installer presentation" in result.stdout, result.stdout + result.stderr

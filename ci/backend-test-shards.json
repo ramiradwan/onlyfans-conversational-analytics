@@ -286,6 +286,7 @@
     "tests/test_nlp_dependencies.py": 2,
     "tests/test_nlp_dependencies_api.py": 2,
     "tests/test_nlp_dependency_publication.py": 4,
+    "tests/test_nlp_dependency_runtime.py": 1,
     "tests/test_nlp_download_resume.py": 3,
     "tests/test_nlp_enrollment_reconciliation.py": 3,
     "tests/test_nlp_execution_gate.py": 2,
@@ -298,6 +299,7 @@
     "tests/test_nlp_observation_api.py": 1,
     "tests/test_nlp_observation_read.py": 4,
     "tests/test_nlp_observation_runtime.py": 1,
+    "tests/test_nlp_preparation_composition.py": 3,
     "tests/test_nlp_presentation.py": 4,
     "tests/test_nlp_preview_execution.py": 4,
     "tests/test_nlp_process_owners.py": 1,
@@ -436,6 +438,14 @@
       {
         "selector": "tests/test_msix_packaging.py",
         "reason": "MSIX profiles, target-specific closure and real pinned Windows SDK semantic packing must qualify on Windows."
+      },
+      {
+        "selector": "tests/test_msix_nlp_preparation.py",
+        "reason": "Optional preparation inputs require matching Python and native PowerShell package validation."
+      },
+      {
+        "selector": "tests/test_nlp_preparation_release.py::test_fixed_sibling_loader_held_read_path",
+        "reason": "Preparation metadata must retain real Windows sibling-file handles and reject path aliases."
       },
       {
         "selector": "tests/test_optional_msix.py::test_sdk_constructs_exact_external_related_set",

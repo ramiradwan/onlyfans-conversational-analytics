@@ -413,6 +413,25 @@ def verify_engine_bundle(path: Path, profile: dict) -> None:
                 raise ValueError("Engine application identity differs")
             if dependencies[0].attrib != {"Name":relation.core_package_name} or payload.namelist().count(WORKER_PATH) != 1:
                 raise ValueError("Engine dependency or worker entry differs")
+            from tools.msix_packaging import installed_archive_path
+            metadata_name = "worker/worker-release.json"
+            metadata = [entry for entry in payload.infolist()
+                        if installed_archive_path(entry.filename).casefold() == metadata_name]
+            if (len(metadata) != 1 or metadata[0].filename != metadata_name
+                    or not 0 < metadata[0].file_size <= 1_048_576
+                    or stat.S_ISLNK(metadata[0].external_attr >> 16)):
+                raise ValueError("Engine worker metadata entry differs")
+            try:
+                release = _decode_object(payload.read(metadata[0]), 1_048_576)
+            except ValueError as error:
+                raise ValueError("Engine worker metadata is invalid") from error
+            expected = dict(package_name=relation.package_name, package_family=relation.package_family,
+                publisher=relation.publisher, package_version=relation.package_version,
+                core_package_name=relation.core_package_name, core_package_version=relation.core_package_version,
+                related_set_id=profile["servicing"]["installed_artifact"]["related_set_id"])
+            if (release.get("schema") != "nlp-engine-release.v1" or type(release.get("engine")) is not dict
+                    or any(release["engine"].get(key) != value for key, value in expected.items())):
+                raise ValueError("Engine worker metadata differs from the selected release")
 
 
 def validate_identity(engine: EngineIdentity) -> None:

@@ -180,6 +180,37 @@ pub(crate) fn unknown(id: Option<String>, reason: &str) -> Status {
         ..Status::default()
     }
 }
+fn observe_unrequested_installation(
+    mut status: Status,
+    observe: impl FnOnce() -> Result<bool>,
+) -> Status {
+    // Only an unowned default status may acquire a fresh installed observation.
+    // Acquisition history and unresolved ownership keep their existing outcomes.
+    if status.state != Phase::NotRequested
+        || status.operation_id.is_some()
+        || status.installed
+        || status.in_flight
+        || status.cancel_requested
+        || status.deadline_reached
+        || status.progress_percent.is_some()
+        || status.reason.is_some()
+        || status.hresult.is_some()
+    {
+        return status;
+    }
+    match observe() {
+        Ok(true) => {
+            status.installed = true;
+            status.state = Phase::Installed;
+        }
+        Ok(false) => (),
+        Err(_) => {
+            status.state = Phase::RecoveryPending;
+            status.reason = Some("optional_not_registered".into());
+        }
+    }
+    status
+}
 pub(crate) fn dispatch(owner: &Arc<Owner>, journal: &Journal, request: Request) -> Result<Status> {
     if request.nonce != journal.nonce {
         return Err("optional_broker_peer");
@@ -276,6 +307,68 @@ mod tests {
         let s = unknown(Some("a".repeat(32)), "optional_recovery_pending");
         assert!(!s.installed && !s.in_flight);
         assert_eq!(s.state, Phase::RecoveryPending);
+    }
+    #[test]
+    fn unrequested_status_observes_current_installation_without_an_operation() {
+        for (observation, phase, installed) in [
+            (Ok(true), Phase::Installed, true),
+            (Ok(false), Phase::NotRequested, false),
+            (Err("artifact_mismatch"), Phase::RecoveryPending, false),
+        ] {
+            let mut called = false;
+            let status = observe_unrequested_installation(Status::default(), || {
+                called = true;
+                observation
+            });
+            assert!(called);
+            assert_eq!(status.state, phase);
+            assert_eq!(status.installed, installed);
+            assert!(status.operation_id.is_none() && !status.in_flight);
+            assert!(!status.cancel_requested && !status.deadline_reached);
+            assert!(status.progress_percent.is_none() && status.hresult.is_none());
+            assert_eq!(
+                status.reason.as_deref(),
+                (phase == Phase::RecoveryPending).then_some("optional_not_registered")
+            );
+        }
+    }
+    #[test]
+    fn installed_observation_cannot_replace_owned_or_unresolved_status() {
+        let mut statuses = Vec::new();
+        for phase in [
+            Phase::Checking,
+            Phase::Acquiring,
+            Phase::Cancelling,
+            Phase::Installed,
+            Phase::Failed,
+            Phase::RecoveryPending,
+        ] {
+            statuses.push(Status {
+                state: phase,
+                ..Status::default()
+            });
+        }
+        for field in 0..8 {
+            let mut status = Status::default();
+            match field {
+                0 => status.operation_id = Some("a".repeat(32)),
+                1 => status.installed = true,
+                2 => status.in_flight = true,
+                3 => status.cancel_requested = true,
+                4 => status.deadline_reached = true,
+                5 => status.progress_percent = Some(1),
+                6 => status.reason = Some("optional_intent_invalid".into()),
+                _ => status.hresult = Some(-1),
+            }
+            statuses.push(status);
+        }
+        for status in statuses {
+            let before = serde_json::to_vec(&status).unwrap();
+            let observed = observe_unrequested_installation(status, || {
+                panic!("owned status must not trigger installed discovery")
+            });
+            assert_eq!(before, serde_json::to_vec(&observed).unwrap());
+        }
     }
     fn journal() -> Journal {
         Journal {
@@ -409,6 +502,42 @@ mod tests {
             newer.package.push('x');
             assert!(!current_journal(&j, &j.binding, &newer).unwrap());
         }
+    }
+    #[test]
+    fn serviced_release_observation_does_not_inherit_completed_history() {
+        let mut history = journal();
+        history.committed = true;
+        history.terminal = true;
+        history.status.in_flight = false;
+        let mut current = history.broker.clone();
+        current.package.push('x');
+        current.image.push("new");
+        for historical in [Phase::Installed, Phase::Failed] {
+            history.status.state = historical;
+            history.status.installed = historical == Phase::Installed;
+            let before = serde_json::to_vec(&history).unwrap();
+            assert!(!current_journal(&history, &"f".repeat(64), &current).unwrap());
+            for observation in [Ok(true), Ok(false), Err("identity_mismatch")] {
+                let mut called = false;
+                let status = observe_unrequested_installation(Status::default(), || {
+                    called = true;
+                    observation
+                });
+                assert!(called);
+                assert_eq!(status.installed, observation == Ok(true));
+                assert!(status.operation_id.is_none() && !status.in_flight);
+                assert_eq!(before, serde_json::to_vec(&history).unwrap());
+            }
+        }
+        history.terminal = false;
+        history.status.in_flight = true;
+        history.status.state = Phase::Acquiring;
+        history.status.installed = false;
+        assert!(current_journal(&history, &"f".repeat(64), &current).is_err());
+        history.terminal = true;
+        history.status.in_flight = false;
+        history.status.state = Phase::RecoveryPending;
+        assert!(current_journal(&history, &"f".repeat(64), &current).is_err());
     }
     #[test]
     fn versioned_review_journal_is_closed_and_legacy_preview_stays_observable() {

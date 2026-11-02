@@ -21,6 +21,7 @@ from app.analytics.pipeline import AnalyticsPipeline, CanonicalReadModelSource
 from app.analytics.scheduling import InProcessProjectionScheduler
 from app.analytics.query_runtime import QuestionResources
 from app.analytics.nlp_runtime import FindingsConfiguration, FindingsRuntime
+from app.analytics.nlp_dependency_runtime import DependencyConfiguration, DependencyRuntime
 from app.analytics.nlp_execution import require_findings_execution
 from app.analytics.nlp_navigation import NavigationRegistry
 from app.core.config import settings
@@ -41,6 +42,7 @@ class AnalyticsRuntime:
     scheduler: InProcessProjectionScheduler
     questions: QuestionResources | None = None
     findings: FindingsRuntime | None = None
+    dependencies: DependencyRuntime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +58,7 @@ class _DefaultRuntimeConfiguration:
     findings: FindingsConfiguration | None
     findings_navigation: NavigationRegistry | None
     canonical_database: CanonicalSQLite | None = None
+    dependencies: DependencyConfiguration | None = None
 
 
 _RUNTIMES: dict[int, AnalyticsRuntime] = {}
@@ -68,6 +71,8 @@ LOGGER = logging.getLogger(__name__)
 
 def _abort_runtime(runtime: AnalyticsRuntime) -> bool:
     """Attempt every owner cleanup; retain runtimes with live native handles."""
+    if runtime.dependencies is not None and not runtime.dependencies.abort():
+        return False
     if runtime.findings is not None and not runtime.findings.abort():
         return False
     closed = True
@@ -93,6 +98,7 @@ def configure_default_analytics_runtime(
     post_commit_rebuild_enabled: bool | None = None,
     findings: FindingsConfiguration | None = None,
     findings_navigation: NavigationRegistry | None = None,
+    dependencies: DependencyConfiguration | None = None,
 ) -> AnalyticsRuntime:
     """Configure the default runtime from bootstrap-owned dependencies."""
 
@@ -100,6 +106,8 @@ def configure_default_analytics_runtime(
         raise ValueError(f"Unsupported analytics backend {backend!r}")
     if findings is not None and (backend != 'sqlite' or not isinstance(findings, FindingsConfiguration)):
         raise ValueError('findings_configuration_invalid')
+    if dependencies is not None and (backend != "sqlite" or type(dependencies) is not DependencyConfiguration or findings is not None):
+        raise ValueError("dependency_configuration_invalid")
     if findings is not None:
         require_findings_execution()
     if findings_navigation is not None and not isinstance(findings_navigation, NavigationRegistry):
@@ -118,6 +126,7 @@ def configure_default_analytics_runtime(
         ),
         findings=findings,
         findings_navigation=findings_navigation,
+        dependencies=dependencies,
     )
     global _DEFAULT_CONFIGURATION, _STARTUP_TASK, _STARTUP_TASK_SOURCE_KEY
     with _RUNTIME_LOCK:
@@ -197,6 +206,8 @@ def _runtime_for_source_locked(
         raise ProjectionCoordinatorClosed()
     if existing is not None and existing.findings is not None and not existing.findings.abort():
         raise ProjectionCoordinatorClosed()
+    if existing is not None and existing.dependencies is not None and not existing.dependencies.abort():
+        raise ProjectionCoordinatorClosed()
     pipeline = _build_pipeline(source, configuration=configuration)
     findings = None
     if configuration is not None and configuration.findings is not None:
@@ -215,6 +226,8 @@ def _runtime_for_source_locked(
         questions=QuestionResources(source, pipeline, clock=pipeline._retention_clock,
             findings_navigation=configuration.findings_navigation if configuration is not None else None),
         findings=findings,
+        dependencies=(DependencyRuntime(source, pipeline.projections, configuration.dependencies.factory)
+                      if configuration is not None and configuration.dependencies is not None else None),
     )
     _RUNTIMES[key] = runtime
     return runtime
@@ -311,6 +324,8 @@ async def start_default_analytics_runtime() -> InProcessProjectionScheduler:
         runtime.questions.start()
     scheduler = runtime.scheduler
     await scheduler.start(recover=True)
+    if runtime.dependencies is not None:
+        runtime.dependencies.start()
     if runtime.findings is not None:
         runtime.findings.start(scheduler)
     return scheduler
@@ -330,6 +345,8 @@ def launch_default_analytics_runtime() -> asyncio.Task[None]:
             runtime.questions.start()
         try:
             await scheduler.start(recover=True)
+            if runtime.dependencies is not None:
+                runtime.dependencies.start()
             if runtime.findings is not None:
                 runtime.findings.start(scheduler)
         except (ProjectionCoordinatorClosed, ProjectionStorageUnavailable):
@@ -393,6 +410,8 @@ async def shutdown_default_analytics_runtime(*, timeout: float = 5.0) -> bool:
     if runtime is None or runtime.source is not source:
         return True
     deadline = time.monotonic() + max(0.0, timeout)
+    if runtime.dependencies is not None and not await runtime.dependencies.shutdown(max(0, deadline-time.monotonic())):
+        return False
     if runtime.findings is not None and not await runtime.findings.close(
             max(0, deadline-time.monotonic())):
         return False

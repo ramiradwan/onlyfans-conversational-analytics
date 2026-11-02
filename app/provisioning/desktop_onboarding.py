@@ -85,9 +85,25 @@ class ProvisioningSetupOwner:
             except ContinuationSelectionUnavailable as error:
                 if error.reason != "registration_required":
                     return None
-                previous = current.execute("SELECT owner_scope_json FROM desktop_setup_operations WHERE journey_id=? "
-                    "AND action='account.connect' AND state='refused' AND reason='operation_expired' LIMIT 129", (journey_id,)).fetchall()
-                scopes = [json.loads(row["owner_scope_json"]) for row in previous]
+                previous = current.execute("SELECT action,owner_scope_json FROM desktop_setup_operations WHERE journey_id=? "
+                    "AND ((action='account.connect' AND state='refused' AND reason='operation_expired') "
+                    "OR action='browser.access') LIMIT 129", (journey_id,)).fetchall()
+                scopes = []
+                for row in previous:
+                    scope = json.loads(row["owner_scope_json"])
+                    if row["action"] == "browser.access":
+                        # Browser retry admission can prune the expired account
+                        # receipt. Its immutable scope retains the exact initial
+                        # recovery proposal already validated at that admission.
+                        proposal = scope.get("source_recovery")
+                        if (not isinstance(proposal, dict) or set(proposal) != {
+                                "source_journey_id", "classification_generation", "creator_account_id",
+                                "association_request_id", "initial"} or proposal["initial"] is not True
+                                or proposal["association_request_id"] is not None
+                                or proposal.get("source_journey_id") != scope["source_journey_id"]
+                                or proposal.get("creator_account_id") != scope["creator_account_id"]):
+                            continue
+                    scopes.append(scope)
                 creators = {scope["creator_account_id"] for scope in scopes
                     if self.sources.effective(scope["source_journey_id"], connection=current) == source}
                 if len(previous) > 128 or len(creators) != 1 or None in creators:

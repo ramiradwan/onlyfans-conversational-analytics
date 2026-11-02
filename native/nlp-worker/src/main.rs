@@ -1,8 +1,9 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 mod context;
+mod encoder_topics;
 mod entity;
-mod instruction_topics;
 mod instruction_runtime;
+mod instruction_topics;
 mod onnx;
 mod owned;
 mod runtime;

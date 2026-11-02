@@ -77,8 +77,15 @@ class DependencyService:
     """
     def __init__(self, persistence, artifacts, findings, source, distribution, *, keys,
                  approvals, engine_provider, resource_policy, spool_root,
-                 clock=time.time, monotonic=time.monotonic, owners=None):
+                 clock=time.time, monotonic=time.monotonic, owners=None, preparation_admission=None):
         require(type(resource_policy) is ResourcePolicy)
+        if preparation_admission is not None:
+            from app.nlp.preparation import PreparationAdmission
+            from app.nlp.engine_provider import ProcessEngineProvider
+            require(type(preparation_admission) is PreparationAdmission
+                    and type(engine_provider) is ProcessEngineProvider and engine_provider.preparation_only,
+                    'nlp_preparation_only')
+        self.preparation_admission = preparation_admission
         self.policy = ResourcePolicy.model_validate_json(resource_policy.model_dump_json())
         require(artifacts.limits.maximum_store_bytes <= self.policy.installed_bytes, 'nlp_installed_limit')
         self.persistence, self.artifacts, self.findings, self.source = persistence, artifacts, findings, source
@@ -218,7 +225,7 @@ class DependencyService:
         require(matches[0].profile_sha256 not in state['withdrawals'], 'nlp_profile_withdrawn')
         return matches[0]
 
-    def _admit(self, profile, *, fresh=False):
+    def _admit_release(self, profile, *, fresh=False):
         self._running()
         state, _ = self._authority(fresh=fresh)
         digest = profile.identity_digest()
@@ -226,10 +233,33 @@ class DependencyService:
         require(self.approvals is not None and self.engine is not None
                 and self.approvals(profile) is True, 'nlp_release_unapproved')
         validate_resource_policy(profile, self.policy)
-        require(self.engine.current(profile.components[0].engine), 'nlp_engine_unavailable')
+        if self.preparation_admission is not None:
+            self.preparation_admission.require(profile, self.policy)
         if fresh:
             self.persistence.update(lambda current: {**current, 'clock_high_water': self._now(current)})
         return state['epoch']
+
+    def _admit(self, profile, *, fresh=False):
+        epoch = self._admit_release(profile, fresh=fresh)
+        require(self.engine.current(profile.components[0].engine), 'nlp_engine_unavailable')
+        return epoch
+
+    def _require_preparation(self, profile):
+        if self.preparation_admission is None:
+            require_findings_execution()
+        else:
+            self.preparation_admission.require(profile, self.policy)
+
+    def _observe(self, profile, check, *, deadline, fresh):
+        with self.gate:
+            self._admit_release(profile, fresh=fresh)
+            self._require_preparation(profile)
+        check()
+        self.engine.observe(profile, check, deadline=deadline)
+        check()
+        with self.gate:
+            self._admit(profile, fresh=fresh)
+            self._require_preparation(profile)
 
     def ready(self, profile):
         with self.gate:
@@ -248,6 +278,7 @@ class DependencyService:
     @contextmanager
     def publication(self, profile):
         # Short authority gate spans the actual analytics commit. No model job holds it.
+        require(self.preparation_admission is None, 'nlp_preparation_only')
         with self.gate:
             require(self.ready(profile), 'nlp_dependency_unavailable')
             yield
@@ -255,6 +286,7 @@ class DependencyService:
     @contextmanager
     def retain(self, profile):
         """Keep one lazy worker and at most one prepared component in this scope."""
+        require(self.preparation_admission is None, 'nlp_preparation_only')
         require_findings_execution()
         with self._retention(profile, ready=True):
             stack = ExitStack()
@@ -422,6 +454,8 @@ class DependencyService:
                                        resource_policy=self.policy).profile
         adapter.validate_compatibility(profile, entry.compatibility)
         require(self.approvals(profile) is True, 'nlp_release_unapproved')
+        if self.preparation_admission is not None:
+            self.preparation_admission.require(profile, self.policy)
         from app.nlp.profiles import artifact_closure_digest
         members = tuple(a for a in profile.artifacts if a.role in DATA_ROLES)
         closure = artifact_closure_digest(members)
@@ -533,6 +567,13 @@ class DependencyService:
 
         try:
             check()
+            profile = next(p for p, _, state in self.persistence.profiles()
+                           if p.identity_digest() == digest and state in ('planned', 'available'))
+            require((profile.profile_id, profile.revision) == (op['entry']['profile_id'], op['entry']['revision']))
+            require(profile.identity_digest() == op['profile'] == digest, 'nlp_operation_stale')
+            from app.nlp.release_catalog import ReleaseEntry
+            adapter.validate_compatibility(profile, ReleaseEntry.model_validate_json(canonical(op['entry'])).compatibility)
+            self._observe(profile, check, deadline=deadline, fresh=True)
             try:
                 self.spool.mkdir(mode=0o700)
                 created = True
@@ -546,12 +587,6 @@ class DependencyService:
                 op['spool_identity'] = list(self._directory_identity(self.spool))
                 save()
             self._check_spool(directory, op)
-            profile = next(p for p, _, state in self.persistence.profiles()
-                           if p.identity_digest() == digest and state in ('planned','available'))
-            require((profile.profile_id, profile.revision) == (op['entry']['profile_id'], op['entry']['revision']))
-            require(profile.identity_digest() == op['profile'] == digest, 'nlp_operation_stale')
-            from app.nlp.release_catalog import ReleaseEntry
-            adapter.validate_compatibility(profile, ReleaseEntry.model_validate_json(canonical(op['entry'])).compatibility)
             with self.gate:
                 self._admit(profile, fresh=True)
             members = [a for a in profile.artifacts if a.role in DATA_ROLES]
@@ -598,7 +633,7 @@ class DependencyService:
                     streams = [(a.artifact_id, handles.enter_context((directory / op['verified'][a.artifact_id]).open('rb'))) for a in members]
                     available = self.artifacts.stage(profile, streams, cancellation_check=check, ownership=ownership)
             check()
-            self._prepare(profile, available, check)
+            self._prepare(profile, available, check, deadline=min(deadline, self.monotonic() + 120))
             with self.gate:
                 self._admit(profile, fresh=True)
                 check()
@@ -782,19 +817,25 @@ class DependencyService:
             require(total <= self.policy.temporary_bytes, 'nlp_temporary_limit')
         return total
 
-    def _prepare(self, profile, available, check):
-        require_findings_execution()
-        deadline = self.monotonic() + 120
+    def _prepare(self, profile, available, check, *, deadline=None):
+        self._require_preparation(profile)
+        with self.gate:
+            self._admit(profile)
+        deadline = self.monotonic() + 120 if deadline is None else deadline
         request = adapter.HandshakeRequest(request_id=uuid4().hex, expected_engine=profile.components[0].engine)
         with self.engine.open(profile, available, check, deadline=deadline) as session:
             adapter.validate_handshake(profile, request, session.handshake(request, deadline=deadline))
             for component in profile.components:
                 self._prepare_component(profile, component, session, check, deadline)
-                self._unload(profile, component, session)
-            check()
+                self._unload(profile, component, session, deadline=deadline)
+        check()
+        require(self.monotonic() < deadline, 'nlp_deadline')
 
     def _prepare_component(self, profile, component, session, check, deadline):
         check()
+        self._require_preparation(profile)
+        with self.gate:
+            self._admit(profile)
         require(self.monotonic() < deadline, 'nlp_deadline')
         artifacts = tuple(a for a in profile.artifacts if a.artifact_id in component.artifact_ids or a.role in ('engine', 'runtime'))
         request = adapter.PrepareRequest(request_id=uuid4().hex, profile_sha256=profile.identity_digest(),
@@ -843,21 +884,29 @@ class DependencyService:
             if cancelled:
                 observed_cancel = True
                 raise ValueError('nlp_cancelled')
-        check()
-        profile = self._profile(digest)
-        with self._retention(profile, ready=False):
+        try:
             check()
-            available = self.artifacts.reopen(profile, cancellation_check=check)
-            check()
-            try:
-                self._prepare(profile, available, check)
-            finally:
-                if callback_error is not None:
-                    raise callback_error
-            with self.gate:
+            profile = self._profile(digest)
+            deadline = self.monotonic() + 120
+            self._observe(profile, check, deadline=deadline, fresh=False)
+            with self._retention(profile, ready=False):
                 check()
-                self._admit(profile)
-                self.available[digest] = available
+                available = self.artifacts.reopen(profile, cancellation_check=check)
+                check()
+                try:
+                    self._prepare(profile, available, check, deadline=deadline)
+                finally:
+                    if callback_error is not None:
+                        raise callback_error
+                with self.gate:
+                    check()
+                    self._admit(profile)
+                    require(self.monotonic() < deadline, 'nlp_deadline')
+                    self.available[digest] = available
+        except BaseException:
+            with self.gate:
+                self.available.pop(digest, None)
+            raise
 
     def _profile(self, digest):
         rows = [p for p, _, state in self.persistence.profiles() if p.identity_digest() == digest and state == 'available']
@@ -869,6 +918,7 @@ class DependencyService:
         return self.source.erasure_source_identity(account)
 
     def select(self, account, profile_id, revision, *, rollback=False):
+        require(self.preparation_admission is None, 'nlp_preparation_only')
         with self.gate:
             require(self.execution_owner is None, 'nlp_authenticated_command_required')
             if rollback:
@@ -888,6 +938,7 @@ class DependencyService:
 
     def _finish_selection(self, op):
         try:
+            require(self.preparation_admission is None, 'nlp_preparation_only')
             require(self.execution_owner is None, 'nlp_authenticated_command_required')
             require(op['source_token'] == self._source_token(op['account']), 'nlp_selection_stale')
             profile = self._profile(op['profile'])
@@ -922,6 +973,7 @@ class DependencyService:
     def account_mode(self, account, mode):
         """Explicit processing controls, independent of acquisition pause."""
         require(mode in ('paused', 'enabled'))
+        require(mode != 'enabled' or self.preparation_admission is None, 'nlp_preparation_only')
         with self.gate:
             self._running()
             token = self._source_token(account)

@@ -27,9 +27,19 @@ The production bucket can serve only:
 ```
 windows/x64/stable/ConversationAnalytics.appinstaller
 packages/<final-msix-sha256>/ConversationAnalytics_<four-part-version>_x64.msix
+packages/<final-bundle-sha256>/ConversationAnalytics_<four-part-version>_x64.msixbundle
+packages/<final-bundle-sha256>/TextAnalysisEngine_<four-part-version>_x64.msixbundle
 ```
 
-Paths under `qualification/<32-lowercase-hex>/` are read exclusively from the separate qualification bucket; the fixed filenames are `bytes.bin`, `probe.msix`, and `probe.appinstaller`. Missing objects return uncached 404. Unknown paths, query strings, encoded paths and non-read methods are refused.
+Paths under `qualification/<32-lowercase-hex>/` are read exclusively from the separate qualification bucket. They allow `bytes.bin`, `probe.msix`, `probe.appinstaller`, the canonical bundle paths above, and these NLP objects:
+
+```
+nlp/catalog.jws
+nlp/profiles/<64-lowercase-hex>
+nlp/data/<64-lowercase-hex>
+```
+
+NLP catalogues and profile envelopes use `application/jose`; NLP data uses `application/octet-stream`. All qualification responses retain `no-store, no-transform`, including hash-addressed NLP objects. The publisher owns immutable object writes; serving bytes grants no release approval. Missing objects return uncached 404. Unknown paths, query strings, encoded paths and non-read methods are refused.
 
 MSIX responses use `application/msix`; descriptors use `application/appinstaller`. Downloads stream from R2, support bounded single byte ranges and If-Range/ETag checks, and disable response transformation. HEAD describes the full object without a body. Descriptor and qualification responses use no-store. Hash-addressed packages use immutable caching. A conditional R2 read prevents a concurrent descriptor update from mixing one object's headers with another's bytes.
 

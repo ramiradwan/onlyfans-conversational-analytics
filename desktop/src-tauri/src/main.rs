@@ -126,29 +126,37 @@ async fn desktop_engine_acquisition_start(
     explicit_selection: engine_acquisition::Selection,
     review_digest: String,
 ) -> Result<engine_acquisition::Status, &'static str> {
-    use std::sync::atomic::Ordering;
-    desktop_state(window.clone(), state.clone())?;
-    let owner = state.inner().clone();
-    owner
-        .update_check_active
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .map_err(|_| "update_check_in_progress")?;
-    let guard = UpdateCheckGuard(owner.clone());
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        if owner.admitted.load(Ordering::SeqCst) && !owner.quitting.load(Ordering::SeqCst) {
-            engine_acquisition_broker::admitted_servicing();
-        }
-        let release = owner.release.clone();
-        let acquisition = owner.engine_acquisition.clone();
-        acquisition.start(explicit_selection, release, review_digest, move || {
-            let _hold = &guard;
-            owner.quitting.load(Ordering::SeqCst) || !owner.admitted.load(Ordering::SeqCst)
+    let result = async {
+        use std::sync::atomic::Ordering;
+        desktop_state(window.clone(), state.clone())?;
+        let owner = state.inner().clone();
+        owner
+            .update_check_active
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .map_err(|_| "update_check_in_progress")?;
+        let guard = UpdateCheckGuard(owner.clone());
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            if owner.admitted.load(Ordering::SeqCst) && !owner.quitting.load(Ordering::SeqCst) {
+                engine_acquisition_broker::admitted_servicing();
+            }
+            let release = owner.release.clone();
+            let acquisition = owner.engine_acquisition.clone();
+            acquisition.start(explicit_selection, release, review_digest, move || {
+                let _hold = &guard;
+                owner.quitting.load(Ordering::SeqCst) || !owner.admitted.load(Ordering::SeqCst)
+            })
         })
-    })
-    .await
-    .map_err(|_| "optional_owner_unavailable")??;
-    desktop_state(window, state)?;
-    Ok(result)
+        .await
+        .map_err(|_| "optional_owner_unavailable")??;
+        desktop_state(window.clone(), state)?;
+        Ok(result)
+    }
+    .await;
+    if let Ok(handle) = window.hwnd() {
+        windows::observe_servicing_result(handle.0 as _, result)
+    } else {
+        result
+    }
 }
 
 #[cfg(windows)]

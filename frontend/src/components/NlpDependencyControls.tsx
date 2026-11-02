@@ -9,7 +9,7 @@ import { StatusLine } from './ui/ReservedRegion';
 import type { EngineAcquisitionApi } from '../api/engineAcquisition';
 import { usePermissions } from '../hooks/usePermissions';
 import {
-  nlpDependenciesApi, parseNlpDependencyPlan,
+  nlpDependenciesApi, NlpDependenciesHttpError, parseNlpDependencyPlan,
   type NlpDependenciesApi, type NlpDependencyCommand, type NlpDependencyObservation,
   type NlpDependencyPlan, type NlpDependencyProfile, type NlpDependencyStatus,
 } from '../services/nlpDependenciesApi';
@@ -64,12 +64,14 @@ function pendingAcquisition(status: NlpDependencyStatus) {
 export function NlpDependencyControls({ api = nlpDependenciesApi, engineApi, client, reissueApi, creatorAccountId }: Props) {
   const { isCreator } = usePermissions();
   const transport = useSyncExternalStore(bridgeTransportStore.subscribe, bridgeTransportStore.getState, bridgeTransportStore.getState);
+  const [apiBinding, setApiBinding] = useState({ api, revision: 0 });
+  if (apiBinding.api !== api) setApiBinding({ api, revision: apiBinding.revision + 1 });
   const account = isCreator ? creatorAccountId : null;
   const binding = `${creatorAccountId}:${isCreator}:${transport.session?.connection_id ?? ''}:${transport.session?.bridge_session_id ?? ''}`;
   return <Stack spacing={2}>
     <TextAnalysisReissueControls creatorAccountId={account} api={reissueApi} />
     <EngineDependencyControls key={`engine:${binding}`} account={account} api={engineApi} />
-    <DependencySession key={binding} api={api} account={account} />
+    <DependencySession key={`${binding}:${apiBinding.revision}`} api={api} account={account} />
     <TextAnalysisExecutionControls creatorAccountId={account} client={client} dependenciesApi={api} />
   </Stack>;
 }
@@ -78,6 +80,7 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
   const [status, setStatus] = useState<NlpDependencyStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
+  const [readFailure, setReadFailure] = useState<'authentication' | 'authorization' | 'unavailable' | null>(null);
   const [review, setReview] = useState<{ profile: NlpDependencyProfile; plan: NlpDependencyPlan } | null>(null);
   const [removal, setRemoval] = useState<NlpDependencyProfile | null>(null);
   const [operation, setOperation] = useState<NlpDependencyObservation | null>(null);
@@ -85,60 +88,78 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
   const [pollRevision, setPollRevision] = useState(0);
   useRevealHold(Boolean(account && !status && !error));
   const lifetime = useRef<AbortController | null>(null);
-  const active = () => Boolean(account && !lifetime.current?.signal.aborted && bridgeTransportStore.getState().creatorAccountId === account);
+  const requestVersion = useRef(0);
+  const active = (signal: AbortSignal, version: number) => Boolean(account && !signal.aborted
+    && version === requestVersion.current && bridgeTransportStore.getState().creatorAccountId === account);
+  const failRead = (cause: unknown) => {
+    setError(true);
+    setReadFailure(cause instanceof NlpDependenciesHttpError && cause.status === 401 ? 'authentication'
+      : cause instanceof NlpDependenciesHttpError && cause.status === 403 ? 'authorization' : 'unavailable');
+    setReview(null);
+    setRemoval(null);
+  };
 
   useEffect(() => {
     const controller = new AbortController(); lifetime.current = controller;
+    const version = ++requestVersion.current;
     if (account) void api.get(controller.signal).then((value) => {
-      if (!controller.signal.aborted && bridgeTransportStore.getState().creatorAccountId === account) {
+      if (active(controller.signal, version)) {
         setStatus(value);
         const pending = pendingAcquisition(value);
         if (pending) { setOperation(pending); setOperationId(pending.id); }
       }
-    }).catch(() => { if (!controller.signal.aborted) setError(true); });
+    }).catch((cause: unknown) => { if (active(controller.signal, version)) failRead(cause); });
     return () => controller.abort();
   }, [account, api]);
 
   useEffect(() => {
-    if (!operationId || !account) return;
+    if (!operationId || !account || busy || readFailure !== null) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
+    const version = requestVersion.current;
     const poll = async () => {
+      if (!active(controller.signal, version)) return;
       try {
         const value = await api.observe(operationId, controller.signal);
-        if (controller.signal.aborted || bridgeTransportStore.getState().creatorAccountId !== account) return;
+        if (!active(controller.signal, version)) return;
         setOperation(value);
         if (value.in_flight || value.state === 'running') timer = setTimeout(() => { void poll(); }, 1000);
         else {
           const next = await api.get(controller.signal);
-          if (!controller.signal.aborted && bridgeTransportStore.getState().creatorAccountId === account) setStatus(next);
+          if (active(controller.signal, version)) setStatus(next);
         }
-      } catch { if (!controller.signal.aborted) setError(true); }
+      } catch (cause) { if (active(controller.signal, version)) failRead(cause); }
     };
     void poll();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [account, api, operationId, pollRevision]);
+  }, [account, api, operationId, pollRevision, busy, readFailure]);
 
   const checkStatus = async () => {
-    if (!active() || busy) return;
+    const signal = lifetime.current?.signal;
+    if (!signal || !active(signal, requestVersion.current) || busy) return;
+    const version = ++requestVersion.current;
     setBusy(true); setError(false);
     try {
-      const value = await api.get(lifetime.current!.signal);
-      if (active()) {
+      const value = await api.get(signal);
+      if (active(signal, version)) {
         setStatus(value);
+        setReadFailure(null);
         const pending = pendingAcquisition(value);
         if (pending) { setOperation(pending); setOperationId(pending.id); setPollRevision((current) => current + 1); }
+        else { setOperation(null); setOperationId(null); }
       }
-    } catch { if (active()) setError(true); }
-    finally { if (active()) setBusy(false); }
+    } catch (cause) { if (active(signal, version)) failRead(cause); }
+    finally { if (active(signal, version)) setBusy(false); }
   };
 
   const run = async (command: NlpDependencyCommand, profile?: NlpDependencyProfile) => {
-    if (!active() || busy) return;
+    const signal = lifetime.current?.signal;
+    if (!signal || !active(signal, requestVersion.current) || busy || readFailure !== null) return;
+    const version = ++requestVersion.current;
     setBusy(true); setError(false);
     setReview(null);
     try {
-      const response = await api.command(command, lifetime.current!.signal);
-      if (!active()) return;
+      const response = await api.command(command, signal);
+      if (!active(signal, version)) return;
       if (command.action === 'plan' && profile) {
         const quote = parseNlpDependencyPlan(response.operation);
         const matching = response.status.profiles.filter((item) => item.profile_sha256 === quote.profile_sha256);
@@ -148,23 +169,27 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
         setReview({ profile: matching[0], plan: quote });
       }
       setStatus(response.status);
+      setReadFailure(null);
       if (command.action === 'acquire' && typeof response.operation === 'string') {
         setOperation(null); setOperationId(response.operation);
       }
       if (['pause', 'cancel', 'resume'].includes(command.action) && operationId) {
-        const value = await api.observe(operationId, lifetime.current!.signal);
-        if (active()) { setOperation(value); setPollRevision((current) => current + 1); }
+        const value = await api.observe(operationId, signal);
+        if (active(signal, version)) { setOperation(value); setPollRevision((current) => current + 1); }
       }
-    } catch { if (active()) setError(true); }
-    finally { if (active()) setBusy(false); }
+    } catch (cause) { if (active(signal, version)) failRead(cause); }
+    finally { if (active(signal, version)) setBusy(false); }
   };
-  const unavailable = !account || !status?.configured;
+  const unavailable = !account || !status?.configured || readFailure !== null;
   const loading = Boolean(account && !status && !error);
   const feedback = [
     busy ? 'Updating text analysis settings…' : null,
     error ? 'Text analysis settings could not be updated. Your existing selection may still be active. Check status before trying again.' : null,
+    readFailure === 'authentication' ? 'Your sign-in could not be verified. Sign in again before checking status. Current download progress and readiness could not be verified.' : null,
+    readFailure === 'authorization' ? 'Access to text analysis settings was denied. Check your sign-in and permissions, then check status. Current download progress and readiness could not be verified.' : null,
+    readFailure === 'unavailable' && operation ? 'Current download progress and readiness are unavailable. Check status to try reading them again.' : null,
     loading ? 'Checking text analysis availability…' : null,
-    !loading && unavailable ? 'Text analysis is unavailable until a qualified profile and compatible installed engine are available.' : null,
+    !loading && unavailable && readFailure === null ? 'Text analysis is unavailable until a qualified profile and compatible installed engine are available.' : null,
   ].filter(Boolean).join(' ');
   const reviewMatchesStatus = Boolean(review && status?.configured
     && status.profiles.filter((profile) => profile.profile_sha256 === review.profile.profile_sha256).length === 1
@@ -185,6 +210,7 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
       <Typography>Find topics and mentions in messages. Setup is optional; other analytics remain available.</Typography>
       <Typography>Language and task support are profile-specific. Review the profile before choosing it.</Typography>
       {account && <Button disabled={busy} onClick={() => { void checkStatus(); }}>Check status</Button>}
+      {readFailure === 'authentication' && <Button component="a" href="/">Sign in again</Button>}
       {!loading && unavailable
         ? <Box data-journey-state="textanalysis.unavailable">{feedbackLine}</Box>
         : <Box>{feedbackLine}</Box>}
@@ -210,7 +236,9 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
       {operation && <Stack role="status" spacing={1}>
         <Typography>Download: {operation.profile_id ?? 'selected profile'} · {operation.revision ?? 'unknown revision'}</Typography>
         <Typography>Downloads are shared on this device. Download controls do not change this account’s processing settings.</Typography>
-        <Typography>{operationState}. {number.format(operation.verified_files)} verified files retained.</Typography>
+        <Typography>{readFailure !== null
+          ? `Last confirmed progress: ${number.format(operation.verified_files)} verified files. Current state is unknown.`
+          : `${operationState}. ${number.format(operation.verified_files)} verified files retained.`}</Typography>
         <Typography>{operation.resume_granularity === 'verified_files_and_rehashed_prefix'
           ? 'Resume rechecks saved bytes and downloads the remainder when the server supports ranges. Otherwise the interrupted file restarts. Cancelling may discard staged files.'
           : 'Resume reuses verified files. The interrupted file restarts; this is not byte-level resume. Cancelling may discard staged files.'}</Typography>
