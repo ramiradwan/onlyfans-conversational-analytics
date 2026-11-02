@@ -21,12 +21,17 @@ Install the dependencies described in [Contributing](../CONTRIBUTING.md). Build 
 | Validate all classifications and selectors | `python tools/test_backend.py list all --validate` |
 | One stateful profile | `python tools/test_backend.py stateful --profile analytics_convergence_fast` |
 | Windows platform contract | `python tools/test_backend.py windows-platform` |
+| One Windows platform group | `python tools/test_backend.py windows-platform --shard 1` |
 | Windows analytics contract | `python tools/test_backend.py windows-analytics` |
 | One scale qualification file | `python tools/test_backend.py scale -- tests/test_question_identity_scale.py` |
 
 Arguments after `--` pass through to pytest. For example, `python tools/test_backend.py integration --shard 2 -- -k publication -vv` runs a filtered subset. The runner prints the command and writes reports under `artifacts/ci-tests/`. Profile variables apply only to the child process. `fast` runs the fast tier; CI also runs the named stateful profiles as separate steps in its backend-fast job. That job has a 30-minute limit covering the fast selection and all follow-up checks.
 
 Windows contract execution requires Windows and the fixed SQLCipher runtime. A Linux collection that skips a Windows-native test does not reproduce that test. Required hosted and packaged-runtime evidence still comes from their respective workflows.
+
+CI runs the Windows platform contract in three groups, with one pytest worker per runner. Whole files stay together; group 1 also runs the reference collection, production boot, persistence profiles and CPython 3.13 socket-loop checks. The existing Required CI check verifies all three groups. Linux integration keeps four shards and exhaustive Windows keeps two, balanced separately from their recorded execution times.
+
+Backend and browser CI jobs use `npm run build:assets --prefix frontend` to generate and compile the same frontend assets without repeating lint and typecheck. The mandatory web job and the normal `npm run build` command retain both checks.
 
 The MSIX producer contract also requires the Windows SDK `10.0.26100.0` tools and UAP v17 schema. Install the SDK before running `tests/test_msix_packaging.py` or the Windows platform/full regression lanes. A missing SDK on Windows fails qualification instead of skipping it. See [MSIX packaging](../packaging/msix/README.md) for isolated profiles and the remaining installed-system gates.
 

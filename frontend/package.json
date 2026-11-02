@@ -18,6 +18,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "build": "npm run generate:setup-contract && npm run generate:setup-theme && npm run generate:theme && npm run typecheck && npm run lint && vite build && npm run verify:story-isolation",
+    "build:assets": "npm run generate:setup-contract && npm run generate:setup-theme && npm run generate:theme && vite build && npm run verify:story-isolation",
     "verify:story-isolation": "node ./scripts/verify-story-isolation.js",
     "sync:rest": "openapi-typescript http://localhost:8000/openapi.json --output src/types/backend.ts",
     "typecheck": "tsc --noEmit --project tsconfig.json",

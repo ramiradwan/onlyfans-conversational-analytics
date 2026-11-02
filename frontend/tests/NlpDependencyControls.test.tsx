@@ -111,6 +111,7 @@ describe('NlpDependencyControls', () => {
     api.observe.mockReturnValueOnce(pending.promise);
     render(view(api));
     await screen.findByText('Downloading. 2 verified files retained.');
+    await waitFor(() => expect(api.observe).toHaveBeenCalledTimes(1));
     const signal = api.observe.mock.calls[0][1];
     api.get.mockReturnValueOnce(refreshed.promise);
     fireEvent.click(screen.getByRole('button', { name: 'Check status' }));
@@ -127,6 +128,7 @@ describe('NlpDependencyControls', () => {
     api.observe.mockReturnValueOnce(pending.promise);
     render(view(api));
     await screen.findByText('Downloading. 2 verified files retained.');
+    await waitFor(() => expect(api.observe).toHaveBeenCalledTimes(1));
     const signal = api.observe.mock.calls[0][1];
     api.get.mockRejectedValueOnce(new NlpDependenciesHttpError(403));
     fireEvent.click(screen.getByRole('button', { name: 'Check status' }));
@@ -174,6 +176,7 @@ describe('NlpDependencyControls', () => {
     api.observe.mockReturnValueOnce(pending.promise);
     const rendered = render(view(api));
     await screen.findByText('Downloading. 2 verified files retained.');
+    await waitFor(() => expect(api.observe).toHaveBeenCalledTimes(1));
     const signal = api.observe.mock.calls[0][1];
     api.get.mockResolvedValue({ ...status, profiles: [{ ...profile, installed: true, prepared: true }] });
     act(() => { if (change === 'account') bridgeTransportStore.bindAccount('account-two'); else connect('2'); });

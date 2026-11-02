@@ -32,7 +32,7 @@ PYTEST_INI = ROOT / "pytest.ini"
 
 BACKEND_TEST_COMMAND = "python -m pytest"
 DEPENDENCY_INSTALL_COMMAND = "python -m pip install -r requirements-dev.txt"
-FRONTEND_BUILD_COMMAND = "npm run build --prefix frontend"
+FRONTEND_BUILD_COMMAND = "npm run build:assets --prefix frontend"
 WINDOWS_PRODUCTION_MARKER = "windows_production"
 
 
@@ -490,15 +490,42 @@ def test_windows_hang_diagnostics_preserve_bounded_job_limits_and_test_execution
         assert upload["if"] == "always()"
         assert upload["with"]["path"] == "artifacts/ci-tests/"
     assert execution_lanes == {
-        "windows-platform-contract", "windows-production-boot", "windows-persistence-general",
+        "windows-platform-contract-${{ matrix.shard }}", "windows-production-boot", "windows-persistence-general",
         "windows-persistence-deletion", "windows-persistence-smoke", "analytics-windows-contract",
         "windows-full-regression-${{ matrix.shard }}", "analytics-scale-qualification",
         "windows-python313-loop-contract",
     }
 
 
+def test_windows_platform_groups_are_independent_and_auxiliary_work_runs_once() -> None:
+    job = _jobs(_workflow_document())["windows-platform-contract"]
+    assert job["name"] == "windows-platform-contract-${{ matrix.shard }}"
+    assert job["strategy"] == {
+        "fail-fast": False, "max-parallel": 3, "matrix": {"shard": [1, 2, 3]},
+    }
+    assert job["needs"] == "fixed-sqlcipher-wheel"
+    steps = {step["name"]: step for step in _steps(job)}
+    primary = steps["Test Windows platform contract"]
+    assert primary["run"] == "python tools/test_backend.py --lane windows-platform-contract --shard ${{ matrix.shard }}"
+    assert "if" not in primary and not primary.get("continue-on-error")
+    assert primary["env"]["CI_TEST_LANE"] == "windows-platform-contract-${{ matrix.shard }}"
+    assert primary["env"]["CI_REPORT_DIR"] == "artifacts/ci-tests/windows-platform-contract-${{ matrix.shard }}"
+    for name in (
+        "Collect independent legacy Windows selection", "Validate exhaustive Windows shard inventory",
+        "Test Windows production boot", "Test Windows persistent SQLCipher general profile",
+        "Test Windows persistent SQLCipher deletion profile", "Test Windows persistent SQLCipher smoke profile",
+        "Setup CPython 3.13 for socket-loop contracts", "Install isolated socket-loop test dependencies",
+        "Test CPython 3.13 socket-loop contracts",
+    ):
+        assert steps[name].get("if") == "matrix.shard == 1"
+        assert not steps[name].get("continue-on-error")
+    artifact = steps["Retain backend timing and selection"]
+    assert artifact["with"]["name"] == "ci-tests-windows-platform-contract-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}"
+    assert artifact["if"] == "always()"
+
+
 def _assert_windows_pr_cutover(workflow: dict[str, Any]) -> None:
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v6-pr-cutover"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v7-pr-cutover"
     triggers = workflow["on"]
     assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}, "Product CI must not schedule duplicate exhaustive runs"
     assert triggers["push"] == {"branches": ["main"]}
@@ -577,16 +604,16 @@ def test_windows_pr_cutover_falsifiers_refuse_lost_coverage_or_hidden_failures(f
 def test_partial_persistence_evidence_retains_available_profiles_and_source_receipt() -> None:
     steps = _steps(_jobs(_workflow_document())["windows-platform-contract"])
     copy = next(step for step in steps if step.get("name") == "Preserve persistence evidence filenames")
-    assert copy["if"] == "always()"
+    assert copy["if"] == "always() && matrix.shard == 1"
     command = copy["run"]
     assert 'foreach ($profile in @("general", "deletion", "smoke"))' in command
     assert command.index("Test-Path -LiteralPath $source -PathType Leaf") < command.index("Copy-Item")
     assert 'tier-b-$profile-junit.xml' in command
     assert "Write-Warning" in command
     receipt = next(step for step in steps if step.get("name") == "Record Windows persistence CI source")
-    assert receipt["if"] == "always()"
+    assert receipt["if"] == "always() && matrix.shard == 1"
     upload = next(step for step in steps if step.get("name") == "Retain Windows persistence evidence")
-    assert upload["if"] == "always()"
+    assert upload["if"] == "always() && matrix.shard == 1"
     assert upload["with"]["if-no-files-found"] == "error"
 
 
@@ -1021,6 +1048,24 @@ def _assert_web_feedback_keeps_its_checks(workflow: dict[str, Any]) -> None:
     assert "web-build-and-test" in jobs["required-ci-gate"]["needs"]
 
 
+def test_frontend_consumers_compile_the_same_assets_without_repeating_validation() -> None:
+    scripts = json.loads((ROOT / "frontend/package.json").read_text())["scripts"]
+    full = scripts["build"].split(" && ")
+    assert scripts["build:assets"].split(" && ") == [
+        command for command in full if command not in {"npm run lint", "npm run typecheck"}
+    ]
+    jobs = _jobs(_workflow_document())
+    for name in (
+        "backend-fast", "analytics-integration", "windows-platform-contract", "analytics-windows-contract",
+        "windows-full-shards", "analytics-scale-qualification", "browser-e2e-execution", "browser-e2e-serial-control",
+    ):
+        commands = [step.get("run", "") for step in _steps(jobs[name])]
+        assert commands.count("npm run build:assets --prefix frontend") == 1
+        assert "npm run build --prefix frontend" not in commands
+        assert "npm run lint --prefix frontend" not in commands
+        assert "npm run typecheck --prefix frontend" not in commands
+
+
 @pytest.mark.parametrize("mutation", ["drop", "skip", "ignore", "wait", "duplicate", "bootstrap"])
 def test_web_feedback_stays_independent_and_keeps_every_js_check(mutation: str) -> None:
     workflow = _workflow_document()
@@ -1114,7 +1159,7 @@ def _assert_browser_execution_is_isolated_and_gated(workflow: dict[str, Any]) ->
     assert test.get("working-directory") == BROWSER_SUITE_DIRECTORY
     assert "if" not in test and not test.get("continue-on-error")
     assert "if ($exitCode -ne 0) { exit $exitCode }" in test["run"]
-    for command in ("npm run build --prefix frontend", "npm run build --prefix extension"):
+    for command in ("npm run build:assets --prefix frontend", "npm run build --prefix extension"):
         assert any(command in str(step.get("run", "")) for step in steps[:steps.index(test)])
     aggregate = jobs["windows-browser-e2e"]
     assert aggregate.get("if") == "${{ always() }}"
@@ -1250,7 +1295,7 @@ def _assert_python313_loop_counterpart(workflow: dict[str, Any]) -> None:
         matches = [index for index, step in enumerate(steps) if step.get("name") == name]
         assert len(matches) == 1
         indexes.append(matches[0])
-        assert "if" not in steps[matches[0]] and not steps[matches[0]].get("continue-on-error")
+        assert steps[matches[0]].get("if") == "matrix.shard == 1" and not steps[matches[0]].get("continue-on-error")
     assert indexes == sorted(indexes)
     setup, install, execute = (steps[index] for index in indexes)
     assert setup["with"]["python-version"] == "3.13" and setup["id"] == "loop-python"
