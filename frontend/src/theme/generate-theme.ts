@@ -2,6 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import InitColorSchemeScript from '@mui/material/InitColorSchemeScript';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 import { qualifyThemeColors } from './chart-qualification.ts';
 import { contrastRatio, contrastRatioOnComposite } from './color-validation.ts';
@@ -362,6 +365,27 @@ export function generateFirstPaintCss(tokensJsonSource: string): string {
   return rule(':root', 'light') + '\n' + rule(':root[data-mui-color-scheme="dark"]', 'dark') + '\n';
 }
 
+export function generateFirstPaintScript(): string {
+  return renderToStaticMarkup(
+    createElement(InitColorSchemeScript, { attribute: 'data-mui-color-scheme', defaultMode: 'light' }),
+  ).replace(/^<script[^>]*>/, '<script>');
+}
+
+export function replaceFirstPaintScript(consumerSource: string, script: string): string {
+  const startMarker = '<!-- first-paint-script:start -->';
+  const endMarker = '<!-- first-paint-script:end -->';
+  const source = consumerSource.replace(/\r\n/g, '\n');
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker);
+  if (start < 0 || end < start || source.indexOf(startMarker, start + 1) >= 0 || source.indexOf(endMarker, end + 1) >= 0) {
+    throw new Error('Expected exactly one ordered first-paint-script marker pair');
+  }
+  const lineStart = source.lastIndexOf('\n', start) + 1;
+  const indent = source.slice(lineStart, start);
+  if (!/^[ \t]*$/.test(indent)) throw new Error('first-paint-script:start must begin its line');
+  return source.slice(0, start) + startMarker + '\n' + indent + script + '\n' + indent + source.slice(end);
+}
+
 /** Replaces the marker-delimited generated block, keeping the start marker's indentation. */
 export function replaceStaticTokenBlock(consumerSource: string, css: string, marker = 'design-tokens'): string {
   const blockStart = '/* ' + marker + ':start */';
@@ -436,9 +460,13 @@ function main(): void {
       writeIfChanged(consumerPath, replaceStaticFontPreloads(fs.readFileSync(consumerPath, 'utf8'), fonts, count));
     }
     const firstPaint = generateFirstPaintCss(tokensSource);
+    const firstPaintScript = generateFirstPaintScript();
     for (const consumer of firstPaintConsumers) {
       const consumerPath = path.join(repositoryRoot, consumer);
-      const updated = replaceStaticTokenBlock(fs.readFileSync(consumerPath, 'utf8'), firstPaint, 'first-paint');
+      const updated = replaceFirstPaintScript(
+        replaceStaticTokenBlock(fs.readFileSync(consumerPath, 'utf8'), firstPaint, 'first-paint'),
+        firstPaintScript,
+      );
       if (writeIfChanged(consumerPath, updated)) console.log('Updated first-paint colors in ' + consumer);
     }
   }

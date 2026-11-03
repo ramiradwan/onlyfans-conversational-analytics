@@ -9,10 +9,12 @@ import { brandTypography, colorSchemeProps, theme } from '../src/theme';
 import {
   firstPaintConsumers,
   generateFirstPaintCss,
+  generateFirstPaintScript,
   generateStaticTokensCss,
   generateThemeSource,
   onboardingLayoutConsumers,
   replaceStaticTokenBlock,
+  replaceFirstPaintScript,
   staticTokenConsumers,
 } from '../src/theme/generate-theme';
 
@@ -146,12 +148,23 @@ describe('first-paint head', () => {
     createElement(InitColorSchemeScript, { attribute: 'data-mui-color-scheme', ...colorSchemeProps }),
   ).replace(/^<script[^>]*>/, '<script>');
 
+  it('generates the color scheme script from the installed theme package', () => {
+    expect(generateFirstPaintScript()).toBe(colorSchemeScript);
+  });
+
   it.each(firstPaintConsumers)('%s carries the current first-paint colors and color scheme script', (consumer) => {
     const source = fs
       .readFileSync(path.resolve(process.cwd(), '..', consumer), 'utf8')
       .replace(/\r\n/g, '\n');
     expect(replaceStaticTokenBlock(source, css, 'first-paint')).toBe(source);
-    expect(source).toContain(colorSchemeScript);
+    expect(replaceFirstPaintScript(source, generateFirstPaintScript())).toBe(source);
+  });
+
+  it('replaces a stale script without changing the rest of the document', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf8').replace(/\r\n/g, '\n');
+    const stale = source.replace(colorSchemeScript, '<script>old bootstrap</script>');
+    expect(stale).not.toBe(source);
+    expect(replaceFirstPaintScript(stale, generateFirstPaintScript())).toBe(source);
   });
 
   it('paints the canvas and text the theme renders for each scheme', () => {

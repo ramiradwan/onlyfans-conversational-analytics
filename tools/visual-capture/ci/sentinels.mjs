@@ -57,7 +57,7 @@ async function main() {
   if (args.length && (args.length !== 2 || args[0] !== '--python')) throw new Error('visual_ci_invalid_probe_arguments');
   const python = args[1] ?? process.env.VISUAL_CI_PYTHON ?? 'python';
   const packageInfo = JSON.parse(await readFile(resolve(here, '../node_modules/playwright/package.json'), 'utf8'));
-  assert.equal(packageInfo.version, '1.63.0');
+  assert.equal(packageInfo.version, '1.64.1');
   const source = sourceIdentity({ ...process.env, GITHUB_RUN_ID: process.env.GITHUB_RUN_ID ?? '1' }, root);
   const directory = await mkdtemp(join(tmpdir(), 'visual-ci-sentinel-'));
   let browser, owner;
