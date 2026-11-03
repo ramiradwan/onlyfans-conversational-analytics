@@ -7,12 +7,13 @@
   <title>OnlyFans Conversational Analytics</title>  
   
   <!-- Sets the saved color scheme before first paint. -->
+  <!-- first-paint-script:start -->
   <script>(function() {
 try {
   let colorScheme = '';
-  const mode = localStorage.getItem('mui-mode') || 'light';
-  const dark = localStorage.getItem('mui-color-scheme-dark') || 'dark';
-  const light = localStorage.getItem('mui-color-scheme-light') || 'light';
+  const mode = localStorage.getItem("mui-mode") || "light";
+  const dark = localStorage.getItem("mui-color-scheme-dark") || "dark";
+  const light = localStorage.getItem("mui-color-scheme-light") || "light";
   if (mode === 'system') {
     // handle system mode
     const mql = window.matchMedia('(prefers-color-scheme: dark)');
@@ -29,9 +30,10 @@ try {
     colorScheme = dark;
   }
   if (colorScheme) {
-    document.documentElement.setAttribute('data-mui-color-scheme', colorScheme);
+    document.documentElement.setAttribute("data-mui-color-scheme", colorScheme);
   }
 } catch(e){}})();</script>
+  <!-- first-paint-script:end -->
   <style>
     /* first-paint:start */
     :root {
