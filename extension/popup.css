@@ -925,8 +925,9 @@ body[data-surface="popup"] .popup-action-only {
 
 /* Fixed frames remain present while their contents settle. */
 .reserved-empty { visibility: hidden !important; }
-.reserved-status { height: 40px; margin-top: 8px; }
-.reserved-status .feedback { margin: 0; line-height: 20px; }
+/* The longest notice wraps to three lines at the narrowest supported text layout. */
+.reserved-status { min-height: calc(4.5 * var(--dipsy-static-popup-body-size)); margin-top: 8px; }
+.reserved-status .feedback { margin: 0; line-height: 1.5; }
 .reserved-status .feedback:empty { visibility: hidden; }
 /* The action slot keeps its button's box while hidden and grows when the label wraps. */
 .reserved-actions { padding-bottom: var(--dipsy-space-unit); }
@@ -960,4 +961,3 @@ body[data-surface="popup"] #open-connection.hidden { display: block !important; 
 .popup-action-only .popup-status { display: block; }
 .popup-action-only .popup-status #journey-title, .popup-action-only .popup-status #journey-body { display: block; }
 .metrics strong { display: block; width: 100%; font-size: 20px; font-variant-numeric: tabular-nums; }
-@media (min-width: 600px) { .reserved-status { height: 20px; } }
