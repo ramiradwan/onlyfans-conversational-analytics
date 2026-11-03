@@ -429,7 +429,8 @@ class LastPresenceObservation(StrictModel):
 
 class CapabilityStatus(StrictModel):
     capability: Literal[
-        "capture.chats", "capture.messages", "capture.presence", "history.sync", "command.message.send"
+        "capture.chats", "capture.messages", "capture.presence", "history.sync",
+        "history.catchup.v1", "signing.parameters.v1", "command.message.send",
     ]
     status: Literal["active", "degraded", "unsupported"]
     detail: str | None

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -120,7 +121,6 @@ def test_role_specific_unions_reject_wrong_role_messages() -> None:
 
 @pytest.mark.parametrize("fixture", sorted((FIXTURE_ROOT / "catchup").glob("*.json")), ids=lambda path: path.stem)
 def test_catchup_and_old_shape_fixtures(fixture):
-    import json
     from app.protocol.config import (
         CaptureStateReportRequest, CaptureStateReportResponse,
         HistoryCheckBeginRequest, HistoryCheckBeginResponse,
@@ -141,3 +141,29 @@ def test_catchup_and_old_shape_fixtures(fixture):
                  "history.check.begin": HistoryCheckBeginRequest}.get(value.get("operation"))
         adapter = TypeAdapter(model or (HistoryCheckBeginResponse if "result" in value else CaptureStateReportResponse))
     assert adapter.validate_json(document) is not None
+
+
+@pytest.mark.parametrize("capability", ["history.catchup.v1", "signing.parameters.v1"])
+def test_config_applied_accepts_each_negotiated_capability(capability: str) -> None:
+    document = json.loads((FIXTURE_ROOT / "catchup" / "config.applied.json").read_text(encoding="utf-8"))
+    document["payload"]["capabilities"] = [
+        status for status in document["payload"]["capabilities"]
+        if status["capability"] == capability
+    ]
+    assert AGENT_TO_BRAIN_ADAPTER.validate_json(json.dumps(document)) is not None
+
+
+def test_config_applied_rejects_unknown_capability() -> None:
+    document = json.loads((FIXTURE_ROOT / "config.applied.json").read_text(encoding="utf-8"))
+    document["payload"]["capabilities"][0]["capability"] = "unknown.capability.v1"
+    with pytest.raises(ValidationError):
+        AGENT_TO_BRAIN_ADAPTER.validate_json(json.dumps(document))
+
+
+@pytest.mark.parametrize("location", ["payload", "capability"])
+def test_config_applied_rejects_extra_fields(location: str) -> None:
+    document = json.loads((FIXTURE_ROOT / "config.applied.json").read_text(encoding="utf-8"))
+    target = document["payload"] if location == "payload" else document["payload"]["capabilities"][0]
+    target["unexpected"] = True
+    with pytest.raises(ValidationError):
+        AGENT_TO_BRAIN_ADAPTER.validate_json(json.dumps(document))
