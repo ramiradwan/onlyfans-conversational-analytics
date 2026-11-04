@@ -45,7 +45,7 @@ jobs:
           ref: ${{ env.PRODUCT_SHA }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: 'npm'
@@ -95,7 +95,7 @@ jobs:
         run: node --test tools/visual-capture/*.test.mjs
 
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
       - name: Install pinned reporting safety dependencies
@@ -132,7 +132,7 @@ jobs:
           ref: ${{ env.PRODUCT_SHA }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: 'npm'
@@ -170,7 +170,7 @@ jobs:
         run: npx playwright install chromium
 
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
       - name: Capture the required visual stage group
@@ -182,7 +182,7 @@ jobs:
         run: python tools/ci_visual_gate.py seal --artifact-dir artifacts/visual-raw/${{ matrix.group }} --publish-dir artifacts/visual-published/${{ matrix.group }} --diagnostics-dir artifacts/visual-diagnostics/${{ matrix.group }}
       - name: Retain immutable complete visual inputs
         if: ${{ success() && steps.visual-seal.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: visual-inputs-${{ matrix.group }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/visual-published/${{ matrix.group }}/
@@ -190,7 +190,7 @@ jobs:
           if-no-files-found: error
       - name: Retain restricted visual diagnostics
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: visual-diagnostics-${{ matrix.group }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/visual-diagnostics/${{ matrix.group }}/
@@ -211,7 +211,7 @@ jobs:
           ref: ${{ env.PRODUCT_SHA }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: 'npm'
@@ -249,7 +249,7 @@ jobs:
         run: npx playwright install chromium
 
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
       - name: Capture the required visual stage group
@@ -261,7 +261,7 @@ jobs:
         run: python tools/ci_visual_gate.py seal --artifact-dir artifacts/visual-raw/all --publish-dir artifacts/visual-published/all --diagnostics-dir artifacts/visual-diagnostics/all
       - name: Retain immutable complete visual inputs
         if: ${{ success() && steps.visual-seal.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: visual-inputs-all-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/visual-published/all/
@@ -269,7 +269,7 @@ jobs:
           if-no-files-found: error
       - name: Retain restricted visual diagnostics
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: visual-diagnostics-all-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/visual-diagnostics/all/
@@ -292,19 +292,19 @@ jobs:
         with:
           ref: ${{ env.PRODUCT_SHA }}
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
       - name: Install color qualification dependencies
         run: npm ci --prefix frontend
       - name: Retrieve immutable complete visual inputs
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           pattern: visual-inputs-*
           path: artifacts/visual-evidence
@@ -319,14 +319,14 @@ jobs:
       - name: Bind the final color report and approved captures
         run: python tools/ci_visual_gate.py finalize --output-dir artifacts/visual-capture --verified-output artifacts/visual-ci-verified.json
       - name: Retain verified visual assembly provenance
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: visual-verified-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/visual-ci-verified.json
           retention-days: 14
           if-no-files-found: error
       - name: Upload visual states
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: visual-states-${{ env.PRODUCT_SHA }}
           path: artifacts/visual-capture/
