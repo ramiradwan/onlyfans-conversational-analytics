@@ -1,5 +1,5 @@
 {
-  "aggregate_bundle_sha256": "327ce1b4a1e461d80be84330691f97e404f70ecb3e638942a91dc72d50c6181f",
+  "aggregate_bundle_sha256": "378c9a59b52c6bc7eeb5a264588139754b755a3cc307425a107bece8c20dd068",
   "conformance_manifests": [
     {
       "export": "installation-setup-continuation-v1",
@@ -109,7 +109,7 @@
   ],
   "consumer_pin_version": 4,
   "contract_manifest_path": "manifest.json",
-  "contract_manifest_sha256": "dbc76eee6f7d825a134a37d33349afbaa19bd8b58fd91fb3e2ee98b2e560e07b",
+  "contract_manifest_sha256": "88330f89f0b9e72905a01ccfb8545015151c0d7d675c3b0c0076c9eb2dd75aee",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -188,11 +188,11 @@
       "sha256": "58d266fcee4f987091b67ee3adf6e517531606a226d35b75c5870b748908e504"
     }
   ],
-  "source_commit": "50540bb74d1ee71f1fe7028872280dd8299099f9",
+  "source_commit": "16b544510a8da883780c61c4d2fc2b74f1945ac2",
   "source_contract_manifest_path": "source-contract-manifest/contract-manifest.json",
-  "source_contract_manifest_sha256": "cc32e5e1e0f3cba4153c69dac1db15d7f9856dbde351e911279dc942ebc2a500",
+  "source_contract_manifest_sha256": "8b3188126978fcc5d0ab3d234297e4fdea4177ab8312ecaaf0a66d267f62d22f",
   "source_repository": "ramiradwan/creator-platform-contracts",
-  "source_tree": "1cc1c08bb6d97f1b9eadab55028f23b8b1eb5ce9",
+  "source_tree": "62569a4df2985598ab6b6785205d5559eb6923a3",
   "supported_profiles": [
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",

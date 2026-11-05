@@ -14,9 +14,9 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS_ROOT = REPOSITORY_ROOT / "contracts"
 APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-APPROVED_SOURCE_COMMIT = "50540bb74d1ee71f1fe7028872280dd8299099f9"
-APPROVED_SOURCE_TREE = "1cc1c08bb6d97f1b9eadab55028f23b8b1eb5ce9"
-APPROVED_SOURCE_MANIFEST_SHA256 = "cc32e5e1e0f3cba4153c69dac1db15d7f9856dbde351e911279dc942ebc2a500"
+APPROVED_SOURCE_COMMIT = "16b544510a8da883780c61c4d2fc2b74f1945ac2"
+APPROVED_SOURCE_TREE = "62569a4df2985598ab6b6785205d5559eb6923a3"
+APPROVED_SOURCE_MANIFEST_SHA256 = "8b3188126978fcc5d0ab3d234297e4fdea4177ab8312ecaaf0a66d267f62d22f"
 SOURCE_MANIFEST = "contract-manifest.json"
 SOURCE_MANIFEST_EXPORT = "source-contract-manifest"
 SOURCE_MANIFEST_TARGET = f"{SOURCE_MANIFEST_EXPORT}/contract-manifest.json"
@@ -25,8 +25,8 @@ PUBLISHED_ROOTS = ("catalog", "openapi", "profiles", "schemas")
 # Only these additive inventories may replace reviewed previous bytes during
 # this pin migration. All released schemas, profiles and fixtures remain immutable.
 APPROVED_PREVIOUS_INVENTORIES = {
-    "catalog/contracts.yaml": "a83157870729a0d4f8a803370b4cc65ee8a4c2fdc6ea8ba0b77927d525ddef3b",
-    "contract-manifest.json": "c7c7dd49ae22d54431916e3d713241e6141d670a254c1f8d0b3a186cdaf54cf9"
+    "catalog/contracts.yaml": "ec04ea233a0e9ce511ad06dabe9d8941b1767640360d962ff5414c11ec5718bf",
+    "contract-manifest.json": "cc32e5e1e0f3cba4153c69dac1db15d7f9856dbde351e911279dc942ebc2a500"
 }
 
 EXPORT_SET = [
