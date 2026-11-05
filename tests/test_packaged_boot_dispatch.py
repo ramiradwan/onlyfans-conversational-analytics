@@ -403,7 +403,7 @@ def test_boot_roots_share_owned_setup_services_and_close_once(tmp_path, monkeypa
         assert not core.recovery.registered.retain_current_binding
         assert core.recovery.initial.authorize_scope.__self__ is core.recovery
         assert core.ceremonies.client.key is core.recovery.key
-        assert core.ceremonies.authentication.choices == {"google": True, "microsoft-personal": False, "default": True}
+        assert core.ceremonies.authentication.choices == {"google": True, "microsoft-personal": False, "telegram": False, "tiktok": False, "default": True}
     # Observe the real graph's shutdown, including the separate activation
     # continuation, instead of substituting a model of its ownership.
     services = [core.coordinator, core.coordinator.owner]
