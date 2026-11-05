@@ -141,7 +141,7 @@ def authentication_projection(row, state="admitted", *, open_browser=False):
         "operation_id": row["hosted_operation_id"], "ceremony_id": row["ceremony_id"],
         "binding_digest": binding_digest(json.loads(row["binding_json"])),
         "state": state, "expires_at": row["provider_expires_at"],
-        "choices": dict.fromkeys(("google", "microsoft-personal", "default"), True),
+        "choices": dict.fromkeys(("google", "microsoft-personal", "telegram", "tiktok", "default"), True),
         "actions": {"select": False, "cancel": False, "open_browser": open_browser, "switch_account": False},
         "authentication_attempt": {"authentication_attempt_id": "55555555-5555-7555-8555-555555555555",
             "provider": "google", "mode": "sign-in"}}

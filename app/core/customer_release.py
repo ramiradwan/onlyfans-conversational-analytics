@@ -87,7 +87,7 @@ def validate_customer_release_document(
     providers = document["authentication_providers"]
     if (not isinstance(providers, list) or not providers or any(type(value) is not str for value in providers)
             or len(set(providers)) != len(providers) or "default" not in providers
-            or not set(providers) <= {"google", "microsoft-personal", "default"}):
+            or not set(providers) <= {"google", "microsoft-personal", "telegram", "tiktok", "default"}):
         raise CustomerReleaseConfigurationError("customer authentication providers are invalid")
 
     receiver_url = _https_url(

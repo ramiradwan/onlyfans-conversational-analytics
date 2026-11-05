@@ -70,7 +70,7 @@ export function CommercialActivationControls({
   const canSwitch = !accepted && authentication?.state === 'admitted'
     && authentication.actions.switch_account && allowed.includes('auth.switch');
   const choosingProvider = Boolean(canSelect || (choosingAccount && canSwitch));
-  const providers = (['google', 'microsoft-personal', 'default'] as const).filter(provider => authentication?.choices[provider]);
+  const providers = (['google', 'microsoft-personal', 'telegram', 'tiktok', 'default'] as const).filter(provider => authentication?.choices[provider]);
   const canConfirm = desktop.connected && decision !== null && desktop.snapshot?.allowed_actions.includes('activation.confirm');
   const activationOutcome = desktop.snapshot?.pending_operations.find(value => value.action === 'activation.review');
   const pendingActivation = desktop.snapshot?.pending_operations.some(value => value.action === 'activation.review') === true;

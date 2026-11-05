@@ -16,7 +16,7 @@ from app.security.hosted_grants import HostedGrantUnavailable, TransportResponse
 from test_desktop_decision_client import VectorKey
 
 pytestmark = [pytest.mark.ci_tier("fast"), pytest.mark.contract_integrity]
-ROOT = Path(__file__).resolve().parents[1] / "contracts/browser-authentication-selection-v1"
+ROOT = Path(__file__).resolve().parents[1] / "contracts/browser-authentication-selection-v2"
 NOW = datetime(2026, 10, 12, 12, tzinfo=timezone.utc)
 CHILD = "0199b234-5678-7000-8000-000000000099"
 OTHER_CHILD = "0199b234-5678-7000-8000-000000000098"
@@ -65,7 +65,7 @@ def projection(request, state="selection-required", *, exact=False):
     return {"profile": PROFILE, "operation_id": request["operation_id"],
         "ceremony_id": request["ceremony_id"], "binding_digest": binding_digest(request["binding"]),
         "expires_at": request["binding"]["source_expires_at"], "state": state,
-        "choices": dict.fromkeys(("google", "microsoft-personal", "default"), True),
+        "choices": dict.fromkeys(("google", "microsoft-personal", "telegram", "tiktok", "default"), True),
         "actions": {"select": not exact and state == "selection-required", "cancel": not exact and state == "selected",
             "open_browser": not exact and state == "selected", "switch_account": not exact and state == "admitted"},
         "authentication_attempt": attempt}

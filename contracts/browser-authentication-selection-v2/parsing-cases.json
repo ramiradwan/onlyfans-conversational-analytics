@@ -1,0 +1,78 @@
+[
+  {
+    "canonical_hex": "7b2261223a312c2262223a747275657d",
+    "case_id": "ordered",
+    "document": "{\"a\":1,\"b\":true}",
+    "limit": 8192,
+    "valid": true
+  },
+  {
+    "canonical_hex": "7b2261223a312c2262223a747275657d",
+    "case_id": "reordered",
+    "document": "{ \"b\":true, \"a\":1 }",
+    "limit": 8192,
+    "valid": true
+  },
+  {
+    "canonical_hex": "7b226e616d65223a2252c3a46d6920f09f9880227d",
+    "case_id": "unicode",
+    "document": "{\"name\":\"Rämi 😀\"}",
+    "limit": 8192,
+    "valid": true
+  },
+  {
+    "canonical_hex": "39303037313939323534373430393931",
+    "case_id": "safe-integer",
+    "document": "9007199254740991",
+    "limit": 8192,
+    "valid": true
+  },
+  {
+    "case_id": "duplicate",
+    "document": "{\"a\":1,\"a\":2}",
+    "limit": 8192,
+    "valid": false
+  },
+  {
+    "case_id": "nested-duplicate",
+    "document": "{\"x\":{\"a\":1,\"a\":2}}",
+    "limit": 8192,
+    "valid": false
+  },
+  {
+    "case_id": "nonfinite",
+    "document": "{\"a\":NaN}",
+    "limit": 8192,
+    "valid": false
+  },
+  {
+    "case_id": "unsafe-integer",
+    "document": "9007199254740992",
+    "limit": 8192,
+    "valid": false
+  },
+  {
+    "case_id": "fraction",
+    "document": "1.2",
+    "limit": 8192,
+    "valid": false
+  },
+  {
+    "case_id": "surrogate",
+    "document": "\"\\ud800\"",
+    "limit": 8192,
+    "valid": false
+  },
+  {
+    "case_id": "trailing",
+    "document": "{} {}",
+    "limit": 8192,
+    "valid": false
+  },
+  {
+    "case_id": "byte-bound",
+    "document": "\"é\"",
+    "limit": 3,
+    "valid": false
+  }
+]

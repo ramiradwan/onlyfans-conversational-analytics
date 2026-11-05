@@ -1,5 +1,5 @@
 {
-  "content_digest": "d50639dae201aaa3298f7b2b312f39f5e4b08dbaec3f8f5e68f5240d3f937cf9",
+  "content_digest": "327ce1b4a1e461d80be84330691f97e404f70ecb3e638942a91dc72d50c6181f",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -27,6 +27,7 @@
     "browser-ceremony-v1",
     "desktop-decision-v1",
     "browser-authentication-selection-v1",
+    "browser-authentication-selection-v2",
     "capability-license-delivery-recovery-v1",
     "deferred-setup-preparation-v1",
     "source-contract-manifest",
@@ -116,6 +117,46 @@
       "path": "browser-authentication-selection-v1/schema-cases.json",
       "sha256": "43e8ffae98eecd9be03760a1c63d688ebe52b52f0490bd22732244484bf25523",
       "size": 4355521
+    },
+    {
+      "path": "browser-authentication-selection-v2/admission-generation-cases.json",
+      "sha256": "555216aadf827811eb0bf93a7528a0d221144204bb40b1dd188a2f581e695905",
+      "size": 7704
+    },
+    {
+      "path": "browser-authentication-selection-v2/authentication-cases.json",
+      "sha256": "bec37d36f57078d1b818902d1327e14da708129794d213845c7dddbf2cc75f6e",
+      "size": 41768
+    },
+    {
+      "path": "browser-authentication-selection-v2/manifest.json",
+      "sha256": "67c934cb034f375be0bba0dfa63c209a83e8b5fd6a148c797d10aa6a66b05ee6",
+      "size": 5667
+    },
+    {
+      "path": "browser-authentication-selection-v2/parsing-cases.json",
+      "sha256": "70dfb268d44daba92a43dce7a851b6b42aed8f857df546ed06b5070841ae9d2d",
+      "size": 1562
+    },
+    {
+      "path": "browser-authentication-selection-v2/projection-cases.json",
+      "sha256": "db54ba4224336bfd2183fe13a7763583fb82762447e965e5b6db2c8578fe369e",
+      "size": 37684
+    },
+    {
+      "path": "browser-authentication-selection-v2/proof-admission-cases.json",
+      "sha256": "59224247fb080dc1e2279fe4eb13f8b323340b28cb8c03521e1cf4b8818f2c04",
+      "size": 24303
+    },
+    {
+      "path": "browser-authentication-selection-v2/proof-cases.json",
+      "sha256": "8185ccbf6e9847827554d320c2eee5462c2936b261c9b70f883d293896aac305",
+      "size": 250710
+    },
+    {
+      "path": "browser-authentication-selection-v2/schema-cases.json",
+      "sha256": "8c6d419c758862a36d4918a9046aca8ba2c9f587cf40b6fa17ff4eb52cc87e1b",
+      "size": 7731531
     },
     {
       "path": "browser-ceremony-v1/admission-cases.json",
@@ -1143,14 +1184,19 @@
       "size": 479
     },
     {
+      "path": "catalog/authentication-selection-admission-policy-v2.json",
+      "sha256": "becae193a0df8855e1d88cafb0e92603b15677f4bc251963c16a2b836ea45bef",
+      "size": 2107
+    },
+    {
       "path": "catalog/authentication-selection-admission-policy.json",
       "sha256": "1de0add47fe202d1caa7d2dedc75bc4e5264572dd5a31f2980a9c3b8a3c00de5",
       "size": 1936
     },
     {
       "path": "catalog/contracts.yaml",
-      "sha256": "a83157870729a0d4f8a803370b4cc65ee8a4c2fdc6ea8ba0b77927d525ddef3b",
-      "size": 67843
+      "sha256": "ec04ea233a0e9ce511ad06dabe9d8941b1767640360d962ff5414c11ec5718bf",
+      "size": 70262
     },
     {
       "path": "catalog/deferred-setup-preparation-policy-v1.json",
@@ -3988,6 +4034,11 @@
       "size": 14709
     },
     {
+      "path": "openapi/browser-authentication-selection-v2.openapi.yaml",
+      "sha256": "5ada610c8e701a0ea6f4b2c0a259e9bfdd5bf915f9d31bcdbef642f0e1a3f0e3",
+      "size": 14719
+    },
+    {
       "path": "openapi/browser-ceremony-v1.openapi.yaml",
       "sha256": "8a5e92861ea626c9cbe8c6f2735a18b9e6bd024b790c8a63bdcb4e91bf62c75e",
       "size": 15845
@@ -4178,9 +4229,19 @@
       "size": 1925
     },
     {
+      "path": "profiles/browser-authentication-selection-proof/v2/profile.json",
+      "sha256": "38bb24d420682d6011325842a5fff54db138576ebbf56dae958fed0b078919ba",
+      "size": 1913
+    },
+    {
       "path": "profiles/browser-authentication-selection/v1/profile.json",
       "sha256": "deef130cc60754453e472710b1d1c8304850c4bb0dd36905b494e7292ecb5383",
       "size": 4676
+    },
+    {
+      "path": "profiles/browser-authentication-selection/v2/profile.json",
+      "sha256": "c381e40022e26a7545842fad7cc716561c862f50cc5241e69191b5ca74878d08",
+      "size": 5176
     },
     {
       "path": "profiles/browser-ceremony-proof/v1/profile.json",
@@ -4520,6 +4581,71 @@
     {
       "path": "schemas/browser-authentication-selection/v1/switch-response.schema.json",
       "sha256": "ba2b892521bccae61770c10581928867fc58307042b1b5b62259857b592d1429",
+      "size": 530
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v2/cancel-request.schema.json",
+      "sha256": "368a2f9f61c1c92abed588fd515e8d15700db2f9a92472a406a283fbe8d6910a",
+      "size": 534
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v2/cancel-response.schema.json",
+      "sha256": "14312ed958781bda91437e5c2bfe6c20b105f4106b93c3cf7e2e6fd0e5071e27",
+      "size": 506
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v2/definitions.schema.json",
+      "sha256": "2c8bf4569df976d6a9ba070831a23e174e20c88e615122e5aef82e814c4fa361",
+      "size": 5141
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v2/error.schema.json",
+      "sha256": "022270a2afd8ecec04b69ac255efcbf6773b0d69b67cab6923a7383c8d5af39d",
+      "size": 822
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v2/projection.schema.json",
+      "sha256": "30632b3b31fd209f663fef44eea93dc7f9e19ed23b9fd0bdc4e0ff2ebffa2eac",
+      "size": 6918
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v2/proof-challenge-request.schema.json",
+      "sha256": "93993d3eb7a1b897bc2327ab5cefbf89edc1d34c3db01879ab013cdf46fe05bd",
+      "size": 2204
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v2/proof-challenge-response.schema.json",
+      "sha256": "3eb15f717cb128865d47eca0123b8382be0faab7307ef1de49292b1e20caa7fb",
+      "size": 843
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v2/read-request.schema.json",
+      "sha256": "4eea90afd1c084089b0ecfdf70ede90457e5ed0f436e11e85a1446d07345761c",
+      "size": 528
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v2/read-response.schema.json",
+      "sha256": "b5a72aa33a7043a1df8883878bf88ec3c58825741f091ea28c9e8d33e18cac10",
+      "size": 285
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v2/select-request.schema.json",
+      "sha256": "22e17dbdf0eb906c0405b586572558a2ce649d94a5890268289ff3efa3354d8a",
+      "size": 534
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v2/select-response.schema.json",
+      "sha256": "48fbe907cf94c5106557309d924207dc331966ca4e63f4d2c680f44ec95bb1db",
+      "size": 530
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v2/switch-request.schema.json",
+      "sha256": "75c9e31f47630c0b5cfec927b60b383085f81f0df523ef07e47bd243f2760dea",
+      "size": 534
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v2/switch-response.schema.json",
+      "sha256": "8087c950af5d9afc0c623f7e14a4af937cab2a84bc9b7f122558da848851a95a",
       "size": 530
     },
     {
@@ -5879,8 +6005,8 @@
     },
     {
       "path": "source-contract-manifest/contract-manifest.json",
-      "sha256": "c7c7dd49ae22d54431916e3d713241e6141d670a254c1f8d0b3a186cdaf54cf9",
-      "size": 77546
+      "sha256": "cc32e5e1e0f3cba4153c69dac1db15d7f9856dbde351e911279dc942ebc2a500",
+      "size": 81087
     },
     {
       "path": "text-analysis-authority-v1/admission-cases.json",
@@ -6013,7 +6139,9 @@
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
     "urn:bridge-clean:browser-authentication-selection-proof:v1",
+    "urn:bridge-clean:browser-authentication-selection-proof:v2",
     "urn:bridge-clean:browser-authentication-selection:v1",
+    "urn:bridge-clean:browser-authentication-selection:v2",
     "urn:bridge-clean:browser-ceremony-proof:v1",
     "urn:bridge-clean:browser-ceremony:v1",
     "urn:bridge-clean:capability-license-activation-package:v1",

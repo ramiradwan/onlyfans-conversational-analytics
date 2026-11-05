@@ -35,7 +35,7 @@ class AuthenticationClient:
         return {"profile": PROFILE, "operation_id": request["operation_id"],
             "ceremony_id": request["ceremony_id"], "binding_digest": binding_digest(request["binding"]),
             "expires_at": expires_at, "state": state,
-            "choices": dict.fromkeys(("google", "microsoft-personal", "default"), True),
+            "choices": dict.fromkeys(("google", "microsoft-personal", "telegram", "tiktok", "default"), True),
             "actions": {"select": state in {"selection-required", "retired"}, "cancel": state == "selected",
                 "open_browser": state == "selected" or state == "admitted" and self.preparation_recovery,
                 "switch_account": state == "admitted"},

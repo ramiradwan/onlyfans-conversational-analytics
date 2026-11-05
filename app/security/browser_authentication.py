@@ -21,8 +21,8 @@ from app.security.installation_continuation import (
 from app.security.installation_key import verify_installation_proof
 from contracts.loader import verify_snapshot_integrity
 
-PROFILE = "urn:bridge-clean:browser-authentication-selection:v1"
-PROOF_PROFILE = "urn:bridge-clean:browser-authentication-selection-proof:v1"
+PROFILE = "urn:bridge-clean:browser-authentication-selection:v2"
+PROOF_PROFILE = "urn:bridge-clean:browser-authentication-selection-proof:v2"
 CHALLENGE_PATH = "/v1/onboarding/browser-authentication-selection-proof-challenges"
 PATH_PREFIX = "/v1/onboarding/browser-authentication-selections:"
 MAX_REQUEST_BYTES = 8192
@@ -56,9 +56,9 @@ class _Contract:
         self.validators = {
             value["$id"].rsplit("/", 1)[-1].removesuffix(".schema.json"):
             Draft202012Validator(value, registry=registry) for value in documents
-            if "/schemas/browser-authentication-selection/v1/" in value["$id"]}
+            if "/schemas/browser-authentication-selection/v2/" in value["$id"]}
         self.proof = json.loads(
-            (root / "profiles/browser-authentication-selection-proof/v1/profile.json").read_text("utf-8"))
+            (root / "profiles/browser-authentication-selection-proof/v2/profile.json").read_text("utf-8"))
 
     def validate(self, name: str, value: dict) -> dict:
         try:

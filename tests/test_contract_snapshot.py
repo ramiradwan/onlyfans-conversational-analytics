@@ -123,8 +123,8 @@ def test_consumer_pin_names_exact_published_contract_authority() -> None:
     assert pin["source_tree"] == APPROVED_SOURCE_TREE
     assert pin["source_contract_manifest_path"] == SOURCE_MANIFEST_TARGET
     assert pin["source_contract_manifest_sha256"] == APPROVED_SOURCE_MANIFEST_SHA256
-    assert pin["aggregate_bundle_sha256"] == "d50639dae201aaa3298f7b2b312f39f5e4b08dbaec3f8f5e68f5240d3f937cf9"
-    assert pin["contract_manifest_sha256"] == "77dfd0719e5160f22b5104adad4372f7edd42232731a6cad236b85624e7978ff"
+    assert pin["aggregate_bundle_sha256"] == "327ce1b4a1e461d80be84330691f97e404f70ecb3e638942a91dc72d50c6181f"
+    assert pin["contract_manifest_sha256"] == "dbc76eee6f7d825a134a37d33349afbaa19bd8b58fd91fb3e2ee98b2e560e07b"
     assert {record["export"]: record["sha256"] for record in pin["conformance_manifests"]} == {
         "text-analysis-license-reissue-v2": "b8d059dcdfedebad1da79eb649970b4cb28abd474b80eb3b731cf586032d0e80",
         "text-analysis-license-reissue-response-conformance-v1": "caefdad92b2ef29058b2bb9876b28df16756280658e5010ca9725af55a1b08c5",
@@ -134,6 +134,7 @@ def test_consumer_pin_names_exact_published_contract_authority() -> None:
         "deferred-setup-preparation-v1": "3e9885653c501b3c3f73221453f2a7c9d2b9aa81d4bf71ec6805d77c1b610a26",
         "capability-license-delivery-recovery-v1": "c086ca4cc75e589d4427150bf7f83dfa089a4c0aa3fa77bd9430c37dce685bde",
         "browser-authentication-selection-v1": "1ca8b47bd3f7067166ae6ba71fddc615bb3dad525d0e10f49db5fc0eef859e8c",
+        "browser-authentication-selection-v2": "67c934cb034f375be0bba0dfa63c209a83e8b5fd6a148c797d10aa6a66b05ee6",
         "desktop-decision-v1": "54dabb1007de3caae82a9bea4556d0ee48f6e5053cba328f4f94d6c532ca77e2",
         "browser-ceremony-v1": "fdb51040649fb73596f47268bbca4488ed5bca6d37e2ccd9dc95657c3ffd8279",
         "initial-installation-handoff-v2": "3a60ed6d7653ec62820b98725a4a9449dff1a675708102b0a893a99af07dcd53",
@@ -202,6 +203,10 @@ def test_installation_continuation_export_is_closed_and_manifest_bound() -> None
     ("browser-authentication-selection-v1", (
         "profiles/browser-authentication-selection/v1/profile.json",
         "profiles/browser-authentication-selection-proof/v1/profile.json",
+    )),
+    ("browser-authentication-selection-v2", (
+        "profiles/browser-authentication-selection/v2/profile.json",
+        "profiles/browser-authentication-selection-proof/v2/profile.json",
     )),
     ("browser-ceremony-v1", (
         "profiles/browser-ceremony/v1/profile.json",

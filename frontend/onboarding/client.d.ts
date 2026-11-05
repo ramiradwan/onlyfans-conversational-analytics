@@ -1,4 +1,4 @@
-export type SignInProvider = 'google' | 'microsoft-personal' | 'default';
+export type SignInProvider = 'google' | 'microsoft-personal' | 'telegram' | 'tiktok' | 'default';
 export interface AnalysisReadiness {
   schema: 'ofca-analysis-readiness/v1';
   commercial_authority: 'required' | 'active' | 'unavailable';

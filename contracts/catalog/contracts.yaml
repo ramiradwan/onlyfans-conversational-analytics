@@ -799,6 +799,51 @@ contracts:
     openapi_operations:
     - issueBrowserAuthenticationSelectionProofChallenge
     governing_adr: docs/adr/0031-bound-authentication-attempts-and-current-admission.md
+  - id: browser-authentication-selection-v2
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Bind closed provider choices and explicit account switching to bounded
+      nonauthorizing children of an existing browser ceremony.
+    profile: urn:bridge-clean:browser-authentication-selection:v2
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/browser-authentication-selection/v2/definitions.schema.json
+    - schemas/browser-authentication-selection/v2/projection.schema.json
+    - schemas/browser-authentication-selection/v2/read-request.schema.json
+    - schemas/browser-authentication-selection/v2/read-response.schema.json
+    - schemas/browser-authentication-selection/v2/select-request.schema.json
+    - schemas/browser-authentication-selection/v2/select-response.schema.json
+    - schemas/browser-authentication-selection/v2/cancel-request.schema.json
+    - schemas/browser-authentication-selection/v2/cancel-response.schema.json
+    - schemas/browser-authentication-selection/v2/switch-request.schema.json
+    - schemas/browser-authentication-selection/v2/switch-response.schema.json
+    - schemas/browser-authentication-selection/v2/error.schema.json
+    openapi_operations:
+    - readBrowserAuthenticationSelectionV2
+    - selectBrowserAuthenticationSelectionV2
+    - cancelBrowserAuthenticationSelectionV2
+    - switchBrowserAuthenticationSelectionV2
+    governing_adr: docs/adr/0058-provider-selection-v2-shared-federation.md
+  - id: browser-authentication-selection-proof-v2
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Prove the exact child selection request in an independent installation-key domain.
+    profile: urn:bridge-clean:browser-authentication-selection-proof:v2
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/browser-authentication-selection/v2/proof-challenge-request.schema.json
+    - schemas/browser-authentication-selection/v2/proof-challenge-response.schema.json
+    openapi_operations:
+    - issueBrowserAuthenticationSelectionProofChallengeV2
+    governing_adr: docs/adr/0058-provider-selection-v2-shared-federation.md
   - id: capability-license-delivery-recovery-v1
     owner: licensing
     producer: local-product
