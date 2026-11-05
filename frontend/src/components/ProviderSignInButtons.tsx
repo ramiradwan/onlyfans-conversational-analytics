@@ -7,6 +7,8 @@ export type { SignInProvider } from '../../onboarding/client.js';
 const choices: Array<{ provider: SignInProvider; label: string; logo?: string }> = [
   { provider: 'google', label: 'Continue with Google', logo: googleLogo },
   { provider: 'microsoft-personal', label: 'Continue with Microsoft', logo: microsoftLogo },
+  { provider: 'telegram', label: 'Continue with Telegram' },
+  { provider: 'tiktok', label: 'Continue with TikTok' },
   { provider: 'default', label: 'Other sign-in options' },
 ];
 

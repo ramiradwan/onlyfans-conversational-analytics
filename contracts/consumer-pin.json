@@ -1,5 +1,5 @@
 {
-  "aggregate_bundle_sha256": "d50639dae201aaa3298f7b2b312f39f5e4b08dbaec3f8f5e68f5240d3f937cf9",
+  "aggregate_bundle_sha256": "378c9a59b52c6bc7eeb5a264588139754b755a3cc307425a107bece8c20dd068",
   "conformance_manifests": [
     {
       "export": "installation-setup-continuation-v1",
@@ -67,6 +67,11 @@
       "sha256": "1ca8b47bd3f7067166ae6ba71fddc615bb3dad525d0e10f49db5fc0eef859e8c"
     },
     {
+      "export": "browser-authentication-selection-v2",
+      "path": "browser-authentication-selection-v2/manifest.json",
+      "sha256": "67c934cb034f375be0bba0dfa63c209a83e8b5fd6a148c797d10aa6a66b05ee6"
+    },
+    {
       "export": "capability-license-delivery-recovery-v1",
       "path": "capability-license-delivery-recovery-v1/manifest.json",
       "sha256": "c086ca4cc75e589d4427150bf7f83dfa089a4c0aa3fa77bd9430c37dce685bde"
@@ -104,7 +109,7 @@
   ],
   "consumer_pin_version": 4,
   "contract_manifest_path": "manifest.json",
-  "contract_manifest_sha256": "77dfd0719e5160f22b5104adad4372f7edd42232731a6cad236b85624e7978ff",
+  "contract_manifest_sha256": "88330f89f0b9e72905a01ccfb8545015151c0d7d675c3b0c0076c9eb2dd75aee",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -132,6 +137,7 @@
     "browser-ceremony-v1",
     "desktop-decision-v1",
     "browser-authentication-selection-v1",
+    "browser-authentication-selection-v2",
     "capability-license-delivery-recovery-v1",
     "deferred-setup-preparation-v1",
     "source-contract-manifest",
@@ -182,16 +188,18 @@
       "sha256": "58d266fcee4f987091b67ee3adf6e517531606a226d35b75c5870b748908e504"
     }
   ],
-  "source_commit": "e40cc5d8d196e060dfee66c3ae73258e66e80708",
+  "source_commit": "16b544510a8da883780c61c4d2fc2b74f1945ac2",
   "source_contract_manifest_path": "source-contract-manifest/contract-manifest.json",
-  "source_contract_manifest_sha256": "c7c7dd49ae22d54431916e3d713241e6141d670a254c1f8d0b3a186cdaf54cf9",
+  "source_contract_manifest_sha256": "8b3188126978fcc5d0ab3d234297e4fdea4177ab8312ecaaf0a66d267f62d22f",
   "source_repository": "ramiradwan/creator-platform-contracts",
-  "source_tree": "f3647b5530e89f2f213e6a15d42e4effd45c0f9b",
+  "source_tree": "62569a4df2985598ab6b6785205d5559eb6923a3",
   "supported_profiles": [
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
     "urn:bridge-clean:browser-authentication-selection-proof:v1",
+    "urn:bridge-clean:browser-authentication-selection-proof:v2",
     "urn:bridge-clean:browser-authentication-selection:v1",
+    "urn:bridge-clean:browser-authentication-selection:v2",
     "urn:bridge-clean:browser-ceremony-proof:v1",
     "urn:bridge-clean:browser-ceremony:v1",
     "urn:bridge-clean:capability-license-activation-package:v1",

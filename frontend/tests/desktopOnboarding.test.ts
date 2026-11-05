@@ -79,7 +79,7 @@ describe('native coordinator adapter', () => {
       allowed_actions: ['auth.switch'],
       pending_operations: [{ operation_id: child, action: 'auth.select', state: 'waiting', reason: 'none' }],
       authentication: { operation_id: parent, browser_operation_id: child, state: 'admitted',
-        choices: { google: true, 'microsoft-personal': true, default: true },
+        choices: { google: true, 'microsoft-personal': true, telegram: false, tiktok: false, default: true },
         actions: { select: false, cancel: false, open_browser: true, switch_account: true },
         authentication_attempt: { authentication_attempt_id: '55555555-5555-7555-8555-555555555555',
           provider: 'google', mode: 'sign-in' } },

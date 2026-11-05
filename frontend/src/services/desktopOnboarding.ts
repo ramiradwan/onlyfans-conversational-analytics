@@ -13,7 +13,7 @@ export function selectAnalysisReadiness(value: DesktopState, creatorAccountId?: 
 
 
 export type DesktopAction = 'activation.review' | 'activation.confirm' | 'browser.pair' | 'browser.access' | 'auth.select' | 'auth.cancel' | 'auth.switch';
-export type AuthenticationProvider = 'google' | 'microsoft-personal' | 'default';
+export type AuthenticationProvider = 'google' | 'microsoft-personal' | 'telegram' | 'tiktok' | 'default';
 export interface DesktopOnboardingApi {
   getState(): DesktopState;
   subscribe(listener: () => void): () => void;

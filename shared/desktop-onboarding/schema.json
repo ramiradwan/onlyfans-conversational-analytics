@@ -145,6 +145,8 @@
           "enum": [
             "google",
             "microsoft-personal",
+            "telegram",
+            "tiktok",
             "default"
           ]
         }
@@ -583,6 +585,8 @@
                   "required": [
                     "google",
                     "microsoft-personal",
+                    "telegram",
+                    "tiktok",
                     "default"
                   ],
                   "properties": {
@@ -593,6 +597,12 @@
                       "type": "boolean"
                     },
                     "default": {
+                      "type": "boolean"
+                    },
+                    "telegram": {
+                      "type": "boolean"
+                    },
+                    "tiktok": {
                       "type": "boolean"
                     }
                   }
@@ -643,6 +653,8 @@
                           "enum": [
                             "google",
                             "microsoft-personal",
+                            "telegram",
+                            "tiktok",
                             "default"
                           ]
                         },

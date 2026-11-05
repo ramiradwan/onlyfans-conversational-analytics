@@ -320,7 +320,7 @@ def authentication_operations(setup, parent_action="account.connect", action="au
     owner.scope["desktop_authentication"] = {
         "operation_id": child_id if relation == "self" else parent["operation_id"], "browser_operation_id": None,
         "state": "selection-required" if action == "auth.select" else "admitted",
-        "choices": dict.fromkeys(("google", "microsoft-personal", "default"), True),
+        "choices": dict.fromkeys(("google", "microsoft-personal", "telegram", "tiktok", "default"), True),
         "actions": {"select": action == "auth.select", "cancel": action == "auth.cancel",
             "switch_account": action == "auth.switch", "open_browser": False},
         "authentication_attempt": None if action == "auth.select" else {

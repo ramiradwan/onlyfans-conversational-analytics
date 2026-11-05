@@ -16,7 +16,7 @@ const decision: DesktopDecision = { operation_id: '11111111-1111-4111-8111-11111
   capability: 'analysis-run', licensed_major_version: 2, compatible_artifact_family: 'analysis-artifact', update_rights: true, fallback_major_versions: [1],
 } };
 const authentication: DesktopAuthentication = { operation_id: decision.operation_id, browser_operation_id: '22222222-2222-4222-8222-222222222222',
-  state: 'selection-required', choices: { google: true, 'microsoft-personal': true, default: true },
+  state: 'selection-required', choices: { google: true, 'microsoft-personal': true, telegram: false, tiktok: false, default: true },
   actions: { select: true, cancel: true, open_browser: false, switch_account: false }, authentication_attempt: null };
 type TestApi = CapabilityLicenseApi & { readiness: ReturnType<typeof vi.fn> };
 function makeApi(overrides: Partial<TestApi> = {}): TestApi {
@@ -150,7 +150,7 @@ describe('native commercial activation', () => {
   it('offers configured providers and sends the selected provider only after a click', async () => {
     const fixture = desktopFixture();
     fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, authentication: { ...authentication,
-      choices: { google: true, 'microsoft-personal': false, default: true } }, allowed_actions: ['auth.select', 'auth.cancel'] } });
+      choices: { google: true, 'microsoft-personal': false, telegram: false, tiktok: false, default: true } }, allowed_actions: ['auth.select', 'auth.cancel'] } });
     mount(makeApi(), fixture.api);
     expect(await screen.findByRole('button', { name: 'Continue with Google' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Continue with Microsoft' })).toBeNull();

@@ -14,9 +14,9 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS_ROOT = REPOSITORY_ROOT / "contracts"
 APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-APPROVED_SOURCE_COMMIT = "e40cc5d8d196e060dfee66c3ae73258e66e80708"
-APPROVED_SOURCE_TREE = "f3647b5530e89f2f213e6a15d42e4effd45c0f9b"
-APPROVED_SOURCE_MANIFEST_SHA256 = "c7c7dd49ae22d54431916e3d713241e6141d670a254c1f8d0b3a186cdaf54cf9"
+APPROVED_SOURCE_COMMIT = "16b544510a8da883780c61c4d2fc2b74f1945ac2"
+APPROVED_SOURCE_TREE = "62569a4df2985598ab6b6785205d5559eb6923a3"
+APPROVED_SOURCE_MANIFEST_SHA256 = "8b3188126978fcc5d0ab3d234297e4fdea4177ab8312ecaaf0a66d267f62d22f"
 SOURCE_MANIFEST = "contract-manifest.json"
 SOURCE_MANIFEST_EXPORT = "source-contract-manifest"
 SOURCE_MANIFEST_TARGET = f"{SOURCE_MANIFEST_EXPORT}/contract-manifest.json"
@@ -25,8 +25,8 @@ PUBLISHED_ROOTS = ("catalog", "openapi", "profiles", "schemas")
 # Only these additive inventories may replace reviewed previous bytes during
 # this pin migration. All released schemas, profiles and fixtures remain immutable.
 APPROVED_PREVIOUS_INVENTORIES = {
-    "catalog/contracts.yaml": "e1679dada0e0c0d2f5fa01e4f317d8fa4b195ef163ad28613ef50dc4cc8e686c",
-    "contract-manifest.json": "fdec45fabe3b657d33bbf4c6b05133eee06952be5d4669b4914fcf9135fedb39"
+    "catalog/contracts.yaml": "ec04ea233a0e9ce511ad06dabe9d8941b1767640360d962ff5414c11ec5718bf",
+    "contract-manifest.json": "cc32e5e1e0f3cba4153c69dac1db15d7f9856dbde351e911279dc942ebc2a500"
 }
 
 EXPORT_SET = [
@@ -56,6 +56,7 @@ EXPORT_SET = [
     "browser-ceremony-v1",
     "desktop-decision-v1",
     "browser-authentication-selection-v1",
+    "browser-authentication-selection-v2",
     "capability-license-delivery-recovery-v1",
     "deferred-setup-preparation-v1",
     "source-contract-manifest",
@@ -88,6 +89,7 @@ EXPORT_SOURCES = {
     "browser-ceremony-v1": "test-vectors/browser-ceremony-v1",
     "desktop-decision-v1": "test-vectors/desktop-decision-v1",
     "browser-authentication-selection-v1": "test-vectors/browser-authentication-selection-v1",
+    "browser-authentication-selection-v2": "test-vectors/browser-authentication-selection-v2",
     "capability-license-delivery-recovery-v1": "test-vectors/capability-license-delivery-recovery-v1",
     "deferred-setup-preparation-v1": "test-vectors/deferred-setup-preparation-v1",
     "text-analysis-authority-v1": "test-vectors/text-analysis-authority-v1",
@@ -119,6 +121,7 @@ APPROVED_EXPORT_DIGESTS = {
     "browser-ceremony-v1": "824a953fbee1b5433402ca2f73f2f4ca3a458ba4ea038fc4c7db688c9e761c47",
     "desktop-decision-v1": "7fa1cdd451ac4acb570c11a6e3e440ba4e00bc8481d28c4aad22d706534b7efa",
     "browser-authentication-selection-v1": "d99a5bb63f45c95a2ef36b9398fb1c9130a8269635722499e535228c0043a29f",
+    "browser-authentication-selection-v2": "f1684d50c76eb229f4dd8f29b9b5f792930dbdca53384fb6c04c074c08b5433a",
     "capability-license-delivery-recovery-v1": "b20f15cb6539b9345ac51088427176e52e6a7d7850c0976aa98a543cc4700906",
     "deferred-setup-preparation-v1": "7c32147ecc17a04d673e06416f8d889748e128c3bc2386f19fb5870de6c33e39",
     "text-analysis-authority-v1": "985d40ba015958bdafcb18ffa13db66596782dc69849923b1fc79fdc6a18b365",
@@ -152,13 +155,15 @@ EXPECTED_PAIRING_VECTOR_FILES = frozenset(
         "vector.json",
     }
 )
-EXPECTED_FILE_COUNT = 1194
-EXPECTED_PUBLISHED_FILE_COUNT = 373
+EXPECTED_FILE_COUNT = 1219
+EXPECTED_PUBLISHED_FILE_COUNT = 390
 EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
     "urn:bridge-clean:browser-authentication-selection-proof:v1",
+    "urn:bridge-clean:browser-authentication-selection-proof:v2",
     "urn:bridge-clean:browser-authentication-selection:v1",
+    "urn:bridge-clean:browser-authentication-selection:v2",
     "urn:bridge-clean:browser-ceremony-proof:v1",
     "urn:bridge-clean:browser-ceremony:v1",
     "urn:bridge-clean:capability-license-activation-package:v1",
@@ -263,6 +268,7 @@ CONFORMANCE_MANIFESTS = {
     "browser-ceremony-v1": "browser-ceremony-v1/manifest.json",
     "desktop-decision-v1": "desktop-decision-v1/manifest.json",
     "browser-authentication-selection-v1": "browser-authentication-selection-v1/manifest.json",
+    "browser-authentication-selection-v2": "browser-authentication-selection-v2/manifest.json",
     "capability-license-delivery-recovery-v1": "capability-license-delivery-recovery-v1/manifest.json",
     "deferred-setup-preparation-v1": "deferred-setup-preparation-v1/manifest.json",
     "text-analysis-authority-v1": "text-analysis-authority-v1/manifest.json",

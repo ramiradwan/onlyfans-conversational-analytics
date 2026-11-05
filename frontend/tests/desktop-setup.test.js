@@ -83,7 +83,7 @@ describe('desktop setup projection', () => {
     let publish;
     const parent = '33333333-3333-4333-8333-333333333333';
     const value = { ...initial(), next_task: 'account-connection', authentication: { operation_id: parent,
-      browser_operation_id: operationId, state: 'selected', choices: { google: true, 'microsoft-personal': true, default: true },
+      browser_operation_id: operationId, state: 'selected', choices: { google: true, 'microsoft-personal': true, telegram: false, tiktok: false, default: true },
       authentication_attempt: { authentication_attempt_id: '0199b234-5678-7000-8000-000000000002', provider: 'default', mode: 'sign-in' },
       actions: { select: false, cancel: true, open_browser: true, switch_account: false } } };
     const receive = vi.fn(), request = vi.fn(async path => response(path.endsWith('/session') ? session
@@ -129,7 +129,7 @@ describe('desktop setup projection', () => {
         let publish;
         const parent = '33333333-3333-4333-8333-333333333333', successor = '55555555-5555-4555-8555-555555555555';
         const authentication = { operation_id: parent, browser_operation_id: operationId, state: 'selected',
-          choices: { google: true, 'microsoft-personal': true, default: true },
+          choices: { google: true, 'microsoft-personal': true, telegram: false, tiktok: false, default: true },
           authentication_attempt: { authentication_attempt_id: '0199b234-5678-7000-8000-000000000002', provider: 'default', mode: 'sign-in' },
           actions: { select: false, cancel: true, open_browser: true, switch_account: false } };
         const value = { ...initial(), authentication, pending_operations: [{ ...record, action: 'auth.select', state: 'waiting' }] };
@@ -178,7 +178,7 @@ describe('desktop setup projection', () => {
         const parent = '33333333-3333-4333-8333-333333333333', journey = '44444444-4444-4444-8444-444444444444';
         const value = { ...initial(), revision: 2, journey_id: journey, next_task: 'account-connection', pending_operations: [{ ...record, action: 'auth.select', state: 'waiting' }],
           authentication: { operation_id: parent, browser_operation_id: operationId, state: 'selected',
-            choices: { google: true, 'microsoft-personal': true, default: true },
+            choices: { google: true, 'microsoft-personal': true, telegram: false, tiktok: false, default: true },
             authentication_attempt: { authentication_attempt_id: '0199b234-5678-7000-8000-000000000002', provider: 'default', mode: 'sign-in' },
             actions: { select: false, cancel: true, open_browser: true, switch_account: false } } };
         const focusWindow = outcome === 'focus-denied' ? vi.fn(async () => { throw Error('window_focus_deferred'); }) : vi.fn(async () => {});
@@ -208,7 +208,7 @@ describe('desktop setup projection', () => {
         let publish;
         const parent = '33333333-3333-4333-8333-333333333333';
         const authentication = { operation_id: parent, browser_operation_id: operationId, state: 'selected',
-          choices: { google: true, 'microsoft-personal': true, default: true },
+          choices: { google: true, 'microsoft-personal': true, telegram: false, tiktok: false, default: true },
           authentication_attempt: { authentication_attempt_id: '0199b234-5678-7000-8000-000000000002', provider: 'default', mode: 'sign-in' },
           actions: { select: false, cancel: true, open_browser: true, switch_account: false } };
         const value = { ...initial(), authentication, pending_operations: [{ ...record, action: 'auth.select', state: 'waiting' }] };
@@ -232,7 +232,7 @@ describe('desktop setup projection', () => {
   it('keeps asynchronous browser failure available until explicit retry or the same admission supersedes it', async () => {
     let publish;
     const authentication = { operation_id: '33333333-3333-4333-8333-333333333333', browser_operation_id: operationId, state: 'selected',
-      choices: { google: true, 'microsoft-personal': true, default: true },
+      choices: { google: true, 'microsoft-personal': true, telegram: false, tiktok: false, default: true },
       authentication_attempt: { authentication_attempt_id: '0199b234-5678-7000-8000-000000000002', provider: 'default', mode: 'sign-in' },
       actions: { select: false, cancel: true, open_browser: true, switch_account: false } };
     const value = { ...initial(), authentication, pending_operations: [{ ...record, action: 'auth.select', state: 'waiting' }] };
@@ -251,7 +251,7 @@ describe('desktop setup projection', () => {
   it.each(['google', 'microsoft-personal', 'default'])('retains the first %s click through preparation without selecting a replacement operation', async provider => {
     let publish, release;
     const authentication = { operation_id: null, browser_operation_id: null, state: 'selection-required',
-      choices: { google: true, 'microsoft-personal': true, default: true }, authentication_attempt: null,
+      choices: { google: true, 'microsoft-personal': true, telegram: false, tiktok: false, default: true }, authentication_attempt: null,
       actions: { select: true, cancel: false, open_browser: false, switch_account: false } };
     const value = { ...initial(), next_task: 'account-connection', allowed_actions: ['account.connect'], authentication };
     const accepted = { ...record, action: 'account.connect', state: 'waiting' };
@@ -507,13 +507,13 @@ describe('desktop setup projection', () => {
 describe('desktop setup presentation', () => {
   const mount = () => { document.documentElement.innerHTML = markup; };
   const signIn = () => ({ operation_id: null, browser_operation_id: null, state: 'selection-required',
-    choices: { google: true, 'microsoft-personal': true, default: true },
+    choices: { google: true, 'microsoft-personal': true, telegram: false, tiktok: false, default: true },
     actions: { select: true, cancel: false, open_browser: false, switch_account: false }, authentication_attempt: null });
 
   it('renders only configured provider choices with the governed initial action', () => {
     mount();
     const value = { ...initial(), next_task: 'account-connection', allowed_actions: ['account.connect'],
-      authentication: { ...signIn(), choices: { google: true, 'microsoft-personal': false, default: true } } };
+      authentication: { ...signIn(), choices: { google: true, 'microsoft-personal': false, telegram: false, tiktok: false, default: true } } };
     renderSetup(document, { snapshot: value, connected: true });
     expect(document.getElementById('sign-in-options').hidden).toBe(false);
     expect(document.querySelector('[data-provider="google"]').dataset.action).toBe('account.connect');

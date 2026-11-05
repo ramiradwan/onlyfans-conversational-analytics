@@ -1,0 +1,1458 @@
+[
+  {
+    "case_id": "selection-required-current",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": true,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "selection-required"
+    }
+  },
+  {
+    "case_id": "selection-required-exact-read",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": true,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "selection-required"
+    }
+  },
+  {
+    "case_id": "selection-required-old-child",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": false,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "selection-required"
+    }
+  },
+  {
+    "case_id": "selection-required-expired-presentation",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": false,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "selection-required"
+    }
+  },
+  {
+    "case_id": "selection-required-child-cap",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 32,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "selection-required"
+    }
+  },
+  {
+    "case_id": "selection-required-unresolved-browser",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": true,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": false,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "selection-required"
+    }
+  },
+  {
+    "case_id": "reauthentication-required-current",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": true,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "reauthentication-required"
+    }
+  },
+  {
+    "case_id": "reauthentication-required-exact-read",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": true,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "reauthentication-required"
+    }
+  },
+  {
+    "case_id": "reauthentication-required-old-child",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": false,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "reauthentication-required"
+    }
+  },
+  {
+    "case_id": "reauthentication-required-expired-presentation",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": false,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "reauthentication-required"
+    }
+  },
+  {
+    "case_id": "reauthentication-required-child-cap",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 32,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "reauthentication-required"
+    }
+  },
+  {
+    "case_id": "reauthentication-required-unresolved-browser",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": true,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": false,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "reauthentication-required"
+    }
+  },
+  {
+    "case_id": "selected-current",
+    "expected": {
+      "cancel": true,
+      "open_browser": true,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "selected"
+    }
+  },
+  {
+    "case_id": "selected-exact-read",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": true,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "selected"
+    }
+  },
+  {
+    "case_id": "selected-old-child",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": false,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "selected"
+    }
+  },
+  {
+    "case_id": "selected-expired-presentation",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": false,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "selected"
+    }
+  },
+  {
+    "case_id": "selected-child-cap",
+    "expected": {
+      "cancel": true,
+      "open_browser": true,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 32,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "selected"
+    }
+  },
+  {
+    "case_id": "selected-unresolved-browser",
+    "expected": {
+      "cancel": true,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": false,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "selected"
+    }
+  },
+  {
+    "case_id": "admitted-current",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "admitted-exact-read",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": true,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "admitted-old-child",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": false,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "admitted-expired-presentation",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": false,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "admitted-child-cap",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 32,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "admitted-unresolved-browser",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": false,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "retired-current",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": true,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "retired"
+    }
+  },
+  {
+    "case_id": "retired-exact-read",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": true,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "retired"
+    }
+  },
+  {
+    "case_id": "retired-old-child",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": false,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "retired"
+    }
+  },
+  {
+    "case_id": "retired-expired-presentation",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": false,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "retired"
+    }
+  },
+  {
+    "case_id": "retired-child-cap",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 32,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "retired"
+    }
+  },
+  {
+    "case_id": "retired-unresolved-browser",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": true,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": false,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "retired"
+    }
+  },
+  {
+    "case_id": "expired-current",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "expired"
+    }
+  },
+  {
+    "case_id": "expired-exact-read",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": true,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "expired"
+    }
+  },
+  {
+    "case_id": "expired-old-child",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": false,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "expired"
+    }
+  },
+  {
+    "case_id": "expired-expired-presentation",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": false,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "expired"
+    }
+  },
+  {
+    "case_id": "expired-child-cap",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 32,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "expired"
+    }
+  },
+  {
+    "case_id": "expired-unresolved-browser",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": false,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "expired"
+    }
+  },
+  {
+    "case_id": "unavailable-current",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "unavailable-exact-read",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": true,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "unavailable-old-child",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": false,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "unavailable-expired-presentation",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": false,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "unavailable-child-cap",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 32,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "unavailable-unresolved-browser",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": false,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "admitted-stale-source",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": false,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "original-missing-preparation-recovery",
+    "expected": {
+      "cancel": false,
+      "open_browser": true,
+      "select": false,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "absent",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "preparation-refuses-preparation-prepared",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "prepared",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "preparation-refuses-preparation-expired",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "expired",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "preparation-refuses-preparation-changed",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "changed",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "preparation-refuses-preparation-committed",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "committed",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "preparation-refuses-purpose-connect-account",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "absent",
+      "presentation_live": true,
+      "purpose": "connect-account",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "preparation-refuses-source_live-False",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "absent",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": false,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "preparation-refuses-eligibility_live-False",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": false,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "absent",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "preparation-refuses-offer_live-False",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": false,
+      "operation": "read",
+      "preparation": "absent",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "preparation-refuses-funding_live-False",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": false,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "absent",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "preparation-refuses-exact_operation-False",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": true
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": false,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "absent",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "exact-history-cannot-recover-preparation",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": true,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": true,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "absent",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  },
+  {
+    "case_id": "stale-session-cannot-recover-preparation",
+    "expected": {
+      "cancel": false,
+      "open_browser": false,
+      "select": false,
+      "switch_account": false
+    },
+    "input": {
+      "admission_current_live": false,
+      "attempt_count": 1,
+      "browser_dispatch_available": true,
+      "current_child": true,
+      "eligibility_live": true,
+      "exact": false,
+      "exact_operation": true,
+      "funding_live": true,
+      "offer_live": true,
+      "operation": "read",
+      "preparation": "absent",
+      "presentation_live": true,
+      "purpose": "activate-complimentary",
+      "source_live": true,
+      "state": "admitted"
+    }
+  }
+]

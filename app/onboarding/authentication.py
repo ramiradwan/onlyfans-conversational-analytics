@@ -17,10 +17,10 @@ from app.security.initial_handoff import timestamp
 class DesktopAuthentication:
     def __init__(self, store, ceremonies, client, *, providers=("default",)):
         if not providers or len(set(providers)) != len(providers) or not set(providers) <= {
-                "google", "microsoft-personal", "default"} or "default" not in providers:
+                "google", "microsoft-personal", "telegram", "tiktok", "default"} or "default" not in providers:
             raise ValueError("Invalid authentication providers")
         self.store, self.ceremonies, self.client = store, ceremonies, client
-        self.choices = {name: name in providers for name in ("google", "microsoft-personal", "default")}
+        self.choices = {name: name in providers for name in ("google", "microsoft-personal", "telegram", "tiktok", "default")}
         self._lock = asyncio.Lock()
         self._effects = OwnerEffects()
 
