@@ -866,6 +866,10 @@
       {
         "selector": "tests/test_text_analysis_views.py",
         "reason": "Retained profile disclosures and source-verified saved preview reads."
+      },
+      {
+        "selector": "tests/test_webauthn_access_events.py::test_real_server_ends_an_open_access_stream_when_it_shuts_down",
+        "reason": "Shutting down the real server must end an open access stream under the Windows event loop."
       }
     ],
     "analytics": [
@@ -1260,7 +1264,8 @@
     "tests/test_text_analysis_views.py": 2,
     "tests/test_upgrade_checkpoint.py": 3,
     "tests/test_upgrade_corrective.py": 2,
-    "tests/test_upgrade_lifecycle.py": 3
+    "tests/test_upgrade_lifecycle.py": 3,
+    "tests/test_webauthn_access_events.py": 3
   },
   "windows_platform_assignment_basis": {
     "status": "measured",
