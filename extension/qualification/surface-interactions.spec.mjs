@@ -433,9 +433,9 @@ for (const width of [320, 390, 600]) {
         excess: frame.scrollHeight - frame.clientHeight,
       })));
       expect(frameLayout, `${width}px at ${scale * 100}%`).toEqual([
-        { overflow: 'visible', excess: 0 },
-        { overflow: 'visible', excess: 0 },
-        { overflow: 'visible', excess: 0 },
+        { overflow: 'auto', excess: 0 },
+        { overflow: 'auto', excess: 0 },
+        { overflow: 'auto', excess: 0 },
       ]);
       const unfilled = await frames.evaluateAll((elements) => elements.map((frame) =>
         frame.getBoundingClientRect().height - parseFloat(getComputedStyle(frame).paddingBottom)

@@ -146,8 +146,8 @@ dialog::backdrop { background: color-mix(in oklch, var(--dipsy-color-text) 35%, 
 }
 .extension-stage { height: 520px; overflow-y: auto; scrollbar-gutter: stable; }
 .extension-stage > [data-region-content] { min-height: 100%; display: flow-root; }
-/* Hidden cards keep their content geometry while the page carries overflow. */
-.options-frame { display: grid; overflow: visible; padding-block-end: var(--dipsy-space-unit); margin-bottom: calc(2 * var(--dipsy-space-unit)); }
+/* Each frame stays a scroll container but sizes to its tallest state, so the page carries overflow. Hidden cards keep their content geometry. */
+.options-frame { display: grid; overflow-y: auto; padding-block-end: var(--dipsy-space-unit); margin-bottom: calc(2 * var(--dipsy-space-unit)); }
 .options-frame > section { min-height: 100%; margin-bottom: 0; }
 .options-frame > section.hidden { display: block !important; visibility: hidden; }
 .options-frame:has(> section.hidden) { background: var(--dipsy-color-divider); border-radius: var(--dipsy-radius-surface); }
