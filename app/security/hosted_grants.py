@@ -25,6 +25,7 @@ from app.persistence.auth import (
     InstallationKeyReference,
     OnboardingProgressEvent,
     VerifiedGrantReference,
+    refresh_window_open,
 )
 from app.security.grant_verifier import (
     GrantDenialVerificationContext,
@@ -875,10 +876,11 @@ class HostedGrantClient:
         """Refresh installation-bound authority without requiring runtime access."""
         current = self._store.verified_grant(reference_id)
         now = self._now()
+        active = self._store.verified_grants()
         if (
             current is None
-            or reference_id not in {grant.reference_id for grant in self._store.verified_grants()}
-            or not current.valid_from <= now < current.expires_at
+            or reference_id not in {grant.reference_id for grant in active}
+            or not refresh_window_open(current, active, now)
         ):
             raise AuthenticationStateError("Verified grant refresh reference is unavailable")
         key = self._installation_key.ensure_ready()

@@ -113,6 +113,27 @@ class WebAuthnAuthorityDecision:
             raise ValueError("Only an authorized decision may contain authority")
 
 
+class WebAuthnAccessState(str, Enum):
+    """Why this installation cannot report passkey state."""
+
+    RENEWING = "renewing"
+    EXPIRED = "expired"
+    REMOVED = "removed"
+    UNAVAILABLE = "unavailable"
+
+
+# Session results that still describe passkey enrollment rather than access.
+_ENROLLMENT_RESULTS = frozenset({
+    WebAuthnAuthorityResult.AUTHORIZED,
+    WebAuthnAuthorityResult.CREDENTIAL_MISSING,
+    WebAuthnAuthorityResult.CREDENTIAL_REVOKED,
+})
+_WITHDRAWN_RESULTS = frozenset({
+    WebAuthnAuthorityResult.REQUIRED_GRANT_REVOKED,
+    WebAuthnAuthorityResult.AUTHORITY_REVOKED,
+})
+
+
 class WebAuthnAuthorityPort:
     """Derive WebAuthn authority from one policy and current verified state.
 
@@ -142,6 +163,27 @@ class WebAuthnAuthorityPort:
         """Return one session authority derived from durable grant state."""
 
         return self._resolve(policy, session=True, connection=connection)
+
+    def session_access(
+        self, policy: RuntimePolicy
+    ) -> tuple[WebAuthnAuthorityDecision, WebAuthnAccessState | None]:
+        """Return the session decision and, when it is not about enrollment, why.
+
+        The decision and its explanation are read in one writer transaction.
+        """
+
+        with self._store.database.transaction() as connection:
+            decision = self._resolve(policy, session=True, connection=connection)
+            if decision.result in _ENROLLMENT_RESULTS:
+                return decision, None
+            if decision.result in _WITHDRAWN_RESULTS:
+                return decision, WebAuthnAccessState.REMOVED
+            if decision.result is not WebAuthnAuthorityResult.REQUIRED_GRANT_EXPIRED:
+                return decision, WebAuthnAccessState.UNAVAILABLE
+            lapse = self._store.lapsed_account_authority(connection, self._now())
+            return decision, (
+                WebAuthnAccessState.UNAVAILABLE if lapse is None else WebAuthnAccessState(lapse)
+            )
 
     def _resolve(
         self, policy: RuntimePolicy, *, session: bool, connection: sqlite3.Connection | None = None

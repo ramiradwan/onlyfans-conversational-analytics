@@ -10,19 +10,27 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable, Iterator
+from typing import TYPE_CHECKING, Callable, Iterator
 
 from app.core.customer_release import HOSTED_ORIGIN_ENVIRONMENT_VARIABLE
-from app.persistence.auth import AuthenticationStore, ProvisioningCandidateState, VerifiedGrantReference
+from app.persistence.auth import (
+    AuthenticationStore, ProvisioningCandidateState, VerifiedGrantReference, refresh_window_open,
+)
 from app.security.grant_types import LICENSE_ENTITLEMENT
 from app.security.hosted_grants import (
     GrantRefresh, HostedGrantClient, HostedTransport, InstallationProofAuthority,
     grant_offline_grace_seconds,
 )
 
+if TYPE_CHECKING:
+    from app.core.config import Settings
+
 logger = logging.getLogger(__name__)
 MAX_REFRESH_REFERENCES = 128
 ATTEMPT_SECONDS = 25.0
+RETRY_CEILING_SECONDS = 300.0
+# Access on this computer waits on a lapsed grant, so its retries stay frequent.
+LAPSED_RETRY_CEILING_SECONDS = 60.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +61,8 @@ class GrantRefreshLifecycle:
         self._stopped = threading.Event()
         self._generation = 0
         self._worker: threading.Thread | None = None
-        self._retries: dict[str, tuple[int, float]] = {}
+        # Failures, the attempt's end and its jitter factor for each reference.
+        self._retries: dict[str, tuple[int, float, float]] = {}
         self._include_legacy_license_entitlement = include_legacy_license_entitlement
 
     def lease(self) -> RefreshLease:
@@ -152,17 +161,26 @@ class GrantRefreshLifecycle:
         now, monotonic = self._clock(), self._monotonic()
         due: list[tuple[float, str]] = []
         for grant in grants:
-            if not grant.valid_from <= now < grant.expires_at:
+            if not refresh_window_open(grant, grants, now):
                 continue
-            signed_expiry = grant.expires_at.timestamp() - grant_offline_grace_seconds(grant.grant_type)
-            lifetime = signed_expiry - grant.valid_from.timestamp()
-            if lifetime <= 0:
-                continue
-            scheduled = grant.valid_from.timestamp() + 0.4 * lifetime
-            wait = max(0.0, scheduled - now.timestamp())
+            lapsed = now >= grant.expires_at
+            if lapsed:
+                # Past its grace and anchored on the installation grant: due now.
+                wait = 0.0
+            else:
+                signed_expiry = grant.expires_at.timestamp() - grant_offline_grace_seconds(grant.grant_type)
+                lifetime = signed_expiry - grant.valid_from.timestamp()
+                if lifetime <= 0:
+                    continue
+                scheduled = grant.valid_from.timestamp() + 0.4 * lifetime
+                wait = max(0.0, scheduled - now.timestamp())
             retry = self._retries.get(grant.reference_id)
             if retry is not None:
-                wait = max(wait, retry[1] - monotonic)
+                # The ceiling follows the grant's current state, so a grant that
+                # lapses during a long backoff is retried within the lapsed ceiling.
+                failures, attempted, factor = retry
+                ceiling = LAPSED_RETRY_CEILING_SECONDS if lapsed else RETRY_CEILING_SECONDS
+                wait = max(wait, attempted + min(ceiling, 15.0 * 2 ** failures) * factor - monotonic)
             due.append((wait, grant.reference_id))
         if not due:
             return 30.0
@@ -171,9 +189,8 @@ class GrantRefreshLifecycle:
             return min(wait, 30.0)
         result = self.refresh(reference_id)
         if result.state == "unknown":
-            failures = min(self._retries.get(reference_id, (0, 0.0))[0] + 1, 5)
-            delay = min(300.0, 15.0 * 2 ** failures) * (0.8 + 0.4 * self._jitter())
-            self._retries[reference_id] = (failures, self._monotonic() + delay)
+            failures = min(self._retries.get(reference_id, (0, 0.0, 1.0))[0] + 1, 5)
+            self._retries[reference_id] = (failures, self._monotonic(), 0.8 + 0.4 * self._jitter())
         else:
             self._retries.pop(reference_id, None)
         return 0.1
@@ -222,6 +239,12 @@ class GrantRefreshLifecycle:
         await asyncio.to_thread(self.close)
         if self._worker is not None:
             await asyncio.to_thread(self._worker.join, 1.0)
+
+
+def renewal_runs(configuration: Settings) -> bool:
+    """Whether the runtime renews verified grants in this configuration."""
+    return (configuration.identity_binding_source == "verified_grants"
+            and configuration.websocket_auth_mode == "local_session")
 
 
 def configured_grant_refresh(

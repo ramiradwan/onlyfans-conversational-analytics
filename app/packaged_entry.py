@@ -110,6 +110,9 @@ def supervised_server(configuration, application):
             coordinator = getattr(application.state, "desktop_coordinator", None)
             if coordinator is not None:
                 coordinator.begin_shutdown()
+            streams = getattr(application.state, "webauthn_access_streams", None)
+            if streams is not None:
+                streams.close()
             await super().shutdown(sockets=sockets)
 
     return OwnedServer(configuration)

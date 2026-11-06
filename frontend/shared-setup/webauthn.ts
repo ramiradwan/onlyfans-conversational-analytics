@@ -20,10 +20,26 @@ interface LoginOptions {
   userVerification?: UserVerificationRequirement;
 }
 
+/** Why the local service keeps this computer from opening analytics. */
+export type AccessState = 'renewing' | 'expired' | 'removed';
+/** The closed access values that the local service pushes to open pages. */
+export type PushedAccess = 'available' | AccessState | 'unavailable';
+type RefusedAccess = Exclude<PushedAccess, 'available'>;
+
+const REFUSED_ACCESS: readonly RefusedAccess[] = ['renewing', 'expired', 'removed', 'unavailable'];
+const PUSHED_ACCESS: readonly PushedAccess[] = ['available', ...REFUSED_ACCESS];
+const ACCESS_EVENTS = '/api/v1/webauthn/session-state/events';
+
+function oneOf<T extends string>(values: readonly T[], value: unknown): value is T {
+  return typeof value === 'string' && (values as readonly string[]).includes(value);
+}
+
 export interface WebAuthnApi {
   enroll(signal?: AbortSignal): Promise<void>;
   login(signal?: AbortSignal): Promise<void>;
   state?(signal: AbortSignal): Promise<{ enrolled: boolean; authenticated: boolean }>;
+  /** Receives each pushed access change until the signal ends. Never rejects. */
+  watch?(signal: AbortSignal, receive: (access: PushedAccess) => void): Promise<void>;
 }
 
 export class EnrollmentOutcomeError extends Error {
@@ -108,9 +124,137 @@ class RequestRefused extends Error {
 }
 
 export class WebAuthnStatusError extends Error {
-  constructor(readonly kind: 'network' | 'session' | 'forbidden' | 'invalid' | 'unavailable', readonly status?: number) {
+  constructor(
+    readonly kind: 'network' | 'session' | 'forbidden' | 'invalid' | 'unavailable' | 'access',
+    readonly status?: number,
+    /** The closed value a 409 named. Kind 'access' always carries a lapsed state. */
+    readonly access: RefusedAccess | null = null,
+  ) {
     super('Passkey status could not be read');
     this.name = 'WebAuthnStatusError';
+  }
+}
+
+/** A 409 names why access is closed with one value from a closed set. */
+async function refusal(response: Response): Promise<WebAuthnStatusError> {
+  let value: unknown = null;
+  try { value = parseOnboardingJson(await response.text()); } catch { /* A malformed refusal stays unavailable. */ }
+  if (typeof value === 'object' && value !== null && Object.keys(value).length === 2
+    && 'detail' in value && typeof value.detail === 'string' && 'access' in value) {
+    const access = value.access;
+    if (oneOf(REFUSED_ACCESS, access)) return new WebAuthnStatusError(access === 'unavailable' ? 'unavailable' : 'access', 409, access);
+  }
+  return new WebAuthnStatusError('unavailable', 409);
+}
+
+/** The lapsed state a failed status read reported, or null. */
+export function lapsedAccess(error: unknown): AccessState | null {
+  return error instanceof WebAuthnStatusError && error.access !== null && error.access !== 'unavailable' ? error.access : null;
+}
+
+/**
+ * Asks for one status read for each pushed access value that the last read did not observe.
+ * Reads and ceremonies hold it, so a value pushed meanwhile is compared when they end.
+ */
+export class AccessFollower {
+  private observed: PushedAccess | null = null;
+  private pushed: PushedAccess | null = null;
+  private holds = 0;
+  private pending = false;
+
+  constructor(private readonly reread: () => void) {}
+
+  push(value: PushedAccess) { this.pushed = value; this.pending = true; this.settle(); }
+
+  hold() { this.holds += 1; }
+
+  /** A read passes what it observed. A ceremony passes nothing, so the last pushed value is compared again. */
+  release(outcome?: PushedAccess | null) {
+    this.holds = Math.max(0, this.holds - 1);
+    if (outcome === undefined) this.pending = true;
+    else this.observed = outcome;
+    this.settle();
+  }
+
+  /** Ends a hold whose read was retired before it observed anything. */
+  abandon() { this.holds = Math.max(0, this.holds - 1); this.pending = true; }
+
+  private settle() {
+    if (this.holds > 0 || !this.pending) return;
+    this.pending = false;
+    if (this.pushed !== null && this.pushed !== this.observed) this.reread();
+  }
+}
+
+function pushedFrame(data: string): PushedAccess {
+  let value: unknown;
+  try { value = parseOnboardingJson(data); } catch { throw new WebAuthnStatusError('invalid'); }
+  if (typeof value !== 'object' || value === null || Object.keys(value).length !== 1 || !('access' in value)) {
+    throw new WebAuthnStatusError('invalid');
+  }
+  const access = value.access;
+  if (!oneOf(PUSHED_ACCESS, access)) throw new WebAuthnStatusError('invalid');
+  return access;
+}
+
+/** Resolves after the delay, or at once when the signal ends. */
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const finish = () => { clearTimeout(timer); signal.removeEventListener('abort', finish); resolve(); };
+    const timer = setTimeout(finish, signal.aborted ? 0 : ms);
+    signal.addEventListener('abort', finish, { once: true });
+  });
+}
+
+/** Reads one access stream until it ends, goes quiet or carries an invalid frame. */
+async function readAccessEvents(request: typeof fetch, parent: AbortSignal, receive: (access: PushedAccess) => void): Promise<void> {
+  if (parent.aborted) return;
+  const connection = new AbortController();
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stop = () => { connection.abort(); void reader?.cancel().catch(() => undefined); };
+  // Keepalives arrive at least every 15 seconds, so a silent stream is gone.
+  const arm = (ms: number) => { clearTimeout(timer); timer = setTimeout(stop, ms); };
+  parent.addEventListener('abort', stop, { once: true });
+  try {
+    arm(10_000);
+    let response: Response;
+    try {
+      response = await request(ACCESS_EVENTS, {
+        signal: connection.signal, credentials: 'same-origin', cache: 'no-store', redirect: 'error', headers: { Accept: 'text/event-stream' },
+      });
+    } catch { throw new WebAuthnStatusError('network'); }
+    if (!response.ok || !response.body || response.headers.get('content-type')?.split(';')[0] !== 'text/event-stream') {
+      throw new WebAuthnStatusError(response.status === 403 ? 'forbidden' : 'unavailable', response.status);
+    }
+    reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8', { fatal: true });
+    let pending = '', data = '', event = '';
+    arm(45_000);
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done || connection.signal.aborted) return;
+      arm(45_000);
+      pending += decoder.decode(chunk.value, { stream: true });
+      let end: number;
+      while ((end = pending.indexOf('\n')) >= 0) {
+        const line = pending.slice(0, end).replace(/\r$/u, '');
+        pending = pending.slice(end + 1);
+        if (line.length > 1024) throw new WebAuthnStatusError('invalid');
+        if (!line) {
+          if (event === 'access' && data) receive(pushedFrame(data));
+          data = ''; event = '';
+        } else if (line.startsWith('event:')) event = line.slice(6).trim();
+        else if (line.startsWith('data:')) data += (data ? '\n' : '') + line.slice(5).replace(/^ /u, '');
+        if (data.length > 256) throw new WebAuthnStatusError('invalid');
+      }
+      if (pending.length > 1024) throw new WebAuthnStatusError('invalid');
+    }
+  } finally {
+    clearTimeout(timer);
+    parent.removeEventListener('abort', stop);
+    connection.abort();
+    if (reader) { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
   }
 }
 
@@ -141,6 +285,7 @@ export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi
     const response = await request('/api/v1/webauthn/session-state', {
       signal: requestSignal, credentials: 'same-origin', cache: 'no-store', redirect: 'error', headers: { Accept: 'application/json' },
     });
+    if (response.status === 409) throw await refusal(response);
     if (!response.ok) throw new WebAuthnStatusError(response.status === 401 ? 'session'
       : response.status === 403 ? 'forbidden' : 'unavailable', response.status);
     let value: unknown;
@@ -211,8 +356,23 @@ export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi
     }
   };
 
+  // Reconnects after each end. A refused origin is permanent for this page.
+  const watch = async (signal: AbortSignal, receive: (access: PushedAccess) => void) => {
+    let delay = 1000;
+    while (!signal.aborted) {
+      const opened = Date.now();
+      try { await readAccessEvents(request, signal, receive); }
+      catch (error) { if (error instanceof WebAuthnStatusError && error.kind === 'forbidden') return; }
+      if (signal.aborted) return;
+      if (Date.now() - opened > 60_000) delay = 1000;
+      await pause(delay, signal);
+      delay = Math.min(delay * 2, 30_000);
+    }
+  };
+
   return {
     state,
+    watch,
     async enroll(signal) {
       const registrationOptions = await post<RegistrationOptions>('/registration/begin', undefined, signal);
       const credential = await bounded((ceremonySignal) => navigator.credentials.create({

@@ -451,6 +451,8 @@
     "tests/test_visibility_proof_completeness.py": 2,
     "tests/test_visual_capture_workflow.py": 2,
     "tests/test_webauthn.py": 2,
+    "tests/test_webauthn_access_events.py": 1,
+    "tests/test_webauthn_access_state.py": 2,
     "tests/test_webauthn_authority_port.py": 1,
     "tests/test_webauthn_routes.py": 2,
     "tests/test_websocket_transport.py": 2,
@@ -937,7 +939,9 @@
       "tests/test_nlp_preparation_release.py",
       "tests/test_nlp_profile_packaging.py",
       "tests/test_nlp_release_signing.py",
-      "tests/test_optional_engine_packaging.py"
+      "tests/test_optional_engine_packaging.py",
+      "tests/test_webauthn_access_events.py",
+      "tests/test_webauthn_access_state.py"
     ]
   }
 }

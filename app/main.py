@@ -45,6 +45,7 @@ from app.security.capability_license_redemption import (
 from app.security.grant_refresh import (
     GrantRefreshLifecycle,
     configured_grant_refresh,
+    renewal_runs,
 )
 from app.security.installation_key import (
     InstallationKeyAuthority,
@@ -86,8 +87,7 @@ def configure_capability_license_delivery() -> None:
 def start_grant_refresh() -> None:
     """Renew verified installation grants without delaying local startup."""
     global _grant_refresh
-    if (_grant_refresh is not None or settings.identity_binding_source != "verified_grants"
-            or settings.websocket_auth_mode != "local_session"):
+    if _grant_refresh is not None or not renewal_runs(settings):
         return
     from app.provisioning.claim_submission import (
         hosted_transport,

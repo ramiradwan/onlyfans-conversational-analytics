@@ -746,6 +746,35 @@ describe('desktop setup presentation', () => {
     expect(document.getElementById('local-access').hidden).toBe(true);
     expect(document.getElementById('task-action').disabled).toBe(false);
   });
+  it.each([
+    ['renewing', 'Renewing access on this computer. This window updates when renewal finishes.', 'Renewal needs an internet connection.'],
+    ['expired', 'Access on this computer expired. It could not be renewed in time.', 'Contact support to restore access.'],
+    ['removed', 'Access was removed from this computer.', 'Contact support if you did not expect this.'],
+  ])('names %s access on this computer instead of offering another attempt', (access, description, guidance) => {
+    mount();
+    const snapshot = { ...initial(), next_task: 'finish-setup', allowed_actions: ['browser.pair'],
+      pending_operations: [{ ...record, action: 'browser.pair', state: 'outcome_unknown', reason: 'authority_unavailable' }] };
+    const authentication = { checked: true, enrolled: null, authenticated: false, busy: false, error: null, access };
+    renderSetup(document, { snapshot, connected: true, authentication });
+    const get = id => document.getElementById(id);
+    expect(get('local-access').hidden).toBe(false);
+    expect(get('local-access-description').textContent).toBe(description);
+    expect(get('local-auth-status').textContent).toBe(guidance);
+    expect(get('local-authenticate').hidden).toBe(true);
+    expect(get('local-auth-retry').hidden).toBe(true);
+    expect(get('task-status').textContent).toBe('');
+    expect(get('task-action').disabled).toBe(true);
+    expect(get('browser-reopen').hidden).toBe(true);
+    const shown = [...document.querySelectorAll('button')].filter(button => !button.closest('[hidden]'));
+    expect(shown.map(button => button.textContent)).not.toContain('Try again');
+    renderSetup(document, { snapshot, connected: false, error: 'status_unavailable', authentication });
+    expect(get('task-status').textContent).toBe('The setup connection was interrupted. Reconnecting…');
+    renderSetup(document, { snapshot, connected: true, authentication: { ...authentication, enrolled: true, access: null } });
+    expect(get('local-access-description').textContent).toBe('Use a passkey to sign in on this computer.');
+    expect(get('local-auth-status').textContent).toBe('');
+    expect(get('local-authenticate').hidden).toBe(false);
+    expect(get('task-status').textContent).toBe('Account authorization is unavailable.');
+  });
 });
 
 it('reads pushed frames across chunk boundaries and reports disconnection', async () => {

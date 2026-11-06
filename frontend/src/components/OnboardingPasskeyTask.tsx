@@ -3,14 +3,28 @@ import { Box, Button, Link, Stack, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 
 import { OnboardingWorkspace } from './OnboardingWorkspace';
+import type { AccessState } from '../../shared-setup/webauthn';
 import { effectTokens } from '../theme';
 import { StatusLine } from './ui/ReservedRegion';
 
-export function OnboardingPasskeyTask({ busy, checking, enrolled, error, authenticate, statusUnavailable = false, recheck }: {
-  statusUnavailable?: boolean; recheck?(): void;
+// No action here can restore access. Pushed updates replace this copy.
+const accessCopy: Record<AccessState, { heading: string; body: string; guidance: string }> = {
+  renewing: { heading: 'Renewing access on this computer', body: 'This page updates when renewal finishes.', guidance: 'Renewal needs an internet connection.' },
+  expired: { heading: 'Access on this computer expired', body: 'Access could not be renewed in time.', guidance: 'Contact support to restore access.' },
+  removed: { heading: 'Access removed from this computer', body: 'This computer can no longer open analytics.', guidance: 'Contact support if you did not expect this.' },
+};
+const accessCopies = Object.values(accessCopy);
+
+function Sizing({ texts }: { texts: string[] }) {
+  return <>{texts.map(text => <Box component="span" key={text} aria-hidden="true" sx={{ visibility: 'hidden', gridArea: '1 / 1' }}>{text}</Box>)}</>;
+}
+
+export function OnboardingPasskeyTask({ busy, checking, enrolled, error, authenticate, statusUnavailable = false, recheck, access = null }: {
+  statusUnavailable?: boolean; recheck?(): void; access?: AccessState | null;
   busy: boolean; checking: boolean; enrolled: boolean | null; error: string | null; authenticate(enroll: boolean): Promise<void>;
 }) {
   const actionLabel = statusUnavailable ? 'Try again' : enrolled === false ? 'Create passkey' : 'Sign in with passkey';
+  const lapsed = checking || access === null ? null : accessCopy[access];
   const [fontState, setFontState] = useState<'loading' | 'ready' | 'fallback'>(() => typeof document.fonts?.load === 'function' ? 'loading' : 'fallback');
   useEffect(() => {
     if (typeof document.fonts?.load !== 'function') return;
@@ -40,26 +54,25 @@ export function OnboardingPasskeyTask({ busy, checking, enrolled, error, authent
             <LockOutlinedIcon sx={{ fontSize: 24 }} />
           </Box>
           <Typography component="h1" variant="h4" sx={{ minHeight: '2.6em', display: 'grid' }}>
-            <Box component="span" aria-hidden="true" sx={{ visibility: 'hidden', gridArea: '1 / 1' }}>Create a passkey on this computer</Box>
-            <Box component="span" sx={{ gridArea: '1 / 1' }}>{checking ? 'Checking this computer…' : statusUnavailable ? 'Passkey setup could not be checked' : enrolled === false ? 'Create a passkey on this computer' : 'Sign in on this computer'}</Box>
+            <Sizing texts={['Create a passkey on this computer', ...accessCopies.map(copy => copy.heading)]} />
+            <Box component="span" sx={{ gridArea: '1 / 1' }}>{checking ? 'Checking this computer…' : lapsed ? lapsed.heading : statusUnavailable ? 'Passkey setup could not be checked' : enrolled === false ? 'Create a passkey on this computer' : 'Sign in on this computer'}</Box>
           </Typography>
           <Typography color="text.secondary" sx={{ display: 'grid' }}>
-            <Box component="span" aria-hidden="true" sx={{ visibility: 'hidden', gridArea: '1 / 1' }}>Use the passkey you created for this app.</Box>
-            <Box component="span" aria-hidden="true" sx={{ visibility: 'hidden', gridArea: '1 / 1' }}>Use it to open analytics on this computer.</Box>
-            <Box component="span" sx={{ gridArea: '1 / 1', visibility: checking || statusUnavailable ? 'hidden' : 'visible' }}>{enrolled === false ? 'Use it to open analytics on this computer.' : 'Use the passkey you created for this app.'}</Box>
+            <Sizing texts={['Use the passkey you created for this app.', 'Use it to open analytics on this computer.', ...accessCopies.map(copy => copy.body)]} />
+            <Box component="span" sx={{ gridArea: '1 / 1', visibility: checking || statusUnavailable && !lapsed ? 'hidden' : 'visible' }}>{lapsed ? lapsed.body : enrolled === false ? 'Use it to open analytics on this computer.' : 'Use the passkey you created for this app.'}</Box>
           </Typography>
-          <Button disabled={busy || checking} onClick={() => statusUnavailable ? recheck?.() : void authenticate(enrolled === false)} size="large" variant="contained" sx={{ alignSelf: 'flex-start', display: 'grid', alignItems: 'start', maxWidth: '100%' }}>
+          <Button disabled={busy || checking || Boolean(lapsed)} onClick={() => statusUnavailable ? recheck?.() : void authenticate(enrolled === false)} size="large" variant="contained" sx={{ alignSelf: 'flex-start', display: 'grid', alignItems: 'start', maxWidth: '100%', visibility: lapsed ? 'hidden' : 'visible' }}>
             <Box component="span" aria-hidden="true" sx={{ visibility: 'hidden', gridArea: '1 / 1' }}>Sign in with passkey</Box>
             <Box component="span" key={actionLabel} sx={{ gridArea: '1 / 1' }}>{actionLabel}</Box>
           </Button>
-          <Typography variant="body2" color="text.secondary" sx={{ visibility: !checking && !statusUnavailable && enrolled === null ? 'visible' : 'hidden' }}>First time on this computer?{' '}
+          <Typography variant="body2" color="text.secondary" sx={{ visibility: !checking && !statusUnavailable && !lapsed && enrolled === null ? 'visible' : 'hidden' }}>First time on this computer?{' '}
             <Link component="button" type="button" disabled={busy} onClick={() => void authenticate(true)} sx={{ font: 'inherit', verticalAlign: 'baseline',
               '&:focus-visible': { outline: `${effectTokens.focus.width} solid`, outlineColor: 'primary.main', outlineOffset: effectTokens.focus.offset } }}>
               Set up a passkey
             </Link>
           </Typography>
           <Typography role="status" sx={{ minHeight: '1.5rem', visibility: busy ? 'visible' : 'hidden' }}>Waiting for your passkey…</Typography>
-          <StatusLine essential id="passkey-feedback" text={error} tone="error" />
+          <StatusLine essential id="passkey-feedback" text={lapsed ? lapsed.guidance : error} tone={lapsed ? 'secondary' : 'error'} />
         </Stack>
       </OnboardingWorkspace>
     </Box>

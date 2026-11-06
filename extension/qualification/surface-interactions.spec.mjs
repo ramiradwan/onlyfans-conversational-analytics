@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { SURFACE_STATES, renderSurfaceState } from './surface-fixtures.mjs';
+import { readFileSync } from 'node:fs';
 const calls = (page) => page.evaluate(() => window.__surfaceFixture.calls.filter(call => !(call.type === 'ofca.workspace.v1' && ['read', 'draft', 'browser_task', 'desktop_adoption', 'dismiss_browser_task'].includes(call.action)) && !(call.type === 'ofca.setup-transfer.v1' && call.action === 'context')));
 
 test('Preview keeps its status and Full review action visible in the reserved frames', async ({ page }) => {
@@ -285,6 +286,216 @@ for (const [name, state] of [['connection', SURFACE_STATES.connection], ['manage
       expect(cut, `${width}px`).toEqual([0, 0, 0]);
     }
   });
+}
+
+for (const width of [320, 390, 600]) {
+  for (const scale of [1.25, 1.5, 2]) {
+    test(`connection details status slots stay fixed at ${width}px and ${scale * 100}% text`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 640 });
+      await renderSurfaceState(page, { ...SURFACE_STATES.connection, hash: '' });
+      await page.evaluate(async (factor) => {
+        document.documentElement.style.fontSize = `${parseFloat(getComputedStyle(document.documentElement).fontSize) * factor}px`;
+        await document.fonts.ready;
+        const sendMessage = chrome.runtime.sendMessage;
+        window.__dialogDelivery = {};
+        chrome.runtime.sendMessage = async (message) => {
+          const response = await sendMessage(message);
+          if (message.type === 'ofca.ui.status') Object.assign(response.status.delivery, window.__dialogDelivery);
+          return response;
+        };
+      }, scale);
+      await page.locator('#open-connection-details').click();
+      const dialog = page.locator('#connection-details-dialog');
+      const boxes = () => dialog.evaluate((node) => [node, ...node.querySelectorAll('h2, dl, dt, dd, p, form, button')]
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          return [rect.x, rect.y, rect.width, rect.height];
+        }));
+      const initial = await boxes();
+      const captureStates = [
+        [{ startup_error_code: null, capture_drop_counts: {} }, 'No capture issues reported.'],
+        [{ startup_error_code: null, capture_drop_counts: { unavailable: Number.MAX_SAFE_INTEGER } },
+          `${new Intl.NumberFormat('en-US').format(Number.MAX_SAFE_INTEGER)} updates could not be recorded.`],
+        [{ startup_error_code: 'startup_failed', capture_drop_counts: {} },
+          'Full analytics could not start. Open the desktop app, then retry in setup.'],
+      ];
+      const historyStates = [
+        [{ browser_tab_sleeping: false, history_error_code: null }, ''],
+        [{ browser_tab_sleeping: false, history_error_code: 'history_unavailable' }, 'Message history needs attention in the desktop app.'],
+        [{ browser_tab_sleeping: true, history_error_code: 'history_unavailable' }, 'Your browser paused OnlyFans. Open the tab to continue.'],
+      ];
+      for (const [capture, captureText] of captureStates) for (const [history, historyText] of historyStates) {
+        for (const pending of [0, 999, Number.MAX_SAFE_INTEGER]) {
+          await page.evaluate((delivery) => {
+            window.__dialogDelivery = delivery;
+            window.__surfaceFixture.change({});
+          }, { ...capture, ...history, pending_entries: pending });
+          await expect(page.locator('#capture-health')).toHaveText(captureText);
+          await expect(page.locator('#history-health')).toHaveText(historyText);
+          await expect(page.locator('#pending-count')).toHaveText(new Intl.NumberFormat('en-US').format(pending));
+          expect.soft(await boxes(), JSON.stringify({ capture, history, pending })).toEqual(initial);
+        }
+      }
+      await page.evaluate(() => {
+        window.__dialogDelivery = {};
+        window.__surfaceFixture.change({});
+      });
+      await expect(page.locator('#capture-health')).toHaveText('No capture issues reported.');
+      await expect(page.locator('#history-health')).toBeEmpty();
+      await expect(page.locator('#pending-count')).toHaveText('0');
+      expect(await boxes(), 'cleared status').toEqual(initial);
+      await dialog.locator('button').scrollIntoViewIfNeeded();
+      const close = await dialog.locator('button').boundingBox();
+      expect(close.y).toBeGreaterThanOrEqual(0);
+      expect(close.y + close.height).toBeLessThanOrEqual(641);
+      await dialog.locator('button').click();
+      await expect(dialog).not.toBeVisible();
+    });
+
+    test(`options state slots stay fixed at ${width}px and ${scale * 100}% text`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 640 });
+      const rendering = renderSurfaceState(page, { ...SURFACE_STATES.connection, hash: '', initialRequestHold: 'ofca.ui.status' });
+      await page.waitForFunction(() => typeof window.__releaseInitialRequest === 'function');
+      await page.evaluate(async (factor) => {
+        document.documentElement.style.fontSize = `${parseFloat(getComputedStyle(document.documentElement).fontSize) * factor}px`;
+        await document.fonts.ready;
+      }, scale);
+      const boxes = () => page.evaluate(() => Object.fromEntries([
+        ...document.querySelectorAll('.options-frame, .reserved-status, footer'),
+        ...document.querySelectorAll('.options-frame h2, .options-frame h3, .options-frame .settings-row, #open-dashboard, #open-connection-details'),
+      ].map((node, index) => {
+        const rect = node.getBoundingClientRect();
+        return [node.id || `${node.className}:${index}`, [rect.x, rect.y + window.scrollY, rect.width, rect.height]];
+      })));
+      const loading = await boxes();
+      for (const id of ['capture', 'connection', 'data']) await expect(page.locator(`#${id}`)).toBeHidden();
+      await page.evaluate(() => window.__releaseInitialRequest());
+      await rendering;
+      await expect(page.locator('#analysis-status')).toHaveText('Ready');
+      const loaded = await boxes();
+      expect.soft(loaded, 'loading to loaded').toEqual(loading);
+      await page.evaluate(() => window.__surfaceFixture.change({ reachable: false }));
+      await expect(page.locator('#delivery-status')).toHaveText('Not connected');
+      expect.soft(await boxes(), 'connection loss').toEqual(loaded);
+      await page.evaluate(() => window.__surfaceFixture.change({ reachable: true }));
+      await expect(page.locator('#analysis-status')).toHaveText('Ready');
+      expect.soft(await boxes(), 'reconnection').toEqual(loaded);
+      await page.evaluate(() => window.__surfaceFixture.change({ runtimeUnavailable: true }));
+      await expect(page.locator('#runtime-unavailable')).toBeVisible();
+      expect.soft(await boxes(), 'runtime unavailable').toEqual(loaded);
+      await page.evaluate(() => window.__surfaceFixture.change({ runtimeUnavailable: false }));
+      await expect(page.locator('#analysis-status')).toHaveText('Ready');
+      expect.soft(await boxes(), 'runtime recovered').toEqual(loaded);
+    });
+
+    for (const surface of ['popup', 'setup', 'options']) {
+      test(`${surface} real feedback slots stay fixed at ${width}px and ${scale * 100}% text`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 640 });
+        await renderSurfaceState(page, surface === 'popup' ? SURFACE_STATES.preview
+          : surface === 'setup' ? SURFACE_STATES.activation_required : SURFACE_STATES.manage);
+        await page.evaluate((factor) => {
+          document.documentElement.style.fontSize = `${parseFloat(getComputedStyle(document.documentElement).fontSize) * factor}px`;
+        }, scale);
+        const sources = ['../ui/actions.mjs', '../ui/surface-client.mjs', '../setup.js']
+          .map((name) => readFileSync(new URL(name, import.meta.url), 'utf8')).join('\n');
+        const messages = [...sources.matchAll(/new NoticeError\('([^']+)'\)/gu)].map((match) => match[1]);
+        messages.push('That did not complete. Try again.', 'The desktop connection has been removed.', 'Check both boxes to continue.');
+        const layout = () => page.evaluate(() => {
+          const slot = document.querySelector('.reserved-status');
+          const following = document.querySelector('nav.menu') || document.querySelector('footer');
+          const rect = following.getBoundingClientRect();
+          const feedback = slot.querySelector('.feedback');
+          return { slot: slot.getBoundingClientRect().toJSON(), feedback: feedback.getBoundingClientRect().toJSON(),
+            following: [rect.x, rect.y + window.scrollY, rect.width, rect.height] };
+        });
+        const empty = await layout();
+        for (const [index, message] of messages.entries()) {
+          await page.locator('#feedback').evaluate((node, value) => { node.textContent = value; }, message);
+          const filled = await layout();
+          expect.soft(filled.following, `message ${index}`).toEqual(empty.following);
+          expect.soft(filled.slot.height, `message ${index}`).toBe(empty.slot.height);
+          expect.soft(filled.feedback.bottom, `message ${index}`).toBeLessThanOrEqual(filled.slot.bottom + 1);
+          await page.locator('#feedback').evaluate((node) => { node.textContent = ''; });
+          expect.soft((await layout()).following, `cleared ${index}`).toEqual(empty.following);
+        }
+      });
+    }
+
+    test(`options controls use page scrolling at ${width}px and ${scale * 100}% text`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 640 });
+      await renderSurfaceState(page, SURFACE_STATES.connection);
+      await page.evaluate((factor) => {
+        document.documentElement.style.fontSize = `${parseFloat(getComputedStyle(document.documentElement).fontSize) * factor}px`;
+      }, scale);
+      const frames = page.locator('.options-frame');
+      const frameLayout = await frames.evaluateAll((elements) => elements.map((frame) => ({
+        overflow: getComputedStyle(frame).overflowY,
+        excess: frame.scrollHeight - frame.clientHeight,
+      })));
+      expect(frameLayout, `${width}px at ${scale * 100}%`).toEqual([
+        { overflow: 'auto', excess: 0 },
+        { overflow: 'auto', excess: 0 },
+        { overflow: 'auto', excess: 0 },
+      ]);
+      const unfilled = await frames.evaluateAll((elements) => elements.map((frame) =>
+        frame.getBoundingClientRect().height - parseFloat(getComputedStyle(frame).paddingBottom)
+          - frame.querySelector(':scope > section').getBoundingClientRect().height));
+      expect(unfilled.every((gap) => Math.abs(gap) < 1), `${width}px at ${scale * 100}%: ${unfilled}`).toBe(true);
+      const controls = frames.locator('button:visible');
+      expect(await controls.count()).toBeGreaterThan(0);
+      for (const control of await controls.all()) {
+        await control.scrollIntoViewIfNeeded();
+        const bounds = await control.boundingBox();
+        expect(bounds.y, await control.getAttribute('id')).toBeGreaterThanOrEqual(0);
+        expect(bounds.y + bounds.height, await control.getAttribute('id')).toBeLessThanOrEqual(641);
+      }
+      expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+      const frameTops = () => frames.evaluateAll((elements) => elements.map((frame) => frame.getBoundingClientRect().top + window.scrollY));
+      const before = await frameTops();
+      await page.evaluate(() => window.__surfaceFixture.change({ phase: 'permission_required' }));
+      const restoreAccess = page.locator('#restore-access');
+      await expect(restoreAccess).toBeVisible();
+      expect(await frameTops()).toEqual(before);
+      await restoreAccess.scrollIntoViewIfNeeded();
+      const restoreBounds = await restoreAccess.boundingBox();
+      expect(restoreBounds.y).toBeGreaterThanOrEqual(0);
+      expect(restoreBounds.y + restoreBounds.height).toBeLessThanOrEqual(641);
+    });
+
+    for (const surface of ['popup', 'setup', 'options']) {
+      test(`${surface} feedback keeps its following content in place at ${width}px and ${scale * 100}% text`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 640 });
+        const state = surface === 'popup' ? SURFACE_STATES.preview
+          : surface === 'setup' ? SURFACE_STATES.activation_required : SURFACE_STATES.manage;
+        await renderSurfaceState(page, state);
+        await page.evaluate((factor) => {
+          document.documentElement.style.fontSize = `${parseFloat(getComputedStyle(document.documentElement).fontSize) * factor}px`;
+        }, scale);
+        const layout = () => page.evaluate(() => {
+          const status = document.querySelector('.reserved-status');
+          const feedback = status.querySelector('.feedback');
+          const following = document.querySelector('body[data-surface="popup"] nav.menu')
+            || document.querySelector('body[data-surface="options"] footer')
+            || document.querySelector('body[data-surface="setup"] footer');
+          return {
+            status: status.getBoundingClientRect().toJSON(),
+            feedback: feedback.getBoundingClientRect().toJSON(),
+            following: following.getBoundingClientRect().toJSON(),
+            lineHeight: parseFloat(getComputedStyle(feedback).lineHeight),
+            fontSize: parseFloat(getComputedStyle(feedback).fontSize),
+          };
+        });
+        const empty = await layout();
+        await page.locator('#feedback').evaluate((element) => { element.innerHTML = 'Status ready.<br>Try again.'; });
+        const filled = await layout();
+        expect(filled.lineHeight).toBeGreaterThanOrEqual(filled.fontSize * 1.4);
+        expect(filled.feedback.height).toBeGreaterThanOrEqual(filled.lineHeight * 2 - 1);
+        expect(filled.status.bottom).toBeGreaterThanOrEqual(filled.feedback.bottom - 1);
+        expect(filled.following.top).toBeGreaterThanOrEqual(filled.feedback.bottom - 1);
+        expect(filled.following.top).toBeCloseTo(empty.following.top, 0);
+      });
+    }
+  }
 }
 
 for (const width of [1280, 390, 320]) {

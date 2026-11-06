@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "assignment_basis": {
-    "status": "measured",
-    "method": "reviewed file-duration longest-first allocation",
+    "status": "provisional_unmeasured",
+    "method": "preserved existing assignments; new files assigned deterministically by declared test counts",
     "timing_seconds": {
       "tests/hardening/falsifiers/test_falsifiers.py": 0.6541230179999786,
       "tests/stateful/test_agent_delivery.py": 7.378533153999911,
@@ -537,6 +537,7 @@
     "tests/test_validation_receipts.py": 2,
     "tests/test_verified_append_records.py": 3,
     "tests/test_visibility_proof_completeness.py": 2,
+    "tests/test_webauthn_access_events.py": 4,
     "tests/test_websocket_transport.py": 4,
     "tests/test_witness_source_cache.py": 4
   },
@@ -865,6 +866,10 @@
       {
         "selector": "tests/test_text_analysis_views.py",
         "reason": "Retained profile disclosures and source-verified saved preview reads."
+      },
+      {
+        "selector": "tests/test_webauthn_access_events.py::test_real_server_ends_an_open_access_stream_when_it_shuts_down",
+        "reason": "Shutting down the real server must end an open access stream under the Windows event loop."
       }
     ],
     "analytics": [
@@ -1259,7 +1264,8 @@
     "tests/test_text_analysis_views.py": 2,
     "tests/test_upgrade_checkpoint.py": 3,
     "tests/test_upgrade_corrective.py": 2,
-    "tests/test_upgrade_lifecycle.py": 3
+    "tests/test_upgrade_lifecycle.py": 3,
+    "tests/test_webauthn_access_events.py": 3
   },
   "windows_platform_assignment_basis": {
     "status": "measured",
