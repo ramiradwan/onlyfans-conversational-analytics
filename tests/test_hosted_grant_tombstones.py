@@ -478,3 +478,114 @@ def test_replacement_crossing_grant_deadline_rolls_back(store, clock, monkeypatc
     assert store.verified_grant(replacement.reference_id) is None
     assert store.verified_grant(grant.reference_id).compact_jws is not None
     assert _epoch(store) == epoch
+
+
+def _lapsed(clock: Clock, kind: str, **anchor_changes):
+    """A grant of ``kind`` past its grace and the installation grant it may renew on."""
+    anchor = replace(_grant(clock, 10, "installation_grant"), **anchor_changes)
+    grant = replace(
+        _grant(clock, 1, kind), valid_from=clock.value - timedelta(days=5), expires_at=clock.value
+    )
+    return anchor, grant
+
+
+@pytest.mark.parametrize("kind", ["membership_snapshot", "creator_account_binding"])
+def test_lapsed_replacement_commits_on_its_installation_grant(store, clock, kind):
+    anchor, grant = _lapsed(clock, kind)
+    replacement = _grant(clock, 2, kind)
+    store.record_verified_grants((anchor, grant))
+    store.replace_verified_grant(grant.reference_id, replacement, expected=grant)
+    assert set(store.verified_grants()) == {anchor, replacement}
+    assert store.verified_grant(grant.reference_id).compact_jws is None
+
+
+@pytest.mark.parametrize("change", [
+    "anchor_revoked", "installation_revoked", "anchor_lapsed", "anchor_not_yet_valid",
+    "installation", "organization", "key", "thumbprint", "issuer", "subject",
+])
+def test_lapsed_replacement_needs_a_usable_matching_installation_grant(store, clock, change):
+    anchor_changes = {
+        "anchor_lapsed": {"expires_at": clock.value},
+        "anchor_not_yet_valid": {"valid_from": clock.value + timedelta(seconds=1)},
+        "installation": {"installation_id": "installation-2"},
+        "organization": {"organization_id": "organization-2"},
+        "key": {"installation_key_id": "installation-key-2"},
+        "thumbprint": {"installation_key_jkt": "installation-thumbprint-2"},
+        "issuer": {"issuer": "other-issuer.example"},
+        "subject": {"subject": "operator-2"},
+    }.get(change, {})
+    anchor, grant = _lapsed(clock, "membership_snapshot", **anchor_changes)
+    replacement = _grant(clock, 2, "membership_snapshot")
+    store.record_verified_grants((anchor, grant))
+    if change == "anchor_revoked":
+        store.revoke(RevocationKey(RevocationScopeType.VERIFIED_GRANT, anchor.reference_id))
+    elif change == "installation_revoked":
+        store.revoke(RevocationKey(RevocationScopeType.INSTALLATION, grant.installation_id))
+    epoch = _epoch(store)
+    with pytest.raises(AuthenticationStateError):
+        store.replace_verified_grant(grant.reference_id, replacement, expected=grant)
+    assert store.verified_grant(replacement.reference_id) is None
+    assert _epoch(store) == epoch
+    if change != "installation_revoked":
+        assert store.verified_grant(grant.reference_id).compact_jws is not None
+
+
+@pytest.mark.parametrize("kind", ["installation_grant", "license_entitlement"])
+def test_only_bindings_and_memberships_renew_past_their_grace(store, clock, kind):
+    anchor, grant = _lapsed(clock, kind)
+    replacement = _grant(clock, 2, kind)
+    store.record_verified_grants((anchor, grant))
+    epoch = _epoch(store)
+    with pytest.raises(AuthenticationStateError, match="context is stale"):
+        store.replace_verified_grant(grant.reference_id, replacement, expected=grant)
+    assert store.verified_grant(replacement.reference_id) is None
+    assert store.verified_grant(grant.reference_id).compact_jws is not None
+    assert _epoch(store) == epoch
+
+
+@pytest.mark.parametrize("anchored", [True, False])
+def test_denial_on_a_lapsed_grant_applies_only_with_its_installation_grant(store, clock, anchored):
+    anchor, grant = _lapsed(clock, "membership_snapshot")
+    store.record_verified_grants((anchor, grant) if anchored else (grant,))
+    epoch = _epoch(store)
+    result = store.apply_hosted_grant_denial(grant, _denial(clock, grant, "membership_removed"))
+    if anchored:
+        assert result == "applied"
+        assert [row["scope_type"] for row in _tombstones(store)] == ["membership"]
+        assert store.verified_grants() == (anchor,)
+        assert store.verified_grant(grant.reference_id).compact_jws is None
+    else:
+        assert result == "stale"
+        assert _tombstones(store) == []
+        assert _epoch(store) == epoch
+        assert store.verified_grants() == (grant,)
+
+
+@pytest.mark.parametrize("operation", ["replacement", "denial"])
+def test_lapsed_commit_crossing_the_installation_grant_deadline_rolls_back(
+    store, clock, monkeypatch, operation,
+):
+    anchor, grant = _lapsed(
+        clock, "membership_snapshot", expires_at=clock.value + timedelta(microseconds=1)
+    )
+    replacement = _grant(clock, 2, "membership_snapshot")
+    store.record_verified_grants((anchor, grant))
+    epoch = _epoch(store)
+    original = store._increment_authorization_epoch
+
+    def cross_boundary(connection):
+        original(connection)
+        clock.value += timedelta(microseconds=1)
+
+    monkeypatch.setattr(store, "_increment_authorization_epoch", cross_boundary)
+    if operation == "replacement":
+        with pytest.raises(AuthenticationStateError, match="context is stale"):
+            store.replace_verified_grant(grant.reference_id, replacement, expected=grant)
+        assert store.verified_grant(replacement.reference_id) is None
+    else:
+        denial = _denial(clock, grant, "membership_removed")
+        assert store.apply_hosted_grant_denial(grant, denial) == "stale"
+        assert _tombstones(store) == []
+    assert store.verified_grant(grant.reference_id).compact_jws is not None
+    assert set(store.verified_grants()) == {anchor, grant}
+    assert _epoch(store) == epoch

@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mockFeedbackOverflow } from './feedbackGeometry';
 
-import { LoginOutcomeError, EnrollmentOutcomeError, WebAuthnStatusError, type WebAuthnApi } from '../shared-setup/webauthn';
+import { LoginOutcomeError, EnrollmentOutcomeError, WebAuthnStatusError, type PushedAccess, type WebAuthnApi } from '../shared-setup/webauthn';
 import { theme } from '../src/theme';
 import { WebAuthnAccessView } from '../src/views/WebAuthnAccessView';
 
@@ -263,6 +263,95 @@ it('an unmounted sign-in cannot navigate when its stale success resolves', async
   pending.resolve(); await pending.promise;
   expect(view.onAuthenticated).not.toHaveBeenCalled();
 });
+/** An access stream the test pushes into. */
+function pushedStream() {
+  let deliver: ((access: PushedAccess) => void) | undefined;
+  let opened: AbortSignal | undefined;
+  const watch = vi.fn((signal: AbortSignal, receive: (access: PushedAccess) => void) => {
+    opened = signal; deliver = receive;
+    return new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }));
+  });
+  return { watch, signal: () => opened, push: (access: PushedAccess) => act(() => { deliver?.(access); }) };
+}
+const lapsed = (access: 'renewing' | 'expired' | 'removed') => new WebAuthnStatusError('access', 409, access);
+
+describe('lapsed access on this computer', () => {
+  it.each([
+    ['renewing', 'Renewing access on this computer', 'Renewal needs an internet connection.'],
+    ['expired', 'Access on this computer expired', 'Contact support to restore access.'],
+    ['removed', 'Access removed from this computer', 'Contact support if you did not expect this.'],
+  ] as const)('names %s access with guidance and no action to retry', async (access, heading, guidance) => {
+    vi.useFakeTimers();
+    const api = { state: vi.fn().mockRejectedValue(lapsed(access)), enroll: vi.fn(), login: vi.fn() };
+    renderView(api);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10 * 60_000); });
+    expect(screen.getByRole('heading', { level: 1, name: heading })).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toBe(guidance);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+    expect(api.state).toHaveBeenCalledOnce();
+    expect(api.enroll).not.toHaveBeenCalled(); expect(api.login).not.toHaveBeenCalled();
+  });
+
+  it('follows pushed changes with one quiet read each and never polls while renewing', async () => {
+    vi.useFakeTimers();
+    const stream = pushedStream();
+    let answer: ((value: { enrolled: boolean; authenticated: boolean }) => void) | undefined;
+    const state = vi.fn()
+      .mockRejectedValueOnce(lapsed('renewing'))
+      .mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    renderView({ state, watch: stream.watch, enroll: vi.fn(), login: vi.fn() });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    stream.push('renewing');
+    await act(async () => { await vi.advanceTimersByTimeAsync(10 * 60_000); });
+    expect(state).toHaveBeenCalledOnce();
+    expect(screen.getByRole('heading', { level: 1, name: 'Renewing access on this computer' })).toBeTruthy();
+    stream.push('available');
+    expect(state).toHaveBeenCalledTimes(2);
+    // The read keeps the current screen rather than flashing the checking state.
+    expect(screen.getByRole('heading', { level: 1, name: 'Renewing access on this computer' })).toBeTruthy();
+    await act(async () => { answer?.({ enrolled: true, authenticated: false }); await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByRole('heading', { level: 1, name: 'Sign in on this computer' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Sign in with passkey' })).toBeTruthy();
+    stream.push('available');
+    expect(state).toHaveBeenCalledTimes(2);
+    expect(stream.watch).toHaveBeenCalledOnce();
+  });
+
+  it('confirms the first read with the first pushed value without reading again', async () => {
+    const stream = pushedStream();
+    const state = vi.fn(async () => ({ enrolled: false, authenticated: false }));
+    renderView({ state, watch: stream.watch, enroll: vi.fn(), login: vi.fn() });
+    stream.push('available');
+    await screen.findByRole('button', { name: 'Create passkey' });
+    stream.push('available');
+    expect(state).toHaveBeenCalledOnce();
+    cleanup();
+    expect(stream.signal()?.aborted).toBe(true);
+  });
+
+  it('reads a change pushed during a ceremony once the ceremony ends', async () => {
+    const stream = pushedStream();
+    const pending = deferred();
+    const state = vi.fn()
+      .mockResolvedValueOnce({ enrolled: true, authenticated: false })
+      .mockRejectedValueOnce(lapsed('removed'));
+    const login = vi.fn(() => pending.promise.then(() => { throw new LoginOutcomeError('begin'); }));
+    const view = renderView({ state, watch: stream.watch, enroll: vi.fn(), login });
+    await screen.findByRole('button', { name: 'Sign in with passkey' });
+    stream.push('available');
+    fireEvent.click(view.signIn());
+    stream.push('removed');
+    expect(state).toHaveBeenCalledOnce();
+    pending.resolve();
+    await screen.findByRole('heading', { level: 1, name: 'Access removed from this computer' });
+    expect(state).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText('Contact support if you did not expect this.')).toBeTruthy();
+    expect(view.onAuthenticated).not.toHaveBeenCalled();
+  });
+});
+
 it('a confirmed created passkey with no session offers sign-in rather than another creation', async () => {
   const view = renderView({ state: vi.fn(async () => ({ enrolled: false, authenticated: false })),
     enroll: vi.fn(async () => { throw new EnrollmentOutcomeError(true); }), login: vi.fn() });

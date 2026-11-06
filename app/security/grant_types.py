@@ -59,6 +59,10 @@ PROVISIONING_GRANT_TYPES = tuple(
     sorted(ACCOUNT_AUTHORITY_GRANT_TYPES + (LICENSE_ENTITLEMENT,))
 )
 
+# Grants that may renew past their offline grace on the authority of the
+# installation's own grant while that installation grant is current or graced.
+ANCHORED_RENEWAL_GRANT_TYPES = (CREATOR_ACCOUNT_BINDING, MEMBERSHIP_SNAPSHOT)
+
 # A paired agent acts under installation identity and one account binding. It
 # presents no membership snapshot of its own; the pairing carries the person.
 AGENT_PAIRING_GRANT_TYPES = (INSTALLATION_GRANT, CREATOR_ACCOUNT_BINDING)

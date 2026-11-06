@@ -1656,6 +1656,10 @@ def test_replacement_wait_cannot_restore_revoked_expired_or_replaced_prior_autho
         if len(clock.waits) != 1:
             return
         if changed == "prior-expired":
+            # Past its grace with no usable installation grant to renew on.
+            store.revoke(RevocationKey(
+                RevocationScopeType.VERIFIED_GRANT, consumed.grant_reference_ids[0]
+            ))
             clock.now = current.expires_at
         elif changed == "reference-replaced":
             store.replace_verified_grant(current_id, replace(
@@ -1682,6 +1686,67 @@ def test_replacement_wait_cannot_restore_revoked_expired_or_replaced_prior_autho
     )
     if changed == "reference-replaced":
         assert store.verified_grant("concurrent-refresh") in store.verified_grants()
+
+
+def test_replacement_wait_commits_a_lapsed_membership_on_its_installation_grant(
+    tmp_path: Path, bundle: SignedBundle, claim: InstallationClaim, device: DeviceMetadata,
+):
+    client, store, transport, _ = _client(tmp_path, bundle, claim)
+    consumed = client.consume_claim(claim, device)
+    current_id = consumed.grant_reference_ids[1]
+    current = store.verified_grant(current_id)
+    clock = RefreshClock()
+    _refresh_clock(client, store, clock)
+    _respond_with_replacement(
+        transport, bundle, "membership_snapshot", issued_at=int(_INSTANT.timestamp()) + 1
+    )
+
+    def wait(seconds):
+        clock.wait(seconds)
+        if len(clock.waits) == 1:
+            clock.now = current.expires_at
+
+    client._wait = wait
+    result = client.refresh_reference(current_id)
+
+    assert result.state == "updated"
+    assert current_id not in {grant.reference_id for grant in store.verified_grants()}
+    assert store.verified_grant(result.grant_reference_ids[0]) in store.verified_grants()
+
+
+def test_replacement_wait_cannot_outlast_the_installation_grant_grace(
+    tmp_path: Path, bundle: SignedBundle, claim: InstallationClaim, device: DeviceMetadata,
+):
+    from app.persistence.auth import AuthenticationStateError
+
+    client, store, transport, _ = _client(tmp_path, bundle, claim)
+    consumed = client.consume_claim(claim, device)
+    current_id = consumed.grant_reference_ids[1]
+    current = store.verified_grant(current_id)
+    anchor = store.verified_grant(consumed.grant_reference_ids[0])
+    # The membership has lapsed and the replacement stays valid throughout, so
+    # only the installation grant's grace can refuse the commit.
+    clock = RefreshClock(anchor.expires_at - timedelta(seconds=2))
+    _refresh_clock(client, store, clock)
+    _respond_with_replacement(
+        transport, bundle, "membership_snapshot", issued_at=int(clock.now.timestamp()) + 1
+    )
+
+    def wait(seconds):
+        clock.wait(seconds)
+        if len(clock.waits) == 1:
+            clock.now = anchor.expires_at
+
+    client._wait = wait
+    with pytest.raises(AuthenticationStateError):
+        client.refresh_reference(current_id)
+
+    assert len(clock.waits) == 1
+    assert store.verified_grant(current_id).grant_identifier == current.grant_identifier
+    assert not any(
+        grant.grant_identifier == "0198a1b2-c3d4-7100-8000-000000000098"
+        for grant in store.verified_grants()
+    )
 
 
 @pytest.mark.parametrize(("grant_type", "changes"), [
@@ -1724,11 +1789,13 @@ def test_reference_refresh_uses_the_exclusive_offline_grace_boundary(
     tmp_path: Path, bundle: SignedBundle, claim: InstallationClaim,
     device: DeviceMetadata, after_signed_expiry: int,
 ):
-    from app.persistence.auth import AuthenticationStateError
+    from app.persistence.auth import AuthenticationStateError, RevocationKey, RevocationScopeType
 
     client, store, transport, _ = _client(tmp_path, bundle, claim)
     consumed = client.consume_claim(claim, device)
     current_id = consumed.grant_reference_ids[1]
+    # Without a usable installation grant the membership's own grace is final.
+    store.revoke(RevocationKey(RevocationScopeType.VERIFIED_GRANT, consumed.grant_reference_ids[0]))
     signed_expiry = _payload(bundle.tokens["membership_snapshot"])["exp"]
     now = datetime.fromtimestamp(signed_expiry + after_signed_expiry, timezone.utc)
     client._clock = lambda: now
@@ -1745,6 +1812,82 @@ def test_reference_refresh_uses_the_exclusive_offline_grace_boundary(
         assert result.state == "updated"
         assert result.policy is None
         assert store.verified_grant(result.grant_reference_ids[0]).valid_from == now
+
+
+@pytest.mark.parametrize("grant_type", ["membership_snapshot", "creator_account_binding"])
+@pytest.mark.parametrize("after_grace", [0, 20 * 86_400])
+def test_lapsed_reference_renews_on_its_installation_grant(
+    tmp_path: Path, bundle: SignedBundle, claim: InstallationClaim,
+    device: DeviceMetadata, grant_type: str, after_grace: int,
+):
+    client, store, transport, _ = _client(tmp_path, bundle, claim)
+    consumed = client.consume_claim(claim, device)
+    if grant_type == "creator_account_binding":
+        association = _association(request_id="0198a1b2-c3d4-7800-8000-000000000015")
+        client.request_creator_association(association)
+        store.record_verified_grants((client.acquire_creator_account_binding(
+            association, membership_reference_id=consumed.grant_reference_ids[1]
+        ),))
+    before = {grant.reference_id for grant in store.verified_grants()}
+    current = next(grant for grant in store.verified_grants() if grant.grant_type == grant_type)
+    anchor = store.verified_grant(consumed.grant_reference_ids[0])
+    now = current.expires_at + timedelta(seconds=after_grace)
+    assert now < anchor.expires_at
+    client._clock = store._clock = lambda: now
+    _respond_with_replacement(transport, bundle, grant_type, issued_at=int(now.timestamp()))
+
+    result = client.refresh_reference(current.reference_id)
+
+    assert result.state == "updated"
+    renewed = store.verified_grant(result.grant_reference_ids[0])
+    assert renewed.valid_from == now
+    assert {grant.reference_id for grant in store.verified_grants()} == (
+        before - {current.reference_id} | {renewed.reference_id}
+    )
+
+
+@pytest.mark.parametrize("before_anchor_end", [1, 0])
+def test_lapsed_reference_renewal_ends_with_its_installation_grant_grace(
+    tmp_path: Path, bundle: SignedBundle, claim: InstallationClaim,
+    device: DeviceMetadata, before_anchor_end: int,
+):
+    from app.persistence.auth import AuthenticationStateError
+
+    client, store, transport, _ = _client(tmp_path, bundle, claim)
+    consumed = client.consume_claim(claim, device)
+    current_id = consumed.grant_reference_ids[1]
+    anchor = store.verified_grant(consumed.grant_reference_ids[0])
+    now = anchor.expires_at - timedelta(seconds=before_anchor_end)
+    client._clock = store._clock = lambda: now
+    _respond_with_replacement(transport, bundle, "membership_snapshot", issued_at=int(now.timestamp()))
+    requests_before = len(transport.requests)
+
+    if before_anchor_end == 0:
+        with pytest.raises(AuthenticationStateError):
+            client.refresh_reference(current_id)
+        assert len(transport.requests) == requests_before
+    else:
+        assert client.refresh_reference(current_id).state == "updated"
+
+
+def test_lapsed_reference_applies_a_signed_denial_on_its_installation_grant(
+    tmp_path: Path, bundle: SignedBundle, claim: InstallationClaim, device: DeviceMetadata,
+):
+    client, store, transport, _ = _client(tmp_path, bundle, claim)
+    consumed = client.consume_claim(claim, device)
+    current = store.verified_grant(consumed.grant_reference_ids[1])
+    now = current.expires_at + timedelta(days=1)
+    client._clock = store._clock = lambda: now
+    instant = int(now.timestamp())
+    _respond_with_denial(transport, _signed_denial(bundle, "membership_snapshot", changes={
+        "iat": instant, "nbf": instant, "exp": instant + 600, "effective_at": instant,
+    }))
+
+    result = client.refresh_reference(current.reference_id)
+
+    assert result.state == "revoked"
+    assert current.reference_id not in {grant.reference_id for grant in store.verified_grants()}
+    assert store.verified_grant(current.reference_id).compact_jws is None
 
 
 @pytest.mark.parametrize("grant_type", ["installation_grant", "membership_snapshot"])

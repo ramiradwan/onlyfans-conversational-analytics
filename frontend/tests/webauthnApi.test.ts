@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createWebAuthnApi } from '../shared-setup/webauthn';
+import { AccessFollower, createWebAuthnApi, lapsedAccess, type PushedAccess } from '../shared-setup/webauthn';
 
 function json(value: unknown): Response {
   return new Response(JSON.stringify(value), {
@@ -214,4 +214,200 @@ it.each([[401, 'session'], [403, 'forbidden'], [503, 'unavailable']] as const)(
 it('classifies a failed passkey status connection', async () => {
   const api = createWebAuthnApi({ fetch: vi.fn(async () => { throw new TypeError('offline'); }) as typeof fetch });
   await expect(api.state!(new AbortController().signal)).rejects.toMatchObject({ name: 'WebAuthnStatusError', kind: 'network' });
+});
+
+const refused = (body: string) => createWebAuthnApi({ fetch: vi.fn(async () => new Response(body, { status: 409 })) as typeof fetch })
+  .state!(new AbortController().signal).catch((error: unknown) => error);
+const frame = (access: string) => `event: access\ndata: {"access":"${access}"}\n\n`;
+function events(chunks: string[], close = true, cancel?: () => void): Response {
+  const encoder = new TextEncoder();
+  return new Response(new ReadableStream({
+    start(stream) { for (const chunk of chunks) stream.enqueue(encoder.encode(chunk)); if (close) stream.close(); },
+    cancel,
+  }), { headers: { 'Content-Type': 'text/event-stream' } });
+}
+
+describe('pushed access', () => {
+  it.each(['renewing', 'expired', 'removed'] as const)('reads a %s refusal as a lapsed access state', async (access) => {
+    const failure = await refused(JSON.stringify({ detail: 'Enrollment state is unavailable', access }));
+    expect(failure).toMatchObject({ name: 'WebAuthnStatusError', kind: 'access', status: 409, access });
+    expect(lapsedAccess(failure)).toBe(access);
+  });
+
+  it.each([
+    JSON.stringify({ detail: 'Enrollment state is unavailable', access: 'unavailable' }),
+    JSON.stringify({ detail: 'Enrollment state is unavailable', access: 'paused' }),
+    JSON.stringify({ detail: 'Enrollment state is unavailable', access: 'renewing', reason: 'membership' }),
+    JSON.stringify({ access: 'renewing' }),
+    '{"detail":"Enrollment state is unavailable","access":"renewing","access":"removed"}',
+    'Enrollment state is unavailable',
+  ])('keeps any other refusal unavailable: %s', async (body) => {
+    const failure = await refused(body);
+    expect(failure).toMatchObject({ name: 'WebAuthnStatusError', kind: 'unavailable', status: 409 });
+    expect(lapsedAccess(failure)).toBeNull();
+  });
+
+  it('delivers each access frame across chunk boundaries from one connection', async () => {
+    const text = frame('renewing') + ': keepalive\n\n' + 'event: other\ndata: {"access":"removed"}\n\n' + frame('available');
+    const controller = new AbortController();
+    const received: PushedAccess[] = [];
+    const request = vi.fn(async () => events([text.slice(0, 9), text.slice(9, 40), text.slice(40)], false));
+    await createWebAuthnApi({ fetch: request as typeof fetch }).watch!(controller.signal, (access) => {
+      received.push(access);
+      if (received.length === 2) controller.abort();
+    });
+    expect(received).toEqual(['renewing', 'available']);
+    expect(request).toHaveBeenCalledOnce();
+    expect(request).toHaveBeenCalledWith('/api/v1/webauthn/session-state/events', expect.objectContaining({
+      credentials: 'same-origin', cache: 'no-store', redirect: 'error', headers: { Accept: 'text/event-stream' },
+    }));
+  });
+
+  it('reconnects with a growing delay after invalid or ended streams and stops for a refused origin', async () => {
+    vi.useFakeTimers();
+    try {
+      const received: PushedAccess[] = [];
+      const request = vi.fn()
+        .mockResolvedValueOnce(events([frame('paused'), frame('available')]))
+        .mockResolvedValueOnce(events([frame('removed')]))
+        .mockResolvedValueOnce(new Response('', { status: 403 }));
+      const watching = createWebAuthnApi({ fetch: request as typeof fetch }).watch!(new AbortController().signal, (access) => received.push(access));
+      await vi.advanceTimersByTimeAsync(999);
+      expect(request).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(request).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(2000);
+      await watching;
+      expect(request).toHaveBeenCalledTimes(3);
+      expect(received).toEqual(['removed']);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('drops a stream that goes quiet past its keepalive interval', async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      let cancelled = false;
+      const request = vi.fn()
+        .mockResolvedValueOnce(events([frame('available')], false, () => { cancelled = true; }))
+        .mockImplementationOnce(async () => { controller.abort(); return new Response('', { status: 503 }); });
+      const watching = createWebAuthnApi({ fetch: request as typeof fetch }).watch!(controller.signal, () => undefined);
+      await vi.advanceTimersByTimeAsync(44_999);
+      expect(cancelled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(cancelled).toBe(true);
+      await vi.advanceTimersByTimeAsync(1000);
+      await watching;
+      expect(request).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('starts the reconnect delay over after a connection that lasted', async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      let control: ReadableStreamDefaultController<Uint8Array> | undefined;
+      const request = vi.fn()
+        .mockResolvedValueOnce(events([]))
+        .mockResolvedValueOnce(events([]))
+        .mockImplementationOnce(async () => new Response(new ReadableStream<Uint8Array>({ start(stream) { control = stream; } }),
+          { headers: { 'Content-Type': 'text/event-stream' } }))
+        .mockImplementationOnce(async () => { controller.abort(); return new Response('', { status: 503 }); });
+      const watching = createWebAuthnApi({ fetch: request as typeof fetch }).watch!(controller.signal, () => undefined);
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(request).toHaveBeenCalledTimes(3);
+      for (let tick = 0; tick < 4; tick++) {
+        await vi.advanceTimersByTimeAsync(15_000);
+        control!.enqueue(new TextEncoder().encode(': keepalive\n\n'));
+      }
+      await vi.advanceTimersByTimeAsync(1001);
+      control!.close();
+      await vi.advanceTimersByTimeAsync(999);
+      expect(request).toHaveBeenCalledTimes(3);
+      await vi.advanceTimersByTimeAsync(1);
+      await watching;
+      expect(request).toHaveBeenCalledTimes(4);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it.each([
+    ['a data field over 256 characters', [`event: access\ndata: {"access":"removed"${' '.repeat(240)}}\n\n`, frame('removed')]],
+    ['a line over 1024 characters', [`: ${'x'.repeat(1023)}\n\n`, frame('removed')]],
+    ['an unterminated line over 1024 characters', ['x'.repeat(1025)]],
+  ])('drops a stream with %s and reconnects', async (_case, chunks) => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const received: PushedAccess[] = [];
+      const request = vi.fn()
+        .mockResolvedValueOnce(events(chunks, false))
+        .mockImplementationOnce(async () => { controller.abort(); return new Response('', { status: 503 }); });
+      const watching = createWebAuthnApi({ fetch: request as typeof fetch }).watch!(controller.signal, (access) => received.push(access));
+      await vi.advanceTimersByTimeAsync(1000);
+      await watching;
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(received).toEqual([]);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('cancels the open stream when the page retires it', async () => {
+    const controller = new AbortController();
+    let cancelled = false;
+    const request = vi.fn(async () => events([frame('available')], false, () => { cancelled = true; }));
+    await createWebAuthnApi({ fetch: request as typeof fetch }).watch!(controller.signal, () => controller.abort());
+    expect(cancelled).toBe(true);
+    expect(request).toHaveBeenCalledOnce();
+  });
+});
+
+describe('access follower', () => {
+  it('reads again once for a pushed value the last read did not observe', () => {
+    const reread = vi.fn();
+    const follower = new AccessFollower(reread);
+    follower.hold(); follower.push('renewing'); follower.release('renewing');
+    follower.push('renewing');
+    expect(reread).not.toHaveBeenCalled();
+    follower.push('available');
+    expect(reread).toHaveBeenCalledOnce();
+    // A failed read does not ask again until something new is pushed.
+    follower.hold(); follower.release(null);
+    expect(reread).toHaveBeenCalledOnce();
+    follower.push('available');
+    expect(reread).toHaveBeenCalledTimes(2);
+  });
+
+  it('compares a value pushed during a ceremony when it ends', () => {
+    const reread = vi.fn();
+    const follower = new AccessFollower(reread);
+    follower.hold(); follower.release('available');
+    follower.hold(); follower.push('removed'); follower.push('available'); follower.release();
+    expect(reread).not.toHaveBeenCalled();
+    follower.hold(); follower.push('removed'); follower.release();
+    expect(reread).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the comparison for a read retired before it answered', () => {
+    const reread = vi.fn();
+    const follower = new AccessFollower(reread);
+    follower.hold(); follower.release('available');
+    follower.push('renewing');
+    expect(reread).toHaveBeenCalledOnce();
+    // A newer read retires the one the push asked for and answers with the older value.
+    follower.hold(); follower.abandon();
+    follower.hold(); follower.release('available');
+    expect(reread).toHaveBeenCalledTimes(2);
+  });
+
+  it('compares a read that answered during a ceremony when the ceremony ends', () => {
+    const reread = vi.fn();
+    const follower = new AccessFollower(reread);
+    follower.hold(); follower.release('available');
+    follower.push('renewing');
+    expect(reread).toHaveBeenCalledOnce();
+    follower.hold(); follower.hold();
+    follower.release('available');
+    expect(reread).toHaveBeenCalledOnce();
+    follower.release();
+    expect(reread).toHaveBeenCalledTimes(2);
+  });
 });

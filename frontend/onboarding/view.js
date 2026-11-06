@@ -31,6 +31,12 @@ const passkeyErrors = {
   passkey_start_unavailable: 'Sign-in could not start. Try again.',
   passkey_unconfirmed: 'Verification could not be confirmed.',
 };
+// No action here can restore access. Pushed updates replace this copy.
+const accessCopy = {
+  renewing: ['Renewing access on this computer. This window updates when renewal finishes.', 'Renewal needs an internet connection.'],
+  expired: ['Access on this computer expired. It could not be renewed in time.', 'Contact support to restore access.'],
+  removed: ['Access was removed from this computer.', 'Contact support if you did not expect this.'],
+};
 
 // Avatars show the first character of a labelled account's name.
 const initial = label => [...new Intl.Segmenter(undefined, { granularity: 'grapheme' })
@@ -41,13 +47,15 @@ export function renderSetup(document, state) {
   const value = state.snapshot;
   const authentication = state.authentication;
   const needsAuthentication = Boolean(authentication && !authentication.authenticated);
+  const lapsed = needsAuthentication && accessCopy[authentication.access] || null;
   get('local-access').hidden = !needsAuthentication;
   get('local-access').dataset.journeyState = 'desktop.setup_local_access';
+  setStatus(get('local-access-description'), lapsed?.[0] || 'Use a passkey to sign in on this computer.');
   get('local-authenticate').hidden = !needsAuthentication || authentication.enrolled === null;
   get('local-authenticate').disabled = !state.connected || authentication?.busy;
   get('local-authenticate').textContent = authentication?.enrolled ? 'Sign in' : 'Set up access';
-  get('local-auth-retry').hidden = !needsAuthentication || authentication.enrolled !== null || authentication.busy || !authentication.checked;
-  setStatus(get('local-auth-status'), passkeyErrors[authentication?.error]
+  get('local-auth-retry').hidden = !needsAuthentication || authentication.enrolled !== null || authentication.busy || !authentication.checked || Boolean(lapsed);
+  setStatus(get('local-auth-status'), lapsed?.[1] || passkeyErrors[authentication?.error]
     || (authentication?.busy ? authentication.checked ? 'Waiting for verification…' : 'Checking passkey status…' : ''));
   const task = value?.next_task;
   const decision = value?.decision?.action === 'connect-account' && value?.decision_status?.state !== 'accepted'
@@ -108,7 +116,9 @@ export function renderSetup(document, state) {
       : accepted ? 'Account connection accepted. Finishing setup…'
         : choosingProvider ? '' : signInMessage || (decisionStatus === 'awaiting-authentication' ? 'Finish signing in in Chrome.'
           : decisionStatus === 'unavailable' ? 'This sign-in request is unavailable.' : pending && !decision ? 'Waiting for the current action to finish.' : '');
-  setStatus(get('task-status'), errors[reason] || progress);
+  // The access section explains a lapse. Nothing progresses until access returns,
+  // so the task line then names only errors unrelated to it.
+  setStatus(get('task-status'), (lapsed ? reason !== 'authority_unavailable' && errors[reason] : errors[reason] || progress) || '');
   get('sign-in-options').hidden = !choosingProvider;
   for (const button of get('sign-in-options').querySelectorAll('[data-provider]')) {
     button.hidden = !signIn?.choices[button.dataset.provider];

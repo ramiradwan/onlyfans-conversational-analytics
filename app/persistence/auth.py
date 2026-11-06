@@ -22,6 +22,7 @@ from app.persistence.migrations import MigrationRunner
 from app.security.grant_types import (
     ACCOUNT_AUTHORITY_GRANT_TYPES,
     AGENT_PAIRING_GRANT_TYPES,
+    ANCHORED_RENEWAL_GRANT_TYPES,
     CREATOR_ACCOUNT_BINDING,
     INSTALLATION_GRANT,
     LICENSE_ENTITLEMENT,
@@ -120,6 +121,51 @@ class VerifiedGrantReference:
     # Equality uses the verified digest; diagnostic field comparisons must not
     # expand the secret bytes either.
     compact_jws: str | None = field(default=None, repr=False, compare=False)
+
+
+def _anchor_identity(grant: VerifiedGrantReference) -> tuple[object, ...]:
+    return (
+        grant.organization_id, grant.installation_id, grant.installation_key_id,
+        grant.installation_key_jkt, grant.issuer, grant.subject,
+    )
+
+
+def installation_anchor(
+    grant: VerifiedGrantReference,
+    references: Iterable[VerifiedGrantReference],
+    now: datetime,
+) -> VerifiedGrantReference | None:
+    """Return the usable installation grant a binding or membership renews on.
+
+    ``references`` must already exclude revoked references. The anchor shares
+    the grant's organization, installation, installation key and external
+    principal, and is current or graced at ``now``.
+    """
+    identity = _anchor_identity(grant)
+    if grant.grant_type not in ANCHORED_RENEWAL_GRANT_TYPES or not all(identity):
+        return None
+    usable = [
+        candidate for candidate in references
+        if candidate.grant_type == INSTALLATION_GRANT
+        and _anchor_identity(candidate) == identity
+        and candidate.valid_from <= now < candidate.expires_at
+    ]
+    return max(usable, key=lambda candidate: candidate.expires_at, default=None)
+
+
+def refresh_window_open(
+    grant: VerifiedGrantReference,
+    references: Iterable[VerifiedGrantReference],
+    now: datetime,
+) -> bool:
+    """Whether a refresh of ``grant`` may be attempted or committed at ``now``.
+
+    A grant is refreshable while current or graced. A lapsed creator binding or
+    membership snapshot stays refreshable while its installation anchor is usable.
+    """
+    if not grant.valid_from <= now:
+        return False
+    return now < grant.expires_at or installation_anchor(grant, references, now) is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1245,6 +1291,7 @@ class SQLiteAuthenticationStore:
                 ))
             if any(self._scope_is_revoked(connection, key) for key in keys):
                 raise AuthenticationStateError("Verified grant replacement authority is revoked")
+            deadline: datetime | None = None
             if expected is not None:
                 immutable = (
                     "grant_type", "issuer", "subject", "organization_id", "installation_id",
@@ -1252,10 +1299,11 @@ class SQLiteAuthenticationStore:
                     "membership_id", "approval_id", "approval_revision", "entitlement_id", "product_id",
                 )
                 now = self._now()
+                deadline = self._refresh_deadline(connection, expected, now)
                 if (
                     previous_grant != expected
                     or expected.grant_identifier == grant.grant_identifier
-                    or not expected.valid_from <= now < expected.expires_at
+                    or deadline is None
                     or not grant.valid_from <= now < grant.expires_at
                     or any(getattr(expected, field) != getattr(grant, field) for field in immutable)
                 ):
@@ -1281,7 +1329,8 @@ class SQLiteAuthenticationStore:
             if expected is not None:
                 now = self._now()
                 if not (
-                    expected.valid_from <= now < expected.expires_at
+                    deadline is not None
+                    and expected.valid_from <= now < deadline
                     and grant.valid_from <= now < grant.expires_at
                 ):
                     raise AuthenticationStateError("Verified grant replacement context is stale")
@@ -1347,9 +1396,11 @@ class SQLiteAuthenticationStore:
                         RevocationScopeType.CREATOR_ACCOUNT, expected.creator_account_id
                     )
                 )
+            deadline = self._refresh_deadline(connection, expected, now)
             if (
                 current["revoked_at"] is not None
-                or not _hosted_denial_is_current(expected, denial, now)
+                or deadline is None
+                or not _hosted_denial_is_current(denial, now)
                 or any(self._scope_is_revoked(connection, key) for key in keys)
                 or self._grant_has_hosted_tombstone(connection, expected)
             ):
@@ -1396,9 +1447,47 @@ class SQLiteAuthenticationStore:
                     reason="hosted_grant_denial",
                 )
             self._increment_authorization_epoch(connection)
-            if not _hosted_denial_is_current(expected, denial, self._now()):
+            later = self._now()
+            if not (
+                expected.valid_from <= later < deadline
+                and _hosted_denial_is_current(denial, later)
+            ):
                 raise _HostedDenialCommitExpired
         return "applied"
+
+    def _refresh_deadline(
+        self, connection: sqlite3.Connection, grant: VerifiedGrantReference, now: datetime
+    ) -> datetime | None:
+        """Return when a refresh answer for ``grant`` stops being committable.
+
+        None means the window is already closed at ``now``. The anchor is read
+        inside the caller's transaction, so local revocation and hosted
+        withdrawal of the installation grant close the window with it.
+        """
+        if not grant.valid_from <= now:
+            return None
+        deadline = grant.expires_at if now < grant.expires_at else None
+        if grant.grant_type not in ANCHORED_RENEWAL_GRANT_TYPES or self._scope_is_revoked(
+            connection, RevocationKey(RevocationScopeType.INSTALLATION, grant.installation_id)
+        ):
+            return deadline
+        rows = connection.execute(
+            """
+            SELECT * FROM verified_grant_references
+            WHERE grant_type = ? AND installation_id = ? AND revoked_at IS NULL
+            """,
+            (INSTALLATION_GRANT, grant.installation_id),
+        ).fetchall()
+        anchor = installation_anchor(grant, (
+            candidate for candidate in map(_verified_grant_reference, rows)
+            if not self._scope_is_revoked(
+                connection, RevocationKey(RevocationScopeType.VERIFIED_GRANT, candidate.reference_id)
+            )
+            and not self._grant_has_hosted_tombstone(connection, candidate)
+        ), now)
+        if anchor is not None and (deadline is None or deadline < anchor.expires_at):
+            return anchor.expires_at
+        return deadline
 
     @staticmethod
     def _grant_has_hosted_tombstone(
@@ -1428,6 +1517,71 @@ class SQLiteAuthenticationStore:
                 grant.grant_type,
             ),
         ).fetchone() is not None
+
+    def lapsed_account_authority(
+        self, connection: sqlite3.Connection, now: datetime
+    ) -> Literal["renewing", "expired", "removed"] | None:
+        """Name why account authority has no current grant, inside ``connection``.
+
+        ``removed`` means a required grant was withdrawn, ``expired`` that one
+        can no longer renew on this computer, and ``renewing`` that every
+        lapsed one still has an open refresh window on the activated key.
+        None means the state is not a lapse this method can name.
+        """
+        key = connection.execute(
+            """
+            SELECT installation_key_id, installation_key_jkt
+            FROM installation_key_reference
+            WHERE singleton = 1 AND activated_at IS NOT NULL
+            """
+        ).fetchone()
+        states: set[str | None] = set()
+        for grant_type in ACCOUNT_AUTHORITY_GRANT_TYPES:
+            rows = connection.execute(
+                "SELECT * FROM verified_grant_references WHERE grant_type = ?",
+                (grant_type,),
+            ).fetchall()
+            kept = [
+                grant for grant in (
+                    _verified_grant_reference(row) for row in rows if row["revoked_at"] is None
+                )
+                if not self._grant_is_withdrawn(connection, grant)
+            ]
+            if rows and not kept:
+                states.add("removed")
+            elif not kept or any(now < grant.valid_from for grant in kept):
+                states.add(None)
+            elif any(now < grant.expires_at for grant in kept):
+                continue
+            elif key is not None and any(
+                (grant.installation_key_id, grant.installation_key_jkt)
+                == (key["installation_key_id"], key["installation_key_jkt"])
+                and self._refresh_deadline(connection, grant, now) is not None
+                for grant in kept
+            ):
+                states.add("renewing")
+            else:
+                states.add("expired")
+        if "removed" in states:
+            return "removed"
+        if "expired" in states:
+            return "expired"
+        return "renewing" if states == {"renewing"} else None
+
+    def _grant_is_withdrawn(
+        self, connection: sqlite3.Connection, grant: VerifiedGrantReference
+    ) -> bool:
+        scopes = [
+            RevocationKey(RevocationScopeType.VERIFIED_GRANT, grant.reference_id),
+            RevocationKey(RevocationScopeType.INSTALLATION, grant.installation_id),
+        ]
+        if grant.creator_account_id:
+            scopes.append(
+                RevocationKey(RevocationScopeType.CREATOR_ACCOUNT, grant.creator_account_id)
+            )
+        return any(
+            self._scope_is_revoked(connection, scope) for scope in scopes
+        ) or self._grant_has_hosted_tombstone(connection, grant)
 
     def verified_grant(
         self, reference_id: str
@@ -4174,13 +4328,10 @@ class SQLiteAuthenticationStore:
         return value.astimezone(timezone.utc)
 
 
-def _hosted_denial_is_current(
-    grant: VerifiedGrantReference, denial: VerifiedGrantDenial, now: datetime
-) -> bool:
+def _hosted_denial_is_current(denial: VerifiedGrantDenial, now: datetime) -> bool:
     instant = now.timestamp()
     return (
-        grant.valid_from <= now < grant.expires_at
-        and denial.issued_at <= instant + 60
+        denial.issued_at <= instant + 60
         and instant < denial.expires_at
         and denial.effective_at <= instant
     )

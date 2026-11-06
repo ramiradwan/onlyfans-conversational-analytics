@@ -167,6 +167,86 @@ def test_read_bound_and_wrong_key_refuse_outbound_work():
     assert client.calls == 0
 
 
+def lapsed_reference(clock, grant_type="membership_snapshot"):
+    return replace(grant(grant_type), valid_from=clock.now - timedelta(days=5), expires_at=clock.now)
+
+
+def installation_reference(clock, **changes):
+    value = replace(grant("installation_grant"), valid_from=clock.now - timedelta(days=1),
+                    expires_at=clock.now + timedelta(days=36))
+    return replace(value, **changes)
+
+
+@pytest.mark.parametrize("grant_type", ["membership_snapshot", "creator_account_binding"])
+def test_lapsed_reference_on_a_usable_installation_grant_is_due_at_once_with_backoff(grant_type):
+    clock = Clock()
+    store = MemoryReferences([installation_reference(clock), lapsed_reference(clock, grant_type)])
+    client = Client()
+    renewal = lifecycle(store, client, clock)
+    assert renewal.tick() == pytest.approx(0.1)
+    assert client.calls == 1
+    assert renewal.tick() == pytest.approx(30.0)
+    assert client.calls == 1
+    renewal.close()
+
+
+@pytest.mark.parametrize("anchor", ["missing", "lapsed", "issuer", "subject"])
+def test_lapsed_reference_without_a_usable_matching_installation_grant_is_never_due(anchor):
+    clock = Clock()
+    references = [lapsed_reference(clock)]
+    if anchor != "missing":
+        references.append(installation_reference(clock, **{
+            "lapsed": {"valid_from": clock.now - timedelta(days=40), "expires_at": clock.now},
+            "issuer": {"issuer": "https://other-identity.example"},
+            "subject": {"subject": "external-subject-2"},
+        }[anchor]))
+    client = Client()
+    renewal = lifecycle(MemoryReferences(references), client, clock)
+    assert renewal.tick() == 30.0
+    assert client.calls == 0
+    renewal.close()
+
+
+@pytest.mark.parametrize(("lapsed", "third_delay"), [(True, 60.0), (False, 120.0)])
+def test_backoff_for_a_lapsed_reference_stays_within_a_minute(lapsed, third_delay):
+    clock = Clock()
+    reference = lapsed_reference(clock) if lapsed else due_reference(clock)
+    client = Client()
+    renewal = lifecycle(MemoryReferences([installation_reference(clock), reference]), client, clock)
+    # Delays double from 30 seconds, and the fixed jitter leaves them exact.
+    for calls, delay in ((1, 30.0), (2, 60.0), (3, third_delay)):
+        assert renewal.tick() == pytest.approx(0.1)
+        assert client.calls == calls
+        clock.advance(delay - 1)
+        assert renewal.tick() == pytest.approx(1.0)
+        clock.advance(1)
+    assert renewal.tick() == pytest.approx(0.1)
+    assert client.calls == 4
+    renewal.close()
+
+
+def test_a_reference_that_lapses_during_a_long_backoff_is_retried_within_a_minute():
+    clock = Clock()
+    reference = replace(lapsed_reference(clock), expires_at=clock.now + timedelta(seconds=100))
+    client = Client()
+    renewal = lifecycle(MemoryReferences([installation_reference(clock), reference]), client, clock)
+    for delay in (30, 60):
+        renewal.tick()
+        clock.advance(delay)
+    # The third failure backs off 120 seconds while the reference is still valid.
+    renewal.tick()
+    assert client.calls == 3
+    clock.advance(10)
+    renewal.tick()
+    assert client.calls == 3
+    clock.advance(49)
+    assert renewal.tick() == pytest.approx(1.0)
+    clock.advance(1)
+    assert renewal.tick() == pytest.approx(0.1)
+    assert client.calls == 4
+    renewal.close()
+
+
 @pytest.mark.parametrize("stop", [False, True])
 def test_inflight_attempt_is_single_and_late_commit_fails_deadline_or_shutdown(stop):
     clock = Clock()

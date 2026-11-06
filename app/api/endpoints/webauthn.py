@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+from collections.abc import Callable
 from typing import Annotated, Literal, NoReturn, TypeVar
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.api.activation import require_activated_runtime
@@ -19,12 +23,14 @@ from app.api.security import (
 )
 from app.core.config import settings
 from app.persistence.auth import SQLiteAuthenticationStore
+from app.security.grant_refresh import renewal_runs
 from app.security.runtime_policy import AuthContext, RuntimePolicy
 from app.security.webauthn import (
     AuthenticationCredential,
     RegistrationAuthority,
     RegistrationCredential,
     SessionAuthority,
+    WebAuthnAccessState,
     WebAuthnAuthorityDecision,
     WebAuthnAuthorityPort,
     WebAuthnAuthorityResult,
@@ -176,20 +182,143 @@ def _no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
 
 
-@router.get("/session-state")
+def _require_same_origin_read(request: Request) -> None:
+    # Same-origin fetch metadata and exact host; GET does not require an Origin
+    # header, which browsers commonly omit for these same-origin reads.
+    if (request.headers.get("host") != urlsplit(settings.bridge_origin).netloc
+            or request.headers.get("sec-fetch-site") not in {None, "same-origin", "none"}):
+        raise HTTPException(403, "Request origin is not authorized")
+
+
+def _session_access(
+    policy: RuntimePolicy, authority_port: WebAuthnAuthorityPort
+) -> tuple[WebAuthnAuthorityDecision, WebAuthnAccessState | None]:
+    decision, access = authority_port.session_access(policy)
+    if access is WebAuthnAccessState.RENEWING and not renewal_runs(settings):
+        access = WebAuthnAccessState.UNAVAILABLE
+    return decision, access
+
+
+def runtime_policy_reader(request: Request) -> Callable[[], RuntimePolicy]:
+    """Derive the request's policy again for each read of a long response."""
+
+    return lambda: get_runtime_policy(request)
+
+
+_ACCESS_STREAM_LIMIT = 8
+_KEEPALIVE_SECONDS = 15.0
+# Wake just after a validity boundary, so the read sees the grant past it.
+_BOUNDARY_MARGIN_SECONDS = 0.05
+
+
+class AccessStreams:
+    """The open access streams of one application. Closing ends every one."""
+
+    def __init__(self) -> None:
+        self.active: set[AccessEventResponse] = set()
+        self.closed = False
+
+    def close(self) -> None:
+        from app.provisioning.events import events
+
+        self.closed = True
+        events.publish()
+
+
+def access_streams(application) -> AccessStreams:
+    streams = getattr(application.state, "webauthn_access_streams", None)
+    if streams is None:
+        streams = application.state.webauthn_access_streams = AccessStreams()
+    return streams
+
+
+class AccessEventResponse(StreamingResponse):
+    """Sends the access value again after each authority commit or validity boundary.
+
+    The response owns its subscription, even if no body is ever consumed.
+    """
+
+    def __init__(self, streams: AccessStreams, read: Callable[[], str],
+                 next_boundary: Callable[[], float | None]) -> None:
+        self.streams, self.read, self.next_boundary = streams, read, next_boundary
+        super().__init__(self.frames(), media_type="text/event-stream",
+                         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+        self.listener = None
+
+    async def __call__(self, scope, receive, send) -> None:
+        from app.provisioning.events import events
+
+        if self.streams.closed or len(self.streams.active) >= _ACCESS_STREAM_LIMIT:
+            await JSONResponse({"detail": "Access updates are unavailable"},
+                               status_code=503 if self.streams.closed else 429,
+                               headers={"Cache-Control": "no-store"})(scope, receive, send)
+            return
+        self.streams.active.add(self)
+        self.listener = events.subscribe()
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            events.unsubscribe(self.listener)
+            self.streams.active.discard(self)
+
+    async def frames(self):
+        signal = self.listener[1]
+        previous = None
+        while not self.streams.closed:
+            # Clear before the read. A commit during the read or the send stays
+            # set for the next iteration.
+            signal.clear()
+            try:
+                value = await asyncio.to_thread(self.read)
+                boundary = await asyncio.to_thread(self.next_boundary)
+            except HTTPException:
+                return
+            if value != previous:
+                yield "event: access\ndata: " + json.dumps({"access": value}, separators=(",", ":")) + "\n\n"
+                previous = value
+            wait = _KEEPALIVE_SECONDS if boundary is None else min(
+                _KEEPALIVE_SECONDS, boundary + _BOUNDARY_MARGIN_SECONDS)
+            try:
+                await asyncio.wait_for(signal.wait(), wait)
+            except TimeoutError:
+                yield ": keepalive\n\n"
+
+
+@router.get("/session-state/events", response_class=StreamingResponse)
+async def session_state_events(
+    request: Request,
+    policy: Callable[[], RuntimePolicy] = Depends(runtime_policy_reader),
+    store: SQLiteAuthenticationStore = Depends(authentication_store),
+    authority_port: WebAuthnAuthorityPort = Depends(webauthn_authority_port),
+) -> StreamingResponse:
+    """Push the access value that session-state reports, so pages never poll it."""
+
+    _require_same_origin_read(request)
+    from app.provisioning.state import next_authority_expiry
+
+    def read() -> str:
+        access = _session_access(policy(), authority_port)[1]
+        return "available" if access is None else access.value
+
+    return AccessEventResponse(access_streams(request.app), read, lambda: next_authority_expiry(store))
+
+
+@router.get("/session-state", response_model=dict[str, bool | str | None])
 def session_state(request: Request, response: Response,
                   policy: RuntimePolicy = Depends(get_runtime_policy),
                   store: SQLiteAuthenticationStore = Depends(authentication_store),
-                  authority_port: WebAuthnAuthorityPort = Depends(webauthn_authority_port)) -> dict[str, bool | str | None]:
-    # Same-origin fetch metadata and exact host; GET does not require an Origin
-    # header, which browsers commonly omit for these same-origin reads.
-    from urllib.parse import urlsplit
-    if request.headers.get("host") != urlsplit(settings.bridge_origin).netloc or request.headers.get("sec-fetch-site") not in {None, "same-origin", "none"}:
-        raise HTTPException(403, "Request origin is not authorized")
-    decision = authority_port.session_authority(policy)
+                  authority_port: WebAuthnAuthorityPort = Depends(webauthn_authority_port),
+                  ) -> dict[str, bool | str | None] | JSONResponse:
+    _require_same_origin_read(request)
+    decision, access = _session_access(policy, authority_port)
+    if access is not None:
+        # One closed value says why, without naming grants or accounts.
+        return JSONResponse(
+            status_code=409,
+            content={"detail": "Enrollment state is unavailable", "access": access.value},
+            headers={"Cache-Control": "no-store"},
+        )
     enrolled = decision.result is WebAuthnAuthorityResult.AUTHORIZED
-    if not enrolled and decision.result not in {WebAuthnAuthorityResult.CREDENTIAL_MISSING, WebAuthnAuthorityResult.CREDENTIAL_REVOKED}:
-        raise HTTPException(409, "Enrollment state is unavailable", headers={"Cache-Control": "no-store"})
     _no_store(response)
     authenticated = bool(enrolled and store.bridge_session_is_current(policy))
     return {"authenticated": authenticated, "enrolled": enrolled,
