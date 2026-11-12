@@ -10,19 +10,23 @@ from app.onboarding.coordinator import OperationResult
 from app.provisioning.events import events
 from app.provisioning.owner_effects import OwnerEffects
 from app.security.browser_authentication import PROFILE, BrowserAuthenticationRefused
+from app.security.browser_ceremony_wait import wait_request
 from app.security.hosted_grants import HostedGrantUnavailable
 from app.security.initial_handoff import timestamp
 
+PROBE_INTERVAL_SECONDS = 2
+
 
 class DesktopAuthentication:
-    def __init__(self, store, ceremonies, client, *, providers=("default",)):
+    def __init__(self, store, ceremonies, client, *, providers=("default",), waits=None):
         if not providers or len(set(providers)) != len(providers) or not set(providers) <= {
                 "google", "microsoft-personal", "telegram", "tiktok", "default"} or "default" not in providers:
             raise ValueError("Invalid authentication providers")
-        self.store, self.ceremonies, self.client = store, ceremonies, client
+        self.store, self.ceremonies, self.client, self.waits = store, ceremonies, client, waits
         self.choices = {name: name in providers for name in ("google", "microsoft-personal", "telegram", "tiktok", "default")}
         self._lock = asyncio.Lock()
         self._effects = OwnerEffects()
+        self._probed: dict[str, str] = {}
 
     def presentation(self, journey_id, action, *, connection=None):
         with (self.store.database.read() if connection is None else nullcontext(connection)) as current:
@@ -115,6 +119,42 @@ class DesktopAuthentication:
         if attempt is None:
             self._save(row, result)
         return result
+
+    def probe_interval(self, operation_id):
+        """Probe cadence while this operation's sign-in popup can still be open."""
+        with self.store.database.read() as connection:
+            row = connection.execute("SELECT 1 FROM desktop_browser_tasks WHERE operation_id=? "
+                "AND purpose='browser.authentication' AND state IN ('pending','accepted','outcome_unknown') "
+                "AND expires_at>? LIMIT 1", (operation_id, self.store._now().timestamp())).fetchone()
+        return None if row is None else PROBE_INTERVAL_SECONDS
+
+    async def probe(self, operation_id, *, authorize):
+        """Read the parent's current projection only. True when it differs from the last probe."""
+        parent = self.parent_operation(operation_id)
+        row, request = self._request(parent)
+        result = await self._effects.run(self.client.read, request, expires_at=row["provider_expires_at"],
+            before_send=authorize, journey_id=self.ceremonies._journey(parent), protected=False)
+        encoded = canonical(result).decode()
+        if self._probed.get(operation_id) == encoded:
+            return False
+        self._probed.pop(operation_id, None)
+        if len(self._probed) >= 64:
+            self._probed.pop(next(iter(self._probed)))
+        self._probed[operation_id] = encoded
+        return True
+
+    async def wait(self, operation_id, *, authorize):
+        """Hold the parent's ceremony outcome wait. Each hint is a notification without authority."""
+        if self.waits is None:
+            raise HostedGrantUnavailable("Ceremony wait is unavailable")
+        parent = self.parent_operation(operation_id)
+        row = self.ceremonies.row(parent)
+        if row is None or row["ceremony_id"] is None:
+            raise HostedGrantUnavailable("Authentication scope is unavailable")
+        request = wait_request(self.ceremonies.request(row))
+        envelope = await asyncio.to_thread(self.waits.envelope, request, before_send=authorize)
+        async for hint in self.waits.hints(envelope):
+            yield hint
 
     async def refresh(self, parent, *, authorize):
         async with self._lock:

@@ -10,7 +10,7 @@ export async function openSetupCode(client, invoke = code =>
   return true;
 }
 
-/** Only a fresh single-use code crosses the purpose-specific native command. */
+/** Brain chooses the route: the paired session, the live helper, then one Chrome tab with a fresh code. */
 export async function openBrowserTask(client, operationId, invoke = (code) =>
   globalThis.__TAURI__.core.invoke('desktop_browser_task', { entryCode: code }), current = () => client.connected !== false) {
   if (!current()) return false;
@@ -21,16 +21,13 @@ export async function openBrowserTask(client, operationId, invoke = (code) =>
   if (matches.length === 0) return false; // The accepted operation is still preparing its task.
   if (matches.length !== 1) throw Error('browser_unavailable');
   client.browserTaskPrepared?.(matches[0]);
-  if (client.session?.stage === 'runtime' && matches[0].purpose === 'browser.authentication') {
-    const result = await client.json('/api/v1/desktop/browser-tasks/' + matches[0].task_id + '/dispatch', {});
-    if (!current()) return false;
-    if (!exact(result, ['state']) || !['dispatched', 'unreachable', 'unconfirmed'].includes(result.state)) throw Error('browser_unavailable');
-    if (result.state === 'dispatched') return true;
-    if (result.state !== 'unreachable') throw Error('browser_unavailable');
-  }
-  const result = await client.json('/api/v1/desktop/browser-tasks/' + matches[0].task_id + '/entry', {});
+  const result = await client.json('/api/v1/desktop/browser-tasks/' + matches[0].task_id + '/open', {});
   if (!current()) return false;
-  if (!exact(result, ['entry_code']) || !/^[A-Za-z0-9_-]{43}$/u.test(result.entry_code)) throw Error('browser_unavailable');
+  if (exact(result, ['state']) && ['dispatched', 'focused'].includes(result.state)) return true;
+  if (exact(result, ['state']) && result.state === 'unavailable') return false;
+  if (!exact(result, ['state', 'entry_code']) || result.state !== 'entry' || !/^[A-Za-z0-9_-]{43}$/u.test(result.entry_code)) {
+    throw Error('browser_unavailable');
+  }
   await invoke(result.entry_code);
   return true;
 }

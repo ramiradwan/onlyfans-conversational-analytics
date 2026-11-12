@@ -42,11 +42,14 @@ Hello fields remain closed. New features negotiate only through capabilities and
 | `agent.config.get` | Authenticate the current Agent configuration ticket; return the immutable configuration or an ETag match. |
 | `agent.storage.unseal` | Validate the account-bound bootstrap and return the stable account storage key with this session's fresh ticket. |
 | `agent.storage.rotate` | Validate this session's reconnect and configuration credentials and reseal its bootstrap. |
+| `agent.browser-task.capabilities` | After Agent authentication, record the closed controls and task purposes this session accepts: exactly `controls` `["browser.task.end"]` and a sorted, known `task_purposes` list. Returns `{}`. |
 | `agent.surface.report` | After Agent authentication, record the extension's closed browser state (`schema` `ofca-browser-surface/v1`, `capture`, `site_access`, `history_permission`, `legal_review_required`) for `agent.state`, and admit the session for controls. Returns `{}`. |
 
 ## Session controls
 
 Brain sends a control as a routine document with exactly `type` `session.control`, a canonical UUID `id`, and an `action` of `capture.pause`, `capture.resume`, or `companion.revoked` ([ADR 0045](adr/0045-desktop-led-extension-setup.md)). Agent refuses any other shape by closing the session, ignores a repeated `id`, and applies pause and resume through its consent controller. Brain sends controls only to sessions that have reported browser state, and `companion.revoked` only to sessions of the pin being revoked.
+
+Agent calls `agent.browser-task.capabilities` once per session, after its first browser state report. A session that called it also receives `browser.task.end` with only `task_id` and `admission_generation` when a task Brain dispatched to its pairing ends. The control is a notification and carries no outcome. Agent matches it to an active task or ignores it. Brain sends it to no other session, so an older extension never receives it.
 
 While consent is paused from Full, Agent keeps a control-only session. It runs `agent.challenge`, `agent.authenticate`, and `agent.surface.report`, and never `agent.storage.unseal` or `agent.hello`.
 

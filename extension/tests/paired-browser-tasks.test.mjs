@@ -14,11 +14,22 @@ function harness(t) {
     ceremony_id: '0199b234-5678-7000-8000-000000000001', attempt_id: 'A'.repeat(43),
     completion: { mode: 'extension-auth-flow', return_uri: 'https://' + value.extension_id + '.chromiumapp.org/browser-ceremony/v1/complete' },
     expires_at: new Date(value.task.expires_at * 1000).toISOString() };
+  const session = {};
   const chromeApi = { runtime: { id: value.extension_id }, storage: { local: {
     async get(key) { return structuredClone({ [key]: stored[key] }); }, async set(change) { Object.assign(stored, structuredClone(change)); },
+  }, session: {
+    async get(key) { return structuredClone({ [key]: session[key] }); }, async set(change) { Object.assign(session, structuredClone(change)); },
   } }, alarms: { async create() {}, async clear() {}, onAlarm: { addListener() {}, removeListener() {} } },
-  identity: { getRedirectURL: path => 'https://' + value.extension_id + '.chromiumapp.org/' + path,
-    launchWebAuthFlow(options) { return new Promise((resolve, reject) => flows.push({ options, resolve, reject })); } } };
+  identity: { getRedirectURL: path => 'https://' + value.extension_id + '.chromiumapp.org/' + path } };
+  const removed = new Set(), removals = [];
+  const emit = (listeners, ...args) => { for (const fn of [...listeners]) fn(...args); };
+  chromeApi.windows = { onRemoved: { addListener: fn => removed.add(fn), removeListener: fn => removed.delete(fn) },
+    async create(options) {
+      const id = 700 + flows.length;
+      flows.push({ options, id, close: () => emit(removed, id) });
+      return { id, tabs: [{ id: id + 1000, windowId: id }] };
+    },
+    async remove(id) { removals.push(id); emit(removed, id); }, async update() {} };
   const authentication = createBrowserAuth({ chromeApi, hostedOrigin: 'https://provider.example', now: () => time });
   let reads = 0, afterRead = () => {}, afterAttach = () => {};
   const leases = new Set();
@@ -32,7 +43,13 @@ function harness(t) {
   const controls = { creatorAccountId: value.creator_account_id, signal: abort.signal,
     guard() { if (abort.signal.aborted) throw Error('session_closed'); }, async notify(value) { notifications.push(value); } };
   t.after(() => { abort.abort(); tasks.dispose(); authentication.dispose(); });
-  return { value, tasks, controls, flows, notifications, state, abort, authentication, leases,
+  const restart = () => {
+    tasks.dispose(); authentication.dispose();
+    const fresh = createBrowserAuth({ chromeApi, hostedOrigin: 'https://provider.example', now: () => time });
+    t.after(() => fresh.dispose());
+    return { authentication: fresh, tasks: createPairedBrowserTasks({ owner, authentication: fresh, now: () => time }) };
+  };
+  return { value, tasks, controls, flows, notifications, state, abort, authentication, leases, removals, stored, session, restart,
     advance(ms) { time += ms; }, afterRead(fn) { afterRead = fn; }, afterAttach(fn) { afterAttach = fn; } };
 }
 
@@ -54,12 +71,17 @@ test('paired dispatch reuses its exact flow and pushes only bounded outcome corr
       resolve();
     };
   });
-  h.flows[0].resolve(h.value.ceremony.completion.return_uri + '?ceremony_id=' + h.value.ceremony.ceremony_id
-    + '&attempt_id=' + h.value.ceremony.attempt_id + '&notification=changed');
+  assert.equal(h.flows[0].options.url, h.value.ceremony.entry_url + '#system-browser');
+  await h.authentication.retire(h.value);
   await notified;
   assert.deepEqual(h.notifications.at(-1), { state: 'checking', notification: {
-    ceremony_id: h.value.ceremony.ceremony_id, attempt_id: h.value.ceremony.attempt_id, notification: 'changed' } });
+    ceremony_id: h.value.ceremony.ceremony_id, attempt_id: h.value.ceremony.attempt_id, notification: 'unavailable' } });
+  assert.deepEqual(h.removals, [h.flows[0].id]);
+  // A callback an earlier build journaled is reused, never reopened.
+  Object.assign(h.stored.browser_auth_attempts_v2[0], { phase: 'returned', notification: 'changed' });
   await h.tasks.run(h.value, h.controls); assert.equal(h.flows.length, 1);
+  assert.deepEqual(h.notifications.at(-1), { state: 'checking', notification: {
+    ceremony_id: h.value.ceremony.ceremony_id, attempt_id: h.value.ceremony.attempt_id, notification: 'changed' } });
 });
 
 test('popup closure sends the same bounded local withdrawal on paired redispatch without reopening', async t => {
@@ -75,7 +97,7 @@ test('popup closure sends the same bounded local withdrawal on paired redispatch
       if (value.state === 'closed') { clearTimeout(timer); resolve(); }
     };
   });
-  h.flows[0].reject(Error('The user did not approve access.'));
+  h.flows[0].close();
   await closed;
   assert.deepEqual(h.notifications.at(-1), { state: 'closed', notification: null });
   await h.tasks.run(h.value, h.controls);
@@ -106,8 +128,10 @@ test('lost channel suppresses late notifications without claiming the browser fa
   const h = harness(t); await h.tasks.run(h.value, h.controls);
   const count = h.notifications.length;
   assert.equal(h.leases.size, 1); assert.equal(h.authentication.hasLiveFlow(), true);
-  h.abort.abort(); h.flows[0].reject(Error('untrusted browser text'));
+  h.abort.abort();
   assert.equal(h.leases.size, 0); assert.equal(h.authentication.hasLiveFlow(), true);
+  assert.deepEqual(h.removals, [], 'a lost channel does not end the sign-in');
+  await h.authentication.retire(h.value);
   await tick(); await tick();
   assert.equal(h.notifications.length, count);
   assert.equal((await h.authentication.read(h.value)).notification.notification, 'unavailable');
@@ -159,4 +183,52 @@ test('shared auth lifecycle rechecks authority and retires only its exact subscr
     assert.equal(sent.length, 1);
     abort.abort(); assert.deepEqual(released, [original, successor]); assert.equal(listeners.size, 0);
   } finally { first.close(); second.close(); }
+});
+
+const settle = async () => { for (let i = 0; i < 20; i++) await tick(); };
+const endOf = value => ({ task_id: value.task.task_id, admission_generation: value.task.admission_generation });
+
+test('an end with the matching task and generation removes the popup without recording closure', async t => {
+  const h = harness(t);
+  await h.tasks.run(h.value, h.controls);
+  await settle();
+  await h.tasks.end(endOf(h.value));
+  assert.deepEqual(h.removals, [h.flows[0].id], 'the window is removed before end resolves');
+  await settle();
+  assert.equal(h.stored.browser_auth_attempts_v2[0].phase, 'unknown');
+  assert.deepEqual(h.session.browser_auth_popup_v1, {});
+});
+
+test('an end with another generation, an unknown task or a repeat changes nothing', async t => {
+  const h = harness(t);
+  await h.tasks.run(h.value, h.controls);
+  await settle();
+  await h.tasks.end({ ...endOf(h.value), admission_generation: crypto.randomUUID() });
+  await h.tasks.end({ ...endOf(h.value), task_id: crypto.randomUUID() });
+  await settle();
+  assert.deepEqual(h.removals, []);
+  assert.equal(h.stored.browser_auth_attempts_v2[0].phase, 'opening');
+  await h.tasks.end(endOf(h.value));
+  await h.tasks.end(endOf(h.value));
+  await settle();
+  assert.deepEqual(h.removals, [h.flows[0].id]);
+});
+
+test('a restarted worker removes the saved popup only for the exact task, generation and sequence', async t => {
+  const h = harness(t);
+  await h.tasks.run(h.value, h.controls);
+  await settle();
+  const saved = h.session.browser_auth_popup_v1[h.value.task.task_id];
+  assert.deepEqual(Object.keys(saved).sort(), ['admission_generation', 'sequence', 'window_id']);
+  assert.equal(saved.window_id, h.flows[0].id);
+  assert.ok(!JSON.stringify(h.stored).includes('window'), 'the local journal never holds a window id');
+  const fresh = h.restart();
+  await fresh.tasks.end({ ...endOf(h.value), admission_generation: crypto.randomUUID() });
+  await settle();
+  assert.deepEqual(h.removals, []);
+  await fresh.tasks.end(endOf(h.value));
+  await settle();
+  assert.deepEqual(h.removals, [h.flows[0].id]);
+  assert.equal(h.stored.browser_auth_attempts_v2[0].phase, 'unknown');
+  assert.ok(!JSON.stringify(h.stored).includes('window'));
 });

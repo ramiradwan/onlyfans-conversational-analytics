@@ -430,3 +430,244 @@ async def test_authentication_refresh_waits_for_inflight_parent_and_respects_clo
     assert parent_reads == ([(False, True, None), (True, True, None)] if ending == "refresh" else [(False, True, None)])
     assert not coordinator._workers
     await coordinator.stop()
+
+
+async def _probed_connect(setup, probe, *, interval=0.01, recoverable=True):
+    coordinator, owner, session, _ = setup
+    owner.facts["browser_access"] = "verified"
+    owner.result = OperationResult("waiting")
+    owner.automatic_recovery = lambda _: recoverable
+    owner.probe_interval = lambda _: interval
+    owner.probe = probe
+    request = command(coordinator.read(session), "account.connect")
+    coordinator.start()
+    await coordinator.command(session, request)
+    await coordinator.drain()
+    return request
+
+
+@pytest.mark.asyncio
+async def test_open_sign_in_is_probed_and_reconciled_as_soon_as_its_outcome_changes(setup):
+    coordinator, owner, session, _ = setup
+    probes, changed = [], asyncio.Event()
+
+    async def probe(operation):
+        probes.append(operation["operation_id"])
+        return changed.is_set()
+
+    request = await _probed_connect(setup, probe)
+    try:
+        async with asyncio.timeout(2):
+            while len(probes) < 3:
+                await asyncio.sleep(0.005)
+        # An unchanged probe never repeats the full owner reconciliation.
+        assert [reconcile for _, reconcile in owner.calls] == [False]
+        owner.result = OperationResult("completed")
+        changed.set()
+        async with asyncio.timeout(1):
+            while coordinator.receipt(session, request["operation_id"])["state"] != "completed":
+                await asyncio.sleep(0.005)
+        assert [reconcile for _, reconcile in owner.calls] == [False, True]
+        assert set(probes) == {request["operation_id"]}
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_failed_probe_falls_back_to_one_full_reconciliation_and_backs_off(setup, monkeypatch):
+    monkeypatch.setattr("app.onboarding.coordinator.RECOVERY_INTERVAL_SECONDS", 0.5)
+    coordinator, owner, _, _ = setup
+    probes = []
+
+    async def probe(operation):
+        probes.append(operation["operation_id"])
+        raise OSError("authority unavailable")
+
+    await _probed_connect(setup, probe)
+    try:
+        async with asyncio.timeout(1):
+            while len(owner.calls) < 2:
+                await asyncio.sleep(0.005)
+        await asyncio.sleep(0.1)
+        assert len(probes) == 1
+        assert [reconcile for _, reconcile in owner.calls] == [False, True]
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ineligible", ["not-recoverable", "no-open-sign-in"])
+async def test_probes_run_only_for_recoverable_work_with_an_open_sign_in(setup, ineligible):
+    coordinator, owner, _, _ = setup
+    probes = []
+
+    async def probe(operation):
+        probes.append(operation["operation_id"])
+        return True
+
+    await _probed_connect(setup, probe, interval=None if ineligible == "no-open-sign-in" else 0.01,
+        recoverable=ineligible != "not-recoverable")
+    try:
+        await asyncio.sleep(0.1)
+        assert not probes
+        assert [reconcile for _, reconcile in owner.calls] == [False]
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_an_inflight_probe_without_starting_owner_work(setup):
+    coordinator, owner, _, _ = setup
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def probe(operation):
+        started.set()
+        await release.wait()
+        return True
+
+    await _probed_connect(setup, probe)
+    async with asyncio.timeout(1):
+        await started.wait()
+    await asyncio.wait_for(coordinator.stop(), 1)
+    release.set()
+    await asyncio.sleep(0.02)
+    assert [reconcile for _, reconcile in owner.calls] == [False]
+    assert not coordinator._workers
+
+class Hints:
+    """A scripted held wait: each connection yields its hints, then stays open or fails."""
+
+    def __init__(self, *connections):
+        self.connections = list(connections)
+        self.opened = []
+        self.hold = asyncio.Event()
+
+    def __call__(self, operation):
+        self.opened.append(asyncio.get_running_loop().time())
+        script = self.connections.pop(0) if self.connections else ("hold",)
+        return self._run(script)
+
+    async def _run(self, script):
+        for step in script:
+            if isinstance(step, BaseException):
+                raise step
+            if isinstance(step, asyncio.Event):
+                await step.wait()
+                continue
+            if step == "hold":
+                await self.hold.wait()
+                return
+            yield step
+
+
+def _hint(revision, presentation="active", status="awaiting-authentication"):
+    return (revision, presentation, status)
+
+
+async def _waited_connect(setup, wait, *, probe=None):
+    probes = []
+
+    async def counted(operation):
+        probes.append(operation["operation_id"])
+        return False
+
+    request = await _probed_connect(setup, probe or counted)
+    setup[1].wait = wait
+    return request, probes
+
+
+async def _until(condition, timeout=2):
+    async with asyncio.timeout(timeout):
+        while not condition():
+            await asyncio.sleep(0.005)
+
+
+@pytest.mark.asyncio
+async def test_wait_frame_starts_reconcile_and_never_settles_alone(setup):
+    coordinator, owner, session, _ = setup
+    request, _ = await _waited_connect(setup, Hints((_hint(1, "retired", "committed"), "hold")))
+    try:
+        await _until(lambda: [reconcile for _, reconcile in owner.calls] == [False, True])
+        await _until(lambda: not coordinator._workers)
+        # The frame said committed; the owner's proof read still says waiting.
+        assert coordinator.receipt(session, request["operation_id"])["state"] == "waiting"
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_healthy_wait_suppresses_probe_and_retry(setup, monkeypatch):
+    monkeypatch.setattr("app.onboarding.coordinator.RECOVERY_INTERVAL_SECONDS", 0.05)
+    coordinator, owner, session, _ = setup
+    hints = Hints((_hint(1), "hold"))
+    request, probes = await _waited_connect(setup, hints)
+    try:
+        await _until(lambda: request["operation_id"] in coordinator._held)
+        settled = len(owner.calls)
+        probes.clear()
+        await asyncio.sleep(0.3)
+        assert probes == []
+        assert len(owner.calls) == settled
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_lost_wait_falls_back_to_probe_then_reconnects(setup, monkeypatch):
+    monkeypatch.setattr("app.onboarding.coordinator.WAIT_BACKOFF_CAP_SECONDS", 0.3)
+    coordinator, owner, session, _ = setup
+    lose = asyncio.Event()
+    hints = Hints((_hint(1), lose, OSError("stream lost")), (_hint(2, "retired", "committed"), "hold"))
+    request, probes = await _waited_connect(setup, hints)
+    try:
+        await _until(lambda: request["operation_id"] in coordinator._held)
+        await _until(lambda: not coordinator._workers)
+        before = [reconcile for _, reconcile in owner.calls].count(True)
+        probes.clear()
+        lose.set()
+        # The probe resumes while the wait is down, then the reconnected wait reconciles.
+        await _until(lambda: probes, timeout=1)
+        await _until(lambda: len(hints.opened) >= 2, timeout=2)
+        await _until(lambda: [reconcile for _, reconcile in owner.calls].count(True) > before, timeout=2)
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_reconnect_honours_retry_after(setup):
+    from app.security.browser_ceremony_wait import CeremonyWaitUnavailable
+    coordinator, owner, session, _ = setup
+    hints = Hints((CeremonyWaitUnavailable("busy", retry_after=0.3),), (_hint(1), "hold"))
+    request, _ = await _waited_connect(setup, hints)
+    try:
+        await _until(lambda: len(hints.opened) >= 2, timeout=2)
+        assert hints.opened[1] - hints.opened[0] >= 0.29
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_repeated_or_older_hints_are_ignored(setup):
+    coordinator, owner, session, _ = setup
+    hints = Hints((_hint(2), _hint(2), _hint(1, "retired", "committed"), "hold"))
+    request, _ = await _waited_connect(setup, hints)
+    try:
+        await _until(lambda: request["operation_id"] in coordinator._held)
+        await _until(lambda: not coordinator._workers)
+        await asyncio.sleep(0.05)
+        assert [reconcile for _, reconcile in owner.calls].count(True) == 1
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_wait_without_owner_work(setup):
+    coordinator, owner, session, _ = setup
+    hints = Hints(("hold",))
+    request, _ = await _waited_connect(setup, hints)
+    await _until(lambda: len(hints.opened) >= 1)
+    calls = len(owner.calls)
+    await asyncio.wait_for(coordinator.stop(), 1)
+    await asyncio.sleep(0.02)
+    assert len(owner.calls) == calls
+    assert not coordinator._waits

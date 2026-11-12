@@ -43,6 +43,7 @@ export const companionClient = createCompanionClient({
   onControl: (action) => action.startsWith('browser.open.')
     ? openBrowserControl(action, { openSurface, openCreatorAccount }) : applyControl(consentController, action),
   onBrowserTask: (payload, controls) => pairedBrowserTasks.run(payload, controls),
+  onBrowserTaskEnd: end => pairedBrowserTasks.end(end),
   detectedAccountId: () => provisioningIdentityBridge.currentAccountId(),
 });
 export const chromeAdapter = companionClient.adapter;

@@ -1,7 +1,7 @@
 import { createCompanionSession } from './companion-noise-session.mjs';
 import { key32 } from './pairing-contract.mjs';
 import { createFragmentReceiver, fragmentMessage } from './companion-fragments.mjs';
-import { isBrowserTaskControl } from '../../shared/browser-tasks/wire.mjs';
+import { END_CONTROL, isBrowserTaskControl, isBrowserTaskEnd } from '../../shared/browser-tasks/wire.mjs';
 
 export class CompanionChannelError extends Error {
   constructor(code = 'companion_session_refused') { super(code); this.code = code; }
@@ -183,6 +183,19 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
       sending = operation.catch(() => { close('send_failed'); });
       return operation.finally(() => { if (rotation) rotationQueued--; else queued--; });
     };
+    let endControl = false;
+    // Brain may replay ends before it answers, so the end control is accepted
+    // from the moment the advertisement is sent. An older Brain never sends one.
+    async function advertiseBrowserTasks(taskPurposes = []) {
+      endControl = true;
+      try {
+        await rpc('agent.browser-task.capabilities', { controls: [END_CONTROL], task_purposes: [...taskPurposes] });
+        return true;
+      } catch {
+        endControl = false;
+        return false;
+      }
+    }
     async function rpc(method, params = {}, controls = {}) {
       const rotation = method === 'agent.storage.rotate';
       const ordinaryPending = pending.size - Number(pending.has(rotationId));
@@ -247,6 +260,13 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
               for (const listener of controlObservers) listener({ id: document.id, action: document.action, payload: document.payload });
               continue;
             }
+            if (document.action === END_CONTROL) {
+              // Accepted only once this channel has advertised it; otherwise the closed set holds.
+              if (!endControl || !isBrowserTaskEnd(document)) throw refused();
+              const end = { task_id: document.task_id, admission_generation: document.admission_generation };
+              for (const listener of controlObservers) listener({ id: document.id, action: document.action, end });
+              continue;
+            }
             // A session-level control from Brain (ADR 0045). It is closed and
             // carries no data; the receiver applies it through its own controllers.
             const keys = Object.keys(document);
@@ -267,7 +287,8 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
       get closeReason() { return wire.closeReason; },
       get closeCode() { return wire.closeCode; },
       get closeDiagnostic() { return safeCompanionChannelDiagnostic(closeDiagnostic); },
-      rpc, send: document => send(document), close,
+      rpc, send: document => send(document), close, advertiseBrowserTasks,
+      get endControl() { return endControl; },
       onMessage(listener) { if (observers.size) throw refused(); observers.add(listener); return () => observers.delete(listener); },
       onControl(listener) { controlObservers.add(listener); return () => controlObservers.delete(listener); },
       onClose(listener) { closedObservers.add(listener); return () => closedObservers.delete(listener); },

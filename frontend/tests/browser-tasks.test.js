@@ -124,23 +124,22 @@ describe('scoped browser helper', () => {
     expect(document.getElementById('desktop-return').hidden).toBe(false);
     expect(document.getElementById('desktop-return').getAttribute('href')).toBe('ofca://onboarding/?journey=' + value.task.journey_id);
   });
-  it.each(['tasks', 'entry', 'dispatch'])('fences a delayed %s reply after the native launch owner stops', async stage => {
+  it.each(['tasks', 'open'])('fences a delayed %s reply after the native launch owner stops', async stage => {
     const value = authenticationPayload(), invoke = vi.fn();
     let release;
     const json = vi.fn(async path => {
       if (stage === 'tasks' && path.endsWith('/browser-tasks') || path.endsWith('/' + stage)) await new Promise(resolve => { release = resolve; });
-      return path.endsWith('/entry') ? { entry_code: 'A'.repeat(43) }
-        : path.endsWith('/dispatch') ? { state: 'unreachable' } : { tasks: [value.task] };
+      return path.endsWith('/open') ? { state: 'entry', entry_code: 'A'.repeat(43) } : { tasks: [value.task] };
     });
     const client = new DesktopSetupClient({ generation: id(4), receive: vi.fn(), storage: {},
       openBrowser: (owner, operation, _invoke, current) => openBrowserTask(owner, operation, invoke, current) });
-    client.json = json; client.connected = true; client.session = { stage: stage === 'dispatch' ? 'runtime' : 'setup' };
+    client.json = json; client.connected = true; client.session = { stage: 'setup' };
     client.launchOperation = value.task.operation_id;
     const pending = client.launchBrowser();
     await Promise.resolve(); await Promise.resolve();
     client.stop(); release(); await pending;
     expect(invoke).not.toHaveBeenCalled();
-    expect(json.mock.calls.some(([path]) => path.endsWith('/entry'))).toBe(stage === 'entry');
+    expect(json.mock.calls.some(([path]) => path.endsWith('/open'))).toBe(stage === 'open');
   });
   it.each(['navigate', 'reload', 'back_forward', 'missing', 'mismatch', 'get-failure', 'remove-failure'])(
     'spends native entry intent once and refuses %s recovery', type => {
@@ -239,7 +238,7 @@ describe('scoped browser helper', () => {
     const value = payload(), received = [], requests = [];
     let publish;
     const request = vi.fn(async (path, options) => {
-      requests.push([path, options]);
+      if (!path.endsWith('/events')) requests.push([path, options]);
       const body = path.endsWith('/session') ? { role: 'browser_task', generation: id(4), task_id: id(1), journey_id: id(2), csrf_token: 'A'.repeat(43) }
         : path.endsWith('/payload') ? value : { state: 'observed' };
       return { ok: true, text: async () => JSON.stringify(body) };
@@ -257,7 +256,7 @@ describe('scoped browser helper', () => {
   });
   it('opens only one prepared task through the native code-only command', async () => {
     const value = payload(), invoke = vi.fn();
-    const client = { json: vi.fn(async path => path.endsWith('/entry') ? { entry_code: 'A'.repeat(43) } : { tasks: [value.task] }) };
+    const client = { json: vi.fn(async path => path.endsWith('/open') ? { state: 'entry', entry_code: 'A'.repeat(43) } : { tasks: [value.task] }) };
     expect(await openBrowserTask(client, value.task.operation_id, invoke)).toBe(true);
     expect(invoke).toHaveBeenCalledExactlyOnceWith('A'.repeat(43));
     client.json.mockResolvedValue({ tasks: [value.task, value.task] });
@@ -288,7 +287,7 @@ describe('scoped browser helper', () => {
       publish({ state: 'unavailable' });
       await vi.advanceTimersByTimeAsync(60000);
       expect(received).toHaveLength(count);
-      expect(request).toHaveBeenCalledTimes(3);
+      expect(request.mock.calls.filter(([path]) => !path.endsWith('/events'))).toHaveLength(3);
       client.stop();
     } finally { vi.useRealTimers(); }
   });
@@ -339,10 +338,46 @@ describe('scoped browser helper', () => {
       expect(received.at(-1).state).toBe('task_completed');
       document.documentElement.innerHTML = readFileSync('browser-tasks/index.html', 'utf8');
       renderBrowserTask(document, received.at(-1));
-      expect(document.getElementById('authentication-browser').hasAttribute('href')).toBe(false);
+      expect(document.getElementById('authentication-browser')).toBeNull();
       expect(connect).toHaveBeenCalledTimes(source === 'start' ? 0 : 1);
       expect(authenticate).not.toHaveBeenCalled();
       expect(request.mock.calls.every(([, options]) => options.method === undefined)).toBe(true);
+    } finally { client.stop(); vi.useRealTimers(); }
+  });
+  it.each(['authentication', 'access'])('reads the end of an open %s task at its own interval', async kind => {
+    vi.useFakeTimers();
+    const value = kind === 'authentication' ? authenticationPayload() : payload(), received = [];
+    const finish = vi.fn(async () => true), close = vi.fn();
+    let completed = false, unavailable = false;
+    const reads = () => request.mock.calls.filter(([path]) => path.endsWith('/payload')).length;
+    const request = vi.fn(async path => {
+      if (unavailable && path.endsWith('/payload')) return { ok: false, status: 503 };
+      return { ok: true, text: async () => JSON.stringify(path.endsWith('/session')
+        ? { role: 'browser_task', generation: id(4), task_id: id(1), journey_id: id(2), csrf_token: 'A'.repeat(43) }
+        : completed ? { ...value, task: { ...value.task, state: 'completed' }, ceremony: kind === 'authentication' ? null : value.ceremony }
+          : value) };
+    });
+    const client = new BrowserTaskClient({ generation: id(4), request, receive: next => received.push(next),
+      connect: () => ({ finish, close }) });
+    try {
+      await client.start();
+      const started = reads();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(reads() - started).toBe(kind === 'authentication' ? 1 : 0);
+      // A failed read backs off as before and returns to the task's own interval.
+      unavailable = true;
+      await vi.advanceTimersByTimeAsync(kind === 'authentication' ? 500 : 1500);
+      expect(received.at(-1).state).toBe('service_unavailable');
+      unavailable = false;
+      await vi.advanceTimersByTimeAsync(kind === 'authentication' ? 1000 : 4000);
+      completed = true;
+      const before = reads();
+      await vi.advanceTimersByTimeAsync(kind === 'authentication' ? 500 : 2000);
+      expect(reads() - before).toBe(1);
+      expect(received.at(-1).state).toBe('task_completed');
+      expect(finish).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(reads() - before).toBe(1);
     } finally { client.stop(); vi.useRealTimers(); }
   });
   it.each(['task_id', 'journey_id', 'operation_id', 'scope_digest', 'source_revision', 'admission_generation', 'expires_at', 'creator_account_id'])(
@@ -357,15 +392,17 @@ describe('scoped browser helper', () => {
       await expect(client.currentPayload()).rejects.toThrow('task_changed');
       expect(isPayloadProjection({ ...value, ceremony: null })).toBe(false);
     });
-  it.each(['dispatched', 'unreachable', 'unconfirmed'])('routes a paired task with %s delivery without duplicating uncertain work', async (state) => {
-    const value = authenticationPayload(), invoke = vi.fn();
-    const client = { session: { stage: 'runtime' }, json: vi.fn(async path => path.endsWith('/dispatch')
-      ? { state } : path.endsWith('/entry') ? { entry_code: 'A'.repeat(43) } : { tasks: [value.task] }) };
-    if (state === 'unconfirmed') await expect(openBrowserTask(client, value.task.operation_id, invoke)).rejects.toThrow('browser_unavailable');
-    else expect(await openBrowserTask(client, value.task.operation_id, invoke)).toBe(true);
-    expect(client.json.mock.calls.some(([path]) => path.endsWith('/entry'))).toBe(state === 'unreachable');
-    expect(invoke).toHaveBeenCalledTimes(state === 'unreachable' ? 1 : 0);
-  });
+  it.each([['setup', 'dispatched'], ['runtime', 'dispatched'], ['setup', 'focused'], ['setup', 'entry'], ['runtime', 'unavailable'], ['setup', 'malformed']])(
+    'lets Brain choose the route in the %s stage and opens Chrome only for an entry: %s', async (stage, state) => {
+      const value = authenticationPayload(), invoke = vi.fn();
+      const result = state === 'entry' ? { state, entry_code: 'A'.repeat(43) } : state === 'malformed' ? { state: 'entry' } : { state };
+      const client = { session: { stage }, json: vi.fn(async path => path.endsWith('/open') ? result : { tasks: [value.task] }) };
+      if (state === 'malformed') await expect(openBrowserTask(client, value.task.operation_id, invoke)).rejects.toThrow('browser_unavailable');
+      else expect(await openBrowserTask(client, value.task.operation_id, invoke)).toBe(state !== 'unavailable');
+      expect(client.json.mock.calls.map(([path]) => path.split('/').at(-1))).toEqual(['browser-tasks', 'open']);
+      expect(invoke).toHaveBeenCalledTimes(state === 'entry' ? 1 : 0);
+      if (state === 'entry') expect(invoke).toHaveBeenCalledWith('A'.repeat(43));
+    });
   it('renders focused authentication and ordinary Chrome recovery without declaring success', () => {
     document.documentElement.innerHTML = readFileSync('browser-tasks/index.html', 'utf8');
     const value = authenticationPayload();
@@ -373,10 +410,12 @@ describe('scoped browser helper', () => {
       renderBrowserTask(document, { state, payload: value });
       expect(document.querySelector('main').dataset.journeyState).toBe('browser.' + state);
       expect(document.getElementById('authentication-open').hidden).toBe(!['auth_idle', 'auth_unconfirmed'].includes(state));
-      expect(document.getElementById('authentication-browser').hidden).toBe(state !== 'unavailable');
       expect(document.getElementById('extension-open').hidden).toBe(true);
     }
-    expect(document.getElementById('authentication-browser').href).toBe(value.ceremony.entry_url + '#system-browser');
+    // Sign-in stays in the extension popup. No second Chrome route exists.
+    expect(document.getElementById('authentication-browser')).toBeNull();
+    expect(document.querySelector('a[href*="#system-browser"]')).toBeNull();
+    expect(document.getElementById('extension-install').target).toBe('_self');
     expect(document.getElementById('desktop-return').hidden).toBe(false);
   });
   it('forwards only exact authentication correlation and launches only after an explicit action', () => {
@@ -459,7 +498,8 @@ describe('scoped browser helper', () => {
     retired = true;
     publish({ state: 'unavailable' }); await client.serial;
     expect(received.at(-1)).toEqual({ state: 'task_changed', payload: value });
-    expect(request.mock.calls.every(([, options]) => options.method === undefined)).toBe(true);
+    // The only write is this helper's own ending report.
+    expect(request.mock.calls.filter(([path]) => !path.endsWith('/ended')).every(([, options]) => options.method === undefined)).toBe(true);
     await client.start();
     expect(received.at(-1)).toEqual({ state: 'task_changed', payload: value });
     client.stop();
@@ -533,7 +573,7 @@ describe('scoped browser helper', () => {
         expect(received.at(-1).state).toBe(order === 'expired' ? 'task_expired' : 'task_completed');
         expect(pair).toHaveBeenCalledTimes(order === 'replace' ? 0 : 1);
         expect(replacePairing).toHaveBeenCalledTimes(order === 'replace' ? 1 : 0);
-        expect(request.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(1);
+        expect(request.mock.calls.filter(([path, options]) => options.method === 'POST' && !path.endsWith('/ended'))).toHaveLength(1);
       } finally { client.stop(); vi.useRealTimers(); }
     });
   it.each([false, true])('forwards one pairing code and preserves a lost comparison reply: %s', async lost => {

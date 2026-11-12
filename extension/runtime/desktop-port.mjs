@@ -42,27 +42,67 @@ export function closeFinishedHelper(generation, expiresAt) {
   return true;
 }
 
+// The same exact-document binding without the expiry check: an ended or expired
+// task still closes its own helper once that helper reported why it ended.
+export function closeEndedHelper(generation) {
+  const expected = 'http://bridge.localhost:17871/browser-tasks#presentation=' + generation;
+  if (typeof generation !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(generation)
+    || window.top !== window || window.location.href !== expected) return false;
+  window.close();
+  return true;
+}
+export const ENDED_HELPER_GRACE_MS = 5000;
+
 export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, companion, authentication,
-  onPaired = async () => {}, changeSources = [], now = Date.now } = {}) {
+  onPaired = async () => {}, changeSources = [], now = Date.now, endedGraceMs = ENDED_HELPER_GRACE_MS } = {}) {
   if (!owner || !companion) throw TypeError('Browser task owners are required');
   const ports = new Set(), tasks = new Map();
   let queue = Promise.resolve(), scheduled = false, registered = false;
   const serial = work => { const result = queue.then(work); queue = result.catch(() => undefined); return result; };
   const writeLink = () => Promise.resolve(chromeApi.storage.session.set({ [DESKTOP_LINK_STORAGE_KEY]: tasks.size })).catch(() => undefined);
+  // Releases the task and its owner state. The port may stay open briefly for the helper's close.
+  const release = entry => {
+    if (entry.released) return;
+    entry.released = true; clearTimeout(entry.timer);
+    if (tasks.get(entry.payload?.task.task_id) === entry) tasks.delete(entry.payload.task.task_id);
+    entry.unsubscribe?.(); entry.controller.abort(); companion.cancelFor(entry);
+    const session = entry.authSession; entry.authSession = null;
+    if (session) session.close();
+    else void owner.release?.(entry.context)?.catch(() => undefined);
+    void writeLink();
+  };
   const close = entry => {
     if (entry.closed) return;
     entry.closed = true; clearTimeout(entry.timer); ports.delete(entry);
-    if (tasks.get(entry.payload?.task.task_id) === entry) tasks.delete(entry.payload.task.task_id);
-    entry.unsubscribe?.(); entry.controller.abort(); companion.cancelFor(entry);
-    if (entry.authSession) entry.authSession.close();
-    else void owner.release?.(entry.context)?.catch(() => undefined);
+    release(entry);
     try { entry.port.disconnect(); } catch { /* disconnected */ }
-    void writeLink();
   };
   function send(entry, value) { if (!entry.closed) { try { entry.port.postMessage(value); } catch { close(entry); } } }
   function refuse(entry, reason) {
+    if (entry.closed || entry.ending) { close(entry); return; }
     send(entry, { type: 'refused', reason: ['profile_mismatch', 'account_mismatch', 'task_expired', 'task_changed'].includes(reason) ? reason : 'unavailable' });
-    close(entry);
+    const task = entry.payload?.task ?? entry.declared;
+    if (!task || entry.closed) { close(entry); return; }
+    // The helper reports the reason to Brain first and then asks to be closed.
+    // Without that request the helper stays and keeps showing the error.
+    entry.ending = { task_id: task.task_id, admission_generation: task.admission_generation };
+    release(entry);
+    entry.timer = setTimeout(() => close(entry), endedGraceMs);
+  }
+  async function sameDocument(entry) {
+    const tab = await chromeApi.tabs.get(entry.port.sender.tab.id);
+    if (entry.closed || tab.url !== entry.port.sender.url || tab.windowId !== entry.port.sender.tab.windowId || tab.pendingUrl) {
+      throw Error('task_changed');
+    }
+  }
+  async function closeHelper(entry) {
+    await sameDocument(entry);
+    const documents = await chromeApi.scripting.executeScript({
+      target: { tabId: entry.port.sender.tab.id, documentIds: [entry.port.sender.documentId] },
+      world: 'ISOLATED', func: closeEndedHelper, args: [entry.ending.admission_generation],
+    });
+    if (documents.length !== 1 || documents[0].frameId !== 0 || documents[0].documentId !== entry.port.sender.documentId
+      || documents[0].result !== true) throw Error('task_changed');
   }
   function assertLive(entry) {
     if (entry.closed || entry.controller.signal.aborted || !entry.payload) throw Error('task_changed');
@@ -104,7 +144,7 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
   function connect(port) {
     if (port?.name !== PORT) return;
     if (!admitDesktopSender(port.sender)) { try { port.disconnect(); } catch { /* disconnected */ } return; }
-    const entry = { port, closed: false, desktop: true, replacement: null,
+    const entry = { port, closed: false, released: false, ending: null, declared: null, desktop: true, replacement: null,
       pairingPending: false, pairingCompleted: false,
       payload: null, context: null, last: null, authSession: null,
       controller: new AbortController(), lastOpen: -Infinity, timer: null, unsubscribe: null };
@@ -115,11 +155,21 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
       if (JSON.stringify(message)?.length > 8192) { refuse(entry, 'task_changed'); return; }
       void serial(async () => {
         if (entry.closed) return;
+        if (entry.ending) {
+          // After a refusal only this helper's close is accepted, once.
+          const ending = entry.ending;
+          if (!exact(message, ['type', 'task_id', 'admission_generation']) || message.type !== 'close'
+            || message.task_id !== ending.task_id || message.admission_generation !== ending.admission_generation) { close(entry); return; }
+          try { await closeHelper(entry); } finally { close(entry); }
+          return;
+        }
         if (exact(message, ['type', 'payload']) && message.type === 'attach') {
           const payload = message.payload;
-          if (entry.payload || !isPayload(payload) || payload.extension_id !== chromeApi.runtime.id
-            || payload.task.admission_generation !== helperGeneration(port.sender.url)
-            || !['pending', 'accepted', 'outcome_unknown', 'completed'].includes(payload.task.state)) throw Error('task_changed');
+          if (entry.payload || entry.declared || !isPayload(payload) || payload.extension_id !== chromeApi.runtime.id
+            || payload.task.admission_generation !== helperGeneration(port.sender.url)) throw Error('task_changed');
+          // The exact helper document's own task. A refusal of it may still close that document.
+          entry.declared = payload.task;
+          if (!['pending', 'accepted', 'outcome_unknown', 'completed'].includes(payload.task.state)) throw Error('task_changed');
           const remaining = payload.task.expires_at * 1000 - now();
           if (remaining <= 0 || remaining > 1800000) throw Error('task_expired');
           const previous = tasks.get(payload.task.task_id);
@@ -144,7 +194,7 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
               deadline: payload.task.expires_at * 1000, now, changed,
               publish: status => send(entry, { type: 'authentication', task_id: payload.task.task_id,
                 admission_generation: payload.task.admission_generation, ...status }),
-              onClose: reason => reason === 'expired' ? refuse(entry, 'task_expired') : close(entry) });
+              onClose: reason => { if (!entry.released) { if (reason === 'expired') refuse(entry, 'task_expired'); else close(entry); } } });
           } else entry.timer = setTimeout(() => refuse(entry, 'task_expired'), remaining);
           entry.unsubscribe = companion.subscribe(announced => {
             if (!entry.closed && payload.task.purpose === 'browser.pairing-confirmation' && companion.owns(entry)) {
@@ -158,6 +208,13 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
         }
         if (!exact(message, ['type', 'task_id', 'admission_generation']) || !entry.payload
           || message.task_id !== entry.payload.task.task_id || message.admission_generation !== entry.payload.task.admission_generation) throw Error('task_changed');
+        if (message.type === 'close') {
+          // A helper that ended on its own side (Brain read task_changed or task_expired) closes the same way.
+          entry.ending = { task_id: entry.payload.task.task_id, admission_generation: entry.payload.task.admission_generation };
+          release(entry);
+          try { await closeHelper(entry); } finally { close(entry); }
+          return;
+        }
         await current(entry);
         const purpose = entry.payload.task.purpose;
         if (message.type === 'finish') {
@@ -173,9 +230,18 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
           assertLive(entry);
           if (documents.length !== 1 || documents[0].frameId !== 0
             || documents[0].documentId !== entry.port.sender.documentId || documents[0].result !== true) throw Error('task_changed');
+          // A finished helper ends its sign-in. Its popup is removed without claiming closure.
+          if (purpose === 'browser.authentication') await Promise.resolve(authentication?.retire?.(entry.payload)).catch(() => undefined);
           send(entry, { type: 'finished', task_id: entry.payload.task.task_id,
             admission_generation: entry.payload.task.admission_generation });
           close(entry); return;
+        }
+        if (message.type === 'focus') {
+          await chromeApi.tabs.update(entry.port.sender.tab.id, { active: true });
+          await chromeApi.windows.update(entry.port.sender.tab.windowId, { focused: true });
+          await current(entry);
+          send(entry, { type: 'focused', task_id: entry.payload.task.task_id, admission_generation: entry.payload.task.admission_generation });
+          return;
         }
         if (message.type === 'ping') {
           send(entry, { type: 'pong', task_id: entry.payload.task.task_id, admission_generation: entry.payload.task.admission_generation });

@@ -277,6 +277,22 @@ class ProvisioningSetupOwner:
             "preparing", "prepare-unknown", "unknown", "completing"}
             or self.ceremonies.row(operation["operation_id"]) is not None)
 
+    def probe_interval(self, operation):
+        authentication = None if self.ceremonies is None else self.ceremonies.authentication
+        return None if authentication is None else authentication.probe_interval(operation["operation_id"])
+
+    async def probe(self, operation):
+        authentication = self.ceremonies.authentication
+        parent = authentication.parent_operation(operation["operation_id"])
+        return await authentication.probe(operation["operation_id"],
+            authorize=lambda: self._read_guard({"operation_id": parent}))
+
+    def wait(self, operation):
+        authentication = self.ceremonies.authentication
+        parent = authentication.parent_operation(operation["operation_id"])
+        return authentication.wait(operation["operation_id"],
+            authorize=lambda: self._read_guard({"operation_id": parent}))
+
     def authorize_initial_scope(self, journey_id, scope):
         """Bind initial completion to the accepted intent, including its exact recovery."""
         with self.store.database.read() as connection:

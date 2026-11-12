@@ -724,3 +724,55 @@ test('an abandoned rotation keeps its reservation until its response is discarde
     await next;
   } finally { channel.close(); }
 });
+
+test('browser.task.end is refused before this channel advertises it and accepted after', async () => {
+  const end = { type: 'session.control', id: crypto.randomUUID(), action: 'browser.task.end',
+    task_id: crypto.randomUUID(), admission_generation: crypto.randomUUID() };
+  const before = fixture(), refusedChannel = await before.open(), seen = [];
+  refusedChannel.onControl(value => seen.push(value));
+  before.application(end);
+  await waitFor(() => refusedChannel.closed);
+  assert.deepEqual(seen, []);
+  const peer = fixture({ reply: document => document.method === 'agent.browser-task.capabilities' ? {} : { secret: 'x' } });
+  const channel = await peer.open(), controls = [];
+  try {
+    channel.onControl(value => controls.push(value));
+    assert.equal(await channel.advertiseBrowserTasks([]), true);
+    assert.deepEqual(peer.received.at(-1).params, { controls: ['browser.task.end'], task_purposes: [] });
+    peer.application(end);
+    await waitFor(() => controls.length === 1);
+    assert.deepEqual(controls[0], { id: end.id, action: end.action,
+      end: { task_id: end.task_id, admission_generation: end.admission_generation } });
+    assert.equal(channel.closed, false);
+  } finally { channel.close(); }
+});
+
+test('an extra, missing or malformed end field closes the channel even after advertisement', async () => {
+  const good = { type: 'session.control', id: crypto.randomUUID(), action: 'browser.task.end',
+    task_id: crypto.randomUUID(), admission_generation: crypto.randomUUID() };
+  const { admission_generation: _missing, ...missing } = good;
+  for (const control of [{ ...good, outcome: 'completed' }, missing, { ...good, task_id: 'task' }]) {
+    const peer = fixture({ reply: () => ({}) }), channel = await peer.open(), controls = [];
+    channel.onControl(value => controls.push(value));
+    await channel.advertiseBrowserTasks([]);
+    peer.application(control);
+    await waitFor(() => channel.closed);
+    assert.deepEqual(controls, [], JSON.stringify(control));
+  }
+});
+
+test('an older Brain answers the advertisement as unknown and the channel stays open without the end control', async () => {
+  let answered = false;
+  const peer = fixture({ reply(document) {
+    if (document.method !== 'agent.browser-task.capabilities') return { secret: 'x' };
+    queueMicrotask(() => { answered = true; peer.application({ type: 'rpc.response', id: document.id, error: 'unknown_method' }); });
+    return undefined;
+  } });
+  const channel = await peer.open();
+  try {
+    assert.equal(await channel.advertiseBrowserTasks([]), false);
+    assert.equal(answered, true);
+    assert.equal(channel.closed, false);
+    assert.equal(channel.endControl, false);
+  } finally { channel.close(); }
+});

@@ -1,5 +1,5 @@
 /** Header-authenticated, bounded stream. Every event contains the entire projection. */
-export async function setupEvents(request, headers, signal, receive) {
+export async function setupEvents(request, headers, signal, receive, notices = null) {
   const response = await request('/api/v1/desktop/setup/events', { credentials: 'same-origin', redirect: 'error',
     cache: 'no-store', headers: { Accept: 'text/event-stream', ...headers }, signal });
   if (!response.ok || !response.body || response.headers.get('content-type')?.split(';')[0] !== 'text/event-stream') {
@@ -24,6 +24,7 @@ export async function setupEvents(request, headers, signal, receive) {
         pending = pending.slice(end + 1);
         if (!line) {
           if (event === 'setup' && data) receive(data);
+          else if (event === 'browser-notices' && data) notices?.(data);
           data = ''; event = '';
         } else if (line.startsWith('event:')) event = line.slice(6).trim();
         else if (line.startsWith('data:')) data += (data ? '\n' : '') + line.slice(5).replace(/^ /u, '');

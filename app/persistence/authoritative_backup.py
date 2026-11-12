@@ -51,7 +51,7 @@ SECURITY_TABLES = (
     'desktop_authentication_commands','desktop_authentication_closures','desktop_browser_ceremonies',
     'desktop_pairing_operations','desktop_activation_sources','desktop_admission_entries',
     'desktop_admission_sessions','desktop_authentication_projections','desktop_browser_observations',
-    'desktop_browser_tasks','desktop_decision_projections','desktop_presentations',
+    'desktop_browser_task_dispatches','desktop_browser_tasks','desktop_decision_projections','desktop_presentations',
     'desktop_setup_journeys','desktop_setup_operations','first_enrollment_contexts',
     'installation_continuation_contexts','onboarding_journeys','onboarding_native_selection_receipts',
     'onboarding_presentation_retirements','onboarding_presentation_sessions','onboarding_progress_outbox',

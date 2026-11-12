@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 
+from app.onboarding import timing
 from app.onboarding.admission import AdmissionRefused, ScopedAdmissions
 from app.onboarding.contract import canonical
 from app.persistence.onboarding import require_journey
@@ -100,6 +101,10 @@ class BrowserTasks:
             raise ValueError("Invalid supported extension")
         self.admissions, self.extension_id = admissions, extension_id
         self.store = admissions.authentication
+        from app.onboarding.helper_events import HelperStreams
+        self.helpers = HelperStreams()
+        # Set by the runtime companion router: sends an authentication task to the paired session.
+        self.dispatcher = None
 
     def prepare(self, operation, purpose, *, deadline=None):
         if self.extension_id is None:
@@ -189,6 +194,7 @@ class BrowserTasks:
         with self.store.database.transaction() as connection:
             connection.execute("UPDATE desktop_browser_tasks SET state='completed' WHERE operation_id=? AND state IN ('pending','accepted','outcome_unknown')",
                                (require_journey(operation_id),))
+        timing.mark(operation_id, "completed")
         events.publish()
 
     def next_expiry(self):

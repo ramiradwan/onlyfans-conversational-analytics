@@ -45,15 +45,12 @@ export function renderBrowserTask(document, value) {
   get('task-title').textContent = pairing ? 'Connect browser' : authentication ? 'Sign in' : 'Browser access';
   get('extension-open').hidden = authentication || pairing || !['needs-consent', 'needs-permission', 'needs-account'].includes(state);
   get('authentication-open').hidden = !authentication || !['auth_idle', 'auth_unconfirmed'].includes(state);
-  get('authentication-browser').hidden = !authentication || state !== 'unavailable';
   get('extension-open').textContent = state === 'needs-account' ? 'Open creator account' : 'Open extension';
   get('task-retry').hidden = !['unavailable', 'service_unavailable', 'account_mismatch'].includes(state);
   get('extension-install').hidden = state !== 'unavailable' || !payload;
   if (payload) {
     get('extension-install').href = 'https://chromewebstore.google.com/detail/' + payload.extension_id;
     get('desktop-return').href = 'ofca://onboarding/?journey=' + payload.task.journey_id;
-    if (authentication && payload.ceremony) get('authentication-browser').href = payload.ceremony.entry_url + '#system-browser';
-    else get('authentication-browser').removeAttribute('href');
   }
   get('desktop-return').hidden = !payload || !(['reported', 'task_completed', 'task_expired', 'task_changed', 'profile_mismatch',
     'account_mismatch', 'auth_checking', 'auth_closed', 'auth_unconfirmed', 'auth_access_required', 'pairing_checking',

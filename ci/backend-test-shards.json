@@ -660,6 +660,10 @@
         "reason": "Paired dispatch must preserve exact desktop, operator, task and operation admission in the Windows encrypted database."
       },
       {
+        "selector": "tests/test_browser_task_events.py",
+        "reason": "Helper and desktop task event streams read the Windows encrypted admission and task journals."
+      },
+      {
         "selector": "tests/test_desktop_browser_tasks.py",
         "reason": "Browser observations, generations and expiry use the Windows encrypted authentication database."
       },
@@ -1194,6 +1198,7 @@
     "tests/test_authoritative_backup.py": 1,
     "tests/test_authoritative_pair.py": 1,
     "tests/test_bootstrap_status.py": 1,
+    "tests/test_browser_task_events.py": 1,
     "tests/test_build_extension_identity.py": 3,
     "tests/test_build_windows.py": 3,
     "tests/test_companion_noise.py": 1,
