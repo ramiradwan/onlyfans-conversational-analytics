@@ -182,7 +182,7 @@ function isTransferRequest(value) {
     && /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(value.operation_id)
     && /^[0-9A-HJKMNP-TV-Z]{12}$/u.test(value.setup_code) && isRecord(value.destination)
     && hasOnlyKeys(value.destination, ['kind', 'destination_id', 'public_key'])
-    && ['desktop', 'browser-extension'].includes(value.destination.kind)
+    && value.destination.kind === 'desktop'
     && /^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/u.test(value.destination.destination_id)
     && isRecord(value.destination.public_key) && hasOnlyKeys(value.destination.public_key, ['crv', 'kty', 'x', 'y'])
     && value.destination.public_key.crv === 'P-256' && value.destination.public_key.kty === 'EC'

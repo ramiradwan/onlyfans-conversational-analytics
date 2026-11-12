@@ -73,7 +73,7 @@ The security checks follow their current owners:
 | Boundary | Regression coverage |
 | --- | --- |
 | Host, origin, role, CSRF and presentation supersession | `test_desktop_admission.py`, `test_desktop_setup_transfer.py` |
-| Replay, original deadlines, uncertain outcomes and source retirement | `test_desktop_coordinator.py`, `test_desktop_setup_transfer.py`, `setup-transfer.test.mjs` |
+| Replay, original deadlines, uncertain outcomes and source retirement | `test_desktop_coordinator.py`, `test_desktop_setup_transfer.py` |
 | Automatic recovery, approval, key loss and restart | `test_desktop_coordinator.py`, initial-handoff and retained claim/binding/finalization domain tests |
 | Exact browser document, participant and independent pairing | browser-task admission tests and extension `desktop-port` / browser-task tests |
 | Closed native URI and child-process ownership | Rust policy, admission, browser and process-lifetime tests |

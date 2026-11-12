@@ -7,7 +7,7 @@ import { createBrowserAuth } from './runtime/browser-auth.mjs';
 import { createPairedBrowserTasks } from './runtime/paired-browser-tasks.mjs';
 import { onboardingHostedOrigin } from './runtime/onboarding-release-config.mjs';
 import { registerOnboardingWorkspace } from './runtime/onboarding-entry.mjs';
-import { registerSetupTransfer } from './runtime/setup-transfer.mjs';
+import { retireSetupTransfer } from './runtime/setup-transfer-retirement.mjs';
 import { applyControl, openBrowserControl, createSurfaceReporter } from './runtime/browser-surface.mjs';
 import { createReadOnlyAgentRuntime } from './transport/read-only-agent-runtime.mjs';
 import { createObserverSigningProvider } from './runtime/observer-signer.mjs';
@@ -252,7 +252,7 @@ companionClient.onRevoked(() => consentController.reconcile());
 void consentController.initialize().catch(() => undefined);
 
 export const onboarding = registerOnboardingWorkspace({ chromeApi: chrome, consentController, identityBridge: provisioningIdentityBridge });
-export const setupTransfer = registerSetupTransfer({ chromeApi: chrome, workspace: onboarding.workspace, identityBridge: provisioningIdentityBridge });
+retireSetupTransfer({ chromeApi: chrome });
 const openLegacySurface = createSurfaceOpener(chrome);
 const openSurface = (request) => request.surface === 'setup' ? onboarding.open(request) : openLegacySurface(request);
 registerSurfaceNavigation(chrome, openSurface);

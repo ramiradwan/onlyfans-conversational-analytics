@@ -1031,11 +1031,9 @@ def test_protected_sparse_policy_uses_only_declared_public_configuration(tmp_pat
     release = json.loads((ROOT / "app/core/customer-release.json").read_bytes())
     origin = release["hosted_api_origin"]
     manifest = json.loads(entries["manifest.json"])
-    manifest["host_permissions"] = ["http://bridge.localhost/*", origin + "/*"]
-    manifest["externally_connectable"] = {"matches": [
-        "http://bridge.localhost:17871/*", release["setup_transfer_receiver_url"],
-        origin + "/public/onboarding/installation-continuation",
-    ]}
+    manifest["host_permissions"] = ["http://bridge.localhost/*"]
+    manifest["externally_connectable"] = {"matches": ["http://bridge.localhost:17871/*"]}
+    assert origin not in json.dumps(manifest)
     entries["manifest.json"] = json.dumps(manifest).encode()
     metadata = json.loads(entries["build-meta.json"])
     metadata["outputs"]["manifest.json"] = "sha256:" + hashlib.sha256(entries["manifest.json"]).hexdigest()

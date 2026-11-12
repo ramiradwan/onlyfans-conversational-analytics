@@ -80,7 +80,6 @@ export function installSurfaceFixture(input) {
           if (message.action === 'prepare_launch') return { ok: true, result: { journey_id: journey, app_link: `ofca://onboarding/?journey=${journey}` } };
           throw Error('unknown_fixture_workspace_action');
         }
-        if (message.type === 'ofca.setup-transfer.v1' && message.action === 'context') return { ok: true, result: null };
         if (message.type === 'ofca.legal-activation.accept-terms') state.terms = true;
         else if (message.type === 'ofca.legal-activation.acknowledge-risk') state.risk = true;
         else if (message.type === 'ofca.legal-activation.activate-software') { state.agreement = false; state.choice = true; }

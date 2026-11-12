@@ -3,11 +3,9 @@ import test from 'node:test';
 import { createSurfaceClient } from '../ui/surface-client.mjs';
 import { productionWorkspaceRoutes } from '../runtime/onboarding-entry.mjs';
 
-test('production workspace has only extension and focused hosted destinations', () => {
+test('production workspace has only the extension destination', () => {
   const routes = productionWorkspaceRoutes({ runtime: { getURL: () => 'chrome-extension://fixture/setup.html' } });
-  assert.deepEqual(Object.keys(routes).sort(), ['extension', 'hosted']);
-  assert.equal(routes.extension, 'chrome-extension://fixture/setup.html');
-  if (routes.hosted !== null) assert.equal(new URL(routes.hosted).pathname, '/public/onboarding/setup');
+  assert.deepEqual(routes, { extension: 'chrome-extension://fixture/setup.html' });
 });
 
 test('repeated worker disconnects exhaust finite recovery; only a visible wake restarts it', async () => {

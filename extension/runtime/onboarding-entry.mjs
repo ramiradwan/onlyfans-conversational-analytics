@@ -1,6 +1,5 @@
 import { createOnboardingWorkspace } from './onboarding-workspace.mjs';
 import { legalReleaseBindings } from './legal-release-bindings.mjs';
-import { setupTransferReceiverUrl } from './onboarding-release-config.mjs';
 import { FULL_REVIEW_INTENT_KEY, fullReviewIntent } from './onboarding-full-intent.mjs';
 import { attachInstalledHelpers } from './browser-task-owner.mjs';
 import { BROWSER_TASK_ADOPTION_KEY, BROWSER_TASK_INSTANCE_KEY, createBrowserTaskEntry, desktopAdopted } from './browser-task-entry.mjs';
@@ -8,7 +7,7 @@ export const WORKSPACE_MESSAGE_TYPE = 'ofca.workspace.v1';
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 export function productionWorkspaceRoutes(chromeApi) {
-  return { extension: chromeApi.runtime.getURL('setup.html'), hosted: setupTransferReceiverUrl };
+  return { extension: chromeApi.runtime.getURL('setup.html') };
 }
 export function registerOnboardingWorkspace({ chromeApi, consentController, identityBridge,
   routes = productionWorkspaceRoutes(chromeApi) }) {
@@ -73,10 +72,7 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
     const run = async () => {
       await reconcileAccount();
       const admitted = await workspace.admit(sender);
-      if (exact(message, ['type', 'action']) && message.action === 'read') {
-        if (admitted.route === 'hosted') throw Error('workspace_local_only');
-        return admitted.record;
-      }
+      if (exact(message, ['type', 'action']) && message.action === 'read') return admitted.record;
       if (exact(message, ['type', 'action', 'route']) && message.action === 'navigate') return workspace.navigate(sender, { route: message.route });
       if (admitted.route !== 'extension') throw Error('workspace_draft_owner');
       if (exact(message, ['type', 'action']) && message.action === 'browser_task') return browserTaskEntry.read(admitted.record);
@@ -98,8 +94,8 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
     void run().then((result) => reply({ ok: true, result }), () => reply({ ok: false, code: 'workspace_unavailable' }));
     return true;
   };
+  // Only the extension's own pages message the workspace. No web page is a sender.
   chromeApi.runtime.onMessage.addListener(listener);
-  chromeApi.runtime.onMessageExternal?.addListener(listener);
   chromeApi.action?.onClicked?.addListener(() => { void open().catch(() => undefined); });
   chromeApi.runtime.onInstalled?.addListener(({ reason }) => {
     if (reason !== 'install') return;

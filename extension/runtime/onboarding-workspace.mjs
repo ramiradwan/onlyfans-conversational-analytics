@@ -1,4 +1,4 @@
-// Preview drafts, exact browser-task ownership, and explicit receiving only.
+// Preview drafts and exact browser-task ownership. The onboarding tab is always an extension page.
 import { workspaceAppLink, NATIVE_LAUNCH_KEY, NATIVE_LAUNCH_TTL_MS } from './onboarding-native-launch.mjs';
 import { createWorkspaceStore } from './onboarding-workspace-store.mjs';
 export { WORKSPACE_STATE_KEY } from './onboarding-workspace-store.mjs';
@@ -8,7 +8,7 @@ export const WORKSPACE_ACTIVITY_KEY = 'onboarding_workspace_activity_v1';
 export const WORKSPACE_IDENTITY_KEY = 'onboarding_workspace_identity_v1';
 const MAX_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
-const ROUTES = ['extension', 'hosted'];
+const ROUTES = ['extension'];
 const DRAFT_FIELDS = ['terms_checked', 'risk_checked', 'full_checked'];
 const validScope = (scope) => exact(scope, ['scope_id', 'disclosure_bundle_id']) && UUID.test(scope.scope_id)
   && /^[0-9a-f]{64}$/u.test(scope.disclosure_bundle_id);
@@ -29,12 +29,9 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
   if (!exact(routes, ROUTES)) fail('workspace_routes_invalid');
   const registered = new Map();
   for (const route of ROUTES) {
-    if (route === 'hosted' && routes[route] === null) continue;
     const url = new URL(routes[route]);
-    const extension = chromeApi.runtime.getURL('setup.html');
     if (url.username || url.password || url.search || url.hash || url.href !== routes[route]
-      || (route === 'extension' ? url.href !== extension
-        : !(url.protocol === 'https:' && url.pathname === '/public/onboarding/setup'))) {
+      || url.href !== chromeApi.runtime.getURL('setup.html')) {
       fail('workspace_routes_invalid');
     }
     if (registered.has(url.href)) fail('workspace_routes_invalid');
@@ -90,20 +87,11 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
     const context = (await extensionContexts()).find((value) => value.tabId === id && value.frameId === 0);
     // Always compare the current document, including reload to the same URL.
     if (context) return { ...tab, url: context.documentUrl, documentId: context.documentId };
-    if (tab.url && parse(tab.url) && chromeApi.scripting?.executeScript) {
-      const documents = await chromeApi.scripting.executeScript({ target: { tabId: id, frameIds: [0] },
-        world: 'ISOLATED', func: () => null });
-      const document = documents.find((value) => value.frameId === 0);
-      if (!document?.documentId) fail('workspace_document_unavailable');
-      return { ...tab, documentId: document.documentId };
-    }
     return tab;
   };
+  // Only extension documents are onboarding tabs. No tab query reads other origins.
   const registeredTabs = async () => {
-    const origins = [...new Set([...registered.keys()].filter((value) => !value.startsWith('chrome-extension:')).map((value) => {
-      const url = new URL(value); return `${url.protocol}//${url.hostname}/*`;
-    }))];
-    const tabs = await chromeApi.tabs.query({ url: origins });
+    const tabs = [];
     for (const context of await extensionContexts()) {
       if (context.frameId === 0 && context.tabId >= 0 && !tabs.some((tab) => tab.id === context.tabId)) {
         tabs.push({ id: context.tabId, windowId: context.windowId, url: context.documentUrl });

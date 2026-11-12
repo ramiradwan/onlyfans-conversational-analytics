@@ -65,13 +65,10 @@ const EXPECTED_OPTIONAL_PERMISSIONS = Object.freeze(['webRequest']);
 const EXPECTED_OPTIONAL_HOST_PERMISSIONS = Object.freeze([
   'https://onlyfans.com/*',
 ]);
+// The hosted origin is only the sign-in popup's navigation target. No manifest
+// value names it: no host access, no external messaging and no connect-src.
 let workspaceHostedOrigin = null;
-let workspaceTransferReceiver = null;
-const workspaceHostPermissions = () => ['http://bridge.localhost/*', ...(workspaceHostedOrigin ? [`${workspaceHostedOrigin}/*`] : [])];
-const workspaceExternalMatches = () => [...EXPECTED_EXTERNAL_MATCHES,
-  ...(workspaceTransferReceiver ? [workspaceTransferReceiver] : []),
-  ...(workspaceHostedOrigin ? [`${workspaceHostedOrigin}/public/onboarding/installation-continuation`] : []),
-];
+const EXPECTED_HOST_PERMISSIONS = Object.freeze(['http://bridge.localhost/*']);
 const EXPECTED_EXTERNAL_MATCHES = Object.freeze(['http://bridge.localhost:17871/*']);
 const EXPECTED_EXTENSION_CSP = "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871; frame-ancestors 'none';";
 const FORBIDDEN_PERMISSIONS = Object.freeze([
@@ -431,7 +428,7 @@ async function compileOnce(signingRule, legalBindings) {
     : [packagedSignerPlugin(signingRule), legalBindingsPlugin(legalBindings)];
   plugins.push({ name: 'onboarding-release-origin', setup(context) {
     context.onLoad({ filter: /[\\/]runtime[\\/]onboarding-release-config\.mjs$/ }, () => ({
-      contents: `export const onboardingHostedOrigin = ${JSON.stringify(workspaceHostedOrigin)};\nexport const setupTransferReceiverUrl = ${JSON.stringify(workspaceTransferReceiver)};`, loader: 'js',
+      contents: `export const onboardingHostedOrigin = ${JSON.stringify(workspaceHostedOrigin)};`, loader: 'js',
     }));
   } });
   const common = {
@@ -522,9 +519,10 @@ function auditManifest(manifest) {
   assert.equal(deriveExtensionId(manifest.key), EXPECTED_EXTENSION_ID);
   assert.deepEqual(manifest.permissions, EXPECTED_PERMISSIONS);
   assert.deepEqual(manifest.optional_permissions, EXPECTED_OPTIONAL_PERMISSIONS);
-  assert.deepEqual(manifest.host_permissions, workspaceHostPermissions());
+  assert.deepEqual(manifest.host_permissions, EXPECTED_HOST_PERMISSIONS);
   assert.deepEqual(manifest.optional_host_permissions, EXPECTED_OPTIONAL_HOST_PERMISSIONS);
-  assert.deepEqual(manifest.externally_connectable?.matches, workspaceExternalMatches());
+  assert.deepEqual(manifest.externally_connectable, { matches: EXPECTED_EXTERNAL_MATCHES });
+  if (workspaceHostedOrigin) assert.equal(JSON.stringify(manifest).includes(workspaceHostedOrigin), false, 'The manifest names the hosted origin');
   assert.deepEqual(manifest.web_accessible_resources, [
     { resources: ['setup.html'], matches: ['http://bridge.localhost/*'] },
   ]);
@@ -898,8 +896,6 @@ export async function auditChromeArchive(
 
 async function writeArtifact(compiled, signingRule, extensionConfig, legalBindings) {
   const sourceManifest = await readJson(path.join(ROOT, 'manifest.json'));
-  sourceManifest.host_permissions = workspaceHostPermissions();
-  sourceManifest.externally_connectable.matches = workspaceExternalMatches();
   auditManifest(sourceManifest);
   // An output option must never turn a build into deletion of an arbitrary tree.
   // Reuse only a directory owned by a prior build; candidates start empty.
@@ -1079,7 +1075,6 @@ async function main() {
     ?? path.join(ROOT, '../app/core/customer-release.json')));
   workspaceHostedOrigin = validateOnboardingReleaseConfig(release,
     { required: process.argv.includes('--package') || process.argv.includes('--audit-package') });
-  workspaceTransferReceiver = release.setup_transfer_receiver_url ? new URL(release.setup_transfer_receiver_url).href : null;
   if (process.argv.includes('--audit-package')) {
     const signingRule = await loadSigningRule({ required: true });
     const legalBindings = await verifyLegalReleaseBindings({ required: true });

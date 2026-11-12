@@ -406,7 +406,8 @@ for (const type of ['ofca.workspace.recovery-prepare.v1','ofca.workspace.saved-c
   'ofca.workspace.launch-return.v1','ofca.workspace.activation.v1','ofca.workspace.recovery-ready.v1']) {
   test(`retired ${type} cannot call the workspace owner`, async () => {
     const f = await savedFixture(); const before = structuredClone(f.local);
-    assert.equal(f.chromeApi.runtime.onMessageExternal.listeners[0]({type},f.sender(),()=>assert.fail('unexpected reply')),false);
+    assert.equal(f.chromeApi.runtime.onMessage.listeners[0]({type},f.sender(),()=>assert.fail('unexpected reply')),false);
+    assert.equal(f.chromeApi.runtime.onMessageExternal.listeners.length, 0, 'no web page can message the workspace');
     assert.deepEqual(f.local,before);
   });
 }

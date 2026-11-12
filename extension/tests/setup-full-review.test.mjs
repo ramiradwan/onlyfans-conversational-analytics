@@ -38,7 +38,6 @@ const stubs = {
     export const createPageActions=()=>({busy:false,lock(){},bind(id,fn){fixture.actions[id]=fn}});`,
   'actions.mjs': 'export const chooseMode=async()=>{},transition=()=>{},restoreAccess=()=>{},openCreatorAccount=()=>{};',
   'handoff.mjs': 'export const createHandoffFinisher=()=>()=>{},returnToDesktop=()=>{};',
-  'setup-transfer.mjs': 'export const SETUP_TRANSFER_MESSAGE="transfer",bindSetupTransfer=()=>null,renderReceivingContext=()=>{};',
 };
 const bundle = await build({ entryPoints: [fileURLToPath(new URL('../setup.js', import.meta.url))],
   bundle: true, write: false, format: 'iife', plugins: [{ name: 'setup-platform-ports', setup(bundler) {

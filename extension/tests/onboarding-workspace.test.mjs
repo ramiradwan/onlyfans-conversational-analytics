@@ -6,15 +6,22 @@ const journey = 'b88c2d88-dbbf-4fdb-8743-9f92cbe46fed';
 const scope = { scope_id: 'b88c2d88-dbbf-4fdb-8743-9f92cbe46fea', disclosure_bundle_id: 'a'.repeat(64) };
 const nextScope = { ...scope, scope_id: 'b88c2d88-dbbf-4fdb-8743-9f92cbe46feb' };
 const checked = { terms_checked: true, risk_checked: true, full_checked: true };
-const routes = { extension: 'chrome-extension://synthetic/setup.html', hosted: 'https://onboarding.example.test/public/onboarding/setup' };
+const routes = { extension: 'chrome-extension://synthetic/setup.html' };
 function fixture(initialTabs = [], routeOverrides = {}) {
   const values = {}, session = {}, calls = [], tabs = initialTabs.map((tab) => ({ ...tab }));
   const storage = (data) => ({ async get(key) { return structuredClone({ [key]: data[key] }); },
     async set(record) { Object.assign(data, structuredClone(record)); },
     async remove(keys) { for (const key of keys) delete data[key]; } });
-  const chromeApi = { runtime: { id: 'synthetic', getURL: (path) => `chrome-extension://synthetic/${path}` },
+  // Only extension documents are discoverable, through their own contexts. No tab query exists.
+  const chromeApi = { runtime: { id: 'synthetic', getURL: (path) => `chrome-extension://synthetic/${path}`,
+      async getContexts({ documentIds } = {}) {
+        return tabs.filter((tab) => typeof tab.url === 'string' && tab.url.startsWith('chrome-extension://synthetic/'))
+          .map((tab) => ({ tabId: tab.id, windowId: tab.windowId, frameId: 0, documentUrl: tab.url,
+            ...(tab.documentId ? { documentId: tab.documentId } : {}) }))
+          .filter((context) => !documentIds || documentIds.includes(context.documentId));
+      } },
     storage: { local: storage(values), session: storage(session) },
-    tabs: { async query() { return structuredClone(tabs); },
+    tabs: { async query() { throw Error('tabs.query is not used'); },
       async get(id) { const tab = tabs.find((entry) => entry.id === id); if (!tab) throw Error('closed'); return { ...tab }; },
       async create(options) { calls.push(['create', options]); const tab = { id: tabs.length + 10, windowId: 1, ...options }; tabs.push(tab); return { ...tab }; },
       async update(id, options) { calls.push(['update', id, options]); const tab = tabs.find((entry) => entry.id === id); Object.assign(tab, options); return { ...tab }; } },
@@ -28,7 +35,7 @@ function fixture(initialTabs = [], routeOverrides = {}) {
 }
 test('concurrent explicit opens adopt the trusted existing journey and never navigate a user tab', async () => {
   const f = fixture([{ id: 1, windowId: 1, url: 'https://onlyfans.com/my/chats' },
-    { id: 2, windowId: 1, url: `${routes.hosted}#journey=${journey}` }]);
+    { id: 2, windowId: 1, url: `${routes.extension}#journey=${journey}` }]);
   const opened = await Promise.all([f.open(), f.open()]);
   assert.deepEqual(opened.map((item) => item.tab_id), [2, 2]);
   assert.equal(f.tabs.length, 2);
@@ -51,12 +58,12 @@ test('draft survives worker restart and tab close; has no authority fields or ef
 });
 test('navigation uses registered route IDs and rejects extra URL/token fields and stale senders', async () => {
   const f = fixture(); await f.open(); const sender = f.sender();
-  for (const request of [{ route: 'https://evil.test/' }, { route: 'hosted', url: 'https://evil.test/' },
-    { route: 'hosted', token: 'secret' }]) await assert.rejects(f.workspace.navigate(sender, request));
+  for (const request of [{ route: 'https://evil.test/' }, { route: 'hosted' }, { route: 'extension', url: 'https://evil.test/' },
+    { route: 'extension', token: 'secret' }]) await assert.rejects(f.workspace.navigate(sender, request));
   await assert.rejects(f.workspace.saveDraft(sender, { scope_id: scope.scope_id, draft: { ...checked, consent_granted: true } }));
-  await assert.rejects(f.workspace.navigate({ ...sender, frameId: 1 }, { route: 'hosted' }));
+  await assert.rejects(f.workspace.navigate({ ...sender, frameId: 1 }, { route: 'extension' }));
   f.tabs[0].url = 'https://onlyfans.com/my/chats';
-  await assert.rejects(f.workspace.navigate(sender, { route: 'hosted' }), /workspace_sender_stale/);
+  await assert.rejects(f.workspace.navigate(sender, { route: 'extension' }), /workspace_sender_stale/);
   await f.open(); assert.equal(f.tabs.length, 2);
   assert.equal(f.tabs[0].url, 'https://onlyfans.com/my/chats');
 });
@@ -73,17 +80,20 @@ test('draft scope fences stale writes and clears Full choice on creator change, 
 });
 test('only the exact registered path and canonical opaque reference can be adopted', async () => {
   const badUrls = [
-    `https://onboarding.example.test/unregistered#journey=${journey}`,
-    `${routes.hosted}?secret=value#journey=${journey}`, `${routes.hosted}#journey=${journey}&token=x`,
-    `${routes.hosted}#journey=${journey.toUpperCase()}`, `https://evil.test/#journey=${journey}`,
+    `https://onboarding.example.test/public/onboarding/setup#journey=${journey}`,
+    `chrome-extension://synthetic/options.html#journey=${journey}`,
+    `${routes.extension}?secret=value#journey=${journey}`, `${routes.extension}#journey=${journey}&token=x`,
+    `${routes.extension}#journey=${journey.toUpperCase()}`, `https://evil.test/#journey=${journey}`,
   ];
   for (const url of badUrls) { const f = fixture([{ id: 1, windowId: 1, url }]); await f.open(); assert.equal(f.tabs.length, 2); }
-  assert.throws(() => createOnboardingWorkspace({ chromeApi: fixture().chromeApi,
-    routes: { ...routes, hosted: 'https://user:password@onboarding.example.test/setup' } }));
+  for (const changed of [{ ...routes, hosted: 'https://onboarding.example.test/public/onboarding/setup' },
+    { extension: 'chrome-extension://synthetic/options.html' }, { extension: 'https://onboarding.example.test/public/onboarding/setup' }]) {
+    assert.throws(() => createOnboardingWorkspace({ chromeApi: fixture().chromeApi, routes: changed }));
+  }
 });
 test('installation resumes only the existing setup document without changing focus', async () => {
   const f = fixture([{ id: 1, windowId: 1, url: 'https://onlyfans.com/my/chats', active: true },
-    { id: 2, windowId: 1, url: `${routes.hosted}#journey=${journey}`, active: false }]);
+    { id: 2, windowId: 1, url: `${routes.extension}#journey=${journey}`, active: false }]);
   await f.workspace.resumeExisting({ draft_scope: scope, route: 'extension' });
   assert.equal(f.tabs.length, 2);
   assert.equal(f.tabs[1].url, `${routes.extension}#journey=${journey}`);
