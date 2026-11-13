@@ -48,8 +48,7 @@
         "extension/ui/surface-client.mjs",
         "extension/ui/dom.mjs",
         "extension/runtime/ui-surfaces.mjs",
-        "extension/runtime/onboarding-workspace.mjs",
-        "extension/ui/setup-transfer.mjs"
+        "extension/runtime/onboarding-workspace.mjs"
       ]
     },
     "extension.options": {
@@ -178,11 +177,6 @@
       "id": "extension-full-status",
       "entry_state": "extension.desktop_app_needed",
       "success_state": "extension.full_ready"
-    },
-    {
-      "id": "explicit-setup-transfer",
-      "entry_state": "extension.setup_code_entry",
-      "success_state": "extension.browser_access_ready"
     },
     {
       "id": "native-installation-ownership",
@@ -2021,33 +2015,6 @@
           "kind": "unit",
           "file": "frontend/tests/ConversationQuestions.test.tsx",
           "name": "shows unavailable questions without old results"
-        }
-      ]
-    },
-    {
-      "id": "extension.setup_code_entry",
-      "surface": "extension.setup",
-      "anchor": {
-        "file": "extension/setup.html",
-        "text": "id=\"setup-transfer-entry\""
-      },
-      "transitions": [
-        {
-          "to": "extension.software_activation",
-          "by": "user",
-          "action": "setup-transfer-back"
-        }
-      ],
-      "evidence": [
-        {
-          "kind": "unit",
-          "file": "extension/tests/setup-transfer-ui.test.mjs",
-          "name": "code validation stays on the receiving screen and preserves input on an unknown response"
-        },
-        {
-          "kind": "unit",
-          "file": "extension/tests/setup-transfer-ui.test.mjs",
-          "name": "receiving entry uses the same tab and a body, never a code or key in a URL"
         }
       ]
     },

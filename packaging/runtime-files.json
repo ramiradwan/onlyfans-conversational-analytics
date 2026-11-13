@@ -135,7 +135,8 @@
         "0034_nlp_dependencies.sql": "1337162d5f43f0b34a509ef298965807450362ae52ffc8b08a153fac95e25a67",
         "0035_text_analysis_authority.sql": "87f8846df9c7c6728edc3e205a8f5f0c36d92b769ae3e6ec9e5a5eb19b8372a7",
         "0036_authoritative_pair.sql": "93686f6dd3a6a804b2d33fa8afec00129ea799f54d516f000eb68ebd2e5b398b",
-        "0037_text_analysis_reissue.sql": "b786935312c86ac75d0a8cdab3a7e7817b69f914309e2360f6f1a191073968be"
+        "0037_text_analysis_reissue.sql": "b786935312c86ac75d0a8cdab3a7e7817b69f914309e2360f6f1a191073968be",
+        "0038_browser_task_dispatches.sql": "4ae5296c0fecf397f9152b71f9a80cc6b69956e77cf67f1bce043715ef822ffc"
       }
     },
     {
