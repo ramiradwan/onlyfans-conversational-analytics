@@ -83,6 +83,7 @@
     "tests/test_bounded_publication.py": 2,
     "tests/test_browser_authentication_client.py": 1,
     "tests/test_browser_ceremony_client.py": 1,
+    "tests/test_browser_ceremony_wait_client.py": 1,
     "tests/test_browser_task_ends.py": 1,
     "tests/test_browser_task_events.py": 2,
     "tests/test_build_extension_identity.py": 2,
@@ -935,6 +936,7 @@
       "tests/test_workflow_contexts.py": 0.17582839999977296
     },
     "unmeasured_files": [
+      "tests/test_browser_ceremony_wait_client.py",
       "tests/test_browser_task_ends.py",
       "tests/test_browser_task_events.py",
       "tests/test_msix_nlp_preparation.py",

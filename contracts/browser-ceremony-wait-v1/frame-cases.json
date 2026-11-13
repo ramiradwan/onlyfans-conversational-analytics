@@ -1,0 +1,424 @@
+[
+  {
+    "case_id": "first-frame-is-current-hint",
+    "deadline": 2000,
+    "expected": {
+      "end": "open",
+      "frames": [
+        [
+          1,
+          "active",
+          "awaiting-authentication"
+        ]
+      ]
+    },
+    "steps": [
+      {
+        "domain_status": "awaiting-authentication",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1000,
+        "presentation_state": "active",
+        "revision": 1,
+        "source_current": true
+      }
+    ]
+  },
+  {
+    "case_id": "unrelated-wakeups-send-nothing",
+    "deadline": 2000,
+    "expected": {
+      "end": "open",
+      "frames": [
+        [
+          1,
+          "active",
+          "awaiting-authentication"
+        ]
+      ]
+    },
+    "steps": [
+      {
+        "domain_status": "awaiting-authentication",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1000,
+        "presentation_state": "active",
+        "revision": 1,
+        "source_current": true
+      },
+      {
+        "domain_status": "awaiting-authentication",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1001,
+        "presentation_state": "active",
+        "revision": 1,
+        "source_current": true
+      },
+      {
+        "domain_status": "awaiting-authentication",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1002,
+        "presentation_state": "active",
+        "revision": 1,
+        "source_current": true
+      },
+      {
+        "domain_status": "awaiting-authentication",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1003,
+        "presentation_state": "active",
+        "revision": 1,
+        "source_current": true
+      }
+    ]
+  },
+  {
+    "case_id": "admission-revision-change-frames",
+    "deadline": 2000,
+    "expected": {
+      "end": "open",
+      "frames": [
+        [
+          1,
+          "active",
+          "awaiting-authentication"
+        ],
+        [
+          2,
+          "active",
+          "awaiting-confirmation"
+        ]
+      ]
+    },
+    "steps": [
+      {
+        "domain_status": "awaiting-authentication",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1000,
+        "presentation_state": "active",
+        "revision": 1,
+        "source_current": true
+      },
+      {
+        "domain_status": "awaiting-confirmation",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1010,
+        "presentation_state": "active",
+        "revision": 2,
+        "source_current": true
+      }
+    ]
+  },
+  {
+    "case_id": "domain-status-change-without-revision-frames",
+    "deadline": 2000,
+    "expected": {
+      "end": "open",
+      "frames": [
+        [
+          4,
+          "active",
+          "pending"
+        ],
+        [
+          4,
+          "active",
+          "committed"
+        ]
+      ]
+    },
+    "steps": [
+      {
+        "domain_status": "pending",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1000,
+        "presentation_state": "active",
+        "revision": 4,
+        "source_current": true
+      },
+      {
+        "domain_status": "committed",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1010,
+        "presentation_state": "active",
+        "revision": 4,
+        "source_current": true
+      }
+    ]
+  },
+  {
+    "case_id": "retirement-frames-then-ends",
+    "deadline": 2000,
+    "expected": {
+      "end": "terminal",
+      "frames": [
+        [
+          4,
+          "active",
+          "pending"
+        ],
+        [
+          5,
+          "retired",
+          "pending"
+        ]
+      ]
+    },
+    "steps": [
+      {
+        "domain_status": "pending",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1000,
+        "presentation_state": "active",
+        "revision": 4,
+        "source_current": true
+      },
+      {
+        "domain_status": "pending",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1010,
+        "presentation_state": "retired",
+        "revision": 5,
+        "source_current": true
+      },
+      {
+        "domain_status": "committed",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1020,
+        "presentation_state": "retired",
+        "revision": 6,
+        "source_current": true
+      }
+    ]
+  },
+  {
+    "case_id": "already-retired-first-frame-ends",
+    "deadline": 2000,
+    "expected": {
+      "end": "terminal",
+      "frames": [
+        [
+          7,
+          "retired",
+          "committed"
+        ]
+      ]
+    },
+    "steps": [
+      {
+        "domain_status": "committed",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1000,
+        "presentation_state": "retired",
+        "revision": 7,
+        "source_current": true
+      }
+    ]
+  },
+  {
+    "case_id": "expired-presentation-ends",
+    "deadline": 2000,
+    "expected": {
+      "end": "terminal",
+      "frames": [
+        [
+          1,
+          "active",
+          "pending"
+        ],
+        [
+          1,
+          "expired",
+          "pending"
+        ]
+      ]
+    },
+    "steps": [
+      {
+        "domain_status": "pending",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1000,
+        "presentation_state": "active",
+        "revision": 1,
+        "source_current": true
+      },
+      {
+        "domain_status": "pending",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1500,
+        "presentation_state": "expired",
+        "revision": 1,
+        "source_current": true
+      }
+    ]
+  },
+  {
+    "case_id": "deadline-ends-without-frame",
+    "deadline": 2000,
+    "expected": {
+      "end": "deadline",
+      "frames": [
+        [
+          1,
+          "active",
+          "pending"
+        ]
+      ]
+    },
+    "steps": [
+      {
+        "domain_status": "pending",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1000,
+        "presentation_state": "active",
+        "revision": 1,
+        "source_current": true
+      },
+      {
+        "domain_status": "ready",
+        "key_current": true,
+        "kind": "observe",
+        "now": 2000,
+        "presentation_state": "active",
+        "revision": 2,
+        "source_current": true
+      }
+    ]
+  },
+  {
+    "case_id": "key-recheck-ends-without-frame",
+    "deadline": 2000,
+    "expected": {
+      "end": "recheck",
+      "frames": [
+        [
+          1,
+          "active",
+          "pending"
+        ]
+      ]
+    },
+    "steps": [
+      {
+        "domain_status": "pending",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1000,
+        "presentation_state": "active",
+        "revision": 1,
+        "source_current": true
+      },
+      {
+        "domain_status": "ready",
+        "key_current": false,
+        "kind": "observe",
+        "now": 1010,
+        "presentation_state": "active",
+        "revision": 2,
+        "source_current": true
+      }
+    ]
+  },
+  {
+    "case_id": "source-recheck-ends-without-first-frame",
+    "deadline": 2000,
+    "expected": {
+      "end": "recheck",
+      "frames": []
+    },
+    "steps": [
+      {
+        "domain_status": "pending",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1000,
+        "presentation_state": "active",
+        "revision": 1,
+        "source_current": false
+      }
+    ]
+  },
+  {
+    "case_id": "disconnect-ends",
+    "deadline": 2000,
+    "expected": {
+      "end": "disconnect",
+      "frames": [
+        [
+          1,
+          "active",
+          "pending"
+        ]
+      ]
+    },
+    "steps": [
+      {
+        "domain_status": "pending",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1000,
+        "presentation_state": "active",
+        "revision": 1,
+        "source_current": true
+      },
+      {
+        "kind": "disconnect",
+        "now": 1005
+      }
+    ]
+  },
+  {
+    "case_id": "revision-regression-still-frames-on-difference",
+    "deadline": 2000,
+    "expected": {
+      "end": "open",
+      "frames": [
+        [
+          3,
+          "active",
+          "pending"
+        ],
+        [
+          2,
+          "active",
+          "pending"
+        ]
+      ]
+    },
+    "steps": [
+      {
+        "domain_status": "pending",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1000,
+        "presentation_state": "active",
+        "revision": 3,
+        "source_current": true
+      },
+      {
+        "domain_status": "pending",
+        "key_current": true,
+        "kind": "observe",
+        "now": 1010,
+        "presentation_state": "active",
+        "revision": 2,
+        "source_current": true
+      }
+    ]
+  }
+]

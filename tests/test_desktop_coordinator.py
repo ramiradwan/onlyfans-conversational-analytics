@@ -1,5 +1,7 @@
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -647,15 +649,43 @@ async def test_reconnect_honours_retry_after(setup):
 
 
 @pytest.mark.asyncio
-async def test_repeated_or_older_hints_are_ignored(setup):
+async def test_repeated_hints_are_ignored(setup):
     coordinator, owner, session, _ = setup
-    hints = Hints((_hint(2), _hint(2), _hint(1, "retired", "committed"), "hold"))
+    hints = Hints((_hint(2), _hint(2), "hold"))
     request, _ = await _waited_connect(setup, hints)
     try:
         await _until(lambda: request["operation_id"] in coordinator._held)
         await _until(lambda: not coordinator._workers)
         await asyncio.sleep(0.05)
         assert [reconcile for _, reconcile in owner.calls].count(True) == 1
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.parametrize("case", json.loads((Path(__file__).resolve().parents[1]
+    / "contracts/browser-ceremony-wait-v1/frame-cases.json").read_bytes()), ids=lambda case: case["case_id"])
+async def test_every_published_wait_frame_starts_proof_reconciliation(setup, case):
+    coordinator, owner, session, _ = setup
+    frames = case["expected"]["frames"]
+    opened, hold = asyncio.Event(), asyncio.Event()
+
+    def reconciliations():
+        return sum(reconcile for _, reconcile in owner.calls)
+
+    async def wait(operation):
+        opened.set()
+        for frame in frames:
+            before = reconciliations()
+            yield tuple(frame)
+            await _until(lambda: reconciliations() > before)
+            await _until(lambda: not coordinator._workers)
+        await hold.wait()
+
+    request, _ = await _waited_connect(setup, wait)
+    try:
+        await _until(opened.is_set)
+        await _until(lambda: reconciliations() == len(frames))
+        assert coordinator.receipt(session, request["operation_id"])["state"] == "waiting"
     finally:
         await coordinator.stop()
 

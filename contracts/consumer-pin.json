@@ -1,5 +1,5 @@
 {
-  "aggregate_bundle_sha256": "378c9a59b52c6bc7eeb5a264588139754b755a3cc307425a107bece8c20dd068",
+  "aggregate_bundle_sha256": "d1ccf95e17cc3c27cf0312f7409fc17aaa347d65e6775105380fd86b99a8af1a",
   "conformance_manifests": [
     {
       "export": "installation-setup-continuation-v1",
@@ -57,6 +57,11 @@
       "sha256": "fdb51040649fb73596f47268bbca4488ed5bca6d37e2ccd9dc95657c3ffd8279"
     },
     {
+      "export": "browser-ceremony-wait-v1",
+      "path": "browser-ceremony-wait-v1/manifest.json",
+      "sha256": "a43bef7ae0996bfa96e64aa3e192636f02212256816f4dfbe95c71da61a896de"
+    },
+    {
       "export": "desktop-decision-v1",
       "path": "desktop-decision-v1/manifest.json",
       "sha256": "54dabb1007de3caae82a9bea4556d0ee48f6e5053cba328f4f94d6c532ca77e2"
@@ -109,7 +114,7 @@
   ],
   "consumer_pin_version": 4,
   "contract_manifest_path": "manifest.json",
-  "contract_manifest_sha256": "88330f89f0b9e72905a01ccfb8545015151c0d7d675c3b0c0076c9eb2dd75aee",
+  "contract_manifest_sha256": "ba2cf309dc8b169dd4c6758f1f3603cd87124da623621217ed8e6a79c2c68cc6",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -135,6 +140,7 @@
     "installation-setup-continuation-v2",
     "complimentary-onboarding-activation-v1",
     "browser-ceremony-v1",
+    "browser-ceremony-wait-v1",
     "desktop-decision-v1",
     "browser-authentication-selection-v1",
     "browser-authentication-selection-v2",
@@ -188,11 +194,11 @@
       "sha256": "58d266fcee4f987091b67ee3adf6e517531606a226d35b75c5870b748908e504"
     }
   ],
-  "source_commit": "16b544510a8da883780c61c4d2fc2b74f1945ac2",
+  "source_commit": "5e76aedc2e2c0bccdba657adbed3ddb9c91ad6ad",
   "source_contract_manifest_path": "source-contract-manifest/contract-manifest.json",
-  "source_contract_manifest_sha256": "8b3188126978fcc5d0ab3d234297e4fdea4177ab8312ecaaf0a66d267f62d22f",
+  "source_contract_manifest_sha256": "696f490f5967f8e278bc69d8ea00d79758de82b4a8f7f7e1a61bca221bf06914",
   "source_repository": "ramiradwan/creator-platform-contracts",
-  "source_tree": "62569a4df2985598ab6b6785205d5559eb6923a3",
+  "source_tree": "a5381514946ac4de5c11d8942193ace6769e547f",
   "supported_profiles": [
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
@@ -201,6 +207,8 @@
     "urn:bridge-clean:browser-authentication-selection:v1",
     "urn:bridge-clean:browser-authentication-selection:v2",
     "urn:bridge-clean:browser-ceremony-proof:v1",
+    "urn:bridge-clean:browser-ceremony-wait-proof:v1",
+    "urn:bridge-clean:browser-ceremony-wait:v1",
     "urn:bridge-clean:browser-ceremony:v1",
     "urn:bridge-clean:capability-license-activation-package:v1",
     "urn:bridge-clean:capability-license-activation-proof:v1",

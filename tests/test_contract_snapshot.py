@@ -123,8 +123,8 @@ def test_consumer_pin_names_exact_published_contract_authority() -> None:
     assert pin["source_tree"] == APPROVED_SOURCE_TREE
     assert pin["source_contract_manifest_path"] == SOURCE_MANIFEST_TARGET
     assert pin["source_contract_manifest_sha256"] == APPROVED_SOURCE_MANIFEST_SHA256
-    assert pin["aggregate_bundle_sha256"] == "378c9a59b52c6bc7eeb5a264588139754b755a3cc307425a107bece8c20dd068"
-    assert pin["contract_manifest_sha256"] == "88330f89f0b9e72905a01ccfb8545015151c0d7d675c3b0c0076c9eb2dd75aee"
+    assert pin["aggregate_bundle_sha256"] == "d1ccf95e17cc3c27cf0312f7409fc17aaa347d65e6775105380fd86b99a8af1a"
+    assert pin["contract_manifest_sha256"] == "ba2cf309dc8b169dd4c6758f1f3603cd87124da623621217ed8e6a79c2c68cc6"
     assert {record["export"]: record["sha256"] for record in pin["conformance_manifests"]} == {
         "text-analysis-license-reissue-v2": "b8d059dcdfedebad1da79eb649970b4cb28abd474b80eb3b731cf586032d0e80",
         "text-analysis-license-reissue-response-conformance-v1": "caefdad92b2ef29058b2bb9876b28df16756280658e5010ca9725af55a1b08c5",
@@ -137,6 +137,7 @@ def test_consumer_pin_names_exact_published_contract_authority() -> None:
         "browser-authentication-selection-v2": "67c934cb034f375be0bba0dfa63c209a83e8b5fd6a148c797d10aa6a66b05ee6",
         "desktop-decision-v1": "54dabb1007de3caae82a9bea4556d0ee48f6e5053cba328f4f94d6c532ca77e2",
         "browser-ceremony-v1": "fdb51040649fb73596f47268bbca4488ed5bca6d37e2ccd9dc95657c3ffd8279",
+        "browser-ceremony-wait-v1": "a43bef7ae0996bfa96e64aa3e192636f02212256816f4dfbe95c71da61a896de",
         "initial-installation-handoff-v2": "3a60ed6d7653ec62820b98725a4a9449dff1a675708102b0a893a99af07dcd53",
         "installation-setup-continuation-v2": "8825be19fce06abf6d93f6da0d82d50ff64d04ffb24c854d901f1de214d55a7b",
         "complimentary-onboarding-activation-v1": "876d1fcebbb93291bfeefbd696260ef311d9026725e4cf6c130729018cf571f3",
@@ -207,6 +208,10 @@ def test_installation_continuation_export_is_closed_and_manifest_bound() -> None
     ("browser-authentication-selection-v2", (
         "profiles/browser-authentication-selection/v2/profile.json",
         "profiles/browser-authentication-selection-proof/v2/profile.json",
+    )),
+    ("browser-ceremony-wait-v1", (
+        "profiles/browser-ceremony-wait/v1/profile.json",
+        "profiles/browser-ceremony-wait-proof/v1/profile.json",
     )),
     ("browser-ceremony-v1", (
         "profiles/browser-ceremony/v1/profile.json",

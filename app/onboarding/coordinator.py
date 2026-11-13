@@ -535,7 +535,7 @@ class DesktopOnboardingCoordinator:
                         self._held.add(operation_id)
                         self._probe_at.pop(operation_id, None)
                         attempt = 0
-                    if hint != last and (last is None or hint[0] >= last[0]):
+                    if hint != last:
                         last = hint
                         timing.mark(operation_id, "frame")
                         self._reconcile_soon(operation)

@@ -1,5 +1,5 @@
 {
-  "content_digest": "378c9a59b52c6bc7eeb5a264588139754b755a3cc307425a107bece8c20dd068",
+  "content_digest": "d1ccf95e17cc3c27cf0312f7409fc17aaa347d65e6775105380fd86b99a8af1a",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -25,6 +25,7 @@
     "installation-setup-continuation-v2",
     "complimentary-onboarding-activation-v1",
     "browser-ceremony-v1",
+    "browser-ceremony-wait-v1",
     "desktop-decision-v1",
     "browser-authentication-selection-v1",
     "browser-authentication-selection-v2",
@@ -192,6 +193,26 @@
       "path": "browser-ceremony-v1/schema-cases.json",
       "sha256": "6102ee62ff841fde0a5a047312485a5f7b04d7e0ed4bd8765c8fda4ffee94d15",
       "size": 1544404
+    },
+    {
+      "path": "browser-ceremony-wait-v1/frame-cases.json",
+      "sha256": "ca8340c5b3aac7b9bc16aad5f892254b57d16ffc922042f810436a0298dd4a46",
+      "size": 8681
+    },
+    {
+      "path": "browser-ceremony-wait-v1/manifest.json",
+      "sha256": "a43bef7ae0996bfa96e64aa3e192636f02212256816f4dfbe95c71da61a896de",
+      "size": 3262
+    },
+    {
+      "path": "browser-ceremony-wait-v1/proof-cases.json",
+      "sha256": "9058ed0eb7cb0de077f42feb75d03f624f54972a0541d85bc2203bb18c2a026e",
+      "size": 101447
+    },
+    {
+      "path": "browser-ceremony-wait-v1/schema-cases.json",
+      "sha256": "23fa285d11690fd9a23267a435242b885efb7ee4e0128f3406a57ed54778a2e4",
+      "size": 44108
     },
     {
       "path": "capability-license-delivery-recovery-v1/admission-cases.json",
@@ -1195,8 +1216,8 @@
     },
     {
       "path": "catalog/contracts.yaml",
-      "sha256": "d5b439a0af1117c8ab917d0fbb4e16620edd2545b66943f990c6a25fef306290",
-      "size": 70262
+      "sha256": "092c3d0a777e7567ba830b971f1b614e776e8c9d0be3ebe2de9daee9d45bde37",
+      "size": 71857
     },
     {
       "path": "catalog/deferred-setup-preparation-policy-v1.json",
@@ -4044,6 +4065,11 @@
       "size": 15845
     },
     {
+      "path": "openapi/browser-ceremony-wait-v1.openapi.yaml",
+      "sha256": "df53b01b7c842c2543153b8fb10929b0ce9b69fe5a798419ce339fe8ef93b93e",
+      "size": 3354
+    },
+    {
       "path": "openapi/capability-license-delivery-recovery-v1.openapi.yaml",
       "sha256": "53266e8acc8488b7fa4698217cae0617d730d555e803cfae6f8150c6daa50336",
       "size": 11556
@@ -4247,6 +4273,16 @@
       "path": "profiles/browser-ceremony-proof/v1/profile.json",
       "sha256": "b62d4150decd9cb5d345eca410c7b0ab31e1e5e07e6bd97c8cf20304e024abd7",
       "size": 1761
+    },
+    {
+      "path": "profiles/browser-ceremony-wait-proof/v1/profile.json",
+      "sha256": "9c50830179145c607a39f85edb0283d53fa052a590ba6de10388c46054f12b11",
+      "size": 1687
+    },
+    {
+      "path": "profiles/browser-ceremony-wait/v1/profile.json",
+      "sha256": "dfd094d73cbd15babebe0840913e55d2ddbabd7593c25d2821aa74377fe2460a",
+      "size": 2130
     },
     {
       "path": "profiles/browser-ceremony/v1/profile.json",
@@ -4647,6 +4683,36 @@
       "path": "schemas/browser-authentication-selection/v2/switch-response.schema.json",
       "sha256": "8087c950af5d9afc0c623f7e14a4af937cab2a84bc9b7f122558da848851a95a",
       "size": 530
+    },
+    {
+      "path": "schemas/browser-ceremony-wait/v1/definitions.schema.json",
+      "sha256": "019ea0cec3a726b4c8af08c3edfd2f1bdd2583516e8f0a2a6caf23e40cead691",
+      "size": 1005
+    },
+    {
+      "path": "schemas/browser-ceremony-wait/v1/error.schema.json",
+      "sha256": "9f1ec516fbb6eee759001f2b9ee39832cd11b262c5f089492d11ff9db6f4a8ab",
+      "size": 648
+    },
+    {
+      "path": "schemas/browser-ceremony-wait/v1/proof-challenge-request.schema.json",
+      "sha256": "5728911259800c3e904c05df16118e35db0a8f17a5286c56fe466635482138a6",
+      "size": 813
+    },
+    {
+      "path": "schemas/browser-ceremony-wait/v1/proof-challenge-response.schema.json",
+      "sha256": "7c38766136d2a81e54a7663c679b144add43bbf13d1c990bc9983f7b4067f54b",
+      "size": 810
+    },
+    {
+      "path": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+      "sha256": "df41f4f93485ea343eebb627a4ad2ea34849a9d5a593f2127c1a6ee3c9d15a3f",
+      "size": 1027
+    },
+    {
+      "path": "schemas/browser-ceremony-wait/v1/wait-request.schema.json",
+      "sha256": "af6024da39a6ae4c43604549dd9e01e4895db7628c4a1e4092855d1c26a92220",
+      "size": 501
     },
     {
       "path": "schemas/browser-ceremony/v1/cancel-request.schema.json",
@@ -6005,8 +6071,8 @@
     },
     {
       "path": "source-contract-manifest/contract-manifest.json",
-      "sha256": "8b3188126978fcc5d0ab3d234297e4fdea4177ab8312ecaaf0a66d267f62d22f",
-      "size": 81087
+      "sha256": "696f490f5967f8e278bc69d8ea00d79758de82b4a8f7f7e1a61bca221bf06914",
+      "size": 82891
     },
     {
       "path": "text-analysis-authority-v1/admission-cases.json",
@@ -6143,6 +6209,8 @@
     "urn:bridge-clean:browser-authentication-selection:v1",
     "urn:bridge-clean:browser-authentication-selection:v2",
     "urn:bridge-clean:browser-ceremony-proof:v1",
+    "urn:bridge-clean:browser-ceremony-wait-proof:v1",
+    "urn:bridge-clean:browser-ceremony-wait:v1",
     "urn:bridge-clean:browser-ceremony:v1",
     "urn:bridge-clean:capability-license-activation-package:v1",
     "urn:bridge-clean:capability-license-activation-proof:v1",
