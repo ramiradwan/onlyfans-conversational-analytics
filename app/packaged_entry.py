@@ -182,23 +182,25 @@ def run_brain() -> int:
             return 1
         import uvicorn
         status.emit("validating")
-        application = select_brain_application(provisioning_completion_exit=request_exit)
-        if stopped.is_set():
-            return 1
+        # The supervisor still bounds validating to 300 s and all startup to 900 s.
+        with status.heartbeats():
+            application = select_brain_application(provisioning_completion_exit=request_exit)
+            if stopped.is_set():
+                return 1
 
-        observed_application = ObservedApplication(application, status, stopped)
+            observed_application = ObservedApplication(application, status, stopped)
 
-        configuration = uvicorn.Config(
-            observed_application, host="127.0.0.1", port=17871, workers=1, access_log=False, lifespan="on",
-            ws_max_size=36_864, ws_max_queue=8, ws_per_message_deflate=False,
-            loop=uvicorn_loop(),
-        )
-        server = supervised_server(configuration, application)
-        if stopped.is_set():
-            server.should_exit = True
-        server.run()
-        if status.phase == "ready-to-check-listener":
-            status.shutdown_complete(observed_application.drained)
+            configuration = uvicorn.Config(
+                observed_application, host="127.0.0.1", port=17871, workers=1, access_log=False, lifespan="on",
+                ws_max_size=36_864, ws_max_queue=8, ws_per_message_deflate=False,
+                loop=uvicorn_loop(),
+            )
+            server = supervised_server(configuration, application)
+            if stopped.is_set():
+                server.should_exit = True
+            server.run()
+            if status.phase == "ready-to-check-listener":
+                status.shutdown_complete(observed_application.drained)
     return 75 if state.mode != "configured" and application.state.completion_requested else 0
 
 

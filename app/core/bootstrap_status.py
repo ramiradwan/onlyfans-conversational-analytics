@@ -6,6 +6,7 @@ import json
 import os
 import re
 import stat
+import threading
 import time
 
 HANDLE_ENV = "BRAIN_BOOTSTRAP_STATUS_HANDLE"
@@ -54,8 +55,17 @@ class BootstrapStatus:
         self.last_emitted = 0.0
         self.terminal = False
         self.shutdown_emitted = False
+        self._lock = threading.Lock()
+        self._heartbeat_stop = threading.Event()
+        self._heartbeat_thread: threading.Thread | None = None
 
     def emit(self, phase: str, reason: str | None = None) -> None:
+        with self._lock:
+            self._emit(phase, reason)
+        if phase in {"ready-to-check-listener", "recovery-required"}:
+            self._stop_heartbeats()
+
+    def _emit(self, phase: str, reason: str | None = None) -> None:
         if (phase not in PHASES or self.terminal or (self.phase is not None and
                 PHASES.index(phase) < PHASES.index(self.phase))
                 or (phase == "recovery-required" and reason not in REASONS)
@@ -80,9 +90,37 @@ class BootstrapStatus:
             self.stopped.set()
 
     def cancelled(self) -> bool:
-        if not self.terminal and self.phase is not None and time.monotonic() - self.last_emitted >= HEARTBEAT_SECONDS:
-            self.emit(self.phase)
+        with self._lock:
+            if (not self.terminal and not self.stopped.is_set() and self.phase is not None
+                    and time.monotonic() - self.last_emitted >= HEARTBEAT_SECONDS):
+                self._emit(self.phase)
         return self.stopped.is_set()
+
+    @contextmanager
+    def heartbeats(self):
+        """Keep the current phase observable through unpolled startup work."""
+        def pulse():
+            while True:
+                with self._lock:
+                    if self.terminal or self.stopped.is_set():
+                        break
+                    delay = max(0.0, self.last_emitted + HEARTBEAT_SECONDS - time.monotonic())
+                if self._heartbeat_stop.wait(delay):
+                    break
+                if self.cancelled():
+                    break
+
+        self._heartbeat_thread = threading.Thread(target=pulse, name="bootstrap-heartbeat", daemon=True)
+        try:
+            self._heartbeat_thread.start()
+            yield
+        finally:
+            self._stop_heartbeats()
+
+    def _stop_heartbeats(self) -> None:
+        self._heartbeat_stop.set()
+        if self._heartbeat_thread is not None and self._heartbeat_thread.ident is not None:
+            self._heartbeat_thread.join()
 
     def maintenance_phase(self, phase: str) -> None:
         self.emit("validating" if phase == "complete" else phase)
@@ -107,9 +145,11 @@ class BootstrapStatus:
             self.stopped.set()
 
     def close(self) -> None:
-        if self.descriptor is not None:
-            os.close(self.descriptor)
-            self.descriptor = None
+        self._stop_heartbeats()
+        with self._lock:
+            if self.descriptor is not None:
+                os.close(self.descriptor)
+                self.descriptor = None
 
 
 @contextmanager
