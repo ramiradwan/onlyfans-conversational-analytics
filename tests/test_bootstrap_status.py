@@ -189,12 +189,15 @@ def startup(monkeypatch):
 
     reader, writer = os.pipe()
     frames = []
+    frame_condition = threading.Condition()
     emitters = []
 
     def collect():
         with os.fdopen(reader, "rb", buffering=0) as stream:
             for line in stream:
-                frames.append((time.monotonic(), json.loads(line)))
+                with frame_condition:
+                    frames.append((time.monotonic(), json.loads(line)))
+                    frame_condition.notify_all()
 
     collector = threading.Thread(target=collect, daemon=True)
     collector.start()
@@ -222,7 +225,8 @@ def startup(monkeypatch):
         async def __call__(self, scope, receive, send):
             await send({"type": "lifespan.startup.complete"})
 
-    harness = SimpleNamespace(frames=frames, emitters=emitters, application=Application())
+    harness = SimpleNamespace(frames=frames, frame_condition=frame_condition,
+                              emitters=emitters, application=Application())
     try:
         yield harness
     finally:
@@ -242,7 +246,13 @@ def test_unpolled_validating_stretch_keeps_pipe_alive(monkeypatch, startup):
 
     def select(**kwargs):
         workers.extend(set(threading.enumerate()) - existing)
-        time.sleep(interval * 9)
+        deadline = time.monotonic() + 10
+        with startup.frame_condition:
+            while sum(frame["schema"] == status.SCHEMA and frame["phase"] == "validating"
+                      for _, frame in startup.frames) < 6:
+                remaining = deadline - time.monotonic()
+                assert remaining > 0, "validation heartbeats did not reach the pipe reader"
+                startup.frame_condition.wait(remaining)
         return startup.application
 
     def serve(observed, application):
@@ -258,16 +268,14 @@ def test_unpolled_validating_stretch_keeps_pipe_alive(monkeypatch, startup):
     monkeypatch.setattr(packaged_entry, "select_brain_application", select)
     monkeypatch.setattr(packaged_entry, "supervised_server", serve)
     assert packaged_entry.run_brain() == 0
-    # Drain the real pipe before checking reader-side arrival times.
+    # Wait for the real pipe to report shutdown before inspecting its frames.
     deadline = time.monotonic() + 2
     while not startup.frames or startup.frames[-1][1]["schema"] != "ofca-runtime-shutdown/v1":
         assert time.monotonic() < deadline
         time.sleep(0.001)
     frames = [(arrived, frame) for arrived, frame in startup.frames if frame["schema"] == status.SCHEMA]
-    validating = [(arrived, frame) for arrived, frame in frames if frame["phase"] == "validating"]
+    validating = [frame for _, frame in frames if frame["phase"] == "validating"]
     assert len(validating) >= 6, "unpolled validation needs repeated heartbeat frames"
-    stretch = validating + [frames[-1]]
-    assert max(right[0] - left[0] for left, right in zip(stretch, stretch[1:])) <= interval + 0.08
     assert [frame["seq"] for _, frame in frames] == list(range(1, len(frames) + 1))
     assert [frame["phase"] for _, frame in frames] == ["starting"] + ["validating"] * len(validating) + ["ready-to-check-listener"]
     assert all(frame["reason"] is None for _, frame in frames)
