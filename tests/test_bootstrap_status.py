@@ -1,6 +1,8 @@
 """Child-owned observations are bounded and parent loss cancels work."""
 from __future__ import annotations
 
+import asyncio
+from contextlib import contextmanager, nullcontext
 import json
 import os
 from pathlib import Path
@@ -8,11 +10,14 @@ import subprocess
 import sys
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 import jsonschema
 
+from app import packaged_entry
 from app.core import bootstrap_status as status
+from app.core import process_lifetime, startup_maintenance
 
 pytestmark = [pytest.mark.ci_tier("integration"), pytest.mark.windows_compat]
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -176,3 +181,183 @@ with parent_lifetime(stopped.set),bootstrap_status(stopped) as status:
                 os.close(descriptor)
         if process is not None and process.poll() is None:
             process.kill(); process.wait(timeout=5)
+
+
+@pytest.fixture
+def startup(monkeypatch):
+    import uvicorn
+
+    reader, writer = os.pipe()
+    frames = []
+    emitters = []
+
+    def collect():
+        with os.fdopen(reader, "rb", buffering=0) as stream:
+            for line in stream:
+                frames.append((time.monotonic(), json.loads(line)))
+
+    collector = threading.Thread(target=collect, daemon=True)
+    collector.start()
+
+    @contextmanager
+    def observations(stopped):
+        emitter = status.BootstrapStatus(writer, stopped)
+        emitters.append(emitter)
+        try:
+            emitter.emit("starting")
+            yield emitter
+        finally:
+            emitter.close()
+
+    monkeypatch.setattr(status, "bootstrap_status", observations)
+    monkeypatch.setattr(process_lifetime, "parent_lifetime", lambda *a, **kw: nullcontext())
+    monkeypatch.setattr(startup_maintenance, "acquire_runtime_ownership",
+                        lambda: SimpleNamespace(mode="configured"))
+    monkeypatch.setattr(startup_maintenance, "admit_retained_schemas", lambda *a, **kw: None)
+    monkeypatch.setattr(uvicorn, "Config", lambda application, **kw: application)
+
+    class Application:
+        state = SimpleNamespace()
+
+        async def __call__(self, scope, receive, send):
+            await send({"type": "lifespan.startup.complete"})
+
+    harness = SimpleNamespace(frames=frames, emitters=emitters, application=Application())
+    try:
+        yield harness
+    finally:
+        if emitters:
+            emitters[0].close()
+        else:
+            os.close(writer)
+        collector.join(timeout=2)
+        assert not collector.is_alive()
+
+
+def test_unpolled_validating_stretch_keeps_pipe_alive(monkeypatch, startup):
+    interval = 0.03
+    monkeypatch.setattr(status, "HEARTBEAT_SECONDS", interval)
+    workers = []
+    existing = set(threading.enumerate())
+
+    def select(**kwargs):
+        workers.extend(set(threading.enumerate()) - existing)
+        time.sleep(interval * 9)
+        return startup.application
+
+    def serve(observed, application):
+        async def discard(message):
+            pass
+
+        def run():
+            asyncio.run(observed({"type": "lifespan"}, None, discard))
+            assert all(not worker.is_alive() for worker in workers)
+            time.sleep(interval * 2)
+        return SimpleNamespace(run=run)
+
+    monkeypatch.setattr(packaged_entry, "select_brain_application", select)
+    monkeypatch.setattr(packaged_entry, "supervised_server", serve)
+    assert packaged_entry.run_brain() == 0
+    # Drain the real pipe before checking reader-side arrival times.
+    deadline = time.monotonic() + 2
+    while not startup.frames or startup.frames[-1][1]["schema"] != "ofca-runtime-shutdown/v1":
+        assert time.monotonic() < deadline
+        time.sleep(0.001)
+    frames = [(arrived, frame) for arrived, frame in startup.frames if frame["schema"] == status.SCHEMA]
+    validating = [(arrived, frame) for arrived, frame in frames if frame["phase"] == "validating"]
+    assert len(validating) >= 6, "unpolled validation needs repeated heartbeat frames"
+    stretch = validating + [frames[-1]]
+    assert max(right[0] - left[0] for left, right in zip(stretch, stretch[1:])) <= interval + 0.08
+    assert [frame["seq"] for _, frame in frames] == list(range(1, len(frames) + 1))
+    assert [frame["phase"] for _, frame in frames] == ["starting"] + ["validating"] * len(validating) + ["ready-to-check-listener"]
+    assert all(frame["reason"] is None for _, frame in frames)
+    assert workers and all(worker.daemon and not worker.is_alive() for worker in workers)
+
+
+@pytest.mark.parametrize("terminal,reason", [("ready-to-check-listener", None), ("recovery-required", "maintenance")])
+def test_heartbeat_terminal_race_preserves_pipe_order(monkeypatch, terminal, reason):
+    monkeypatch.setattr(status, "HEARTBEAT_SECONDS", 0)
+    real_write = os.write
+    for _ in range(25):
+        reader, writer = os.pipe()
+        stopped = threading.Event()
+        emitter = status.BootstrapStatus(writer, stopped)
+        emitter.emit("validating")
+        heartbeat_entered, release = threading.Event(), threading.Event()
+        terminal_attempted, terminal_finished = threading.Event(), threading.Event()
+        errors = []
+
+        def gated_write(descriptor, data):
+            if threading.current_thread() is heartbeat:
+                heartbeat_entered.set()
+                if not release.wait(2):
+                    raise RuntimeError("heartbeat write was not released")
+            return real_write(descriptor, data)
+
+        def poll():
+            try:
+                emitter.cancelled()
+            except BaseException as error:
+                errors.append(error)
+
+        def finish():
+            terminal_attempted.set()
+            try:
+                emitter.emit(terminal, reason)
+            except BaseException as error:
+                errors.append(error)
+            finally:
+                terminal_finished.set()
+
+        heartbeat = threading.Thread(target=poll, daemon=True)
+        finisher = threading.Thread(target=finish)
+        monkeypatch.setattr(status.os, "write", gated_write)
+        try:
+            heartbeat.start()
+            assert heartbeat_entered.wait(2)
+            finisher.start()
+            assert terminal_attempted.wait(2)
+            terminal_finished.wait(0.005)
+        finally:
+            release.set()
+            heartbeat.join(timeout=2)
+            if finisher.ident is not None:
+                finisher.join(timeout=2)
+            emitter.close()
+            frames = [json.loads(line) for line in os.read(reader, status.MAX_TOTAL_BYTES).splitlines()]
+            os.close(reader)
+        assert not errors
+        assert not heartbeat.is_alive() and not finisher.is_alive()
+        assert [frame["seq"] for frame in frames] == [1, 2, 3]
+        assert [frame["phase"] for frame in frames] == ["validating", "validating", terminal]
+        emitter.cancelled()
+        assert emitter.sequence == 3
+
+
+@pytest.mark.parametrize("exit_kind", ["exception", "stopped"])
+def test_selection_exit_stops_and_joins_heartbeat(monkeypatch, startup, exit_kind):
+    monkeypatch.setattr(status, "HEARTBEAT_SECONDS", 0.01)
+    existing = set(threading.enumerate())
+    workers, joined = [], []
+    real_join = threading.Thread.join
+
+    def join(worker, *args, **kwargs):
+        joined.append(worker)
+        return real_join(worker, *args, **kwargs)
+
+    def select(**kwargs):
+        workers.extend(set(threading.enumerate()) - existing)
+        if exit_kind == "exception":
+            raise RuntimeError("synthetic selection failure")
+        startup.emitters[0].stopped.set()
+        return startup.application
+
+    monkeypatch.setattr(threading.Thread, "join", join)
+    monkeypatch.setattr(packaged_entry, "select_brain_application", select)
+    if exit_kind == "exception":
+        with pytest.raises(RuntimeError, match="synthetic selection failure"):
+            packaged_entry.run_brain()
+    else:
+        assert packaged_entry.run_brain() == 1
+    assert workers, "validation must start a heartbeat worker before selecting the application"
+    assert all(worker.daemon and not worker.is_alive() and worker in joined for worker in workers)
