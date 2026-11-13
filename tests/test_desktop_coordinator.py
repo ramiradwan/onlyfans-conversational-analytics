@@ -24,6 +24,7 @@ class Owner:
         self.admissions = []
         self.result = OperationResult("completed")
         self.started = asyncio.Event()
+        self.reconciled = asyncio.Event()
         self.release = None
         self.reason = "none"
 
@@ -45,6 +46,8 @@ class Owner:
             await self.release.wait()
         if isinstance(self.result, Exception):
             raise self.result
+        if reconcile:
+            self.reconciled.set()
         return self.result
 
 
@@ -605,6 +608,8 @@ async def test_healthy_wait_suppresses_probe_and_retry(setup, monkeypatch):
     request, probes = await _waited_connect(setup, hints)
     try:
         await _until(lambda: request["operation_id"] in coordinator._held)
+        await asyncio.wait_for(owner.reconciled.wait(), 2)
+        assert [reconcile for _, reconcile in owner.calls] == [False, True]
         settled = len(owner.calls)
         probes.clear()
         await asyncio.sleep(0.3)
