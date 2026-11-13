@@ -17,6 +17,8 @@ const errors = {
   browser_unavailable: 'The browser connection is unavailable.',
   chrome_unavailable: 'Chrome could not be found. Install Chrome, then try again.',
   browser_preparing: 'The browser task is being prepared.',
+  extension_unavailable: 'The extension is not available in that Chrome profile. Install or turn it on, then choose Try again.',
+  profile_mismatch: 'Chrome opened a different profile. Switch to the profile that has the extension, then choose Try again.',
   account_mismatch: 'The selected creator account does not match the browser account.',
   operation_expired: 'This task expired.',
   activation_unavailable: 'Full analytics activation could not be prepared. Try again.',
@@ -135,7 +137,7 @@ export function renderSetup(document, state) {
   get('task-action').dataset.action = action || '';
   get('browser-reopen').hidden = accepted || choosingProvider || Boolean(decision) || !state.connected
     || (signIn ? !signIn.actions.open_browser || !(signIn.state === 'admitted'
-      || ['chrome_unavailable', 'browser_unavailable'].includes(reason)) : !value?.pending_operations.some(item => ['browser.access', 'browser.pair'].includes(item.action))
+      || ['chrome_unavailable', 'browser_unavailable', 'extension_unavailable', 'profile_mismatch'].includes(reason)) : !value?.pending_operations.some(item => ['browser.access', 'browser.pair'].includes(item.action))
       || reason === 'authority_unavailable' || !['browser-access', 'finish-setup'].includes(task));
   get('browser-reopen').disabled = controlsDisabled;
   get('browser-reopen').textContent = signIn ? 'Try again' : 'Continue connecting';

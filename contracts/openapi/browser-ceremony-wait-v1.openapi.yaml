@@ -1,0 +1,86 @@
+openapi: 3.1.0
+info:
+  title: Held browser ceremony outcome wait
+  version: 1.0.0
+paths:
+  /v1/onboarding/browser-ceremony-wait-proof-challenges:
+    post:
+      operationId: issueBrowserCeremonyWaitProofChallenge
+      summary: Issue an unauthorizing challenge for one exact ceremony wait
+      x-contract-profile: urn:bridge-clean:browser-ceremony-wait-proof:v1
+      x-max-request-bytes: 8192
+      x-max-response-bytes: 16384
+      x-authentication: uniform challenge; possession is not authority
+      x-rate-limit: separate wait budget; 429 does not disclose existence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/browser-ceremony-wait/v1/proof-challenge-request.schema.json
+      responses:
+        '200':
+          description: Uniform challenge, including for unknown, revoked and foreign targets.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony-wait/v1/proof-challenge-response.schema.json
+        '400':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+  /v1/onboarding/browser-ceremonies:wait:
+    post:
+      operationId: waitBrowserCeremonyV1
+      summary: Hold a content-free outcome hint stream for one exact ceremony
+      x-contract-profile: urn:bridge-clean:browser-ceremony-wait:v1
+      x-max-request-bytes: 8192
+      x-max-event-bytes: 1024
+      x-authentication: single-use exact installation-key browser-ceremony-wait-proof:v1
+      x-idempotency: each wait needs a fresh challenge; frames create, renew and settle nothing
+      x-rate-limit: separate wait budget and held-stream slots; 429 carries Retry-After
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/browser-ceremony-wait/v1/wait-request.schema.json
+      responses:
+        '200':
+          description: >-
+            One `browser-ceremony` event per change of revision, presentation state or
+            domain status, each an invalidation only. Comment keepalives at most every
+            15 seconds. The stream ends after a non-active presentation state, at the
+            fixed ceremony deadline, or on disconnect.
+          content:
+            text/event-stream:
+              schema:
+                $ref: ../schemas/browser-ceremony-wait/v1/wait-event.schema.json
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+components:
+  responses:
+    Error:
+      description: Closed refusal; unknown and foreign ceremonies disclose no existence.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/browser-ceremony-wait/v1/error.schema.json

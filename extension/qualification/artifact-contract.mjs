@@ -62,10 +62,11 @@ export async function auditReleaseArchive({ artifact, legalBindings }) {
   const hostedOrigin = json(entries, 'build-meta.json').workspace_hosted_origin;
   assert.equal(new URL(hostedOrigin).protocol, 'https:');
   assert.equal(new URL(hostedOrigin).origin, hostedOrigin);
-  assert.deepEqual(manifest.externally_connectable?.matches, [`${BRIDGE_ORIGIN}/*`,
-    `${hostedOrigin}/public/onboarding/setup`, `${hostedOrigin}/public/onboarding/installation-continuation`]);
+  // The hosted origin is the sign-in popup's navigation target only. No manifest value names it.
+  assert.deepEqual(manifest.externally_connectable, { matches: [`${BRIDGE_ORIGIN}/*`] });
   assert.equal(manifest.content_security_policy?.extension_pages, EXPECTED_CSP);
-  assert.deepEqual(manifest.host_permissions, ['http://bridge.localhost/*', `${hostedOrigin}/*`]);
+  assert.deepEqual(manifest.host_permissions, ['http://bridge.localhost/*']);
+  assert.equal(JSON.stringify(manifest).includes(hostedOrigin), false);
   assert.equal(manifest.action.default_popup, undefined);
 
   const config = json(entries, 'extension-config.json');

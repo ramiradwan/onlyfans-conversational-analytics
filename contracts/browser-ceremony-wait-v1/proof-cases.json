@@ -1,0 +1,1265 @@
+[
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "valid",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": true
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "foreign-key",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "tfWAAsNESyO_X3t3VZib4D5b_lgXK7EAEwxUwG0A-dM",
+      "y": "MWslXDfqhWjDsE_FGMRotomwfgkTWfleAxW64VITRoA"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "off-curve-key",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "y": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "extra-jwk-member",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kid": "unexpected",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "short-signature",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "zero-signature",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "high-s",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x3-XsPuFSQTstRZI_1l7_tYlXToga477VEYcQdEK14cgSQ",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "padded-signature",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA=",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "padded-challenge",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU=",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "short-challenge",
+    "challenge": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "ceremony-read-purpose",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-read",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "changed-digest",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "ceremony-v1-domain",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "jVNUIJmgiPFvDjm5oCkSDwmKP6RWtWT0NEBkuyp3j7VUzPE_uALgILzrsIGftyxT9LKA3T6LUE14EyNP1VxCUw",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "selection-v1-domain",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d41555448454e5449434154494f4e2d53454c454354494f4e2d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "le_tg6GyONsDheY5cJHDToPKmFXWP_wUyU6YCfe469oL38dcki8P2eDDxLWYQPtjffOI9MK2VNHGA1sQhWkfBw",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "selection-v2-domain",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d41555448454e5449434154494f4e2d53454c454354494f4e2d50524f4f462d563200000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "BYMn6V4xNQYUQerwRp47jNNmSkl23i08tL-8i6UV0CYAHw2mFLiKfMtNw3lNmTh1bhEu3AAsu6ByFcxO899-QA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "onboarding-domain",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4f4e424f415244494e472d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "Mb2KwhNCCm1Nv7qnzMEb_C3kwZQupDHNKQAKOucETqRbzn-LjbEM2B08Cq70l4f0cKYZui0uz1JPfNwHLUL9pg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "read-path",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a72656164000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "dW8PtxW7qbzR1u3GQjNZlWseg2GSfhL9z5u4A5PGoaMPt_O6HVwdDZzXiBbhMeT5EkyGxl2I8gIklnrpiAGwqQ",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "wrong-method",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d150000000447455420000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "U8TyvNsU_5ALJEuh16pcv2KCMbd2RENKaOrYzFnR8GMIn8djA9A2Tv4WabTwlcHf_YxPaT0VEGNd-eMWZ1ZzQA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "wrong-audience",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000004075726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e792d6f74686572",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "pST7cwmUMOSOSDhp6dorxSZm1ESRF5DcwQYmmr4JVnVPEuM-3kWOzuYjLYFv4IFwfXTXhIqeglqVc5vhnsNi7Q",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "wrong-length-prefix",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d5631000000001f7664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "UNMZOh3noBwJ2nsciLW_p0fhhUuhsgNJl4CFIY349EQzgEPFzh2vmWjfltI6dJEmDNGsOOhy5_7tnKhSWplrNw",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "ceremony-v1-request-profile",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "other-ceremony",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000013",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "tampered-binding-source",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": "changed",
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "tampered-binding-installation_id",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "changed",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "tampered-binding-installation_key_id",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "changed",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "tampered-binding-installation_key_jkt",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "changed",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "tampered-binding-intended_creator_id",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "changed",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "tampered-binding-purpose",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "changed",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "tampered-binding-attempt_id",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "changed",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "tampered-binding-completion",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": "changed",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "2026-11-12T12:30:00.000Z"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"binding\":{\"attempt_id\":\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA\",\"completion\":{\"extension_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"extension-auth-flow\"},\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"installation_key_jkt\":\"L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k\",\"intended_creator_id\":\"creator-fixture\",\"purpose\":\"connect-account\",\"source\":{\"kind\":\"initial\",\"operation_id\":\"0199b234-5678-7000-8000-000000000014\",\"profile\":\"urn:bridge-clean:initial-installation-handoff:v2\",\"reference\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"request_digest\":\"112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238\"},\"source_expires_at\":\"2026-11-12T12:30:00.000Z\"},\"ceremony_id\":\"0199b234-5678-7000-8000-000000000012\",\"operation_id\":\"0199b234-5678-7000-8000-000000000011\",\"profile\":\"urn:bridge-clean:browser-ceremony-wait:v1\"}",
+    "case_id": "tampered-binding-source_expires_at",
+    "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+    "operation": "browser-ceremony-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d574149542d50524f4f462d563100000000207664b59e1a3122445e3c94d4bf5484d27126f5c7052e730a0875c77df6dc5d1500000004504f5354000000262f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e6965733a77616974000000204266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb0000001562726f777365722d636572656d6f6e792d77616974000000202ff7882c0c480254fd8104bb505a30fb22698620a3e2deebb15cba22deb03fe90000003a75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e79",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_oLBjf23xAkXzlBzF5oGU5yxXmH3lySzUEonNaH_sao",
+      "y": "f9TQEOgyVjsFl6W2N1CFFxFo5c2lDtBSXHGYi5zX9o8"
+    },
+    "request": {
+      "binding": {
+        "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        "completion": {
+          "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mode": "extension-auth-flow"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+        "intended_creator_id": "creator-fixture",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0199b234-5678-7000-8000-000000000014",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+        },
+        "source_expires_at": "changed"
+      },
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "operation_id": "0199b234-5678-7000-8000-000000000011",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb",
+    "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA",
+    "valid": false
+  }
+]

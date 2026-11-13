@@ -83,6 +83,9 @@
     "tests/test_bounded_publication.py": 2,
     "tests/test_browser_authentication_client.py": 1,
     "tests/test_browser_ceremony_client.py": 1,
+    "tests/test_browser_ceremony_wait_client.py": 1,
+    "tests/test_browser_task_ends.py": 1,
+    "tests/test_browser_task_events.py": 2,
     "tests/test_build_extension_identity.py": 2,
     "tests/test_build_windows.py": 2,
     "tests/test_canonical_migration_lineages.py": 1,
@@ -394,6 +397,7 @@
     "tests/test_shared_graph_lifecycle.py": 2,
     "tests/test_shared_graph_queries.py": 2,
     "tests/test_shared_membership_pages.py": 2,
+    "tests/test_sign_in_close_latency.py": 1,
     "tests/test_signing_parameter_qualification_admission.py": 2,
     "tests/test_signing_parameters.py": 1,
     "tests/test_small_conversation_pages.py": 2,
@@ -932,6 +936,9 @@
       "tests/test_workflow_contexts.py": 0.17582839999977296
     },
     "unmeasured_files": [
+      "tests/test_browser_ceremony_wait_client.py",
+      "tests/test_browser_task_ends.py",
+      "tests/test_browser_task_events.py",
       "tests/test_msix_nlp_preparation.py",
       "tests/test_nlp_dependency_runtime.py",
       "tests/test_nlp_encoder_profile.py",
@@ -940,6 +947,7 @@
       "tests/test_nlp_profile_packaging.py",
       "tests/test_nlp_release_signing.py",
       "tests/test_optional_engine_packaging.py",
+      "tests/test_sign_in_close_latency.py",
       "tests/test_webauthn_access_events.py",
       "tests/test_webauthn_access_state.py"
     ]

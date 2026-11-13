@@ -42,7 +42,7 @@ function validatedAnalysisReadiness(value) {
 export function createCompanionClient({
   chromeApi = globalThis.chrome, allowsFull, detectedAccountId,
   // Paused Full keeps a control-only session so the desktop app can resume it.
-  allowsControl = () => false, onControl = async () => {}, onBrowserTask = null,
+  allowsControl = () => false, onControl = async () => {}, onBrowserTask = null, onBrowserTaskEnd = null,
   accountDatabaseName,
   storeFactory = openPairingStore, loadSnow = loadPackagedSnow,
   channelFactory = openCompanionChannel, wireFactory = openLoopbackSocket,
@@ -227,11 +227,17 @@ export function createCompanionClient({
   // Session controls and browser state reports (ADR 0045). Controls change
   // nothing here: the consent and companion controllers apply them.
   const seenControls = new Set();
+  const advertised = new WeakSet();
   let lastSurface = null, lastSurfaceEncoded = null, reportedSurfaceChannel = null, surfaceMeaning = null;
   function attachControls(channel) {
     const lifetime = new AbortController();
     channel.onClose(() => lifetime.abort());
-    channel.onControl?.(({ id, action, payload }) => {
+    channel.onControl?.(({ id, action, payload, end }) => {
+      if (action === 'browser.task.end') {
+        // A notification only: the receiver matches it to an active task or ignores it.
+        if (!lifetime.signal.aborted && onBrowserTaskEnd) void Promise.resolve().then(() => onBrowserTaskEnd(end)).catch(() => undefined);
+        return;
+      }
       if (action === 'browser.task') {
         const guard = () => {
           if (lifetime.signal.aborted || channel !== controlChannel() || !(allowsFull?.() || allowsControl())
@@ -282,6 +288,10 @@ export function createCompanionClient({
     const surface = lastSurface, encoded = lastSurfaceEncoded, meaning = surfaceMeaning;
     try {
       await channel.rpc('agent.surface.report', surface);
+      if (onBrowserTaskEnd && channel.advertiseBrowserTasks && !advertised.has(channel)) {
+        advertised.add(channel);
+        void channel.advertiseBrowserTasks([]);
+      }
       if (channel === controlChannel() && encoded === lastSurfaceEncoded && meaning === surfaceMeaning) {
         const wasReady = controlReady();
         reportedSurfaceChannel = channel;

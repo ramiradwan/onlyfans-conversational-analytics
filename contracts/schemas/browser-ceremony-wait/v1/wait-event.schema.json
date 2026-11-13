@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+  "title": "Browser ceremony wait-event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "ceremony_id",
+    "revision",
+    "presentation_state",
+    "domain_status"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:browser-ceremony-wait:v1"
+    },
+    "ceremony_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "presentation_state": {
+      "enum": [
+        "active",
+        "retired",
+        "expired"
+      ]
+    },
+    "domain_status": {
+      "enum": [
+        "awaiting-authentication",
+        "awaiting-confirmation",
+        "pending",
+        "ready",
+        "committed",
+        "unavailable",
+        "revoked"
+      ]
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import json
 from types import SimpleNamespace
@@ -6,7 +7,7 @@ import pytest
 
 from app.onboarding.authentication import DesktopAuthentication
 from app.onboarding.browser_tasks import BrowserTasks
-from app.onboarding.coordinator import CommandRefused
+from app.onboarding.coordinator import CommandRefused, OperationResult
 from app.security.browser_authentication import PROFILE
 from app.security.browser_ceremony import binding_digest
 from app.security.hosted_grants import HostedGrantUnavailable
@@ -175,6 +176,148 @@ async def test_admitted_preparation_retry_keeps_exact_child_pending_for_browser_
     assert (await authentication.execute(operation, authorize=authorized, read_guard=authorized,
         reconcile=True)).state == "completed"
     assert ceremonies.browser_entry(browser_operation) is None
+
+
+@pytest.mark.asyncio
+async def test_open_sign_in_probe_only_reads_and_reports_each_change_once(auth):
+    coordinator, _, authentication, client, parent, _, _ = auth
+    operation, _ = accept(auth)
+    await authentication.execute(operation, authorize=authorized, read_guard=authorized, reconcile=False)
+    identifier = operation["operation_id"]
+    assert authentication.probe_interval(identifier) is None
+    tasks = BrowserTasks(coordinator.admissions, extension_id="a" * 32)
+    tasks.prepare(operation, "browser.authentication")
+    assert authentication.probe_interval(identifier) == 2
+
+    def saved():
+        with coordinator.store.database.read() as connection:
+            return [tuple(row) for row in connection.execute(
+                "SELECT operation_id,projection_json,revision FROM desktop_authentication_projections").fetchall()]
+
+    before, calls = saved(), len(client.calls)
+    assert await authentication.probe(identifier, authorize=authorized) is True
+    assert await authentication.probe(identifier, authorize=authorized) is False
+    client.attempts[client.current]["state"] = "admitted"
+    assert await authentication.probe(identifier, authorize=authorized) is True
+    assert await authentication.probe(identifier, authorize=authorized) is False
+    # A probe reads only the parent's current projection. It never mutates,
+    # cancels, stores a projection or reads under a borrowed child scope.
+    probes = client.calls[calls:]
+    assert len(probes) == 4
+    assert all(verb == "read" and request["authentication_attempt_id"] is None
+        and request["operation_id"] == client.calls[0][1]["operation_id"] for verb, request in probes)
+    assert saved() == before
+    with pytest.raises(HostedGrantUnavailable):
+        await authentication.probe(identifier, authorize=lambda: (_ for _ in ()).throw(HostedGrantUnavailable("key changed")))
+    assert len(client.calls) == calls + 4
+    tasks.complete(identifier)
+    assert authentication.probe_interval(identifier) is None
+    assert authentication.probe_interval(parent["operation_id"]) is None
+
+
+@pytest.mark.asyncio
+async def test_admission_ends_the_open_sign_in_task_after_one_probe_not_the_slow_retry(auth, monkeypatch):
+    monkeypatch.setattr("app.onboarding.authentication.PROBE_INTERVAL_SECONDS", 0.02, raising=False)
+    coordinator, _, authentication, client, _, _, _ = auth
+    operation, _ = accept(auth)
+    tasks = BrowserTasks(coordinator.admissions, extension_id="a" * 32)
+    owner = coordinator.owner
+
+    async def execute(current, *, reconcile, actor=None):
+        if current["operation_id"] != operation["operation_id"]:
+            return OperationResult("waiting")
+        owner.calls.append((dict(current), reconcile))
+        return await authentication.execute(current, authorize=authorized, read_guard=authorized, reconcile=reconcile)
+
+    owner.execute = execute
+    owner.automatic_recovery = lambda current: current["operation_id"] == operation["operation_id"]
+    owner.probe_interval = lambda current: authentication.probe_interval(current["operation_id"])
+    owner.probe = lambda current: authentication.probe(current["operation_id"], authorize=authorized)
+    owner.settled = lambda current, result: tasks.complete(current["operation_id"]) if result.state == "completed" else None
+
+    def task_state():
+        with coordinator.store.database.read() as connection:
+            return connection.execute("SELECT state FROM desktop_browser_tasks WHERE operation_id=?",
+                (operation["operation_id"],)).fetchone()[0]
+
+    coordinator._start(operation, reconcile=False, actor=None)
+    await coordinator.drain()
+    tasks.prepare(operation, "browser.authentication")
+    coordinator.start()
+    try:
+        # Fresh send, startup recovery, then the first probe has nothing to compare.
+        async with asyncio.timeout(1):
+            while len(owner.calls) < 3:
+                await asyncio.sleep(0.005)
+        await asyncio.sleep(0.1)
+        assert [reconcile for _, reconcile in owner.calls] == [False, True, True]
+        assert task_state() == "pending"
+        client.attempts[client.current]["state"] = "admitted"
+        started = asyncio.get_running_loop().time()
+        async with asyncio.timeout(1):
+            while task_state() != "completed":
+                await asyncio.sleep(0.005)
+        # The ordinary 15 s recovery interval is untouched. One probe period and
+        # one full read separate the server's admission from the task's end.
+        assert asyncio.get_running_loop().time() - started < 0.5
+        assert [reconcile for _, reconcile in owner.calls] == [False, True, True, True]
+        assert [verb for verb, _ in client.calls if verb != "read"] == ["select"]
+    finally:
+        await coordinator.stop()
+
+
+class ProbeOwner:
+    def __init__(self):
+        self.calls = []
+
+    def parent_operation(self, operation_id):
+        return "parent-of-" + operation_id
+
+    def probe_interval(self, operation_id):
+        self.calls.append(("interval", operation_id))
+        return 2
+
+    async def probe(self, operation_id, *, authorize):
+        authorize()
+        self.calls.append(("probe", operation_id))
+        return True
+
+
+@pytest.mark.asyncio
+async def test_setup_owners_probe_only_through_the_operation_read_guard():
+    from app.onboarding.runtime import RuntimeSetupOwner
+    from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
+    guards = []
+    probe = ProbeOwner()
+    setup = SimpleNamespace(ceremonies=SimpleNamespace(authentication=probe),
+        _read_guard=lambda operation: guards.append(("setup", operation["operation_id"])))
+    setup.probe_interval = lambda operation: ProvisioningSetupOwner.probe_interval(setup, operation)
+    setup.probe = lambda operation: ProvisioningSetupOwner.probe(setup, operation)
+    child = {"operation_id": "child", "action": "auth.select", "owner_scope_json": "{}"}
+    assert ProvisioningSetupOwner.probe_interval(setup, child) == 2
+    assert await ProvisioningSetupOwner.probe(setup, child) is True
+    assert guards == [("setup", "parent-of-child")]
+    assert ProvisioningSetupOwner.probe_interval(SimpleNamespace(ceremonies=None), child) is None
+    assert ProvisioningSetupOwner.probe_interval(SimpleNamespace(ceremonies=SimpleNamespace(authentication=None)), child) is None
+
+    activation = SimpleNamespace(ceremonies=SimpleNamespace(authentication=probe),
+        _proof_read_guard=lambda operation: guards.append(("activation", operation["operation_id"])))
+    def runtime_owner(**fields):
+        value = SimpleNamespace(**fields)
+        value._probe_owner = lambda operation: RuntimeSetupOwner._probe_owner(value, operation)
+        return value
+    runtime = runtime_owner(activation=activation, setup_owner=setup)
+    runtime_child = {"operation_id": "runtime-child", "action": "auth.select", "owner_scope_json": json.dumps({"actor": {}})}
+    review = {"operation_id": "review", "action": "activation.review", "owner_scope_json": "{}"}
+    connect = {"operation_id": "connect", "action": "account.connect", "owner_scope_json": "{}"}
+    for operation in (runtime_child, review, child, connect):
+        assert RuntimeSetupOwner.probe_interval(runtime, operation) == 2
+        assert await RuntimeSetupOwner.probe(runtime, operation) is True
+    assert guards[1:] == [("activation", "runtime-child"), ("activation", "review"),
+        ("setup", "parent-of-child"), ("setup", "parent-of-connect")]
+    for action in ("browser.access", "browser.pair", "setup.finalize", "activation.confirm"):
+        assert RuntimeSetupOwner.probe_interval(runtime, {**review, "action": action}) is None
+    assert RuntimeSetupOwner.probe_interval(runtime_owner(activation=None, setup_owner=None), runtime_child) is None
 
 
 async def close_task(auth):

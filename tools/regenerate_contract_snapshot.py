@@ -14,9 +14,9 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS_ROOT = REPOSITORY_ROOT / "contracts"
 APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-APPROVED_SOURCE_COMMIT = "16b544510a8da883780c61c4d2fc2b74f1945ac2"
-APPROVED_SOURCE_TREE = "62569a4df2985598ab6b6785205d5559eb6923a3"
-APPROVED_SOURCE_MANIFEST_SHA256 = "8b3188126978fcc5d0ab3d234297e4fdea4177ab8312ecaaf0a66d267f62d22f"
+APPROVED_SOURCE_COMMIT = "5e76aedc2e2c0bccdba657adbed3ddb9c91ad6ad"
+APPROVED_SOURCE_TREE = "a5381514946ac4de5c11d8942193ace6769e547f"
+APPROVED_SOURCE_MANIFEST_SHA256 = "696f490f5967f8e278bc69d8ea00d79758de82b4a8f7f7e1a61bca221bf06914"
 SOURCE_MANIFEST = "contract-manifest.json"
 SOURCE_MANIFEST_EXPORT = "source-contract-manifest"
 SOURCE_MANIFEST_TARGET = f"{SOURCE_MANIFEST_EXPORT}/contract-manifest.json"
@@ -25,8 +25,8 @@ PUBLISHED_ROOTS = ("catalog", "openapi", "profiles", "schemas")
 # Only these additive inventories may replace reviewed previous bytes during
 # this pin migration. All released schemas, profiles and fixtures remain immutable.
 APPROVED_PREVIOUS_INVENTORIES = {
-    "catalog/contracts.yaml": "ec04ea233a0e9ce511ad06dabe9d8941b1767640360d962ff5414c11ec5718bf",
-    "contract-manifest.json": "cc32e5e1e0f3cba4153c69dac1db15d7f9856dbde351e911279dc942ebc2a500"
+    "catalog/contracts.yaml": "d5b439a0af1117c8ab917d0fbb4e16620edd2545b66943f990c6a25fef306290",
+    "contract-manifest.json": "8b3188126978fcc5d0ab3d234297e4fdea4177ab8312ecaaf0a66d267f62d22f"
 }
 
 EXPORT_SET = [
@@ -54,6 +54,7 @@ EXPORT_SET = [
     "installation-setup-continuation-v2",
     "complimentary-onboarding-activation-v1",
     "browser-ceremony-v1",
+    "browser-ceremony-wait-v1",
     "desktop-decision-v1",
     "browser-authentication-selection-v1",
     "browser-authentication-selection-v2",
@@ -87,6 +88,7 @@ EXPORT_SOURCES = {
     "installation-setup-continuation-v2": "test-vectors/installation-setup-continuation-v2",
     "complimentary-onboarding-activation-v1": "test-vectors/complimentary-onboarding-activation-v1",
     "browser-ceremony-v1": "test-vectors/browser-ceremony-v1",
+    "browser-ceremony-wait-v1": "test-vectors/browser-ceremony-wait-v1",
     "desktop-decision-v1": "test-vectors/desktop-decision-v1",
     "browser-authentication-selection-v1": "test-vectors/browser-authentication-selection-v1",
     "browser-authentication-selection-v2": "test-vectors/browser-authentication-selection-v2",
@@ -119,6 +121,7 @@ APPROVED_EXPORT_DIGESTS = {
     "installation-setup-continuation-v2": "9673deaa3c38aba0832a68e2e290720447f8c566c8f0e12f5c5875e67c29ea97",
     "complimentary-onboarding-activation-v1": "b9eb0b9a68dec64a67ce2522b641d5eddf9ef5a86e5cc67a459a66af9fd37cba",
     "browser-ceremony-v1": "824a953fbee1b5433402ca2f73f2f4ca3a458ba4ea038fc4c7db688c9e761c47",
+    "browser-ceremony-wait-v1": "9c01935f000b1c09ce17afcefc622f525db4c40011c0bfe4fe33ee6481804619",
     "desktop-decision-v1": "7fa1cdd451ac4acb570c11a6e3e440ba4e00bc8481d28c4aad22d706534b7efa",
     "browser-authentication-selection-v1": "d99a5bb63f45c95a2ef36b9398fb1c9130a8269635722499e535228c0043a29f",
     "browser-authentication-selection-v2": "f1684d50c76eb229f4dd8f29b9b5f792930dbdca53384fb6c04c074c08b5433a",
@@ -155,8 +158,8 @@ EXPECTED_PAIRING_VECTOR_FILES = frozenset(
         "vector.json",
     }
 )
-EXPECTED_FILE_COUNT = 1219
-EXPECTED_PUBLISHED_FILE_COUNT = 390
+EXPECTED_FILE_COUNT = 1232
+EXPECTED_PUBLISHED_FILE_COUNT = 399
 EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
@@ -165,6 +168,8 @@ EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:browser-authentication-selection:v1",
     "urn:bridge-clean:browser-authentication-selection:v2",
     "urn:bridge-clean:browser-ceremony-proof:v1",
+    "urn:bridge-clean:browser-ceremony-wait-proof:v1",
+    "urn:bridge-clean:browser-ceremony-wait:v1",
     "urn:bridge-clean:browser-ceremony:v1",
     "urn:bridge-clean:capability-license-activation-package:v1",
     "urn:bridge-clean:capability-license-activation-proof:v1",
@@ -266,6 +271,7 @@ CONFORMANCE_MANIFESTS = {
     "installation-setup-continuation-v2": "installation-setup-continuation-v2/manifest.json",
     "complimentary-onboarding-activation-v1": "complimentary-onboarding-activation-v1/manifest.json",
     "browser-ceremony-v1": "browser-ceremony-v1/manifest.json",
+    "browser-ceremony-wait-v1": "browser-ceremony-wait-v1/manifest.json",
     "desktop-decision-v1": "desktop-decision-v1/manifest.json",
     "browser-authentication-selection-v1": "browser-authentication-selection-v1/manifest.json",
     "browser-authentication-selection-v2": "browser-authentication-selection-v2/manifest.json",

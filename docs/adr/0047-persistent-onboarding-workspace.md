@@ -4,6 +4,7 @@
 - Date: 2026-10-08
 - Decision authority: Product owner.
 - Amends: ADR 0045, Desktop port opening behavior, Pushed state's browser-port liveness inference, and Controls after pairing's popup ownership. Other pairing and authorization guarantees remain unchanged.
+- Amended: 2026-11-12 (proposed: hosted pages never message the extension)
 
 ## Decision
 
@@ -92,12 +93,12 @@ counter values cannot be compared across worker restarts. Reconnect performs a
 read-only receipt lookup, with durable account/consent/effect checks at the owner.
 It never retries an uncertain mutation to discover its outcome.
 
-Workspace discovery needs host access to the exact first-party local origin and
-the configured hosted browser origin. The browser manifest expresses host patterns;
-the coordinator additionally enforces exact port, path, fragment, current document
-and owning tab before reading local state or accepting commands. It receives no
-broad tabs/history permission. Hosted documents may request registered navigation,
-but cannot read local state or command capture. Release builds read the same
+Workspace discovery needs host access to the exact first-party local origin only.
+The setup tab never navigates to a hosted page, and the workspace has no hosted route.
+The browser manifest expresses the local host pattern; the coordinator additionally
+enforces exact port, path, fragment, current document and owning tab before reading
+local state or accepting commands. It receives no broad tabs/history permission.
+Hosted documents cannot message the extension, read local state or command capture. Release builds read the same
 release-owned customer configuration as Brain; an empty development configuration
 supports Preview and cannot produce a release package. The provisioning workspace
 path is exactly `/provisioning` without a trailing slash.
@@ -310,8 +311,12 @@ wakeup. Subscription presence and focus do not establish valid setup authority.
 Receiving setup codes use a dedicated, expiring workflow key. They do not grant
 creator identity, local authentication, consent, installation registration, pairing,
 or commercial rights. The hosted receiver separately authenticates the user and
-checks current organization/creator authority. Browser receivers sign through the
-admitted extension workspace. Desktop receivers use same-tab, exact-path form posts
+checks current organization/creator authority. Hosted pages never message the
+extension, and the extension has no web-page messaging entry for the hosted origin,
+no host access to it, and no request to it or to any other external origin. Setup codes
+are received only by the desktop app. The extension holds no transfer key and offers no
+setup-code entry. The intended creator hint stays with the desktop app, which leads
+extension setup. Desktop receivers use same-tab, exact-path form posts
 containing only the public request/challenge/proof and journey UUID. The local return
 restores the original HttpOnly cookie context; an authenticated read and CSRF-protected
 signing request must match the durable local request. A public entry cookie provides

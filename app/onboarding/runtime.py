@@ -172,6 +172,39 @@ class RuntimeSetupOwner:
         return (self.setup_owner is not None and operation["action"] in {"account.connect", "account.confirm"}
                 and self.setup_owner.automatic_recovery(operation))
 
+    def _probe_owner(self, operation):
+        # Mirrors execute(): the same owner and read guard that would reconcile it.
+        action = operation["action"]
+        if self.setup_owner is not None and (action == "account.connect" or action.startswith("auth.")
+                and "actor" not in json.loads(operation["owner_scope_json"])):
+            return "setup", self.setup_owner
+        if ((action.startswith("auth.") or action == "activation.review") and self.activation is not None
+                and self.activation.ceremonies.authentication is not None):
+            return "activation", self.activation
+        return None
+
+    def probe_interval(self, operation):
+        owner = self._probe_owner(operation)
+        if owner is None:
+            return None
+        kind, value = owner
+        return (value.probe_interval(operation) if kind == "setup"
+            else value.ceremonies.authentication.probe_interval(operation["operation_id"]))
+
+    async def probe(self, operation):
+        kind, value = self._probe_owner(operation)
+        if kind == "setup":
+            return await value.probe(operation)
+        return await value.ceremonies.authentication.probe(operation["operation_id"],
+            authorize=lambda: value._proof_read_guard(operation))
+
+    def wait(self, operation):
+        kind, value = self._probe_owner(operation)
+        if kind == "setup":
+            return value.wait(operation)
+        return value.ceremonies.authentication.wait(operation["operation_id"],
+            authorize=lambda: value._proof_read_guard(operation))
+
     @staticmethod
     def _runtime_access(operation):
         # An initial setup operation retains its original owner across restart.

@@ -1,0 +1,87 @@
+{
+  "case_count": 116,
+  "files": [
+    {
+      "path": "frame-cases.json",
+      "sha256": "ca8340c5b3aac7b9bc16aad5f892254b57d16ffc922042f810436a0298dd4a46",
+      "size": 8681
+    },
+    {
+      "path": "proof-cases.json",
+      "sha256": "9058ed0eb7cb0de077f42feb75d03f624f54972a0541d85bc2203bb18c2a026e",
+      "size": 101447
+    },
+    {
+      "path": "schema-cases.json",
+      "sha256": "23fa285d11690fd9a23267a435242b885efb7ee4e0128f3406a57ed54778a2e4",
+      "size": 44108
+    }
+  ],
+  "generator": "tools/generate_browser_ceremony_wait_vectors.py",
+  "generator_version": "1.0.0",
+  "governing_adr": "docs/adr/0029-operation-bound-browser-ceremonies.md",
+  "inputs": [
+    {
+      "path": "docs/adr/0029-amendments/2026-11-12-ceremony-outcome-wait.md",
+      "sha256": "9b62b936897e7a233fe2d44f4f0f2b2eb0a7afb396e0139d8516f4e672c59433"
+    },
+    {
+      "path": "docs/adr/0029-operation-bound-browser-ceremonies.md",
+      "sha256": "28055fe17d9e74004baa2da4be6387820a990025a47f3717974c1ee388dbb355"
+    },
+    {
+      "path": "docs/browser-ceremony-wait-v1.md",
+      "sha256": "e14c3ad9389b6aca691bce7cc6b78bd4ba01fb65a72526ff1a2048d10681be58"
+    },
+    {
+      "path": "openapi/browser-ceremony-wait-v1.openapi.yaml",
+      "sha256": "df53b01b7c842c2543153b8fb10929b0ce9b69fe5a798419ce339fe8ef93b93e"
+    },
+    {
+      "path": "profiles/browser-ceremony-wait-proof/v1/profile.json",
+      "sha256": "9c50830179145c607a39f85edb0283d53fa052a590ba6de10388c46054f12b11"
+    },
+    {
+      "path": "profiles/browser-ceremony-wait/v1/profile.json",
+      "sha256": "dfd094d73cbd15babebe0840913e55d2ddbabd7593c25d2821aa74377fe2460a"
+    },
+    {
+      "path": "schemas/browser-ceremony-wait/v1/definitions.schema.json",
+      "sha256": "019ea0cec3a726b4c8af08c3edfd2f1bdd2583516e8f0a2a6caf23e40cead691"
+    },
+    {
+      "path": "schemas/browser-ceremony-wait/v1/error.schema.json",
+      "sha256": "9f1ec516fbb6eee759001f2b9ee39832cd11b262c5f089492d11ff9db6f4a8ab"
+    },
+    {
+      "path": "schemas/browser-ceremony-wait/v1/proof-challenge-request.schema.json",
+      "sha256": "5728911259800c3e904c05df16118e35db0a8f17a5286c56fe466635482138a6"
+    },
+    {
+      "path": "schemas/browser-ceremony-wait/v1/proof-challenge-response.schema.json",
+      "sha256": "7c38766136d2a81e54a7663c679b144add43bbf13d1c990bc9983f7b4067f54b"
+    },
+    {
+      "path": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+      "sha256": "df41f4f93485ea343eebb627a4ad2ea34849a9d5a593f2127c1a6ee3c9d15a3f"
+    },
+    {
+      "path": "schemas/browser-ceremony-wait/v1/wait-request.schema.json",
+      "sha256": "af6024da39a6ae4c43604549dd9e01e4895db7628c4a1e4092855d1c26a92220"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/definitions.schema.json",
+      "sha256": "8b7e4636fcea8ac170379fd5b77e2dcb3c59537e789dee35fd580e6b39c9964a"
+    },
+    {
+      "path": "schemas/common/v1/definitions.schema.json",
+      "sha256": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa"
+    },
+    {
+      "path": "tools/generate_browser_ceremony_wait_vectors.py",
+      "sha256": "f397934e00e140dae100a3611cfd26832ef1a73daf57608a6ac4c0832e83b371"
+    }
+  ],
+  "profile": "urn:bridge-clean:browser-ceremony-wait-vectors:v1",
+  "test_only": true
+}

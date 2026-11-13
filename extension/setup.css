@@ -179,14 +179,7 @@ body[data-surface="options"] .settings-row.hidden { display: flex !important; vi
   .extension-stage { height: 640px; }
 }
 
-#setup-transfer-entry > p { margin-block-end: calc(2 * var(--dipsy-space-unit)); }
-#setup-transfer-form { display: grid; gap: 12px; max-width: var(--dipsy-static-compact-form-max-width); }
-#setup-transfer-form > .field { display: grid; gap: var(--dipsy-space-unit); }
-#setup-transfer-form label { color: var(--dipsy-color-text); font-weight: var(--dipsy-font-weight-medium); }
-#setup-transfer-code { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; font: inherit; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 8px; }
-#setup-transfer-code:focus-visible { outline-offset: calc(-1 * var(--dipsy-border-thin)); }
 /* The status keeps its reservation while empty. */
-#setup-transfer-status { display: block; min-height: 2.5em; margin: 0; }
 
 body.onboarding-workspace[data-surface="setup"] { padding: 0; display: flex; flex-direction: column; }
 .onboarding-workspace .onboarding-loading { margin: 0; padding: 28px; }

@@ -19,6 +19,7 @@ from app.provisioning.initial_handoff import InitialInstallationEnrollment
 from app.provisioning.installation_continuation import RegisteredInstallationContinuation
 from app.security.browser_authentication import BrowserAuthenticationClient
 from app.security.browser_ceremony import BrowserCeremonyClient
+from app.security.browser_ceremony_wait import BrowserCeremonyWaitClient
 from app.security.desktop_decision import DesktopDecisionClient
 
 
@@ -67,7 +68,8 @@ def build_desktop_setup(*, store, stage, extension_id, hosted_origin, authentica
             BrowserCeremonyClient(hosted_transport(hosted_origin), key), hosted_origin=hosted_origin,
             decision_client=DesktopDecisionClient(hosted_transport(hosted_origin), key),
             authentication_client=BrowserAuthenticationClient(hosted_transport(hosted_origin), key),
-            authentication_providers=authentication_providers)
+            authentication_providers=authentication_providers,
+            wait_client=BrowserCeremonyWaitClient(hosted_transport(hosted_origin), key, hosted_origin))
         initial = InitialInstallationEnrollment(store, hosted_origin=hosted_origin)
         registered = RegisteredInstallationContinuation(store, hosted_origin=hosted_origin)
     recovery = ProvisioningSetupOwner(store, browser_tasks=tasks, ceremonies=ceremonies,
@@ -94,7 +96,10 @@ def attach_desktop_setup(application, *, core, launcher_token,
         return min(values, default=1800.0)
 
     application.include_router(admission_router(admissions, launcher_token=launcher_token))
-    application.include_router(desktop_router(coordinator, actor=actor, next_expiry=expiry))
+    def notices(session):
+        return tasks.helpers.notices({task["task_id"] for task in tasks.current_native(session)})
+
+    application.include_router(desktop_router(coordinator, actor=actor, next_expiry=expiry, notices=notices))
     application.include_router(browser_router(coordinator, tasks, ceremonies, pairing=pairing))
     application.include_router(setup_surface_router())
     return coordinator

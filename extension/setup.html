@@ -32,33 +32,13 @@
   <main class="onboarding-content" data-presentation-ready="false">
     <h1 class="visually-hidden">Set up Conversation Analytics</h1>
     <p id="step-summary" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">Checking status…</p>
-    <section id="setup-transfer-entry" class="journey-card onboarding-card hidden" aria-labelledby="setup-transfer-title">
-      <h2 id="setup-transfer-title">Continue setup</h2>
-      <p>Enter the code from your other browser or computer.</p>
-      <form id="setup-transfer-form" novalidate>
-        <div class="field">
-          <label for="setup-transfer-code">Setup code</label>
-          <input id="setup-transfer-code" name="setup-code" type="text" maxlength="40" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="setup-transfer-status">
-        </div>
-        <p id="setup-transfer-status" role="status" aria-live="polite"></p>
-        <button id="setup-transfer-submit" class="primary" type="submit">Continue</button>
-        <button id="setup-transfer-back" class="text-button" type="button">Back</button>
-      </form>
-    </section>
     <div class="onboarding-layout">
     <div data-reserved-region="extension-stage" data-region-role="flow" class="extension-stage"><div data-region-content>
-    <section id="setup-transfer-creator" class="journey-card onboarding-card hidden" aria-label="Creator for this setup">
-      <p class="onboarding-fact"><strong>Setup is for</strong><span id="setup-transfer-intended"></span></p>
-      <p class="onboarding-fact"><strong>Signed in now</strong><span id="setup-transfer-current"></span></p>
-      <div id="setup-transfer-mismatch" class="hidden">
-        <p>Switch to the creator this setup is for.</p>
-        <button id="setup-transfer-switch" class="secondary outlined" type="button">Open OnlyFans</button>
-      </div>
-    </section>
     <p id="review-notice" class="fine-print hidden">Data-handling information changed. Review it before restarting analytics.</p>
     <section id="desktop-entry" class="onboarding-card hidden" aria-labelledby="desktop-entry-title" data-journey-state="extension.full_handoff">
       <h2 id="desktop-entry-title" tabindex="-1">Full analytics uses the desktop app</h2>
       <p id="desktop-entry-body" role="status" aria-live="polite"></p>
+      <p id="desktop-setup-code" class="fine-print">Have a setup code? Enter it in the desktop app.</p>
       <div class="journey-actions">
         <button id="open-desktop" class="primary" type="button">Open desktop app</button>
         <button id="download-desktop" class="secondary outlined hidden" type="button">Download desktop app</button>

@@ -115,7 +115,7 @@ def customer_release_config(tmp_path_factory: pytest.TempPathFactory) -> Iterato
 
 
 @pytest.mark.parametrize("receiver_configured", [False, True])
-def test_workspace_policy_tracks_explicit_receiver_access(tmp_path, monkeypatch, receiver_configured):
+def test_workspace_policy_names_no_hosted_origin(tmp_path, monkeypatch, receiver_configured):
     origin = "https://setup.example.com"
     receiver = origin + "/public/onboarding/setup" if receiver_configured else ""
     path = tmp_path / "customer-release.json"
@@ -123,14 +123,16 @@ def test_workspace_policy_tracks_explicit_receiver_access(tmp_path, monkeypatch,
         "setup_transfer_receiver_url": receiver, "hosted_api_origin": origin,
         "authentication_providers": ["default"]}), encoding="utf-8")
     monkeypatch.setattr(producer, "CUSTOMER_RELEASE_CONFIG", path)
-    matches = ["http://bridge.localhost:17871/*"] + ([receiver] if receiver else [])
-    matches += [origin + "/public/onboarding/installation-continuation"]
-    manifest = {"host_permissions": ["http://bridge.localhost/*", origin + "/*"],
+    matches = ["http://bridge.localhost:17871/*"]
+    manifest = {"host_permissions": ["http://bridge.localhost/*"],
                 "externally_connectable": {"matches": matches}}
     assert producer._qualified_workspace_policy(manifest)
-    # The controlled package policy rejects both missing and excess messaging access.
-    manifest["externally_connectable"]["matches"] = matches + [origin + "/*"]
-    assert not producer._qualified_workspace_policy(manifest)
+    # Neither host access nor external messaging may name the hosted origin.
+    for change in ({"host_permissions": ["http://bridge.localhost/*", origin + "/*"]},
+                   {"externally_connectable": {"matches": matches + [origin + "/public/onboarding/installation-continuation"]}},
+                   {"externally_connectable": {"matches": matches + ([receiver] if receiver else [origin + "/*"])}},
+                   {"content_security_policy": {"extension_pages": "connect-src 'self' " + origin}}):
+        assert not producer._qualified_workspace_policy({**manifest, **change}), change
 
 
 def test_api_only_extension_build_omits_receiver_messaging_access(tmp_path):
@@ -146,9 +148,9 @@ def test_api_only_extension_build_omits_receiver_messaging_access(tmp_path):
         result = _run_extension_build(arguments + flags)
         assert result.returncode == 0, result.stdout + result.stderr
     manifest = json.loads((output / "manifest.json").read_bytes())
-    assert manifest["host_permissions"] == ["http://bridge.localhost/*", origin + "/*"]
-    assert manifest["externally_connectable"] == {"matches": [
-        "http://bridge.localhost:17871/*", origin + "/public/onboarding/installation-continuation"]}
+    assert manifest["host_permissions"] == ["http://bridge.localhost/*"]
+    assert manifest["externally_connectable"] == {"matches": ["http://bridge.localhost:17871/*"]}
+    assert origin not in json.dumps(manifest)
 
 
 @pytest.fixture(scope="module")
@@ -513,9 +515,9 @@ def test_package_cannot_choose_its_own_hosted_workspace_origin(packaged_release,
     entries = _store_entries(packaged_release["bytes"])
     manifest = json.loads(entries["manifest.json"])
     if field == "host_permissions":
-        manifest[field][1] = "https://another.example.com/*"
+        manifest[field].append("https://another.example.com/*")
     elif field == "externally_connectable":
-        manifest[field]["matches"][1] = "https://another.example.com/public/onboarding/setup"
+        manifest[field]["matches"].append("https://another.example.com/public/onboarding/setup")
     elif field == "web_accessible_resources":
         manifest[field][0]["matches"] = ["<all_urls>"]
     else:

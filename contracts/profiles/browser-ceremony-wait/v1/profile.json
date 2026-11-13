@@ -1,0 +1,51 @@
+{
+  "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+  "governing_adr": "docs/adr/0029-operation-bound-browser-ceremonies.md",
+  "governing_amendment": "docs/adr/0029-amendments/2026-11-12-ceremony-outcome-wait.md",
+  "proof_profile": "urn:bridge-clean:browser-ceremony-wait-proof:v1",
+  "request_max_bytes": 8192,
+  "event_max_bytes": 1024,
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "wait": {
+    "method": "POST",
+    "path": "/v1/onboarding/browser-ceremonies:wait",
+    "response_media_type": "text/event-stream",
+    "event_name": "browser-ceremony",
+    "event_id_line": false,
+    "data_lines_per_event": 1,
+    "keepalive": "comment-line-at-most-every-15-seconds"
+  },
+  "request": "exact-browser-ceremony-read-scope-with-required-ceremony-id",
+  "key_resolution": "same-as-browser-ceremony-read",
+  "subscribe_before_read": true,
+  "first_frame": "current-hint-after-subscription",
+  "frame_rule": "emit-only-when-(revision,presentation_state,domain_status)-differs-from-previous-frame",
+  "per_frame_recheck": "current-key-and-exact-source-before-each-frame",
+  "termination": [
+    "after-frame-with-presentation-state-not-active",
+    "at-fixed-ceremony-deadline",
+    "on-disconnect",
+    "on-key-or-source-recheck-failure"
+  ],
+  "authority": false,
+  "creates_or_renews": false,
+  "settles_outcome": false,
+  "consumer_rule": "every-frame-is-an-invalidation-the-consumer-runs-its-proof-read-reconciliation",
+  "budgets": "separate-request-budget-and-held-stream-slots-from-browser-ceremony-entry-read-and-other-onboarding-streams",
+  "refusal_status": {
+    "invalid": 400,
+    "proof_invalid": 401,
+    "authorization_denied": 403,
+    "operation_conflict": 409,
+    "expired": 410,
+    "rate_limited": 429,
+    "temporarily_unavailable": 503
+  },
+  "messages": {
+    "definitions": "schemas/browser-ceremony-wait/v1/definitions.schema.json",
+    "wait-request": "schemas/browser-ceremony-wait/v1/wait-request.schema.json",
+    "wait-event": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "error": "schemas/browser-ceremony-wait/v1/error.schema.json"
+  }
+}

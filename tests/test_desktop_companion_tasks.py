@@ -58,7 +58,8 @@ def setup(tmp_path):
         delivered.append((account, target, payload, receive))
         return "dispatched"
 
-    manager = SimpleNamespace(browser_task_target=Mock(return_value=17), send_browser_task=send)
+    manager = SimpleNamespace(browser_task_target=Mock(return_value=17), send_browser_task=send,
+                              browser_task_pairing=Mock(return_value=None))
 
     def actor(request, mutation):
         assert mutation

@@ -4,6 +4,7 @@
 - Date: 2026-10-09
 - Decision authority: Product owner.
 - Extends: ADR 0047 with a separate enrolled-installation continuation.
+- Amended: 2026-11-12 (proposed: the extension takes no part in recovery, ADR 0047)
 - Preserves: ADR 0008's hosted provisioning and local authentication boundaries.
 - Governing cross-plane decisions: `creator-platform-contracts` ADR 0026,
   Continue setup for an enrolled installation, and ADR 0028, Authorize onboarding
@@ -91,10 +92,10 @@ Use pushed hosted events and one-shot expiry wakeups. Unknown transport outcomes
 uncertain, without guessed causes or authority. Explicit recovery retains completed
 work, and an unavailable result never means the remote mutation did not commit.
 
-An installed extension may return the fresh context to the exact admitted setup
-document under the existing document and scope fences. Recovery does not require
-the extension. Without it, browser APIs cannot reliably find an arbitrary old
-hosted tab: leave expired documents inactive and admit only the fresh context.
+The extension takes no part in recovery. Hosted pages never message it (ADR 0047),
+so it cannot return a fresh context to a setup document. Browser APIs cannot reliably
+find an arbitrary old hosted tab: leave expired documents inactive and admit only
+the fresh context.
 Background recovery never steals focus, navigates a user-owned unrelated document,
 or reloads an OnlyFans tab.
 

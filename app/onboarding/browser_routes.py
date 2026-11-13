@@ -6,8 +6,11 @@ from fastapi.responses import JSONResponse
 
 from app.onboarding.admission import AdmissionRefused
 from app.onboarding.admission_routes import HEADERS, authorize
+from app.onboarding.helper_events import NOTICES, BrowserTaskEventResponse
 from app.onboarding.routes import body
 from app.onboarding.task_reports import AdmittedAuthenticationTask, AuthenticationTaskReports
+from app.persistence.onboarding import require_journey
+from app.provisioning.events import events
 from app.security.companion_pairing import CompanionPairingError
 from app.security.hosted_grants import HostedGrantUnavailable
 
@@ -89,6 +92,88 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
         except (AdmissionRefused, HostedGrantUnavailable, ValueError):
             raise HTTPException(409, "Browser task changed") from None
         return JSONResponse({"state": "checking"}, status_code=202, headers=HEADERS)
+
+    @router.get("/api/v1/browser-tasks/events")
+    def task_events(request: Request):
+        session, task = task_session(request)
+        if coordinator._closed:
+            raise HTTPException(503, "Local setup is stopping")
+        return BrowserTaskEventResponse(coordinator, session, task, tasks.helpers)
+
+    @router.post("/api/v1/browser-tasks/focused")
+    async def focused(request: Request):
+        session, task = task_session(request, mutation=True)
+        await body(request, empty=True)
+        if not tasks.helpers.focused(task["task_id"], session.generation):
+            raise HTTPException(409, "Browser task changed")
+        return JSONResponse({"state": "focused"}, headers=HEADERS)
+
+    @router.post("/api/v1/browser-tasks/ended")
+    async def ended(request: Request):
+        session, task = task_session(request, mutation=True)
+        value = await body(request)
+        if set(value) != {"reason"} or value["reason"] not in NOTICES:
+            raise HTTPException(400, "Invalid browser task request")
+        tasks.helpers.notice(task["task_id"], session.generation, value["reason"])
+        return JSONResponse({"state": "recorded"}, headers=HEADERS)
+
+    @router.get("/api/v1/desktop/browser-tasks/notices")
+    def notices(request: Request):
+        if request.url.query:
+            raise HTTPException(400, "Invalid browser task request")
+        session = authorize(coordinator.admissions, request, role="desktop")
+        current = {task["task_id"] for task in tasks.current_native(session)}
+        return JSONResponse({"notices": tasks.helpers.notices(current)}, headers=HEADERS)
+
+    opening: set[str] = set()
+
+    def open_target(session, task_id):
+        with coordinator.store.database.read() as connection:
+            _, parent = coordinator.admissions._require(connection, session.identifier, role="desktop",
+                generation=session.generation)
+            task = connection.execute("SELECT * FROM desktop_browser_tasks WHERE task_id=?", (task_id,)).fetchone()
+        if (task is None or task["journey_id"] != parent["journey_id"]
+                or task["expires_at"] <= coordinator.admissions._now()
+                or task["state"] not in {"pending", "accepted", "outcome_unknown"}):
+            return None
+        return dict(task)
+
+    @router.post("/api/v1/desktop/browser-tasks/{task_id}/open")
+    async def open_task(request: Request, task_id: str):
+        """Choose one transport for an existing task: the paired session, the live helper, then Chrome."""
+        session = authorize(coordinator.admissions, request, role="desktop", mutation=True)
+        await body(request, empty=True)
+        if coordinator._closed:
+            raise HTTPException(503, "Local setup is stopping")
+        if task_id in opening:
+            return JSONResponse({"reason": "open_in_progress"}, status_code=429, headers=HEADERS)
+        opening.add(task_id)
+        try:
+            try:
+                task = open_target(session, require_journey(task_id))
+            except (AdmissionRefused, ValueError):
+                raise HTTPException(401, "Setup admission is unavailable") from None
+            if task is None:
+                return JSONResponse({"state": "unavailable"}, headers=HEADERS)
+            tasks.helpers.clear_notice(task_id)
+            if tasks.dispatcher is not None and task["purpose"] == "browser.authentication":
+                state = await tasks.dispatcher(request, session, task_id)
+                if state == "dispatched":
+                    return JSONResponse({"state": "dispatched"}, headers=HEADERS)
+                if state != "unreachable":
+                    raise HTTPException(409, "Browser task is unavailable")
+            if await tasks.helpers.focus(task_id, task["admission_generation"]):
+                return JSONResponse({"state": "focused"}, headers=HEADERS)
+            try:
+                # Reissue fences any helper that did not confirm focus.
+                code = coordinator.admissions.reissue_task_entry(session.identifier,
+                    generation=session.generation, task_id=task_id)
+            except (AdmissionRefused, ValueError):
+                return JSONResponse({"state": "unavailable"}, headers=HEADERS)
+            events.publish()
+            return JSONResponse({"state": "entry", "entry_code": code}, headers=HEADERS)
+        finally:
+            opening.discard(task_id)
 
     @router.post("/api/v1/browser-tasks/pairing")
     async def compare_pairing(request: Request):

@@ -3,19 +3,23 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import AsyncIterator, Protocol
 
+from app.onboarding import timing
 from app.onboarding.admission import AdmittedSession, ScopedAdmissions
 from app.onboarding.contract import SNAPSHOT_PROFILE, REASONS, canonical, digest, validate
 from app.onboarding.readiness import DesktopAnalysisReadiness
 from app.onboarding.browser_tasks import creator_label
 from app.persistence.onboarding import require_journey
 from app.provisioning.events import events
+from app.security.browser_ceremony_wait import CeremonyWaitUnavailable
 
 FACTS = ("browser_access", "installation", "account", "configuration", "enrollment", "pairing", "activation", "analysis")
 FACT_STATES = frozenset({"unknown", "missing", "verified", "paused"})
 RECOVERY_INTERVAL_SECONDS = 15
+WAIT_BACKOFF_CAP_SECONDS = 15
 
 
 class CommandRefused(ValueError):
@@ -75,6 +79,22 @@ class SetupOwner(Protocol):
         ...
 
 
+class ProbingSetupOwner(Protocol):
+    """Optional owner hooks for work whose outcome another party may settle soon."""
+
+    def probe_interval(self, operation: dict) -> float | None:
+        """Seconds between cheap outcome reads, or None for the ordinary recovery cadence."""
+        ...
+
+    async def probe(self, operation: dict) -> bool:
+        """Read without writing. True means the full reconciliation may now settle more."""
+        ...
+
+    def wait(self, operation: dict) -> AsyncIterator[tuple]:
+        """Held outcome hints for the same work. A hint only starts the full reconciliation."""
+        ...
+
+
 class DesktopOnboardingCoordinator:
     def __init__(self, admissions: ScopedAdmissions, owner: SetupOwner):
         self.admissions, self.owner = admissions, owner
@@ -83,6 +103,11 @@ class DesktopOnboardingCoordinator:
         self._watcher: asyncio.Task | None = None
         self._closed = False
         self._retry_at: dict[str, float] = {}
+        self._probes: dict[str, asyncio.Task] = {}
+        self._probe_at: dict[str, float] = {}
+        self._waits: dict[str, asyncio.Task] = {}
+        self._held: set[str] = set()
+        self._wake: asyncio.Event | None = None
 
     def _current(self, connection, session):
         row, parent = self.admissions._require(connection, session.identifier, role="desktop", generation=session.generation)
@@ -352,6 +377,7 @@ class DesktopOnboardingCoordinator:
             if changed:
                 connection.execute("UPDATE desktop_setup_journeys SET revision=revision+1 WHERE journey_id=?", (operation["journey_id"],))
         if changed:
+            timing.mark(operation["operation_id"], "reconciled")
             events.publish()
             settled = getattr(self.owner, "settled", None)
             if settled is not None:
@@ -373,13 +399,16 @@ class DesktopOnboardingCoordinator:
 
     async def _watch(self):
         listener = events.subscribe()
-        signal = listener[1]
+        signal = self._wake = listener[1]
         try:
             while not self._closed:
                 signal.clear()
                 pending = self._pending()
                 pending_ids = {operation["operation_id"] for operation in pending}
                 self._retry_at = {key: value for key, value in self._retry_at.items() if key in pending_ids}
+                self._probe_at = {key: value for key, value in self._probe_at.items() if key in pending_ids}
+                for operation_id in [key for key in self._waits if key not in pending_ids]:
+                    self._waits.pop(operation_id).cancel()
                 retry_delays = []
                 for operation in pending:
                     try:
@@ -400,6 +429,24 @@ class DesktopOnboardingCoordinator:
                             # Only domain-approved recovery of accepted work. No
                             # new command, browser window or presentation is created.
                             clock = asyncio.get_running_loop().time()
+                            interval = self._probe_interval(operation)
+                            if interval is not None:
+                                self._hold_wait(operation)
+                                if operation["operation_id"] in self._held:
+                                    # A healthy held wait replaces both the probe
+                                    # and the slow retry for this sign-in.
+                                    continue
+                                # A cheap read replaces the slow full retry while
+                                # its sign-in is open. A change starts the full read.
+                                if operation["operation_id"] not in self._probes:
+                                    due = self._probe_at.setdefault(operation["operation_id"], clock + interval)
+                                    if due <= clock:
+                                        self._start_probe(operation, interval)
+                                    else:
+                                        retry_delays.append(due - clock)
+                                continue
+                            if operation["operation_id"] in self._waits:
+                                self._waits.pop(operation["operation_id"]).cancel()
                             due = self._retry_at.setdefault(operation["operation_id"], clock + RECOVERY_INTERVAL_SECONDS)
                             if due <= clock:
                                 self._start(operation, reconcile=True, actor=None)
@@ -421,7 +468,105 @@ class DesktopOnboardingCoordinator:
                 else:
                     await signal.wait()
         finally:
+            self._wake = None
             events.unsubscribe(listener)
+
+    def _probe_interval(self, operation):
+        interval = getattr(self.owner, "probe_interval", None)
+        if interval is None or getattr(self.owner, "probe", None) is None:
+            return None
+        try:
+            value = interval(operation)
+        except Exception:
+            return None
+        return value if isinstance(value, (int, float)) and value > 0 else None
+
+    def _start_probe(self, operation, interval):
+        operation_id = operation["operation_id"]
+
+        async def run():
+            try:
+                changed = await self.owner.probe(operation)
+                delay = interval
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # An unavailable read proves nothing. Fall back to the ordinary
+                # full reconciliation and its slower cadence.
+                changed, delay = True, RECOVERY_INTERVAL_SECONDS
+            self._probe_at[operation_id] = asyncio.get_running_loop().time() + delay
+            if changed and not self._closed:
+                self._start(operation, reconcile=True, actor=None)
+
+        task = asyncio.create_task(run())
+        self._probes[operation_id] = task
+
+        def finished(probe):
+            if self._probes.get(operation_id) is probe:
+                self._probes.pop(operation_id, None)
+            if self._wake is not None:
+                self._wake.set()
+
+        task.add_done_callback(finished)
+
+    def _hold_wait(self, operation):
+        operation_id = operation["operation_id"]
+        if self._closed or operation_id in self._waits or getattr(self.owner, "wait", None) is None:
+            return
+        task = asyncio.create_task(self._run_wait(operation))
+        self._waits[operation_id] = task
+
+        def finished(wait):
+            if self._waits.get(operation_id) is wait:
+                self._waits.pop(operation_id, None)
+            self._held.discard(operation_id)
+            if self._wake is not None:
+                self._wake.set()
+
+        task.add_done_callback(finished)
+
+    async def _run_wait(self, operation):
+        operation_id, attempt, last = operation["operation_id"], 0, None
+        while not self._closed and self._probe_interval(operation) is not None:
+            delay = None
+            try:
+                async for hint in self.owner.wait(operation):
+                    if operation_id not in self._held:
+                        self._held.add(operation_id)
+                        self._probe_at.pop(operation_id, None)
+                        attempt = 0
+                    if hint != last:
+                        last = hint
+                        timing.mark(operation_id, "frame")
+                        self._reconcile_soon(operation)
+            except asyncio.CancelledError:
+                raise
+            except CeremonyWaitUnavailable as error:
+                delay = error.retry_after
+            except Exception:
+                # A lost wait proves nothing. The probe resumes at once.
+                pass
+            finally:
+                self._held.discard(operation_id)
+                if self._wake is not None:
+                    self._wake.set()
+            if delay is None:
+                delay = min(WAIT_BACKOFF_CAP_SECONDS, 0.25 * 2 ** attempt) * random.uniform(0.5, 1.0)
+            attempt += 1
+            await asyncio.sleep(delay)
+
+    def _reconcile_soon(self, operation):
+        """Reconcile now, or once more after a running reconciliation whose read may predate the hint."""
+        running = self._workers.get(operation["operation_id"])
+        if running is None or running.done():
+            self._start(operation, reconcile=True, actor=None)
+            return
+
+        def again(_):
+            if not self._closed:
+                self._start(operation, reconcile=True, actor=None)
+
+        running.add_done_callback(again)
 
     async def drain(self):
         while self._workers:
@@ -432,6 +577,10 @@ class DesktopOnboardingCoordinator:
         if self._watcher is not None:
             self._watcher.cancel()
             await asyncio.gather(self._watcher, return_exceptions=True)
+        probes = tuple(self._probes.values()) + tuple(self._waits.values())
+        for probe in probes:
+            probe.cancel()
+        await asyncio.gather(*probes, return_exceptions=True)
         await self.drain()
 
     def begin_shutdown(self):

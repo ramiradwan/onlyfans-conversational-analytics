@@ -1,19 +1,47 @@
 import { isPayloadProjection, UUID } from '../../shared/browser-tasks/wire.mjs';
 import { parseOnboardingJson } from '../../shared/onboarding/json.mjs';
-import { connectExtension } from './extension.js';
+import { connectExtension, reattachExtension } from './extension.js';
+import { readBrowserTaskEvents } from './events.js';
+
+const AUTHENTICATION_POLL_MS = 500;
+// While the helper stream is healthy the payload read is only a safety check.
+export const STREAM_POLL_MS = 15000;
+const STREAM_RETRY_CAP_MS = 5000;
+// Reasons a helper reports to Brain before it asks the extension to close it.
+const ENDINGS = ['profile_mismatch', 'account_mismatch', 'task_changed', 'task_expired', 'unavailable'];
 
 export class BrowserTaskClient {
-  constructor({ generation, receive, request = globalThis.fetch.bind(globalThis), connect = connectExtension, now = Date.now, nativeLaunch = false }) {
+  constructor({ generation, receive, request = globalThis.fetch.bind(globalThis), connect = connectExtension,
+    reattach = reattachExtension, events = readBrowserTaskEvents, now = Date.now, nativeLaunch = false }) {
     if (!UUID.test(generation)) throw new Error('session_unavailable');
-    Object.assign(this, { generation, receive, request, connect, now });
+    Object.assign(this, { generation, receive, request, connect, reattach, events, now });
     this.link = null; this.expiry = null; this.session = null; this.payload = null; this.serial = Promise.resolve(); this.run = 0;
-    this.pollTimer = null;
-    this.pollDelay = 2000;
+    this.pollTimer = null; this.stream = null; this.streamTimer = null; this.streaming = false;
+    this.pollBase = this.pollDelay = 2000;
     this.nativeLaunch = nativeLaunch === true;
+    this.lastLink = null; this.ending = null; this.extensionSeen = false; this.reattached = false;
     this.receive = value => {
       if (value.state !== 'service_unavailable') this.lastPresentation = value;
       receive(value);
+      if (ENDINGS.includes(value.state) && !this.ending) this.ending = this.end(value.state).catch(() => undefined);
     };
+  }
+  /** Report why this helper ended, then ask the extension to close it. An error that would be lost stays shown. */
+  async end(state) {
+    const reason = state === 'unavailable' && !this.extensionSeen ? 'extension_unavailable' : state;
+    let reported = false;
+    try { if (this.session) { await this.json('ended', { reason }); reported = true; } } catch { /* not recorded */ }
+    // Without an extension nothing can close this tab. It stays as the install surface.
+    if (reason === 'extension_unavailable') return;
+    // Brain already knows a changed or expired task. Other reasons close only once the desktop has them.
+    if (!reported && !['task_changed', 'task_expired'].includes(reason)) return;
+    if (this.lastLink?.end?.() === true) return;
+    await this.reattachOnce('close');
+  }
+  async reattachOnce(type) {
+    if (this.reattached || !this.payload) return false;
+    this.reattached = true;
+    return this.reattach({ payload: this.payload, type }).catch(() => false);
   }
   async json(path, body) {
     const response = await this.request('/api/v1/browser-tasks/' + path, { credentials: 'same-origin', redirect: 'error', cache: 'no-store',
@@ -38,6 +66,7 @@ export class BrowserTaskClient {
     this.pairStarted = false;
     this.pairFinished = false;
     this.pairCodeSent = false;
+    this.ending = null;
     this.receive({ state: 'loading' });
     try {
       const session = await this.json('session');
@@ -50,12 +79,16 @@ export class BrowserTaskClient {
       if (!isPayloadProjection(payload) || payload.task.admission_generation !== this.generation || payload.task.task_id !== session.task_id
         || payload.task.journey_id !== session.journey_id) throw new Error('task_changed');
       this.payload = payload;
+      // A sign-in popup closes when this read sees its task end.
+      this.fallbackPoll = payload.task.purpose === 'browser.authentication' ? AUTHENTICATION_POLL_MS : 2000;
+      this.pollBase = this.pollDelay = this.fallbackPoll;
       if (this.finishCompleted(payload)) return;
       const remaining = payload.task.expires_at * 1000 - this.now();
       if (remaining <= 0 || remaining > 1800000) throw new Error('task_expired');
       this.expiry = setTimeout(() => { this.stop(); this.receive({ state: 'task_expired', payload }); }, remaining);
-      this.link = this.connect({ payload, receive: value => {
+      this.link = this.lastLink = this.connect({ payload, receive: value => {
         if (run !== this.run) return;
+        if (value.state !== 'unavailable') this.extensionSeen = true;
         this.extensionState = value.state;
         if (!['ready', 'paused', 'auth_idle'].includes(value.state)) {
           this.automatic = false;
@@ -191,9 +224,54 @@ export class BrowserTaskClient {
         }).catch(error => { if (run === this.run) { this.stop(); this.receive({ state: error.message, payload }); } });
       } });
       this.schedulePoll(run);
+      this.listen(run);
     } catch (error) {
       if (run === this.run) { this.stop(); this.receive({ state: ['task_changed', 'task_expired'].includes(error.message) ? error.message : 'service_unavailable', payload: this.payload }); }
     }
+  }
+  listen(run) {
+    const controller = new AbortController();
+    this.stream = controller;
+    let attempt = 0;
+    const loop = async () => {
+      while (run === this.run) {
+        try {
+          await this.events({ request: this.request, generation: this.generation, signal: controller.signal,
+            open: () => { if (run === this.run) { attempt = 0; this.streamHealth(run, true); } },
+            frame: value => this.frame(run, value) });
+        } catch { /* reconnect below */ }
+        if (run !== this.run) return;
+        this.streamHealth(run, false);
+        await new Promise(resolve => { this.streamTimer = setTimeout(resolve, Math.min(1000 * 2 ** attempt++, STREAM_RETRY_CAP_MS)); });
+      }
+    };
+    void loop();
+  }
+  streamHealth(run, healthy) {
+    if (run !== this.run || this.streaming === healthy) return;
+    this.streaming = healthy;
+    this.pollBase = this.pollDelay = healthy ? STREAM_POLL_MS : this.fallbackPoll;
+    this.schedulePoll(run);
+  }
+  frame(run, value) {
+    if (run !== this.run || !this.payload || value.task_id !== this.payload.task.task_id) return;
+    if (value.type === 'focus') {
+      this.serial = this.serial.then(async () => {
+        if (run !== this.run || await this.link?.focus?.() !== true || run !== this.run) return;
+        await this.json('focused', {});
+      }).catch(() => undefined);
+      return;
+    }
+    // A frame is only an invalidation. Completion still follows a confirmed payload read.
+    this.serial = this.serial.then(async () => {
+      if (run !== this.run) return;
+      const current = await this.currentPayload();
+      if (run === this.run) this.finishCompleted(current);
+    }).catch(error => {
+      if (run !== this.run || !['task_expired', 'task_changed'].includes(error.message)) return;
+      const payload = this.payload;
+      this.stop(); this.receive({ state: error.message, payload });
+    });
   }
   schedulePoll(run) {
     clearTimeout(this.pollTimer);
@@ -202,7 +280,7 @@ export class BrowserTaskClient {
       try {
         const value = await this.currentPayload();
         if (run !== this.run || this.finishCompleted(value)) return;
-        this.pollDelay = 2000;
+        this.pollDelay = this.pollBase;
         if (this.pollUnavailable && this.lastPresentation) this.receive(this.lastPresentation);
         this.pollUnavailable = false;
       } catch (error) {
@@ -265,8 +343,9 @@ export class BrowserTaskClient {
     this.link = null;
     this.stop();
     this.receive({ state, payload });
-    if (link?.finish) void Promise.resolve(link.finish()).catch(() => false).finally(() => link.close());
-    else link?.close();
+    // A helper whose port died earlier makes one fresh attachment to finish.
+    void Promise.resolve(link?.finish ? link.finish() : false).catch(() => false)
+      .then(finished => { link?.close(); if (finished !== true && state === 'task_completed') return this.reattachOnce('finish'); });
   }
   async open() {
     const run = this.run;
@@ -292,5 +371,9 @@ export class BrowserTaskClient {
       return false;
     }
   }
-  stop() { this.nativeLaunch = false; this.automatic = false; this.run++; this.link?.close(); this.link = null; clearTimeout(this.expiry); clearTimeout(this.pollTimer); }
+  stop() {
+    this.nativeLaunch = false; this.automatic = false; this.run++; this.link?.close(); this.link = null;
+    clearTimeout(this.expiry); clearTimeout(this.pollTimer); clearTimeout(this.streamTimer);
+    this.stream?.abort(); this.stream = null; this.streaming = false;
+  }
 }

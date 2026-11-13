@@ -1405,3 +1405,38 @@ contracts:
     openapi_operations:
     - issueBrowserAuthenticationSelectionProofChallengeV2
     governing_adr: docs/adr/0058-provider-selection-v2-shared-federation.md
+  - id: browser-ceremony-wait-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Hold a content-free outcome hint stream for one exact browser ceremony so the
+      local product reconciles at once instead of polling.
+    profile: urn:bridge-clean:browser-ceremony-wait:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 1024
+    schema_paths:
+    - schemas/browser-ceremony-wait/v1/definitions.schema.json
+    - schemas/browser-ceremony-wait/v1/wait-request.schema.json
+    - schemas/browser-ceremony-wait/v1/wait-event.schema.json
+    - schemas/browser-ceremony-wait/v1/error.schema.json
+    openapi_operations:
+    - waitBrowserCeremonyV1
+    governing_adr: docs/adr/0029-operation-bound-browser-ceremonies.md
+  - id: browser-ceremony-wait-proof-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Prove one exact ceremony wait request in an independent installation-key domain.
+    profile: urn:bridge-clean:browser-ceremony-wait-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/browser-ceremony-wait/v1/proof-challenge-request.schema.json
+    - schemas/browser-ceremony-wait/v1/proof-challenge-response.schema.json
+    openapi_operations:
+    - issueBrowserCeremonyWaitProofChallenge
+    governing_adr: docs/adr/0029-operation-bound-browser-ceremonies.md

@@ -135,7 +135,8 @@
         "0034_nlp_dependencies.sql": "1337162d5f43f0b34a509ef298965807450362ae52ffc8b08a153fac95e25a67",
         "0035_text_analysis_authority.sql": "87f8846df9c7c6728edc3e205a8f5f0c36d92b769ae3e6ec9e5a5eb19b8372a7",
         "0036_authoritative_pair.sql": "93686f6dd3a6a804b2d33fa8afec00129ea799f54d516f000eb68ebd2e5b398b",
-        "0037_text_analysis_reissue.sql": "b786935312c86ac75d0a8cdab3a7e7817b69f914309e2360f6f1a191073968be"
+        "0037_text_analysis_reissue.sql": "b786935312c86ac75d0a8cdab3a7e7817b69f914309e2360f6f1a191073968be",
+        "0038_browser_task_dispatches.sql": "4ae5296c0fecf397f9152b71f9a80cc6b69956e77cf67f1bce043715ef822ffc"
       }
     },
     {
@@ -187,10 +188,10 @@
   ],
   "contracts": {
     "path": "_internal/contracts",
-    "manifest_sha256": "88330f89f0b9e72905a01ccfb8545015151c0d7d675c3b0c0076c9eb2dd75aee",
-    "consumer_pin_sha256": "739f76f027c356406c63fe4af955957679a1fd9fe077f04b391123e40dbdd213",
+    "manifest_sha256": "ba2cf309dc8b169dd4c6758f1f3603cd87124da623621217ed8e6a79c2c68cc6",
+    "consumer_pin_sha256": "938e80410ec2124266b6131c47d0af8bc8dd2dabbeadc1e4c6349a70b04d814b",
     "root_file_sha256": {
-      "loader.py": "7eff52275189cd7597fbae1577877db56fd85b66fde486ce492e0f8178ae9210",
+      "loader.py": "d392d1ac138dea71780294058e0f1c5ce1efb628166f326666174a645c80ad26",
       "verify.py": "e954e65aba92ffb85619ada60fafbc0e68a7c0e80947da84f4a6b1d6580b708e"
     },
     "root_files": [

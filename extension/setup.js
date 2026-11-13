@@ -9,8 +9,6 @@ import { createSurfaceClient, openSurface, send, secureExternalUrl, NoticeError 
 import { customerJourney, needsAgreement, modeChoiceAvailable } from './ui/presentation.mjs';
 import { element, show, text, renderLoading, renderJourney, renderLegalLinks, createPageActions } from './ui/dom.mjs';
 import { chooseMode, transition, restoreAccess, openCreatorAccount } from './ui/actions.mjs';
-import { bindSetupTransfer, renderReceivingContext } from './ui/setup-transfer.mjs';
-import { SETUP_TRANSFER_MESSAGE } from './runtime/setup-transfer.mjs';
 import { createDesktopLaunch, desktopLaunchPresentation } from './ui/desktop-launch.mjs';
 import { BROWSER_TASK_ENTRY_KEY, BROWSER_TASK_ADOPTION_KEY } from './runtime/browser-task-entry.mjs';
 import { createSetupChoice } from './ui/setup-choice.mjs';
@@ -30,7 +28,6 @@ let fullReviewRequested = false;
 let browserTask = null, browserTaskExpiry = null, desktopAdoption = false;
 let currentTask = null, taskHeading = null, taskLifetime = 0;
 let presentationStarted = false, workspacePending = location.hash.startsWith('#journey=');
-let receivingSetup = null, receivingTask = null, receivingFocusPending = false;
 const fullReviewPersistence = createFullReviewPersistence();
 const client = createSurfaceClient((model) => { if (model.status) failed = false; render(model); }, () => { failed = true; render(client.model); });
 const page = createPageActions(client, render, {
@@ -57,12 +54,12 @@ const desktopLaunch = createDesktopLaunch({ workspace: () => workspaceRecord,
   changed: () => render(client.model),
 });
 window.addEventListener('pagehide', () => {
-  taskLifetime++; receivingFocusPending = false;
+  taskLifetime++;
   clearTimeout(browserTaskExpiry);
-  desktopLaunch.stop(); receivingSetup?.close({ notify: false, focus: false });
+  desktopLaunch.stop();
 });
 let checkboxDraft = { terms_checked: false, risk_checked: false, full_checked: false };
-let receivingRead = 0, receivingExpiry = null;
+let receivingRead = 0;
 const consumeFullReviewIntent = createFullReviewIntentConsumer({ apply() {
   dismissed = false; setFullReview(true);
   setupChoice = { mode: 'full', stage: 'review' }; choicePersistence.write(workspaceRecord, setupChoice);
@@ -76,8 +73,6 @@ async function readWorkspace() {
   setupChoice = null;
   fullReviewRequested = false;
   checkboxDraft = { terms_checked: false, risk_checked: false, full_checked: false };
-  clearTimeout(receivingExpiry);
-  renderReceivingContext(document, null);
   try {
     const next = await send({ type: WORKSPACE_MESSAGE_TYPE, action: 'read' });
     const intent = (await chrome.storage.session.get([FULL_REVIEW_INTENT_KEY]))[FULL_REVIEW_INTENT_KEY];
@@ -97,13 +92,6 @@ async function readWorkspace() {
     if (browserTask) browserTaskExpiry = setTimeout(() => {
       browserTask = null; render(client.model);
     }, Math.max(0, browserTask.task.expires_at * 1000 - Date.now()));
-    render(client.model);
-    const receiving = await send({ type: SETUP_TRANSFER_MESSAGE, action: 'context' });
-    if (generation !== receivingRead || lifetime !== taskLifetime) return;
-    if (receiving?.expires_at > Date.now()) {
-      renderReceivingContext(document, receiving);
-      receivingExpiry = setTimeout(() => renderReceivingContext(document, null), receiving.expires_at - Date.now());
-    }
     render(client.model);
   } catch {}
   finally {
@@ -157,7 +145,6 @@ function render(model) {
     if (failed) document.querySelector('main').dataset.requirement = 'runtime-status';
     else delete document.querySelector('main').dataset.requirement;
     taskHeading = failed ? 'runtime-title' : null;
-    renderSetupTransfer();
     delete document.querySelector('main').dataset.ready;
     return;
   }
@@ -166,7 +153,7 @@ function render(model) {
     currentTask = 'legal-unavailable'; taskHeading = null;
     document.querySelector('main').dataset.task = currentTask;
     document.querySelector('main').dataset.requirement = 'legal-information';
-    show('legal-unavailable', true); text('step-summary', 'Setup unavailable'); renderSetupTransfer(); return;
+    show('legal-unavailable', true); text('step-summary', 'Setup unavailable'); return;
   }
   const mode = status.consent.mode;
   const agreement = needsAgreement(model);
@@ -279,7 +266,6 @@ function render(model) {
     show('background-tab-note', false); show('reopen-background-tab', false);
   }
   show('review-notice', legal.requires_reauthorization === true);
-  renderSetupTransfer();
 }
 function focusTask() {
   const heading = taskHeading ? element(taskHeading) : document.querySelector('#legal-unavailable h2');
@@ -287,22 +273,6 @@ function focusTask() {
     heading.setAttribute('tabindex', '-1'); heading.focus({ preventScroll: true }); return true;
   }
   return false;
-}
-function renderSetupTransfer() {
-  const entry = element('setup-transfer-entry');
-  const obsolete = receivingSetup?.opened && ((receivingTask !== null && receivingTask !== currentTask)
-    || !receivingSetup.direct);
-  const restore = obsolete && entry.contains(document.activeElement);
-  if (restore) receivingFocusPending = true;
-  if (obsolete) receivingSetup.close({ notify: false, focus: false });
-  const open = receivingSetup?.opened === true;
-  if (open && receivingTask === null) receivingTask = currentTask;
-  if (!open) receivingTask = null;
-  show('setup-transfer-entry', open);
-  for (const id of ['extension-stage', 'surface-feedback']) {
-    document.querySelector(`[data-reserved-region="${id}"]`).classList.toggle('hidden', open);
-  }
-  if (receivingFocusPending && focusTask()) receivingFocusPending = false;
 }
 function runJourneyAction(action) {
   if (action === 'review_full' || action === 'choose_mode') {
@@ -373,22 +343,10 @@ page.bind('full-secondary', async () => {
 });
 page.bind('restore-access', () => setupChoice?.stage === 'access' ? enableMode(setupChoice.mode) : restoreAccess(client.model));
 page.bind('reopen-background-tab', () => send({ type: OBSERVER_REOPEN_TYPE }));
-page.bind('setup-transfer-switch', () => openCreatorAccount());
 page.bind('pause', () => transition('pause', client.model));
 page.bind('journey-primary', () => runJourneyAction(element('journey-primary').dataset.action));
 page.bind('journey-secondary', () => runJourneyAction(element('journey-secondary').dataset.action));
 page.bind('open-options', () => openSurface('options'));
 page.bind('retry-runtime', () => client.sync());
 for (const heading of document.querySelectorAll('h2')) heading.setAttribute('tabindex', '-1');
-receivingSetup = bindSetupTransfer({ document, send,
-  changed: () => render(client.model), restoreFocus: () => {
-    receivingFocusPending = !focusTask();
-  } });
-const initialLifetime = taskLifetime;
-void Promise.all([initialWorkspace, client.start(), chrome.storage.session.get(['onboarding_code_entry_v1'])]).then(async ([, , values]) => {
-  if (initialLifetime !== taskLifetime) return;
-  if (location.hash === `#journey=${values.onboarding_code_entry_v1}`) {
-    receivingSetup?.open({ direct: true });
-    await chrome.storage.session.remove('onboarding_code_entry_v1');
-  }
-}).catch(() => undefined);
+void Promise.all([initialWorkspace, client.start()]).catch(() => undefined);

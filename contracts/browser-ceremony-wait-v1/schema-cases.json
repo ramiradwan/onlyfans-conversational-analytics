@@ -1,0 +1,1184 @@
+[
+  {
+    "case_id": "wait-request",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-request.schema.json",
+    "valid": true,
+    "value": {
+      "proof": {
+        "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+        "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA"
+      },
+      "request": {
+        "binding": {
+          "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+          "completion": {
+            "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mode": "extension-auth-flow"
+          },
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+          "intended_creator_id": "creator-fixture",
+          "purpose": "connect-account",
+          "source": {
+            "kind": "initial",
+            "operation_id": "0199b234-5678-7000-8000-000000000014",
+            "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+            "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+            "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+          },
+          "source_expires_at": "2026-11-12T12:30:00.000Z"
+        },
+        "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+        "operation_id": "0199b234-5678-7000-8000-000000000011",
+        "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+      }
+    }
+  },
+  {
+    "case_id": "wait-request-unknown",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-request.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {},
+      "proof": {
+        "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+        "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA"
+      },
+      "request": {
+        "binding": {
+          "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+          "completion": {
+            "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mode": "extension-auth-flow"
+          },
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+          "intended_creator_id": "creator-fixture",
+          "purpose": "connect-account",
+          "source": {
+            "kind": "initial",
+            "operation_id": "0199b234-5678-7000-8000-000000000014",
+            "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+            "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+            "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+          },
+          "source_expires_at": "2026-11-12T12:30:00.000Z"
+        },
+        "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+        "operation_id": "0199b234-5678-7000-8000-000000000011",
+        "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+      }
+    }
+  },
+  {
+    "case_id": "wait-request-missing-request",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+        "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA"
+      }
+    }
+  },
+  {
+    "case_id": "wait-request-missing-proof",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-request.schema.json",
+    "valid": false,
+    "value": {
+      "request": {
+        "binding": {
+          "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+          "completion": {
+            "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mode": "extension-auth-flow"
+          },
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+          "intended_creator_id": "creator-fixture",
+          "purpose": "connect-account",
+          "source": {
+            "kind": "initial",
+            "operation_id": "0199b234-5678-7000-8000-000000000014",
+            "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+            "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+            "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+          },
+          "source_expires_at": "2026-11-12T12:30:00.000Z"
+        },
+        "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+        "operation_id": "0199b234-5678-7000-8000-000000000011",
+        "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+      }
+    }
+  },
+  {
+    "case_id": "wait-event",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "wait-event-unknown",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "metadata": {},
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "wait-event-missing-profile",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "active",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "wait-event-missing-ceremony_id",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "wait-event-missing-revision",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    }
+  },
+  {
+    "case_id": "wait-event-missing-presentation_state",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "wait-event-missing-domain_status",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "proof-challenge-request",
+    "schema": "schemas/browser-ceremony-wait/v1/proof-challenge-request.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:browser-ceremony-wait-proof:v1",
+      "target": {
+        "operation": "browser-ceremony-wait",
+        "request": {
+          "binding": {
+            "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+            "completion": {
+              "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "mode": "extension-auth-flow"
+            },
+            "installation_id": "installation-fixture",
+            "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+            "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+            "intended_creator_id": "creator-fixture",
+            "purpose": "connect-account",
+            "source": {
+              "kind": "initial",
+              "operation_id": "0199b234-5678-7000-8000-000000000014",
+              "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+              "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+              "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+            },
+            "source_expires_at": "2026-11-12T12:30:00.000Z"
+          },
+          "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+          "operation_id": "0199b234-5678-7000-8000-000000000011",
+          "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "proof-challenge-request-unknown",
+    "schema": "schemas/browser-ceremony-wait/v1/proof-challenge-request.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {},
+      "profile": "urn:bridge-clean:browser-ceremony-wait-proof:v1",
+      "target": {
+        "operation": "browser-ceremony-wait",
+        "request": {
+          "binding": {
+            "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+            "completion": {
+              "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "mode": "extension-auth-flow"
+            },
+            "installation_id": "installation-fixture",
+            "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+            "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+            "intended_creator_id": "creator-fixture",
+            "purpose": "connect-account",
+            "source": {
+              "kind": "initial",
+              "operation_id": "0199b234-5678-7000-8000-000000000014",
+              "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+              "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+              "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+            },
+            "source_expires_at": "2026-11-12T12:30:00.000Z"
+          },
+          "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+          "operation_id": "0199b234-5678-7000-8000-000000000011",
+          "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "proof-challenge-request-missing-profile",
+    "schema": "schemas/browser-ceremony-wait/v1/proof-challenge-request.schema.json",
+    "valid": false,
+    "value": {
+      "target": {
+        "operation": "browser-ceremony-wait",
+        "request": {
+          "binding": {
+            "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+            "completion": {
+              "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "mode": "extension-auth-flow"
+            },
+            "installation_id": "installation-fixture",
+            "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+            "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+            "intended_creator_id": "creator-fixture",
+            "purpose": "connect-account",
+            "source": {
+              "kind": "initial",
+              "operation_id": "0199b234-5678-7000-8000-000000000014",
+              "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+              "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+              "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+            },
+            "source_expires_at": "2026-11-12T12:30:00.000Z"
+          },
+          "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+          "operation_id": "0199b234-5678-7000-8000-000000000011",
+          "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "proof-challenge-request-missing-target",
+    "schema": "schemas/browser-ceremony-wait/v1/proof-challenge-request.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:browser-ceremony-wait-proof:v1"
+    }
+  },
+  {
+    "case_id": "proof-challenge-response",
+    "schema": "schemas/browser-ceremony-wait/v1/proof-challenge-response.schema.json",
+    "valid": true,
+    "value": {
+      "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+      "expires_at": "2026-11-12T12:01:00.000Z",
+      "profile": "urn:bridge-clean:browser-ceremony-wait-proof:v1",
+      "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb"
+    }
+  },
+  {
+    "case_id": "proof-challenge-response-unknown",
+    "schema": "schemas/browser-ceremony-wait/v1/proof-challenge-response.schema.json",
+    "valid": false,
+    "value": {
+      "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+      "expires_at": "2026-11-12T12:01:00.000Z",
+      "metadata": {},
+      "profile": "urn:bridge-clean:browser-ceremony-wait-proof:v1",
+      "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb"
+    }
+  },
+  {
+    "case_id": "proof-challenge-response-missing-profile",
+    "schema": "schemas/browser-ceremony-wait/v1/proof-challenge-response.schema.json",
+    "valid": false,
+    "value": {
+      "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+      "expires_at": "2026-11-12T12:01:00.000Z",
+      "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb"
+    }
+  },
+  {
+    "case_id": "proof-challenge-response-missing-challenge",
+    "schema": "schemas/browser-ceremony-wait/v1/proof-challenge-response.schema.json",
+    "valid": false,
+    "value": {
+      "expires_at": "2026-11-12T12:01:00.000Z",
+      "profile": "urn:bridge-clean:browser-ceremony-wait-proof:v1",
+      "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb"
+    }
+  },
+  {
+    "case_id": "proof-challenge-response-missing-request_digest",
+    "schema": "schemas/browser-ceremony-wait/v1/proof-challenge-response.schema.json",
+    "valid": false,
+    "value": {
+      "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+      "expires_at": "2026-11-12T12:01:00.000Z",
+      "profile": "urn:bridge-clean:browser-ceremony-wait-proof:v1"
+    }
+  },
+  {
+    "case_id": "proof-challenge-response-missing-expires_at",
+    "schema": "schemas/browser-ceremony-wait/v1/proof-challenge-response.schema.json",
+    "valid": false,
+    "value": {
+      "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+      "profile": "urn:bridge-clean:browser-ceremony-wait-proof:v1",
+      "request_digest": "4266b079047832a175fa29184a99a094a705755fee8427c7c617801fa6ed9efb"
+    }
+  },
+  {
+    "case_id": "error",
+    "schema": "schemas/browser-ceremony-wait/v1/error.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "reason": "rate_limited"
+    }
+  },
+  {
+    "case_id": "error-unknown",
+    "schema": "schemas/browser-ceremony-wait/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {},
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "reason": "rate_limited"
+    }
+  },
+  {
+    "case_id": "error-missing-profile",
+    "schema": "schemas/browser-ceremony-wait/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "reason": "rate_limited"
+    }
+  },
+  {
+    "case_id": "error-missing-reason",
+    "schema": "schemas/browser-ceremony-wait/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+    }
+  },
+  {
+    "case_id": "wait-request-missing-request-profile",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+        "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA"
+      },
+      "request": {
+        "binding": {
+          "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+          "completion": {
+            "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mode": "extension-auth-flow"
+          },
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+          "intended_creator_id": "creator-fixture",
+          "purpose": "connect-account",
+          "source": {
+            "kind": "initial",
+            "operation_id": "0199b234-5678-7000-8000-000000000014",
+            "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+            "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+            "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+          },
+          "source_expires_at": "2026-11-12T12:30:00.000Z"
+        },
+        "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+        "operation_id": "0199b234-5678-7000-8000-000000000011"
+      }
+    }
+  },
+  {
+    "case_id": "wait-request-missing-request-operation_id",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+        "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA"
+      },
+      "request": {
+        "binding": {
+          "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+          "completion": {
+            "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mode": "extension-auth-flow"
+          },
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+          "intended_creator_id": "creator-fixture",
+          "purpose": "connect-account",
+          "source": {
+            "kind": "initial",
+            "operation_id": "0199b234-5678-7000-8000-000000000014",
+            "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+            "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+            "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+          },
+          "source_expires_at": "2026-11-12T12:30:00.000Z"
+        },
+        "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+        "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+      }
+    }
+  },
+  {
+    "case_id": "wait-request-missing-request-binding",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+        "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA"
+      },
+      "request": {
+        "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+        "operation_id": "0199b234-5678-7000-8000-000000000011",
+        "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+      }
+    }
+  },
+  {
+    "case_id": "wait-request-missing-request-ceremony_id",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+        "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA"
+      },
+      "request": {
+        "binding": {
+          "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+          "completion": {
+            "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mode": "extension-auth-flow"
+          },
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+          "intended_creator_id": "creator-fixture",
+          "purpose": "connect-account",
+          "source": {
+            "kind": "initial",
+            "operation_id": "0199b234-5678-7000-8000-000000000014",
+            "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+            "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+            "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+          },
+          "source_expires_at": "2026-11-12T12:30:00.000Z"
+        },
+        "operation_id": "0199b234-5678-7000-8000-000000000011",
+        "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+      }
+    }
+  },
+  {
+    "case_id": "wait-request-profile-urn:bridge-clean:browser-ceremony:v1",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+        "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA"
+      },
+      "request": {
+        "binding": {
+          "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+          "completion": {
+            "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mode": "extension-auth-flow"
+          },
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+          "intended_creator_id": "creator-fixture",
+          "purpose": "connect-account",
+          "source": {
+            "kind": "initial",
+            "operation_id": "0199b234-5678-7000-8000-000000000014",
+            "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+            "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+            "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+          },
+          "source_expires_at": "2026-11-12T12:30:00.000Z"
+        },
+        "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+        "operation_id": "0199b234-5678-7000-8000-000000000011",
+        "profile": "urn:bridge-clean:browser-ceremony:v1"
+      }
+    }
+  },
+  {
+    "case_id": "wait-request-profile-urn:bridge-clean:browser-ceremony-wait:v2",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "dmS1nhoxIkRePJTUv1SE0nEm9ccFLnMKCHXHffbcXRU",
+        "signature": "rgcEJTEBvHNPhy5R_xQKHQCUPzSBWMujCcg_7EK-x39oTwR5tvsTS-m3AKaEASnaX6zaQhgcSj7Xd_m4JNwFCA"
+      },
+      "request": {
+        "binding": {
+          "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+          "completion": {
+            "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mode": "extension-auth-flow"
+          },
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+          "intended_creator_id": "creator-fixture",
+          "purpose": "connect-account",
+          "source": {
+            "kind": "initial",
+            "operation_id": "0199b234-5678-7000-8000-000000000014",
+            "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+            "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+            "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+          },
+          "source_expires_at": "2026-11-12T12:30:00.000Z"
+        },
+        "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+        "operation_id": "0199b234-5678-7000-8000-000000000011",
+        "profile": "urn:bridge-clean:browser-ceremony-wait:v2"
+      }
+    }
+  },
+  {
+    "case_id": "proof-challenge-operation-browser-ceremony-read",
+    "schema": "schemas/browser-ceremony-wait/v1/proof-challenge-request.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:browser-ceremony-wait-proof:v1",
+      "target": {
+        "operation": "browser-ceremony-read",
+        "request": {
+          "binding": {
+            "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+            "completion": {
+              "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "mode": "extension-auth-flow"
+            },
+            "installation_id": "installation-fixture",
+            "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+            "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+            "intended_creator_id": "creator-fixture",
+            "purpose": "connect-account",
+            "source": {
+              "kind": "initial",
+              "operation_id": "0199b234-5678-7000-8000-000000000014",
+              "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+              "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+              "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+            },
+            "source_expires_at": "2026-11-12T12:30:00.000Z"
+          },
+          "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+          "operation_id": "0199b234-5678-7000-8000-000000000011",
+          "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "proof-challenge-operation-browser-ceremony-prepare",
+    "schema": "schemas/browser-ceremony-wait/v1/proof-challenge-request.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:browser-ceremony-wait-proof:v1",
+      "target": {
+        "operation": "browser-ceremony-prepare",
+        "request": {
+          "binding": {
+            "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+            "completion": {
+              "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "mode": "extension-auth-flow"
+            },
+            "installation_id": "installation-fixture",
+            "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+            "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+            "intended_creator_id": "creator-fixture",
+            "purpose": "connect-account",
+            "source": {
+              "kind": "initial",
+              "operation_id": "0199b234-5678-7000-8000-000000000014",
+              "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+              "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+              "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+            },
+            "source_expires_at": "2026-11-12T12:30:00.000Z"
+          },
+          "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+          "operation_id": "0199b234-5678-7000-8000-000000000011",
+          "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "proof-challenge-ceremony-v1-profile",
+    "schema": "schemas/browser-ceremony-wait/v1/proof-challenge-request.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:browser-ceremony-proof:v1",
+      "target": {
+        "operation": "browser-ceremony-wait",
+        "request": {
+          "binding": {
+            "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+            "completion": {
+              "extension_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "mode": "extension-auth-flow"
+            },
+            "installation_id": "installation-fixture",
+            "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+            "installation_key_jkt": "L_eILAxIAlT9gQS7UFow-yJphiCj4t7rsVy6It6wP-k",
+            "intended_creator_id": "creator-fixture",
+            "purpose": "connect-account",
+            "source": {
+              "kind": "initial",
+              "operation_id": "0199b234-5678-7000-8000-000000000014",
+              "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+              "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+              "request_digest": "112c2460cbc2fd0e1769444a70a4b28456a0a0d633d5c46fac80288ae7ede238"
+            },
+            "source_expires_at": "2026-11-12T12:30:00.000Z"
+          },
+          "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+          "operation_id": "0199b234-5678-7000-8000-000000000011",
+          "profile": "urn:bridge-clean:browser-ceremony-wait:v1"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "event-active-awaiting-authentication",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-active-awaiting-confirmation",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-confirmation",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-active-pending",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "pending",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-active-ready",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "ready",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-active-committed",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "committed",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-active-unavailable",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "unavailable",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-active-revoked",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "revoked",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-retired-awaiting-authentication",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "retired",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-retired-awaiting-confirmation",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-confirmation",
+      "presentation_state": "retired",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-retired-pending",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "pending",
+      "presentation_state": "retired",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-retired-ready",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "ready",
+      "presentation_state": "retired",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-retired-committed",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "committed",
+      "presentation_state": "retired",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-retired-unavailable",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "unavailable",
+      "presentation_state": "retired",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-retired-revoked",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "revoked",
+      "presentation_state": "retired",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-expired-awaiting-authentication",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "expired",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-expired-awaiting-confirmation",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-confirmation",
+      "presentation_state": "expired",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-expired-pending",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "pending",
+      "presentation_state": "expired",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-expired-ready",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "ready",
+      "presentation_state": "expired",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-expired-committed",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "committed",
+      "presentation_state": "expired",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-expired-unavailable",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "unavailable",
+      "presentation_state": "expired",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-expired-revoked",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "revoked",
+      "presentation_state": "expired",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-extra-binding",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "binding": "refused",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-extra-entry",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "entry": "refused",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-extra-entry_reference",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "entry_reference": "refused",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-extra-result",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "result": "refused",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-extra-attempt_id",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "attempt_id": "refused",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-extra-operation_id",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "operation_id": "refused",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-extra-expires_at",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "expires_at": "refused",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-extra-notification",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "notification": "refused",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-extra-customer_id",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "customer_id": "refused",
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-negative-revision",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": -1
+    }
+  },
+  {
+    "case_id": "event-unsafe-revision",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 9007199254740992
+    }
+  },
+  {
+    "case_id": "event-string-revision",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": "3"
+    }
+  },
+  {
+    "case_id": "event-fractional-revision",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 1.5
+    }
+  },
+  {
+    "case_id": "event-unknown-state",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "closed",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-unknown-status",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "admitted",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "event-ceremony-v1-profile",
+    "schema": "schemas/browser-ceremony-wait/v1/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "ceremony_id": "0199b234-5678-7000-8000-000000000012",
+      "domain_status": "awaiting-authentication",
+      "presentation_state": "active",
+      "profile": "urn:bridge-clean:browser-ceremony-",
+      "revision": 3
+    }
+  },
+  {
+    "case_id": "error-reason-not_ready",
+    "schema": "schemas/browser-ceremony-wait/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "reason": "not_ready"
+    }
+  },
+  {
+    "case_id": "error-reason-unknown_method",
+    "schema": "schemas/browser-ceremony-wait/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:browser-ceremony-wait:v1",
+      "reason": "unknown_method"
+    }
+  }
+]

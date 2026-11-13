@@ -1,5 +1,11 @@
 import { command, operation, snapshot, UUID } from './contract.js';
 import { setupEvents } from './events.js';
+import { exact } from '../../shared/browser-tasks/wire.mjs';
+import { parseOnboardingJson } from '../../shared/onboarding/json.mjs';
+
+// A helper tab reports why it ended. The desktop shows it where retry lives.
+const NOTICE_ERRORS = { extension_unavailable: 'extension_unavailable', profile_mismatch: 'profile_mismatch',
+  account_mismatch: 'account_mismatch', task_expired: 'operation_expired', unavailable: 'browser_unavailable' };
 
 async function refreshNativePresentation(generation) {
   const invoke = globalThis.__TAURI__?.core?.invoke;
@@ -30,6 +36,7 @@ export class DesktopSetupClient {
     this.reconnectTimer = null;
     this.reconnectDelay = 1000;
     this.operationError = null;
+    this.browserNotice = null;
     this.key = 'desktop-setup-operation:' + generation;
     try {
       const saved = storage.getItem(this.key);
@@ -38,7 +45,8 @@ export class DesktopSetupClient {
   }
 
   notify(error = null, deliberate = false) {
-    this.receive({ snapshot: this.value, pending: this.pending, connected: this.connected, error: error || this.operationError?.reason || null, deliberate });
+    this.receive({ snapshot: this.value, pending: this.pending, connected: this.connected,
+      error: error || this.operationError?.reason || this.browserNotice || null, deliberate });
   }
 
   retireAuthenticationError() {
@@ -226,6 +234,15 @@ export class DesktopSetupClient {
         this.notify(null, deliberate);
         if (this.launchOperation) void this.launchBrowser();
         if (this.pending && !value.pending_operations.some(item => item.operation_id === this.pending)) void this.receipt();
+      }, text => {
+        if (controller.signal.aborted) return;
+        const value = parseOnboardingJson(text);
+        if (!exact(value, ['notices']) || !Array.isArray(value.notices) || value.notices.length > 64
+          || !value.notices.every(item => exact(item, ['task_id', 'reason']) && UUID.test(item.task_id))) throw new Error('invalid_snapshot');
+        const notice = value.notices.map(item => NOTICE_ERRORS[item.reason]).find(Boolean) ?? null;
+        if (notice === this.browserNotice) return;
+        this.browserNotice = notice;
+        this.notify();
       });
     } catch (error) {
       if (!controller.signal.aborted) {

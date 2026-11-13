@@ -123,6 +123,7 @@ class BridgeBinding:
     view_revision: int | None = None
 
 
+ADVERTISED_TASK_PURPOSES = frozenset({"browser.access", "browser.identity", "browser.history-permission"})
 BROWSER_CONTROL_ACTIONS = frozenset({"capture.pause", "capture.resume", "companion.revoked",
     "browser.open.setup", "browser.open.access", "browser.open.history", "browser.open.creator"})
 
@@ -135,6 +136,9 @@ class BrowserSession:
     send: Callable[[dict[str, Any]], Awaitable[None]]
     surface: dict[str, Any] | None = None
     tasks: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Set only by this session's own advertisement; an older extension never advertises.
+    end_control: bool = False
+    task_purposes: frozenset[str] = frozenset()
 
 
 @dataclass(slots=True)
@@ -216,6 +220,8 @@ class InMemoryTransportManager:
         # Authenticated extension sessions that accept session controls, by account.
         self._browser_sessions: dict[str, dict[int, BrowserSession]] = {}
         self._browser_session_ids = 0
+        # Set by the onboarding owner: replays ended tasks dispatched to this session's pairing.
+        self.browser_task_advertised: Callable[[BrowserSession], Awaitable[None]] | None = None
         self._catchup_auth_path = Path(settings.auth_database_path).resolve()
         subscribe_authority_changes(self._capture_authority_changed)
 
@@ -1541,6 +1547,45 @@ class InMemoryTransportManager:
             return True
         except Exception:
             return False
+
+    async def advertise_browser_tasks(self, account_id, token, value):
+        """Record which closed controls and task purposes this one session accepts."""
+        if (not isinstance(value, dict) or set(value) != {"controls", "task_purposes"}
+                or value["controls"] != ["browser.task.end"] or not isinstance(value["task_purposes"], list)
+                or value["task_purposes"] != sorted(set(value["task_purposes"]))
+                or not set(value["task_purposes"]) <= ADVERTISED_TASK_PURPOSES):
+            raise ValueError("Invalid browser task advertisement")
+        session = self._browser_sessions.get(account_id, {}).get(token)
+        if session is None:
+            raise ValueError("Browser session is closed")
+        session.end_control = True
+        session.task_purposes = frozenset(value["task_purposes"])
+        if self.browser_task_advertised is not None:
+            await self.browser_task_advertised(session)
+
+    async def send_browser_task_end(self, session: BrowserSession, task_id: str, admission_generation: str) -> bool:
+        """Notify one advertised session that a task ended. The control carries no outcome."""
+        if not session.end_control:
+            return False
+        entry = session.tasks.pop(task_id, None)
+        if entry is not None:
+            entry["expiry"].cancel()
+            if not entry["ack"].done():
+                entry["ack"].set_result("unconfirmed")
+        try:
+            await session.send({"type": "session.control", "id": str(uuid4()), "action": "browser.task.end",
+                                "task_id": task_id, "admission_generation": admission_generation})
+            return True
+        except Exception:
+            return False
+
+    def browser_task_pairing(self, account_id: str, token: int) -> str | None:
+        session = self._browser_sessions.get(account_id, {}).get(token)
+        return None if session is None else session.pairing_id
+
+    def browser_sessions_for_pairing(self, pairing_id: str) -> list[BrowserSession]:
+        return [session for sessions in self._browser_sessions.values() for session in sessions.values()
+                if session.pairing_id == pairing_id and session.end_control]
 
     async def report_browser_task(self, account_id, token, value):
         if (not isinstance(value, dict) or set(value) != {"task_id", "admission_generation", "state", "notification"}

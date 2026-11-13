@@ -1627,15 +1627,13 @@ def _qualified_workspace_policy(manifest: dict[str, Any]) -> bool:
             page.path != "/public/onboarding/setup" or origin_of(page) != origin
         )):
             return False
-        receiver = origin + page.path if page else ""
     except (OSError, TypeError, ValueError):
         return False
+    # The hosted origin is only the sign-in popup's navigation target. No manifest value names it.
     return (
-        manifest.get("host_permissions") == ["http://bridge.localhost/*", origin + "/*"]
-        and manifest.get("externally_connectable") == {
-            "matches": [local_match] + ([receiver] if receiver else [])
-            + [origin + "/public/onboarding/installation-continuation"]
-        }
+        manifest.get("host_permissions") == ["http://bridge.localhost/*"]
+        and manifest.get("externally_connectable") == {"matches": [local_match]}
+        and origin not in json.dumps(manifest)
     )
 
 

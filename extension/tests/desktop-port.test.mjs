@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
-import { DESKTOP_PORT_NAME, admitDesktopSender, closeFinishedHelper, desktopStage, registerDesktopPort } from '../runtime/desktop-port.mjs';
+import { DESKTOP_PORT_NAME, admitDesktopSender, closeEndedHelper, closeFinishedHelper, desktopStage, registerDesktopPort } from '../runtime/desktop-port.mjs';
 import { payload, observation, id } from '../test-fixtures/browser-task.mjs';
 import { openPairingStore } from '../runtime/companion-pairing-store.mjs';
 import { FakeIndexedDb } from './fake-indexeddb.mjs';
@@ -29,9 +29,9 @@ test('the stage follows the extension-owned prerequisites in order', () => {
 });
 
 
-function harness(t) {
+function harness(t, { endedGraceMs } = {}) {
   const onConnectExternal = event(), session = {}, subscribers = new Set();
-  const calls = { attach: 0, reads: 0, open: 0, pair: 0, cancel: 0, auth: 0, closeDocument: 0 };
+  const calls = { attach: 0, reads: 0, open: 0, pair: 0, cancel: 0, auth: 0, closeDocument: 0, retired: [] };
   const tabs = new Map([[12, { url: sender().url, windowId: 4 }], [13, { url: sender().url, windowId: 4 }]]);
   let clock = Date.now(), pairingOwner = null;
   const value = payload(clock), next = observation(value.task);
@@ -49,8 +49,8 @@ function harness(t) {
     async read() { return { ...authStatus }; }, async launch(_payload, guard) {
       await guard(); await authentication.betweenGuards(); await guard(); calls.auth++;
       authStatus.state = 'opening';
-    } };
-  const portOwner = registerDesktopPort({ chromeApi, companion, owner, authentication, now: () => clock }); portOwner.register();
+    }, async retire(value) { calls.retired.push(value); } };
+  const portOwner = registerDesktopPort({ chromeApi, companion, owner, authentication, now: () => clock, endedGraceMs }); portOwner.register();
   t.after(() => portOwner.unregister());
   function connect(admission = sender()) {
     const port = { name: DESKTOP_PORT_NAME, sender: admission, onMessage: event(), onDisconnect: event(), sent: [], disconnected: false,
@@ -59,7 +59,9 @@ function harness(t) {
   }
   const attach = async (port, p = value) => { port.onMessage.emit({ type: 'attach', payload: p }); await tick(); await tick(); };
   const message = (port, type) => port.onMessage.emit({ type, task_id: value.task.task_id, admission_generation: value.task.admission_generation });
-  return { value, next, calls, connect, attach, message, portOwner, tabs, chromeApi, authentication, authStatus, owner, companion,
+  // Ended: refused and released. Only this helper's own close request may follow.
+  const ended = port => port.disconnected || port.sent.at(-1)?.type === 'refused';
+  return { value, next, calls, connect, attach, message, portOwner, ended, tabs, chromeApi, authentication, authStatus, owner, companion,
     advance: ms => { clock += ms; }, announce: value => { for (const fn of subscribers) fn(value); } };
 }
 
@@ -102,7 +104,7 @@ test('authentication rechecks creator, permission, navigation and deadline immed
     const port = h.connect(); await h.attach(port);
     h.authentication.betweenGuards = async () => mutate(h);
     h.message(port, 'authenticate'); await tick(); await tick();
-    assert.equal(h.calls.auth, 0); assert.equal(port.disconnected, true);
+    assert.equal(h.calls.auth, 0); assert.equal(h.ended(port), true);
   }
 });
 
@@ -110,7 +112,7 @@ test('an access task cannot invoke authentication even when a permitted account 
   const h = harness(t), port = h.connect();
   h.next.state = 'ready'; h.next.creator_account_id = 'creator-test';
   await h.attach(port); h.message(port, 'authenticate'); await tick();
-  assert.equal(h.calls.auth, 0); assert.equal(port.disconnected, true);
+  assert.equal(h.calls.auth, 0); assert.equal(h.ended(port), true);
 });
 
 test('only an exact top-level helper document is admitted', () => {
@@ -121,7 +123,7 @@ test('only an exact top-level helper document is admitted', () => {
 test('reads and opens require the scoped handshake; old general commands are refused', async t => {
   const h = harness(t), port = h.connect(); await tick(); assert.equal(h.calls.reads, 0);
   port.onMessage.emit({ type: 'open', version: 1, step: 'creator' }); await tick();
-  assert.equal(port.disconnected, true); assert.equal(h.calls.open, 0); assert.equal(h.calls.pair, 0);
+  assert.equal(h.ended(port), true); assert.equal(h.calls.open, 0); assert.equal(h.calls.pair, 0);
 });
 test('an admitted task only opens its declared action and coalesces notifications', async t => {
   const h = harness(t), port = h.connect(); await h.attach(port);
@@ -129,21 +131,21 @@ test('an admitted task only opens its declared action and coalesces notification
   const reads = h.calls.reads; for (let i = 0; i < 10; i++) h.portOwner.changed(); await tick();
   assert.equal(h.calls.reads, reads + 1); assert.equal(port.sent.length, 1);
   h.message(port, 'open'); h.message(port, 'open'); await tick(); assert.equal(h.calls.open, 1);
-  h.message(port, 'pair'); await tick(); assert.equal(h.calls.pair, 0); assert.equal(port.disconnected, true);
+  h.message(port, 'pair'); await tick(); assert.equal(h.calls.pair, 0); assert.equal(h.ended(port), true);
 });
 test('expired, wrong extension, wrong generation and extra-field handshakes do nothing', async t => {
   const h = harness(t);
   for (const change of [{ extension_id: 'b'.repeat(32) }, { extra: true }, { task: { ...h.value.task, admission_generation: id(99) } },
     { task: { ...h.value.task, expires_at: Date.now() / 1000 - 1 } }]) {
-    const port = h.connect(); await h.attach(port, { ...h.value, ...change }); assert.equal(port.disconnected, true);
+    const port = h.connect(); await h.attach(port, { ...h.value, ...change }); assert.equal(h.ended(port), true);
   }
   assert.equal(h.calls.attach, 0); assert.equal(h.calls.pair, 0);
 });
 test('a second tab cannot steal an attached task and navigation fences the owner', async t => {
   const h = harness(t), first = h.connect(), second = h.connect(sender({ tab: { id: 13, windowId: 4 } }));
-  await h.attach(first); await h.attach(second); assert.equal(second.disconnected, true); assert.equal(h.calls.attach, 1);
+  await h.attach(first); await h.attach(second); assert.equal(h.ended(second), true); assert.equal(h.calls.attach, 1);
   h.tabs.set(12, { url: 'https://onlyfans.com/', windowId: 4 }); h.message(first, 'open'); await tick();
-  assert.equal(first.disconnected, true); assert.equal(h.calls.open, 0);
+  assert.equal(h.ended(first), true); assert.equal(h.calls.open, 0);
 });
 
 test('a helper disconnected during attachment releases a late returned lease', async t => {
@@ -164,7 +166,7 @@ test('task liveness reads no account state and cannot extend its fixed expiry', 
   assert.deepEqual(port.sent.at(-1), { type: 'pong', task_id: h.value.task.task_id, admission_generation: h.value.task.admission_generation });
   assert.equal(h.calls.reads, reads); assert.equal(h.calls.open, 0);
   h.advance(1800001); h.message(port, 'ping'); await tick();
-  assert.equal(port.sent.at(-1).reason, 'task_expired'); assert.equal(port.disconnected, true);
+  assert.equal(port.sent.at(-1).reason, 'task_expired'); assert.equal(h.ended(port), true);
   assert.equal(h.calls.reads, reads);
 });
 test('only the pairing task sees its independent comparison code and owns cancellation', async t => {
@@ -218,7 +220,7 @@ for (const cause of ['disconnect', 'account', 'permission', 'navigation', 'deadl
     }
     complete(true); await tick(); await tick();
     assert.equal(port.sent.some(value => value.type === 'pairing-completed'), false);
-    assert.equal(port.disconnected, true);
+    assert.equal(h.ended(port), true);
   });
 }
 
@@ -238,7 +240,7 @@ test('pairing rechecks account and browser access before opening an attempt', as
     h.value.creator_account_id = 'creator-test';
     h.next.state = state; h.next.creator_account_id = state === 'ready' ? 'another-creator' : null;
     const port = h.connect(); await h.attach(port); h.message(port, 'pair'); await tick();
-    assert.equal(h.calls.pair, 0); assert.equal(port.disconnected, true);
+    assert.equal(h.calls.pair, 0); assert.equal(h.ended(port), true);
   }
 });
 
@@ -271,7 +273,7 @@ test('replacement without a prior saved-pin presentation and a stale replacement
     if (cause === 'deadline') h.advance(3_600_000);
     h.message(port, 'replace-pairing'); await tick(); await tick();
     assert.equal(h.calls.pair, 0, cause);
-    assert.equal(port.disconnected, true, cause);
+    assert.equal(h.ended(port), true, cause);
   }
 });
 
@@ -315,7 +317,7 @@ test('a fresh generation fences the prior helper without changing the operation'
   const next = h.connect(sender({ url, documentId: 'replacement', tab: { id: 13, windowId: 4 } }));
   h.next.admission_generation = id(88);
   await h.attach(next, replacement);
-  assert.equal(first.disconnected, true); assert.equal(next.disconnected, false);
+  assert.equal(h.ended(first), true); assert.equal(next.disconnected, false);
   assert.equal(h.portOwner.connected, 1); assert.equal(h.calls.pair, 0);
   h.message(first, 'open'); await tick(); assert.equal(h.calls.open, 0);
 });
@@ -331,7 +333,33 @@ test('finish closes only the exact admitted helper document and acknowledges pre
   assert.deepEqual(h.calls.lastClose.args, [h.value.task.admission_generation, h.value.task.expires_at]);
   assert.deepEqual(port.sent.at(-1), { type: 'finished', task_id: h.value.task.task_id,
     admission_generation: h.value.task.admission_generation });
-  assert.equal(port.disconnected, true); assert.equal(h.calls.open, 0);
+  assert.equal(h.ended(port), true); assert.equal(h.calls.open, 0);
+});
+
+test('a finished authentication helper ends its sign-in before acknowledging', async t => {
+  const h = harness(t); authenticateTask(h);
+  const port = h.connect(); await h.attach(port);
+  h.message(port, 'authenticate'); await tick(); await tick();
+  assert.deepEqual(h.calls.retired, []);
+  h.message(port, 'finish'); await tick(); await tick();
+  assert.deepEqual(h.calls.retired, [h.value]);
+  assert.deepEqual(port.sent.at(-1), { type: 'finished', task_id: h.value.task.task_id,
+    admission_generation: h.value.task.admission_generation });
+});
+
+test('a refused finish or a disconnected helper leaves the sign-in open', async t => {
+  const h = harness(t); authenticateTask(h);
+  const port = h.connect(); await h.attach(port);
+  h.message(port, 'authenticate'); await tick(); await tick();
+  h.chromeApi.scripting.executeScript = async options => [{ frameId: 0, documentId: options.target.documentIds[0], result: false }];
+  h.message(port, 'finish'); await tick(); await tick();
+  assert.equal(port.sent.some(value => value.type === 'finished'), false);
+  assert.deepEqual(h.calls.retired, []);
+  const g = harness(t); authenticateTask(g);
+  const helper = g.connect(); await g.attach(helper);
+  g.message(helper, 'authenticate'); await tick(); await tick();
+  helper.disconnect(); await tick();
+  assert.deepEqual(g.calls.retired, []);
 });
 
 for (const cause of ['task', 'generation', 'extra', 'expiry', 'navigation', 'pending-navigation', 'replaced-document']) {
@@ -350,7 +378,7 @@ for (const cause of ['task', 'generation', 'extra', 'expiry', 'navigation', 'pen
       throw Error('No document with id document-1');
     };
     port.onMessage.emit(message); await tick(); await tick();
-    assert.equal(h.calls.closeDocument, 0); assert.equal(port.disconnected, true);
+    assert.equal(h.calls.closeDocument, 0); assert.equal(h.ended(port), true);
     assert.equal(port.sent.some(value => value.type === 'finished'), false);
   });
 }
@@ -378,6 +406,100 @@ test('the injected closure rechecks the top-level exact URL and original expiry 
       generation: cause === 'invalid-generation' ? 'invalid' : generation,
       expiresAt: cause === 'invalid-expiry' ? NaN : expiresAt,
       Date: { now: () => (expiresAt - (cause === 'expiry' ? 0 : 1)) * 1000 } });
+    assert.equal(result, cause === 'valid', cause); assert.equal(closed, cause === 'valid' ? 1 : 0, cause);
+  }
+});
+
+const ended = (h, port, cause = id(0)) => ({ type: 'close', task_id: cause === 'task' ? id(89) : h.value.task.task_id,
+  admission_generation: cause === 'generation' ? id(88) : h.value.task.admission_generation });
+
+test('a refused helper that reports and asks to close has exactly its own document closed, even after expiry', async t => {
+  const h = harness(t), port = h.connect(); await h.attach(port);
+  h.advance(31000);
+  h.message(port, 'ping'); await tick(); await tick();
+  assert.deepEqual(port.sent.at(-1), { type: 'refused', reason: 'task_expired' });
+  assert.equal(port.disconnected, false, 'the port waits for the helper');
+  assert.equal(h.portOwner.connected, 0, 'the task is released at once');
+  port.onMessage.emit(ended(h, port)); await tick(); await tick();
+  assert.equal(h.calls.closeDocument, 1);
+  assert.equal(h.calls.lastClose.func, closeEndedHelper);
+  assert.deepEqual(h.calls.lastClose.target, { tabId: 12, documentIds: ['document-1'] });
+  assert.deepEqual(h.calls.lastClose.args, [h.value.task.admission_generation]);
+  assert.equal(port.disconnected, true);
+});
+
+test('a refused helper that never asks to close stays open after the grace period', async t => {
+  const h = harness(t, { endedGraceMs: 30 }), port = h.connect(); await h.attach(port);
+  h.advance(31000);
+  h.message(port, 'ping'); await tick(); await tick();
+  assert.equal(port.sent.at(-1).type, 'refused');
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.equal(port.disconnected, true);
+  assert.equal(h.calls.closeDocument, 0, 'the helper keeps showing its error');
+});
+
+for (const cause of ['task', 'generation', 'other-message', 'navigation']) {
+  test(`after a refusal a close for ${cause} closes no document`, async t => {
+    const h = harness(t), port = h.connect(); await h.attach(port);
+    h.advance(31000);
+    h.message(port, 'ping'); await tick(); await tick();
+    if (cause === 'navigation') h.tabs.set(12, { url: 'https://onlyfans.com/', windowId: 4 });
+    if (cause === 'other-message') h.message(port, 'open');
+    else port.onMessage.emit(ended(h, port, cause));
+    await tick(); await tick();
+    assert.equal(h.calls.closeDocument, 0); assert.equal(h.calls.open, 0);
+    assert.equal(port.disconnected, true);
+  });
+}
+
+test('a live helper that ended on its own side closes its own document and releases the task', async t => {
+  const h = harness(t), port = h.connect(); await h.attach(port);
+  assert.equal(h.portOwner.connected, 1);
+  port.onMessage.emit(ended(h, port)); await tick(); await tick();
+  assert.equal(h.calls.closeDocument, 1);
+  assert.equal(h.calls.lastClose.func, closeEndedHelper);
+  assert.equal(h.portOwner.connected, 0);
+  assert.equal(port.disconnected, true);
+});
+
+test('a fresh port for an ended task may close only that exact helper document', async t => {
+  const h = harness(t), port = h.connect();
+  await h.attach(port, { ...h.value, task: { ...h.value.task, state: 'cancelled' } });
+  assert.deepEqual(port.sent.at(-1), { type: 'refused', reason: 'task_changed' });
+  assert.equal(h.calls.attach, 0);
+  port.onMessage.emit(ended(h, port)); await tick(); await tick();
+  assert.equal(h.calls.closeDocument, 1);
+  const other = h.connect();
+  await h.attach(other, { ...h.value, extension_id: 'b'.repeat(32) });
+  other.onMessage.emit(ended(h, other)); await tick(); await tick();
+  assert.equal(h.calls.closeDocument, 1, 'a payload for another extension declares nothing');
+});
+
+test('focus brings forward only the current admitted helper tab', async t => {
+  const h = harness(t), port = h.connect(); await h.attach(port);
+  const focused = [];
+  h.chromeApi.tabs.update = async (tabId, change) => { focused.push(['tab', tabId, change]); };
+  h.chromeApi.windows = { async update(windowId, change) { focused.push(['window', windowId, change]); } };
+  h.message(port, 'focus'); await tick(); await tick();
+  assert.deepEqual(focused, [['tab', 12, { active: true }], ['window', 4, { focused: true }]]);
+  assert.deepEqual(port.sent.at(-1), { type: 'focused', task_id: h.value.task.task_id, admission_generation: h.value.task.admission_generation });
+  focused.length = 0;
+  h.tabs.set(12, { url: 'https://onlyfans.com/', windowId: 4 });
+  h.message(port, 'focus'); await tick(); await tick();
+  assert.deepEqual(focused, []);
+  assert.equal(port.sent.at(-1).type, 'refused');
+});
+
+test('the ended-helper closer keeps the exact document checks and drops only the expiry check', () => {
+  const generation = id(4);
+  for (const cause of ['valid', 'iframe', 'generation', 'query', 'invalid-generation']) {
+    let closed = 0;
+    const window = { location: { href: ORIGIN + '/browser-tasks#presentation=' + generation }, close() { closed++; } };
+    window.top = cause === 'iframe' ? {} : window;
+    if (cause === 'generation') window.location.href = ORIGIN + '/browser-tasks#presentation=' + id(88);
+    if (cause === 'query') window.location.href = ORIGIN + '/browser-tasks?other=1#presentation=' + generation;
+    const result = runInNewContext('(' + closeEndedHelper.toString() + ')(generation)', { window,
+      generation: cause === 'invalid-generation' ? 'invalid' : generation, Date: { now: () => 1e15 } });
     assert.equal(result, cause === 'valid', cause); assert.equal(closed, cause === 'valid' ? 1 : 0, cause);
   }
 });

@@ -15,13 +15,13 @@ from app.security.initial_handoff import timestamp
 
 class BrowserCeremonies:
     def __init__(self, store, client, *, hosted_origin, decision_client=None, authentication_client=None,
-                 authentication_providers=("default",)):
+                 authentication_providers=("default",), wait_client=None):
         self.store, self.client, self.hosted_origin = store, client, hosted_origin
         from app.onboarding.decisions import DesktopDecisions
         self.decisions = None if decision_client is None else DesktopDecisions(store, self, decision_client)
         from app.onboarding.authentication import DesktopAuthentication
         self.authentication = None if authentication_client is None else DesktopAuthentication(
-            store, self, authentication_client, providers=authentication_providers)
+            store, self, authentication_client, providers=authentication_providers, waits=wait_client)
         self._lock = asyncio.Lock()
         self._effects = OwnerEffects()
 

@@ -37,22 +37,6 @@ for (const name of ['legal_unavailable', 'runtime_unavailable']) {
   });
 }
 
-test('a direct receiving entry focuses its code only after initial legal information is ready', async ({ page }) => {
-  const journey = '11111111-1111-4111-8111-111111111111';
-  const rendering = renderSurfaceState(page, { ...SURFACE_STATES.preview_complete, receiving: true,
-    hash: `journey=${journey}`, initialRequestHold: 'ofca.legal-activation.status',
-    sessionValues: { onboarding_code_entry_v1: journey } });
-  await page.waitForFunction(() => typeof window.__releaseInitialRequest === 'function');
-  await expect(page.locator('#loading')).toBeVisible();
-  await expect(page.locator('#setup-transfer-entry')).toBeHidden();
-  await expect(page.locator('#setup-transfer-code')).not.toBeFocused();
-  await page.evaluate(() => window.__releaseInitialRequest());
-  await rendering;
-  await expect(page.locator('#setup-transfer-entry')).toBeVisible();
-  await expect(page.locator('#setup-transfer-code')).toBeFocused();
-  await expect(page.locator('#loading')).toBeHidden();
-});
-
 for (const [state, card, task] of [
   [{ runtimeUnavailable: true }, '#runtime-unavailable', 'unavailable'],
   [{ configured: false }, '#legal-unavailable', 'legal-unavailable'],
@@ -216,68 +200,11 @@ test('Preview waiting does not display a verified icon before observer attachmen
   await expect(page.locator('#journey-icon')).not.toHaveText('✓');
 });
 
-for (const width of [1280, 390, 320]) for (const theme of ['light', 'dark']) {
-  test(`receiving code validation stays in its workspace at ${width}px in ${theme}`, async ({ page }, info) => {
-    await page.setViewportSize({ width, height: 960 });
-    await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
-    await renderSurfaceState(page, { ...SURFACE_STATES.start_choice, receiving: true, sessionValues: { onboarding_code_entry_v1: '11111111-1111-4111-8111-111111111111' } });
-    await expect(page.locator('#setup-transfer-entry')).toBeVisible();
-    await expect(page.locator('#setup-transfer-code')).toBeFocused();
-    await page.locator('#setup-transfer-code').fill('123');
-    await page.locator('#setup-transfer-submit').click();
-    await expect(page.locator('#setup-transfer-status')).toHaveText('Enter the 12-character setup code.');
-    await expect(page.locator('#setup-transfer-code')).toHaveAttribute('aria-invalid', 'true');
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await page.screenshot({ path: info.outputPath(`receiving-code-${width}-${theme}.png`), fullPage: true });
-    await expect(page.locator('#setup-transfer-status')).toHaveText('Enter the 12-character setup code.');
-    await page.locator('#setup-transfer-back').click();
-    await expect(page.locator('#setup-transfer-entry')).toBeHidden();
-    await expect(page.locator('#start-title')).toBeFocused();
-  });
-}
-
-for (const name of ['software_activation', 'mode_choice', 'permission_required', 'desktop_app_needed',
-  'pairing_required', 'pairing_failed', 'activation_required', 'preview_complete', 'runtime_unavailable']) {
-  test(`setup-code shortcut is absent from ${name}`, async ({ page }) => {
-    await renderSurfaceState(page, { ...SURFACE_STATES[name], receiving: true,
-      browserTask: name === 'software_activation' });
-    await expect(page.locator('#setup-transfer-shortcut')).toBeHidden();
-    await expect(page.locator('#setup-transfer-open')).toBeHidden();
-    await expect(page.locator('#setup-transfer-entry')).toBeHidden();
-  });
-}
-
-test('a deliberate receiving entry works from Preview and Back returns focus to its current task', async ({ page }) => {
-  const journey = '11111111-1111-4111-8111-111111111111';
-  await renderSurfaceState(page, { ...SURFACE_STATES.preview_complete, receiving: true, hash: `journey=${journey}`,
-    sessionValues: { onboarding_code_entry_v1: journey } });
-  await expect(page.locator('#setup-transfer-entry')).toBeVisible();
-  await expect(page.locator('#setup-transfer-code')).toBeFocused();
-  expect(await page.evaluate(() => chrome.storage.session.get('onboarding_code_entry_v1'))).toEqual({});
-  await page.locator('#setup-transfer-back').click();
-  await expect(page.locator('#setup-transfer-entry')).toBeHidden();
-  await expect(page.locator('#setup-transfer-shortcut')).toBeHidden();
-  await expect(page.locator('#journey-title')).toBeFocused();
-});
-
-test('a changed underlying setup task closes code entry without reviving its shortcut', async ({ page }) => {
-  await renderSurfaceState(page, { ...SURFACE_STATES.start_choice, receiving: true, sessionValues: { onboarding_code_entry_v1: '11111111-1111-4111-8111-111111111111' } });
-  await expect(page.locator('#setup-transfer-code')).toBeFocused();
-  await page.evaluate(() => window.__surfaceFixture.change({ agreement: false, mode: 'full', reachable: false }));
-  await expect(page.locator('#setup-transfer-entry')).toBeHidden();
-  await expect(page.locator('#setup-transfer-shortcut')).toBeHidden();
-  await expect(page.locator('#desktop-entry-title')).toBeFocused();
-  await expect(page.locator('#desktop-entry-title')).toBeVisible();
-});
-
-test('code-entry focus reaches the recovery heading after an intermediate unavailable read', async ({ page }) => {
-  await renderSurfaceState(page, { ...SURFACE_STATES.start_choice, receiving: true, sessionValues: { onboarding_code_entry_v1: '11111111-1111-4111-8111-111111111111' } });
-  await expect(page.locator('#setup-transfer-code')).toBeFocused();
-  await page.evaluate(() => window.__surfaceFixture.change({ runtimeUnavailable: true }));
-  await expect(page.locator('#runtime-unavailable')).toBeVisible();
-  await expect(page.locator('#setup-transfer-entry')).toBeHidden();
-  await expect(page.locator('#setup-transfer-shortcut')).toBeHidden();
-  await expect(page.locator('#runtime-title')).toBeFocused();
+test('the onboarding tab offers no setup-code entry and points to the desktop app', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.desktop_app_needed, receiving: true });
+  await expect(page.locator('#setup-transfer-entry')).toHaveCount(0);
+  await expect(page.locator('#setup-transfer-code')).toHaveCount(0);
+  await expect(page.locator('#desktop-setup-code')).toHaveText('Have a setup code? Enter it in the desktop app.');
 });
 
 const position = (page) => page.evaluate(() => {

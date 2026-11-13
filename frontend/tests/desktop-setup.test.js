@@ -810,3 +810,36 @@ it.each([
     expect(() => check(bundle)).toThrow('cannot reference Chrome APIs');
   }
 });
+
+describe('helper notices in the desktop', () => {
+  const sessionValue = generation => ({ role: 'desktop', generation, stage: 'setup', csrf_token: 'A'.repeat(43) });
+  it('shows a helper notice next to the step and clears it when Brain clears it', async () => {
+    const generation = crypto.randomUUID(), received = [];
+    let notices;
+    const request = vi.fn(async () => ({ ok: true, status: 200, text: async () => JSON.stringify(sessionValue(generation)) }));
+    const client = new DesktopSetupClient({ generation, storage: { getItem: () => null, setItem() {}, removeItem() {} },
+      receive: state => received.push(state), request,
+      stream: async (_request, _headers, _signal, publish, notice) => {
+        notices = notice; publish(JSON.stringify({ ...initial(), generation }));
+      } });
+    await client.connect();
+    notices(JSON.stringify({ notices: [{ task_id: crypto.randomUUID(), reason: 'profile_mismatch' }] }));
+    expect(received.at(-1).error).toBe('profile_mismatch');
+    notices(JSON.stringify({ notices: [] }));
+    expect(received.at(-1).error).toBe(null);
+    expect(() => notices(JSON.stringify({ notices: [{ task_id: 'x', reason: 'profile_mismatch' }] }))).toThrow('invalid_snapshot');
+    client.stop();
+  });
+  it('reads browser notice events and ignores unknown events', async () => {
+    const encoder = new TextEncoder(), seen = [], shown = [];
+    const body = new ReadableStream({ start(controller) {
+      controller.enqueue(encoder.encode('event: other\ndata: {}\n\nevent: browser-notices\ndata: {"notices":[]}\n\n'));
+      controller.close();
+    } });
+    const request = async () => ({ ok: true, body, headers: new Headers({ 'content-type': 'text/event-stream' }) });
+    await expect(setupEvents(request, {}, new AbortController().signal, value => seen.push(value), value => shown.push(value)))
+      .rejects.toThrow('stream_unavailable');
+    expect(seen).toEqual([]);
+    expect(shown).toEqual(['{"notices":[]}']);
+  });
+});

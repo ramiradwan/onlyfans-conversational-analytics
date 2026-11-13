@@ -81,6 +81,12 @@ export function isBrowserTaskControl(value) {
     && value.id === value.payload.task.task_id && value.payload.creator_account_id !== null
     && value.payload.task.purpose === 'browser.authentication';
 }
+// Brain to extension, paired route only, after this channel advertised it. It carries no outcome.
+export const END_CONTROL = 'browser.task.end';
+export function isBrowserTaskEnd(value) {
+  return exact(value, ['type', 'id', 'action', 'task_id', 'admission_generation']) && value.type === 'session.control'
+    && value.action === END_CONTROL && UUID.test(value.id) && UUID.test(value.task_id) && UUID.test(value.admission_generation);
+}
 export function isPairingComparison(value, payload) {
   return payload.task.purpose === 'browser.pairing-confirmation'
     && exact(value, ['type', 'task_id', 'admission_generation', 'state', 'comparison_code'])

@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from app.onboarding.admission import AdmissionRefused
 from app.onboarding.admission_routes import HEADERS, authorize
 from app.onboarding.routes import body
+from app.onboarding.task_ends import BrowserTaskEnds
 from app.onboarding.task_reports import AdmittedAuthenticationTask, AuthenticationTaskReports
 from app.persistence.onboarding import require_journey
 from app.security.hosted_grants import HostedGrantUnavailable
@@ -35,18 +36,14 @@ def companion_task_router(coordinator, tasks, ceremonies, *, manager, actor):
             raise HostedGrantUnavailable("Operator authority changed")
         return task, account
 
-    @router.post("/api/v1/desktop/browser-tasks/{task_id}/dispatch")
-    async def dispatch(request: Request, task_id: str):
-        session = authorize(coordinator.admissions, request, role="desktop", mutation=True)
-        await body(request, empty=True)
+    async def send(request, session, task_id):
+        """Send one authentication task to the account's paired session. Returns the delivery state."""
         operator = actor(request, True)
-        if coordinator._closed:
-            raise HTTPException(503, "Local setup is stopping")
         try:
             task, account = current(session, task_id, operator)
             target = manager.browser_task_target(account)
             if target is None:
-                return JSONResponse({"state": "unreachable"}, headers=HEADERS)
+                return "unreachable"
             if ceremonies is None:
                 raise AdmissionRefused("browser_task_unavailable")
             coordinator.admissions.rebind_paired_task(session.identifier, generation=session.generation, task_id=task_id)
@@ -80,9 +77,22 @@ def companion_task_router(coordinator, tasks, ceremonies, *, manager, actor):
                 except (AdmissionRefused, HostedGrantUnavailable, ValueError):
                     return
 
-            state = await manager.send_browser_task(account, target, payload, authorize=still_current, receive=report)
-            return JSONResponse({"state": state}, headers=HEADERS)
+            ends.record(task, manager.browser_task_pairing(account, target))
+            return await manager.send_browser_task(account, target, payload, authorize=still_current, receive=report)
         except (AdmissionRefused, HostedGrantUnavailable, ValueError):
             raise HTTPException(409, "Browser task changed") from None
 
+    tasks.dispatcher = send
+    ends = BrowserTaskEnds(coordinator, manager)
+    manager.browser_task_advertised = ends.replay
+
+    @router.post("/api/v1/desktop/browser-tasks/{task_id}/dispatch")
+    async def dispatch(request: Request, task_id: str):
+        session = authorize(coordinator.admissions, request, role="desktop", mutation=True)
+        await body(request, empty=True)
+        if coordinator._closed:
+            raise HTTPException(503, "Local setup is stopping")
+        return JSONResponse({"state": await send(request, session, task_id)}, headers=HEADERS)
+
+    router.task_ends = ends
     return router

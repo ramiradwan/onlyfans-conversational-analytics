@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/browser-ceremony-wait/v1/proof-challenge-request.schema.json",
+  "title": "Browser ceremony wait proof-challenge-request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "target"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:browser-ceremony-wait-proof:v1"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "operation": {
+          "const": "browser-ceremony-wait"
+        },
+        "request": {
+          "$ref": "definitions.schema.json#/$defs/waitRequest"
+        }
+      }
+    }
+  }
+}

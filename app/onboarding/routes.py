@@ -53,9 +53,10 @@ def _refused(error):
 
 class DesktopEventResponse(StreamingResponse):
     """The response owns its subscription, even if no body is ever consumed."""
-    def __init__(self, coordinator, session, *, actor, active, deadline):
+    def __init__(self, coordinator, session, *, actor, active, deadline, notices=None):
         self.coordinator, self.session = coordinator, session
         self.actor, self.active, self.deadline = actor, active, deadline
+        self.notices = notices
         super().__init__(self.frames(), media_type="text/event-stream", headers=HEADERS | {"X-Accel-Buffering": "no"})
         self.listener = None
 
@@ -74,6 +75,7 @@ class DesktopEventResponse(StreamingResponse):
     async def frames(self):
         signal = self.listener[1]
         previous = None
+        shown = json.dumps({"notices": []}, separators=(",", ":"))
         try:
             while not self.coordinator._closed:
                 # Clear before the authoritative read. A commit while reading or
@@ -84,6 +86,12 @@ class DesktopEventResponse(StreamingResponse):
                 if encoded != previous:
                     yield "event: setup\ndata: " + encoded + "\n\n"
                     previous = encoded
+                if self.notices is not None:
+                    # Display-only helper notices. Older pages ignore this event.
+                    notices = json.dumps({"notices": self.notices(self.session)}, separators=(",", ":"))
+                    if notices != shown:
+                        yield "event: browser-notices\ndata: " + notices + "\n\n"
+                        shown = notices
                 remaining = min(self.session.expires_at - self.coordinator.admissions._now(), self.deadline())
                 if remaining <= 0:
                     return
@@ -96,7 +104,7 @@ class DesktopEventResponse(StreamingResponse):
 
 
 def desktop_router(coordinator: DesktopOnboardingCoordinator, *, actor=lambda request, mutation: None,
-                   next_expiry=lambda: 1800.0) -> APIRouter:
+                   next_expiry=lambda: 1800.0, notices=None) -> APIRouter:
     router = APIRouter(prefix="/api/v1/desktop/setup")
     active_streams = set()
 
@@ -147,6 +155,6 @@ def desktop_router(coordinator: DesktopOnboardingCoordinator, *, actor=lambda re
         session = admitted(request)
         actor(request, False)
         return DesktopEventResponse(coordinator, session, actor=lambda: actor(request, False),
-                                    active=active_streams, deadline=next_expiry)
+                                    active=active_streams, deadline=next_expiry, notices=notices)
 
     return router
