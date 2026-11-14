@@ -180,3 +180,18 @@ async def test_paired_close_uses_exact_task_owner_without_borrowing_operator_aut
     await report({"state": "closed", "notification": None})
     assert len(accepted) == 1
     h.coordinator._start.assert_not_called()
+
+
+def test_dispatch_of_a_sign_in_task_still_preparing_neither_rebinds_nor_sends(setup):
+    h = setup
+    original = h.tasks.current_native(h.native)[0]
+    h.ceremonies.browser_entry = lambda _: None
+    assert h.client.post(h.path, json={}, headers=h.headers).json() == {"state": "preparing"}
+    assert h.tasks.current_native(h.native)[0] == original
+    assert h.coordinator.admissions.require(h.helper.identifier, role="browser_task", generation=h.helper.generation)
+    assert not h.delivered
+    with h.coordinator.store.database.transaction() as connection:
+        connection.execute("UPDATE desktop_setup_operations SET state='waiting' WHERE operation_id=?",
+            (h.operation["operation_id"],))
+    assert h.client.post(h.path, json={}, headers=h.headers).status_code == 409
+    assert not h.delivered

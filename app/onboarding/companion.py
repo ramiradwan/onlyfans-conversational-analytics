@@ -138,6 +138,9 @@ def companion_task_router(coordinator, tasks, ceremonies, *, manager, actor):
                 return "unreachable"
             if ceremonies is None:
                 raise AdmissionRefused("browser_task_unavailable")
+            if ceremonies.browser_entry(task["operation_id"]) is None and tasks.preparing(task):
+                # The task was created before its ceremony. Dispatch follows the next snapshot.
+                return "preparing"
             coordinator.admissions.rebind_paired_task(session.identifier, generation=session.generation, task_id=task_id)
             task, _ = current(session, task_id, operator)
             payload = {"profile": "browser-task.v1", "task": tasks.public(task), "extension_id": tasks.extension_id,

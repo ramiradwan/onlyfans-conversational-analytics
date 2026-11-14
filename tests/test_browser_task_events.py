@@ -225,3 +225,24 @@ async def test_the_desktop_stream_shows_a_helper_notice_and_its_clearing(tmp_pat
         assert (event, value) == ("browser-notices", {"notices": []})
     finally:
         await served.close()
+
+
+def test_open_of_a_sign_in_task_still_preparing_mints_no_entry(tmp_path):
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, native, _ = setup
+    _, task, browser = asyncio.run(browser_access(setup))
+
+    async def dispatcher(request, session, task_id):
+        return "preparing"
+
+    tasks.dispatcher = dispatcher
+    with coordinator.store.database.transaction() as connection:
+        connection.execute("UPDATE desktop_browser_tasks SET purpose='browser.authentication' WHERE task_id=?",
+                           (task["task_id"],))
+    app = FastAPI()
+    app.include_router(browser_router(coordinator, tasks, None))
+    path = "/api/v1/desktop/browser-tasks/" + task["task_id"] + "/open"
+    with TestClient(app, base_url=ORIGIN) as client:
+        assert client.post(path, json={}, headers=headers(native)).json() == {"state": "unavailable"}
+    with coordinator.store.database.read() as connection:
+        assert connection.execute("SELECT count(*) FROM desktop_admission_entries").fetchone()[0] == 0

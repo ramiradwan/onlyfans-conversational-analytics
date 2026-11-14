@@ -114,6 +114,35 @@ class BrowserTasks:
         events.publish()
         return task_id
 
+    def prepare_early(self, operation) -> bool:
+        """Create an accepted sign-in's task before its ceremony exists, so a browser launch overlaps preparation.
+
+        The task carries no ceremony until preparation adds one. A refusal leaves
+        the task to the ordinary creation after preparation.
+        """
+        try:
+            self.prepare(operation, "browser.authentication")
+            return True
+        except AdmissionRefused:
+            return False
+
+    def preparing(self, task) -> bool:
+        """Whether a sign-in task without a ceremony is still waiting for its accepted operation."""
+        if task["purpose"] != "browser.authentication" or task["state"] != "pending":
+            return False
+        with self.store.database.read() as connection:
+            row = connection.execute("SELECT state FROM desktop_setup_operations WHERE operation_id=?",
+                                     (task["operation_id"],)).fetchone()
+        return row is not None and row["state"] == "accepted"
+
+    def withdraw_preparing(self, operation_id):
+        """Cancel a still-pending task whose preparation ended without a ceremony."""
+        with self.store.database.transaction() as connection:
+            changed = connection.execute("UPDATE desktop_browser_tasks SET state='cancelled' WHERE operation_id=? "
+                "AND purpose='browser.authentication' AND state='pending'", (require_journey(operation_id),)).rowcount
+        if changed:
+            events.publish()
+
     def current_native(self, session):
         with self.store.database.read() as connection:
             row, parent = self.admissions._require(connection, session.identifier, role="desktop", generation=session.generation)

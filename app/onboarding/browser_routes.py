@@ -81,6 +81,10 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
         _, task = task_session(request)
         entry = (ceremonies.browser_entry(task["operation_id"]) if ceremonies is not None
             and task["purpose"] == "browser.authentication" and task["state"] != "completed" else None)
+        if (entry is None and ceremonies is not None and task["purpose"] == "browser.authentication"
+                and task["state"] != "completed" and not tasks.preparing(task)):
+            # Without a ceremony only an accepted operation that is still preparing keeps its task.
+            raise HTTPException(409, "Browser task changed")
         return JSONResponse({"profile": "browser-task.v1", "task": task,
             "extension_id": tasks.extension_id, "ceremony": entry, **tasks.attachment(task)}, headers=HEADERS)
 
@@ -194,6 +198,9 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
                 state = await tasks.dispatcher(request, session, task_id)
                 if state == "dispatched":
                     return JSONResponse({"state": "dispatched"}, headers=HEADERS)
+                if state == "preparing":
+                    # The paired session receives the task once its ceremony exists.
+                    return JSONResponse({"state": "unavailable"}, headers=HEADERS)
                 if state != "unreachable":
                     raise HTTPException(409, "Browser task is unavailable")
             if await tasks.helpers.focus(task_id, task["admission_generation"]):

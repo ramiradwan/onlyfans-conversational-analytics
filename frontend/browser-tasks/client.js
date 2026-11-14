@@ -1,9 +1,12 @@
-import { isPayloadProjection, UUID } from '../../shared/browser-tasks/wire.mjs';
+import { isPayloadProjection, isPreparingPayload, UUID } from '../../shared/browser-tasks/wire.mjs';
 import { parseOnboardingJson } from '../../shared/onboarding/json.mjs';
 import { connectExtension, reattachExtension } from './extension.js';
 import { readBrowserTaskEvents } from './events.js';
 
 const AUTHENTICATION_POLL_MS = 500;
+// A sign-in task can open before its ceremony exists. Its helper reads again until the ceremony arrives.
+export const PREPARING_POLL_MS = 250;
+export const PREPARING_LIMIT_MS = 120000;
 // While the helper stream is healthy the payload read is only a safety check.
 export const STREAM_POLL_MS = 15000;
 const STREAM_RETRY_CAP_MS = 5000;
@@ -75,8 +78,8 @@ export class BrowserTaskClient {
       if (session.role !== 'browser_task' || session.generation !== this.generation
         || !/^[A-Za-z0-9_-]{43}$/u.test(session.csrf_token)) throw new Error('task_changed');
       this.session = session;
-      const payload = await this.json('payload');
-      if (run !== this.run) return;
+      const payload = await this.prepared(run, await this.json('payload'));
+      if (run !== this.run || payload === null) return;
       if (!isPayloadProjection(payload) || payload.task.admission_generation !== this.generation || payload.task.task_id !== session.task_id
         || payload.task.journey_id !== session.journey_id) throw new Error('task_changed');
       this.payload = payload;
@@ -229,6 +232,27 @@ export class BrowserTaskClient {
     } catch (error) {
       if (run === this.run) { this.stop(); this.receive({ state: ['task_changed', 'task_expired'].includes(error.message) ? error.message : 'service_unavailable', payload: this.payload }); }
     }
+  }
+  /** Waits while Brain prepares the ceremony of an already admitted sign-in task. Nothing attaches meanwhile. */
+  async prepared(run, first) {
+    let current = first;
+    const started = this.now();
+    while (isPreparingPayload(current)) {
+      if (current.task.admission_generation !== this.generation || current.task.task_id !== this.session.task_id
+        || current.task.journey_id !== this.session.journey_id
+        || first !== current && ['task_id', 'journey_id', 'operation_id', 'purpose', 'scope_digest', 'source_revision', 'expires_at']
+          .some(key => current.task[key] !== first.task[key])) throw new Error('task_changed');
+      if (current.task.expires_at * 1000 <= this.now()) throw new Error('task_expired');
+      if (this.now() - started >= PREPARING_LIMIT_MS) throw new Error('service_unavailable');
+      await new Promise(resolve => { this.pollTimer = setTimeout(resolve, PREPARING_POLL_MS); });
+      if (run !== this.run) return null;
+      const next = await this.json('payload');
+      if (run !== this.run) return null;
+      if (isPayloadProjection(next) && ['task_id', 'journey_id', 'operation_id', 'purpose', 'scope_digest', 'source_revision', 'expires_at']
+        .some(key => next.task[key] !== first.task[key])) throw new Error('task_changed');
+      current = next;
+    }
+    return current;
   }
   listen(run) {
     const controller = new AbortController();

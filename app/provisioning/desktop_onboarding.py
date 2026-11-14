@@ -451,12 +451,21 @@ class ProvisioningSetupOwner:
                 return self.observe(operation) or OperationResult("outcome_unknown", "operation_unconfirmed")
             return await self._connect(operation, reconcile=reconcile)
         if operation["action"].startswith("auth.") and self.ceremonies is not None and self.ceremonies.authentication is not None:
-            parent = json.loads(operation["owner_scope_json"])["authentication_intent"]["parent_operation_id"]
-            result = await self.ceremonies.authentication.execute(operation, reconcile=reconcile,
-                authorize=lambda: self._guard(operation), read_guard=lambda: self._read_guard({"operation_id": parent}))
+            intent = json.loads(operation["owner_scope_json"])["authentication_intent"]
+            parent = intent["parent_operation_id"]
+            early = not reconcile and intent["verb"] in {"select", "switch"} and self.browser_tasks.prepare_early(operation)
+            try:
+                result = await self.ceremonies.authentication.execute(operation, reconcile=reconcile,
+                    authorize=lambda: self._guard(operation), read_guard=lambda: self._read_guard({"operation_id": parent}))
+            except Exception:
+                if early:
+                    self._withdraw_early_task(operation)
+                raise
             entry = self.ceremonies.browser_entry(operation["operation_id"])
             if result.state == "waiting" and entry is not None:
                 self.browser_tasks.prepare(operation, "browser.authentication", deadline=datetime.fromisoformat(entry["expires_at"].replace("Z", "+00:00")).timestamp())
+            elif early:
+                self._withdraw_early_task(operation)
             return result
         if operation["action"] == "account.confirm" and self.ceremonies is not None and self.ceremonies.decisions is not None:
             parent = json.loads(operation["owner_scope_json"])["desktop_decision"]["operation_id"]
@@ -489,34 +498,45 @@ class ProvisioningSetupOwner:
         saved = self.ceremonies.row(operation["operation_id"])
         selected = json.loads(operation["owner_scope_json"])
         source = self.initial if selected["journey_kind"] == "initial-enrollment" else self.registered
-        if saved is None:
-            guard()
-            if self.store._now().timestamp() >= operation["expires_at"]:
-                return OperationResult("refused", "operation_expired")
-            # Source services own their durable operation IDs and lost-send rules.
-            # Retrying here retains that exact source, including on worker restart.
-            with timing.phase("source", "prepare"):
-                await source.prepare(selected["source_journey_id"])
-            guard()
-            with timing.phase("binding", "binding"):
-                binding = self._binding(operation)
-            await self.ceremonies.prepare(operation["operation_id"], binding, authorize=guard)
-        else:
-            result = await self.ceremonies.reconcile(operation["operation_id"], authorize=lambda: self._read_guard(operation))
-            terminal = await self._terminal_initial_read(operation, result)
-            if terminal is not None:
-                return terminal
-        source.resume(selected["source_journey_id"])
         intent = selected.get("authentication_intent")
-        if (saved is None and not reconcile and selected["journey_kind"] == "initial-enrollment"
-                and intent is not None and intent["verb"] == "select"
-                and intent["expected_previous_attempt_id"] is None and self.ceremonies.authentication is not None):
-            authentication = await self.ceremonies.authentication.ensure_initial(operation, authorize=guard,
-                read_guard=lambda: self._read_guard(operation), fresh=True)
+        selecting = (saved is None and not reconcile and selected["journey_kind"] == "initial-enrollment"
+                     and intent is not None and intent["verb"] == "select"
+                     and intent["expected_previous_attempt_id"] is None and self.ceremonies.authentication is not None)
+        early = False
+        try:
+            if saved is None:
+                guard()
+                if self.store._now().timestamp() >= operation["expires_at"]:
+                    return OperationResult("refused", "operation_expired")
+                early = selecting and self.browser_tasks.prepare_early(operation)
+                # Source services own their durable operation IDs and lost-send rules.
+                # Retrying here retains that exact source, including on worker restart.
+                with timing.phase("source", "prepare"):
+                    await source.prepare(selected["source_journey_id"])
+                guard()
+                with timing.phase("binding", "binding"):
+                    binding = self._binding(operation)
+                await self.ceremonies.prepare(operation["operation_id"], binding, authorize=guard)
+            else:
+                result = await self.ceremonies.reconcile(operation["operation_id"], authorize=lambda: self._read_guard(operation))
+                terminal = await self._terminal_initial_read(operation, result)
+                if terminal is not None:
+                    return terminal
+            source.resume(selected["source_journey_id"])
+            if selecting:
+                authentication = await self.ceremonies.authentication.ensure_initial(operation, authorize=guard,
+                    read_guard=lambda: self._read_guard(operation), fresh=True)
+        except Exception:
+            if early:
+                self._withdraw_early_task(operation)
+            raise
+        if selecting:
             entry = self.ceremonies.browser_entry(operation["operation_id"])
             if entry is not None:
                 self.browser_tasks.prepare(operation, "browser.authentication", deadline=datetime.fromisoformat(
                     entry["expires_at"].replace("Z", "+00:00")).timestamp())
+            elif early:
+                self._withdraw_early_task(operation)
             waiting = entry is not None or authentication is not None and authentication["state"] not in {"expired", "unavailable"}
             return OperationResult("waiting" if waiting else "outcome_unknown",
                                    "none" if waiting else "operation_unconfirmed")
@@ -540,6 +560,14 @@ class ProvisioningSetupOwner:
         waiting = entry is not None or authentication is not None and authentication["state"] not in {"expired", "unavailable"}
         return OperationResult("waiting" if waiting else "outcome_unknown",
                                "none" if waiting else "operation_unconfirmed")
+
+    def _withdraw_early_task(self, operation):
+        # Only a task that never received a ceremony is withdrawn; failures leave it to expire.
+        try:
+            if self.ceremonies.browser_entry(operation["operation_id"]) is None:
+                self.browser_tasks.withdraw_preparing(operation["operation_id"])
+        except Exception:
+            pass
 
     def _read_guard(self, operation):
         """Retained proof reads may settle an expired presentation, never renew it."""

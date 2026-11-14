@@ -761,3 +761,112 @@ async def test_fresh_provider_dispatch_reports_unconfirmed_when_expired_or_unava
     owner._read_guard, owner.observe = lambda *_: None, lambda *_: None
     result = await owner._connect(parent, reconcile=False)
     assert result == OperationResult("outcome_unknown", "operation_unconfirmed")
+
+
+async def _fresh_initial_connect(setup, *, fail=False):
+    from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
+    coordinator, ceremonies, ceremony_client, parent, binding, _ = setup
+    client = AuthenticationClient()
+    original = client.execute
+
+    def select(*args, **kwargs):
+        result = original(*args, **kwargs)
+        client.calls.pop()
+        return result
+
+    client.execute = select
+    authentication = DesktopAuthentication(ceremonies.store, ceremonies, client)
+    ceremonies.authentication = authentication
+    with coordinator.store.database.transaction() as connection:
+        connection.execute("UPDATE desktop_setup_operations SET state='refused' WHERE operation_id=?", (parent["operation_id"],))
+    native = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(), role="desktop")
+    coordinator.owner.scope.update(journey_kind="initial-enrollment", source_journey_id=parent["journey_id"],
+        desktop_authentication=authentication.presentation(parent["journey_id"], "account.connect"))
+    parent, fresh = coordinator._accept(native, {**command(coordinator.read(native), "account.connect"), "provider": "default"})
+    assert fresh
+    tasks = BrowserTasks(coordinator.admissions, extension_id="a" * 32)
+    during = []
+
+    def task_states():
+        with coordinator.store.database.read() as connection:
+            return [row[0] for row in connection.execute("SELECT state FROM desktop_browser_tasks WHERE operation_id=?",
+                                                         (parent["operation_id"],))]
+
+    async def prepare(*args):
+        during.append(task_states())
+        if fail:
+            raise HostedGrantUnavailable("Source unavailable")
+
+    async def decision(*args, **kwargs):
+        return {"state": "awaiting-authentication"}
+
+    owner = ProvisioningSetupOwner.__new__(ProvisioningSetupOwner)
+    owner.store, owner.ceremonies, owner.browser_tasks = coordinator.store, ceremonies, tasks
+    owner.initial = owner.registered = SimpleNamespace(prepare=prepare, resume=lambda *_: None)
+    owner._guard, owner._binding = lambda *a, **k: None, lambda *_: binding
+    owner._read_guard, owner.observe = lambda *_: None, lambda *_: None
+    ceremonies.decisions = SimpleNamespace(refresh=decision)
+    return owner, parent, during, task_states
+
+
+@pytest.mark.asyncio
+async def test_a_fresh_sign_in_task_exists_before_preparation_so_a_browser_launch_overlaps_it(setup):
+    owner, parent, during, task_states = await _fresh_initial_connect(setup)
+    result = await owner._connect(parent, reconcile=False)
+    assert result.state == "waiting"
+    assert during == [["pending"]]
+    assert task_states() == ["pending"]
+    assert owner.ceremonies.browser_entry(parent["operation_id"]) is not None
+
+
+@pytest.mark.asyncio
+async def test_a_failed_fresh_preparation_withdraws_its_task_without_a_ceremony(setup):
+    owner, parent, during, task_states = await _fresh_initial_connect(setup, fail=True)
+    with pytest.raises(HostedGrantUnavailable):
+        await owner._connect(parent, reconcile=False)
+    assert during == [["pending"]]
+    assert task_states() == ["cancelled"]
+
+
+def _select_owner(auth):
+    from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
+    coordinator, ceremonies, _, client, _, _, _ = auth
+    operation, _ = accept(auth)
+    tasks = BrowserTasks(coordinator.admissions, extension_id="a" * 32)
+    owner = ProvisioningSetupOwner.__new__(ProvisioningSetupOwner)
+    owner.store, owner.ceremonies, owner.browser_tasks = coordinator.store, ceremonies, tasks
+    owner._guard, owner._read_guard, owner.observe = lambda *_: None, lambda *_: None, lambda *_: None
+    during = []
+
+    def task_states():
+        with coordinator.store.database.read() as connection:
+            return [row[0] for row in connection.execute("SELECT state FROM desktop_browser_tasks WHERE operation_id=?",
+                                                         (operation["operation_id"],))]
+
+    original = client.execute
+
+    def execute(verb, *args, **kwargs):
+        if verb == "select":
+            during.append(task_states())
+        return original(verb, *args, **kwargs)
+
+    client.execute = execute
+    return owner, operation, during, task_states
+
+
+@pytest.mark.asyncio
+async def test_a_fresh_provider_selection_task_exists_before_the_selection_is_sent(auth):
+    owner, operation, during, task_states = _select_owner(auth)
+    assert (await owner.execute(operation, reconcile=False)).state == "waiting"
+    assert during == [["pending"]]
+    assert task_states() == ["pending"]
+
+
+@pytest.mark.asyncio
+async def test_an_unconfirmed_provider_selection_withdraws_its_task_without_a_ceremony(auth):
+    owner, operation, during, task_states = _select_owner(auth)
+    auth[3].lose_selection_reply = True
+    with pytest.raises(OSError):
+        await owner.execute(operation, reconcile=False)
+    assert during == [["pending"]]
+    assert task_states() == ["cancelled"]

@@ -669,3 +669,41 @@ it.each(['pairing_saved', 'auth_unconfirmed'])('restores the last %s presentatio
     client.stop();
   } finally { vi.useRealTimers(); }
 });
+
+describe('sign-in helper opened before its ceremony', () => {
+  const preparing = ready => { const value = structuredClone(ready); value.task.state = 'pending'; value.ceremony = null; return value; };
+  const run = async replies => {
+    const ready = authenticationPayload(); ready.task.state = 'pending';
+    const reads = replies(ready), receive = vi.fn(), connect = vi.fn(() => ({ finish: vi.fn(), close: vi.fn() }));
+    const request = vi.fn(async path => ({ ok: true, text: async () => JSON.stringify(path.endsWith('/session')
+      ? { role: 'browser_task', generation: ready.task.admission_generation, task_id: ready.task.task_id,
+        journey_id: ready.task.journey_id, csrf_token: 'A'.repeat(43) } : reads.shift() ?? reads.last) }));
+    const client = new BrowserTaskClient({ generation: ready.task.admission_generation, request, receive, connect });
+    return { ready, receive, connect, request, client };
+  };
+  it('attaches once, to the ceremony, after reading the preparing task again', async () => {
+    vi.useFakeTimers();
+    const h = await run(ready => Object.assign([preparing(ready), preparing(ready), ready], { last: ready }));
+    try {
+      const started = h.client.start();
+      await vi.advanceTimersByTimeAsync(600); await started;
+      expect(h.connect).toHaveBeenCalledOnce();
+      expect(h.connect.mock.calls[0][0].payload.ceremony).toEqual(h.ready.ceremony);
+      expect(h.request.mock.calls.filter(([path]) => path.endsWith('/payload'))).toHaveLength(3);
+    } finally { h.client.stop(); vi.useRealTimers(); }
+  });
+  it.each(['cancelled', 'changed'])('attaches nothing when the preparing task is %s', async change => {
+    vi.useFakeTimers();
+    const h = await run(ready => {
+      const next = preparing(ready);
+      if (change === 'cancelled') next.task.state = 'cancelled'; else next.task.expires_at += 60;
+      return Object.assign([preparing(ready), next], { last: next });
+    });
+    try {
+      const started = h.client.start();
+      await vi.advanceTimersByTimeAsync(600); await started;
+      expect(h.connect).not.toHaveBeenCalled();
+      expect(h.receive.mock.calls.at(-1)[0].state).toBe('task_changed');
+    } finally { h.client.stop(); vi.useRealTimers(); }
+  });
+});

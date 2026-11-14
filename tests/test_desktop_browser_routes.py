@@ -127,3 +127,23 @@ def test_completed_authentication_payload_withdraws_launch_authority(tmp_path, m
         assert value["ceremony"] is None and value["task"]["state"] == "completed"
         assert {key: item for key, item in value["task"].items() if key != "state"} == {
             key: item for key, item in before["task"].items() if key != "state"}
+
+
+def test_sign_in_payload_without_a_ceremony_waits_only_while_its_operation_prepares(tmp_path):
+    coordinator, ceremonies, _, operation, _, _ = ceremony_setup.__wrapped__(tmp_path)
+    tasks = BrowserTasks(coordinator.admissions, extension_id="a" * 32)
+    task_id = tasks.prepare(operation, "browser.authentication")
+    native = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(), role="desktop")
+    entry = coordinator.admissions.reissue_task_entry(native.identifier, generation=native.generation, task_id=task_id)
+    browser = coordinator.admissions.consume(entry, role="browser_task")
+    app = FastAPI()
+    app.include_router(browser_router(coordinator, tasks, ceremonies))
+    with TestClient(app, base_url=ORIGIN) as client:
+        response = client.get("/api/v1/browser-tasks/payload", headers=headers(browser))
+        assert response.status_code == 200
+        VALIDATOR.validate(response.json())
+        assert response.json()["ceremony"] is None and response.json()["task"]["state"] == "pending"
+        with coordinator.store.database.transaction() as connection:
+            connection.execute("UPDATE desktop_setup_operations SET state='waiting' WHERE operation_id=?",
+                (operation["operation_id"],))
+        assert client.get("/api/v1/browser-tasks/payload", headers=headers(browser)).status_code == 409
