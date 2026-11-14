@@ -572,3 +572,12 @@ test('a restarted worker removes waiting windows it can no longer adopt', async 
   assert.deepEqual(h.removed, [h.flows[0].windowId]);
   assert.deepEqual(apis.session[BROWSER_AUTH_WAITING_KEY], {});
 });
+
+test('the waiting page shows only a spinner and announces loading to assistive technology', () => {
+  const page = readFileSync(new URL('../sign-in-waiting.html', import.meta.url), 'utf8');
+  const body = page.slice(page.indexOf('<body>'), page.indexOf('</body>'));
+  assert.match(page, /<title>Sign in<\/title>/u);
+  assert.match(body, /<div class="spinner" role="status"><span class="visually-hidden">Loading<\/span><\/div>/u);
+  assert.equal(body.replace(/<span class="visually-hidden">Loading<\/span>/u, '').replace(/<[^>]+>/gu, '').trim(), '');
+  assert.match(page, /\.visually-hidden \{[^}]*clip-path: inset\(50%\)/u);
+});
