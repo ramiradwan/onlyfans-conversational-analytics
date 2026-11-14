@@ -321,6 +321,7 @@ class InstallationKeyAuthority:
         self._provider = provider
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
+    @timing.measured("key", "ensure")
     def ensure_ready(self) -> InstallationKeyReference:
         active = self._store.installation_key_reference()
         reservation = self._store.installation_key_reservation()

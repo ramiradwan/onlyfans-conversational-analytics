@@ -131,17 +131,28 @@ class DesktopAuthentication:
             before_send=authorize, journey_id=self.ceremonies._journey(row["operation_id"]), protected=False, **options)
 
     async def prefetch(self, operation_id, *, authorize):
+        """Hold one fresh current-read challenge. Returns seconds until it needs renewal."""
         if not hasattr(self.client, "prefetch_read"):
-            return
+            return None
         parent = self.parent_operation(operation_id)
         row, request = self._request(parent)
-        if parent in self._prefetched:
-            return
-        ticket = await self._effects.run(self.client.prefetch_read, request, before_send=authorize,
-            journey_id=self.ceremonies._journey(parent), protected=False)
-        if len(self._prefetched) >= 64:
-            self._prefetched.pop(next(iter(self._prefetched)))
-        self._prefetched[parent] = ticket
+        renewal = getattr(self.client, "renewal_delay", None)
+        held = self._prefetched.get(parent)
+        if held is not None:
+            if renewal is None:
+                return None
+            delay = renewal(held)
+            if delay > 0:
+                return delay
+        with timing.phase("authentication-read", "renew"):
+            ticket = await self._effects.run(self.client.prefetch_read, request, before_send=authorize,
+                journey_id=self.ceremonies._journey(parent), protected=False)
+        if self._prefetched.get(parent) in (None, held):
+            self._prefetched.pop(parent, None)
+            if len(self._prefetched) >= 64:
+                self._prefetched.pop(next(iter(self._prefetched)))
+            self._prefetched[parent] = ticket
+        return None if renewal is None else renewal(ticket)
 
     async def reconcile_task(self, operation_id, *, authorize):
         """Only a current proof read can complete this exact live task generation."""

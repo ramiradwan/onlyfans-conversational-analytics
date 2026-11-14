@@ -116,7 +116,7 @@ def inspect_retained_state(root: Path) -> RetainedState:
             return RetainedState(root, "provisioning", present)
         # Only empty/non-authoritative runtime-owned containers may precede
         # first setup. Unknown files are retained evidence, never "first run".
-        allowed = {WRITER_LOCK_FILENAME, ".bridge-installation-migration.lock", "webview", "temp"}
+        allowed = {WRITER_LOCK_FILENAME, ".bridge-installation-migration.lock", "webview", "temp", "diagnostics"}
         if names - allowed:
             raise StartupRefused("retained_root_unrecognized")
         return RetainedState(root, "fresh", ())

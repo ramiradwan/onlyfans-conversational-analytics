@@ -7,6 +7,7 @@ import json
 import math
 import re
 import time
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import AsyncIterator, Callable, Mapping
@@ -16,6 +17,7 @@ from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
 
 from app.core.resource_paths import resource_path
+from app.onboarding import timing
 from contracts.loader import verify_snapshot_integrity
 
 from app.security.hosted_grants import (
@@ -245,7 +247,13 @@ class InitialHandoffClient:
         if before_send is not None:
             before_send()
         try:
-            response = self.transport.request("POST", path, json_body=body)
+            challenge = path == CHALLENGE_PATH
+            verb = (body["target"]["operation"].removeprefix("initial-handoff-") if challenge
+                    else path.removeprefix(PATH_PREFIX))
+            measured = (timing.exchange("handoff-" + verb, "challenge" if challenge else "protected")
+                        if "handoff-" + verb in timing.OPERATIONS else nullcontext())
+            with measured:
+                response = self.transport.request("POST", path, json_body=body)
         except Exception:
             raise HostedGrantUnavailable("Initial handoff result unavailable") from None
         if response.status_code != expected:

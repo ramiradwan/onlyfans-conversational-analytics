@@ -22,6 +22,8 @@ from app.security.browser_ceremony import BrowserCeremonyClient
 from app.security.browser_ceremony_wait import BrowserCeremonyWaitClient
 from app.security.desktop_decision import DesktopDecisionClient
 
+SIGN_IN_KEEPALIVE_SECONDS = 60.0
+
 
 @dataclass
 class DesktopSetupCore:
@@ -64,12 +66,14 @@ def build_desktop_setup(*, store, stage, extension_id, hosted_origin, authentica
     key = installation_proof_authority(store)
     ceremonies = initial = registered = None
     if hosted_origin:
+        # One pool keeps a sign-in's proof exchanges on an open connection.
+        proofs = hosted_transport(hosted_origin, keepalive_seconds=SIGN_IN_KEEPALIVE_SECONDS)
         ceremonies = BrowserCeremonies(store,
-            BrowserCeremonyClient(hosted_transport(hosted_origin), key), hosted_origin=hosted_origin,
-            decision_client=DesktopDecisionClient(hosted_transport(hosted_origin), key),
-            authentication_client=BrowserAuthenticationClient(hosted_transport(hosted_origin), key),
+            BrowserCeremonyClient(proofs, key), hosted_origin=hosted_origin,
+            decision_client=DesktopDecisionClient(proofs, key),
+            authentication_client=BrowserAuthenticationClient(proofs, key),
             authentication_providers=authentication_providers,
-            wait_client=BrowserCeremonyWaitClient(hosted_transport(hosted_origin), key, hosted_origin))
+            wait_client=BrowserCeremonyWaitClient(proofs, key, hosted_origin))
         initial = InitialInstallationEnrollment(store, hosted_origin=hosted_origin)
         registered = RegisteredInstallationContinuation(store, hosted_origin=hosted_origin)
     recovery = ProvisioningSetupOwner(store, browser_tasks=tasks, ceremonies=ceremonies,

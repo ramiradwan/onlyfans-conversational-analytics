@@ -216,6 +216,23 @@ def test_prefetched_read_delays_signing_and_refreshes_expired_challenges(delay):
     assert [call[1] for call in transport.calls].count(CHALLENGE_PATH) == (2 if delay < 60 else 3)
 
 
+def test_prefetched_read_challenge_reports_when_it_needs_renewal():
+    elapsed, now = [0.0], [NOW]
+    item = vector()
+    subject, transport, _ = client(item, projection(item["request"]), monotonic=lambda: elapsed[0],
+                                   clock=lambda: now[0])
+    ticket = subject.prefetch_read(item["request"])
+    assert subject.renewal_delay(ticket) == 40
+    elapsed[0], now[0] = 30, NOW + timedelta(seconds=40)
+    assert subject.renewal_delay(ticket) == 5
+    elapsed[0] = 45
+    assert subject.renewal_delay(ticket) == 0
+    elapsed[0], now[0] = 1, NOW
+    subject.read(item["request"], prefetched=ticket)
+    assert subject.renewal_delay(ticket) == 0
+    assert [call[1] for call in transport.calls].count(CHALLENGE_PATH) == 1
+
+
 @pytest.mark.parametrize("change", ["request", "key", "guard"])
 def test_prefetch_never_signs_a_changed_scope(change):
     item = vector()

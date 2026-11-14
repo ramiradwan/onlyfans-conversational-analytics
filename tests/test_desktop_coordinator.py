@@ -783,6 +783,38 @@ def test_sign_in_phases_are_closed_delta_only_info_records(caplog):
     assert len(caplog.messages) == 1
 
 
+def test_sign_in_phases_append_to_a_bounded_local_file(tmp_path, monkeypatch):
+    import re
+    from app.onboarding import timing
+    monkeypatch.setattr(timing, "_sink", None)
+    timing.observe("key", "sign", "ok", 1)
+    timing.record_to(tmp_path / "absent")
+    timing.observe("key", "sign", "ok", 1)
+    assert not (tmp_path / "absent").exists()
+    timing.record_to(tmp_path)
+    timing.reset()
+    timing.mark("operation", "frame", clock=lambda: 1.0)
+    timing.completed("operation", clock=lambda: 1.5)
+    timing.close("operation", "helper", clock=lambda: 1.75)
+    directory = tmp_path / "diagnostics"
+    first = (directory / "sign-in-timing.log").read_text("ascii").splitlines()
+    stamp = r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z "
+    assert re.fullmatch(stamp + "sign_in_phase operation=helper phase=task-send status=ok elapsed_ms=250", first[0])
+    assert re.fullmatch(stamp + "sign_in_close_timing route=helper frame_to_completed_ms=500 completed_to_sent_ms=250",
+                        first[1])
+    for _ in range(3000):
+        timing.observe("authentication-read", "challenge-receive", "ok", 125.4)
+    names = sorted(path.name for path in directory.iterdir())
+    assert names == ["sign-in-timing.1.log", "sign-in-timing.log"]
+    for name in names:
+        size = (directory / name).stat().st_size
+        assert 0 < size <= timing.SINK_LIMIT_BYTES
+        last = (directory / name).read_text("ascii").splitlines()[-1]
+        assert re.fullmatch(stamp + "sign_in_phase operation=authentication-read phase=challenge-receive "
+                            "status=ok elapsed_ms=125", last)
+    timing.reset()
+
+
 @pytest.mark.asyncio
 async def test_wait_and_prefetch_open_while_dispatch_worker_is_active(setup):
     from app.provisioning.events import events
@@ -815,6 +847,63 @@ async def test_wait_and_prefetch_open_while_dispatch_worker_is_active(setup):
         await asyncio.wait_for(opened.wait(), 1)
         await asyncio.wait_for(prefetched.wait(), 1)
         assert coordinator._workers
+    finally:
+        release.set()
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_prefetched_challenge_is_renewed_while_the_sign_in_stays_open(setup):
+    coordinator, owner, session, _ = setup
+    open_task, renewals, release, delay = [True], [], asyncio.Event(), [0.02]
+
+    async def execute(operation, **kwargs):
+        await release.wait()
+        return OperationResult("waiting")
+
+    async def wait(operation):
+        await release.wait()
+        if False:
+            yield None
+
+    async def prefetch(operation):
+        renewals.append(delay[0])
+        return delay[0]
+
+    owner.execute, owner.wait, owner.prefetch = execute, wait, prefetch
+    owner.automatic_recovery = lambda operation: True
+    owner.probe_interval = lambda operation: 2 if open_task[0] else None
+    owner.probe = lambda operation: None
+    coordinator.start()
+    try:
+        await coordinator.command(session, command(coordinator.read(session)))
+        for _ in range(100):
+            if len(renewals) >= 4:
+                break
+            await asyncio.sleep(0.01)
+        assert len(renewals) >= 4
+        delay[0] = 30
+        for _ in range(100):
+            if renewals[-1] == 30:
+                break
+            await asyncio.sleep(0.01)
+        operation_id = next(iter(coordinator._prefetches))
+        # A consumed challenge is replaced at once rather than at the next renewal.
+        before = len(renewals)
+        coordinator._prefetch({"operation_id": operation_id})
+        for _ in range(50):
+            if len(renewals) > before:
+                break
+            await asyncio.sleep(0.01)
+        assert len(renewals) > before
+        open_task[0] = False
+        renewed = len(renewals)
+        coordinator._prefetch({"operation_id": operation_id})
+        for _ in range(50):
+            if not coordinator._prefetches:
+                break
+            await asyncio.sleep(0.01)
+        assert not coordinator._prefetches and len(renewals) == renewed
     finally:
         release.set()
         await coordinator.stop()

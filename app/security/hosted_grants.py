@@ -189,12 +189,38 @@ class InstallationProofAuthority(Protocol):
     def sign_challenge(self, challenge: bytes) -> InstallationProof: ...
 
 
+def _connection_timing():
+    """Record new TCP and TLS connection durations under closed timing labels."""
+    started = {}
+    stages = {"connection.connect_tcp": "connect", "connection.start_tls": "tls"}
+
+    def trace(name, info):
+        event, _, outcome = name.rpartition(".")
+        stage = stages.get(event)
+        if stage is None:
+            return
+        if outcome == "started":
+            started[stage] = monotonic()
+        elif stage in started:
+            from app.onboarding import timing
+            try:
+                timing.observe("transport", stage, "ok" if outcome == "complete" else "error",
+                               max(0.0, (monotonic() - started.pop(stage)) * 1000))
+            except ValueError:
+                pass
+    return trace
+
+
 class HTTPXHostedTransport:
     """HTTPS transport for hosted JSON requests."""
 
-    def __init__(self, base_url: str, *, timeout_seconds: float = 10.0) -> None:
+    def __init__(self, base_url: str, *, timeout_seconds: float = 10.0,
+                 keepalive_seconds: float = 5.0) -> None:
         if isinstance(timeout_seconds, bool) or not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise ValueError("Hosted timeout must be finite and positive")
+        if (isinstance(keepalive_seconds, bool) or not math.isfinite(keepalive_seconds)
+                or not 0 < keepalive_seconds <= 120):
+            raise ValueError("Hosted keepalive must be finite and at most 120 seconds")
         self._timeout_seconds = timeout_seconds
         try:
             url = httpx.URL(base_url)
@@ -214,6 +240,8 @@ class HTTPXHostedTransport:
             base_url=str(url.copy_with(path="/")),
             follow_redirects=False,
             timeout=timeout_seconds,
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20,
+                                keepalive_expiry=keepalive_seconds),
             headers={"Accept": "application/json", "Accept-Encoding": "identity"},
         )
 
@@ -226,7 +254,8 @@ class HTTPXHostedTransport:
     ) -> TransportResponse:
         deadline = monotonic() + self._timeout_seconds
         try:
-            with self._client.stream(method, path, json=json_body) as response:
+            with self._client.stream(method, path, json=json_body,
+                                     extensions={"trace": _connection_timing()}) as response:
                 if monotonic() >= deadline:
                     raise _TransportFailure("Hosted response exceeded deadline")
                 if response.headers.get("content-encoding", "identity").strip().lower() != "identity":

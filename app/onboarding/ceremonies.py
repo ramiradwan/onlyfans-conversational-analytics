@@ -158,12 +158,14 @@ class BrowserCeremonies:
         return self.row(parent)
 
     async def stop(self):
-        if self.authentication is not None:
-            await self.authentication.stop()
-        if self.decisions is not None:
-            await self.decisions.stop()
-        self._effects.close_admission()
-        await self._effects.drain()
+        # The proof clients can share one transport; drain all of them before any close.
+        owners = tuple(owner for owner in (self.authentication, self.decisions) if owner is not None)
+        for effects in (*(owner._effects for owner in owners), self._effects):
+            effects.close_admission()
+        for effects in (*(owner._effects for owner in owners), self._effects):
+            await effects.drain()
+        for owner in owners:
+            await owner.stop()
         close = getattr(self.client.transport, "close", None)
         if close is not None:
             close()

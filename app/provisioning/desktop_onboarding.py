@@ -297,7 +297,7 @@ class ProvisioningSetupOwner:
     async def prefetch(self, operation):
         authentication = self.ceremonies.authentication
         parent = authentication.parent_operation(operation["operation_id"])
-        await authentication.prefetch(operation["operation_id"],
+        return await authentication.prefetch(operation["operation_id"],
             authorize=lambda: self._read_guard({"operation_id": parent}))
 
     async def reconcile_hint(self, operation):
@@ -425,7 +425,8 @@ class ProvisioningSetupOwner:
         return recovered["journey_id"]
 
     async def execute(self, operation, *, reconcile, actor=None):
-        observed = self.observe(operation)
+        with timing.phase("worker", "observe"):
+            observed = self.observe(operation)
         if observed is not None:
             return observed
         if operation["action"] == "browser.access":
@@ -441,7 +442,8 @@ class ProvisioningSetupOwner:
                 terminal = await self._terminal_initial_read(operation, result)
                 if terminal is not None:
                     return terminal
-            recovered = self._recover_initial_source(operation)
+            with timing.phase("worker", "recover"):
+                recovered = self._recover_initial_source(operation)
             if recovered is not None:
                 # The original initial owner replays only its idempotent prepare
                 # or reads its accepted completion receipt. No new ceremony.
@@ -545,14 +547,19 @@ class ProvisioningSetupOwner:
         if saved is None:
             raise HostedGrantUnavailable("Browser ceremony is unavailable")
         binding = json.loads(saved["binding_json"])
-        key = self.key.reopen_existing()
-        if (binding["installation_key_id"], binding["installation_key_jkt"]) != (key.installation_key_id, key.installation_key_jkt):
+        # Each proof exchange reopens the provider key and verifies it against this reference.
+        key = self.store.installation_key_reference()
+        if key is None or (binding["installation_key_id"], binding["installation_key_jkt"]) != (
+                key.installation_key_id, key.installation_key_jkt):
             raise HostedGrantUnavailable("Browser ceremony key changed")
 
     def _binding(self, operation):
         selected = json.loads(operation["owner_scope_json"])
         journey = self._guard(operation)
-        key = self.key.reopen_existing()
+        # The ceremony proof reopens the provider key and refuses a binding that differs from it.
+        key = self.store.installation_key_reference()
+        if key is None:
+            raise HostedGrantUnavailable("Installation key is unavailable")
         if selected["creator_account_id"] is None:
             raise HostedGrantUnavailable("Browser account is unavailable")
         if journey.kind == "initial-enrollment":

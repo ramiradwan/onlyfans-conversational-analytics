@@ -111,6 +111,7 @@ class DesktopOnboardingCoordinator:
         self._wake: asyncio.Event | None = None
         self._dirty: dict[str, bool] = {}
         self._prefetches: dict[str, asyncio.Task] = {}
+        self._prefetch_wake: dict[str, asyncio.Event] = {}
 
     def _current(self, connection, session):
         row, parent = self.admissions._require(connection, session.identifier, role="desktop", generation=session.generation)
@@ -422,6 +423,7 @@ class DesktopOnboardingCoordinator:
         try:
             while not self._closed:
                 signal.clear()
+                started = time.monotonic()
                 pending = self._pending()
                 pending_ids = {operation["operation_id"] for operation in pending}
                 self._retry_at = {key: value for key, value in self._retry_at.items() if key in pending_ids}
@@ -478,6 +480,9 @@ class DesktopOnboardingCoordinator:
                                 self._start(operation, reconcile=True, actor=None)
                             else:
                                 retry_delays.append(due - clock)
+                elapsed = (time.monotonic() - started) * 1000
+                if elapsed >= timing.SLOW_MS:
+                    timing.observe("snapshot", "watch", "ok", elapsed)
                 deadlines = [operation["expires_at"] - self.admissions._now() for operation in self._pending()
                     if operation["expires_at"] > self.admissions._now()]
                 deadlines.extend(retry_delays)
@@ -553,17 +558,34 @@ class DesktopOnboardingCoordinator:
         task.add_done_callback(finished)
 
     def _prefetch(self, operation):
+        """Keep one fresh read challenge while this sign-in can still be open."""
         operation_id = operation["operation_id"]
-        if self._closed or operation_id in self._prefetches or getattr(self.owner, "prefetch", None) is None:
+        if self._closed or getattr(self.owner, "prefetch", None) is None:
             return
+        if operation_id in self._prefetches:
+            self._prefetch_wake[operation_id].set()
+            return
+        wake = self._prefetch_wake[operation_id] = asyncio.Event()
 
         async def run():
             try:
-                await self.owner.prefetch(operation)
+                while not self._closed:
+                    wake.clear()
+                    delay = await self.owner.prefetch(operation)
+                    if (isinstance(delay, bool) or not isinstance(delay, (int, float)) or not 0 < delay < 3600
+                            or self._probe_interval(operation) is None):
+                        return
+                    try:
+                        await asyncio.wait_for(wake.wait(), delay)
+                    except TimeoutError:
+                        pass
+                    if self._probe_interval(operation) is None:
+                        return
             except Exception:
                 pass
             finally:
                 self._prefetches.pop(operation_id, None)
+                self._prefetch_wake.pop(operation_id, None)
 
         self._prefetches[operation_id] = asyncio.create_task(run())
 

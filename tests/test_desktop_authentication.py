@@ -596,6 +596,62 @@ async def test_hint_closes_only_current_task_after_one_current_read(auth, change
 
 
 @pytest.mark.asyncio
+async def test_guards_and_binding_check_the_persisted_key_without_provider_work(setup):
+    from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
+    _, ceremonies, _, parent, binding, _ = setup
+    await ceremonies.prepare(parent["operation_id"], binding, authorize=authorized)
+    current = SimpleNamespace(installation_key_id=binding["installation_key_id"],
+                              installation_key_jkt=binding["installation_key_jkt"])
+    reference = [current]
+    owner = ProvisioningSetupOwner.__new__(ProvisioningSetupOwner)
+    owner.store = SimpleNamespace(installation_key_reference=lambda: reference[0])
+    owner.ceremonies = ceremonies
+    owner.key = SimpleNamespace(reopen_existing=lambda: pytest.fail("provider key work in a guard"))
+    owner._read_guard({"operation_id": parent["operation_id"]})
+    journey = SimpleNamespace(kind="initial-enrollment", installation_id="installation", operation_id="source-operation",
+        preparation=SimpleNamespace(profile="profile", request_digest="digest"), handoff_reference="reference",
+        handoff_expires_at="2026-10-12T13:00:00.000Z")
+    owner._guard = lambda operation: journey
+    selected = {"creator_account_id": "creator", "browser": None}
+    made = owner._binding({"owner_scope_json": json.dumps(selected)})
+    assert (made["installation_key_id"], made["installation_key_jkt"]) == (
+        current.installation_key_id, current.installation_key_jkt)
+    for changed in (SimpleNamespace(installation_key_id=current.installation_key_id, installation_key_jkt="changed"), None):
+        reference[0] = changed
+        with pytest.raises(HostedGrantUnavailable):
+            owner._read_guard({"operation_id": parent["operation_id"]})
+    with pytest.raises(HostedGrantUnavailable):
+        owner._binding({"owner_scope_json": json.dumps(selected)})
+
+
+@pytest.mark.asyncio
+async def test_prefetch_renews_a_due_or_consumed_challenge_and_keeps_a_fresh_one(auth):
+    _, _, authentication, client, parent, _, _ = auth
+    tickets = []
+
+    def prefetch_read(request, *, before_send):
+        before_send()
+        assert request["authentication_attempt_id"] is None
+        tickets.append(SimpleNamespace(delay=40.0))
+        return tickets[-1]
+
+    client.prefetch_read = prefetch_read
+    client.renewal_delay = lambda ticket: ticket.delay
+    guards = []
+    operation_id = parent["operation_id"]
+    assert await authentication.prefetch(operation_id, authorize=lambda: guards.append(True)) == 40
+    assert await authentication.prefetch(operation_id, authorize=lambda: guards.append(True)) == 40
+    assert len(tickets) == 1 and authentication._prefetched[operation_id] is tickets[0]
+    tickets[0].delay = 0.0
+    assert await authentication.prefetch(operation_id, authorize=lambda: guards.append(True)) == 40
+    assert len(tickets) == 2 and authentication._prefetched[operation_id] is tickets[1]
+    authentication._prefetched.pop(operation_id)
+    assert await authentication.prefetch(operation_id, authorize=lambda: guards.append(True)) == 40
+    assert len(tickets) == 3 and authentication._prefetched[operation_id] is tickets[2]
+    assert len(guards) == 3
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("case", ["selected", "closure", "fenced", "retired", "expired", "unavailable", "successor"])
 async def test_hint_falls_through_on_pending_closure_fenced_task_or_non_open_state(auth, case):
     from uuid import uuid4

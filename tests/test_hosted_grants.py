@@ -1228,6 +1228,41 @@ def test_concrete_transport_refuses_an_unbounded_or_invalid_timeout(timeout):
         HTTPXHostedTransport("https://control.example", timeout_seconds=timeout)
 
 
+@pytest.mark.parametrize("keepalive", [0.0, -1.0, 121.0, float("inf"), float("nan"), True])
+def test_concrete_transport_refuses_an_invalid_keepalive(keepalive):
+    with pytest.raises(ValueError):
+        HTTPXHostedTransport("https://control.example", keepalive_seconds=keepalive)
+
+
+def test_new_connection_and_tls_durations_are_recorded_without_request_details(monkeypatch, caplog):
+    import logging
+    from app.onboarding import timing
+    now = [0.0]
+    monkeypatch.setattr("app.security.hosted_grants.monotonic", lambda: now[0])
+    caplog.set_level(logging.INFO, logger=timing.__name__)
+
+    def handler(request):
+        trace = request.extensions["trace"]
+        for name, after in (("connection.connect_tcp.started", 0.25), ("connection.connect_tcp.complete", 0.0),
+                            ("connection.start_tls.started", 0.5), ("connection.start_tls.failed", 0.0),
+                            ("http11.send_request_headers.started", 0.0)):
+            trace(name, {"secret": "not-recorded"})
+            now[0] += after
+        return httpx.Response(200, headers={"content-type": "application/json"},
+                              stream=_CountingResponseStream([b"{}"]))
+
+    transport = HTTPXHostedTransport("https://control.example")
+    transport._client.close()
+    transport._client = httpx.Client(base_url="https://control.example", transport=httpx.MockTransport(handler))
+    try:
+        transport.request("POST", "/v1/test", json_body={})
+    finally:
+        transport.close()
+    assert caplog.messages == [
+        "event=sign_in_phase operation=transport phase=connect status=ok elapsed_ms=250",
+        "event=sign_in_phase operation=transport phase=tls status=error elapsed_ms=500"]
+
+
 def test_transport_response_repr_does_not_expose_signed_objects():
     response = TransportResponse(403, b"sensitive-compact-denial", "application/json")
     assert "sensitive-compact-denial" not in repr(response)

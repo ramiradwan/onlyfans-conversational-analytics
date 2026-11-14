@@ -63,9 +63,9 @@ ClaimSubmissionRefusal = Literal[
 ]
 
 
-def hosted_transport(hosted_origin: str) -> HostedTransport:
+def hosted_transport(hosted_origin: str, *, keepalive_seconds: float = 5.0) -> HostedTransport:
     """Open the outbound HTTPS transport for the pinned hosted origin."""
-    return HTTPXHostedTransport(hosted_origin)
+    return HTTPXHostedTransport(hosted_origin, keepalive_seconds=keepalive_seconds)
 
 
 def installation_proof_authority(

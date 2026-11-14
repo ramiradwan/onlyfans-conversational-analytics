@@ -209,7 +209,7 @@ class RuntimeSetupOwner:
         kind, value = self._probe_owner(operation)
         if kind == "setup":
             return await value.prefetch(operation)
-        await value.ceremonies.authentication.prefetch(operation["operation_id"],
+        return await value.ceremonies.authentication.prefetch(operation["operation_id"],
             authorize=lambda: value._proof_read_guard(operation))
 
     async def reconcile_hint(self, operation):

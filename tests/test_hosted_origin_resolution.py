@@ -154,7 +154,7 @@ with tempfile.TemporaryDirectory(dir=temp_parent) as temporary:
             lambda base_url, *, journal: captured.setdefault("redemption", base_url)
         )
         claim_submission.HTTPXHostedTransport = (
-            lambda base_url: captured.setdefault("refresh", base_url)
+            lambda base_url, **_: captured.setdefault("refresh", base_url)
         )
         progress_reporting.HTTPXHostedTransport = (
             lambda base_url: captured.setdefault("progress", base_url)

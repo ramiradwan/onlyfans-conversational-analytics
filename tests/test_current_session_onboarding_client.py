@@ -94,6 +94,22 @@ def test_only_exact_current_session_refusals_explain_required_action(reason, sta
     assert error.value.code == expected
 
 
+def test_handoff_exchanges_are_timed_with_closed_labels_only(caplog):
+    import logging
+    from app.onboarding import timing
+    caplog.set_level(logging.INFO, logger=timing.__name__)
+    ok = TransportResponse(200, b"{}", "application/json")
+    client = InitialHandoffClient(SimpleNamespace(request=lambda *a, **k: ok), object())
+    client._request(CHALLENGE_PATH, {"target": {"operation": "initial-handoff-prepare"}}, expected=200)
+    client._request(PATH_PREFIX + "prepare", {}, expected=200)
+    client._request(PATH_PREFIX + "unlisted", {}, expected=200)
+    assert [message.split(" status=")[0] for message in caplog.messages] == [
+        "event=sign_in_phase operation=handoff-prepare phase=challenge-send",
+        "event=sign_in_phase operation=handoff-prepare phase=challenge-receive",
+        "event=sign_in_phase operation=handoff-prepare phase=protected-send",
+        "event=sign_in_phase operation=handoff-prepare phase=protected-receive"]
+
+
 def test_unsigned_unstructured_http_401_does_not_become_an_authentication_fact():
     transport = SimpleNamespace(request=lambda *a, **k: TransportResponse(401, b'{"reason":"login"}', "application/json"))
     with pytest.raises(HostedGrantUnavailable):
