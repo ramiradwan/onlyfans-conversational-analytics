@@ -571,6 +571,31 @@ describe('desktop setup presentation', () => {
     for (const id of ['browser-reopen', 'sign-in-switch', 'sign-in-options']) expect(document.getElementById(id).hidden).toBe(true);
   });
 
+  it('keeps the clicked provider busy in place until its sign-in is selected', () => {
+    mount();
+    const choosing = { ...initial(), next_task: 'account-connection', allowed_actions: ['account.connect'], authentication: signIn() };
+    const busy = () => [...document.querySelectorAll('[data-provider]')].filter(button => button.getAttribute('aria-busy') === 'true')
+      .map(button => button.dataset.provider);
+    renderSetup(document, { snapshot: choosing, connected: true, acting: 'account.connect', provider: 'google' });
+    expect(busy()).toEqual(['google']);
+    expect(document.getElementById('task-status').textContent).toBe('Opening Chrome…');
+    const accepted = { ...choosing, allowed_actions: [], pending_operations: [{ ...record, action: 'account.connect' }] };
+    renderSetup(document, { snapshot: accepted, connected: true, pending: operationId, provider: 'google' });
+    expect(document.getElementById('sign-in-options').hidden).toBe(false);
+    expect(busy()).toEqual(['google']);
+    expect([...document.querySelectorAll('[data-provider]:not([hidden])')].every(button => button.disabled)).toBe(true);
+    expect(document.getElementById('task-status').textContent).toBe('Opening Chrome…');
+    for (const id of ['task-action', 'browser-reopen']) expect(document.getElementById(id).hidden).toBe(true);
+    const selected = { ...accepted, authentication: { ...signIn(), operation_id: operationId, browser_operation_id: operationId,
+      state: 'selected', actions: { select: false, cancel: true, open_browser: true, switch_account: false } } };
+    renderSetup(document, { snapshot: selected, connected: true, pending: operationId, provider: 'google' });
+    expect(document.getElementById('sign-in-options').hidden).toBe(true);
+    expect(busy()).toEqual([]);
+    expect(document.getElementById('task-status').textContent).toBe('Finish signing in in Chrome.');
+    renderSetup(document, { snapshot: accepted, connected: true, pending: operationId, provider: 'google', error: 'browser_unavailable' });
+    expect(busy()).toEqual([]);
+  });
+
   it('requires the current authentication projection before offering account sign-in or browser retry', () => {
     mount();
     renderSetup(document, { snapshot: { ...initial(), next_task: 'account-connection', allowed_actions: ['account.connect'],

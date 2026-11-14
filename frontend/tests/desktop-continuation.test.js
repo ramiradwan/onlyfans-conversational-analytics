@@ -126,3 +126,26 @@ it('ignores late completion after the setup page has closed', () => {
   expect(owners.client.stop).toHaveBeenCalledOnce();
   expect(owners.enrollment.stop).toHaveBeenCalledOnce();
 });
+
+it('marks the clicked provider busy at once and keeps it busy while its sign-in is accepted', async () => {
+  const operation = '22222222-2222-4222-8222-222222222222';
+  const signIn = { operation_id: null, browser_operation_id: null, state: 'selection-required',
+    choices: { google: true, 'microsoft-personal': true, telegram: true, tiktok: false, default: true },
+    actions: { select: true, cancel: false, open_browser: false, switch_account: false }, authentication_attempt: null };
+  const choosing = { ...ready(), next_task: 'account-connection', local_ready: false, allowed_actions: ['account.connect'], authentication: signIn };
+  let settle;
+  owners.client.session.stage = 'setup';
+  owners.client.act.mockImplementation(() => new Promise(resolve => { settle = resolve; }));
+  publish(choosing);
+  const busy = () => [...document.querySelectorAll('[data-provider]')].filter(button => button.getAttribute('aria-busy') === 'true')
+    .map(button => button.dataset.provider);
+  document.querySelector('[data-provider="telegram"]').click();
+  expect(owners.client.act).toHaveBeenCalledExactlyOnceWith('account.connect', { provider: 'telegram' });
+  expect(busy()).toEqual(['telegram']);
+  const accepted = { ...choosing, allowed_actions: [], pending_operations: [{ operation_id: operation, action: 'account.connect', state: 'accepted', reason: 'none' }] };
+  publish(accepted, { pending: operation });
+  settle(); await Promise.resolve(); await Promise.resolve();
+  expect(busy()).toEqual(['telegram']);
+  publish(choosing);
+  expect(busy()).toEqual([]);
+});
