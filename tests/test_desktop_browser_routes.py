@@ -25,6 +25,37 @@ def headers(session):
         CSRF: csrf_token(session.identifier), "Origin": ORIGIN}
 
 
+def test_popup_timing_is_local_closed_and_cannot_reconcile(tmp_path, caplog):
+    import logging
+    from starlette.websockets import WebSocketDisconnect
+    from app.transport.companion_origin import CompanionOriginBoundary
+    coordinator, tasks, _, _ = browser_setup.__wrapped__(tmp_path)
+    app = FastAPI()
+    app.add_middleware(CompanionOriginBoundary)
+    app.include_router(browser_router(coordinator, tasks, None))
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    value = {"operation": "extension", "phase": "popup-remove", "status": "ok", "elapsed_ms": 7}
+    socket_headers = {"Host": "127.0.0.1:17871", "Origin": "chrome-extension://" + "a" * 32}
+    with TestClient(app, base_url="http://127.0.0.1:17871") as client:
+        path = "/api/v1/browser-tasks/timing"
+        with client.websocket_connect(path, headers=socket_headers) as socket:
+            socket.send_json(value)
+            with pytest.raises(WebSocketDisconnect) as ended:
+                socket.receive_text()
+            assert ended.value.code == 1000
+        with client.websocket_connect(path, headers=socket_headers) as socket:
+            socket.send_json({**value, "detail": "private"})
+            with pytest.raises(WebSocketDisconnect) as ended:
+                socket.receive_text()
+            assert ended.value.code == 1008
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect(path, headers={**socket_headers, "Origin": "chrome-extension://" + "b" * 32}):
+                pass
+    assert caplog.messages == ["event=sign_in_phase operation=extension phase=popup-remove status=ok elapsed_ms=7"]
+    with coordinator.store.database.read() as connection:
+        assert connection.execute("SELECT count(*) FROM desktop_setup_operations").fetchone()[0] == 0
+
+
 def test_browser_payload_and_observation_are_closed_and_role_scoped(tmp_path):
     setup = browser_setup.__wrapped__(tmp_path)
     coordinator, tasks, native, _ = setup

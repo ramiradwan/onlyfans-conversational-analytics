@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+
+from app.onboarding import timing
 from contextlib import nullcontext
 
 from app.onboarding.contract import canonical
@@ -91,9 +93,10 @@ class DesktopDecisions:
 
     async def refresh(self, operation_id, *, authorize):
         row, request = self._request(operation_id)
-        result = await self._effects.run(self.client.read, request,
-            expires_at=row["provider_expires_at"], before_send=authorize,
-            journey_id=self.ceremonies._journey(operation_id), protected=False)
+        with timing.phase("decision-read", "read-end"):
+            result = await self._effects.run(self.client.read, request,
+                expires_at=row["provider_expires_at"], before_send=authorize,
+                journey_id=self.ceremonies._journey(operation_id), protected=False)
         self._save(row, result)
         return result
 

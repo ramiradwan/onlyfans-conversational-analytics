@@ -1,7 +1,7 @@
 """Keep the Agent socket origin free of Bridge HTTP and cookie issuance."""
 
 AGENT_HOST = b"127.0.0.1:17871"
-AGENT_PATHS = frozenset({"/ws/agent", "/ws/agent/pairing"})
+AGENT_PATHS = frozenset({"/ws/agent", "/ws/agent/pairing", "/api/v1/browser-tasks/timing"})
 
 
 class CompanionOriginBoundary:

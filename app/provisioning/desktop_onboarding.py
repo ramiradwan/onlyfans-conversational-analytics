@@ -6,6 +6,7 @@ import secrets
 from datetime import datetime
 from uuid import uuid4
 
+from app.onboarding import timing
 from app.onboarding.contract import digest
 from app.onboarding.coordinator import AcceptedContext, CommandRefused, DomainView, OperationResult
 from app.persistence.continuation_selection import ContinuationSelectionUnavailable
@@ -293,6 +294,19 @@ class ProvisioningSetupOwner:
         return authentication.wait(operation["operation_id"],
             authorize=lambda: self._read_guard({"operation_id": parent}))
 
+    async def prefetch(self, operation):
+        authentication = self.ceremonies.authentication
+        parent = authentication.parent_operation(operation["operation_id"])
+        await authentication.prefetch(operation["operation_id"],
+            authorize=lambda: self._read_guard({"operation_id": parent}))
+
+    async def reconcile_hint(self, operation):
+        def guard():
+            self._guard(operation)
+            parent = self.ceremonies.authentication.parent_operation(operation["operation_id"])
+            self._read_guard({"operation_id": parent})
+        return await self.ceremonies.authentication.reconcile_task(operation["operation_id"], authorize=guard)
+
     def authorize_initial_scope(self, journey_id, scope):
         """Bind initial completion to the accepted intent, including its exact recovery."""
         with self.store.database.read() as connection:
@@ -479,9 +493,11 @@ class ProvisioningSetupOwner:
                 return OperationResult("refused", "operation_expired")
             # Source services own their durable operation IDs and lost-send rules.
             # Retrying here retains that exact source, including on worker restart.
-            await source.prepare(selected["source_journey_id"])
+            with timing.phase("source", "prepare"):
+                await source.prepare(selected["source_journey_id"])
             guard()
-            binding = self._binding(operation)
+            with timing.phase("binding", "binding"):
+                binding = self._binding(operation)
             await self.ceremonies.prepare(operation["operation_id"], binding, authorize=guard)
         else:
             result = await self.ceremonies.reconcile(operation["operation_id"], authorize=lambda: self._read_guard(operation))
@@ -489,6 +505,19 @@ class ProvisioningSetupOwner:
             if terminal is not None:
                 return terminal
         source.resume(selected["source_journey_id"])
+        intent = selected.get("authentication_intent")
+        if (saved is None and not reconcile and selected["journey_kind"] == "initial-enrollment"
+                and intent is not None and intent["verb"] == "select"
+                and intent["expected_previous_attempt_id"] is None and self.ceremonies.authentication is not None):
+            authentication = await self.ceremonies.authentication.ensure_initial(operation, authorize=guard,
+                read_guard=lambda: self._read_guard(operation), fresh=True)
+            entry = self.ceremonies.browser_entry(operation["operation_id"])
+            if entry is not None:
+                self.browser_tasks.prepare(operation, "browser.authentication", deadline=datetime.fromisoformat(
+                    entry["expires_at"].replace("Z", "+00:00")).timestamp())
+            waiting = entry is not None or authentication is not None and authentication["state"] not in {"expired", "unavailable"}
+            return OperationResult("waiting" if waiting else "outcome_unknown",
+                                   "none" if waiting else "operation_unconfirmed")
         authentication = None
         if self.ceremonies.authentication is not None:
             authentication = await self.ceremonies.authentication.refresh(operation["operation_id"],

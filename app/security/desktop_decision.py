@@ -12,6 +12,7 @@ from typing import Callable
 from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
 
+from app.onboarding import timing
 from app.core.resource_paths import resource_path
 from app.security.hosted_grants import HostedGrantUnavailable, HostedTransport
 from app.security.initial_handoff import _require_proof_budget, timestamp
@@ -187,7 +188,11 @@ class DesktopDecisionClient:
         if before_send is not None:
             before_send()
         try:
-            response = self.transport.request("POST", path, json_body=body)
+            challenge = schema == "proof-challenge-response"
+            verb = body["target"]["operation"].removeprefix("desktop-decision-") if challenge else schema.removesuffix("-response")
+            operation = "decision-" + verb
+            with timing.exchange(operation, "challenge" if challenge else "protected"):
+                response = self.transport.request("POST", path, json_body=body)
         except Exception:
             raise HostedGrantUnavailable("Desktop decision result is unavailable") from None
         if response.content_type.split(";", 1)[0].strip().lower() != "application/json":

@@ -5,6 +5,7 @@ import asyncio
 import json
 from contextlib import nullcontext
 
+from app.onboarding import timing
 from app.onboarding.contract import canonical
 from app.onboarding.coordinator import OperationResult
 from app.provisioning.events import events
@@ -27,6 +28,7 @@ class DesktopAuthentication:
         self._lock = asyncio.Lock()
         self._effects = OwnerEffects()
         self._probed: dict[str, str] = {}
+        self._prefetched = {}
 
     def presentation(self, journey_id, action, *, connection=None):
         with (self.store.database.read() if connection is None else nullcontext(connection)) as current:
@@ -94,9 +96,10 @@ class DesktopAuthentication:
             "ceremony_id": row["ceremony_id"], "binding": json.loads(row["binding_json"]),
             "authentication_attempt_id": attempt}
 
-    def _save(self, row, projection):
+    def _save(self, row, projection, *, connection=None):
         encoded = canonical(projection).decode()
-        with self.store.database.transaction() as connection:
+        publish = connection is None
+        with (self.store.database.transaction() if connection is None else nullcontext(connection)) as connection:
             current = connection.execute("SELECT binding_json,ceremony_id FROM desktop_browser_ceremonies WHERE operation_id=?",
                 (row["operation_id"],)).fetchone()
             if current is None or (current["binding_json"], current["ceremony_id"]) != (row["binding_json"], row["ceremony_id"]):
@@ -110,15 +113,88 @@ class DesktopAuthentication:
                 (row["operation_id"], encoded))
             connection.execute("DELETE FROM desktop_decision_projections WHERE operation_id=? "
                 "AND json_extract(projection_json,'$.state')='confirmation-required'", (row["operation_id"],))
-        events.publish()
+        if publish:
+            events.publish()
 
     async def _read(self, parent, *, authorize, attempt=None):
         row, request = self._request(parent, attempt)
-        result = await self._effects.run(self.client.read, request, expires_at=row["provider_expires_at"],
-            before_send=authorize, journey_id=self.ceremonies._journey(parent), protected=False)
+        with timing.phase("authentication-read", "read-end"):
+            result = await self._read_request(row, request, authorize=authorize)
         if attempt is None:
             self._save(row, result)
         return result
+
+    async def _read_request(self, row, request, *, authorize):
+        ticket = self._prefetched.pop(row["operation_id"], None) if request["authentication_attempt_id"] is None else None
+        options = {} if ticket is None else {"prefetched": ticket}
+        return await self._effects.run(self.client.read, request, expires_at=row["provider_expires_at"],
+            before_send=authorize, journey_id=self.ceremonies._journey(row["operation_id"]), protected=False, **options)
+
+    async def prefetch(self, operation_id, *, authorize):
+        if not hasattr(self.client, "prefetch_read"):
+            return
+        parent = self.parent_operation(operation_id)
+        row, request = self._request(parent)
+        if parent in self._prefetched:
+            return
+        ticket = await self._effects.run(self.client.prefetch_read, request, before_send=authorize,
+            journey_id=self.ceremonies._journey(parent), protected=False)
+        if len(self._prefetched) >= 64:
+            self._prefetched.pop(next(iter(self._prefetched)))
+        self._prefetched[parent] = ticket
+
+    async def reconcile_task(self, operation_id, *, authorize):
+        """Only a current proof read can complete this exact live task generation."""
+        async with self._lock:
+            with self.store.database.read() as connection:
+                tasks = connection.execute("SELECT * FROM desktop_browser_tasks WHERE operation_id=? "
+                    "AND purpose='browser.authentication' AND state IN ('pending','accepted','outcome_unknown')",
+                    (operation_id,)).fetchall()
+                command = connection.execute("SELECT * FROM desktop_authentication_commands WHERE operation_id=?",
+                    (operation_id,)).fetchone()
+                closure = connection.execute("SELECT 1 FROM desktop_authentication_closures WHERE operation_id=? "
+                    "AND state='pending'", (operation_id,)).fetchone()
+            if len(tasks) != 1 or command is None or command["verb"] == "cancel" or closure is not None:
+                return None
+            task = dict(tasks[0])
+            row, request = self._request(command["parent_operation_id"])
+            with timing.phase("authentication-read", "read-end"):
+                result = await self._read_request(row, request, authorize=authorize)
+            expected = json.loads(command["request_json"])
+            attempt = result["authentication_attempt"]
+            return await self._effects.run(self._finish_task, operation_id, task, row, result, expected, attempt,
+                authorize=authorize, journey_id=self.ceremonies._journey(row["operation_id"]), protected=False)
+
+    def _finish_task(self, operation_id, task, row, result, expected, attempt, *, authorize):
+        closed = False
+        with self.store.database.transaction() as connection:
+            authorize()
+            current = connection.execute("SELECT * FROM desktop_browser_tasks WHERE task_id=?", (task["task_id"],)).fetchone()
+            operation = connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?", (operation_id,)).fetchone()
+            closure = connection.execute("SELECT 1 FROM desktop_authentication_closures WHERE operation_id=? "
+                "AND state='pending'", (operation_id,)).fetchone()
+            if (current is None or any(current[name] != task[name] for name in (
+                    "admission_generation", "operation_id", "journey_id", "scope_digest", "expires_at"))
+                    or current["state"] not in {"pending", "accepted", "outcome_unknown"}
+                    or current["expires_at"] <= self.store._now().timestamp()
+                    or operation is None or operation["state"] not in {"accepted", "waiting", "outcome_unknown"}
+                    or operation["journey_id"] != task["journey_id"] or operation["scope_digest"] != task["scope_digest"]
+                    or closure is not None):
+                return None
+            self._save(row, result, connection=connection)
+            if (result["state"] == "admitted" and not result["actions"]["open_browser"]
+                    and timestamp(result["expires_at"]) > self.store._now() and attempt is not None
+                    and attempt["authentication_attempt_id"] == expected["authentication_attempt_id"]):
+                connection.execute("UPDATE desktop_browser_tasks SET state='completed' WHERE task_id=? "
+                    "AND admission_generation=?", (task["task_id"], task["admission_generation"]))
+                closed = True
+            else:
+                still_open = (result["actions"]["open_browser"] and timestamp(result["expires_at"]) > self.store._now()
+                    and attempt is not None and attempt["authentication_attempt_id"] == expected["authentication_attempt_id"])
+        if closed:
+            timing.completed(operation_id)
+        events.publish()
+        return True if closed else False if still_open else None
 
     def probe_interval(self, operation_id):
         """Probe cadence while this operation's sign-in popup can still be open."""
@@ -253,7 +329,7 @@ class DesktopAuthentication:
                 (operation["operation_id"], parent, verb, encoded))
         return row, request, verb, True
 
-    async def execute(self, operation, *, authorize, read_guard, reconcile):
+    async def execute(self, operation, *, authorize, read_guard, reconcile, use_selection=False):
         async with self._lock:
             row, request, verb, fresh = self._reserve(operation)
             parent = row["operation_id"]
@@ -272,7 +348,11 @@ class DesktopAuthentication:
                 # A reserved request may have committed. Reopening only reads
                 # that child; a fresh explicit command admits any next attempt.
                 result = await self._read(parent, authorize=read_guard, attempt=request["authentication_attempt_id"])
-            current = await self._read(parent, authorize=read_guard)
+            if use_selection and fresh and not reconcile:
+                self._save(row, result)
+                current = result
+            else:
+                current = await self._read(parent, authorize=read_guard)
             if (result["state"] == "admitted" and verb != "cancel" and current["actions"]["open_browser"]
                     and current["authentication_attempt"] is not None
                     and current["authentication_attempt"]["authentication_attempt_id"] == request["authentication_attempt_id"]):
@@ -287,14 +367,19 @@ class DesktopAuthentication:
                 return OperationResult("refused", "operation_expired" if result["state"] == "expired" else "operation_unconfirmed")
             return OperationResult("outcome_unknown", "operation_unconfirmed")
 
-    async def ensure_initial(self, operation, *, authorize, read_guard):
+    async def ensure_initial(self, operation, *, authorize, read_guard, fresh=False):
         intent = json.loads(operation["owner_scope_json"]).get("authentication_intent")
         if intent is not None:
             with self.store.database.read() as connection:
                 exists = connection.execute("SELECT 1 FROM desktop_authentication_commands WHERE operation_id=?",
                     (operation["operation_id"],)).fetchone() is not None
             if not exists:
-                await self.execute(operation, authorize=authorize, read_guard=read_guard, reconcile=False)
+                await self.execute(operation, authorize=authorize, read_guard=read_guard, reconcile=False, use_selection=fresh)
+                if fresh:
+                    with self.store.database.read() as connection:
+                        row = connection.execute("SELECT projection_json FROM desktop_authentication_projections WHERE operation_id=?",
+                            (operation["operation_id"],)).fetchone()
+                    return None if row is None else json.loads(row[0])
         return await self.refresh(operation["operation_id"], authorize=read_guard)
 
     async def stop(self):

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+import time
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Protocol
 
@@ -108,6 +109,8 @@ class DesktopOnboardingCoordinator:
         self._waits: dict[str, asyncio.Task] = {}
         self._held: set[str] = set()
         self._wake: asyncio.Event | None = None
+        self._dirty: dict[str, bool] = {}
+        self._prefetches: dict[str, asyncio.Task] = {}
 
     def _current(self, connection, session):
         row, parent = self.admissions._require(connection, session.identifier, role="desktop", generation=session.generation)
@@ -218,6 +221,7 @@ class DesktopOnboardingCoordinator:
                 raise CommandRefused("operation_unavailable")
             return self._public(row)
 
+    @timing.measured("command", "accept")
     def _accept(self, session, command, *, actor=None):
         request_digest = digest(command)
         with self.store.database.transaction() as connection:
@@ -302,24 +306,39 @@ class DesktopOnboardingCoordinator:
             self._start(operation, reconcile=True, actor=actor)
         return self._public(operation)
 
-    def _start(self, operation, *, reconcile, actor):
+    def _start(self, operation, *, reconcile, actor, hint=False):
         operation_id = operation["operation_id"]
         running = self._workers.get(operation_id)
         if running is not None and not running.done():
+            if reconcile or hint:
+                self._dirty[operation_id] = self._dirty.get(operation_id, True) and bool(hint)
             return
-        task = asyncio.create_task(self._run(operation, reconcile=reconcile, actor=actor))
+        task = asyncio.create_task(self._run(operation, reconcile=reconcile, actor=actor, hint=hint, queued=time.monotonic()))
         self._workers[operation_id] = task
 
         def finished(worker):
             if self._workers.get(operation_id) is worker:
                 self._workers.pop(operation_id, None)
                 self._retry_at[operation_id] = asyncio.get_running_loop().time() + RECOVERY_INTERVAL_SECONDS
+                if operation_id in self._dirty:
+                    dirty_hint = self._dirty.pop(operation_id)
+                    if not self._closed:
+                        current = next((row for row in self._pending() if row["operation_id"] == operation_id), None)
+                        if current is not None:
+                            self._start(current, reconcile=True, actor=None, hint=dirty_hint)
                 events.publish()
 
         task.add_done_callback(finished)
 
-    async def _run(self, operation, *, reconcile, actor):
+    async def _run(self, operation, *, reconcile, actor, hint=False, queued=None):
+        timing.observe("worker", "entry", "ok", 0 if queued is None else (time.monotonic() - queued) * 1000)
         try:
+            if hint and getattr(self.owner, "reconcile_hint", None) is not None:
+                closed = await self.owner.reconcile_hint(operation)
+                if closed is False:
+                    self._prefetch(operation)
+                    return
+                # A completed task is published before the remaining owner reads.
             result = await self.owner.execute(operation, reconcile=reconcile, actor=actor)
         except asyncio.CancelledError:
             self._settle(operation, OperationResult("outcome_unknown", "operation_unconfirmed"))
@@ -411,6 +430,13 @@ class DesktopOnboardingCoordinator:
                     self._waits.pop(operation_id).cancel()
                 retry_delays = []
                 for operation in pending:
+                    recover = getattr(self.owner, "automatic_recovery", None)
+                    try:
+                        recoverable = recover is not None and recover(operation)
+                    except Exception:
+                        recoverable = False
+                    if recoverable and self._probe_interval(operation) is not None:
+                        self._hold_wait(operation)
                     try:
                         observed = self.owner.observe(operation)
                     except Exception:
@@ -515,6 +541,7 @@ class DesktopOnboardingCoordinator:
             return
         task = asyncio.create_task(self._run_wait(operation))
         self._waits[operation_id] = task
+        self._prefetch(operation)
 
         def finished(wait):
             if self._waits.get(operation_id) is wait:
@@ -525,12 +552,28 @@ class DesktopOnboardingCoordinator:
 
         task.add_done_callback(finished)
 
+    def _prefetch(self, operation):
+        operation_id = operation["operation_id"]
+        if self._closed or operation_id in self._prefetches or getattr(self.owner, "prefetch", None) is None:
+            return
+
+        async def run():
+            try:
+                await self.owner.prefetch(operation)
+            except Exception:
+                pass
+            finally:
+                self._prefetches.pop(operation_id, None)
+
+        self._prefetches[operation_id] = asyncio.create_task(run())
+
     async def _run_wait(self, operation):
         operation_id, attempt, last = operation["operation_id"], 0, None
         while not self._closed and self._probe_interval(operation) is not None:
             delay = None
             try:
                 async for hint in self.owner.wait(operation):
+                    timing.observe("wait", "frame", "ok", 0)
                     if operation_id not in self._held:
                         self._held.add(operation_id)
                         self._probe_at.pop(operation_id, None)
@@ -557,16 +600,7 @@ class DesktopOnboardingCoordinator:
 
     def _reconcile_soon(self, operation):
         """Reconcile now, or once more after a running reconciliation whose read may predate the hint."""
-        running = self._workers.get(operation["operation_id"])
-        if running is None or running.done():
-            self._start(operation, reconcile=True, actor=None)
-            return
-
-        def again(_):
-            if not self._closed:
-                self._start(operation, reconcile=True, actor=None)
-
-        running.add_done_callback(again)
+        self._start(operation, reconcile=True, actor=None, hint=True)
 
     async def drain(self):
         while self._workers:
@@ -577,7 +611,7 @@ class DesktopOnboardingCoordinator:
         if self._watcher is not None:
             self._watcher.cancel()
             await asyncio.gather(self._watcher, return_exceptions=True)
-        probes = tuple(self._probes.values()) + tuple(self._waits.values())
+        probes = tuple(self._probes.values()) + tuple(self._waits.values()) + tuple(self._prefetches.values())
         for probe in probes:
             probe.cancel()
         await asyncio.gather(*probes, return_exceptions=True)

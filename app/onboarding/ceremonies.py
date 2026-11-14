@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 
+from app.onboarding import timing
 from app.onboarding.contract import canonical
 from app.persistence.onboarding import require_journey
 from app.provisioning.events import events
@@ -83,8 +84,9 @@ class BrowserCeremonies:
             return await self._read(row, authorize=authorize)
 
     async def _read(self, row, *, authorize):
-        result = await self._effects.run(self.client.read, self.request(row), expires_at=row["provider_expires_at"],
-            before_send=authorize, journey_id=self._journey(row["operation_id"]), protected=False)
+        with timing.phase("ceremony-read", "read-end"):
+            result = await self._effects.run(self.client.read, self.request(row), expires_at=row["provider_expires_at"],
+                before_send=authorize, journey_id=self._journey(row["operation_id"]), protected=False)
         if result["status"] == "found":
             self._bind(row, result)
         return result

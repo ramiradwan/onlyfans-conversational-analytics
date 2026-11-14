@@ -197,3 +197,41 @@ def test_closed_refusal_is_distinct_from_unknown_transport_result(status, reason
     with pytest.raises(BrowserAuthenticationRefused) as refused:
         subject.execute("select", item["request"])
     assert refused.value.reason == reason
+
+
+@pytest.mark.parametrize("delay", [0, 59, 60, 61])
+def test_prefetched_read_delays_signing_and_refreshes_expired_challenges(delay):
+    elapsed = [0.0]
+    item = vector()
+    subject, transport, key = client(item, projection(item["request"]), monotonic=lambda: elapsed[0])
+    ticket = subject.prefetch_read(item["request"])
+    assert len(transport.calls) == 1 and not key.signed
+    elapsed[0] = delay
+    subject.read(item["request"], prefetched=ticket)
+    assert key.signed == 1
+    assert [call[1] for call in transport.calls].count(CHALLENGE_PATH) == (1 if delay < 60 else 2)
+    assert transport.calls[-1][1] == PATH_PREFIX + "read"
+    subject.read(item["request"], prefetched=ticket)
+    assert key.signed == 2
+    assert [call[1] for call in transport.calls].count(CHALLENGE_PATH) == (2 if delay < 60 else 3)
+
+
+@pytest.mark.parametrize("change", ["request", "key", "guard"])
+def test_prefetch_never_signs_a_changed_scope(change):
+    item = vector()
+    subject, transport, key = client(item, projection(item["request"]))
+    ticket = subject.prefetch_read(item["request"])
+    request = copy.deepcopy(item["request"])
+    guard = None
+    if change == "request":
+        request["authentication_attempt_id"] = CHILD
+    elif change == "key":
+        original = key.reopen_existing
+        from dataclasses import replace
+        key.reopen_existing = lambda: replace(original(), installation_key_id="changed")
+    else:
+        def guard():
+            raise HostedGrantUnavailable("Scope changed")
+    with pytest.raises(HostedGrantUnavailable):
+        subject.read(request, prefetched=ticket, before_send=guard)
+    assert len(transport.calls) == 1 and not key.signed

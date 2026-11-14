@@ -11,6 +11,29 @@ import { BROWSER_AUTH_KEY, createBrowserAuth, parseBrowserAuthReturn } from '../
 import { payload, id } from '../test-fixtures/browser-task.mjs';
 
 const ORIGIN = 'https://provider.example';
+
+test('both backgrounds send closed popup removal observations locally', () => {
+  for (const file of ['background.js', 'background-read-only.js']) {
+    const source = readFileSync(new URL('../' + file, import.meta.url), 'utf8');
+    assert.match(source, /onRemoved: observePopupRemoval/u);
+  }
+});
+
+test('popup timing sends only a finite delta over the fixed local socket', async t => {
+  const prior = globalThis.WebSocket, sockets = [];
+  globalThis.WebSocket = class {
+    constructor(url) { this.url = url; sockets.push(this); }
+    send(value) { this.value = JSON.parse(value); this.onclose(); }
+    close() { this.onclose(); }
+  };
+  t.after(() => { globalThis.WebSocket = prior; });
+  const { observePopupRemoval } = await import('../runtime/sign-in-timing.mjs');
+  for (const value of [NaN, Infinity, -1, 3600001, '2']) observePopupRemoval(value);
+  assert.equal(sockets.length, 0);
+  observePopupRemoval(12.4); sockets[0].onopen();
+  assert.equal(sockets[0].url, 'ws://127.0.0.1:17871/api/v1/browser-tasks/timing');
+  assert.deepEqual(sockets[0].value, { operation: 'extension', phase: 'popup-remove', status: 'ok', elapsed_ms: 12 });
+});
 const RETURN = 'https://' + 'a'.repeat(32) + '.chromiumapp.org/browser-ceremony/v1/complete';
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));

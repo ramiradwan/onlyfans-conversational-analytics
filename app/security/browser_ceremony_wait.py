@@ -10,6 +10,7 @@ from typing import AsyncIterator, Callable
 
 import httpx
 
+from app.onboarding import timing
 from app.security.browser_ceremony import _P256_ORDER
 from app.security.hosted_grants import HostedGrantUnavailable, HostedTransport, HTTPXHostedTransport
 from app.security.initial_handoff import _require_proof_budget, timestamp
@@ -130,7 +131,8 @@ class BrowserCeremonyWaitClient:
 
     def _challenge(self, body: dict) -> dict:
         try:
-            response = self.transport.request("POST", CHALLENGE_PATH, json_body=body)
+            with timing.exchange("wait", "challenge"):
+                response = self.transport.request("POST", CHALLENGE_PATH, json_body=body)
         except Exception:
             raise CeremonyWaitUnavailable("Ceremony wait challenge is unavailable") from None
         if response.status_code == 429:
@@ -152,8 +154,12 @@ class BrowserCeremonyWaitClient:
         async with httpx.AsyncClient(base_url=self.origin, follow_redirects=False, trust_env=False,
                                      transport=self.stream_transport,
                                      timeout=httpx.Timeout(35.0, connect=10.0)) as client:
+            timing.observe("wait", "protected-send", "ok", 0)
+            started = self.monotonic()
             async with client.stream("POST", WAIT_PATH, json=envelope,
                                      headers={"Accept": "text/event-stream", "Accept-Encoding": "identity"}) as response:
+                timing.observe("wait", "protected-receive", "ok" if response.status_code == 200 else "error",
+                    max(0, (self.monotonic() - started) * 1000))
                 if response.status_code in {429, 503}:
                     raise CeremonyWaitUnavailable("Ceremony wait is unavailable", retry_after=_retry_after(response))
                 if (response.status_code != 200

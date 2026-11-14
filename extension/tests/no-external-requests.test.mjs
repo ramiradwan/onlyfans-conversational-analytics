@@ -15,7 +15,7 @@ const ORIGINS = new Set(['https://onlyfans.com', 'http://bridge.localhost', 'htt
 const PRIMITIVES = [
   ['fetch(', ['runtime/companion-client.mjs', 'ui/surface-client.mjs', 'page-hook.js']],
   ['XMLHttpRequest', ['page-hook.js']],
-  ['new WebSocket(', ['runtime/customer-journey.mjs', 'transport/companion-channel.mjs']],
+  ['new WebSocket(', ['runtime/customer-journey.mjs', 'transport/companion-channel.mjs', 'runtime/sign-in-timing.mjs']],
   ['EventSource(', []],
   ['sendBeacon', []],
   ['importScripts(', []],
@@ -65,7 +65,7 @@ test('the hosted origin reaches only the sign-in popup owner', async () => {
     const text = (await readFile(path.join(ROOT, file), 'utf8'));
     const uses = [...text.matchAll(/onboardingHostedOrigin/gu)].length;
     assert.equal(uses, 2, `${file} imports it once and passes it to browser auth once`);
-    assert.match(text, /createBrowserAuth\(\{ chromeApi: chrome, hostedOrigin: onboardingHostedOrigin \}\)/u);
+    assert.match(text, /createBrowserAuth\(\{ chromeApi: chrome, hostedOrigin: onboardingHostedOrigin, onRemoved: observePopupRemoval \}\)/u);
   }
 });
 

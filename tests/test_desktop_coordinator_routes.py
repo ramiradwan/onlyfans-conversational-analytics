@@ -19,6 +19,19 @@ def setup(request):
 pytestmark = [pytest.mark.ci_tier("fast"), pytest.mark.windows_compat]
 
 
+def test_phase_observation_is_scoped_closed_and_has_no_authority(setup, caplog):
+    import logging
+    coordinator, owner, session, _ = setup
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    with client_for(coordinator, session) as client:
+        value = {"operation": "frontend", "phase": "command-send", "status": "ok", "elapsed_ms": 12}
+        assert client.post("/api/v1/desktop/setup/timing", json=value).status_code == 204
+        assert client.post("/api/v1/desktop/setup/timing", json={**value, "url": "private"}).status_code == 400
+        assert client.post("/api/v1/desktop/setup/timing", json=value, headers={CSRF: "wrong"}).status_code == 403
+        assert not owner.calls
+    assert caplog.messages == ["event=sign_in_phase operation=frontend phase=command-send status=ok elapsed_ms=12"]
+
+
 def client_for(coordinator, session):
     app = FastAPI()
     app.include_router(desktop_router(coordinator))
@@ -31,16 +44,16 @@ def client_for(coordinator, session):
 
 def test_desktop_snapshot_and_commands_require_the_exact_role_and_generation(setup):
     coordinator, owner, session, _ = setup
-    client = client_for(coordinator, session)
-    snapshot = client.get("/api/v1/desktop/setup")
-    assert snapshot.status_code == 200 and snapshot.headers["cache-control"] == "no-store"
-    value = command(snapshot.json())
-    response = client.post("/api/v1/desktop/setup/commands", json=value, headers={CSRF: "wrong"})
-    assert response.status_code == 403
-    response = client.post("/api/v1/desktop/setup/commands", json=value, headers={GENERATION: "wrong"})
-    assert response.status_code == 401
-    response = client.get("/api/v1/desktop/setup", headers={"Cookie": COOKIE_NAMES["browser_task"] + "=" + session.identifier})
-    assert response.status_code == 401
+    with client_for(coordinator, session) as client:
+        snapshot = client.get("/api/v1/desktop/setup")
+        assert snapshot.status_code == 200 and snapshot.headers["cache-control"] == "no-store"
+        value = command(snapshot.json())
+        response = client.post("/api/v1/desktop/setup/commands", json=value, headers={CSRF: "wrong"})
+        assert response.status_code == 403
+        response = client.post("/api/v1/desktop/setup/commands", json=value, headers={GENERATION: "wrong"})
+        assert response.status_code == 401
+        response = client.get("/api/v1/desktop/setup", headers={"Cookie": COOKIE_NAMES["browser_task"] + "=" + session.identifier})
+        assert response.status_code == 401
     assert not owner.calls and not owner.admissions
 
 
@@ -50,7 +63,8 @@ def test_desktop_snapshot_and_commands_require_the_exact_role_and_generation(set
 ])
 def test_request_origin_cannot_be_substituted(setup, change, status):
     coordinator, _, session, _ = setup
-    assert client_for(coordinator, session).get("/api/v1/desktop/setup", headers=change).status_code == status
+    with client_for(coordinator, session) as client:
+        assert client.get("/api/v1/desktop/setup", headers=change).status_code == status
 
 
 @pytest.mark.parametrize("content,status", [
@@ -60,8 +74,9 @@ def test_request_origin_cannot_be_substituted(setup, change, status):
 ])
 def test_closed_parser_rejects_duplicate_keys_nonfinite_values_and_oversize_bodies(setup, content, status):
     coordinator, owner, session, _ = setup
-    response = client_for(coordinator, session).post("/api/v1/desktop/setup/commands", content=content,
-                                                    headers={"Content-Type": "application/json"})
+    with client_for(coordinator, session) as client:
+        response = client.post("/api/v1/desktop/setup/commands", content=content,
+            headers={"Content-Type": "application/json"})
     assert response.status_code == status and not owner.calls
 
 

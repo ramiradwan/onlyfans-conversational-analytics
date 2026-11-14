@@ -205,6 +205,23 @@ class RuntimeSetupOwner:
         return value.ceremonies.authentication.wait(operation["operation_id"],
             authorize=lambda: value._proof_read_guard(operation))
 
+    async def prefetch(self, operation):
+        kind, value = self._probe_owner(operation)
+        if kind == "setup":
+            return await value.prefetch(operation)
+        await value.ceremonies.authentication.prefetch(operation["operation_id"],
+            authorize=lambda: value._proof_read_guard(operation))
+
+    async def reconcile_hint(self, operation):
+        selected = self._probe_owner(operation)
+        if selected is None:
+            return None
+        kind, value = selected
+        if kind == "setup":
+            return await value.reconcile_hint(operation)
+        return await value.ceremonies.authentication.reconcile_task(operation["operation_id"],
+            authorize=lambda: value._proof_read_guard(operation))
+
     @staticmethod
     def _runtime_access(operation):
         # An initial setup operation retains its original owner across restart.

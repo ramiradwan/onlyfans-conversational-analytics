@@ -5,8 +5,9 @@ import asyncio
 import json
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, Response
 
+from app.onboarding import timing
 from app.onboarding.admission import AdmissionRefused
 from app.onboarding.admission_routes import HEADERS, authorize
 from app.onboarding.coordinator import CommandRefused, DesktopOnboardingCoordinator
@@ -126,10 +127,21 @@ def desktop_router(coordinator: DesktopOnboardingCoordinator, *, actor=lambda re
         session = admitted(request, mutation=True)
         value = await body(request)
         try:
-            result = await coordinator.command(session, value, actor=actor(request, True))
+            with timing.phase("command", "run"):
+                result = await coordinator.command(session, value, actor=actor(request, True))
             return JSONResponse(result, status_code=202, headers=HEADERS)
         except (AdmissionRefused, CommandRefused, ValueError) as error:
             return _refused(error)
+
+    @router.post("/timing")
+    async def phase_observation(request: Request):
+        admitted(request, mutation=True)
+        value = await body(request)
+        try:
+            timing.observation(value, operation="frontend", phases={"click", "command-send"})
+        except (ValueError, TypeError):
+            raise HTTPException(400, "Invalid sign-in timing") from None
+        return Response(status_code=204, headers=HEADERS)
 
     @router.get("/operations/{operation_id}")
     def receipt(request: Request, operation_id: str):
