@@ -6,7 +6,7 @@ import json
 import random
 import time
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Protocol
+from typing import AsyncIterator, Callable, Protocol
 
 from app.onboarding import timing
 from app.onboarding.admission import AdmittedSession, ScopedAdmissions
@@ -112,6 +112,8 @@ class DesktopOnboardingCoordinator:
         self._dirty: dict[str, bool] = {}
         self._prefetches: dict[str, asyncio.Task] = {}
         self._prefetch_wake: dict[str, asyncio.Event] = {}
+        # Presentation-only notice of a freshly accepted command; it never changes the operation.
+        self.accepted: Callable[[dict], None] | None = None
 
     def _current(self, connection, session):
         row, parent = self.admissions._require(connection, session.identifier, role="desktop", generation=session.generation)
@@ -292,6 +294,11 @@ class DesktopOnboardingCoordinator:
         operation, fresh = self._accept(session, command, actor=actor)
         if fresh:
             events.publish()
+            if self.accepted is not None:
+                try:
+                    self.accepted(operation)
+                except Exception:
+                    pass
             self._start(operation, reconcile=False, actor=actor)
         # HTTP cancellation cannot cancel accepted domain work. A duplicate only
         # observes its receipt; it never starts a second worker.

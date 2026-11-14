@@ -26,7 +26,7 @@ PHASES = frozenset({"click", "command-send", "accept", "entry", "prepare", "bind
     "run", "reopen", "usability", "sign", "challenge", "protected", "frame", "read-end",
     "helper-finish", "task-send", "popup-remove", "challenge-send", "challenge-receive",
     "protected-send", "protected-receive", "observe", "recover", "ensure", "connect", "tls",
-    "read", "watch", "renew"})
+    "read", "watch", "renew", "waiting"})
 # Event-loop work below this duration is not recorded.
 SLOW_MS = 25
 SINK_DIRECTORY = "diagnostics"

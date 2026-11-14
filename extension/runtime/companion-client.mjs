@@ -43,6 +43,7 @@ export function createCompanionClient({
   chromeApi = globalThis.chrome, allowsFull, detectedAccountId,
   // Paused Full keeps a control-only session so the desktop app can resume it.
   allowsControl = () => false, onControl = async () => {}, onBrowserTask = null, onBrowserTaskEnd = null,
+  onBrowserTaskWaiting = null,
   accountDatabaseName,
   storeFactory = openPairingStore, loadSnow = loadPackagedSnow,
   channelFactory = openCompanionChannel, wireFactory = openLoopbackSocket,
@@ -232,7 +233,14 @@ export function createCompanionClient({
   function attachControls(channel) {
     const lifetime = new AbortController();
     channel.onClose(() => lifetime.abort());
-    channel.onControl?.(({ id, action, payload, end }) => {
+    channel.onControl?.(({ id, action, payload, end, waiting }) => {
+      if (action === 'browser.task.waiting' || action === 'browser.task.waiting.end') {
+        if (!lifetime.signal.aborted && onBrowserTaskWaiting && channel === controlChannel() && (allowsFull?.() || allowsControl())) {
+          void Promise.resolve().then(() => onBrowserTaskWaiting(action === 'browser.task.waiting' ? 'open' : 'end', waiting))
+            .catch(() => undefined);
+        }
+        return;
+      }
       if (action === 'browser.task.end') {
         // A notification only: the receiver matches it to an active task or ignores it.
         if (!lifetime.signal.aborted && onBrowserTaskEnd) void Promise.resolve().then(() => onBrowserTaskEnd(end)).catch(() => undefined);
@@ -290,7 +298,10 @@ export function createCompanionClient({
       await channel.rpc('agent.surface.report', surface);
       if (onBrowserTaskEnd && channel.advertiseBrowserTasks && !advertised.has(channel)) {
         advertised.add(channel);
-        void channel.advertiseBrowserTasks([]);
+        void Promise.resolve(channel.advertiseBrowserTasks([])).then(ended => {
+          if (ended === true && onBrowserTaskWaiting && channel.advertiseBrowserTaskWaiting) return channel.advertiseBrowserTaskWaiting();
+          return false;
+        }).catch(() => undefined);
       }
       if (channel === controlChannel() && encoded === lastSurfaceEncoded && meaning === surfaceMeaning) {
         const wasReady = controlReady();

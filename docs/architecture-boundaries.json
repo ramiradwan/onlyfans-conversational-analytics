@@ -236,6 +236,7 @@
         "extension/setup.*",
         "extension/options.*",
         "extension/signing-helper.html",
+        "extension/sign-in-waiting.html",
         "extension/ui/**",
         "extension/preview/**",
         "extension/activation/**",

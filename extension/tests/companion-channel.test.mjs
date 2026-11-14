@@ -776,3 +776,51 @@ test('an older Brain answers the advertisement as unknown and the channel stays 
     assert.equal(channel.endControl, false);
   } finally { channel.close(); }
 });
+
+test('waiting controls are refused before this channel advertises them and accepted after', async () => {
+  const operation = crypto.randomUUID();
+  const open = { type: 'session.control', id: crypto.randomUUID(), action: 'browser.task.waiting', operation_id: operation, expires_at: 1900000000 };
+  const end = { type: 'session.control', id: crypto.randomUUID(), action: 'browser.task.waiting.end', operation_id: operation };
+  const before = fixture({ reply: () => ({}) }), refusedChannel = await before.open(), seen = [];
+  refusedChannel.onControl(value => seen.push(value));
+  await refusedChannel.advertiseBrowserTasks([]);
+  before.application(open);
+  await waitFor(() => refusedChannel.closed);
+  assert.deepEqual(seen, []);
+  const peer = fixture({ reply: () => ({}) });
+  const channel = await peer.open(), controls = [];
+  try {
+    channel.onControl(value => controls.push(value));
+    assert.equal(await channel.advertiseBrowserTaskWaiting(), true);
+    assert.equal(peer.received.at(-1).method, 'agent.browser-task.waiting');
+    assert.deepEqual(peer.received.at(-1).params, {});
+    peer.application(open); peer.application(end);
+    await waitFor(() => controls.length === 2);
+    assert.deepEqual(controls, [{ id: open.id, action: open.action, waiting: { operation_id: operation, expires_at: 1900000000 } },
+      { id: end.id, action: end.action, waiting: { operation_id: operation } }]);
+    assert.equal(channel.closed, false);
+  } finally { channel.close(); }
+});
+
+test('a malformed waiting control closes the channel and an older Brain leaves waiting off', async () => {
+  const good = { type: 'session.control', id: crypto.randomUUID(), action: 'browser.task.waiting',
+    operation_id: crypto.randomUUID(), expires_at: 1900000000 };
+  for (const control of [{ ...good, url: 'https://provider.example/' }, { ...good, expires_at: 1.5 }, { ...good, operation_id: 'operation' }]) {
+    const peer = fixture({ reply: () => ({}) }), channel = await peer.open(), controls = [];
+    channel.onControl(value => controls.push(value));
+    await channel.advertiseBrowserTaskWaiting();
+    peer.application(control);
+    await waitFor(() => channel.closed);
+    assert.deepEqual(controls, [], JSON.stringify(control));
+  }
+  const peer = fixture({ reply(document) {
+    if (document.method !== 'agent.browser-task.waiting') return {};
+    queueMicrotask(() => peer.application({ type: 'rpc.response', id: document.id, error: 'unknown_method' }));
+    return undefined;
+  } });
+  const channel = await peer.open();
+  try {
+    assert.equal(await channel.advertiseBrowserTaskWaiting(), false);
+    assert.equal(channel.waitingControl, false); assert.equal(channel.closed, false);
+  } finally { channel.close(); }
+});

@@ -1,7 +1,8 @@
 import { createCompanionSession } from './companion-noise-session.mjs';
 import { key32 } from './pairing-contract.mjs';
 import { createFragmentReceiver, fragmentMessage } from './companion-fragments.mjs';
-import { END_CONTROL, isBrowserTaskControl, isBrowserTaskEnd } from '../../shared/browser-tasks/wire.mjs';
+import { END_CONTROL, WAITING_CONTROL, WAITING_END_CONTROL, isBrowserTaskControl, isBrowserTaskEnd,
+  isBrowserTaskWaiting, isBrowserTaskWaitingEnd } from '../../shared/browser-tasks/wire.mjs';
 
 export class CompanionChannelError extends Error {
   constructor(code = 'companion_session_refused') { super(code); this.code = code; }
@@ -196,6 +197,18 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
         return false;
       }
     }
+    let waitingControl = false;
+    // An older Brain answers this method as unknown and never sends a waiting control.
+    async function advertiseBrowserTaskWaiting() {
+      waitingControl = true;
+      try {
+        await rpc('agent.browser-task.waiting', {});
+        return true;
+      } catch {
+        waitingControl = false;
+        return false;
+      }
+    }
     async function rpc(method, params = {}, controls = {}) {
       const rotation = method === 'agent.storage.rotate';
       const ordinaryPending = pending.size - Number(pending.has(rotationId));
@@ -267,6 +280,13 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
               for (const listener of controlObservers) listener({ id: document.id, action: document.action, end });
               continue;
             }
+            if (document.action === WAITING_CONTROL || document.action === WAITING_END_CONTROL) {
+              if (!waitingControl || !(isBrowserTaskWaiting(document) || isBrowserTaskWaitingEnd(document))) throw refused();
+              const waiting = { operation_id: document.operation_id,
+                ...(document.action === WAITING_CONTROL ? { expires_at: document.expires_at } : {}) };
+              for (const listener of controlObservers) listener({ id: document.id, action: document.action, waiting });
+              continue;
+            }
             // A session-level control from Brain (ADR 0045). It is closed and
             // carries no data; the receiver applies it through its own controllers.
             const keys = Object.keys(document);
@@ -287,8 +307,9 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
       get closeReason() { return wire.closeReason; },
       get closeCode() { return wire.closeCode; },
       get closeDiagnostic() { return safeCompanionChannelDiagnostic(closeDiagnostic); },
-      rpc, send: document => send(document), close, advertiseBrowserTasks,
+      rpc, send: document => send(document), close, advertiseBrowserTasks, advertiseBrowserTaskWaiting,
       get endControl() { return endControl; },
+      get waitingControl() { return waitingControl; },
       onMessage(listener) { if (observers.size) throw refused(); observers.add(listener); return () => observers.delete(listener); },
       onControl(listener) { controlObservers.add(listener); return () => controlObservers.delete(listener); },
       onClose(listener) { closedObservers.add(listener); return () => closedObservers.delete(listener); },

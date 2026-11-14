@@ -129,6 +129,23 @@ async def test_duplicate_clicks_have_one_durable_operation_and_one_worker(setup)
 
 
 @pytest.mark.asyncio
+async def test_only_a_fresh_acceptance_is_announced_and_an_announcement_failure_changes_nothing(setup):
+    coordinator, owner, session, _ = setup
+    announced = []
+
+    def accepted(operation):
+        announced.append(operation["operation_id"])
+        raise RuntimeError("presentation unavailable")
+    coordinator.accepted = accepted
+    request = command(coordinator.read(session))
+    first = await coordinator.command(session, request)
+    assert await coordinator.command(session, request) == first
+    await coordinator.drain()
+    assert announced == [request["operation_id"]]
+    assert coordinator.receipt(session, request["operation_id"])["state"] == "completed"
+    assert len(owner.calls) == 1
+
+@pytest.mark.asyncio
 async def test_lost_reply_recovers_receipt_without_repeating_mutation(setup):
     coordinator, owner, session, _ = setup
     request = command(coordinator.read(session))

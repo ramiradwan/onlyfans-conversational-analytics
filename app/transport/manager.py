@@ -139,6 +139,7 @@ class BrowserSession:
     # Set only by this session's own advertisement; an older extension never advertises.
     end_control: bool = False
     task_purposes: frozenset[str] = frozenset()
+    waiting_control: bool = False
 
 
 @dataclass(slots=True)
@@ -1562,6 +1563,30 @@ class InMemoryTransportManager:
         session.task_purposes = frozenset(value["task_purposes"])
         if self.browser_task_advertised is not None:
             await self.browser_task_advertised(session)
+
+    def advertise_browser_task_waiting(self, account_id, token, value) -> None:
+        """Record that this one session accepts the closed waiting-window controls."""
+        session = self._browser_sessions.get(account_id, {}).get(token)
+        if value != {} or session is None or not session.end_control:
+            raise ValueError("Invalid browser task advertisement")
+        session.waiting_control = True
+
+    async def send_browser_task_waiting(self, account_id: str, token: int, operation_id: str, *,
+                                        expires_at: int | None) -> bool:
+        """Ask one advertised session to open, or with no deadline end, an operation's waiting window."""
+        session = self._browser_sessions.get(account_id, {}).get(token)
+        if session is None or session.surface is None or not session.waiting_control:
+            return False
+        control = {"type": "session.control", "id": str(uuid4()), "operation_id": operation_id}
+        if expires_at is None:
+            control["action"] = "browser.task.waiting.end"
+        else:
+            control |= {"action": "browser.task.waiting", "expires_at": expires_at}
+        try:
+            await session.send(control)
+            return True
+        except Exception:
+            return False
 
     async def send_browser_task_end(self, session: BrowserSession, task_id: str, admission_generation: str) -> bool:
         """Notify one advertised session that a task ended. The control carries no outcome."""

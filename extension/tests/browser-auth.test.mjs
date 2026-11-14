@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { BROWSER_AUTH_KEY, createBrowserAuth, parseBrowserAuthReturn } from '../runtime/browser-auth.mjs';
+import { BROWSER_AUTH_KEY, BROWSER_AUTH_WAITING_KEY, WAITING_PAGE, createBrowserAuth, parseBrowserAuthReturn } from '../runtime/browser-auth.mjs';
 import { payload, id } from '../test-fixtures/browser-task.mjs';
 
 const ORIGIN = 'https://provider.example';
@@ -478,4 +478,97 @@ test('the built manifest adds no host permission and no tab-wide permission', as
   } finally {
     await rm(outdir, { recursive: true, force: true });
   }
+});
+
+function waitingApis(h) {
+  const updates = [], session = {};
+  h.chromeApi.runtime.getURL = file => `chrome-extension://${'a'.repeat(32)}/${file}`;
+  h.chromeApi.tabs.update = async (tabId, options) => {
+    updates.push([tabId, options]);
+    if (h.control.updateFailure) throw h.control.updateFailure;
+    return { id: tabId };
+  };
+  h.chromeApi.storage.session = { async get(key) { return structuredClone({ [key]: session[key] }); },
+    async set(value) { Object.assign(session, structuredClone(value)); } };
+  return { updates, session };
+}
+const waitingFor = (h, value) => ({ operation_id: value.task.operation_id, expires_at: Math.floor(Date.now() / 1000) + 60 });
+
+test('a waiting window opens at once and becomes the sign-in popup without a second window', async t => {
+  const h = harness(t), value = h.request(), apis = waitingApis(h);
+  await h.owner.waiting('open', waitingFor(h, value));
+  assert.equal(h.flows.length, 1);
+  assert.deepEqual(h.flows[0].options, { type: 'popup', url: `chrome-extension://${'a'.repeat(32)}/${WAITING_PAGE}`,
+    focused: true, width: 500, height: 720 });
+  assert.deepEqual(apis.session[BROWSER_AUTH_WAITING_KEY], { [value.task.operation_id]: h.flows[0].windowId });
+  assert.equal((await h.owner.launch(value, async () => {})).state, 'opening'); await settle();
+  assert.equal(h.flows.length, 1);
+  assert.deepEqual(apis.updates, [[h.flows[0].tabId, { url: value.ceremony.entry_url + '#system-browser', active: true }]]);
+  assert.deepEqual(apis.session[BROWSER_AUTH_WAITING_KEY], {});
+  await h.owner.waiting('end', { operation_id: value.task.operation_id }); await settle();
+  assert.deepEqual(h.removed, []);
+  h.flows[0].close(); await settle();
+  const record = h.stored[BROWSER_AUTH_KEY][0];
+  assert.equal(record.phase, 'closed'); assert.equal(record.closed_generation, value.task.admission_generation);
+  assert.equal(h.onRemoved.listeners.size, 0);
+  assertBoundedJournal(h);
+});
+
+test('closing the waiting window closes the attempt dispatched for it without opening another', async t => {
+  const h = harness(t), value = h.request(), apis = waitingApis(h);
+  await h.owner.waiting('open', waitingFor(h, value));
+  h.flows[0].close(); await settle();
+  assert.deepEqual(await h.owner.launch(value, async () => {}), { state: 'closed', notification: null });
+  assert.equal(h.flows.length, 1); assert.deepEqual(apis.updates, []); assert.deepEqual(h.removed, []);
+  const record = h.stored[BROWSER_AUTH_KEY][0];
+  assert.equal(record.phase, 'closed'); assert.equal(record.closed_generation, value.task.admission_generation);
+  assert.equal(h.onRemoved.listeners.size, 0);
+});
+
+test('an ended waiting window is removed without closure and a later dispatch opens one popup', async t => {
+  const h = harness(t), value = h.request(), apis = waitingApis(h);
+  await h.owner.waiting('open', waitingFor(h, value));
+  await h.owner.waiting('end', { operation_id: value.task.operation_id }); await settle();
+  assert.deepEqual(h.removed, [h.flows[0].windowId]);
+  assert.equal((await h.owner.launch(value, async () => {})).state, 'opening'); await settle();
+  assert.equal(h.flows.length, 2); assert.deepEqual(apis.updates, []);
+  assert.equal(h.stored[BROWSER_AUTH_KEY][0].phase, 'opening');
+});
+
+test('repeated, stale or malformed waiting controls open at most one window', async t => {
+  const h = harness(t), value = h.request();
+  waitingApis(h);
+  const valid = waitingFor(h, value);
+  await h.owner.waiting('open', valid); await h.owner.waiting('open', valid);
+  await h.owner.waiting('open', { ...valid, operation_id: id(90), expires_at: 1 });
+  await h.owner.waiting('open', { operation_id: 'not-an-id', expires_at: valid.expires_at });
+  await h.owner.waiting('open', { ...valid, operation_id: id(91), extra: true });
+  assert.equal(h.flows.length, 1);
+});
+
+test('a waiting window that cannot be navigated is removed and leaves an unknown outcome', async t => {
+  const h = harness(t), value = h.request();
+  waitingApis(h);
+  await h.owner.waiting('open', waitingFor(h, value));
+  h.control.updateFailure = Error('No tab');
+  await h.owner.launch(value, async () => {}); await settle();
+  assert.equal(h.flows.length, 1); assert.deepEqual(h.removed, [h.flows[0].windowId]);
+  const record = h.stored[BROWSER_AUTH_KEY][0];
+  assert.equal(record.phase, 'unknown'); assert.equal('closed_generation' in record, false);
+});
+
+test('a refused dispatch removes its waiting window without closure', async t => {
+  const h = harness(t), value = h.request();
+  waitingApis(h);
+  await h.owner.waiting('open', waitingFor(h, value));
+  await assert.rejects(h.owner.launch(value, async () => { throw Error('task_changed'); }), /task_changed/u); await settle();
+  assert.deepEqual(h.removed, [h.flows[0].windowId]); assert.equal(h.flows.length, 1);
+});
+
+test('a restarted worker removes waiting windows it can no longer adopt', async t => {
+  const h = harness(t), value = h.request(), apis = waitingApis(h);
+  await h.owner.waiting('open', waitingFor(h, value));
+  h.make(); await settle();
+  assert.deepEqual(h.removed, [h.flows[0].windowId]);
+  assert.deepEqual(apis.session[BROWSER_AUTH_WAITING_KEY], {});
 });
