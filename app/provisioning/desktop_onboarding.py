@@ -515,7 +515,9 @@ class ProvisioningSetupOwner:
             if entry is not None:
                 self.browser_tasks.prepare(operation, "browser.authentication", deadline=datetime.fromisoformat(
                     entry["expires_at"].replace("Z", "+00:00")).timestamp())
-            return OperationResult("waiting" if authentication is not None else "outcome_unknown")
+            waiting = entry is not None or authentication is not None and authentication["state"] not in {"expired", "unavailable"}
+            return OperationResult("waiting" if waiting else "outcome_unknown",
+                                   "none" if waiting else "operation_unconfirmed")
         authentication = None
         if self.ceremonies.authentication is not None:
             authentication = await self.ceremonies.authentication.refresh(operation["operation_id"],

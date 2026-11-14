@@ -737,6 +737,39 @@ async def test_hint_worker_coalesces_bursts_and_retains_later_revision(setup):
     await coordinator.stop()
 
 
+@pytest.mark.asyncio
+async def test_non_hint_reconcile_during_active_worker_runs_full_followup(setup):
+    coordinator, owner, session, _ = setup
+    owner.result = OperationResult("waiting")
+    await coordinator.command(session, command(coordinator.read(session)))
+    await coordinator.drain()
+    operation = coordinator._pending()[0]
+    entered, release = asyncio.Event(), asyncio.Event()
+    hints = []
+
+    async def reconcile_hint(value):
+        hints.append(value["operation_id"])
+        if len(hints) == 1:
+            entered.set()
+            await release.wait()
+        return False
+
+    owner.reconcile_hint = reconcile_hint
+    owner.result = OperationResult("refused")
+    coordinator._reconcile_soon(operation)
+    await asyncio.wait_for(entered.wait(), 1)
+    coordinator._reconcile_soon(operation)
+    await coordinator.reconcile(session, operation["operation_id"])
+    coordinator._reconcile_soon(operation)
+    release.set()
+    await coordinator.drain()
+    assert len(hints) == 1
+    assert len(owner.calls) == 2
+    assert owner.calls[-1][1] is True
+    assert coordinator.receipt(session, operation["operation_id"])["state"] == "refused"
+    await coordinator.stop()
+
+
 def test_sign_in_phases_are_closed_delta_only_info_records(caplog):
     from app.onboarding import timing
     import logging

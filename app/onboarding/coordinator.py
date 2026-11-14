@@ -109,7 +109,7 @@ class DesktopOnboardingCoordinator:
         self._waits: dict[str, asyncio.Task] = {}
         self._held: set[str] = set()
         self._wake: asyncio.Event | None = None
-        self._dirty: set[str] = set()
+        self._dirty: dict[str, bool] = {}
         self._prefetches: dict[str, asyncio.Task] = {}
 
     def _current(self, connection, session):
@@ -310,8 +310,8 @@ class DesktopOnboardingCoordinator:
         operation_id = operation["operation_id"]
         running = self._workers.get(operation_id)
         if running is not None and not running.done():
-            if hint:
-                self._dirty.add(operation_id)
+            if reconcile or hint:
+                self._dirty[operation_id] = self._dirty.get(operation_id, True) and bool(hint)
             return
         task = asyncio.create_task(self._run(operation, reconcile=reconcile, actor=actor, hint=hint, queued=time.monotonic()))
         self._workers[operation_id] = task
@@ -321,11 +321,11 @@ class DesktopOnboardingCoordinator:
                 self._workers.pop(operation_id, None)
                 self._retry_at[operation_id] = asyncio.get_running_loop().time() + RECOVERY_INTERVAL_SECONDS
                 if operation_id in self._dirty:
-                    self._dirty.discard(operation_id)
+                    dirty_hint = self._dirty.pop(operation_id)
                     if not self._closed:
                         current = next((row for row in self._pending() if row["operation_id"] == operation_id), None)
                         if current is not None:
-                            self._start(current, reconcile=True, actor=None, hint=True)
+                            self._start(current, reconcile=True, actor=None, hint=dirty_hint)
                 events.publish()
 
         task.add_done_callback(finished)

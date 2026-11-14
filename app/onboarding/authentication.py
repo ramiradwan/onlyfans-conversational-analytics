@@ -152,7 +152,9 @@ class DesktopAuthentication:
                     (operation_id,)).fetchall()
                 command = connection.execute("SELECT * FROM desktop_authentication_commands WHERE operation_id=?",
                     (operation_id,)).fetchone()
-            if len(tasks) != 1 or command is None or command["verb"] == "cancel":
+                closure = connection.execute("SELECT 1 FROM desktop_authentication_closures WHERE operation_id=? "
+                    "AND state='pending'", (operation_id,)).fetchone()
+            if len(tasks) != 1 or command is None or command["verb"] == "cancel" or closure is not None:
                 return None
             task = dict(tasks[0])
             row, request = self._request(command["parent_operation_id"])
@@ -169,13 +171,16 @@ class DesktopAuthentication:
             authorize()
             current = connection.execute("SELECT * FROM desktop_browser_tasks WHERE task_id=?", (task["task_id"],)).fetchone()
             operation = connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?", (operation_id,)).fetchone()
+            closure = connection.execute("SELECT 1 FROM desktop_authentication_closures WHERE operation_id=? "
+                "AND state='pending'", (operation_id,)).fetchone()
             if (current is None or any(current[name] != task[name] for name in (
                     "admission_generation", "operation_id", "journey_id", "scope_digest", "expires_at"))
                     or current["state"] not in {"pending", "accepted", "outcome_unknown"}
                     or current["expires_at"] <= self.store._now().timestamp()
                     or operation is None or operation["state"] not in {"accepted", "waiting", "outcome_unknown"}
-                    or operation["journey_id"] != task["journey_id"] or operation["scope_digest"] != task["scope_digest"]):
-                return False
+                    or operation["journey_id"] != task["journey_id"] or operation["scope_digest"] != task["scope_digest"]
+                    or closure is not None):
+                return None
             self._save(row, result, connection=connection)
             if (result["state"] == "admitted" and not result["actions"]["open_browser"]
                     and timestamp(result["expires_at"]) > self.store._now() and attempt is not None
@@ -183,10 +188,13 @@ class DesktopAuthentication:
                 connection.execute("UPDATE desktop_browser_tasks SET state='completed' WHERE task_id=? "
                     "AND admission_generation=?", (task["task_id"], task["admission_generation"]))
                 closed = True
+            else:
+                still_open = (result["actions"]["open_browser"] and timestamp(result["expires_at"]) > self.store._now()
+                    and attempt is not None and attempt["authentication_attempt_id"] == expected["authentication_attempt_id"])
         if closed:
             timing.completed(operation_id)
         events.publish()
-        return closed
+        return True if closed else False if still_open else None
 
     def probe_interval(self, operation_id):
         """Probe cadence while this operation's sign-in popup can still be open."""

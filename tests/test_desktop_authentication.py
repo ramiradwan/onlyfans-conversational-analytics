@@ -593,3 +593,115 @@ async def test_hint_closes_only_current_task_after_one_current_read(auth, change
     assert bool(closed) == (change == "none")
     from threading import get_ident
     assert all(thread != get_ident() for thread in guards)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["selected", "closure", "fenced", "retired", "expired", "unavailable", "successor"])
+async def test_hint_falls_through_on_pending_closure_fenced_task_or_non_open_state(auth, case):
+    from uuid import uuid4
+    coordinator, _, authentication, client, _, _, _ = auth
+    operation, browser, admitted = await close_task(auth)
+    coordinator._settle(operation, OperationResult("waiting"))
+    owner = coordinator.owner
+    owner.calls.clear()
+    hint_outcomes = []
+
+    async def execute(current, *, reconcile, actor=None):
+        owner.calls.append((dict(current), reconcile))
+        return await authentication.execute(current, authorize=authorized, read_guard=authorized, reconcile=reconcile)
+
+    async def reconcile_hint(current):
+        outcome = await authentication.reconcile_task(current["operation_id"], authorize=authorized)
+        hint_outcomes.append(outcome)
+        return outcome
+
+    owner.execute = execute
+    owner.reconcile_hint = reconcile_hint
+    if case == "closure":
+        authentication.close_for_task(browser.task_id, browser.generation, authorize=admitted)
+    elif case == "fenced":
+        client.attempts[client.current]["state"] = "retired"
+        real_read = client.read
+
+        def read(*args, **kwargs):
+            result = real_read(*args, **kwargs)
+            with coordinator.store.database.transaction() as connection:
+                connection.execute("UPDATE desktop_browser_tasks SET admission_generation=? WHERE task_id=?",
+                    (str(uuid4()), browser.task_id))
+            return result
+
+        client.read = read
+    elif case in {"retired", "expired", "unavailable"}:
+        client.attempts[client.current]["state"] = case
+    elif case == "successor":
+        client.attempts[client.current]["state"] = "retired"
+        client.current = str(uuid4())
+        client.attempts[client.current] = {"authentication_attempt_id": client.current,
+            "provider": "default", "mode": "sign-in", "state": "selected"}
+
+    coordinator._start(operation, reconcile=True, actor=None, hint=True)
+    await coordinator.drain()
+    with coordinator.store.database.read() as connection:
+        state = connection.execute("SELECT state FROM desktop_setup_operations WHERE operation_id=?",
+            (operation["operation_id"],)).fetchone()[0]
+    if case == "selected":
+        assert hint_outcomes == [False]
+        assert owner.calls == []
+        assert state == "waiting"
+    else:
+        assert hint_outcomes == [None]
+        assert len(owner.calls) == 1 and owner.calls[0][1] is True
+        assert state == "refused"
+        if case == "closure":
+            assert any(verb == "cancel" for verb, _ in client.calls)
+            with coordinator.store.database.read() as connection:
+                assert connection.execute("SELECT state FROM desktop_authentication_closures WHERE operation_id=?",
+                    (operation["operation_id"],)).fetchone()[0] == "settled"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["expired", "unavailable", "missing"])
+async def test_fresh_provider_dispatch_reports_unconfirmed_when_expired_or_unavailable(setup, state):
+    from datetime import datetime, timezone
+    from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
+    from app.security.browser_authentication import BrowserAuthenticationRefused
+    coordinator, ceremonies, _, parent, binding, clock = setup
+    client = AuthenticationClient()
+    authentication = DesktopAuthentication(ceremonies.store, ceremonies, client)
+    ceremonies.authentication = authentication
+    with coordinator.store.database.transaction() as connection:
+        connection.execute("UPDATE desktop_setup_operations SET state='refused' WHERE operation_id=?", (parent["operation_id"],))
+    native = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(), role="desktop")
+    coordinator.owner.scope.update(journey_kind="initial-enrollment", source_journey_id=parent["journey_id"],
+        desktop_authentication=authentication.presentation(parent["journey_id"], "account.connect"))
+    parent, fresh = coordinator._accept(native, {**command(coordinator.read(native), "account.connect"), "provider": "default"})
+    assert fresh
+    if state != "missing":
+        real_read = client.read
+
+        def refused(*args, **kwargs):
+            raise BrowserAuthenticationRefused("selection refused")
+
+        def read_state(*args, **kwargs):
+            result = real_read(*args, **kwargs)
+            result["state"] = state
+            result["actions"] = dict.fromkeys(result["actions"], False)
+            return result
+
+        client.execute = refused
+        client.read = read_state
+
+    async def prepare(*args):
+        pass
+
+    def resume(*_):
+        if state == "missing":
+            clock[0] = datetime.fromtimestamp(parent["expires_at"], tz=timezone.utc)
+
+    owner = ProvisioningSetupOwner.__new__(ProvisioningSetupOwner)
+    owner.store, owner.ceremonies, owner.browser_tasks = coordinator.store, ceremonies, BrowserTasks(coordinator.admissions, extension_id="a" * 32)
+    owner.initial = owner.registered = SimpleNamespace(prepare=prepare, resume=resume)
+    owner._guard, owner._binding = lambda *a, **k: None, lambda *_: binding
+    owner._read_guard, owner.observe = lambda *_: None, lambda *_: None
+    result = await owner._connect(parent, reconcile=False)
+    assert result == OperationResult("outcome_unknown", "operation_unconfirmed")
