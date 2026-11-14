@@ -14,6 +14,7 @@ from app.security.hosted_grants import HostedGrantUnavailable
 from test_desktop_ceremonies import authorized, setup as setup
 from test_desktop_coordinator import command
 
+
 pytestmark = [pytest.mark.ci_tier("fast"), pytest.mark.windows_compat]
 
 
@@ -486,3 +487,109 @@ async def test_only_admitted_activation_preparation_emits_closed_task_recovery(t
     client.preparation_recovery = True
     await authentication.refresh(parent["operation_id"], authorize=authorized)
     assert ceremonies.browser_entry(operation["operation_id"]) == {**entry, "preparation_recovery": True}
+
+
+@pytest.mark.asyncio
+async def test_fresh_provider_dispatch_uses_only_prepare_and_select(setup):
+    from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
+    coordinator, ceremonies, ceremony_client, parent, binding, _ = setup
+    client = AuthenticationClient()
+    original = client.execute
+
+    def select(*args, **kwargs):
+        result = original(*args, **kwargs)
+        client.calls.pop()  # The fake builds its mutation response using its read helper.
+        return result
+
+    client.execute = select
+    authentication = DesktopAuthentication(ceremonies.store, ceremonies, client)
+    ceremonies.authentication = authentication
+    with coordinator.store.database.transaction() as connection:
+        connection.execute("UPDATE desktop_setup_operations SET state='refused' WHERE operation_id=?", (parent["operation_id"],))
+    native = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(), role="desktop")
+    coordinator.owner.scope.update(journey_kind="initial-enrollment", source_journey_id=parent["journey_id"],
+        desktop_authentication=authentication.presentation(parent["journey_id"], "account.connect"))
+    parent, fresh = coordinator._accept(native, {**command(coordinator.read(native), "account.connect"), "provider": "default"})
+    assert fresh
+    tasks = BrowserTasks(coordinator.admissions, extension_id="a" * 32)
+    reads = []
+
+    async def decision(*args, **kwargs):
+        reads.append("decision")
+        return {"state": "awaiting-authentication"}
+
+    async def prepare(*args):
+        pass
+
+    owner = ProvisioningSetupOwner.__new__(ProvisioningSetupOwner)
+    owner.store, owner.ceremonies, owner.browser_tasks = coordinator.store, ceremonies, tasks
+    owner.initial = owner.registered = SimpleNamespace(prepare=prepare, resume=lambda *_: None)
+    owner._guard, owner._binding = lambda *a, **k: None, lambda *_: binding
+    owner._read_guard, owner.observe = lambda *_: None, lambda *_: None
+    ceremonies.decisions = SimpleNamespace(refresh=decision)
+    result = await owner._connect(parent, reconcile=False)
+    assert result.state == "waiting"
+    assert [verb for verb, _ in ceremony_client.calls] == ["prepare"]
+    assert [verb for verb, _ in client.calls] == ["select"]
+    assert reads == []
+    with coordinator.store.database.read() as connection:
+        assert connection.execute("SELECT count(*) FROM desktop_browser_tasks").fetchone()[0] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["none", "successor", "cancel", "generation", "expired", "key", "source", "preparation"])
+async def test_hint_closes_only_current_task_after_one_current_read(auth, change):
+    coordinator, ceremonies, authentication, client, parent, _, _ = auth
+    operation, _ = accept(auth)
+    await authentication.execute(operation, authorize=authorized, read_guard=authorized, reconcile=False)
+    tasks = BrowserTasks(coordinator.admissions, extension_id="a" * 32)
+    task_id = tasks.prepare(operation, "browser.authentication")
+    client.attempts[client.current]["state"] = "admitted"
+    if change == "successor":
+        client.current = "0199b234-5678-7000-8000-000000000098"
+        client.attempts[client.current] = {"authentication_attempt_id": client.current,
+            "provider": "default", "mode": "sign-in", "state": "admitted"}
+    if change == "preparation":
+        client.preparation_recovery = True
+    before = len(client.calls)
+    real_read = client.read
+
+    def read(*args, **kwargs):
+        result = real_read(*args, **kwargs)
+        if change in {"cancel", "generation", "expired"}:
+            with coordinator.store.database.transaction() as connection:
+                if change == "cancel":
+                    connection.execute("UPDATE desktop_browser_tasks SET state='cancelled' WHERE task_id=?", (task_id,))
+                elif change == "generation":
+                    from uuid import uuid4
+                    connection.execute("UPDATE desktop_browser_tasks SET admission_generation=? WHERE task_id=?", (str(uuid4()), task_id))
+                elif change == "expired":
+                    connection.execute("UPDATE desktop_browser_tasks SET expires_at=0 WHERE task_id=?", (task_id,))
+        return result
+
+    client.read = read
+    guards = []
+
+    def guard():
+        from threading import get_ident
+        guards.append(get_ident())
+        if change in {"key", "source"} and len(guards) > 1:
+            raise HostedGrantUnavailable("Changed scope")
+
+    try:
+        closed = await authentication.reconcile_task(operation["operation_id"], authorize=guard)
+    except HostedGrantUnavailable:
+        assert change in {"key", "source"}
+        closed = False
+    assert len(client.calls) - before == 1
+    assert client.calls[-1][1]["authentication_attempt_id"] is None
+    with coordinator.store.database.read() as connection:
+        task = connection.execute("SELECT * FROM desktop_browser_tasks WHERE task_id=?", (task_id,)).fetchone()
+        assert (task["state"] == "completed") == (change == "none")
+        if change == "none":
+            projection = json.loads(connection.execute("SELECT projection_json FROM desktop_authentication_projections WHERE operation_id=?",
+                (parent["operation_id"],)).fetchone()[0])
+            assert projection["state"] == "admitted"
+    assert bool(closed) == (change == "none")
+    from threading import get_ident
+    assert all(thread != get_ident() for thread in guards)

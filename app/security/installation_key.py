@@ -20,6 +20,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 
+from app.onboarding import timing
 from app.persistence.auth import (
     AuthenticationStore,
     InstallationKeyReference,
@@ -364,6 +365,7 @@ class InstallationKeyAuthority:
             self._store.activate_installation_key(reference)
         return reference
 
+    @timing.measured("key", "reopen")
     def reopen_existing(self) -> InstallationKeyReference:
         """Verify the activated key without reserving, creating or activating one."""
         reference = self._store.installation_key_reference()
@@ -387,6 +389,7 @@ class InstallationKeyAuthority:
         self._prove_usable(reference)
         return reference
 
+    @timing.measured("key", "sign")
     def sign_challenge(self, challenge: bytes) -> InstallationProof:
         if not isinstance(challenge, bytes):
             raise TypeError("Installation proof challenge must be bytes")
@@ -422,6 +425,7 @@ class InstallationKeyAuthority:
             _canonical_es256_signature(signature),
         )
 
+    @timing.measured("key", "usability")
     def _prove_usable(self, reference: InstallationKeyReference) -> None:
         challenge = secrets.token_bytes(32)
         signature = self._provider.sign_digest(

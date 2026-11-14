@@ -45,6 +45,7 @@ export class BrowserTaskClient {
   }
   async json(path, body) {
     const response = await this.request('/api/v1/browser-tasks/' + path, { credentials: 'same-origin', redirect: 'error', cache: 'no-store',
+      ...(path === 'timing' ? { keepalive: true } : {}),
       headers: { 'X-Desktop-Generation': this.generation,
         ...(body === undefined ? {} : { 'Content-Type': 'application/json', 'X-Desktop-CSRF': this.session.csrf_token }) },
       ...(body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) }) });
@@ -339,6 +340,9 @@ export class BrowserTaskClient {
     return true;
   }
   complete(state, payload) {
+    if (state === 'task_completed' && payload.task.purpose === 'browser.authentication' && this.session) {
+      void this.json('timing', { operation: 'helper', phase: 'helper-finish', status: 'ok', elapsed_ms: 0 }).catch(() => {});
+    }
     const link = this.link;
     this.link = null;
     this.stop();

@@ -4,14 +4,18 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Callable
+from threading import Lock
 
 from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
 
+from app.onboarding import timing
 from app.core.resource_paths import resource_path
 from app.security.hosted_grants import HostedGrantUnavailable, HostedTransport
 from app.security.initial_handoff import _require_proof_budget, timestamp
@@ -78,6 +82,16 @@ def binding_digest(binding: dict) -> str:
 
 
 
+@dataclass
+class _ReadChallenge:
+    request: bytes
+    challenge: dict
+    started: float
+    key: object
+    used: bool = False
+    lock: Lock = field(default_factory=Lock)
+
+
 class BrowserAuthenticationClient:
     """Each request sends once; uncertain selection is reconciled against its exact child attempt."""
 
@@ -87,25 +101,65 @@ class BrowserAuthenticationClient:
         self.transport, self.key, self.monotonic, self.clock = transport, key, monotonic, clock
         self.contract = _contract()
 
-    def envelope(self, operation: str, request: dict, *, before_send=None) -> dict:
-        if operation not in {"read", "select", "cancel", "switch"}:
-            raise ValueError("Invalid authentication selection operation")
-        purpose = "browser-authentication-" + operation
+    def prefetch_read(self, request: dict, *, before_send=None):
         request = _document(canonical_request(request), limit=MAX_REQUEST_BYTES)
-        challenge_request = {"profile": PROOF_PROFILE,
-                             "target": {"operation": purpose, "request": request}}
-        self.contract.validate("proof-challenge-request", challenge_request)
-        if before_send is not None:
-            before_send()
+        if request.get("authentication_attempt_id") is not None:
+            raise HostedGrantUnavailable("Only current authentication can be prefetched")
+        return self._challenge("read", request, before_send=before_send)
+
+    def _key(self, request):
         key = self.key.reopen_existing()
         binding = request["binding"]
         if (binding["installation_key_id"], binding["installation_key_jkt"]) != (
                 key.installation_key_id, key.installation_key_jkt):
             raise HostedGrantUnavailable("Authentication selection key changed")
+        return key
+
+    def _challenge(self, operation, request, *, before_send):
+        purpose = "browser-authentication-" + operation
+        challenge_request = {"profile": PROOF_PROFILE, "target": {"operation": purpose, "request": request}}
+        self.contract.validate("proof-challenge-request", challenge_request)
+        if before_send is not None:
+            before_send()
+        key = self._key(request)
         started = self.monotonic()
         challenge = self._request(CHALLENGE_PATH, challenge_request,
-                                  schema="proof-challenge-response", before_send=before_send)
+            schema="proof-challenge-response", before_send=before_send)
         _require_proof_budget(started, self.monotonic())
+        if challenge["request_digest"] != hashlib.sha256(canonical_request(request)).hexdigest():
+            raise HostedGrantUnavailable("Authentication selection challenge changed")
+        timestamp(challenge["expires_at"])
+        return _ReadChallenge(canonical_request(request), challenge, started, key)
+
+    def envelope(self, operation: str, request: dict, *, before_send=None) -> dict:
+        return self._envelope(operation, request, before_send=before_send)[0]
+
+    def _envelope(self, operation, request, *, before_send=None, prefetched=None):
+        if operation not in {"read", "select", "cancel", "switch"}:
+            raise ValueError("Invalid authentication selection operation")
+        purpose = "browser-authentication-" + operation
+        request = _document(canonical_request(request), limit=MAX_REQUEST_BYTES)
+        if prefetched is not None:
+            if operation != "read" or canonical_request(request) != prefetched.request:
+                raise HostedGrantUnavailable("Prefetched authentication request changed")
+            with prefetched.lock:
+                consumed = prefetched.used
+                prefetched.used = True
+            elapsed = self.monotonic() - prefetched.started
+            if not math.isfinite(elapsed) or elapsed < 0:
+                raise HostedGrantUnavailable("Authentication proof budget is unavailable")
+            if consumed or elapsed >= 60 or timestamp(prefetched.challenge["expires_at"]) <= self.clock():
+                prefetched = None
+        if prefetched is None:
+            ticket = self._challenge(operation, request, before_send=before_send)
+            # Challenge admission already reopens and verifies the same key.
+            key = ticket.key
+        else:
+            ticket = prefetched
+            if before_send is not None:
+                before_send()
+            key = self._key(request)
+        challenge, started = ticket.challenge, ticket.started
         digest = hashlib.sha256(canonical_request(request)).digest()
         if challenge["request_digest"] != digest.hex():
             raise HostedGrantUnavailable("Authentication selection challenge changed")
@@ -129,13 +183,13 @@ class BrowserAuthenticationClient:
         result = {"request": request, "proof": {"challenge": challenge["challenge"],
                   "signature": base64.urlsafe_b64encode(proof.signature).rstrip(b"=").decode()}}
         self.contract.validate(operation + "-request", result)
-        return result
+        return result, started
 
-    def read(self, request: dict, *, before_send=None, expires_at: str | None = None) -> dict:
-        return self.execute("read", request, before_send=before_send, expires_at=expires_at)
+    def read(self, request: dict, *, before_send=None, expires_at: str | None = None, prefetched=None) -> dict:
+        return self.execute("read", request, before_send=before_send, expires_at=expires_at, prefetched=prefetched)
 
     def execute(self, operation: str, request: dict, *, before_send=None,
-                expires_at: str | None = None) -> dict:
+                expires_at: str | None = None, prefetched=None) -> dict:
         started = self.monotonic()
 
         def guarded_send():
@@ -143,7 +197,7 @@ class BrowserAuthenticationClient:
                 before_send()
             _require_proof_budget(started, self.monotonic())
 
-        envelope = self.envelope(operation, request, before_send=guarded_send)
+        envelope, started = self._envelope(operation, request, before_send=guarded_send, prefetched=prefetched)
         result = self._request(PATH_PREFIX + operation, envelope,
                                schema=operation + "-response", before_send=guarded_send)
         self.validate_result(operation, envelope["request"], result, expires_at=expires_at)
@@ -186,7 +240,11 @@ class BrowserAuthenticationClient:
         if before_send is not None:
             before_send()
         try:
-            response = self.transport.request("POST", path, json_body=body)
+            challenge = schema == "proof-challenge-response"
+            verb = body["target"]["operation"].removeprefix("browser-authentication-") if challenge else schema.removesuffix("-response")
+            operation = "authentication-" + verb
+            with timing.exchange(operation, "challenge" if challenge else "protected"):
+                response = self.transport.request("POST", path, json_body=body)
         except Exception:
             raise HostedGrantUnavailable("Authentication selection result is unavailable") from None
         if response.content_type.split(";", 1)[0].strip().lower() != "application/json":

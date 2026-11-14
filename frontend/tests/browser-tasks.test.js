@@ -341,7 +341,8 @@ describe('scoped browser helper', () => {
       expect(document.getElementById('authentication-browser')).toBeNull();
       expect(connect).toHaveBeenCalledTimes(source === 'start' ? 0 : 1);
       expect(authenticate).not.toHaveBeenCalled();
-      expect(request.mock.calls.every(([, options]) => options.method === undefined)).toBe(true);
+      expect(request.mock.calls.filter(([path]) => !path.endsWith('/timing'))
+        .every(([, options]) => options.method === undefined)).toBe(true);
     } finally { client.stop(); vi.useRealTimers(); }
   });
   it.each(['authentication', 'access'])('reads the end of an open %s task at its own interval', async kind => {

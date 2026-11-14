@@ -270,11 +270,17 @@ export class DesktopSetupClient {
   }
 
   async act(action, options = {}) {
+    const clicked = performance.now();
+    const observe = phase => {
+      void this.json('/api/v1/desktop/setup/timing', { operation: 'frontend', phase, status: 'ok',
+        elapsed_ms: Math.max(0, Math.round(performance.now() - clicked)) }).catch(() => {});
+    };
     const authentication = this.value?.authentication;
     const replacesCurrentAuthentication = ['auth.cancel', 'auth.switch'].includes(action)
       && this.value?.allowed_actions.includes(action)
       && [authentication?.operation_id, authentication?.browser_operation_id].includes(this.pending);
     if (!this.connected || !this.value || (this.pending && !replacesCurrentAuthentication)) return;
+    observe('click');
     const intent = command(this.value, action, this.uuid(), options);
     this.operationError = null;
     this.launchEpoch++;
@@ -287,6 +293,7 @@ export class DesktopSetupClient {
     if (action === 'auth.cancel') this.launchOperation = null;
     this.notify();
     try {
+      observe('command-send');
       await this.json('/api/v1/desktop/setup/commands', intent);
       if (epoch !== this.launchEpoch || !this.connected) return;
       await this.receipt();

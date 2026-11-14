@@ -24,6 +24,26 @@ const response = (value, status = 200) => new Response(JSON.stringify(value), { 
 const session = { role: 'desktop', stage: 'setup', generation, csrf_token: 'A'.repeat(43) };
 const storage = () => { const values = new Map(); return { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }; };
 
+it('sends closed click deltas without delaying command dispatch', async () => {
+  const calls = [];
+  const subject = new DesktopSetupClient({ generation, storage: storage(), receive() {},
+    uuid: () => operationId, stream: () => () => {}, request: async (url, options) => {
+      calls.push([url, options?.body && JSON.parse(options.body)]);
+      if (url.endsWith('/timing')) return new Promise(() => {});
+      if (url.includes('/operations/')) return response(record);
+      return response(record, 202);
+    } });
+  subject.value = initial(); subject.session = session; subject.connected = true;
+  await subject.act('browser.access');
+  const phases = calls.filter(([url]) => url.endsWith('/timing')).map(([, body]) => body);
+  expect(phases.map(value => value.phase)).toEqual(['click', 'command-send']);
+  for (const value of phases) {
+    expect(Object.keys(value).sort()).toEqual(['elapsed_ms', 'operation', 'phase', 'status']);
+    expect(value.operation).toBe('frontend');
+  }
+  expect(calls.some(([url]) => url.endsWith('/commands'))).toBe(true);
+});
+
 it('selects the saved setup theme before the entry module can paint', () => {
   const meta = { setAttribute: vi.fn() };
   const earlyDocument = { documentElement: { dataset: {} }, querySelector: () => meta };
@@ -325,7 +345,7 @@ describe('desktop setup projection', () => {
     client.remember(operationId);
     await client.act(action, action === 'auth.switch' ? { provider: 'default' } : {});
     expect(request.mock.calls.filter(([path]) => path.endsWith('/commands'))).toHaveLength(1);
-    const body = JSON.parse(request.mock.calls[0][1].body);
+    const body = JSON.parse(request.mock.calls.find(([path]) => path.endsWith('/commands'))[1].body);
     expect(body.action).toBe(action);
     expect(body.provider).toBe(action === 'auth.switch' ? 'default' : undefined);
     await client.act(action, action === 'auth.switch' ? { provider: 'google' } : {});
@@ -453,6 +473,7 @@ describe('desktop setup projection', () => {
     let release;
     const request = vi.fn(async (path, options) => {
       if (path.endsWith('/session')) return response(session);
+      if (path.endsWith('/timing')) return new Response(null, { status: 204 });
       if (path.endsWith('/commands')) return new Promise(resolve => { release = () => resolve(response(record)); });
       expect(options.method).toBeUndefined();
       return response(record);
@@ -465,7 +486,7 @@ describe('desktop setup projection', () => {
     await client.act('browser.access');
     release();
     await first;
-    const mutations = request.mock.calls.filter(([, options]) => options.method === 'POST');
+    const mutations = request.mock.calls.filter(([path]) => path.endsWith('/commands'));
     expect(mutations).toHaveLength(1);
     expect(JSON.parse(mutations[0][1].body).operation_id).toBe(operationId);
     expect(client.pending).toBe(operationId);

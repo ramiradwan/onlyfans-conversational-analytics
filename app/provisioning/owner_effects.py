@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from threading import Lock, RLock
 
+from app.onboarding import timing
 from app.persistence.onboarding import OnboardingJourneyUnavailable, require_journey
 
 
@@ -46,6 +48,13 @@ class OwnerEffects:
                 if task in self._protected and not task.done()))
 
     async def run(self, function, *args, journey_id=None, protected=True, **kwargs):
+        queued = time.monotonic()
+
+        def execute():
+            timing.observe("effect", "queue", "ok", (time.monotonic() - queued) * 1000)
+            with timing.phase("effect", "run"):
+                return function(*args, **kwargs)
+
         locator = self._journey.get() if journey_id is None else journey_id
         try:
             marker = "external:" + require_journey(locator)
@@ -55,7 +64,7 @@ class OwnerEffects:
             if self._closed:
                 raise OnboardingJourneyUnavailable("journey_unavailable")
             self._admission_guard(locator)
-            task = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
+            task = asyncio.create_task(asyncio.to_thread(execute))
             with self._lock:
                 self._tasks[task] = marker
                 if protected:

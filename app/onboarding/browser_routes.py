@@ -1,9 +1,13 @@
 """Scoped browser task observations; no browser operator or desktop rights."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+import asyncio
+import json
 
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, Response
+
+from app.onboarding import timing
 from app.onboarding.admission import AdmissionRefused
 from app.onboarding.admission_routes import HEADERS, authorize
 from app.onboarding.helper_events import NOTICES, BrowserTaskEventResponse
@@ -41,6 +45,36 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
             raise HTTPException(400, "Invalid browser task request")
         session = authorize(coordinator.admissions, request, role="desktop")
         return JSONResponse({"tasks": tasks.current_native(session)}, headers=HEADERS)
+
+    @router.post("/api/v1/browser-tasks/timing")
+    async def phase_observation(request: Request):
+        _, task = task_session(request, mutation=True)
+        value = await body(request)
+        try:
+            timing.observation(value, operation="helper", phases={"helper-finish"}, record=False)
+            timing.helper_finish(task["operation_id"])
+        except (ValueError, TypeError):
+            raise HTTPException(400, "Invalid sign-in timing") from None
+        return Response(status_code=204, headers=HEADERS)
+
+    @router.websocket("/api/v1/browser-tasks/timing")
+    async def popup_observation(socket: WebSocket):
+        if (tasks.extension_id is None or socket.headers.getlist("origin") != ["chrome-extension://" + tasks.extension_id]
+                or socket.headers.getlist("host") != ["127.0.0.1:17871"] or socket.url.query):
+            await socket.close(code=1008)
+            return
+        await socket.accept()
+        try:
+            raw = await asyncio.wait_for(socket.receive_text(), 2)
+            if len(raw) > 256:
+                raise ValueError("Invalid sign-in observation")
+            timing.observation(json.loads(raw), operation="extension", phases={"popup-remove"})
+        except (ValueError, TypeError, TimeoutError):
+            await socket.close(code=1008)
+            return
+        except WebSocketDisconnect:
+            return
+        await socket.close()
 
     @router.get("/api/v1/browser-tasks/payload")
     def payload(request: Request):

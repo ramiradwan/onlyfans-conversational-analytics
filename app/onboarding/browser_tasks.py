@@ -194,7 +194,7 @@ class BrowserTasks:
         with self.store.database.transaction() as connection:
             connection.execute("UPDATE desktop_browser_tasks SET state='completed' WHERE operation_id=? AND state IN ('pending','accepted','outcome_unknown')",
                                (require_journey(operation_id),))
-        timing.mark(operation_id, "completed")
+        timing.completed(operation_id)
         events.publish()
 
     def next_expiry(self):
