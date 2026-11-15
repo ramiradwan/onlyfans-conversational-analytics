@@ -30,6 +30,10 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
             return task
         return AdmittedAuthenticationTask(session.task_id, session.generation, admitted)
 
+    def entry_open(task):
+        return (ceremonies is not None and task["purpose"] == "browser.authentication"
+                and ceremonies.browser_entry(task["operation_id"]) is not None)
+
     def task_session(request, *, mutation=False):
         if request.url.query:
             raise HTTPException(400, "Invalid browser task request")
@@ -147,7 +151,7 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
         session, task = task_session(request)
         if coordinator._closed:
             raise HTTPException(503, "Local setup is stopping")
-        return BrowserTaskEventResponse(coordinator, session, task, tasks.helpers)
+        return BrowserTaskEventResponse(coordinator, session, task, tasks.helpers, entry=entry_open)
 
     @router.post("/api/v1/browser-tasks/focused")
     async def focused(request: Request):
@@ -215,7 +219,10 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
                     return JSONResponse({"state": "unavailable"}, headers=HEADERS)
                 if state != "unreachable":
                     raise HTTPException(409, "Browser task is unavailable")
-            if await tasks.helpers.focus(task_id, task["admission_generation"]):
+            # A sign-in helper still waiting for its ceremony holds its stream but cannot focus yet.
+            preparing = (ceremonies is not None and task["purpose"] == "browser.authentication"
+                         and not entry_open(task))
+            if not preparing and await tasks.helpers.focus(task_id, task["admission_generation"]):
                 return JSONResponse({"state": "focused"}, headers=HEADERS)
             try:
                 # Reissue fences any helper that did not confirm focus.

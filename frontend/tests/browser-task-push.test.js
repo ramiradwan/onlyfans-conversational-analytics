@@ -17,12 +17,14 @@ const authenticationPayload = () => {
 };
 
 // A controllable helper stream: open it, push frames, or drop it.
-function stream() {
+// With `initial`, it frames the current state on connect, as Brain's stream does.
+function stream({ initial = false } = {}) {
   const state = { opened: 0, frame: null, drop: null };
   const events = vi.fn(({ open, frame, signal }) => new Promise((resolve, reject) => {
     state.opened++; state.frame = frame; state.drop = () => reject(Error('lost'));
     signal.addEventListener('abort', () => resolve(), { once: true });
     open();
+    if (initial) queueMicrotask(() => frame({ type: 'task', task_id: id(1), admission_generation: id(4), state: 'pending' }));
   }));
   return { state, events };
 }
@@ -94,13 +96,78 @@ describe('helper stream', () => {
       return { ok: true, status: 200, text: async () => JSON.stringify(body) };
     });
     const client = new BrowserTaskClient({ generation: id(4), request, nativeLaunch: true, wait: () => ({ close() {} }),
-      receive() {}, events: stream().events, connect: () => ({ close() {}, finish: async () => true, end: () => true }) });
+      receive() {}, events: stream({ initial: true }).events, connect: () => ({ close() {}, finish: async () => true, end: () => true }) });
     try {
       await client.start();
       const marks = posts.filter(([path]) => path === 'timing').map(([, body]) => body);
       expect(marks.map(value => value.phase)).toEqual(['payload', 'waiting']);
       for (const value of marks) expect(Object.keys(value).sort()).toEqual(['elapsed_ms', 'operation', 'phase', 'status']);
     } finally { client.stop(); }
+  });
+
+  it('waits for its stream while its sign-in is prepared and reads once when a frame arrives', async () => {
+    vi.useFakeTimers();
+    const signIn = authenticationPayload();
+    const preparing = { ...signIn, ceremony: null, task: { ...signIn.task, state: 'pending' } };
+    let ready = false;
+    const s = stream();
+    const h = helper({ events: s.events, value: signIn,
+      respond: path => path.endsWith('/payload') && !ready
+        ? { ok: true, status: 200, text: async () => JSON.stringify(preparing) } : null });
+    try {
+      const started = h.client.start();
+      await vi.waitFor(() => expect(s.state.opened).toBe(1));
+      const before = h.reads();
+      await vi.advanceTimersByTimeAsync(STREAM_POLL_MS - 1000);
+      expect(h.reads()).toBe(before);
+      ready = true;
+      s.state.frame(frame('pending'));
+      await started;
+      expect(h.reads()).toBe(before + 1);
+      expect(h.client.payload).toEqual(signIn);
+      expect(s.state.opened).toBe(1);
+    } finally { h.client.stop(); vi.useRealTimers(); }
+  });
+
+  it('keeps a frame that arrives during a preparing read for the next wait', async () => {
+    const signIn = authenticationPayload();
+    const preparing = { ...signIn, ceremony: null, task: { ...signIn.task, state: 'pending' } };
+    const s = stream();
+    let reads = 0, release;
+    const held = new Promise(resolve => { release = resolve; });
+    const h = helper({ events: s.events, value: signIn, respond: path => {
+      if (!path.endsWith('/payload')) return null;
+      reads++;
+      const body = reads <= 2 ? preparing : signIn;
+      return (reads === 2 ? held : Promise.resolve()).then(() => ({ ok: true, status: 200, text: async () => JSON.stringify(body) }));
+    } });
+    try {
+      const started = h.client.start();
+      await vi.waitFor(() => expect(s.state.opened).toBe(1));
+      s.state.frame(frame('pending'));
+      await vi.waitFor(() => expect(reads).toBe(2));
+      s.state.frame(frame('pending'));
+      release();
+      await started;
+      expect(reads).toBe(3);
+      expect(h.client.payload).toEqual(signIn);
+    } finally { h.client.stop(); }
+  });
+
+  it('reads on its short timer while a preparing stream is down', async () => {
+    vi.useFakeTimers();
+    const signIn = authenticationPayload();
+    const preparing = { ...signIn, ceremony: null, task: { ...signIn.task, state: 'pending' } };
+    const events = vi.fn(async () => { throw Error('stream_unavailable'); });
+    const h = helper({ events, value: signIn,
+      respond: path => path.endsWith('/payload') ? { ok: true, status: 200, text: async () => JSON.stringify(preparing) } : null });
+    try {
+      void h.client.start();
+      await vi.advanceTimersByTimeAsync(0);
+      const before = h.reads();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(h.reads() - before).toBeGreaterThanOrEqual(5);
+    } finally { h.client.stop(); vi.useRealTimers(); }
   });
 
   it('ignores a frame for another task', async () => {
@@ -214,7 +281,8 @@ describe('helper ending', () => {
     const signIn = authenticationPayload();
     const preparing = { ...signIn, ceremony: null, task: { ...signIn.task, state: 'pending' } };
     let reads = 0;
-    const h = helper({ respond: path => path.endsWith('/payload') ? { ok: true, status: 200, text: async () => JSON.stringify(
+    const h = helper({ events: stream({ initial: true }).events,
+      respond: path => path.endsWith('/payload') ? { ok: true, status: 200, text: async () => JSON.stringify(
       ++reads === 1 ? preparing : { ...preparing, task: { ...preparing.task, state: 'cancelled' } }) } : null });
     try {
       await h.client.start(); await h.client.ending;

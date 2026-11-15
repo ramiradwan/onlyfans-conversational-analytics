@@ -86,8 +86,10 @@ class HelperStreams:
 class BrowserTaskEventResponse(StreamingResponse):
     """One stream per task generation. Frames say only that the task's state changed."""
 
-    def __init__(self, coordinator, session, task, streams):
+    def __init__(self, coordinator, session, task, streams, *, entry=None):
         self.coordinator, self.session, self.task, self.streams = coordinator, session, task, streams
+        # Whether the task's ceremony entry is open. Its change is framed like a state change.
+        self.entry_open = entry or (lambda task: False)
         super().__init__(self.frames(), media_type="text/event-stream", headers=HEADERS | {"X-Accel-Buffering": "no"})
         self.listener = self.entry = None
 
@@ -104,13 +106,15 @@ class BrowserTaskEventResponse(StreamingResponse):
             self.streams._close(self.task["task_id"], self.session.generation, self.entry)
 
     def _state(self):
-        with self.coordinator.store.database.read() as connection:
-            _, task = self.coordinator.admissions._require(connection, self.session.identifier,
-                role="browser_task", generation=self.session.generation)
-        state = task["state"]
-        if state not in TERMINAL and task["expires_at"] <= self.coordinator.admissions._now():
-            state = "expired"
-        return state, task["expires_at"]
+        with self.coordinator.store.database.shared_reads():
+            with self.coordinator.store.database.read() as connection:
+                _, task = self.coordinator.admissions._require(connection, self.session.identifier,
+                    role="browser_task", generation=self.session.generation)
+            state = task["state"]
+            if state not in TERMINAL and task["expires_at"] <= self.coordinator.admissions._now():
+                state = "expired"
+            entry = state not in TERMINAL and self.entry_open(dict(task))
+        return state, entry, task["expires_at"]
 
     async def frames(self):
         signal, focus = self.listener[1], self.entry["focus"]
@@ -119,9 +123,9 @@ class BrowserTaskEventResponse(StreamingResponse):
             while not self.coordinator._closed:
                 # Clear before the authoritative read, so a commit during it wakes the next pass.
                 signal.clear()
-                state, expires_at = self._state()
-                if state != previous:
-                    previous = state
+                state, entry, expires_at = self._state()
+                if (state, entry) != previous:
+                    previous = (state, entry)
                     yield "event: browser-task\ndata: " + json.dumps({"task_id": self.task["task_id"],
                         "admission_generation": self.session.generation, "state": state},
                         separators=(",", ":")) + "\n\n"

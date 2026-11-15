@@ -277,3 +277,53 @@ def test_a_preparing_sign_in_poll_reads_its_payload_through_one_store_connection
         assert response.status_code == 200 and response.json()["ceremony"] is None
         assert response.json()["task"]["task_id"] == task["task_id"]
         assert len(opened) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_preparing_sign_in_stream_frames_its_entry_opening_without_a_state_change(tmp_path):
+    from app.provisioning.events import events
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, _, _ = setup
+    _, task, browser = await browser_access(setup)
+    opened = [False]
+    served = Served(BrowserTaskEventResponse(coordinator, browser, task_row(coordinator, browser), tasks.helpers,
+                                             entry=lambda row: opened[0])).start()
+    try:
+        assert (await served.frame())[1]["state"] == "pending"
+        events.publish()
+        with pytest.raises(TimeoutError):
+            await served.frame(timeout=0.2)
+        opened[0] = True
+        events.publish()
+        event, value = await served.frame()
+        assert event == "browser-task"
+        assert value == {"task_id": task["task_id"], "admission_generation": browser.generation, "state": "pending"}
+    finally:
+        await served.close()
+
+
+@pytest.mark.asyncio
+async def test_open_reissues_at_once_for_a_sign_in_helper_still_waiting_for_its_ceremony(tmp_path):
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, native, _ = setup
+    _, task, browser = await browser_access(setup)
+    with coordinator.store.database.transaction() as connection:
+        connection.execute("UPDATE desktop_browser_tasks SET purpose='browser.authentication' WHERE task_id=?",
+                           (task["task_id"],))
+
+    class Preparing:
+        def browser_entry(self, operation_id):
+            return None
+
+    served = Served(BrowserTaskEventResponse(coordinator, browser, task_row(coordinator, browser), tasks.helpers)).start()
+    try:
+        await served.frame()
+        app = FastAPI()
+        app.include_router(browser_router(coordinator, tasks, Preparing()))
+        import httpx
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
+            response = await asyncio.wait_for(client.post("/api/v1/desktop/browser-tasks/" + task["task_id"] + "/open",
+                                                          json={}, headers=headers(native)), 1)
+        assert response.json()["state"] == "entry"
+    finally:
+        await served.close()

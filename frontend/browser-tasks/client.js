@@ -104,7 +104,7 @@ export class BrowserTaskClient {
       this.payload = payload;
       // A sign-in popup closes when this read sees its task end.
       this.fallbackPoll = payload.task.purpose === 'browser.authentication' ? AUTHENTICATION_POLL_MS : 2000;
-      this.pollBase = this.pollDelay = this.fallbackPoll;
+      this.pollBase = this.pollDelay = this.streaming ? STREAM_POLL_MS : this.fallbackPoll;
       if (this.finishCompleted(payload)) return;
       const remaining = payload.task.expires_at * 1000 - this.now();
       if (remaining <= 0 || remaining > 1800000) throw new Error('task_expired');
@@ -249,7 +249,8 @@ export class BrowserTaskClient {
         }).catch(error => { if (run === this.run) { this.stop(); this.receive({ state: error.message, payload }); } });
       } });
       this.schedulePoll(run);
-      this.listen(run);
+      // A stream opened during preparation stays this generation's only stream.
+      if (!this.stream) this.listen(run);
     } catch (error) {
       if (run === this.run) { this.stop(); this.receive({ state: ['task_changed', 'task_expired'].includes(error.message) ? error.message : 'service_unavailable', payload: this.payload }); }
     }
@@ -270,7 +271,9 @@ export class BrowserTaskClient {
           .some(key => current.task[key] !== first.task[key])) throw new Error('task_changed');
       if (current.task.expires_at * 1000 <= this.now()) throw new Error('task_expired');
       if (this.now() - started >= PREPARING_LIMIT_MS) throw new Error('service_unavailable');
-      await new Promise(resolve => { this.pollTimer = setTimeout(resolve, PREPARING_POLL_MS); });
+      // The task's stream says when its payload changed. The timer reads only while that stream is down.
+      if (!this.stream) this.listen(run);
+      await this.preparingWake(this.streaming ? STREAM_POLL_MS : PREPARING_POLL_MS);
       if (run !== this.run) return null;
       const next = await this.json('payload');
       if (run !== this.run) return null;
@@ -279,6 +282,19 @@ export class BrowserTaskClient {
       current = next;
     }
     return current;
+  }
+  /** Resolves on the next frame for this task, or after the delay. A frame during a read is kept for the next wait. */
+  preparingWake(delay) {
+    if (this.preparingChanged) { this.preparingChanged = false; return Promise.resolve(); }
+    return new Promise(resolve => {
+      const wake = () => { clearTimeout(this.pollTimer); if (this.wakePreparing === wake) this.wakePreparing = null; resolve(); };
+      this.wakePreparing = wake;
+      this.pollTimer = setTimeout(wake, delay);
+    });
+  }
+  preparingFrame() {
+    if (this.wakePreparing) this.wakePreparing();
+    else this.preparingChanged = true;
   }
   listen(run) {
     const controller = new AbortController();
@@ -301,11 +317,21 @@ export class BrowserTaskClient {
   streamHealth(run, healthy) {
     if (run !== this.run || this.streaming === healthy) return;
     this.streaming = healthy;
+    if (!this.payload) {
+      // A preparing helper whose stream dropped reads again at once, then on its short timer.
+      if (!healthy) this.preparingFrame();
+      return;
+    }
     this.pollBase = this.pollDelay = healthy ? STREAM_POLL_MS : this.fallbackPoll;
     this.schedulePoll(run);
   }
   frame(run, value) {
-    if (run !== this.run || !this.payload || value.task_id !== this.payload.task.task_id) return;
+    if (run !== this.run) return;
+    if (!this.payload) {
+      if (value.type === 'task' && value.task_id === this.session?.task_id) this.preparingFrame();
+      return;
+    }
+    if (value.task_id !== this.payload.task.task_id) return;
     if (value.type === 'focus') {
       this.serial = this.serial.then(async () => {
         if (run !== this.run || await this.link?.focus?.() !== true || run !== this.run) return;
@@ -438,5 +464,6 @@ export class BrowserTaskClient {
     this.nativeLaunch = false; this.automatic = false; this.run++; this.link?.close(); this.link = null;
     clearTimeout(this.expiry); clearTimeout(this.pollTimer); clearTimeout(this.streamTimer);
     this.stream?.abort(); this.stream = null; this.streaming = false;
+    this.wakePreparing = null; this.preparingChanged = false;
   }
 }
