@@ -604,7 +604,8 @@ class ProvisioningSetupOwner:
                 with timing.phase("source", "resume"):
                     source.resume(selected["source_journey_id"])
         if selecting:
-            entry = self.ceremonies.browser_entry(operation["operation_id"])
+            # Store reads between the selection reply and the task run off the event loop.
+            entry = await asyncio.to_thread(self.ceremonies.browser_entry, operation["operation_id"])
             timing.observe("authentication-select", "entry-pending" if entry is None else "entry-open", "ok", 0)
             if entry is None and authentication is not None and authentication["state"] not in {"expired", "unavailable"}:
                 # A selection reply can precede its browser step; one current read can open it at once.
@@ -613,7 +614,7 @@ class ProvisioningSetupOwner:
                         authorize=lambda: self._read_guard(operation))
                 except (HostedGrantUnavailable, BrowserAuthenticationRefused):
                     pass
-                entry = self.ceremonies.browser_entry(operation["operation_id"])
+                entry = await asyncio.to_thread(self.ceremonies.browser_entry, operation["operation_id"])
                 timing.observe("authentication-read", "entry-pending" if entry is None else "entry-open", "ok", 0)
             if entry is not None:
                 timing.entry_ready(operation["operation_id"])

@@ -122,8 +122,9 @@ class BrowserTaskEventResponse(StreamingResponse):
         try:
             while not self.coordinator._closed:
                 # Clear before the authoritative read, so a commit during it wakes the next pass.
+                # The read runs off the event loop; this stream waits for it before its next frame.
                 signal.clear()
-                state, entry, expires_at = self._state()
+                state, entry, expires_at = await asyncio.to_thread(self._state)
                 if (state, entry) != previous:
                     previous = (state, entry)
                     yield "event: browser-task\ndata: " + json.dumps({"task_id": self.task["task_id"],

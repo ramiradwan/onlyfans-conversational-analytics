@@ -1205,3 +1205,30 @@ async def test_ensure_initial_returns_the_projection_its_caller_just_read(auth):
     assert len(client.calls) == before
     await authentication.ensure_initial(operation, authorize=authorized, read_guard=authorized)
     assert len(client.calls) == before + 1
+
+@pytest.mark.asyncio
+async def test_store_work_between_a_selection_reply_and_its_task_runs_off_the_event_loop(setup):
+    import threading
+    owner, parent, _, _ = await _fresh_initial_connect(setup)
+    client = owner.ceremonies.authentication.client
+    database, loop_thread = owner.store.database, threading.get_ident()
+    window, on_loop = [False], []
+    connect, select, prepare = database.connect, client.execute, owner.browser_tasks.prepare
+
+    def counted():
+        if window[0] and threading.get_ident() == loop_thread:
+            on_loop.append(1)
+        return connect()
+
+    def replied(*args, **kwargs):
+        result = select(*args, **kwargs)
+        window[0] = True
+        return result
+
+    def task(*args, **kwargs):
+        window[0] = False
+        return prepare(*args, **kwargs)
+
+    database.connect, client.execute, owner.browser_tasks.prepare = counted, replied, task
+    assert (await owner._connect(parent, reconcile=False)).state == "waiting"
+    assert window == [False] and on_loop == []

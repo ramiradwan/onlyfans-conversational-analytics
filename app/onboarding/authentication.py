@@ -119,6 +119,12 @@ class DesktopAuthentication:
         if publish:
             events.publish()
 
+    def _projection(self, operation_id):
+        with self.store.database.read() as connection:
+            row = connection.execute("SELECT projection_json FROM desktop_authentication_projections WHERE operation_id=?",
+                (operation_id,)).fetchone()
+        return None if row is None else json.loads(row[0])
+
     async def _read(self, parent, *, authorize, attempt=None):
         row, request = self._request(parent, attempt)
         with timing.phase("authentication-read", "read-end"):
@@ -401,7 +407,7 @@ class DesktopAuthentication:
                 # that child; a fresh explicit command admits any next attempt.
                 result = await self._read(parent, authorize=read_guard, attempt=request["authentication_attempt_id"])
             if use_selection and fresh and not reconcile:
-                self._save(row, result)
+                await asyncio.to_thread(self._save, row, result)
                 current = result
             else:
                 current = await self._read(parent, authorize=read_guard)
@@ -429,10 +435,7 @@ class DesktopAuthentication:
             if not exists:
                 await self.execute(operation, authorize=authorize, read_guard=read_guard, reconcile=False, use_selection=fresh)
                 if fresh:
-                    with self.store.database.read() as connection:
-                        row = connection.execute("SELECT projection_json FROM desktop_authentication_projections WHERE operation_id=?",
-                            (operation["operation_id"],)).fetchone()
-                    return None if row is None else json.loads(row[0])
+                    return await asyncio.to_thread(self._projection, operation["operation_id"])
                 current = None
         if current is not None:
             return current

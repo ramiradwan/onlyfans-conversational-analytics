@@ -327,3 +327,34 @@ async def test_open_reissues_at_once_for_a_sign_in_helper_still_waiting_for_its_
         assert response.json()["state"] == "entry"
     finally:
         await served.close()
+
+@pytest.mark.asyncio
+async def test_a_helper_stream_reads_its_task_off_the_event_loop_and_keeps_a_wake_from_that_read(tmp_path):
+    import threading
+    from app.provisioning.events import events
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, _, _ = setup
+    _, task, browser = await browser_access(setup)
+    loop_thread, threads, opened = threading.get_ident(), [], [False, False]
+
+    def entry(row):
+        threads.append(threading.get_ident())
+        if opened[1]:
+            # A commit lands while this read is in flight. Its wake must reach the next pass.
+            opened[0], opened[1] = True, False
+            events.publish()
+            return False
+        return opened[0]
+
+    served = Served(BrowserTaskEventResponse(coordinator, browser, task_row(coordinator, browser), tasks.helpers,
+                                             entry=entry)).start()
+    try:
+        assert (await served.frame())[1]["state"] == "pending"
+        opened[1] = True
+        events.publish()
+        event, value = await served.frame()
+        assert event == "browser-task" and value["state"] == "pending"
+        assert opened == [True, False] and len(threads) >= 3
+        assert loop_thread not in threads
+    finally:
+        await served.close()
