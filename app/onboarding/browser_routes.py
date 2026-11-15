@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
+from starlette.concurrency import run_in_threadpool
 
 from app.onboarding import timing
 from app.onboarding.admission import AdmissionRefused
@@ -60,7 +62,7 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
                 timing.helper_finish(task["operation_id"])
             else:
                 # Loading steps, timed from this helper document's navigation start.
-                timing.observation(value, operation="helper", phases={"payload", "waiting"})
+                timing.observation(value, operation="helper", phases={"session-get", "payload-get", "payload", "waiting"})
         except (ValueError, TypeError):
             raise HTTPException(400, "Invalid sign-in timing") from None
         return Response(status_code=204, headers=HEADERS)
@@ -85,13 +87,26 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
         await socket.close()
 
     @router.get("/api/v1/browser-tasks/payload")
-    def payload(request: Request):
-        # A preparing helper polls this route, so its reads share one store connection.
-        with coordinator.store.database.shared_reads():
-            return task_payload(request)
+    async def payload(request: Request):
+        # The handler runs on the thread pool, as a sync route would. Its wait and run are timed.
+        return await run_in_threadpool(timed_payload, request, time.monotonic())
 
-    def task_payload(request):
+    def timed_payload(request, arrived):
+        started, read, status = time.monotonic(), [], "error"
+        try:
+            # A preparing helper polls this route, so its reads share one store connection.
+            with coordinator.store.database.shared_reads():
+                response = task_payload(request, read)
+            status = "ok"
+            return response
+        finally:
+            if read and read[0]["purpose"] == "browser.authentication":
+                timing.observe("helper", "payload-queue", "ok", max(0, (started - arrived) * 1000))
+                timing.observe("helper", "payload-handler", status, max(0, (time.monotonic() - started) * 1000))
+
+    def task_payload(request, read):
         _, task = task_session(request)
+        read.append(task)
         entry = (ceremonies.browser_entry(task["operation_id"]) if ceremonies is not None
             and task["purpose"] == "browser.authentication" and task["state"] != "completed" else None)
         if (entry is None and ceremonies is not None and task["purpose"] == "browser.authentication"

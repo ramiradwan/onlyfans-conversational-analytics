@@ -56,9 +56,8 @@ export class BrowserTaskClient {
       await new Promise(resolve => { setTimeout(resolve, CLOSE_RETRY_MS); });
     }
   }
-  /** A sign-in helper the desktop opened records its loading steps, timed from its navigation start. */
-  loaded(phase) {
-    const elapsed = globalThis.performance?.now?.();
+  /** A sign-in helper the desktop opened records its loading steps, timed from its navigation start unless given. */
+  loaded(phase, elapsed = globalThis.performance?.now?.()) {
     if (!this.automatic || !this.session || this.payload !== null || !Number.isFinite(elapsed)) return;
     void this.json('timing', { operation: 'helper', phase, status: 'ok', elapsed_ms: Math.round(elapsed) }).catch(() => {});
   }
@@ -91,11 +90,19 @@ export class BrowserTaskClient {
     this.receive({ state: 'loading' });
     try {
       // The payload read needs no session value, so both reads run together. The payload is used only after the session checks.
-      const [session, first] = await Promise.all([this.json('session'), this.json('payload')]);
+      const took = {};
+      const timed = path => {
+        const begun = globalThis.performance?.now?.();
+        return this.json(path).then(value => { took[path] = globalThis.performance?.now?.() - begun; return value; });
+      };
+      const [session, first] = await Promise.all([timed('session'), timed('payload')]);
       if (run !== this.run) return;
       if (session.role !== 'browser_task' || session.generation !== this.generation
         || !/^[A-Za-z0-9_-]{43}$/u.test(session.csrf_token)) throw new Error('task_changed');
       this.session = session;
+      // Each first read records its own round trip; the payload step stays timed from navigation start.
+      this.loaded('session-get', took.session);
+      this.loaded('payload-get', took.payload);
       this.loaded('payload');
       const payload = await this.prepared(run, first);
       if (run !== this.run || payload === null) return;

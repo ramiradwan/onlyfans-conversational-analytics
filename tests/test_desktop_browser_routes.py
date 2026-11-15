@@ -65,12 +65,15 @@ def test_a_helper_records_its_loading_steps_only_under_closed_labels(tmp_path, c
     app.include_router(browser_router(coordinator, tasks, None))
     caplog.set_level(logging.INFO, logger="app.onboarding.timing")
     with TestClient(app, base_url=ORIGIN) as client:
-        for phase, status in (("payload", 204), ("waiting", 204), ("launch", 400), ("popup-create", 400)):
+        for phase, status in (("session-get", 204), ("payload-get", 204), ("payload", 204), ("waiting", 204),
+                              ("payload-queue", 400), ("launch", 400), ("popup-create", 400)):
             value = {"operation": "helper", "phase": phase, "status": "ok", "elapsed_ms": 90}
             assert client.post("/api/v1/browser-tasks/timing", json=value, headers=headers(browser)).status_code == status, phase
         value = {"operation": "helper", "phase": "waiting", "status": "ok", "elapsed_ms": 90, "url": "private"}
         assert client.post("/api/v1/browser-tasks/timing", json=value, headers=headers(browser)).status_code == 400
-    assert caplog.messages == ["event=sign_in_phase operation=helper phase=payload status=ok elapsed_ms=90",
+    assert caplog.messages == ["event=sign_in_phase operation=helper phase=session-get status=ok elapsed_ms=90",
+        "event=sign_in_phase operation=helper phase=payload-get status=ok elapsed_ms=90",
+        "event=sign_in_phase operation=helper phase=payload status=ok elapsed_ms=90",
         "event=sign_in_phase operation=helper phase=waiting status=ok elapsed_ms=90"]
 
 

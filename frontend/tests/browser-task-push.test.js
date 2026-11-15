@@ -100,7 +100,10 @@ describe('helper stream', () => {
     try {
       await client.start();
       const marks = posts.filter(([path]) => path === 'timing').map(([, body]) => body);
-      expect(marks.map(value => value.phase)).toEqual(['payload', 'waiting']);
+      expect(marks.map(value => value.phase)).toEqual(['session-get', 'payload-get', 'payload', 'waiting']);
+      // A first read's mark is its own round trip, never longer than the time from navigation start.
+      expect(marks[0].elapsed_ms).toBeLessThanOrEqual(marks[2].elapsed_ms);
+      expect(marks[1].elapsed_ms).toBeLessThanOrEqual(marks[2].elapsed_ms);
       for (const value of marks) expect(Object.keys(value).sort()).toEqual(['elapsed_ms', 'operation', 'phase', 'status']);
     } finally { client.stop(); }
   });

@@ -358,3 +358,29 @@ async def test_a_helper_stream_reads_its_task_off_the_event_loop_and_keeps_a_wak
         assert loop_thread not in threads
     finally:
         await served.close()
+
+def test_a_sign_in_payload_read_records_its_queue_wait_and_handler_time(tmp_path, caplog):
+    import logging
+    import re
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, _, _ = setup
+    _, task, browser = asyncio.run(browser_access(setup))
+
+    class Preparing:
+        def browser_entry(self, operation_id):
+            return None
+
+    app = FastAPI()
+    app.include_router(browser_router(coordinator, tasks, Preparing()))
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    with TestClient(app, base_url=ORIGIN) as client:
+        # A browser-access helper polls for a long time and records nothing.
+        assert client.get("/api/v1/browser-tasks/payload", headers=headers(browser)).status_code == 200
+        assert not caplog.messages
+        with coordinator.store.database.transaction() as connection:
+            connection.execute("UPDATE desktop_browser_tasks SET purpose='browser.authentication' WHERE task_id=?",
+                               (task["task_id"],))
+        assert client.get("/api/v1/browser-tasks/payload", headers=headers(browser)).status_code == 200
+    assert [re.sub(r"elapsed_ms=\d+", "elapsed_ms=n", message) for message in caplog.messages] == [
+        "event=sign_in_phase operation=helper phase=payload-queue status=ok elapsed_ms=n",
+        "event=sign_in_phase operation=helper phase=payload-handler status=ok elapsed_ms=n"]
