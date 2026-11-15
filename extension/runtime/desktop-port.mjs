@@ -1,6 +1,6 @@
 // The only pre-pairing browser port: one declared task in its exact helper tab.
 import { LOCAL_SERVICE_ORIGIN } from '../transport/local-service-endpoints.mjs';
-import { PORT, exact, isPayload, isObservation, isPreparingPayload, helperGeneration } from '../../shared/browser-tasks/wire.mjs';
+import { PORT, exact, isPayload, isPayloadProjection, isObservation, isPreparingPayload, helperGeneration } from '../../shared/browser-tasks/wire.mjs';
 import { createAuthenticationTaskSession } from './authentication-task-session.mjs';
 export const DESKTOP_PORT_NAME = PORT;
 export const DESKTOP_LINK_STORAGE_KEY = 'desktop_link_v1';
@@ -164,6 +164,18 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
           const ending = entry.ending;
           if (!exact(message, ['type', 'task_id', 'admission_generation']) || message.type !== 'close'
             || message.task_id !== ending.task_id || message.admission_generation !== ending.admission_generation) { close(entry); return; }
+          try { await closeHelper(entry); } finally { close(entry); }
+          return;
+        }
+        if (exact(message, ['type', 'payload']) && message.type === 'end') {
+          // A helper that ended asks a fresh port to close its own document. It declares its task and attaches nothing.
+          const payload = message.payload;
+          if (entry.payload || entry.declared || entry.waiting || !(isPayloadProjection(payload) || isPreparingPayload(payload))
+            || payload.extension_id !== chromeApi.runtime.id
+            || payload.task.admission_generation !== helperGeneration(port.sender.url)) { close(entry); return; }
+          entry.declared = payload.task;
+          entry.ending = { task_id: payload.task.task_id, admission_generation: payload.task.admission_generation };
+          clearTimeout(entry.timer);
           try { await closeHelper(entry); } finally { close(entry); }
           return;
         }

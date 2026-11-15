@@ -125,7 +125,7 @@ export function openWaiting({ payload, runtime = globalThis.chrome?.runtime }) {
   return { close() { const current = port; port = null; try { current?.disconnect(); } catch { /* disconnected */ } } };
 }
 
-/** One fresh port after the first one died: attach, then a single finish or close. */
+/** One fresh port after the first one died: attach and finish, or only ask to end this helper. */
 export function reattachExtension({ payload, type, runtime = globalThis.chrome?.runtime, timeout = 5000 }) {
   if (!['finish', 'close'].includes(type)) return Promise.resolve(false);
   return new Promise(resolve => {
@@ -144,6 +144,7 @@ export function reattachExtension({ payload, type, runtime = globalThis.chrome?.
         if (type === 'finish' && exact(value, ['type', 'task_id', 'admission_generation']) && value.type === 'finished'
           && value.task_id === payload.task.task_id && value.admission_generation === payload.task.admission_generation) end(true);
       });
+      if (type === 'close') { port.postMessage({ type: 'end', payload }); return; }
       port.postMessage({ type: 'attach', payload });
       port.postMessage({ type, task_id: payload.task.task_id, admission_generation: payload.task.admission_generation });
     } catch { end(false); }

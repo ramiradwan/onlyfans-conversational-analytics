@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { payload, observation, id } from '../../extension/test-fixtures/browser-task.mjs';
 import { connectExtension, reattachExtension } from '../browser-tasks/extension.js';
-import { BrowserTaskClient, STREAM_POLL_MS } from '../browser-tasks/client.js';
+import { BrowserTaskClient, CLOSE_RETRY_MS, STREAM_POLL_MS } from '../browser-tasks/client.js';
 import { readBrowserTaskEvents } from '../browser-tasks/events.js';
 
 const event = () => { const listeners = []; return { listeners, addListener: fn => listeners.push(fn), emit: value => listeners.forEach(fn => fn(value)) }; };
@@ -177,6 +177,47 @@ describe('helper ending', () => {
     } finally { h.client.stop(); }
   });
 
+  it('closes a helper whose sign-in task was withdrawn while it was still being prepared', async () => {
+    const signIn = authenticationPayload();
+    const preparing = { ...signIn, ceremony: null, task: { ...signIn.task, state: 'pending' } };
+    let reads = 0;
+    const h = helper({ respond: path => path.endsWith('/payload') ? { ok: true, status: 200, text: async () => JSON.stringify(
+      ++reads === 1 ? preparing : { ...preparing, task: { ...preparing.task, state: 'cancelled' } }) } : null });
+    try {
+      await h.client.start(); await h.client.ending;
+      expect(h.received.at(-1).state).toBe('task_changed');
+      expect(h.reattach).toHaveBeenCalledExactlyOnceWith({ payload: preparing, type: 'close' });
+    } finally { h.client.stop(); }
+  });
+
+  it('keeps asking a reloading extension to close an ended helper, a bounded number of times', async () => {
+    vi.useFakeTimers();
+    const h = helper({ link: { end: vi.fn(() => false) } });
+    h.reattach.mockResolvedValue(false);
+    try {
+      await h.client.start();
+      h.publish({ state: 'ready', observation: observation() });
+      h.publish({ state: 'unavailable' });
+      await vi.advanceTimersByTimeAsync(0); await h.client.serial;
+      await vi.advanceTimersByTimeAsync(CLOSE_RETRY_MS * 5);
+      expect(h.posts.filter(([path]) => path === 'ended')).toEqual([['ended', { reason: 'unavailable' }]]);
+      expect(h.reattach).toHaveBeenCalledTimes(3);
+      expect(h.reattach.mock.calls.every(([value]) => value.type === 'close')).toBe(true);
+    } finally { h.client.stop(); vi.useRealTimers(); }
+  });
+
+  it('closes a sign-in helper through a fresh port when its closed popup cannot finish it', async () => {
+    const h = helper({ link: { finish: vi.fn(async () => false) },
+      respond: path => path.endsWith('/closed') ? { ok: true, status: 200, text: async () => '{"state":"checking"}' } : null });
+    try {
+      await h.client.start();
+      h.publish({ state: 'auth_closed' });
+      await vi.waitFor(() => expect(h.reattach).toHaveBeenCalledOnce());
+      expect(h.reattach).toHaveBeenCalledWith({ payload: h.value, type: 'close' });
+      expect(h.received.at(-1).state).toBe('auth_closed');
+    } finally { h.client.stop(); }
+  });
+
   it('finishes through one fresh attachment when its port died before completion', async () => {
     const h = helper({ link: { finish: vi.fn(async () => false) } });
     try {
@@ -231,13 +272,20 @@ describe('helper port', () => {
     } finally { vi.useRealTimers(); }
   });
 
-  it('sends one attach and one close on a fresh port', async () => {
+  it('asks a fresh port only to end its helper, without attaching', async () => {
     const value = payload(), p = port();
     const done = reattachExtension({ payload: value, type: 'close', runtime: { connect: () => p }, timeout: 10 });
-    expect(p.postMessage.mock.calls.map(([message]) => message.type)).toEqual(['attach', 'close']);
+    expect(p.postMessage.mock.calls).toEqual([[{ type: 'end', payload: value }]]);
     expect(await done).toBe(false);
     expect(p.disconnect).toHaveBeenCalledOnce();
     expect(await reattachExtension({ payload: value, type: 'open', runtime: { connect: () => p } })).toBe(false);
+  });
+
+  it('sends one attach and one finish on a fresh port', async () => {
+    const value = payload(), p = port();
+    const done = reattachExtension({ payload: value, type: 'finish', runtime: { connect: () => p }, timeout: 10 });
+    expect(p.postMessage.mock.calls.map(([message]) => message.type)).toEqual(['attach', 'finish']);
+    expect(await done).toBe(false);
   });
 });
 

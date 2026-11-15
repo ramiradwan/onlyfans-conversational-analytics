@@ -10,6 +10,9 @@ export const PREPARING_LIMIT_MS = 120000;
 // While the helper stream is healthy the payload read is only a safety check.
 export const STREAM_POLL_MS = 15000;
 const STREAM_RETRY_CAP_MS = 5000;
+// An extension that is reloading may miss a helper's request to close. It is asked again, a few times.
+export const CLOSE_RETRY_MS = 1000;
+const CLOSE_ATTEMPTS = 3;
 // Reasons a helper reports to Brain before it asks the extension to close it.
 const ENDINGS = ['profile_mismatch', 'account_mismatch', 'task_changed', 'task_expired', 'unavailable'];
 
@@ -43,9 +46,15 @@ export class BrowserTaskClient {
     await this.reattachOnce('close');
   }
   async reattachOnce(type) {
-    if (this.reattached || !this.payload) return false;
+    // A helper that ended while its sign-in was prepared closes with the task it read.
+    const payload = this.payload ?? (type === 'close' ? this.declared : null);
+    if (this.reattached || !payload) return false;
     this.reattached = true;
-    return this.reattach({ payload: this.payload, type }).catch(() => false);
+    for (let attempt = 1; ; attempt++) {
+      const done = await this.reattach({ payload, type }).catch(() => false);
+      if (done || type !== 'close' || attempt === CLOSE_ATTEMPTS) return done;
+      await new Promise(resolve => { setTimeout(resolve, CLOSE_RETRY_MS); });
+    }
   }
   async json(path, body) {
     const response = await this.request('/api/v1/browser-tasks/' + path, { credentials: 'same-origin', redirect: 'error', cache: 'no-store',
@@ -72,6 +81,7 @@ export class BrowserTaskClient {
     this.pairFinished = false;
     this.pairCodeSent = false;
     this.ending = null;
+    this.declared = null;
     this.receive({ state: 'loading' });
     try {
       const session = await this.json('session');
@@ -241,10 +251,10 @@ export class BrowserTaskClient {
   async prepared(run, first) {
     let current = first;
     const started = this.now();
-    if (this.automatic && isPreparingPayload(first) && first.task.admission_generation === this.generation
-      && first.task.task_id === this.session.task_id && first.task.journey_id === this.session.journey_id) {
-      this.waiting = this.wait({ payload: first });
-    }
+    const own = isPreparingPayload(first) && first.task.admission_generation === this.generation
+      && first.task.task_id === this.session.task_id && first.task.journey_id === this.session.journey_id;
+    if (own) this.declared = first;
+    if (this.automatic && own) this.waiting = this.wait({ payload: first });
     while (isPreparingPayload(current)) {
       if (current.task.admission_generation !== this.generation || current.task.task_id !== this.session.task_id
         || current.task.journey_id !== this.session.journey_id
@@ -381,7 +391,10 @@ export class BrowserTaskClient {
     this.receive({ state, payload });
     // A helper whose port died earlier makes one fresh attachment to finish.
     void Promise.resolve(link?.finish ? link.finish() : false).catch(() => false)
-      .then(finished => { link?.close(); if (finished !== true && state === 'task_completed') return this.reattachOnce('finish'); });
+      .then(finished => {
+        link?.close();
+        if (finished !== true) return this.reattachOnce(state === 'task_completed' ? 'finish' : 'close');
+      });
   }
   async open() {
     const run = this.run;
