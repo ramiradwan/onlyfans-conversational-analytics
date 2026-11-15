@@ -248,11 +248,31 @@ class ProvisioningSetupOwner:
                         and source.operation_id is None and not self._work()
                         and source.expires_at <= self.store._now()):
                     return OperationResult("refused", "operation_expired")
-            view = self.read(operation["journey_id"])
-            if (view.facts["account"] == "verified" and view.facts["installation"] == "verified"
-                    and view.scope["creator_account_id"] == scope["creator_account_id"]):
+            creator = self._verified_creator(operation["journey_id"])
+            if creator is not None and creator == scope["creator_account_id"]:
                 return OperationResult("completed")
         return None
+
+    def _verified_creator(self, journey_id):
+        """The creator when `read` would show a verified account and installation, else None."""
+        # Only the account and installation facts of the view, so a pass during sign-in reads little.
+        source_journey = self._source(journey_id)
+        try:
+            journey = self._journey(source_journey)
+        except OnboardingJourneyUnavailable:
+            return None
+        if journey is None or journey.state in {"expired", "revoked"}:
+            return None
+        progress, creator, _ = self._selection(journey, self.browser_tasks.read(journey_id))
+        if progress["stage"] != "finalization_ready" or creator is None:
+            return None
+        try:
+            verified_grant_bindings(store=self.store, request=FinalizationRequest(progress["association_request_id"], creator),
+                trusted_journey_id=source_journey if journey.kind == "registered-continuation" else None)
+        except (FinalizationRefused, ValueError):
+            return None
+        facts = local_setup_facts(self.store, journey={"kind": journey.kind, "state": journey.state})
+        return creator if facts["installation"] == "verified" else None
 
     def _finalized(self, scope):
         if not self.completion_ready():

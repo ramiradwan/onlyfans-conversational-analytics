@@ -839,6 +839,49 @@ async def test_a_failed_fresh_preparation_withdraws_its_task_without_a_ceremony(
     assert task_states() == ["cancelled"]
 
 
+@pytest.mark.parametrize(("case", "expected"), [
+    ("signing-in", None), ("connected", "completed"), ("other-creator", None), ("installation-missing", None),
+    ("grant-refused", None), ("journey-expired", None), ("journey-unavailable", None)])
+def test_an_account_connection_is_observed_without_building_the_whole_view(monkeypatch, case, expected):
+    from app.persistence.onboarding import OnboardingJourneyUnavailable
+    from app.provisioning import desktop_onboarding
+    from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
+    from app.provisioning.finalize import FinalizationRefused
+
+    owner = ProvisioningSetupOwner.__new__(ProvisioningSetupOwner)
+    owner.sources = SimpleNamespace(resolve=lambda _: None)
+    owner.browser_tasks = SimpleNamespace(read=lambda _: None)
+    owner.store = None
+    owner._source = lambda _: "source-1"
+
+    def journey(_):
+        if case == "journey-unavailable":
+            raise OnboardingJourneyUnavailable("journey_unavailable")
+        return SimpleNamespace(journey_id="source-1", kind="initial-enrollment",
+                               state="expired" if case == "journey-expired" else "active")
+
+    def grants(**_):
+        if case == "grant-refused":
+            raise FinalizationRefused("grant_unavailable")
+
+    owner._journey = journey
+    owner.progress = lambda _: {"stage": "registration_required" if case == "signing-in" else "finalization_ready",
+        "association_request_id": "request-1", "creator_account_id": "creator-2" if case == "other-creator" else "creator-1"}
+
+    def whole_view(*args, **kwargs):
+        raise AssertionError("whole view built")
+
+    owner.read = whole_view
+    monkeypatch.setattr(desktop_onboarding, "verified_grant_bindings", grants)
+    monkeypatch.setattr(desktop_onboarding, "local_setup_facts", lambda *_, **__: {
+        "installation": "missing" if case == "installation-missing" else "verified"})
+    operation = {"action": "account.connect", "journey_id": "journey-1", "owner_scope_json": json.dumps(
+        {"source_journey_id": "source-1", "installation_id": "installation-1", "creator_account_id": "creator-1",
+         "association_request_id": "request-1"})}
+    result = owner.observe(operation)
+    assert (None if result is None else result.state) == expected
+
+
 def _select_owner(auth):
     from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
     coordinator, ceremonies, _, client, _, _, _ = auth
