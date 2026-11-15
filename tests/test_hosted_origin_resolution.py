@@ -228,7 +228,7 @@ with tempfile.TemporaryDirectory(dir=temp_parent) as temporary:
             "delivery", object()
         )
 
-        def capture_initial(store, *, hosted_origin):
+        def capture_initial(store, *, hosted_origin, transport=None):
             captured["initial"] = hosted_origin
             return SimpleNamespace()
 
