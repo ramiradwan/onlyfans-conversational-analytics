@@ -358,7 +358,7 @@ class ProvisioningSetupOwner:
         if selected["installation_id"] is not None and row.installation_id != selected["installation_id"]:
             raise HostedGrantUnavailable("Selected installation changed")
         expected_key = selected["key"]
-        current_key = self.store.installation_key_reference()
+        current_key = self.store.installation_key_reference(connection=connection)
         if expected_key is not None and (current_key is None or (
                 expected_key["installation_key_id"], expected_key["installation_key_jkt"]) != (
                 current_key.installation_key_id, current_key.installation_key_jkt)):
@@ -611,13 +611,16 @@ class ProvisioningSetupOwner:
 
     def _read_guard(self, operation, connection=None):
         """Retained proof reads may settle an expired presentation, never renew it."""
-        saved = (self.ceremonies.row(operation["operation_id"]) if connection is None
-                 else self.ceremonies.row(operation["operation_id"], connection=connection))
+        if connection is None:
+            # The ceremony and key checks share one store connection.
+            with self.store.database.read() as connection:
+                return self._read_guard(operation, connection)
+        saved = self.ceremonies.row(operation["operation_id"], connection=connection)
         if saved is None:
             raise HostedGrantUnavailable("Browser ceremony is unavailable")
         binding = json.loads(saved["binding_json"])
         # Each proof exchange reopens the provider key and verifies it against this reference.
-        key = self.store.installation_key_reference()
+        key = self.store.installation_key_reference(connection=connection)
         if key is None or (binding["installation_key_id"], binding["installation_key_jkt"]) != (
                 key.installation_key_id, key.installation_key_jkt):
             raise HostedGrantUnavailable("Browser ceremony key changed")

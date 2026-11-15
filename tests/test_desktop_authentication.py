@@ -597,6 +597,35 @@ async def test_a_hint_completes_its_task_with_two_store_openings(auth):
 
 
 @pytest.mark.asyncio
+async def test_a_proof_read_guard_checks_its_ceremony_and_key_through_one_store_connection(auth):
+    from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
+    coordinator, ceremonies, _, _, parent, _, _ = auth
+    binding = json.loads(ceremonies.row(parent["operation_id"])["binding_json"])
+    reference = SimpleNamespace(installation_key_id=binding["installation_key_id"],
+                                installation_key_jkt=binding["installation_key_jkt"])
+    seen = []
+
+    def installation_key_reference(*, connection=None):
+        seen.append(connection)
+        return reference
+
+    owner = ProvisioningSetupOwner.__new__(ProvisioningSetupOwner)
+    owner.ceremonies = ceremonies
+    owner.store = SimpleNamespace(database=coordinator.store.database,
+                                  installation_key_reference=installation_key_reference)
+    database = coordinator.store.database
+    opened, connect = [], database.connect
+
+    def counted():
+        opened.append(1)
+        return connect()
+
+    database.connect = counted
+    owner._read_guard({"operation_id": parent["operation_id"]})
+    assert len(opened) == 1 and len(seen) == 1 and seen[0] is not None
+
+
+@pytest.mark.asyncio
 async def test_a_hinted_read_guard_checks_through_one_store_connection(auth):
     from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
     coordinator, ceremonies, authentication, _, parent, _, _ = auth
@@ -607,7 +636,7 @@ async def test_a_hinted_read_guard_checks_through_one_store_connection(auth):
                                 installation_key_jkt=binding["installation_key_jkt"])
     owner = ProvisioningSetupOwner.__new__(ProvisioningSetupOwner)
     owner.ceremonies = ceremonies
-    owner.store = SimpleNamespace(database=coordinator.store.database, installation_key_reference=lambda: reference)
+    owner.store = SimpleNamespace(database=coordinator.store.database, installation_key_reference=lambda **_: reference)
     shared = []
     owner._guard = lambda current, *, connection=None: shared.append(connection is not None)
 
@@ -696,7 +725,7 @@ async def test_guards_and_binding_check_the_persisted_key_without_provider_work(
                               installation_key_jkt=binding["installation_key_jkt"])
     reference = [current]
     owner = ProvisioningSetupOwner.__new__(ProvisioningSetupOwner)
-    owner.store = SimpleNamespace(installation_key_reference=lambda: reference[0])
+    owner.store = SimpleNamespace(database=ceremonies.store.database, installation_key_reference=lambda **_: reference[0])
     owner.ceremonies = ceremonies
     owner.key = SimpleNamespace(reopen_existing=lambda: pytest.fail("provider key work in a guard"))
     owner._read_guard({"operation_id": parent["operation_id"]})

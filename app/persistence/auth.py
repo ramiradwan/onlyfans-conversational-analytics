@@ -8,7 +8,7 @@ import hashlib
 import json
 import re
 import secrets
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from app.persistence import sqlite_api as sqlite3
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -514,7 +514,7 @@ class AuthenticationStore(Protocol):
         self, reference: InstallationKeyReference
     ) -> None: ...
 
-    def installation_key_reference(self) -> InstallationKeyReference | None: ...
+    def installation_key_reference(self, *, connection=None) -> InstallationKeyReference | None: ...
 
     def register_webauthn_credential(self, credential: WebAuthnCredential) -> None: ...
 
@@ -903,8 +903,8 @@ class SQLiteAuthenticationStore:
                 raise AuthenticationStateError("Installation key activation failed")
             self._increment_authorization_epoch(connection)
 
-    def installation_key_reference(self) -> InstallationKeyReference | None:
-        with self.database.read() as connection:
+    def installation_key_reference(self, *, connection=None) -> InstallationKeyReference | None:
+        with (self.database.read() if connection is None else nullcontext(connection)) as connection:
             row = connection.execute(
                 """
                 SELECT * FROM installation_key_reference
