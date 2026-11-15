@@ -9,6 +9,7 @@ import json
 import os
 import secrets
 import struct
+import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -46,6 +47,8 @@ _NCRYPT_PERSIST_FLAG = 0x80000000
 _NCRYPT_SILENT_FLAG = 0x00000040
 _NTE_EXISTS = 0x8009000F
 _NTE_BAD_KEYSET = 0x80090016
+# Serializes key preparation across authority instances in this process.
+_PREPARATION_LOCK = threading.Lock()
 _P256_ORDER = int(
     "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551",
     16,
@@ -323,6 +326,10 @@ class InstallationKeyAuthority:
 
     @timing.measured("key", "ensure")
     def ensure_ready(self) -> InstallationKeyReference:
+        with _PREPARATION_LOCK:
+            return self._ensure_ready()
+
+    def _ensure_ready(self) -> InstallationKeyReference:
         active = self._store.installation_key_reference()
         reservation = self._store.installation_key_reservation()
         if reservation is None:
