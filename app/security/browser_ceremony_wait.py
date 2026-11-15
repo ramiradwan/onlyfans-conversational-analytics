@@ -12,7 +12,9 @@ import httpx
 
 from app.onboarding import timing
 from app.security.browser_ceremony import _P256_ORDER
-from app.security.hosted_grants import HostedGrantUnavailable, HostedTransport, HTTPXHostedTransport
+from app.security.hosted_grants import (
+    HostedGrantUnavailable, HostedTransport, require_hosted_origin,
+)
 from app.security.initial_handoff import _require_proof_budget, timestamp
 from app.security.installation_continuation import ExistingInstallationKey, _decode, _document, canonical_request
 from app.security.installation_key import verify_installation_proof
@@ -94,8 +96,7 @@ class BrowserCeremonyWaitClient:
     def __init__(self, transport: HostedTransport, key: ExistingInstallationKey, origin: str, *,
                  monotonic: Callable[[], float] = time.monotonic,
                  stream_transport: httpx.AsyncBaseTransport | None = None) -> None:
-        validation = HTTPXHostedTransport(origin)
-        validation.close()
+        require_hosted_origin(origin)
         self.transport, self.key, self.origin, self.monotonic = transport, key, origin, monotonic
         self.stream_transport = stream_transport
 

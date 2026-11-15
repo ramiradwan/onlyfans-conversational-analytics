@@ -22,7 +22,7 @@ from contracts.loader import verify_snapshot_integrity
 
 from app.security.hosted_grants import (
     HostedGrantUnavailable, HostedTransport, InstallationProofAuthority,
-    HTTPXHostedTransport, _response_object,
+    _response_object, require_hosted_origin,
 )
 
 PROFILE = "urn:bridge-clean:initial-installation-handoff:v2"
@@ -281,8 +281,7 @@ class OnboardingStreamAdmissionRefused(HostedGrantUnavailable):
 class InitialHandoffStream:
     """Bounded POST SSE transport. Each connection receives a fresh body proof."""
     def __init__(self, origin: str, *, continuity: bool = False) -> None:
-        validation = HTTPXHostedTransport(origin)
-        validation.close()
+        require_hosted_origin(origin)
         self.origin = origin
         self.continuity = continuity
 

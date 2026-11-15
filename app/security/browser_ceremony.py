@@ -14,7 +14,7 @@ from referencing import Registry, Resource
 
 from app.onboarding import timing
 from app.core.resource_paths import resource_path
-from app.security.hosted_grants import HostedGrantUnavailable, HostedTransport, HTTPXHostedTransport
+from app.security.hosted_grants import HostedGrantUnavailable, HostedTransport, require_hosted_origin
 from app.security.initial_handoff import _require_proof_budget, timestamp
 from app.security.installation_continuation import (
     ExistingInstallationKey, _decode, _document, canonical_request,
@@ -76,8 +76,7 @@ def binding_digest(binding: dict) -> str:
 
 def browser_entry_url(origin: str, reference: str) -> str:
     """Only the release-selected Provider origin and fixed entry path can be opened."""
-    validation = HTTPXHostedTransport(origin)
-    validation.close()
+    require_hosted_origin(origin)
     _decode(reference, 32)
     return origin + ENTRY_PREFIX + reference
 

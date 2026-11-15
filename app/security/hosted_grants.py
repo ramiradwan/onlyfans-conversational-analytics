@@ -13,6 +13,7 @@ from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from time import monotonic, sleep
 from typing import Literal, Protocol
 
@@ -211,6 +212,32 @@ def _connection_timing():
     return trace
 
 
+def require_hosted_origin(base_url: str) -> str:
+    """Return the HTTPS origin URL that hosted requests may use, or refuse it."""
+    if not isinstance(base_url, str):
+        raise ValueError("Hosted base URL is invalid")
+    return _hosted_origin(base_url)
+
+
+@lru_cache(maxsize=8)
+def _hosted_origin(base_url: str) -> str:
+    try:
+        url = httpx.URL(base_url)
+    except Exception:
+        raise ValueError("Hosted base URL is invalid") from None
+    if (
+        url.scheme != "https"
+        or not url.host
+        or url.username
+        or url.password
+        or url.query
+        or url.fragment
+        or url.path not in {"", "/"}
+    ):
+        raise ValueError("Hosted base URL must be an HTTPS origin")
+    return str(url.copy_with(path="/"))
+
+
 class HTTPXHostedTransport:
     """HTTPS transport for hosted JSON requests."""
 
@@ -222,22 +249,8 @@ class HTTPXHostedTransport:
                 or not 0 < keepalive_seconds <= 120):
             raise ValueError("Hosted keepalive must be finite and at most 120 seconds")
         self._timeout_seconds = timeout_seconds
-        try:
-            url = httpx.URL(base_url)
-        except Exception:
-            raise ValueError("Hosted base URL is invalid") from None
-        if (
-            url.scheme != "https"
-            or not url.host
-            or url.username
-            or url.password
-            or url.query
-            or url.fragment
-            or url.path not in {"", "/"}
-        ):
-            raise ValueError("Hosted base URL must be an HTTPS origin")
         self._client = httpx.Client(
-            base_url=str(url.copy_with(path="/")),
+            base_url=require_hosted_origin(base_url),
             follow_redirects=False,
             timeout=timeout_seconds,
             limits=httpx.Limits(max_connections=100, max_keepalive_connections=20,
