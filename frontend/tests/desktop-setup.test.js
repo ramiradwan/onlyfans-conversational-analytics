@@ -85,6 +85,34 @@ it('launches the browser for an accepted click while its receipt is still being 
   expect(openBrowser.mock.calls[0][1]).toBe(operationId);
 });
 
+it('stops a launch still in progress when its receipt is refused', async () => {
+  let found;
+  const lookup = new Promise(resolve => { found = resolve; });
+  const invoke = vi.fn();
+  const receive = vi.fn();
+  const subject = new DesktopSetupClient({ generation, storage: storage(), receive,
+    uuid: () => operationId, stream: () => () => {},
+    openBrowser: async (owner, selected, _, current) => {
+      await lookup;
+      if (!current()) return false;
+      invoke(selected);
+      return true;
+    },
+    request: async (url) => {
+      if (url.endsWith('/timing')) return new Promise(() => {});
+      if (url.includes('/operations/')) return response({ ...record, state: 'refused', reason: 'operation_expired' });
+      if (url.endsWith('/session')) return new Promise(() => {});
+      return response(record, 202);
+    } });
+  subject.value = initial(); subject.session = session; subject.connected = true;
+  const acting = subject.act('browser.access');
+  await vi.waitFor(() => expect(subject.launchOperation).toBe(null));
+  found();
+  await acting;
+  expect(invoke).not.toHaveBeenCalled();
+  expect(subject.pending).toBe(null);
+});
+
 it('selects the saved setup theme before the entry module can paint', () => {
   const meta = { setAttribute: vi.fn() };
   const earlyDocument = { documentElement: { dataset: {} }, querySelector: () => meta };
