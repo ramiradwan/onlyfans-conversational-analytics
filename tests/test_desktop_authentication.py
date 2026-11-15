@@ -585,6 +585,8 @@ async def test_an_openable_fresh_provider_dispatch_uses_only_prepare_and_select(
     for point in (("ceremony-prepare", "persist"), ("authentication-select", "lookup"), ("authentication-select", "reserve"),
                   ("authentication-select", "guard"), ("source", "resume")):
         assert point in phases
+    # The browser task is saved before any key or handoff work starts.
+    assert phases.index(("worker", "task")) < phases.index(("source", "prepare"))
     assert [verb for verb, _ in ceremony_client.calls] == ["prepare"]
     assert [verb for verb, _ in client.calls] == ["select"]
     assert reads == []

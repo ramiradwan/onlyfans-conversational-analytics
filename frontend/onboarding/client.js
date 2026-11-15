@@ -107,7 +107,15 @@ export class DesktopSetupClient {
     try { void Promise.resolve(this.focusWindow()).catch(() => undefined); } catch { /* Presentation only. */ }
   }
 
+  markLaunch(operationId, phase) {
+    const timing = this.clickTiming;
+    if (!timing || timing.operationId !== operationId || timing.marked.has(phase)) return;
+    timing.marked.add(phase);
+    timing.observe(phase);
+  }
+
   browserTaskPrepared(task) {
+    this.markLaunch(task.operation_id, 'task-found');
     const intent = this.focusIntent;
     if (!intent || intent.operationId !== task.operation_id || intent.epoch !== this.launchEpoch) return;
     if (intent.journey !== null && intent.journey !== task.journey_id
@@ -282,6 +290,8 @@ export class DesktopSetupClient {
     if (!this.connected || !this.value || (this.pending && !replacesCurrentAuthentication)) return;
     observe('click');
     const intent = command(this.value, action, this.uuid(), options);
+    // Later launch steps of this click are recorded once each.
+    this.clickTiming = { operationId: intent.operation_id, observe, marked: new Set() };
     this.operationError = null;
     this.launchEpoch++;
     this.focusIntent = null;
@@ -378,6 +388,7 @@ export class DesktopSetupClient {
     this.notify();
     try {
       const opened = await this.openBrowser(this, operationId, undefined, current);
+      if (opened) this.markLaunch(operationId, 'launch');
       if (opened && this.connected && this.focusIntent?.epoch === epoch && this.focusIntent.operationId === operationId) {
         this.focusIntent.opened = true;
         this.returnFocus();

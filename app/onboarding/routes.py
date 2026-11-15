@@ -147,7 +147,7 @@ def desktop_router(coordinator: DesktopOnboardingCoordinator, *, actor=lambda re
         admitted(request, mutation=True)
         value = await body(request)
         try:
-            timing.observation(value, operation="frontend", phases={"click", "command-send"})
+            timing.observation(value, operation="frontend", phases={"click", "command-send", "task-found", "launch"})
         except (ValueError, TypeError):
             raise HTTPException(400, "Invalid sign-in timing") from None
         return Response(status_code=204, headers=HEADERS)

@@ -51,8 +51,12 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
         _, task = task_session(request, mutation=True)
         value = await body(request)
         try:
-            timing.observation(value, operation="helper", phases={"helper-finish"}, record=False)
-            timing.helper_finish(task["operation_id"])
+            if isinstance(value, dict) and value.get("phase") == "helper-finish":
+                timing.observation(value, operation="helper", phases={"helper-finish"}, record=False)
+                timing.helper_finish(task["operation_id"])
+            else:
+                # Loading steps, timed from this helper document's navigation start.
+                timing.observation(value, operation="helper", phases={"payload", "waiting"})
         except (ValueError, TypeError):
             raise HTTPException(400, "Invalid sign-in timing") from None
         return Response(status_code=204, headers=HEADERS)

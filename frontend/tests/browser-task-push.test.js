@@ -83,6 +83,26 @@ describe('helper stream', () => {
     } finally { h.client.stop(); }
   });
 
+  it('records when a desktop-opened sign-in helper read its payload and asked for its waiting window', async () => {
+    const signIn = authenticationPayload();
+    const preparing = { ...signIn, ceremony: null, task: { ...signIn.task, state: 'pending' } };
+    let reads = 0;
+    const posts = [];
+    const request = vi.fn(async (path, options = {}) => {
+      if (options.method === 'POST') posts.push([path.split('/').at(-1), JSON.parse(options.body)]);
+      const body = path.endsWith('/session') ? session() : path.endsWith('/payload') ? (++reads === 1 ? preparing : signIn) : {};
+      return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+    });
+    const client = new BrowserTaskClient({ generation: id(4), request, nativeLaunch: true, wait: () => ({ close() {} }),
+      receive() {}, events: stream().events, connect: () => ({ close() {}, finish: async () => true, end: () => true }) });
+    try {
+      await client.start();
+      const marks = posts.filter(([path]) => path === 'timing').map(([, body]) => body);
+      expect(marks.map(value => value.phase)).toEqual(['payload', 'waiting']);
+      for (const value of marks) expect(Object.keys(value).sort()).toEqual(['elapsed_ms', 'operation', 'phase', 'status']);
+    } finally { client.stop(); }
+  });
+
   it('ignores a frame for another task', async () => {
     const s = stream(), h = helper({ events: s.events });
     try {

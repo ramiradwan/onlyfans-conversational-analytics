@@ -499,7 +499,10 @@ class ProvisioningSetupOwner:
         if operation["action"].startswith("auth.") and self.ceremonies is not None and self.ceremonies.authentication is not None:
             intent = json.loads(operation["owner_scope_json"])["authentication_intent"]
             parent = intent["parent_operation_id"]
-            early = not reconcile and intent["verb"] in {"select", "switch"} and self.browser_tasks.prepare_early(operation)
+            early = False
+            if not reconcile and intent["verb"] in {"select", "switch"}:
+                with timing.phase("worker", "task"):
+                    early = self.browser_tasks.prepare_early(operation)
             try:
                 result = await self.ceremonies.authentication.execute(operation, reconcile=reconcile,
                     authorize=lambda: self._guard(operation), read_guard=lambda: self._read_guard({"operation_id": parent}))
@@ -556,7 +559,9 @@ class ProvisioningSetupOwner:
                     guard()
                     if self.store._now().timestamp() >= operation["expires_at"]:
                         return OperationResult("refused", "operation_expired")
-                    early = selecting and self.browser_tasks.prepare_early(operation)
+                    if selecting:
+                        with timing.phase("worker", "task"):
+                            early = self.browser_tasks.prepare_early(operation)
                 # Source services own their durable operation IDs and lost-send rules.
                 # Retrying here retains that exact source, including on worker restart.
                 with timing.phase("source", "prepare"):

@@ -32,6 +32,18 @@ def test_phase_observation_is_scoped_closed_and_has_no_authority(setup, caplog):
     assert caplog.messages == ["event=sign_in_phase operation=frontend phase=command-send status=ok elapsed_ms=12"]
 
 
+def test_launch_steps_are_recorded_and_helper_steps_are_not_accepted_here(setup, caplog):
+    import logging
+    coordinator, owner, session, _ = setup
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    with client_for(coordinator, session) as client:
+        for phase, status in (("task-found", 204), ("launch", 204), ("waiting", 400), ("payload", 400)):
+            value = {"operation": "frontend", "phase": phase, "status": "ok", "elapsed_ms": 40}
+            assert client.post("/api/v1/desktop/setup/timing", json=value).status_code == status, phase
+    assert caplog.messages == ["event=sign_in_phase operation=frontend phase=task-found status=ok elapsed_ms=40",
+        "event=sign_in_phase operation=frontend phase=launch status=ok elapsed_ms=40"]
+
+
 def client_for(coordinator, session):
     app = FastAPI()
     app.include_router(desktop_router(coordinator))

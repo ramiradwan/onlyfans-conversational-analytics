@@ -44,6 +44,28 @@ it('sends closed click deltas without delaying command dispatch', async () => {
   expect(calls.some(([url]) => url.endsWith('/commands'))).toBe(true);
 });
 
+it('records when its click finds the browser task and when Chrome was launched, once each', async () => {
+  const calls = [];
+  const subject = new DesktopSetupClient({ generation, storage: storage(), receive() {},
+    uuid: () => operationId, stream: () => () => {},
+    openBrowser: async (owner, selected) => {
+      owner.browserTaskPrepared({ operation_id: selected, journey_id: '33333333-3333-4333-8333-333333333333', expires_at: 2000000000 });
+      return true;
+    },
+    request: async (url, options) => {
+      calls.push([url, options?.body && JSON.parse(options.body)]);
+      if (url.endsWith('/timing')) return new Promise(() => {});
+      if (url.includes('/operations/')) return response(record);
+      return response(record, 202);
+    } });
+  subject.value = initial(); subject.session = session; subject.connected = true;
+  await subject.act('browser.access');
+  subject.remember(operationId);
+  await subject.launchBrowser(true, null);
+  const phases = calls.filter(([url]) => url.endsWith('/timing')).map(([, body]) => body.phase);
+  expect(phases).toEqual(['click', 'command-send', 'task-found', 'launch']);
+});
+
 it('selects the saved setup theme before the entry module can paint', () => {
   const meta = { setAttribute: vi.fn() };
   const earlyDocument = { documentElement: { dataset: {} }, querySelector: () => meta };

@@ -56,6 +56,24 @@ def test_popup_timing_is_local_closed_and_cannot_reconcile(tmp_path, caplog):
         assert connection.execute("SELECT count(*) FROM desktop_setup_operations").fetchone()[0] == 0
 
 
+def test_a_helper_records_its_loading_steps_only_under_closed_labels(tmp_path, caplog):
+    import logging
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, _, _ = setup
+    _, _, browser = asyncio.run(browser_access(setup))
+    app = FastAPI()
+    app.include_router(browser_router(coordinator, tasks, None))
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    with TestClient(app, base_url=ORIGIN) as client:
+        for phase, status in (("payload", 204), ("waiting", 204), ("launch", 400), ("popup-create", 400)):
+            value = {"operation": "helper", "phase": phase, "status": "ok", "elapsed_ms": 90}
+            assert client.post("/api/v1/browser-tasks/timing", json=value, headers=headers(browser)).status_code == status, phase
+        value = {"operation": "helper", "phase": "waiting", "status": "ok", "elapsed_ms": 90, "url": "private"}
+        assert client.post("/api/v1/browser-tasks/timing", json=value, headers=headers(browser)).status_code == 400
+    assert caplog.messages == ["event=sign_in_phase operation=helper phase=payload status=ok elapsed_ms=90",
+        "event=sign_in_phase operation=helper phase=waiting status=ok elapsed_ms=90"]
+
+
 def test_popup_creation_timing_is_a_closed_local_observation(tmp_path, caplog):
     import logging
     from starlette.websockets import WebSocketDisconnect

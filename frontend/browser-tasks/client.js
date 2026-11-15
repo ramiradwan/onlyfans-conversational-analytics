@@ -56,6 +56,12 @@ export class BrowserTaskClient {
       await new Promise(resolve => { setTimeout(resolve, CLOSE_RETRY_MS); });
     }
   }
+  /** A sign-in helper the desktop opened records its loading steps, timed from its navigation start. */
+  loaded(phase) {
+    const elapsed = globalThis.performance?.now?.();
+    if (!this.automatic || !this.session || this.payload !== null || !Number.isFinite(elapsed)) return;
+    void this.json('timing', { operation: 'helper', phase, status: 'ok', elapsed_ms: Math.round(elapsed) }).catch(() => {});
+  }
   async json(path, body) {
     const response = await this.request('/api/v1/browser-tasks/' + path, { credentials: 'same-origin', redirect: 'error', cache: 'no-store',
       ...(path === 'timing' ? { keepalive: true } : {}),
@@ -90,6 +96,7 @@ export class BrowserTaskClient {
       if (session.role !== 'browser_task' || session.generation !== this.generation
         || !/^[A-Za-z0-9_-]{43}$/u.test(session.csrf_token)) throw new Error('task_changed');
       this.session = session;
+      this.loaded('payload');
       const payload = await this.prepared(run, first);
       if (run !== this.run || payload === null) return;
       if (!isPayloadProjection(payload) || payload.task.admission_generation !== this.generation || payload.task.task_id !== session.task_id
@@ -255,7 +262,7 @@ export class BrowserTaskClient {
     const own = isPreparingPayload(first) && first.task.admission_generation === this.generation
       && first.task.task_id === this.session.task_id && first.task.journey_id === this.session.journey_id;
     if (own) this.declared = first;
-    if (this.automatic && own) this.waiting = this.wait({ payload: first });
+    if (this.automatic && own) { this.waiting = this.wait({ payload: first }); this.loaded('waiting'); }
     while (isPreparingPayload(current)) {
       if (current.task.admission_generation !== this.generation || current.task.task_id !== this.session.task_id
         || current.task.journey_id !== this.session.journey_id
