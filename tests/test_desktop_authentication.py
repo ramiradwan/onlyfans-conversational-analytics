@@ -560,9 +560,16 @@ async def test_an_openable_fresh_provider_dispatch_uses_only_prepare_and_select(
         reads.append("decision")
         return {"state": "awaiting-authentication"}
 
-    async def prepare(*args):
-        pass
+    async def prepare(*args, **kwargs):
+        order.append(("prepare", kwargs))
 
+    real_prepare = ceremony_client.prepare
+
+    def prepare_ceremony(*args, **kwargs):
+        order.append("ceremony")
+        return real_prepare(*args, **kwargs)
+
+    ceremony_client.prepare = prepare_ceremony
     owner = ProvisioningSetupOwner.__new__(ProvisioningSetupOwner)
     owner.store, owner.ceremonies, owner.browser_tasks = coordinator.store, ceremonies, tasks
     owner.initial = owner.registered = SimpleNamespace(prepare=prepare, resume=lambda *_: order.append("resume"))
@@ -572,8 +579,8 @@ async def test_an_openable_fresh_provider_dispatch_uses_only_prepare_and_select(
     with caplog.at_level("INFO", logger="app.onboarding.timing"):
         result = await owner._connect(parent, reconcile=False)
     assert result.state == "waiting"
-    # The source wait resumes only after the selection is sent.
-    assert order == ["select", "resume"]
+    # The source wait resumes only after the ceremony and selection are sent.
+    assert order == [("prepare", {"resume": False}), "ceremony", "select", "resume"]
     phases = re.findall(r"operation=(\S+) phase=(\S+)", caplog.text)
     for point in (("ceremony-prepare", "persist"), ("authentication-select", "lookup"), ("authentication-select", "reserve"),
                   ("authentication-select", "guard"), ("source", "resume")):
@@ -908,7 +915,7 @@ async def test_fresh_provider_dispatch_reports_unconfirmed_when_expired_or_unava
         client.execute = refused
         client.read = read_state
 
-    async def prepare(*args):
+    async def prepare(*args, **kwargs):
         pass
 
     real_prepare = ceremony_client.prepare
@@ -968,7 +975,7 @@ async def _fresh_initial_connect(setup, *, fail=False, closed=0):
             return [row[0] for row in connection.execute("SELECT state FROM desktop_browser_tasks WHERE operation_id=?",
                                                          (parent["operation_id"],))]
 
-    async def prepare(*args):
+    async def prepare(*args, **kwargs):
         during.append(task_states())
         if fail:
             raise HostedGrantUnavailable("Source unavailable")

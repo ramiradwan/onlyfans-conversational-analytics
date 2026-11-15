@@ -78,17 +78,20 @@ class InitialInstallationEnrollment:
     def bind_effect_gate(self, lock, guard):
         self._effects.bind_effect_gate(lock, guard)
 
-    async def prepare(self, journey_id: str) -> dict:
+    async def prepare(self, journey_id: str, *, resume: bool = True) -> dict:
+        """Prepare or reuse the handoff. With resume=False the caller resumes its wait later."""
         async with self._lock:
             try:
                 row = self._current_journey(journey_id)
             except OnboardingJourneyUnavailable as error:
                 raise InitialHandoffRefused(error.code) from None
             if row["state"] in {"completing", "unknown", "completed"}:
-                self.resume(journey_id)
+                if resume:
+                    self.resume(journey_id)
                 return {"state": row["state"], "journey_id": journey_id}
             if row["state"] == "waiting" and row["handoff_reference"]:
-                self.resume(journey_id)
+                if resume:
+                    self.resume(journey_id)
                 return self._browser_entry(row)
             if row["state"] not in {"new", "preparing", "prepare-unknown"}:
                 raise InitialHandoffRefused("handoff_unconfirmed")
@@ -126,7 +129,8 @@ class InitialInstallationEnrollment:
             row = self._current_update(journey_id, state="waiting", handoff_reference=prepared["reference"],
                                        handoff_expires_at=prepared["expires_at"], reason=None)
             events.publish()
-            self.resume(journey_id)
+            if resume:
+                self.resume(journey_id)
             return self._browser_entry(row)
 
     def _current_journey(self, journey_id: str) -> dict:

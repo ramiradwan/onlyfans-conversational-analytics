@@ -723,3 +723,19 @@ async def test_hosted_sse_delivers_small_frames_before_eof_and_closes_on_cancell
             pending.cancel()
             await asyncio.gather(pending, return_exceptions=True)
         await stream.aclose()
+
+
+@pytest.mark.asyncio
+async def test_prepare_leaves_the_wait_to_a_caller_that_resumes_it(tmp_path):
+    store = _seeded_store(tmp_path / "auth.sqlite3", INSTANT)
+    client = _HandoffFixture()
+    worker = _enrollment_worker(store, client)
+    resumed = []
+    worker.resume = resumed.append
+    journey = worker.journeys.open()["journey_id"]
+    assert (await worker.prepare(journey, resume=False))["state"] == "waiting"
+    assert (await worker.prepare(journey, resume=False))["state"] == "waiting"
+    assert resumed == []
+    assert (await worker.prepare(journey))["state"] == "waiting"
+    assert resumed == [journey] and len(client.preparations) == 1
+    await worker.stop()

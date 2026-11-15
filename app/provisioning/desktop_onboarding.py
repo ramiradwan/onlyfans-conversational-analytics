@@ -540,7 +540,7 @@ class ProvisioningSetupOwner:
         selecting = (saved is None and not reconcile and selected["journey_kind"] == "initial-enrollment"
                      and intent is not None and intent["verb"] == "select"
                      and intent["expected_previous_attempt_id"] is None and self.ceremonies.authentication is not None)
-        early = False
+        early = deferred = False
         try:
             if saved is None:
                 guard()
@@ -550,7 +550,13 @@ class ProvisioningSetupOwner:
                 # Source services own their durable operation IDs and lost-send rules.
                 # Retrying here retains that exact source, including on worker restart.
                 with timing.phase("source", "prepare"):
-                    await source.prepare(selected["source_journey_id"])
+                    if selecting:
+                        # The source wait resumes after the selection, so its store reads
+                        # and requests do not run ahead of the ceremony and selection sends.
+                        await source.prepare(selected["source_journey_id"], resume=False)
+                        deferred = True
+                    else:
+                        await source.prepare(selected["source_journey_id"])
                 guard()
                 with timing.phase("binding", "binding"):
                     binding = self._binding(operation)
@@ -564,18 +570,16 @@ class ProvisioningSetupOwner:
                 with timing.phase("source", "resume"):
                     source.resume(selected["source_journey_id"])
             else:
-                # The source wait resumes after the selection, so its store reads and
-                # requests do not run ahead of the selection send.
-                try:
-                    authentication = await self.ceremonies.authentication.ensure_initial(operation, authorize=guard,
-                        read_guard=lambda: self._read_guard(operation), fresh=True)
-                finally:
-                    with timing.phase("source", "resume"):
-                        source.resume(selected["source_journey_id"])
+                authentication = await self.ceremonies.authentication.ensure_initial(operation, authorize=guard,
+                    read_guard=lambda: self._read_guard(operation), fresh=True)
         except Exception:
             if early:
                 self._withdraw_early_task(operation)
             raise
+        finally:
+            if deferred:
+                with timing.phase("source", "resume"):
+                    source.resume(selected["source_journey_id"])
         if selecting:
             entry = self.ceremonies.browser_entry(operation["operation_id"])
             timing.observe("authentication-select", "entry-pending" if entry is None else "entry-open", "ok", 0)
