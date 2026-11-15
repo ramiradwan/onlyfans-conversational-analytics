@@ -17,6 +17,7 @@ from app.provisioning.owner_effects import OwnerEffects
 from app.provisioning.progress import scoped_durable_provisioning_progress
 from app.provisioning.state import local_setup_facts
 from app.provisioning.setup_sources import SetupSourceLifecycle
+from app.security.browser_authentication import BrowserAuthenticationRefused
 from app.security.hosted_grants import HostedGrantUnavailable
 from app.security.installation_key import InstallationKeyError
 
@@ -532,6 +533,14 @@ class ProvisioningSetupOwner:
             raise
         if selecting:
             entry = self.ceremonies.browser_entry(operation["operation_id"])
+            if entry is None and authentication is not None and authentication["state"] not in {"expired", "unavailable"}:
+                # A selection reply can precede its browser step; one current read can open it at once.
+                try:
+                    authentication = await self.ceremonies.authentication.refresh(operation["operation_id"],
+                        authorize=lambda: self._read_guard(operation))
+                except (HostedGrantUnavailable, BrowserAuthenticationRefused):
+                    pass
+                entry = self.ceremonies.browser_entry(operation["operation_id"])
             if entry is not None:
                 self.browser_tasks.prepare(operation, "browser.authentication", deadline=datetime.fromisoformat(
                     entry["expires_at"].replace("Z", "+00:00")).timestamp())

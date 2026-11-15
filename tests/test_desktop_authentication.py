@@ -490,7 +490,7 @@ async def test_only_admitted_activation_preparation_emits_closed_task_recovery(t
 
 
 @pytest.mark.asyncio
-async def test_fresh_provider_dispatch_uses_only_prepare_and_select(setup):
+async def test_an_openable_fresh_provider_dispatch_uses_only_prepare_and_select(setup):
     from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
     coordinator, ceremonies, ceremony_client, parent, binding, _ = setup
     client = AuthenticationClient()
@@ -763,21 +763,27 @@ async def test_fresh_provider_dispatch_reports_unconfirmed_when_expired_or_unava
     assert result == OperationResult("outcome_unknown", "operation_unconfirmed")
 
 
-async def _fresh_initial_connect(setup, *, fail=False, openable=True):
+async def _fresh_initial_connect(setup, *, fail=False, closed=0):
     from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
     coordinator, ceremonies, ceremony_client, parent, binding, _ = setup
     client = AuthenticationClient()
-    original = client.execute
+    original, original_read = client.execute, client.read
+    remaining = [closed]
+
+    def read(*args, **kwargs):
+        result = original_read(*args, **kwargs)
+        if remaining[0]:
+            # A selection can name the attempt before its browser step is open.
+            remaining[0] -= 1
+            result = {**result, "actions": {**result["actions"], "open_browser": False}}
+        return result
 
     def select(*args, **kwargs):
         result = original(*args, **kwargs)
         client.calls.pop()
-        if not openable:
-            # A selection reply can name the attempt before its browser step is open.
-            result = {**result, "actions": {**result["actions"], "open_browser": False}}
         return result
 
-    client.execute = select
+    client.read, client.execute = read, select
     authentication = DesktopAuthentication(ceremonies.store, ceremonies, client)
     ceremonies.authentication = authentication
     with coordinator.store.database.transaction() as connection:
@@ -809,6 +815,7 @@ async def _fresh_initial_connect(setup, *, fail=False, openable=True):
     owner._guard, owner._binding = lambda *a, **k: None, lambda *_: binding
     owner._read_guard, owner.observe = lambda *_: None, lambda *_: None
     ceremonies.decisions = SimpleNamespace(refresh=decision)
+    owner.client_calls = client.calls
     return owner, parent, during, task_states
 
 
@@ -876,10 +883,21 @@ async def test_an_unconfirmed_provider_selection_withdraws_its_task_without_a_ce
 
 
 @pytest.mark.asyncio
-async def test_a_selection_not_yet_openable_keeps_its_early_task_until_a_read_adds_the_ceremony(setup):
-    owner, parent, _, task_states = await _fresh_initial_connect(setup, openable=False)
+async def test_a_selection_not_yet_openable_is_read_once_so_its_early_task_gets_the_ceremony_at_once(setup):
+    owner, parent, _, task_states = await _fresh_initial_connect(setup, closed=1)
     result = await owner._connect(parent, reconcile=False)
     assert result.state == "waiting"
+    assert [verb for verb, _ in owner.client_calls] == ["select", "read"]
+    assert owner.ceremonies.browser_entry(parent["operation_id"]) is not None
+    assert task_states() == ["pending"]
+
+
+@pytest.mark.asyncio
+async def test_a_selection_not_yet_openable_keeps_its_early_task_until_a_read_adds_the_ceremony(setup):
+    owner, parent, _, task_states = await _fresh_initial_connect(setup, closed=2)
+    result = await owner._connect(parent, reconcile=False)
+    assert result.state == "waiting"
+    assert [verb for verb, _ in owner.client_calls] == ["select", "read"]
     assert owner.ceremonies.browser_entry(parent["operation_id"]) is None
     assert task_states() == ["pending"]
     with owner.store.database.transaction() as connection:
