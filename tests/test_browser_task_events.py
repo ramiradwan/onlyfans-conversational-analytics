@@ -250,3 +250,30 @@ def test_open_of_a_sign_in_task_still_preparing_mints_no_entry(tmp_path):
         assert client.post(path, json={}, headers=headers(native)).json() == {"state": "unavailable"}
     with coordinator.store.database.read() as connection:
         assert connection.execute("SELECT count(*) FROM desktop_admission_entries").fetchone()[0] == 0
+
+
+def test_a_preparing_sign_in_poll_reads_its_payload_through_one_store_connection(tmp_path, monkeypatch):
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, _, _ = setup
+    _, task, browser = asyncio.run(browser_access(setup))
+    with coordinator.store.database.transaction() as connection:
+        connection.execute("UPDATE desktop_browser_tasks SET purpose='browser.authentication' WHERE task_id=?",
+                           (task["task_id"],))
+
+    class Preparing:
+        def browser_entry(self, operation_id):
+            with coordinator.store.database.read() as connection:
+                connection.execute("SELECT 1 FROM desktop_setup_operations WHERE operation_id=?", (operation_id,))
+            return None
+
+    database, opened = coordinator.store.database, []
+    connect = database.connect
+    monkeypatch.setattr(database, "connect", lambda *args, **kwargs: opened.append(1) or connect(*args, **kwargs))
+    app = FastAPI()
+    app.include_router(browser_router(coordinator, tasks, Preparing()))
+    with TestClient(app, base_url=ORIGIN) as client:
+        opened.clear()
+        response = client.get("/api/v1/browser-tasks/payload", headers=headers(browser))
+        assert response.status_code == 200 and response.json()["ceremony"] is None
+        assert response.json()["task"]["task_id"] == task["task_id"]
+        assert len(opened) == 1

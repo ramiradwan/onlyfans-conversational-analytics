@@ -82,6 +82,11 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
 
     @router.get("/api/v1/browser-tasks/payload")
     def payload(request: Request):
+        # A preparing helper polls this route, so its reads share one store connection.
+        with coordinator.store.database.shared_reads():
+            return task_payload(request)
+
+    def task_payload(request):
         _, task = task_session(request)
         entry = (ceremonies.browser_entry(task["operation_id"]) if ceremonies is not None
             and task["purpose"] == "browser.authentication" and task["state"] != "completed" else None)
