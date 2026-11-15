@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import nullcontext
 
 from app.onboarding import timing
 from app.onboarding.contract import canonical
@@ -26,9 +27,9 @@ class BrowserCeremonies:
         self._lock = asyncio.Lock()
         self._effects = OwnerEffects()
 
-    def row(self, operation_id):
+    def row(self, operation_id, *, connection=None):
         require_journey(operation_id)
-        with self.store.database.read() as connection:
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
             row = connection.execute("SELECT * FROM desktop_browser_ceremonies WHERE operation_id=?", (operation_id,)).fetchone()
         return None if row is None else dict(row)
 
@@ -107,8 +108,8 @@ class BrowserCeremonies:
                 self._bind(row, result)
             return result
 
-    def _journey(self, operation_id):
-        with self.store.database.read() as connection:
+    def _journey(self, operation_id, *, connection=None):
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
             row = connection.execute("SELECT journey_id FROM desktop_setup_operations WHERE operation_id=?", (operation_id,)).fetchone()
         if row is None:
             raise HostedGrantUnavailable("Browser ceremony owner is unavailable")

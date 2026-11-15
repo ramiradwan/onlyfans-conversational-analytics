@@ -99,6 +99,28 @@ async def test_choice_is_durable_before_network_and_immutable_on_duplicate(auth)
 
 
 @pytest.mark.asyncio
+async def test_a_fresh_selection_opens_the_store_once_before_it_is_sent(auth):
+    _, ceremonies, authentication, client, _, _, _ = auth
+    operation, _ = accept(auth)
+    database = ceremonies.store.database
+    opened, connect, original = [], database.connect, client.execute
+
+    def counted():
+        opened.append(1)
+        return connect()
+
+    def execute(verb, *args, **kwargs):
+        before.append(len(opened))
+        return original(verb, *args, **kwargs)
+
+    before = []
+    database.connect, client.execute = counted, execute
+    assert (await authentication.execute(operation, authorize=authorized, read_guard=authorized,
+                                         reconcile=False)).state == "waiting"
+    assert before == [1]
+
+
+@pytest.mark.asyncio
 async def test_lost_selection_reply_restart_reads_exact_child_without_resending(auth):
     _, ceremonies, authentication, client, parent, _, _ = auth
     operation, _ = accept(auth)

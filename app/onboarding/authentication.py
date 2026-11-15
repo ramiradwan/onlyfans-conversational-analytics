@@ -88,8 +88,8 @@ class DesktopAuthentication:
         return value if (value["actions"]["open_browser"] and timestamp(value["expires_at"]) > self.store._now()
             and attempt is not None and attempt["authentication_attempt_id"] == request["authentication_attempt_id"]) else None
 
-    def _request(self, parent, attempt=None):
-        row = self.ceremonies.row(parent)
+    def _request(self, parent, attempt=None, *, connection=None):
+        row = self.ceremonies.row(parent) if connection is None else self.ceremonies.row(parent, connection=connection)
         if row is None or row["ceremony_id"] is None:
             raise HostedGrantUnavailable("Authentication scope is unavailable")
         return row, {"profile": PROFILE, "operation_id": row["hosted_operation_id"],
@@ -285,11 +285,16 @@ class DesktopAuthentication:
         events.publish()
         return dict(operation)
 
-    async def _recover_closed(self, parent, *, authorize):
-        with self.store.database.read() as connection:
-            rows = connection.execute("SELECT c.*,a.request_json FROM desktop_authentication_closures c "
-                "JOIN desktop_authentication_commands a ON a.operation_id=c.operation_id "
-                "WHERE a.parent_operation_id=? AND c.state='pending'", (parent,)).fetchall()
+    @staticmethod
+    def _closures(connection, parent):
+        return connection.execute("SELECT c.*,a.request_json FROM desktop_authentication_closures c "
+            "JOIN desktop_authentication_commands a ON a.operation_id=c.operation_id "
+            "WHERE a.parent_operation_id=? AND c.state='pending'", (parent,)).fetchall()
+
+    async def _recover_closed(self, parent, *, authorize, rows=None):
+        if rows is None:
+            with self.store.database.read() as connection:
+                rows = self._closures(connection, parent)
         for pending in rows:
             request = json.loads(pending["request_json"])
             row, expected = self._request(parent, request["authentication_attempt_id"])
@@ -323,28 +328,30 @@ class DesktopAuthentication:
     def _reserve(self, operation):
         intent = json.loads(operation["owner_scope_json"])["authentication_intent"]
         parent, verb = intent["parent_operation_id"], intent["verb"]
-        row, request = self._request(parent, intent["authentication_attempt_id"])
-        if self.ceremonies._journey(parent) != operation["journey_id"]:
-            raise HostedGrantUnavailable("Authentication journey changed")
-        if verb in {"select", "switch"}:
-            request.update(provider=intent["provider"], expected_previous_attempt_id=intent["expected_previous_attempt_id"])
-        encoded = canonical(request).decode()
+        # One transaction reads the scope and pending closures and records the command.
         with self.store.database.transaction() as connection:
+            row, request = self._request(parent, intent["authentication_attempt_id"], connection=connection)
+            if self.ceremonies._journey(parent, connection=connection) != operation["journey_id"]:
+                raise HostedGrantUnavailable("Authentication journey changed")
+            if verb in {"select", "switch"}:
+                request.update(provider=intent["provider"], expected_previous_attempt_id=intent["expected_previous_attempt_id"])
+            encoded = canonical(request).decode()
+            closures = self._closures(connection, parent)
             previous = connection.execute("SELECT * FROM desktop_authentication_commands WHERE operation_id=?",
                 (operation["operation_id"],)).fetchone()
             if previous is not None:
                 if (previous["request_json"], previous["verb"], previous["parent_operation_id"]) != (encoded, verb, parent):
                     raise HostedGrantUnavailable("Authentication command changed")
-                return row, request, verb, False
+                return row, request, verb, False, closures
             connection.execute("INSERT INTO desktop_authentication_commands VALUES (?,?,?,?)",
                 (operation["operation_id"], parent, verb, encoded))
-        return row, request, verb, True
+        return row, request, verb, True, closures
 
     async def execute(self, operation, *, authorize, read_guard, reconcile, use_selection=False):
         async with self._lock:
-            row, request, verb, fresh = self._reserve(operation)
+            row, request, verb, fresh, closures = self._reserve(operation)
             parent = row["operation_id"]
-            await self._recover_closed(parent, authorize=read_guard)
+            await self._recover_closed(parent, authorize=read_guard, rows=closures)
             if fresh and not reconcile:
                 authorize()
                 if self.store._now().timestamp() >= operation["expires_at"]:
