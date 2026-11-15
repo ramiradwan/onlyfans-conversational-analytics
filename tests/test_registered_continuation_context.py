@@ -329,8 +329,8 @@ def test_a_send_guard_checks_its_source_through_one_store_connection(owner):
 
     database.connect = counted
     assert setup_owner._guard(operation).journey_id == original.journey_id
-    # One for the source and one for the installation key reference.
-    assert len(opened) == 2
+    # The source and installation key reference checks share one connection.
+    assert len(opened) == 1
 
 
 @pytest.mark.parametrize("state", ["expired", "revoked"])
