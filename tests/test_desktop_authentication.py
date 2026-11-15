@@ -597,6 +597,36 @@ async def test_a_hint_completes_its_task_with_two_store_openings(auth):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["none", "projection", "stale", "closure"])
+async def test_the_refresh_after_a_completing_hint_uses_its_saved_projection_once(auth, change):
+    import app.onboarding.authentication as module
+    coordinator, ceremonies, authentication, client, parent, _, _ = auth
+    operation, _ = accept(auth)
+    await authentication.execute(operation, authorize=authorized, read_guard=authorized, reconcile=False)
+    task_id = BrowserTasks(coordinator.admissions, extension_id="a" * 32).prepare(operation, "browser.authentication")
+    client.attempts[client.current]["state"] = "admitted"
+    assert await authentication.reconcile_task(operation["operation_id"], authorize=authorized) is True
+    if change == "projection":
+        client.attempts[client.current]["state"] = "selected"
+        await authentication._read(parent["operation_id"], authorize=authorized)
+    elif change == "stale":
+        authentication._settled[parent["operation_id"]] = (
+            authentication._settled[parent["operation_id"]][0] - module.SETTLED_SECONDS - 1,
+            *authentication._settled[parent["operation_id"]][1:])
+    elif change == "closure":
+        with coordinator.store.database.transaction() as connection:
+            connection.execute("INSERT INTO desktop_authentication_closures VALUES (?,?,?,'pending')",
+                (operation["operation_id"], task_id, 2 ** 40))
+    before = len(client.calls)
+    result = await authentication.refresh(parent["operation_id"], authorize=authorized)
+    assert (len(client.calls) == before) == (change == "none")
+    if change == "none":
+        assert result["state"] == "admitted"
+        await authentication.refresh(parent["operation_id"], authorize=authorized)
+        assert len(client.calls) == before + 1
+
+
+@pytest.mark.asyncio
 async def test_a_proof_read_guard_checks_its_ceremony_and_key_through_one_store_connection(auth):
     from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
     coordinator, ceremonies, _, _, parent, _, _ = auth

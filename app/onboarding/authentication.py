@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from contextlib import nullcontext
 
 from app.onboarding import timing
@@ -16,6 +17,7 @@ from app.security.hosted_grants import HostedGrantUnavailable
 from app.security.initial_handoff import timestamp
 
 PROBE_INTERVAL_SECONDS = 2
+SETTLED_SECONDS = 5
 
 
 class DesktopAuthentication:
@@ -29,6 +31,7 @@ class DesktopAuthentication:
         self._effects = OwnerEffects()
         self._probed: dict[str, str] = {}
         self._prefetched = {}
+        self._settled = {}
 
     def presentation(self, journey_id, action, *, connection=None):
         with (self.store.database.read() if connection is None else nullcontext(connection)) as current:
@@ -207,6 +210,12 @@ class DesktopAuthentication:
                     and attempt is not None and attempt["authentication_attempt_id"] == expected["authentication_attempt_id"])
         if closed:
             timing.completed(operation_id)
+            # The parent's next refresh can use this projection instead of reading it again.
+            self._settled.pop(row["operation_id"], None)
+            if len(self._settled) >= 64:
+                self._settled.pop(next(iter(self._settled)))
+            self._settled[row["operation_id"]] = (time.monotonic(), canonical(result).decode(),
+                (row["binding_json"], row["ceremony_id"]))
         events.publish()
         return True if closed else False if still_open else None
 
@@ -248,8 +257,27 @@ class DesktopAuthentication:
 
     async def refresh(self, parent, *, authorize):
         async with self._lock:
-            await self._recover_closed(parent, authorize=authorize)
+            with self.store.database.read() as connection:
+                rows = self._closures(connection, parent)
+                settled = None if rows else self._settled_projection(parent, connection)
+            if settled is not None:
+                return settled
+            await self._recover_closed(parent, authorize=authorize, rows=rows)
             return await self._read(parent, authorize=authorize)
+
+    def _settled_projection(self, parent, connection):
+        """The projection a hinted read just saved when it completed the task, once and only while unchanged."""
+        settled = self._settled.pop(parent, None)
+        if settled is None or time.monotonic() - settled[0] > SETTLED_SECONDS:
+            return None
+        current = connection.execute("SELECT projection_json FROM desktop_authentication_projections WHERE operation_id=?",
+            (parent,)).fetchone()
+        ceremony = self.ceremonies.row(parent, connection=connection)
+        if (current is None or current["projection_json"] != settled[1] or ceremony is None
+                or (ceremony["binding_json"], ceremony["ceremony_id"]) != settled[2]):
+            return None
+        value = json.loads(current["projection_json"])
+        return value if timestamp(value["expires_at"]) > self.store._now() else None
 
     def close_for_task(self, task_id, generation, *, authorize):
         """Accept withdrawal of one admitted browser task, never a native command."""
