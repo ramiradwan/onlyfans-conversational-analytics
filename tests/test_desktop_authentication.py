@@ -639,6 +639,7 @@ async def test_a_hinted_read_guard_checks_through_one_store_connection(auth):
     owner.store = SimpleNamespace(database=coordinator.store.database, installation_key_reference=lambda **_: reference)
     shared = []
     owner._guard = lambda current, *, connection=None: shared.append(connection is not None)
+    owner.hold_reads = lambda operation_id: None
 
     async def reconcile_task(operation_id, *, authorize):
         authorize()

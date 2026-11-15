@@ -15,7 +15,7 @@ from referencing import Registry, Resource
 from app.onboarding import timing
 from app.core.resource_paths import resource_path
 from app.security.hosted_grants import HostedGrantUnavailable, HostedTransport, require_hosted_origin
-from app.security.initial_handoff import _require_proof_budget, timestamp
+from app.security.initial_handoff import HeldChallenge, _require_proof_budget, timestamp
 from app.security.installation_continuation import (
     ExistingInstallationKey, _decode, _document, canonical_request,
 )
@@ -98,16 +98,7 @@ class BrowserCeremonyClient:
         self.transport, self.key, self.monotonic, self.clock = transport, key, monotonic, clock
         self.contract = _contract()
 
-    def envelope(self, operation: str, request: dict, *, before_send=None) -> dict:
-        if operation not in {"prepare", "read", "recover", "cancel"}:
-            raise ValueError("Invalid browser ceremony operation")
-        purpose = "browser-ceremony-" + operation
-        request = _document(canonical_request(request), limit=MAX_REQUEST_BYTES)
-        challenge_request = {"profile": PROOF_PROFILE,
-                             "target": {"operation": purpose, "request": request}}
-        self.contract.validate("proof-challenge-request", challenge_request)
-        if before_send is not None:
-            before_send()
+    def _key(self, request):
         # Initial source preparation already created the key. A task can only
         # reopen it, including when that same key has since been registered.
         key = self.key.reopen_existing()
@@ -115,14 +106,46 @@ class BrowserCeremonyClient:
         if (binding["installation_key_id"], binding["installation_key_jkt"]) != (
                 key.installation_key_id, key.installation_key_jkt):
             raise HostedGrantUnavailable("Browser ceremony key changed")
+        return key
+
+    def _challenge(self, operation, request, *, before_send):
+        challenge_request = {"profile": PROOF_PROFILE,
+                             "target": {"operation": "browser-ceremony-" + operation, "request": request}}
+        self.contract.validate("proof-challenge-request", challenge_request)
+        if before_send is not None:
+            before_send()
+        key = self._key(request)
         started = self.monotonic()
         challenge = self._request(CHALLENGE_PATH, challenge_request,
                                   schema="proof-challenge-response", before_send=before_send)
         _require_proof_budget(started, self.monotonic())
+        if challenge["request_digest"] != hashlib.sha256(canonical_request(request)).hexdigest():
+            raise HostedGrantUnavailable("Browser ceremony challenge changed")
+        timestamp(challenge["expires_at"])
+        return HeldChallenge(canonical_request(request), challenge, started), key
+
+    def prefetch_read(self, request: dict, *, before_send=None) -> HeldChallenge:
+        """Fetch the read challenge for this exact request ahead of the read that spends it."""
+        request = _document(canonical_request(request), limit=MAX_REQUEST_BYTES)
+        return self._challenge("read", request, before_send=before_send)[0]
+
+    def envelope(self, operation: str, request: dict, *, before_send=None, prefetched=None) -> dict:
+        if operation not in {"prepare", "read", "recover", "cancel"}:
+            raise ValueError("Invalid browser ceremony operation")
+        purpose = "browser-ceremony-" + operation
+        request = _document(canonical_request(request), limit=MAX_REQUEST_BYTES)
+        if (prefetched is not None and operation == "read"
+                and prefetched.take(canonical_request(request), self.monotonic(), self.clock())):
+            ticket = prefetched
+            if before_send is not None:
+                before_send()
+            key = self._key(request)
+        else:
+            ticket, key = self._challenge(operation, request, before_send=before_send)
+        challenge, started = ticket.challenge, ticket.started
         digest = hashlib.sha256(canonical_request(request)).digest()
         if challenge["request_digest"] != digest.hex():
             raise HostedGrantUnavailable("Browser ceremony challenge changed")
-        timestamp(challenge["expires_at"])
         route = self.contract.proof["purposes"][purpose]
         fields = (_decode(challenge["challenge"], 32), route["method"].encode(),
                   route["path"].encode(), digest, purpose.encode(),
@@ -147,8 +170,8 @@ class BrowserCeremonyClient:
     def prepare(self, request: dict, *, before_send=None) -> dict:
         return self.execute("prepare", request, before_send=before_send)
 
-    def read(self, request: dict, *, expires_at: str | None = None, before_send=None) -> dict:
-        return self.execute("read", request, expires_at=expires_at, before_send=before_send)
+    def read(self, request: dict, *, expires_at: str | None = None, before_send=None, prefetched=None) -> dict:
+        return self.execute("read", request, expires_at=expires_at, before_send=before_send, prefetched=prefetched)
 
     def recover(self, request: dict, *, expires_at: str | None = None, before_send=None) -> dict:
         return self.execute("recover", request, expires_at=expires_at, before_send=before_send)
@@ -157,8 +180,8 @@ class BrowserCeremonyClient:
         return self.execute("cancel", request, expires_at=expires_at, before_send=before_send)
 
     def execute(self, operation: str, request: dict, *, expires_at: str | None = None,
-                before_send=None) -> dict:
-        envelope = self.envelope(operation, request, before_send=before_send)
+                before_send=None, prefetched=None) -> dict:
+        envelope = self.envelope(operation, request, before_send=before_send, prefetched=prefetched)
         result = self._request(PATH_PREFIX + operation, envelope,
                                schema=operation + "-response", before_send=before_send)
         self.validate_result(operation, request, result, expires_at=expires_at)

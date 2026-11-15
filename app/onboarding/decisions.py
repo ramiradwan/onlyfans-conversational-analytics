@@ -8,6 +8,7 @@ from contextlib import nullcontext
 
 from app.onboarding.contract import canonical
 from app.onboarding.coordinator import OperationResult
+from app.onboarding.held_reads import HeldReads
 from app.provisioning.events import events
 from app.provisioning.owner_effects import OwnerEffects
 from app.security.desktop_decision import PROFILE, DesktopDecisionRefused
@@ -19,6 +20,7 @@ class DesktopDecisions:
     def __init__(self, store, ceremonies, client):
         self.store, self.ceremonies, self.client = store, ceremonies, client
         self._effects = OwnerEffects()
+        self._held = HeldReads()
 
     def _projection(self, journey_id, action, *, connection=None):
         """Read only a still-current local display, never contact Provider."""
@@ -53,11 +55,11 @@ class DesktopDecisions:
             return None
         return selected
 
-    def _request(self, operation_id):
-        row = self.ceremonies.row(operation_id)
+    def _request(self, operation_id, *, connection=None):
+        row = self.ceremonies.row(operation_id, connection=connection)
         if row is None or row["ceremony_id"] is None:
             raise HostedGrantUnavailable("Decision scope is unavailable")
-        with self.store.database.read() as connection:
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
             authentication = connection.execute("SELECT revision FROM desktop_authentication_projections WHERE operation_id=?",
                 (operation_id,)).fetchone()
         row["authentication_revision"] = 0 if authentication is None else authentication["revision"]
@@ -91,12 +93,27 @@ class DesktopDecisions:
                 (row["operation_id"], encoded, row["provider_revision"]))
         events.publish()
 
+    def hold_read(self, operation_id, *, authorize, connection=None):
+        """Start fetching this decision's next read challenge, so a following refresh sends at once."""
+        if not hasattr(self.client, "prefetch_read"):
+            return False
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
+            try:
+                _, request = self._request(operation_id, connection=connection)
+            except HostedGrantUnavailable:
+                return False
+            journey = self.ceremonies._journey(operation_id, connection=connection)
+        return self._held.hold(operation_id, lambda: self._effects.run(self.client.prefetch_read, request,
+            before_send=authorize, journey_id=journey, protected=False))
+
     async def refresh(self, operation_id, *, authorize):
         row, request = self._request(operation_id)
+        ticket = await self._held.take(operation_id)
+        options = {} if ticket is None else {"prefetched": ticket}
         with timing.phase("decision-read", "read-end"):
             result = await self._effects.run(self.client.read, request,
                 expires_at=row["provider_expires_at"], before_send=authorize,
-                journey_id=self.ceremonies._journey(operation_id), protected=False)
+                journey_id=self.ceremonies._journey(operation_id), protected=False, **options)
         self._save(row, result)
         return result
 
@@ -135,6 +152,7 @@ class DesktopDecisions:
         return OperationResult("refused", "operation_unconfirmed" if reconcile else "operation_refused")
 
     async def stop(self):
+        self._held.close()
         self._effects.close_admission()
         await self._effects.drain()
         close = getattr(self.client.transport, "close", None)

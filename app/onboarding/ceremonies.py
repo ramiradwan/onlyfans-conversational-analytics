@@ -7,6 +7,7 @@ from contextlib import nullcontext
 
 from app.onboarding import timing
 from app.onboarding.contract import canonical
+from app.onboarding.held_reads import HeldReads
 from app.persistence.onboarding import require_journey
 from app.provisioning.events import events
 from app.provisioning.owner_effects import OwnerEffects
@@ -26,6 +27,19 @@ class BrowserCeremonies:
             store, self, authentication_client, providers=authentication_providers, waits=wait_client)
         self._lock = asyncio.Lock()
         self._effects = OwnerEffects()
+        self._held = HeldReads()
+
+    def hold_read(self, operation_id, *, authorize, connection=None):
+        """Start fetching this ceremony's next read challenge, so a following read sends at once."""
+        if not hasattr(self.client, "prefetch_read"):
+            return False
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
+            row = self.row(operation_id, connection=connection)
+            if row is None or row["ceremony_id"] is None:
+                return False
+            journey = self._journey(operation_id, connection=connection)
+        return self._held.hold(operation_id, lambda: self._effects.run(self.client.prefetch_read, self.request(row),
+            before_send=authorize, journey_id=journey, protected=False))
 
     def row(self, operation_id, *, connection=None):
         require_journey(operation_id)
@@ -85,9 +99,11 @@ class BrowserCeremonies:
             return await self._read(row, authorize=authorize)
 
     async def _read(self, row, *, authorize):
+        ticket = await self._held.take(row["operation_id"])
+        options = {} if ticket is None else {"prefetched": ticket}
         with timing.phase("ceremony-read", "read-end"):
             result = await self._effects.run(self.client.read, self.request(row), expires_at=row["provider_expires_at"],
-                before_send=authorize, journey_id=self._journey(row["operation_id"]), protected=False)
+                before_send=authorize, journey_id=self._journey(row["operation_id"]), protected=False, **options)
         if result["status"] == "found":
             self._bind(row, result)
         return result
@@ -165,6 +181,7 @@ class BrowserCeremonies:
     async def stop(self):
         # The proof clients can share one transport; drain all of them before any close.
         owners = tuple(owner for owner in (self.authentication, self.decisions) if owner is not None)
+        self._held.close()
         for effects in (*(owner._effects for owner in owners), self._effects):
             effects.close_admission()
         for effects in (*(owner._effects for owner in owners), self._effects):

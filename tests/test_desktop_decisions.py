@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import json
 from datetime import timedelta
@@ -198,3 +199,70 @@ async def test_retired_switch_needs_fresh_decision_but_does_not_erase_live_custo
     coordinator.owner.scope["desktop_authentication"] = authentication.presentation(parent["journey_id"], "account.connect")
     snapshot = coordinator.read(native)
     assert snapshot["decision"] is not None and "account.confirm" in snapshot["allowed_actions"]
+
+
+@pytest.mark.asyncio
+async def test_held_challenges_are_spent_by_the_next_ceremony_and_decision_reads(decision):
+    from app.security.hosted_grants import HostedGrantUnavailable
+    _, ceremonies, decisions, client, parent, _, _, ceremony_client = decision
+    held, spent = [], []
+
+    def prefetch(kind):
+        def prefetch_read(request, *, before_send):
+            before_send()
+            held.append((kind, copy.deepcopy(request)))
+            return SimpleNamespace(kind=kind)
+        return prefetch_read
+
+    def spending(kind, read):
+        def spend(request, *, prefetched=None, **options):
+            spent.append((kind, getattr(prefetched, "kind", None)))
+            return read(request, **options)
+        return spend
+
+    ceremony_client.prefetch_read, client.prefetch_read = prefetch("ceremony"), prefetch("decision")
+    ceremony_client.read, client.read = spending("ceremony", ceremony_client.read), spending("decision", client.read)
+    guards = []
+    operation_id = parent["operation_id"]
+    assert ceremonies.hold_read(operation_id, authorize=lambda: guards.append(True))
+    assert decisions.hold_read(operation_id, authorize=lambda: guards.append(True))
+    assert not ceremonies.hold_read(operation_id, authorize=lambda: guards.append(True))
+    await ceremonies.reconcile(operation_id, authorize=authorized)
+    await decisions.refresh(operation_id, authorize=authorized)
+    await ceremonies.reconcile(operation_id, authorize=authorized)
+    assert sorted(kind for kind, _ in held) == ["ceremony", "decision"] and len(guards) == 2
+    row = ceremonies.row(operation_id)
+    assert dict(held)["ceremony"] == ceremonies.request(row)
+    assert dict(held)["decision"]["ceremony_id"] == row["ceremony_id"]
+    assert spent == [("ceremony", "ceremony"), ("decision", "decision"), ("ceremony", None)]
+
+    def failing(request, *, before_send):
+        raise HostedGrantUnavailable("Challenge unavailable")
+
+    ceremony_client.prefetch_read = failing
+    assert ceremonies.hold_read(operation_id, authorize=authorized)
+    await ceremonies.reconcile(operation_id, authorize=authorized)
+    assert spent[-1] == ("ceremony", None)
+
+
+@pytest.mark.asyncio
+async def test_a_hint_holds_its_parent_read_challenges_before_its_own_read(decision):
+    from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
+    coordinator, ceremonies, _, client, parent, _, _, ceremony_client = decision
+    order = []
+    ceremony_client.prefetch_read = lambda request, *, before_send: order.append("ceremony")
+    client.prefetch_read = lambda request, *, before_send: order.append("decision")
+
+    async def reconcile_task(operation_id, *, authorize):
+        await asyncio.sleep(0.05)
+        order.append("hinted")
+        return True
+
+    ceremonies.authentication = SimpleNamespace(parent_operation=lambda operation_id, **_: parent["operation_id"],
+                                                reconcile_task=reconcile_task)
+    owner = ProvisioningSetupOwner.__new__(ProvisioningSetupOwner)
+    owner.store, owner.ceremonies = coordinator.store, ceremonies
+    owner._guard = lambda *_, **__: None
+    owner._read_guard = lambda *_: None
+    assert await owner.reconcile_hint({"operation_id": "child"}) is True
+    assert sorted(order[:2]) == ["ceremony", "decision"] and order[2] == "hinted"

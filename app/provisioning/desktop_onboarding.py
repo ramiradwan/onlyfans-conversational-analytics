@@ -328,7 +328,17 @@ class ProvisioningSetupOwner:
                 self._guard(operation, connection=connection)
                 parent = self.ceremonies.authentication.parent_operation(operation["operation_id"], connection=connection)
                 self._read_guard({"operation_id": parent}, connection)
+        self.hold_reads(operation["operation_id"])
         return await self.ceremonies.authentication.reconcile_task(operation["operation_id"], authorize=guard)
+
+    def hold_reads(self, operation_id):
+        """Fetch the parent's ceremony and decision read challenges while the hinted read runs."""
+        with self.store.database.read() as connection:
+            parent = self.ceremonies.authentication.parent_operation(operation_id, connection=connection)
+            read_guard = lambda: self._read_guard({"operation_id": parent})
+            self.ceremonies.hold_read(parent, authorize=read_guard, connection=connection)
+            if self.ceremonies.decisions is not None:
+                self.ceremonies.decisions.hold_read(parent, authorize=read_guard, connection=connection)
 
     def authorize_initial_scope(self, journey_id, scope):
         """Bind initial completion to the accepted intent, including its exact recovery."""

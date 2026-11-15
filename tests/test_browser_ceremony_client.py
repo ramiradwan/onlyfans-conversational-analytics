@@ -278,3 +278,34 @@ def test_origin_checks_build_no_https_client(monkeypatch, build):
                    "https://provider.example?x=1", "https://provider.example#f", "https://"):
         with pytest.raises(ValueError):
             check(origin)
+
+
+@pytest.mark.parametrize("delay", [0, 39, 40])
+def test_held_read_challenge_is_spent_once_and_only_while_fresh(delay):
+    elapsed = [0.0]
+    item = vector()
+    subject, transport, key = client(item, found(item["request"]), monotonic=lambda: elapsed[0])
+    ticket = subject.prefetch_read(item["request"])
+    assert [call[1] for call in transport.calls] == [CHALLENGE_PATH] and not key.signed
+    elapsed[0] = delay
+    subject.read(item["request"], prefetched=ticket)
+    subject.read(item["request"], prefetched=ticket)
+    paths = [call[1] for call in transport.calls]
+    assert paths.count(CHALLENGE_PATH) == (2 if delay < 40 else 3)
+    assert paths.count(PATH_PREFIX + "read") == 2 and key.signed == 2
+
+
+@pytest.mark.parametrize("change", ["key", "guard"])
+def test_held_read_challenge_never_signs_a_changed_scope(change):
+    item = vector()
+    subject, transport, key = client(item, found(item["request"]))
+    ticket = subject.prefetch_read(item["request"])
+    guard = None
+    if change == "key":
+        key.reference = replace(key.reference, installation_key_id="different-key")
+    else:
+        def guard():
+            raise HostedGrantUnavailable("Scope changed")
+    with pytest.raises(HostedGrantUnavailable):
+        subject.read(item["request"], prefetched=ticket, before_send=guard)
+    assert len(transport.calls) == 1 and not key.signed

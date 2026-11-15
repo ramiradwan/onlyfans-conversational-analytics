@@ -279,3 +279,33 @@ def test_published_parser_negatives_are_rejected():
         if not case["valid"]:
             with pytest.raises((HostedGrantUnavailable, UnicodeError)):
                 _document(case["document"].encode(), limit=case["limit"])
+
+
+@pytest.mark.parametrize("delay", [0, 39, 40])
+def test_held_read_challenge_is_spent_once_and_only_while_fresh(delay):
+    elapsed = [0.0]
+    item = vector()
+    subject, transport, key = client(item, found(item["request"]), monotonic=lambda: elapsed[0])
+    ticket = subject.prefetch_read(item["request"])
+    assert [call[1] for call in transport.calls] == [CHALLENGE_PATH] and not key.signed
+    elapsed[0] = delay
+    subject.read(item["request"], prefetched=ticket)
+    subject.read(item["request"], prefetched=ticket)
+    paths = [call[1] for call in transport.calls]
+    assert paths.count(CHALLENGE_PATH) == (2 if delay < 40 else 3)
+    assert paths.count(PATH_PREFIX + "read") == 2 and key.signed == 2
+
+
+def test_held_read_challenge_never_spends_on_submit_or_a_changed_key():
+    item = vector()
+    subject, transport, key = client(item, found(item["request"]))
+    ticket = subject.prefetch_read(item["request"])
+    key.reference = replace(key.reference, installation_key_id="different-key")
+    with pytest.raises(HostedGrantUnavailable):
+        subject.read(item["request"], prefetched=ticket)
+    assert len(transport.calls) == 1 and not key.signed
+    held = client(item)[0].prefetch_read(item["request"])
+    submit = vector("submit")
+    subject, transport, _ = client(submit)
+    subject.envelope("submit", submit["request"], prefetched=held)
+    assert [call[1] for call in transport.calls] == [CHALLENGE_PATH] and not held.used

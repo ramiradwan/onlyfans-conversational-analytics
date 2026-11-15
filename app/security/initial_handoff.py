@@ -8,8 +8,10 @@ import math
 import re
 import time
 from contextlib import nullcontext
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
+from threading import Lock
 from typing import AsyncIterator, Callable, Mapping
 
 import httpx
@@ -102,6 +104,29 @@ def _require_proof_budget(started: float, current: float) -> None:
         valid = False
     if not valid:
         raise HostedGrantUnavailable("Proof construction budget exhausted")
+
+
+# A held challenge is used well inside the proof budget, leaving time to sign and send.
+HELD_CHALLENGE_SECONDS = 40
+
+
+@dataclass
+class HeldChallenge:
+    """A single-use read challenge for one exact canonical request, fetched before it is needed."""
+    request: bytes
+    challenge: dict
+    started: float
+    used: bool = False
+    lock: Lock = field(default_factory=Lock)
+
+    def take(self, request: bytes, now: float, wall: datetime) -> bool:
+        """Spend this challenge. True only when it is unused, for this request and still fresh."""
+        with self.lock:
+            fresh = (not self.used and self.request == request
+                     and 0 <= now - self.started < HELD_CHALLENGE_SECONDS
+                     and timestamp(self.challenge["expires_at"]) > wall)
+            self.used = True
+        return fresh
 
 
 def _object(raw: str) -> dict:
