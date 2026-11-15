@@ -191,7 +191,7 @@ def test_dispatch_of_a_sign_in_task_still_preparing_neither_rebinds_nor_sends(se
     assert h.coordinator.admissions.require(h.helper.identifier, role="browser_task", generation=h.helper.generation)
     assert not h.delivered
     with h.coordinator.store.database.transaction() as connection:
-        connection.execute("UPDATE desktop_setup_operations SET state='waiting' WHERE operation_id=?",
+        connection.execute("UPDATE desktop_setup_operations SET state='outcome_unknown' WHERE operation_id=?",
             (h.operation["operation_id"],))
     assert h.client.post(h.path, json={}, headers=h.headers).status_code == 409
     assert not h.delivered

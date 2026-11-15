@@ -144,6 +144,6 @@ def test_sign_in_payload_without_a_ceremony_waits_only_while_its_operation_prepa
         VALIDATOR.validate(response.json())
         assert response.json()["ceremony"] is None and response.json()["task"]["state"] == "pending"
         with coordinator.store.database.transaction() as connection:
-            connection.execute("UPDATE desktop_setup_operations SET state='waiting' WHERE operation_id=?",
+            connection.execute("UPDATE desktop_setup_operations SET state='outcome_unknown' WHERE operation_id=?",
                 (operation["operation_id"],))
         assert client.get("/api/v1/browser-tasks/payload", headers=headers(browser)).status_code == 409

@@ -127,13 +127,16 @@ class BrowserTasks:
             return False
 
     def preparing(self, task) -> bool:
-        """Whether a sign-in task without a ceremony is still waiting for its accepted operation."""
+        """Whether a sign-in task without a ceremony is still waiting for its live operation.
+
+        A selection can settle as waiting before a later read allows its browser step.
+        """
         if task["purpose"] != "browser.authentication" or task["state"] != "pending":
             return False
         with self.store.database.read() as connection:
             row = connection.execute("SELECT state FROM desktop_setup_operations WHERE operation_id=?",
                                      (task["operation_id"],)).fetchone()
-        return row is not None and row["state"] == "accepted"
+        return row is not None and row["state"] in {"accepted", "waiting"}
 
     def withdraw_preparing(self, operation_id):
         """Cancel a still-pending task whose preparation ended without a ceremony."""

@@ -763,7 +763,7 @@ async def test_fresh_provider_dispatch_reports_unconfirmed_when_expired_or_unava
     assert result == OperationResult("outcome_unknown", "operation_unconfirmed")
 
 
-async def _fresh_initial_connect(setup, *, fail=False):
+async def _fresh_initial_connect(setup, *, fail=False, openable=True):
     from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
     coordinator, ceremonies, ceremony_client, parent, binding, _ = setup
     client = AuthenticationClient()
@@ -772,6 +772,9 @@ async def _fresh_initial_connect(setup, *, fail=False):
     def select(*args, **kwargs):
         result = original(*args, **kwargs)
         client.calls.pop()
+        if not openable:
+            # A selection reply can name the attempt before its browser step is open.
+            result = {**result, "actions": {**result["actions"], "open_browser": False}}
         return result
 
     client.execute = select
@@ -870,3 +873,22 @@ async def test_an_unconfirmed_provider_selection_withdraws_its_task_without_a_ce
         await owner.execute(operation, reconcile=False)
     assert during == [["pending"]]
     assert task_states() == ["cancelled"]
+
+
+@pytest.mark.asyncio
+async def test_a_selection_not_yet_openable_keeps_its_early_task_until_a_read_adds_the_ceremony(setup):
+    owner, parent, _, task_states = await _fresh_initial_connect(setup, openable=False)
+    result = await owner._connect(parent, reconcile=False)
+    assert result.state == "waiting"
+    assert owner.ceremonies.browser_entry(parent["operation_id"]) is None
+    assert task_states() == ["pending"]
+    with owner.store.database.transaction() as connection:
+        connection.execute("UPDATE desktop_setup_operations SET state='waiting' WHERE operation_id=?", (parent["operation_id"],))
+        task = dict(connection.execute("SELECT * FROM desktop_browser_tasks WHERE operation_id=?", (parent["operation_id"],)).fetchone())
+    # The helper keeps waiting rather than ending while the operation waits for its ceremony.
+    assert owner.browser_tasks.preparing(task)
+    await owner._connect({**parent, "state": "waiting"}, reconcile=True)
+    assert owner.ceremonies.browser_entry(parent["operation_id"]) is not None
+    with owner.store.database.read() as connection:
+        after = dict(connection.execute("SELECT * FROM desktop_browser_tasks WHERE operation_id=?", (parent["operation_id"],)).fetchone())
+    assert after == task

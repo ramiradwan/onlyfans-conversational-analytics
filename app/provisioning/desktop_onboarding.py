@@ -464,7 +464,7 @@ class ProvisioningSetupOwner:
             entry = self.ceremonies.browser_entry(operation["operation_id"])
             if result.state == "waiting" and entry is not None:
                 self.browser_tasks.prepare(operation, "browser.authentication", deadline=datetime.fromisoformat(entry["expires_at"].replace("Z", "+00:00")).timestamp())
-            elif early:
+            elif early and result.state != "waiting":
                 self._withdraw_early_task(operation)
             return result
         if operation["action"] == "account.confirm" and self.ceremonies is not None and self.ceremonies.decisions is not None:
@@ -535,9 +535,10 @@ class ProvisioningSetupOwner:
             if entry is not None:
                 self.browser_tasks.prepare(operation, "browser.authentication", deadline=datetime.fromisoformat(
                     entry["expires_at"].replace("Z", "+00:00")).timestamp())
-            elif early:
-                self._withdraw_early_task(operation)
             waiting = entry is not None or authentication is not None and authentication["state"] not in {"expired", "unavailable"}
+            if early and not waiting:
+                # A waiting selection can receive its ceremony on a later read, so its task stays.
+                self._withdraw_early_task(operation)
             return OperationResult("waiting" if waiting else "outcome_unknown",
                                    "none" if waiting else "operation_unconfirmed")
         authentication = None
