@@ -954,3 +954,35 @@ async def test_prefetched_challenge_is_renewed_while_the_sign_in_stays_open(setu
     finally:
         release.set()
         await coordinator.stop()
+
+@pytest.mark.asyncio
+async def test_a_later_frame_with_the_outcome_a_hinted_read_closed_on_reads_nothing(setup):
+    coordinator, owner, session, _ = setup
+    owner.result = OperationResult("waiting")
+    await coordinator.command(session, command(coordinator.read(session)))
+    await coordinator.drain()
+    operation = coordinator._pending()[0]
+    hints = []
+
+    async def reconcile_hint(value):
+        hints.append(value["operation_id"])
+        return True if len(hints) == 1 else None
+
+    owner.reconcile_hint = reconcile_hint
+    owner.calls.clear()
+    coordinator._reconcile_soon(operation, frame=(1, "active", "awaiting-confirmation"))
+    await coordinator.drain()
+    assert (len(hints), len(owner.calls)) == (1, 1)
+    # The ceremony retires on the same outcome. The closed task has nothing left to read.
+    coordinator._reconcile_soon(operation, frame=(2, "retired", "awaiting-confirmation"))
+    await coordinator.drain()
+    assert (len(hints), len(owner.calls)) == (1, 1)
+    # A new outcome is read in full.
+    coordinator._reconcile_soon(operation, frame=(3, "retired", "committed"))
+    await coordinator.drain()
+    assert (len(hints), len(owner.calls)) == (2, 2)
+    # A read without a frame is never skipped.
+    coordinator._reconcile_soon(operation)
+    await coordinator.drain()
+    assert (len(hints), len(owner.calls)) == (3, 3)
+    await coordinator.stop()

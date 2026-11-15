@@ -110,6 +110,9 @@ class DesktopOnboardingCoordinator:
         self._held: set[str] = set()
         self._wake: asyncio.Event | None = None
         self._dirty: dict[str, bool] = {}
+        # The wait frame behind the next hinted run, and the frame outcome a hinted read already closed a task on.
+        self._hint_frames: dict[str, tuple] = {}
+        self._closed_on: dict[str, str | None] = {}
         self._prefetches: dict[str, asyncio.Task] = {}
         self._prefetch_wake: dict[str, asyncio.Event] = {}
         # Presentation-only notice of a freshly accepted command; it never changes the operation.
@@ -341,14 +344,27 @@ class DesktopOnboardingCoordinator:
 
     async def _run(self, operation, *, reconcile, actor, hint=False, queued=None):
         timing.observe("worker", "entry", "ok", 0 if queued is None else (time.monotonic() - queued) * 1000)
+        operation_id = operation["operation_id"]
+        frame = self._hint_frames.pop(operation_id, None) if hint else None
+        result = None
         try:
             if hint and getattr(self.owner, "reconcile_hint", None) is not None:
+                if (frame is not None and operation_id in self._closed_on and self._closed_on[operation_id] == frame[2]
+                        and self._probe_interval(operation) is None):
+                    # A hinted read already closed this task on the same outcome. Nothing is left to read.
+                    return
                 closed = await self.owner.reconcile_hint(operation)
                 if closed is False:
                     self._prefetch(operation)
                     return
+                if closed is True:
+                    self._closed_on[operation_id] = None if frame is None else frame[2]
+                    if operation["action"] in {"auth.select", "auth.switch"}:
+                        # The read that closed the task admitted this child's own attempt, which completes it.
+                        result = OperationResult("completed")
                 # A completed task is published before the remaining owner reads.
-            result = await self.owner.execute(operation, reconcile=reconcile, actor=actor)
+            if result is None:
+                result = await self.owner.execute(operation, reconcile=reconcile, actor=actor)
         except asyncio.CancelledError:
             self._settle(operation, OperationResult("outcome_unknown", "operation_unconfirmed"))
             raise
@@ -436,6 +452,8 @@ class DesktopOnboardingCoordinator:
                 pending_ids = {operation["operation_id"] for operation in pending}
                 self._retry_at = {key: value for key, value in self._retry_at.items() if key in pending_ids}
                 self._probe_at = {key: value for key, value in self._probe_at.items() if key in pending_ids}
+                self._hint_frames = {key: value for key, value in self._hint_frames.items() if key in pending_ids}
+                self._closed_on = {key: value for key, value in self._closed_on.items() if key in pending_ids}
                 for operation_id in [key for key in self._waits if key not in pending_ids]:
                     self._waits.pop(operation_id).cancel()
                 retry_delays = []
@@ -612,7 +630,7 @@ class DesktopOnboardingCoordinator:
                     if hint != last:
                         last = hint
                         timing.mark(operation_id, "frame")
-                        self._reconcile_soon(operation)
+                        self._reconcile_soon(operation, frame=hint)
             except asyncio.CancelledError:
                 raise
             except CeremonyWaitUnavailable as error:
@@ -634,8 +652,12 @@ class DesktopOnboardingCoordinator:
             attempt += 1
             await asyncio.sleep(delay)
 
-    def _reconcile_soon(self, operation):
+    def _reconcile_soon(self, operation, frame=None):
         """Reconcile now, or once more after a running reconciliation whose read may predate the hint."""
+        if frame is None:
+            self._hint_frames.pop(operation["operation_id"], None)
+        else:
+            self._hint_frames[operation["operation_id"]] = frame
         self._start(operation, reconcile=True, actor=None, hint=True)
 
     async def drain(self):

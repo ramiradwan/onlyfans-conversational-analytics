@@ -419,7 +419,8 @@ class DesktopAuthentication:
                 return OperationResult("refused", "operation_expired" if result["state"] == "expired" else "operation_unconfirmed")
             return OperationResult("outcome_unknown", "operation_unconfirmed")
 
-    async def ensure_initial(self, operation, *, authorize, read_guard, fresh=False):
+    async def ensure_initial(self, operation, *, authorize, read_guard, fresh=False, current=None):
+        """`current` is a projection the caller just read. Without a command to send, it is returned as is."""
         intent = json.loads(operation["owner_scope_json"]).get("authentication_intent")
         if intent is not None:
             with timing.phase("authentication-" + intent["verb"], "lookup"), self.store.database.read() as connection:
@@ -432,6 +433,9 @@ class DesktopAuthentication:
                         row = connection.execute("SELECT projection_json FROM desktop_authentication_projections WHERE operation_id=?",
                             (operation["operation_id"],)).fetchone()
                     return None if row is None else json.loads(row[0])
+                current = None
+        if current is not None:
+            return current
         return await self.refresh(operation["operation_id"], authorize=read_guard)
 
     async def stop(self):

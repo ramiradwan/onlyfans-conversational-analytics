@@ -1143,3 +1143,65 @@ async def test_a_selection_not_yet_openable_keeps_its_early_task_until_a_read_ad
     with owner.store.database.read() as connection:
         after = dict(connection.execute("SELECT * FROM desktop_browser_tasks WHERE operation_id=?", (parent["operation_id"],)).fetchone())
     assert after == task
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("verb", ["select", "switch"])
+async def test_an_admission_frame_reads_the_child_once_and_settles_the_same_end_state(auth, verb):
+    coordinator, _, authentication, client, parent, _, _ = auth
+    tasks = BrowserTasks(coordinator.admissions, extension_id="a" * 32)
+    owner = coordinator.owner
+
+    async def execute(current, *, reconcile, actor=None):
+        owner.calls.append((current["operation_id"], reconcile))
+        if current["operation_id"] == parent["operation_id"]:
+            projection = await authentication.refresh(parent["operation_id"], authorize=authorized)
+            await authentication.ensure_initial(current, authorize=authorized, read_guard=authorized, current=projection)
+            return OperationResult("waiting")
+        return await authentication.execute(current, authorize=authorized, read_guard=authorized, reconcile=reconcile)
+
+    async def reconcile_hint(current):
+        return await authentication.reconcile_task(current["operation_id"], authorize=authorized)
+
+    owner.execute, owner.reconcile_hint = execute, reconcile_hint
+    owner.automatic_recovery = lambda current: True
+    operation, _ = accept(auth)
+    coordinator._settle(operation, await authentication.execute(operation, authorize=authorized, read_guard=authorized, reconcile=False))
+    if verb == "switch":
+        client.attempts[client.current]["state"] = "admitted"
+        coordinator._settle(operation, await authentication.execute(operation, authorize=authorized, read_guard=authorized, reconcile=True))
+        operation, _ = accept(auth, "auth.switch", "default")
+        coordinator._settle(operation, await authentication.execute(operation, authorize=authorized, read_guard=authorized, reconcile=False))
+    owner.settled = lambda current, result: tasks.complete(current["operation_id"]) if result.state == "completed" else None
+    tasks.prepare(operation, "browser.authentication")
+    client.attempts[client.current]["state"] = "admitted"
+    before = len(client.calls)
+    coordinator._reconcile_soon(operation, frame=(4, "active", "awaiting-confirmation"))
+    await coordinator.drain()
+    await coordinator.drain()
+    # From the admission frame to the parent's final projection: one protected read.
+    assert [kind for kind, _ in client.calls[before:]] == ["read"]
+    with coordinator.store.database.read() as connection:
+        state = connection.execute("SELECT state FROM desktop_setup_operations WHERE operation_id=?",
+            (operation["operation_id"],)).fetchone()[0]
+        task = connection.execute("SELECT state FROM desktop_browser_tasks WHERE operation_id=?",
+            (operation["operation_id"],)).fetchone()[0]
+        projection = json.loads(connection.execute("SELECT projection_json FROM desktop_authentication_projections WHERE operation_id=?",
+            (parent["operation_id"],)).fetchone()[0])
+    assert state == "completed" and task == "completed"
+    assert projection["state"] == "admitted"
+    assert projection["authentication_attempt"]["authentication_attempt_id"] == client.current
+    assert (parent["operation_id"], True) in owner.calls
+    await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_ensure_initial_returns_the_projection_its_caller_just_read(auth):
+    _, _, authentication, client, parent, _, _ = auth
+    projection = await authentication.refresh(parent["operation_id"], authorize=authorized)
+    before = len(client.calls)
+    operation = {"operation_id": parent["operation_id"], "owner_scope_json": json.dumps({})}
+    assert await authentication.ensure_initial(operation, authorize=authorized, read_guard=authorized,
+                                               current=projection) == projection
+    assert len(client.calls) == before
+    await authentication.ensure_initial(operation, authorize=authorized, read_guard=authorized)
+    assert len(client.calls) == before + 1

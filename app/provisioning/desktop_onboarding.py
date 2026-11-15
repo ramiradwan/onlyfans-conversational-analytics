@@ -633,7 +633,7 @@ class ProvisioningSetupOwner:
             operation["operation_id"], authorize=lambda: self._read_guard(operation))
         if self.ceremonies.authentication is not None and decision is not None and decision["state"] == "awaiting-authentication":
             authentication = await self.ceremonies.authentication.ensure_initial(operation, authorize=guard,
-                read_guard=lambda: self._read_guard(operation))
+                read_guard=lambda: self._read_guard(operation), current=authentication)
         entry = self.ceremonies.browser_entry(operation["operation_id"])
         if entry is not None and decision is not None and decision["state"] == "awaiting-authentication":
             self.browser_tasks.prepare(operation, "browser.authentication", deadline=datetime.fromisoformat(entry["expires_at"].replace("Z", "+00:00")).timestamp())
