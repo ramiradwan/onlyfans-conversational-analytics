@@ -82,8 +82,10 @@ class DesktopEventResponse(StreamingResponse):
                 # Clear before the authoritative read. A commit while reading or
                 # sending the frame remains dirty for the following iteration.
                 signal.clear()
+                actor = self.actor()
+                # The read runs off the event loop so sign-in work is not held behind it.
                 with timing.phase("snapshot", "read", minimum_ms=timing.SLOW_MS):
-                    snapshot = self.coordinator.read(self.session, actor=self.actor())
+                    snapshot = await asyncio.to_thread(self.coordinator.read, self.session, actor=actor)
                 encoded = json.dumps(snapshot, separators=(",", ":"))
                 if encoded != previous:
                     yield "event: setup\ndata: " + encoded + "\n\n"

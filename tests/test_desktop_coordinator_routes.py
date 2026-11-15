@@ -114,6 +114,36 @@ async def test_event_subscribes_before_read_and_retains_changes_while_sending(se
 
 
 @pytest.mark.asyncio
+async def test_event_snapshot_reads_leave_the_event_loop_free(setup):
+    import threading
+    coordinator, _, session, _ = setup
+    response = DesktopEventResponse(coordinator, session, actor=lambda: None, active=set(), deadline=lambda: 1000)
+    loop = asyncio.get_running_loop()
+    original = coordinator.read
+    observed = []
+
+    def read(*args, **kwargs):
+        # Other loop work, such as a sign-in effect's result, runs while the snapshot is read.
+        ran = threading.Event()
+        loop.call_soon_threadsafe(ran.set)
+        observed.append(ran.wait(1))
+        return original(*args, **kwargs)
+
+    coordinator.read = read
+
+    async def send(message):
+        if message["type"] == "http.response.body" and message["body"].startswith(b"event: setup"):
+            raise OSError("disconnected")
+
+    async def receive():
+        await asyncio.Event().wait()
+
+    with pytest.raises(ClientDisconnect):
+        await asyncio.wait_for(response({"type": "http", "asgi": {"spec_version": "2.4"}}, receive, send), 5)
+    assert observed == [True]
+
+
+@pytest.mark.asyncio
 async def test_event_subscription_released_if_headers_cannot_be_sent(setup):
     coordinator, _, session, _ = setup
     active = set()
