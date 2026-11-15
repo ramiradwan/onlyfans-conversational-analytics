@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import json
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -890,6 +891,20 @@ async def test_a_selection_not_yet_openable_is_read_once_so_its_early_task_gets_
     assert [verb for verb, _ in owner.client_calls] == ["select", "read"]
     assert owner.ceremonies.browser_entry(parent["operation_id"]) is not None
     assert task_states() == ["pending"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("closed", "expected"), [
+    (0, [("authentication-select", "entry-open")]),
+    (1, [("authentication-select", "entry-pending"), ("authentication-read", "entry-open")]),
+    (2, [("authentication-select", "entry-pending"), ("authentication-read", "entry-pending")])])
+async def test_a_fresh_selection_records_whether_its_browser_step_was_open(setup, caplog, closed, expected):
+    owner, parent, _, _ = await _fresh_initial_connect(setup, closed=closed)
+    caplog.set_level("INFO", logger="app.onboarding.timing")
+    await owner._connect(parent, reconcile=False)
+    marks = [re.search(r"operation=(\S+) phase=(entry-\S+)", message).groups()
+             for message in caplog.messages if "phase=entry-" in message]
+    assert marks == expected
 
 
 @pytest.mark.asyncio

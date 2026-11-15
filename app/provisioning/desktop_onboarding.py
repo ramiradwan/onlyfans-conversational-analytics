@@ -533,6 +533,7 @@ class ProvisioningSetupOwner:
             raise
         if selecting:
             entry = self.ceremonies.browser_entry(operation["operation_id"])
+            timing.observe("authentication-select", "entry-pending" if entry is None else "entry-open", "ok", 0)
             if entry is None and authentication is not None and authentication["state"] not in {"expired", "unavailable"}:
                 # A selection reply can precede its browser step; one current read can open it at once.
                 try:
@@ -541,6 +542,7 @@ class ProvisioningSetupOwner:
                 except (HostedGrantUnavailable, BrowserAuthenticationRefused):
                     pass
                 entry = self.ceremonies.browser_entry(operation["operation_id"])
+                timing.observe("authentication-read", "entry-pending" if entry is None else "entry-open", "ok", 0)
             if entry is not None:
                 self.browser_tasks.prepare(operation, "browser.authentication", deadline=datetime.fromisoformat(
                     entry["expires_at"].replace("Z", "+00:00")).timestamp())
