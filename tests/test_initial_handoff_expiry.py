@@ -235,17 +235,30 @@ async def test_expired_uncertain_preparation_reuses_exact_request_and_bounds_exp
 async def test_production_prepare_rechecks_expiry_after_internal_key_and_signing(expiry_case, monkeypatch, boundary):
     clock, _, fixture, worker, resumed, _ = expiry_case
     journey = worker.journeys.open()["journey_id"]
+    import base64
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+
     read_key = fixture.key.ensure_ready
     key_reads, requests = [], []
+    key_id = "ik1.AAECAwQFBgcICQoLDA0ODw"
+    private = ec.generate_private_key(ec.SECP256R1())
+    numbers = private.public_key().public_numbers()
+    encoded = lambda value: base64.urlsafe_b64encode(value.to_bytes(32, "big")).rstrip(b"=").decode()
+    jwk = json.dumps({"crv": "P-256", "kid": key_id, "kty": "EC", "x": encoded(numbers.x), "y": encoded(numbers.y)})
     def ensure_ready():
         key_reads.append(True)
         if boundary == "internal-key" and len(key_reads) == 2:
             clock[0] += timedelta(minutes=31)
-        return read_key()
+        current = read_key()
+        return SimpleNamespace(installation_key_id=key_id, installation_key_jkt=current.installation_key_jkt, public_key_jwk=jwk)
     def sign_challenge(message):
         if boundary == "signing":
             clock[0] += timedelta(minutes=31)
-        return SimpleNamespace(installation_key_id="ik1.AAECAwQFBgcICQoLDA0ODw", algorithm="ES256", signature=b"s" * 64)
+        r, s = decode_dss_signature(private.sign(message, ec.ECDSA(hashes.SHA256())))
+        return SimpleNamespace(installation_key_id=key_id, algorithm="ES256",
+                               signature=r.to_bytes(32, "big") + s.to_bytes(32, "big"))
     def transport_request(method, path, *, json_body):
         requests.append(path)
         assert path == CHALLENGE_PATH

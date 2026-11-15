@@ -51,7 +51,8 @@ def test_initial_production_proof_uses_only_the_exact_published_v2_domain_and_ro
             "expires_at": "2026-10-09T12:01:00.000Z"}).encode(), "application/json")
 
     key = SimpleNamespace(ensure_ready=lambda: SimpleNamespace(installation_key_id=key_id,
-        installation_key_jkt=thumbprint), sign_challenge=sign)
+        installation_key_jkt=thumbprint, public_key_jwk=json.dumps({**vector["public_key"], "kid": key_id})),
+        sign_challenge=sign)
     client = InitialHandoffClient(SimpleNamespace(request=request), key)
     envelope = client.envelope(vector["operation"].removeprefix("initial-handoff-"), vector["request"])
     assert envelope["request"]["profile"] == PROFILE

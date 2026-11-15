@@ -114,10 +114,12 @@ def test_initial_key_client_uses_published_domain_and_body_proof():
     key_id = record["request"]["destination"]["installation_key"]["kid"]
     class Key:
         def ensure_ready(self):
-            return SimpleNamespace(installation_key_id=key_id, installation_key_jkt=thumbprint)
+            return SimpleNamespace(installation_key_id=key_id, installation_key_jkt=thumbprint,
+                                   public_key_jwk=json.dumps({**record["public_key"], "kid": key_id}))
         def sign_challenge(self, value):
             assert value.hex() == record["proof_bytes_hex"]
-            return SimpleNamespace(installation_key_id=key_id, algorithm="ES256", signature=b"s" * 64)
+            return SimpleNamespace(installation_key_id=key_id, algorithm="ES256",
+                                   signature=base64.urlsafe_b64decode(record["signature"] + "=="))
     class Transport:
         def request(self, method, path, *, json_body):
             assert method == "POST" and "?" not in path
@@ -129,6 +131,42 @@ def test_initial_key_client_uses_published_domain_and_body_proof():
     envelope = InitialHandoffClient(Transport(), Key(), clock=lambda: INSTANT).envelope("prepare", record["request"])
     assert set(envelope) == {"request", "proof"}
     assert "claim_secret" not in json.dumps(envelope)
+
+    class WrongProof(Key):
+        def sign_challenge(self, value):
+            return SimpleNamespace(installation_key_id=key_id, algorithm="ES256", signature=b"s" * 64)
+    with pytest.raises(HostedGrantUnavailable, match="^Initial key proof unavailable$"):
+        InitialHandoffClient(Transport(), WrongProof(), clock=lambda: INSTANT).envelope("prepare", record["request"])
+
+
+def test_initial_key_proof_signs_once_with_an_active_key(tmp_path):
+    from app.persistence.auth import SQLiteAuthenticationStore
+    from app.security.installation_key import InstallationKeyAuthority
+    from test_installation_key import EmulatedPlatformProvider
+
+    class CountingProvider(EmulatedPlatformProvider):
+        signs = 0
+
+        def sign_digest(self, provider_key_name, digest):
+            self.signs += 1
+            return super().sign_digest(provider_key_name, digest)
+
+    record = json.loads((Path(__file__).parents[1] / "contracts/initial-installation-handoff-v2/proof-cases.json").read_text())[0]
+
+    class Transport:
+        def request(self, method, path, *, json_body):
+            value = {"profile": PROOF_PROFILE, "challenge": record["challenge"],
+                     "request_digest": hashlib.sha256(canonical(record["request"])).hexdigest(),
+                     "expires_at": (INSTANT + timedelta(seconds=60)).isoformat(timespec="milliseconds").replace("+00:00", "Z")}
+            return TransportResponse(200, json.dumps(value).encode(), "application/json")
+
+    provider = CountingProvider()
+    authority = InstallationKeyAuthority(SQLiteAuthenticationStore(tmp_path / "auth.sqlite3"), provider)
+    active = authority.ensure_ready()
+    provider.signs = 0
+    envelope = InitialHandoffClient(Transport(), authority, clock=lambda: INSTANT).envelope("prepare", record["request"])
+    assert envelope["proof"]["key_id"] == active.installation_key_id
+    assert provider.signs == 1
 
 
 class _HandoffFixture:

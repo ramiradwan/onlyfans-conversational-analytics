@@ -20,6 +20,7 @@ from referencing import Registry, Resource
 
 from app.core.resource_paths import resource_path
 from app.onboarding import timing
+from app.security.installation_key import InstallationKeyUnavailable, verify_installation_proof
 from contracts.loader import verify_snapshot_integrity
 
 from app.security.hosted_grants import (
@@ -212,6 +213,16 @@ class InitialHandoffClient:
         self.clock = clock
         self.monotonic = monotonic
 
+    def _signing_key(self):
+        """The active key, checked by the proof verified below; a key that is not active yet is prepared."""
+        verify = getattr(self.key, "signing_reference", None)
+        if verify is not None:
+            try:
+                return verify()
+            except InstallationKeyUnavailable:
+                pass
+        return self.key.ensure_ready()
+
     def envelope(self, operation: str, request: dict, *, before_send: Callable[[], None] | None = None) -> dict:
         if operation not in {"prepare", "wait", "complete", "receipt"}:
             raise ValueError("Invalid handoff operation")
@@ -219,7 +230,7 @@ class InitialHandoffClient:
         challenge_request = {"profile": PROOF_PROFILE,
             "target": {"operation": purpose, "request": request}}
         validate_contract("proof-challenge-request", challenge_request)
-        key = self.key.ensure_ready()
+        key = self._signing_key()
         started = self.monotonic()
         challenge = self._request(CHALLENGE_PATH, challenge_request, expected=200, before_send=before_send)
         _require_proof_budget(started, self.monotonic())
@@ -233,7 +244,8 @@ class InitialHandoffClient:
         message = _DOMAIN + b"".join(len(piece).to_bytes(4, "big") + piece for piece in pieces)
         proof = self.key.sign_challenge(message)
         _require_proof_budget(started, self.monotonic())
-        if proof.installation_key_id != key.installation_key_id or proof.algorithm != "ES256" or len(proof.signature) != 64:
+        if (proof.installation_key_id != key.installation_key_id or proof.algorithm != "ES256"
+                or len(proof.signature) != 64 or not verify_installation_proof(key.public_key_jwk, message, proof)):
             raise HostedGrantUnavailable("Initial key proof unavailable")
         return {"request": request, "proof": {"challenge": challenge["challenge"], "key_id": key.installation_key_id,
                 "signature": base64.urlsafe_b64encode(proof.signature).rstrip(b"=").decode()}}
