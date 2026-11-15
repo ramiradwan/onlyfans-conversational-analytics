@@ -78,14 +78,17 @@ def exchange(operation, kind):
         yield
 
 
-def observe(operation, phase, status, elapsed_ms):
+def observe(operation, phase, status, elapsed_ms, *, http=None):
+    """`http` is an optional HTTP status code, recorded as a number only."""
     if (operation not in OPERATIONS or phase not in PHASES or status not in {"ok", "error", "cancelled"}
             or type(elapsed_ms) not in {int, float} or not math.isfinite(elapsed_ms)
-            or not 0 <= elapsed_ms <= 3_600_000):
+            or not 0 <= elapsed_ms <= 3_600_000
+            or http is not None and (type(http) is not int or not 100 <= http <= 599)):
         raise ValueError("Invalid sign-in timing")
-    logger.info("event=sign_in_phase operation=%s phase=%s status=%s elapsed_ms=%s",
-        operation, phase, status, round(elapsed_ms))
-    _append(f"sign_in_phase operation={operation} phase={phase} status={status} elapsed_ms={round(elapsed_ms)}")
+    suffix = "" if http is None else f" http={http}"
+    logger.info("event=sign_in_phase operation=%s phase=%s status=%s elapsed_ms=%s%s",
+        operation, phase, status, round(elapsed_ms), suffix)
+    _append(f"sign_in_phase operation={operation} phase={phase} status={status} elapsed_ms={round(elapsed_ms)}{suffix}")
 
 
 @contextmanager

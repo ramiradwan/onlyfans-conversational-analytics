@@ -162,8 +162,9 @@ class BrowserCeremonyWaitClient:
             started = self.monotonic()
             async with client.stream("POST", WAIT_PATH, json=envelope,
                                      headers={"Accept": "text/event-stream", "Accept-Encoding": "identity"}) as response:
-                timing.observe("wait", "protected-receive", "ok" if response.status_code == 200 else "error",
-                    max(0, (self.monotonic() - started) * 1000))
+                status = response.status_code
+                timing.observe("wait", "protected-receive", "ok" if status == 200 else "error",
+                    max(0, (self.monotonic() - started) * 1000), http=status if 100 <= status <= 599 else None)
                 if response.status_code in {429, 503}:
                     raise CeremonyWaitUnavailable("Ceremony wait is unavailable", retry_after=_retry_after(response))
                 if (response.status_code != 200
