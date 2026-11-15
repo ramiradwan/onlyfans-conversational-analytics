@@ -76,7 +76,9 @@ export function renderSetup(document, state) {
   const choosingProvider = Boolean(signIn && (canSelect || choosingAccount));
   // The clicked provider stays in place and busy until its sign-in is selected or fails.
   const signInActions = ['account.connect', 'auth.select', 'auth.switch'];
-  const opening = Boolean(state.provider && !state.error && signIn && !['selected', 'admitted'].includes(signIn.state)
+  // Brain reports no sign-in projection while the accepted command has not selected yet.
+  const opening = Boolean(state.provider && !state.error && task === 'account-connection'
+    && !['selected', 'admitted'].includes(signIn?.state)
     && (signInActions.includes(state.acting) || state.pending && value?.pending_operations.some(item =>
       item.operation_id === state.pending && signInActions.includes(item.action))));
   const showingProviders = choosingProvider || opening;
@@ -129,7 +131,8 @@ export function renderSetup(document, state) {
   setStatus(get('task-status'), (lapsed ? reason !== 'authority_unavailable' && errors[reason] : errors[reason] || progress) || '');
   get('sign-in-options').hidden = !showingProviders;
   for (const button of get('sign-in-options').querySelectorAll('[data-provider]')) {
-    button.hidden = !signIn?.choices[button.dataset.provider];
+    // Without a projection the opening choices keep the visibility they were clicked in.
+    if (signIn || !opening) button.hidden = !signIn?.choices[button.dataset.provider];
     button.disabled = controlsDisabled || opening;
     if (opening && button.dataset.provider === state.provider) button.setAttribute('aria-busy', 'true');
     else button.removeAttribute('aria-busy');

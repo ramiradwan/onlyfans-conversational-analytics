@@ -579,7 +579,8 @@ describe('desktop setup presentation', () => {
     renderSetup(document, { snapshot: choosing, connected: true, acting: 'account.connect', provider: 'google' });
     expect(busy()).toEqual(['google']);
     expect(document.getElementById('task-status').textContent).toBe('Opening Chrome…');
-    const accepted = { ...choosing, allowed_actions: [], pending_operations: [{ ...record, action: 'account.connect' }] };
+    // While the command is pending and nothing is selected yet, Brain reports no sign-in projection.
+    const accepted = { ...choosing, allowed_actions: [], pending_operations: [{ ...record, action: 'account.connect' }], authentication: null };
     renderSetup(document, { snapshot: accepted, connected: true, pending: operationId, provider: 'google' });
     expect(document.getElementById('sign-in-options').hidden).toBe(false);
     expect(busy()).toEqual(['google']);

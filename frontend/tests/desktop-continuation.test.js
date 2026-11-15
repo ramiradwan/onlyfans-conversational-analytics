@@ -142,7 +142,8 @@ it('marks the clicked provider busy at once and keeps it busy while its sign-in 
   document.querySelector('[data-provider="telegram"]').click();
   expect(owners.client.act).toHaveBeenCalledExactlyOnceWith('account.connect', { provider: 'telegram' });
   expect(busy()).toEqual(['telegram']);
-  const accepted = { ...choosing, allowed_actions: [], pending_operations: [{ operation_id: operation, action: 'account.connect', state: 'accepted', reason: 'none' }] };
+  const accepted = { ...choosing, allowed_actions: [], authentication: null,
+    pending_operations: [{ operation_id: operation, action: 'account.connect', state: 'accepted', reason: 'none' }] };
   publish(accepted, { pending: operation });
   settle(); await Promise.resolve(); await Promise.resolve();
   expect(busy()).toEqual(['telegram']);
