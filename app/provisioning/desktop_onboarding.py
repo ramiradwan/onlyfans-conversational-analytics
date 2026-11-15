@@ -323,9 +323,11 @@ class ProvisioningSetupOwner:
 
     async def reconcile_hint(self, operation):
         def guard():
-            self._guard(operation)
-            parent = self.ceremonies.authentication.parent_operation(operation["operation_id"])
-            self._read_guard({"operation_id": parent})
+            # Runs before each step of the hinted read, so its checks share one store connection.
+            with self.store.database.read() as connection:
+                self._guard(operation, connection=connection)
+                parent = self.ceremonies.authentication.parent_operation(operation["operation_id"], connection=connection)
+                self._read_guard({"operation_id": parent}, connection)
         return await self.ceremonies.authentication.reconcile_task(operation["operation_id"], authorize=guard)
 
     def authorize_initial_scope(self, journey_id, scope):
@@ -607,9 +609,10 @@ class ProvisioningSetupOwner:
         except Exception:
             pass
 
-    def _read_guard(self, operation):
+    def _read_guard(self, operation, connection=None):
         """Retained proof reads may settle an expired presentation, never renew it."""
-        saved = self.ceremonies.row(operation["operation_id"])
+        saved = (self.ceremonies.row(operation["operation_id"]) if connection is None
+                 else self.ceremonies.row(operation["operation_id"], connection=connection))
         if saved is None:
             raise HostedGrantUnavailable("Browser ceremony is unavailable")
         binding = json.loads(saved["binding_json"])

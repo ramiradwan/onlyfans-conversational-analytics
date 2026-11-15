@@ -124,11 +124,12 @@ class DesktopAuthentication:
             self._save(row, result)
         return result
 
-    async def _read_request(self, row, request, *, authorize):
+    async def _read_request(self, row, request, *, authorize, journey_id=None):
         ticket = self._prefetched.pop(row["operation_id"], None) if request["authentication_attempt_id"] is None else None
         options = {} if ticket is None else {"prefetched": ticket}
+        journey_id = self.ceremonies._journey(row["operation_id"]) if journey_id is None else journey_id
         return await self._effects.run(self.client.read, request, expires_at=row["provider_expires_at"],
-            before_send=authorize, journey_id=self.ceremonies._journey(row["operation_id"]), protected=False, **options)
+            before_send=authorize, journey_id=journey_id, protected=False, **options)
 
     async def prefetch(self, operation_id, *, authorize):
         """Hold one fresh current-read challenge. Returns seconds until it needs renewal."""
@@ -165,16 +166,18 @@ class DesktopAuthentication:
                     (operation_id,)).fetchone()
                 closure = connection.execute("SELECT 1 FROM desktop_authentication_closures WHERE operation_id=? "
                     "AND state='pending'", (operation_id,)).fetchone()
-            if len(tasks) != 1 or command is None or command["verb"] == "cancel" or closure is not None:
-                return None
+                if len(tasks) != 1 or command is None or command["verb"] == "cancel" or closure is not None:
+                    return None
+                # The hinted read's scope comes from the same connection as the task it may complete.
+                row, request = self._request(command["parent_operation_id"], connection=connection)
+                journey = self.ceremonies._journey(row["operation_id"], connection=connection)
             task = dict(tasks[0])
-            row, request = self._request(command["parent_operation_id"])
             with timing.phase("authentication-read", "read-end"):
-                result = await self._read_request(row, request, authorize=authorize)
+                result = await self._read_request(row, request, authorize=authorize, journey_id=journey)
             expected = json.loads(command["request_json"])
             attempt = result["authentication_attempt"]
             return await self._effects.run(self._finish_task, operation_id, task, row, result, expected, attempt,
-                authorize=authorize, journey_id=self.ceremonies._journey(row["operation_id"]), protected=False)
+                authorize=authorize, journey_id=journey, protected=False)
 
     def _finish_task(self, operation_id, task, row, result, expected, attempt, *, authorize):
         closed = False

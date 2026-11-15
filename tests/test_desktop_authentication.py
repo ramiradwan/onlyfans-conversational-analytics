@@ -577,6 +577,58 @@ async def test_an_openable_fresh_provider_dispatch_uses_only_prepare_and_select(
 
 
 @pytest.mark.asyncio
+async def test_a_hint_completes_its_task_with_two_store_openings(auth):
+    coordinator, ceremonies, authentication, client, _, _, _ = auth
+    operation, _ = accept(auth)
+    await authentication.execute(operation, authorize=authorized, read_guard=authorized, reconcile=False)
+    BrowserTasks(coordinator.admissions, extension_id="a" * 32).prepare(operation, "browser.authentication")
+    client.attempts[client.current]["state"] = "admitted"
+    database = ceremonies.store.database
+    opened, connect = [], database.connect
+
+    def counted():
+        opened.append(1)
+        return connect()
+
+    database.connect = counted
+    assert await authentication.reconcile_task(operation["operation_id"], authorize=authorized) is True
+    # One read for the task and its scope, one transaction that completes it.
+    assert len(opened) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_hinted_read_guard_checks_through_one_store_connection(auth):
+    from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
+    coordinator, ceremonies, authentication, _, parent, _, _ = auth
+    operation, _ = accept(auth)
+    await authentication.execute(operation, authorize=authorized, read_guard=authorized, reconcile=False)
+    binding = json.loads(ceremonies.row(parent["operation_id"])["binding_json"])
+    reference = SimpleNamespace(installation_key_id=binding["installation_key_id"],
+                                installation_key_jkt=binding["installation_key_jkt"])
+    owner = ProvisioningSetupOwner.__new__(ProvisioningSetupOwner)
+    owner.ceremonies = ceremonies
+    owner.store = SimpleNamespace(database=coordinator.store.database, installation_key_reference=lambda: reference)
+    shared = []
+    owner._guard = lambda current, *, connection=None: shared.append(connection is not None)
+
+    async def reconcile_task(operation_id, *, authorize):
+        authorize()
+        return None
+
+    authentication.reconcile_task = reconcile_task
+    database = coordinator.store.database
+    opened, connect = [], database.connect
+
+    def counted():
+        opened.append(1)
+        return connect()
+
+    database.connect = counted
+    await owner.reconcile_hint(operation)
+    assert shared == [True] and len(opened) == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("change", ["none", "successor", "cancel", "generation", "expired", "key", "source", "preparation"])
 async def test_hint_closes_only_current_task_after_one_current_read(auth, change):
     coordinator, ceremonies, authentication, client, parent, _, _ = auth
