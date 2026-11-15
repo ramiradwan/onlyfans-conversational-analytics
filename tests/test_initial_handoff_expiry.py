@@ -58,6 +58,13 @@ async def test_fresh_journey_prepares_once_and_starts_its_wait(expiry_case):
     assert count(store, "onboarding_uncertain_receipts") == 0
 
 
+def test_client_loads_its_contract_before_any_proof_exchange():
+    from app.security import initial_handoff
+    initial_handoff._validators.cache_clear()
+    InitialHandoffClient(SimpleNamespace(), SimpleNamespace())
+    assert initial_handoff._validators.cache_info().currsize == 1
+
+
 @pytest.mark.asyncio
 async def test_fresh_preparation_records_its_request_persistence(expiry_case, caplog):
     import logging

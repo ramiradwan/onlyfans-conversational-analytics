@@ -180,6 +180,8 @@ class InitialHandoffClient:
     def __init__(self, transport: HostedTransport, key: InstallationProofAuthority,
                  *, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
                  monotonic: Callable[[], float] = time.monotonic) -> None:
+        # Contract validation loads at construction, as in the other proof clients, not inside a proof exchange.
+        _validators()
         self.transport = transport
         self.key = key
         self.clock = clock
