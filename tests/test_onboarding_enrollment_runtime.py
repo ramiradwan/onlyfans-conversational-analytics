@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.persistence.auth import SQLiteAuthenticationStore, RevocationKey, RevocationScopeType
 from app.provisioning.events import OnboardingEvents
-from app.security.initial_handoff import InitialHandoffClient, PROOF_PROFILE, canonical
+from app.security.initial_handoff import InitialHandoffClient, InitialHandoffRefused, PROOF_PROFILE, canonical
 from app.security.hosted_grants import TransportResponse
 from app.security.hosted_grants import HostedGrantUnavailable
 from app.provisioning.initial_handoff import InitialInstallationEnrollment
@@ -723,6 +723,43 @@ async def test_hosted_sse_delivers_small_frames_before_eof_and_closes_on_cancell
             pending.cancel()
             await asyncio.gather(pending, return_exceptions=True)
         await stream.aclose()
+
+
+@pytest.mark.asyncio
+async def test_a_fresh_prepare_shares_its_loop_rechecks_and_still_sees_a_change_between_them(tmp_path):
+    store = _seeded_store(tmp_path / "auth.sqlite3", INSTANT)
+    client = _HandoffFixture()
+    worker = _enrollment_worker(store, client)
+    journey = worker.journeys.open()["journey_id"]
+    database, connect, opened = store.database, store.database.connect, []
+
+    def counting():
+        opened.append(1)
+        return connect()
+
+    database.connect = counting
+    assert (await worker.prepare(journey, resume=False))["state"] == "waiting"
+    # One shared connection, two write transactions and the send recheck on the effect thread.
+    assert len(opened) == 4
+    await worker.stop()
+    # A journey that expires while the key is read is refused by the next shared recheck.
+    store = _seeded_store(tmp_path / "second.sqlite3", INSTANT)
+    client = _HandoffFixture()
+    worker = _enrollment_worker(store, client)
+    second = worker.journeys.open()["journey_id"]
+    ready = client.key.ensure_ready
+
+    def expire_then_ready():
+        with store.database.transaction() as connection:
+            connection.execute("UPDATE onboarding_journeys SET expires_at=? WHERE journey_id=?",
+                               ((INSTANT - timedelta(seconds=1)).isoformat(), second))
+        return ready()
+
+    client.key.ensure_ready = expire_then_ready
+    with pytest.raises(InitialHandoffRefused):
+        await worker.prepare(second, resume=False)
+    assert client.preparations == []
+    await worker.stop()
 
 
 @pytest.mark.asyncio
