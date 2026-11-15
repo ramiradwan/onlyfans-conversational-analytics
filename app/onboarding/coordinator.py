@@ -598,12 +598,13 @@ class DesktopOnboardingCoordinator:
         self._prefetches[operation_id] = asyncio.create_task(run())
 
     async def _run_wait(self, operation):
-        operation_id, attempt, last = operation["operation_id"], 0, None
+        operation_id, attempt, last, read = operation["operation_id"], 0, None, False
         while not self._closed and self._probe_interval(operation) is not None:
-            delay = None
+            delay, framed = None, False
             try:
                 async for hint in self.owner.wait(operation):
                     timing.observe("wait", "frame", "ok", 0)
+                    framed, read = True, False
                     if operation_id not in self._held:
                         self._held.add(operation_id)
                         self._probe_at.pop(operation_id, None)
@@ -623,6 +624,11 @@ class DesktopOnboardingCoordinator:
                 self._held.discard(operation_id)
                 if self._wake is not None:
                     self._wake.set()
+            if not framed and not read and not self._closed:
+                # A refused or empty wait may have met a ceremony that already moved.
+                # One proof read per run of frameless attempts settles it.
+                read = True
+                self._reconcile_soon(operation)
             if delay is None:
                 delay = min(WAIT_BACKOFF_CAP_SECONDS, 0.25 * 2 ** attempt) * random.uniform(0.5, 1.0)
             attempt += 1

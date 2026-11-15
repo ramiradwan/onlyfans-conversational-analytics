@@ -671,6 +671,36 @@ async def test_reconnect_honours_retry_after(setup):
 
 
 @pytest.mark.asyncio
+async def test_refused_wait_reads_the_proof_once_per_run_of_failures(setup, monkeypatch):
+    from app.security.browser_ceremony_wait import CeremonyWaitUnavailable
+    monkeypatch.setattr("app.onboarding.coordinator.WAIT_BACKOFF_CAP_SECONDS", 0.02)
+    coordinator, owner, session, _ = setup
+    refused = CeremonyWaitUnavailable("refused")
+    second, framed, lost = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    hints = Hints((refused,), (second, refused), (framed, _hint(1), lost, OSError("stream lost")),
+                  (refused,), (refused,), ("hold",))
+    await _waited_connect(setup, hints)
+
+    def reads():
+        return [reconcile for _, reconcile in owner.calls].count(True)
+
+    try:
+        await _until(lambda: reads() == 1 and not coordinator._workers)
+        second.set()
+        await _until(lambda: len(hints.opened) >= 3)
+        await coordinator.drain()
+        assert reads() == 1
+        framed.set()
+        await _until(lambda: reads() == 2 and not coordinator._workers)
+        lost.set()
+        await _until(lambda: len(hints.opened) >= 6)
+        await coordinator.drain()
+        assert reads() == 3
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
 async def test_repeated_hints_are_ignored(setup):
     coordinator, owner, session, _ = setup
     hints = Hints((_hint(2), _hint(2), "hold"))
