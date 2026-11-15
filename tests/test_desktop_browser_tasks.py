@@ -487,3 +487,17 @@ async def test_an_account_connect_opens_the_store_six_times_before_its_ceremony_
     assert len(guards) == 7
     # Shared reads before each await, then the handoff journey read and the ceremony reservation.
     assert len(opened) == 6
+
+@pytest.mark.asyncio
+async def test_a_setup_snapshot_read_opens_the_store_once(setup, monkeypatch):
+    coordinator, _, _, _, _, _, native = await initial_ceremony_case(setup)
+    database, connect, opened = coordinator.store.database, coordinator.store.database.connect, []
+    expected = coordinator.read(native)
+
+    def counted():
+        opened.append(1)
+        return connect()
+
+    monkeypatch.setattr(database, "connect", counted)
+    assert coordinator.read(native) == expected
+    assert len(opened) == 1

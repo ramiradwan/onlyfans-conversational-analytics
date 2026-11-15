@@ -129,7 +129,8 @@ class DesktopOnboardingCoordinator:
 
     def read(self, session: AdmittedSession, *, actor=None) -> dict:
         """No journal writes, owner work, task creation or network calls."""
-        with self.store.database.read() as connection:
+        # The owner's reads for this snapshot share its connection.
+        with self.store.database.shared_reads(), self.store.database.read() as connection:
             return self._snapshot(connection, self._current(connection, session), actor=actor)
 
     def _snapshot(self, connection, session, *, actor=None, view=None):
