@@ -453,3 +453,37 @@ async def test_browser_retry_recovery_refuses_unproven_or_ambiguous_scopes(setup
     view = coordinator.owner.read(retry["journey_id"])
     assert view.scope["source_recovery"] is None
     assert view.reason == "authority_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_an_account_connect_opens_the_store_six_times_before_its_ceremony_send(setup, monkeypatch):
+    coordinator, initial, _, operation, _, _, _ = await initial_ceremony_case(setup)
+    with coordinator.store.database.transaction() as connection:
+        connection.execute("DELETE FROM desktop_browser_ceremonies")
+    owner = coordinator.owner
+    database, connect, opened = coordinator.store.database, coordinator.store.database.connect, []
+    guards, guard = [], owner._guard
+
+    def counted():
+        opened.append(1)
+        return connect()
+
+    def checked(*args, **kwargs):
+        guards.append(1)
+        return guard(*args, **kwargs)
+
+    class Sent(Exception):
+        pass
+
+    async def send(*args, **kwargs):
+        raise Sent()
+
+    monkeypatch.setattr(database, "connect", counted)
+    monkeypatch.setattr(owner, "_guard", checked)
+    monkeypatch.setattr(owner.ceremonies._effects, "run", send)
+    with pytest.raises(Sent):
+        await owner.execute(operation, reconcile=False)
+    # Every guard check still runs.
+    assert len(guards) == 7
+    # Shared reads before each await, then the handoff journey read and the ceremony reservation.
+    assert len(opened) == 6

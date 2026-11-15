@@ -462,25 +462,34 @@ class ProvisioningSetupOwner:
         return recovered["journey_id"]
 
     async def execute(self, operation, *, reconcile, actor=None):
-        with timing.phase("worker", "observe"):
-            observed = self.observe(operation)
+        stale = False
+        recovered = None
+        # The checks that precede the first await share one store connection.
+        with self.store.database.shared_reads():
+            with timing.phase("worker", "observe"):
+                observed = self.observe(operation)
+            if observed is None and operation["action"] == "account.connect":
+                selected = json.loads(operation["owner_scope_json"])
+                source = self.sources.resolve(selected["source_journey_id"])
+                stale = (selected["journey_kind"] == "initial-enrollment" and source is not None
+                         and source.expires_at <= self.store._now()
+                         and self.ceremonies is not None and self.ceremonies.row(operation["operation_id"]) is not None)
+                if not stale:
+                    with timing.phase("worker", "recover"):
+                        recovered = self._recover_initial_source(operation)
         if observed is not None:
             return observed
         if operation["action"] == "browser.access":
             self.browser_tasks.prepare(operation, "browser.access")
             return OperationResult("waiting")
         if operation["action"] == "account.connect":
-            selected = json.loads(operation["owner_scope_json"])
-            source = self.sources.resolve(selected["source_journey_id"])
-            if (selected["journey_kind"] == "initial-enrollment" and source is not None
-                    and source.expires_at <= self.store._now()
-                    and self.ceremonies is not None and self.ceremonies.row(operation["operation_id"]) is not None):
+            if stale:
                 result = await self.ceremonies.reconcile(operation["operation_id"], authorize=lambda: self._read_guard(operation))
                 terminal = await self._terminal_initial_read(operation, result)
                 if terminal is not None:
                     return terminal
-            with timing.phase("worker", "recover"):
-                recovered = self._recover_initial_source(operation)
+                with timing.phase("worker", "recover"):
+                    recovered = self._recover_initial_source(operation)
             if recovered is not None:
                 # The original initial owner replays only its idempotent prepare
                 # or reads its accepted completion receipt. No new ceremony.
@@ -543,10 +552,11 @@ class ProvisioningSetupOwner:
         early = deferred = False
         try:
             if saved is None:
-                guard()
-                if self.store._now().timestamp() >= operation["expires_at"]:
-                    return OperationResult("refused", "operation_expired")
-                early = selecting and self.browser_tasks.prepare_early(operation)
+                with self.store.database.shared_reads():
+                    guard()
+                    if self.store._now().timestamp() >= operation["expires_at"]:
+                        return OperationResult("refused", "operation_expired")
+                    early = selecting and self.browser_tasks.prepare_early(operation)
                 # Source services own their durable operation IDs and lost-send rules.
                 # Retrying here retains that exact source, including on worker restart.
                 with timing.phase("source", "prepare"):
@@ -557,9 +567,10 @@ class ProvisioningSetupOwner:
                         deferred = True
                     else:
                         await source.prepare(selected["source_journey_id"])
-                guard()
-                with timing.phase("binding", "binding"):
-                    binding = self._binding(operation)
+                with self.store.database.shared_reads():
+                    guard()
+                    with timing.phase("binding", "binding"):
+                        binding = self._binding(operation)
                 await self.ceremonies.prepare(operation["operation_id"], binding, authorize=guard)
             else:
                 result = await self.ceremonies.reconcile(operation["operation_id"], authorize=lambda: self._read_guard(operation))

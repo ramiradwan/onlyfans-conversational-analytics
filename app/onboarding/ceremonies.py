@@ -63,7 +63,7 @@ class BrowserCeremonies:
             if row is not None:
                 if row["binding_json"] != encoded:
                     raise HostedGrantUnavailable("Browser ceremony selection changed")
-                return dict(row), False
+                return dict(row), False, None
             operation = connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?", (operation_id,)).fetchone()
             expected = {"account.connect": "connect-account", "activation.review": "activate-complimentary"}
             if (operation is None or operation["state"] not in {"accepted", "waiting", "outcome_unknown"}
@@ -77,17 +77,18 @@ class BrowserCeremonies:
                 "target": {"operation": "browser-ceremony-prepare", "request": request}})
             connection.execute("INSERT INTO desktop_browser_ceremonies (operation_id,hosted_operation_id,binding_json) VALUES (?,?,?)",
                                (operation_id, hosted_operation, encoded))
-            return dict(connection.execute("SELECT * FROM desktop_browser_ceremonies WHERE operation_id=?", (operation_id,)).fetchone()), True
+            return (dict(connection.execute("SELECT * FROM desktop_browser_ceremonies WHERE operation_id=?", (operation_id,)).fetchone()),
+                    True, operation["journey_id"])
 
     async def prepare(self, operation_id, binding, *, authorize):
         async with self._lock:
-            row, fresh = self._reserve(operation_id, binding, authorize)
+            row, fresh, journey = self._reserve(operation_id, binding, authorize)
             if not fresh:
                 return await self._read(row, authorize=authorize)
             # The exact request is durable before the single prepare send. A
             # restart or lost response can only read this operation.
             result = await self._effects.run(self.client.prepare, self.request(row, known=False),
-                before_send=authorize, journey_id=self._journey(operation_id))
+                before_send=authorize, journey_id=journey)
             with timing.phase("ceremony-prepare", "persist"):
                 self._bind(row, result, preparing=True)
             return result
