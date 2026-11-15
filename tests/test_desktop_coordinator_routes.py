@@ -144,6 +144,27 @@ async def test_event_snapshot_reads_leave_the_event_loop_free(setup):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("actions", "warmed"), [(["account.connect"], 1), (["auth.select"], 1), ([], 0)])
+async def test_a_view_that_can_start_a_sign_in_warms_the_hosted_connection(setup, actions, warmed):
+    coordinator, _, session, _ = setup
+    calls = []
+    response = DesktopEventResponse(coordinator, session, actor=lambda: None, active=set(), deadline=lambda: 1000,
+                                    warm=lambda: calls.append(1))
+    coordinator.read = lambda *args, **kwargs: {"allowed_actions": actions}
+
+    async def send(message):
+        if message["type"] == "http.response.body" and message["body"].startswith(b"event: setup"):
+            raise OSError("disconnected")
+
+    async def receive():
+        await asyncio.Event().wait()
+
+    with pytest.raises(ClientDisconnect):
+        await asyncio.wait_for(response({"type": "http", "asgi": {"spec_version": "2.4"}}, receive, send), 5)
+    assert len(calls) == warmed
+
+
+@pytest.mark.asyncio
 async def test_event_subscription_released_if_headers_cannot_be_sent(setup):
     coordinator, _, session, _ = setup
     active = set()

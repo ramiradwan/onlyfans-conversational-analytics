@@ -13,6 +13,9 @@ from app.onboarding.admission_routes import HEADERS, authorize
 from app.onboarding.coordinator import CommandRefused, DesktopOnboardingCoordinator
 from app.provisioning.events import events
 
+# A view offering one of these can start a sign-in from its next click.
+SIGN_IN_ACTIONS = frozenset({"account.connect", "auth.select"})
+
 
 def _unique(pairs):
     value = {}
@@ -54,10 +57,10 @@ def _refused(error):
 
 class DesktopEventResponse(StreamingResponse):
     """The response owns its subscription, even if no body is ever consumed."""
-    def __init__(self, coordinator, session, *, actor, active, deadline, notices=None):
+    def __init__(self, coordinator, session, *, actor, active, deadline, notices=None, warm=None):
         self.coordinator, self.session = coordinator, session
         self.actor, self.active, self.deadline = actor, active, deadline
-        self.notices = notices
+        self.notices, self.warm = notices, warm
         super().__init__(self.frames(), media_type="text/event-stream", headers=HEADERS | {"X-Accel-Buffering": "no"})
         self.listener = None
 
@@ -86,6 +89,9 @@ class DesktopEventResponse(StreamingResponse):
                 # The read runs off the event loop so sign-in work is not held behind it.
                 with timing.phase("snapshot", "read", minimum_ms=timing.SLOW_MS):
                     snapshot = await asyncio.to_thread(self.coordinator.read, self.session, actor=actor)
+                if self.warm is not None and SIGN_IN_ACTIONS.intersection(snapshot.get("allowed_actions", ())):
+                    # Only a connection is opened. Every sign-in write still starts from its click.
+                    self.warm()
                 encoded = json.dumps(snapshot, separators=(",", ":"))
                 if encoded != previous:
                     yield "event: setup\ndata: " + encoded + "\n\n"
@@ -108,7 +114,7 @@ class DesktopEventResponse(StreamingResponse):
 
 
 def desktop_router(coordinator: DesktopOnboardingCoordinator, *, actor=lambda request, mutation: None,
-                   next_expiry=lambda: 1800.0, notices=None) -> APIRouter:
+                   next_expiry=lambda: 1800.0, notices=None, warm=None) -> APIRouter:
     router = APIRouter(prefix="/api/v1/desktop/setup")
     active_streams = set()
 
@@ -170,6 +176,6 @@ def desktop_router(coordinator: DesktopOnboardingCoordinator, *, actor=lambda re
         session = admitted(request)
         actor(request, False)
         return DesktopEventResponse(coordinator, session, actor=lambda: actor(request, False),
-                                    active=active_streams, deadline=next_expiry, notices=notices)
+                                    active=active_streams, deadline=next_expiry, notices=notices, warm=warm)
 
     return router

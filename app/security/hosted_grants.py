@@ -15,6 +15,7 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+from threading import Lock, Thread
 from time import monotonic, sleep
 from typing import Literal, Protocol
 
@@ -64,6 +65,8 @@ PRODUCTION_TRUST_SET = "production/grant-profile-v1/trust-set.json"
 
 _PROOF_DOMAIN = b"BRIDGE-CLEAN-INSTALLATION-PROOF-V1\x00"
 _MAX_RESPONSE_BYTES = 65_536
+# The hosted service's liveness path. A warm-up reads it only to open a connection.
+WARM_PATH = "/health/live"
 _EXPECTED_MEDIA_TYPE = "application/json"
 _MAX_REPLACEMENT_WAIT_SECONDS = 60.0
 _REPLACEMENT_WAIT_SLICE_SECONDS = 0.1
@@ -256,6 +259,10 @@ class HTTPXHostedTransport:
                 or not 0 < keepalive_seconds <= 120):
             raise ValueError("Hosted keepalive must be finite and at most 120 seconds")
         self._timeout_seconds = timeout_seconds
+        self._keepalive_seconds = keepalive_seconds
+        self._used_at = -math.inf
+        self._warming = False
+        self._warm_lock = Lock()
         self._client = httpx.Client(
             base_url=require_hosted_origin(base_url),
             follow_redirects=False,
@@ -273,6 +280,7 @@ class HTTPXHostedTransport:
         json_body: Mapping[str, object],
     ) -> TransportResponse:
         deadline = monotonic() + self._timeout_seconds
+        self._used_at = monotonic()
         try:
             with self._client.stream(method, path, json=json_body,
                                      extensions={"trace": _connection_timing()}) as response:
@@ -298,6 +306,36 @@ class HTTPXHostedTransport:
                 )
         except Exception:
             raise _TransportFailure("Hosted request failed") from None
+
+    def warm(self) -> bool:
+        """Open a pooled connection in the background unless one was used recently.
+
+        It sends one bodiless GET of the liveness path and ignores the answer, so it
+        carries no proof or credential and changes nothing at the hosted service.
+        """
+        with self._warm_lock:
+            if self._warming or monotonic() - self._used_at < self._keepalive_seconds * 0.75:
+                return False
+            self._warming = True
+        Thread(target=self._warm, name="hosted-transport-warm", daemon=True).start()
+        return True
+
+    def _warm(self) -> None:
+        try:
+            self._used_at = monotonic()
+            with self._client.stream("GET", WARM_PATH, headers={"Accept": "*/*"},
+                                     extensions={"trace": _connection_timing()}) as response:
+                size = 0
+                # Read the bounded answer so the connection returns to the pool.
+                for chunk in response.iter_raw():
+                    size += len(chunk)
+                    if size > _MAX_RESPONSE_BYTES:
+                        break
+        except Exception:
+            pass
+        finally:
+            with self._warm_lock:
+                self._warming = False
 
     def close(self) -> None:
         self._client.close()

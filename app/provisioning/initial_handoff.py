@@ -52,11 +52,14 @@ def _continuity_failure_reason(error: Exception) -> str:
 class InitialInstallationEnrollment:
     def __init__(self, store: SQLiteAuthenticationStore, *, hosted_origin: str,
                  client=None, stream=None, grants=None, continuity=None, continuity_stream=None,
-                 authorize_scope=None) -> None:
+                 authorize_scope=None, transport=None) -> None:
         self.store = store
         self.journeys = OnboardingJourneyStore(store)
         key = installation_proof_authority(store) if client is None else client.key
-        transport = hosted_transport(hosted_origin) if client is None else client.transport
+        # A supplied transport is shared with its creator, which closes it.
+        self._closes_transport = transport is None
+        if transport is None:
+            transport = hosted_transport(hosted_origin) if client is None else client.transport
         self.client = client or InitialHandoffClient(transport, key)
         self.stream = stream or InitialHandoffStream(hosted_origin)
         self.grants = grants or HostedGrantClient(transport, key, store)
@@ -518,4 +521,5 @@ class InitialInstallationEnrollment:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await self._effects.drain()
-        self.grants.close()
+        if self._closes_transport:
+            self.grants.close()

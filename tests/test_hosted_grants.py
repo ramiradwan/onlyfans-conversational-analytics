@@ -1263,6 +1263,63 @@ def test_new_connection_and_tls_durations_are_recorded_without_request_details(m
         "event=sign_in_phase operation=transport phase=tls status=error elapsed_ms=500"]
 
 
+def test_a_warm_up_opens_a_connection_with_one_bodiless_liveness_read_until_the_pool_is_fresh(monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr("app.security.hosted_grants.monotonic", lambda: now[0])
+
+    class Inline:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr("app.security.hosted_grants.Thread", Inline)
+    seen = []
+
+    def handler(request):
+        seen.append((request.method, request.url.path, request.content,
+                     {name for name in request.headers if name.startswith(("authorization", "cookie", "dpop"))}))
+        return httpx.Response(404, stream=_CountingResponseStream([b"{}"]))
+
+    transport = HTTPXHostedTransport("https://control.example", keepalive_seconds=60.0)
+    transport._client.close()
+    transport._client = httpx.Client(base_url="https://control.example", transport=httpx.MockTransport(handler))
+    try:
+        assert transport.warm() is True
+        assert transport.warm() is False
+        now[0] += 46
+        assert transport.warm() is True
+        now[0] += 10
+        transport.request("POST", "/v1/test", json_body={})
+        now[0] += 40
+        assert transport.warm() is False
+    finally:
+        transport.close()
+    assert [(method, path, body, private) for method, path, body, private in seen if method == "GET"] == [
+        ("GET", "/health/live", b"", set()), ("GET", "/health/live", b"", set())]
+
+
+def test_the_initial_handoff_shares_the_sign_in_proof_pool_and_leaves_it_open(tmp_path):
+    import asyncio
+    from app.onboarding.composition import build_desktop_setup
+    from app.persistence.auth import SQLiteAuthenticationStore
+
+    store = SQLiteAuthenticationStore(tmp_path / "auth.sqlite3")
+    core = build_desktop_setup(store=store, stage="setup", extension_id="a" * 32,
+        hosted_origin="https://control.example", authentication_providers=("default",),
+        finalize=lambda **_: None, completion_ready=lambda: False)
+    proofs = core.ceremonies.client.transport
+    assert core.recovery.initial.client.transport is proofs
+    closed = []
+    original = proofs.close
+    proofs.close = lambda: closed.append(1)
+    asyncio.run(core.recovery.initial.stop())
+    assert closed == []
+    proofs.close = original
+    proofs.close()
+
+
 def test_transport_response_repr_does_not_expose_signed_objects():
     response = TransportResponse(403, b"sensitive-compact-denial", "application/json")
     assert "sensitive-compact-denial" not in repr(response)

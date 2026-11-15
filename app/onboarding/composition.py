@@ -74,7 +74,8 @@ def build_desktop_setup(*, store, stage, extension_id, hosted_origin, authentica
             authentication_client=BrowserAuthenticationClient(proofs, key),
             authentication_providers=authentication_providers,
             wait_client=BrowserCeremonyWaitClient(proofs, key, hosted_origin))
-        initial = InitialInstallationEnrollment(store, hosted_origin=hosted_origin)
+        # The first sign-in exchange is the initial handoff, so it shares the proof pool.
+        initial = InitialInstallationEnrollment(store, hosted_origin=hosted_origin, transport=proofs)
         registered = RegisteredInstallationContinuation(store, hosted_origin=hosted_origin)
     recovery = ProvisioningSetupOwner(store, browser_tasks=tasks, ceremonies=ceremonies,
         initial=initial, registered=registered, key=key, finalize=finalize,
@@ -103,7 +104,8 @@ def attach_desktop_setup(application, *, core, launcher_token,
     def notices(session):
         return tasks.helpers.notices({task["task_id"] for task in tasks.current_native(session)})
 
-    application.include_router(desktop_router(coordinator, actor=actor, next_expiry=expiry, notices=notices))
+    warm = None if ceremonies is None else getattr(ceremonies.client.transport, "warm", None)
+    application.include_router(desktop_router(coordinator, actor=actor, next_expiry=expiry, notices=notices, warm=warm))
     application.include_router(browser_router(coordinator, tasks, ceremonies, pairing=pairing))
     application.include_router(setup_surface_router())
     return coordinator
