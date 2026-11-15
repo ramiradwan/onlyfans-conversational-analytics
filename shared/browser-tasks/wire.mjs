@@ -28,7 +28,8 @@ export function isPayload(value) {
 export function isPayloadProjection(value) {
   return isPayload(value) || payloadEnvelope(value) && value.task.state === 'completed' && value.ceremony === null;
 }
-// A sign-in task read before its ceremony exists. The helper attaches nothing until the ceremony arrives.
+// A sign-in task read before its ceremony exists. Its helper port may only prepare: the extension reads
+// and holds the owner in memory, writes nothing, and attaches once the ceremony arrives.
 export function isPreparingPayload(value) {
   return payloadEnvelope(value) && value.task.purpose === 'browser.authentication'
     && value.task.state === 'pending' && value.ceremony === null;

@@ -21,7 +21,7 @@ export class BrowserTaskClient {
     reattach = reattachExtension, events = readBrowserTaskEvents, now = Date.now, nativeLaunch = false, wait = openWaiting }) {
     if (!UUID.test(generation)) throw new Error('session_unavailable');
     Object.assign(this, { generation, receive, request, connect, reattach, events, now, wait });
-    this.waiting = null;
+    this.waiting = null; this.preparedLink = null;
     this.link = null; this.expiry = null; this.session = null; this.payload = null; this.serial = Promise.resolve(); this.run = 0;
     this.pollTimer = null; this.stream = null; this.streamTimer = null; this.streaming = false;
     this.pollBase = this.pollDelay = 2000;
@@ -109,7 +109,11 @@ export class BrowserTaskClient {
       const remaining = payload.task.expires_at * 1000 - this.now();
       if (remaining <= 0 || remaining > 1800000) throw new Error('task_expired');
       this.expiry = setTimeout(() => { this.stop(); this.receive({ state: 'task_expired', payload }); }, remaining);
-      this.link = this.lastLink = this.connect({ payload, receive: value => {
+      const early = this.preparedLink;
+      this.preparedLink = null;
+      const attach = receive => (typeof early?.attach === 'function' && early.attach(payload, receive) ? early
+        : (early?.close?.(), this.connect({ payload, receive })));
+      this.link = this.lastLink = attach(value => {
         if (run !== this.run) return;
         // The ceremony has taken over the waiting window, or this sign-in will not open it.
         if (!['ready', 'paused', 'auth_idle'].includes(value.state)) this.releaseWaiting();
@@ -247,7 +251,7 @@ export class BrowserTaskClient {
             this.complete('reported', payload);
           }
         }).catch(error => { if (run === this.run) { this.stop(); this.receive({ state: error.message, payload }); } });
-      } });
+      });
       this.schedulePoll(run);
       // A stream opened during preparation stays this generation's only stream.
       if (!this.stream) this.listen(run);
@@ -256,7 +260,7 @@ export class BrowserTaskClient {
     }
   }
   /** Waits while Brain prepares the ceremony of an already admitted sign-in task.
-   * A sign-in that opens itself shows the extension's waiting window meanwhile. Nothing attaches. */
+   * A sign-in that opens itself shows the extension's waiting window meanwhile. The extension only reads ahead. */
   async prepared(run, first) {
     let current = first;
     const started = this.now();
@@ -264,6 +268,8 @@ export class BrowserTaskClient {
       && first.task.task_id === this.session.task_id && first.task.journey_id === this.session.journey_id;
     if (own) this.declared = first;
     if (this.automatic && own) { this.waiting = this.wait({ payload: first }); this.loaded('waiting'); }
+    // The extension reads ahead on the port this helper attaches with once the ceremony exists.
+    if (own) this.preparedLink = this.connect({ payload: first, prepare: true, receive: () => {} });
     while (isPreparingPayload(current)) {
       if (current.task.admission_generation !== this.generation || current.task.task_id !== this.session.task_id
         || current.task.journey_id !== this.session.journey_id
@@ -461,6 +467,7 @@ export class BrowserTaskClient {
   }
   stop() {
     this.releaseWaiting();
+    this.preparedLink?.close(); this.preparedLink = null;
     this.nativeLaunch = false; this.automatic = false; this.run++; this.link?.close(); this.link = null;
     clearTimeout(this.expiry); clearTimeout(this.pollTimer); clearTimeout(this.streamTimer);
     this.stream?.abort(); this.stream = null; this.streaming = false;

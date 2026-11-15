@@ -20,18 +20,20 @@ export function createBrowserTaskOwner({ chromeApi, onboarding, consentControlle
     if (!saved) await chromeApi.storage.local.set({ [INSTANCE]: id });
     return id;
   })().catch(error => { instancePromise = null; throw error; });
-  async function context(payload, initial = false, { authorize = async () => {}, signal } = {}) {
+  // A read-only context neither reconciles the workspace identity nor creates the instance id.
+  async function context(payload, initial = false, { authorize = async () => {}, signal, readOnly = false } = {}) {
     const saved = (await chromeApi.storage.local.get(INSTANCE))[INSTANCE];
     if (saved !== undefined && !UUID.test(saved)) throw Error('unavailable');
     if (payload.participant && saved !== payload.participant.instance_id) throw Error('profile_mismatch');
     const current = await onboarding.browserTaskContext(payload.task.journey_id, {
       adopt: initial && payload.entry_source === 'desktop' && payload.participant === null
         && payload.creator_account_id === null && payload.task.purpose === 'browser.access',
-      authorize,
+      authorize, reconcile: !readOnly,
       canAdopt: () => !signal?.aborted && !authentication?.hasLiveFlow() && [...owners.values()].every(owner =>
         owner.payload.task.expires_at * 1000 <= now() || owner.payload.task.journey_id === payload.task.journey_id),
     });
-    const id = await instance();
+    if (readOnly && saved === undefined) throw Error('unavailable');
+    const id = readOnly ? saved : await instance();
     const participant = { instance_id: id, draft_scope_id: current.draft_scope.scope_id,
       disclosure_bundle_id: current.draft_scope.disclosure_bundle_id };
     if (!isParticipant(participant)) throw Error('unavailable');
@@ -62,10 +64,44 @@ export function createBrowserTaskOwner({ chromeApi, onboarding, consentControlle
       owners.set(ownerKey(payload.task), owner);
       return owner;
     }); },
+    /** Reads ahead for a sign-in task whose ceremony is still being prepared. It registers the owner in memory and writes nothing. */
+    prepare(payload, { signal } = {}) { return serial(async () => {
+      const admitted = async () => { if (signal?.aborted) throw Error('task_changed'); };
+      await admitted();
+      for (const [key, owner] of owners) if (owner.payload.task.expires_at * 1000 <= now()) owners.delete(key);
+      const current = await context(payload, true, { authorize: admitted, signal, readOnly: true });
+      await admitted();
+      const owner = { payload, draft_scope: current.draft_scope, selected: null, adopted: JSON.stringify(current.draft_scope),
+        preparing: { record: Boolean(current.record), instance_id: current.participant.instance_id } };
+      owners.set(ownerKey(payload.task), owner);
+      return owner;
+    }); },
+    /** Attaches a prepared owner to its task once the ceremony exists. The adoption is written here, as in attach. */
+    attachPrepared(owner, payload, { authorize = async () => {}, signal } = {}) { return serial(async () => {
+      const admitted = async () => { if (signal?.aborted) throw Error('task_changed'); await authorize();
+        if (signal?.aborted) throw Error('task_changed'); };
+      await admitted();
+      if (!owns(owner) || !owner.preparing || ownerKey(payload.task) !== ownerKey(owner.payload.task)) throw Error('task_changed');
+      const { record, instance_id } = owner.preparing;
+      owner.payload = payload; owner.preparing = null;
+      try {
+        if (record) await chromeApi.storage.local.set({ [ADOPTION]: { journey_id: payload.task.journey_id,
+          instance_id, draft_scope: owner.draft_scope } });
+        await admitted();
+      } catch (error) {
+        if (owns(owner)) owners.delete(ownerKey(payload.task));
+        throw error;
+      }
+      return owner;
+    }); },
+    /** Drops a prepared owner from memory. */
+    forget(owner) { return serial(async () => {
+      if (owner?.preparing && owns(owner)) owners.delete(ownerKey(owner.payload.task));
+    }); },
     read(owner) { return this.readPaired(owner, null); },
     async readPaired(owner, pinnedAccountId) {
       if (!owns(owner)) throw Error('task_changed');
-      const current = await context(owner.payload);
+      const current = await context(owner.payload, false, { readOnly: Boolean(owner.preparing) });
       // A task retains its admitted draft until the workspace has one.
       const scope = current.record ? current.draft_scope : owner.draft_scope;
       const [consent, legal] = await Promise.all([consentController.status(), legalActivationController.status()]);
@@ -91,6 +127,8 @@ export function createBrowserTaskOwner({ chromeApi, onboarding, consentControlle
       const selected = JSON.stringify([account, scope]);
       if (owner.selected !== null && owner.selected !== selected) throw Error('task_changed');
       if (account !== null) owner.selected = selected;
+      // A prepared owner writes nothing. A changed scope ends the read ahead, and the task attaches in full.
+      if (owner.preparing && owner.adopted !== JSON.stringify(scope)) throw Error('task_changed');
       if (current.record && owner.adopted !== JSON.stringify(scope)) {
         await serial(async () => {
           if (!owns(owner)) throw Error('task_changed');

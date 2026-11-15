@@ -54,12 +54,23 @@ export function closeEndedHelper(generation) {
 export const ENDED_HELPER_GRACE_MS = 5000;
 // A waiting port never outlives the waiting window it asked for.
 export const WAITING_PORT_MS = 60000;
+// A preparing helper's port lasts as long as the helper waits for its ceremony.
+export const PREPARED_PORT_MS = 125000;
+// Reads made ahead are used at attach only while this recent and while no change source fired since.
+export const PREPARED_REUSE_MS = 15000;
+const PREPARED_TASK_KEYS = ['task_id', 'journey_id', 'operation_id', 'purpose', 'scope_digest', 'source_revision',
+  'expires_at', 'admission_generation'];
+function samePrepared(prepared, payload) {
+  return PREPARED_TASK_KEYS.every(key => prepared.task[key] === payload.task[key])
+    && ['extension_id', 'entry_source', 'creator_account_id'].every(key => prepared[key] === payload[key])
+    && JSON.stringify(prepared.participant) === JSON.stringify(payload.participant);
+}
 
 export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, companion, authentication,
   onPaired = async () => {}, changeSources = [], now = Date.now, endedGraceMs = ENDED_HELPER_GRACE_MS } = {}) {
   if (!owner || !companion) throw TypeError('Browser task owners are required');
   const ports = new Set(), tasks = new Map();
-  let queue = Promise.resolve(), scheduled = false, registered = false;
+  let queue = Promise.resolve(), scheduled = false, registered = false, changes = 0;
   const serial = work => { const result = queue.then(work); queue = result.catch(() => undefined); return result; };
   const writeLink = () => Promise.resolve(chromeApi.storage.session.set({ [DESKTOP_LINK_STORAGE_KEY]: tasks.size })).catch(() => undefined);
   // Releases the task and its owner state. The port may stay open briefly for the helper's close.
@@ -71,6 +82,7 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
     const session = entry.authSession; entry.authSession = null;
     if (session) session.close();
     else void owner.release?.(entry.context)?.catch(() => undefined);
+    forgetPrepared(entry);
     void writeLink();
   };
   const close = entry => {
@@ -119,9 +131,14 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
     if (tab.url !== entry.port.sender.url || tab.windowId !== entry.port.sender.tab.windowId) throw Error('task_changed');
     return tab;
   }
-  async function push(entry) {
+  function forgetPrepared(entry) {
+    const prepared = entry.prepared; entry.prepared = null;
+    if (prepared?.owner) void Promise.resolve(owner.forget?.(prepared.owner)).catch(() => undefined);
+  }
+  async function push(entry, ahead = null) {
     await current(entry);
-    const observation = await owner.read(entry.context);
+    // An observation read ahead is used only when no change source fired since it was read.
+    const observation = ahead && ahead.changes === changes ? ahead.observation : await owner.read(entry.context);
     await current(entry);
     if (!isObservation(observation)) throw Error('unavailable');
     const encoded = JSON.stringify(observation);
@@ -136,6 +153,7 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
     }
   }
   function changed() {
+    changes++;
     if (scheduled || tasks.size === 0) return;
     scheduled = true;
     void serial(async () => {
@@ -148,7 +166,7 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
   function connect(port) {
     if (port?.name !== PORT) return;
     if (!admitDesktopSender(port.sender)) { try { port.disconnect(); } catch { /* disconnected */ } return; }
-    const entry = { port, closed: false, released: false, ending: null, declared: null, waiting: null, desktop: true, replacement: null,
+    const entry = { port, closed: false, released: false, ending: null, declared: null, waiting: null, prepared: null, desktop: true, replacement: null,
       pairingPending: false, pairingCompleted: false,
       payload: null, context: null, last: null, authSession: null,
       controller: new AbortController(), lastOpen: -Infinity, timer: null, unsubscribe: null };
@@ -195,10 +213,48 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
             expires_at: Math.floor(payload.task.expires_at) });
           return;
         }
+        if (exact(message, ['type', 'payload']) && message.type === 'prepare') {
+          // The helper of a sign-in still being prepared reads ahead on the port it attaches with later.
+          // The owner is held in memory only. Nothing is written, sent or opened until the ceremony exists.
+          const payload = message.payload;
+          if (entry.payload || entry.declared || entry.waiting || entry.prepared || !isPreparingPayload(payload)
+            || payload.extension_id !== chromeApi.runtime.id
+            || payload.task.admission_generation !== helperGeneration(port.sender.url)) throw Error('task_changed');
+          const remaining = payload.task.expires_at * 1000 - now();
+          if (remaining <= 0 || remaining > 1800000) throw Error('task_expired');
+          await sameDocument(entry);
+          clearTimeout(entry.timer);
+          entry.timer = setTimeout(() => close(entry), Math.min(remaining, PREPARED_PORT_MS));
+          if (!owner.prepare || !owner.forget || !owner.attachPrepared) return;
+          const prepared = entry.prepared = { payload, owner: null, observation: null, changes, at: now() };
+          try {
+            prepared.owner = await owner.prepare(payload, { signal: entry.controller.signal });
+            if (entry.prepared !== prepared) throw Error('task_changed');
+            const observation = await owner.read(prepared.owner);
+            await sameDocument(entry);
+            if (entry.prepared !== prepared || !isObservation(observation)) throw Error('task_changed');
+            prepared.observation = observation;
+          } catch {
+            // A failed read ahead leaves the ordinary attach.
+            if (entry.prepared === prepared) forgetPrepared(entry);
+            else if (prepared.owner) void Promise.resolve(owner.forget(prepared.owner)).catch(() => undefined);
+          }
+          return;
+        }
         if (exact(message, ['type', 'payload']) && message.type === 'attach') {
           const payload = message.payload;
           if (entry.payload || entry.declared || entry.waiting || !isPayload(payload) || payload.extension_id !== chromeApi.runtime.id
             || payload.task.admission_generation !== helperGeneration(port.sender.url)) throw Error('task_changed');
+          const prepared = entry.prepared; entry.prepared = null;
+          if (prepared && !samePrepared(prepared.payload, payload)) {
+            if (prepared.owner) void Promise.resolve(owner.forget(prepared.owner)).catch(() => undefined);
+            throw Error('task_changed');
+          }
+          const ahead = prepared?.observation && prepared.changes === changes && now() - prepared.at < PREPARED_REUSE_MS
+            && payload.entry_source === 'desktop' ? prepared : null;
+          if (prepared?.owner && !ahead) void Promise.resolve(owner.forget(prepared.owner)).catch(() => undefined);
+          // Until it attaches, a refusal forgets the prepared owner.
+          entry.prepared = ahead;
           // The exact helper document's own task. A refusal of it may still close that document.
           entry.declared = payload.task;
           if (!['pending', 'accepted', 'outcome_unknown', 'completed'].includes(payload.task.state)) throw Error('task_changed');
@@ -210,7 +266,10 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
             .some(key => previous.payload.task[key] !== payload.task[key])) throw Error('task_changed');
           entry.payload = payload;
           await current(entry);
-          entry.context = await owner.attach(payload, { authorize: () => current(entry), signal: entry.controller.signal });
+          entry.context = ahead
+            ? await owner.attachPrepared(ahead.owner, payload, { authorize: () => current(entry), signal: entry.controller.signal })
+            : await owner.attach(payload, { authorize: () => current(entry), signal: entry.controller.signal });
+          entry.prepared = null;
           try { await current(entry); }
           catch (error) {
             const detached = entry.context; entry.context = null;
@@ -236,7 +295,7 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
               }
             }
           });
-          void writeLink(); await push(entry); return;
+          void writeLink(); await push(entry, ahead); return;
         }
         if (!exact(message, ['type', 'task_id', 'admission_generation']) || !entry.payload
           || message.task_id !== entry.payload.task.task_id || message.admission_generation !== entry.payload.task.admission_generation) throw Error('task_changed');

@@ -23,7 +23,7 @@ async function until(predicate, limit = 5000) {
 }
 
 // Real helper, extension port and sign-in popup owner. Only Chrome and Brain's HTTP replies are simulated.
-function harness(t, { preparingReads, outcome = 'ready', nativeLaunch = true }) {
+function harness(t, { preparingReads, outcome = 'ready', nativeLaunch = true, prepared = false }) {
   const ready = payload();
   Object.assign(ready.task, { purpose: 'browser.authentication', state: 'pending', expires_at: Math.floor(Date.now() / 1000) + 1790 });
   ready.creator_account_id = 'synthetic-creator';
@@ -43,15 +43,21 @@ function harness(t, { preparingReads, outcome = 'ready', nativeLaunch = true }) 
     alarms: { onAlarm: event(), async create() {}, async clear() {} },
     windows: { onRemoved: event(), async create(options) { created.push(options); return { id: 40 + created.length, tabs: [{ id: 80 }] }; },
       async remove(id) { removed.push(id); }, async update() {} },
-    tabs: { async get() { return { url, windowId: 4 }; }, async update(id, options) { updated.push([id, options]); } },
+    tabs: { async get() { return { url, windowId: 4 }; }, async update(id, options) { updated.push([id, options]); calls.push('popup'); } },
     scripting: { async executeScript() { return [{ frameId: 0, documentId: 'document-1', result: true }]; } },
   };
   const authentication = createBrowserAuth({ chromeApi, hostedOrigin: ORIGIN });
-  const owner = { async attach() { return {}; }, async read() { return { ...observed }; }, async release() {} };
+  const calls = [];
+  const owner = { async attach() { calls.push('attach'); return {}; }, async read() { calls.push('read'); return { ...observed }; },
+    async release(context) { if (context) calls.push('release'); },
+    ...(prepared ? { async prepare() { calls.push('prepare'); return { prepared: true }; },
+      async attachPrepared(value) { calls.push('attachPrepared'); return value; },
+      async forget() { calls.push('forget'); } } : {}) };
   const companion = { subscribe: () => () => {}, owns: () => false, cancelFor() {} };
   const ports = registerDesktopPort({ chromeApi, owner, companion, authentication });
   ports.register();
   const runtime = { connect() {
+    connects++;
     let extensionPort;
     const helperPort = { onMessage: event(), onDisconnect: event(), disconnect() { extensionPort.onDisconnect.emit(); },
       postMessage: message => extensionPort.onMessage.emit(message) };
@@ -61,7 +67,7 @@ function harness(t, { preparingReads, outcome = 'ready', nativeLaunch = true }) 
     chromeApi.runtime.onConnectExternal.emit(extensionPort);
     return helperPort;
   } };
-  let reads = 0;
+  let reads = 0, connects = 0;
   const presentations = [];
   const helper = new BrowserTaskClient({ generation: ready.task.admission_generation, nativeLaunch,
     receive: value => presentations.push(value.state), connect: options => connectExtension({ ...options, runtime }),
@@ -76,7 +82,7 @@ function harness(t, { preparingReads, outcome = 'ready', nativeLaunch = true }) 
       return { ok: true, text: async () => JSON.stringify(response) };
     } });
   t.after(async () => { helper.stop(); ports.unregister?.(); await tick(); });
-  return { helper, created, updated, removed, presentations, ready, get reads() { return reads; } };
+  return { helper, created, updated, removed, presentations, ready, calls, ports, chromeApi, get reads() { return reads; }, get connects() { return connects; } };
 }
 
 for (const preparingReads of [0, 3]) {
@@ -123,4 +129,35 @@ test('a helper the customer opened by hand shows no waiting window', async t => 
   await h.helper.start();
   await new Promise(resolve => setTimeout(resolve, 300));
   assert.deepEqual(h.created, []);
+});
+
+test('a prepared sign-in attaches on the port it prepared with and uses its read ahead', async t => {
+  const h = harness(t, { preparingReads: 3, prepared: true });
+  await h.helper.start();
+  assert.equal(await until(() => h.created.length > 0 && h.updated.length > 0), true, `presentations: ${h.presentations.join(',')}`);
+  // One waiting port and one task port. The task port prepared, then attached.
+  assert.equal(h.connects, 2);
+  assert.deepEqual(h.calls.filter(call => call !== 'read').slice(0, 2), ['prepare', 'attachPrepared']);
+  assert.equal(h.calls.includes('attach'), false);
+  // One read ahead and the two guards of the popup opening. Attach reads nothing.
+  assert.deepEqual(h.calls.slice(0, h.calls.indexOf('popup') + 1), ['prepare', 'read', 'attachPrepared', 'read', 'read', 'popup']);
+  // Only the popup owner's attempt record is stored. The read ahead stores nothing.
+  assert.deepEqual(Object.keys(await h.chromeApi.storage.local.get()), ['browser_auth_attempts_v2']);
+});
+
+test('a change after the read ahead makes attach read in full', async t => {
+  const h = harness(t, { preparingReads: 30, prepared: true });
+  void h.helper.start();
+  assert.equal(await until(() => h.calls.includes('read')), true);
+  h.ports.changed();
+  assert.equal(await until(() => h.created.length > 0 && h.updated.length > 0, 8000), true);
+  assert.deepEqual(h.calls.filter(call => call !== 'read').slice(0, 3), ['prepare', 'forget', 'attach']);
+});
+
+test('a sign-in cancelled while it is prepared forgets its read ahead and stores nothing', async t => {
+  const h = harness(t, { preparingReads: 3, outcome: 'cancelled', prepared: true });
+  await h.helper.start();
+  assert.equal(await until(() => h.calls.includes('forget')), true, `calls: ${h.calls.join(',')}`);
+  assert.deepEqual(h.calls, ['prepare', 'read', 'forget']);
+  assert.deepEqual(await h.chromeApi.storage.local.get(), {});
 });
