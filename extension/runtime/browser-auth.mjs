@@ -39,7 +39,7 @@ function validRecord(value) {
 }
 
 /** Journal only bounded correlation. Entry URLs, returned URLs and API errors are never stored. */
-export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onRemoved = () => {} }) {
+export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onRemoved = () => {}, onCreated = () => {} }) {
   const active = new Map(), listeners = new Set();
   const launching = new Map(), watchers = new Set();
   let queue = Promise.resolve(), disposed = false;
@@ -207,6 +207,7 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
   }).catch(() => undefined);
   /** Opens one attempt's popup, adopting its waiting window when there is one. */
   async function open(payload, guard) {
+    const started = now();
     const expected = await binding(payload), records = await load();
     let record = find(records, expected);
     await guard();
@@ -255,6 +256,7 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
       void Promise.resolve()
         .then(() => chromeApi.tabs.update(placeholder.tabId, { url, active: true }))
         .then(() => {
+          onCreated(now() - started);
           if (entry.retired) { retire(entry); return; }
           return rememberPopup(record.task_id, { admission_generation: payload.task.admission_generation,
             sequence, window_id: entry.windowId }).catch(() => undefined);
@@ -269,6 +271,7 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
       .then(() => chromeApi.windows.create({ type: 'popup', url, focused: true, ...POPUP_SIZE }))
       .then(created => {
         if (!Number.isInteger(created?.id)) throw Error('authentication_unconfirmed');
+        onCreated(now() - started);
         entry.windowId = created.id;
         if (entry.retired) { retire(entry); return; }
         return rememberPopup(record.task_id, { admission_generation: payload.task.admission_generation,

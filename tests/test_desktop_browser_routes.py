@@ -56,6 +56,38 @@ def test_popup_timing_is_local_closed_and_cannot_reconcile(tmp_path, caplog):
         assert connection.execute("SELECT count(*) FROM desktop_setup_operations").fetchone()[0] == 0
 
 
+def test_popup_creation_timing_is_a_closed_local_observation(tmp_path, caplog):
+    import logging
+    from starlette.websockets import WebSocketDisconnect
+    from app.transport.companion_origin import CompanionOriginBoundary
+    coordinator, tasks, _, _ = browser_setup.__wrapped__(tmp_path)
+    app = FastAPI()
+    app.add_middleware(CompanionOriginBoundary)
+    app.include_router(browser_router(coordinator, tasks, None))
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    socket_headers = {"Host": "127.0.0.1:17871", "Origin": "chrome-extension://" + "a" * 32}
+    with TestClient(app, base_url="http://127.0.0.1:17871") as client:
+        with client.websocket_connect("/api/v1/browser-tasks/timing", headers=socket_headers) as socket:
+            socket.send_json({"operation": "extension", "phase": "popup-create", "status": "ok", "elapsed_ms": 31})
+            with pytest.raises(WebSocketDisconnect) as ended:
+                socket.receive_text()
+            assert ended.value.code == 1000
+    assert caplog.messages == ["event=sign_in_phase operation=extension phase=popup-create status=ok elapsed_ms=31"]
+
+
+def test_a_helper_first_ceremony_read_is_timed_once_from_the_open_browser_step(caplog):
+    import logging
+    from app.onboarding import timing
+    timing.reset()
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    clock = iter([10.0, 10.25, 10.5])
+    timing.entry_served("operation-1", clock=lambda: 9.0)
+    timing.entry_ready("operation-1", clock=lambda: next(clock))
+    timing.entry_served("operation-1", clock=lambda: next(clock))
+    timing.entry_served("operation-1", clock=lambda: next(clock))
+    assert caplog.messages == ["event=sign_in_phase operation=helper phase=pickup status=ok elapsed_ms=250"]
+
+
 def test_browser_payload_and_observation_are_closed_and_role_scoped(tmp_path):
     setup = browser_setup.__wrapped__(tmp_path)
     coordinator, tasks, native, _ = setup

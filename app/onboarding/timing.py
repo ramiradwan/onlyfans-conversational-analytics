@@ -17,6 +17,7 @@ POINTS = ("frame", "reconciled", "completed", "sent")
 _LIMIT = 64
 _marks: dict[str, dict[str, float]] = {}
 _completed: dict[str, float] = {}
+_ready: dict[str, float] = {}
 OPERATIONS = frozenset({"frontend", "command", "worker", "source", "binding", "effect", "key",
     "ceremony-prepare", "ceremony-read", "ceremony-recover", "ceremony-cancel",
     "authentication-read", "authentication-select", "authentication-cancel", "authentication-switch",
@@ -27,7 +28,7 @@ PHASES = frozenset({"click", "command-send", "accept", "entry", "prepare", "bind
     "helper-finish", "task-send", "popup-remove", "challenge-send", "challenge-receive",
     "protected-send", "protected-receive", "observe", "recover", "ensure", "connect", "tls",
     "read", "watch", "renew", "waiting", "reserve", "lookup", "create", "activate", "persist",
-    "entry-open", "entry-pending"})
+    "entry-open", "entry-pending", "pickup", "popup-create"})
 # Event-loop work below this duration is not recorded.
 SLOW_MS = 25
 SINK_DIRECTORY = "diagnostics"
@@ -131,6 +132,19 @@ def completed(key, *, clock=time.monotonic):
     mark(key, "completed", clock=clock)
 
 
+def entry_ready(key, *, clock=time.monotonic):
+    """Remember when a sign-in's browser step became open, until its helper first reads it."""
+    if len(_ready) >= _LIMIT:
+        _ready.pop(next(iter(_ready)))
+    _ready.setdefault(key, clock())
+
+
+def entry_served(key, *, clock=time.monotonic):
+    started = _ready.pop(key, None)
+    if started is not None:
+        observe("helper", "pickup", "ok", max(0, (clock() - started) * 1000))
+
+
 def helper_finish(key, *, clock=time.monotonic):
     started = _completed.pop(key, None)
     if started is not None:
@@ -176,3 +190,4 @@ def close(key: str, route: str, *, clock=time.monotonic) -> dict | None:
 def reset() -> None:
     _marks.clear()
     _completed.clear()
+    _ready.clear()

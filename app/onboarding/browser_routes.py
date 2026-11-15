@@ -68,7 +68,7 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
             raw = await asyncio.wait_for(socket.receive_text(), 2)
             if len(raw) > 256:
                 raise ValueError("Invalid sign-in observation")
-            timing.observation(json.loads(raw), operation="extension", phases={"popup-remove"})
+            timing.observation(json.loads(raw), operation="extension", phases={"popup-remove", "popup-create"})
         except (ValueError, TypeError, TimeoutError):
             await socket.close(code=1008)
             return
@@ -85,6 +85,8 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
                 and task["state"] != "completed" and not tasks.preparing(task)):
             # Without a ceremony only an accepted operation that is still preparing keeps its task.
             raise HTTPException(409, "Browser task changed")
+        if entry is not None:
+            timing.entry_served(task["operation_id"])
         return JSONResponse({"profile": "browser-task.v1", "task": task,
             "extension_id": tasks.extension_id, "ceremony": entry, **tasks.attachment(task)}, headers=HEADERS)
 

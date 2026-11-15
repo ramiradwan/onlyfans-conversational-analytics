@@ -488,6 +488,7 @@ class ProvisioningSetupOwner:
                 raise
             entry = self.ceremonies.browser_entry(operation["operation_id"])
             if result.state == "waiting" and entry is not None:
+                timing.entry_ready(operation["operation_id"])
                 self.browser_tasks.prepare(operation, "browser.authentication", deadline=datetime.fromisoformat(entry["expires_at"].replace("Z", "+00:00")).timestamp())
             elif early and result.state != "waiting":
                 self._withdraw_early_task(operation)
@@ -568,6 +569,7 @@ class ProvisioningSetupOwner:
                 entry = self.ceremonies.browser_entry(operation["operation_id"])
                 timing.observe("authentication-read", "entry-pending" if entry is None else "entry-open", "ok", 0)
             if entry is not None:
+                timing.entry_ready(operation["operation_id"])
                 self.browser_tasks.prepare(operation, "browser.authentication", deadline=datetime.fromisoformat(
                     entry["expires_at"].replace("Z", "+00:00")).timestamp())
             waiting = entry is not None or authentication is not None and authentication["state"] not in {"expired", "unavailable"}

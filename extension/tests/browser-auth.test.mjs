@@ -34,6 +34,23 @@ test('popup timing sends only a finite delta over the fixed local socket', async
   assert.equal(sockets[0].url, 'ws://127.0.0.1:17871/api/v1/browser-tasks/timing');
   assert.deepEqual(sockets[0].value, { operation: 'extension', phase: 'popup-remove', status: 'ok', elapsed_ms: 12 });
 });
+test('both backgrounds send closed popup creation observations locally', async t => {
+  for (const file of ['background.js', 'background-read-only.js']) {
+    const source = readFileSync(new URL('../' + file, import.meta.url), 'utf8');
+    assert.match(source, /onCreated: observePopupCreation/u);
+  }
+  const prior = globalThis.WebSocket, sockets = [];
+  globalThis.WebSocket = class {
+    constructor(url) { this.url = url; sockets.push(this); }
+    send(value) { this.value = JSON.parse(value); this.onclose(); }
+    close() { this.onclose(); }
+  };
+  t.after(() => { globalThis.WebSocket = prior; });
+  const { observePopupCreation } = await import('../runtime/sign-in-timing.mjs');
+  observePopupCreation(-1); assert.equal(sockets.length, 0);
+  observePopupCreation(30.6); sockets[0].onopen();
+  assert.deepEqual(sockets[0].value, { operation: 'extension', phase: 'popup-create', status: 'ok', elapsed_ms: 31 });
+});
 const RETURN = 'https://' + 'a'.repeat(32) + '.chromiumapp.org/browser-ceremony/v1/complete';
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -110,6 +127,17 @@ for (const vector of JSON.parse(readFileSync(new URL('../../contracts/browser-ce
     else assert.throws(() => parseBrowserAuthReturn(vector.url, ceremony), /authentication_unconfirmed/u);
   });
 }
+
+test('a launched popup reports how long it took from the open request to its window', async t => {
+  const h = harness(t), value = h.request(), created = [], at = Date.now();
+  const owner = createBrowserAuth({ chromeApi: h.chromeApi, hostedOrigin: ORIGIN, now: () => at,
+    onCreated: elapsed => created.push(elapsed) });
+  t.after(() => owner.dispose());
+  await owner.launch(value, async () => {});
+  await tick();
+  assert.deepEqual(created, [0]);
+  assert.equal(h.flows.length, 1);
+});
 
 test('reads never launch, duplicate actions reuse a journaled flow, and only correlation is retained', async t => {
   const h = harness(t), value = h.request();
