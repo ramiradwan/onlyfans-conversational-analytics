@@ -52,29 +52,50 @@ async def browser_access(setup):
     return request, task, browser
 
 
-@pytest.mark.asyncio
-async def test_browser_access_creates_a_missing_key_without_waiting_for_it(setup):
-    import threading
+async def launched_key(coordinator, tasks, operation_id):
+    tasks.launched(operation_id)
+    await coordinator.owner._key_task
 
+
+@pytest.mark.asyncio
+async def test_browser_access_creates_a_missing_key_once_its_launch_returns(setup):
     from app.security.installation_key import InstallationKeyAuthority
     from test_installation_key import EmulatedPlatformProvider
 
     coordinator, tasks, native, _ = setup
-    store, release = coordinator.owner.store, threading.Event()
-
-    class HeldProvider(EmulatedPlatformProvider):
-        def create_non_exportable_key(self, provider_key_name):
-            assert release.wait(timeout=10)
-            return super().create_non_exportable_key(provider_key_name)
-
-    provider = HeldProvider()
+    store, provider = coordinator.owner.store, EmulatedPlatformProvider()
     coordinator.owner.key = InstallationKeyAuthority(store, provider)
-    request, task, _ = await browser_access(setup)
-    assert task["operation_id"] == request["operation_id"]
-    assert store.installation_key_reference() is None
-    release.set()
-    await coordinator.owner.stop()
+    request, _, _ = await browser_access(setup)
+    assert coordinator.receipt(native, request["operation_id"])["state"] == "waiting"
+    await asyncio.sleep(0.05)
+    assert store.installation_key_reference() is None and provider.create_calls == 0
+    await launched_key(coordinator, tasks, request["operation_id"])
     assert store.installation_key_reference() is not None and provider.create_calls == 1
+    await coordinator.owner.stop()
+
+
+@pytest.mark.asyncio
+async def test_stopping_before_the_launch_returns_prepares_no_key(setup):
+    coordinator, _, _, _ = setup
+    await browser_access(setup)
+    await coordinator.owner.stop()
+    assert coordinator.owner.key.prepared == 0
+
+
+@pytest.mark.asyncio
+async def test_only_the_browser_access_click_prepares_a_missing_key(setup):
+    coordinator, tasks, _, _ = setup
+    request, _, _ = await browser_access(setup)
+    with coordinator.store.database.read() as connection:
+        operation = dict(connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?",
+            (request["operation_id"],)).fetchone())
+    await launched_key(coordinator, tasks, request["operation_id"])
+    coordinator.owner.key = MissingKeyOnly()
+    assert (await coordinator.owner.execute(operation, reconcile=True)).state == "waiting"
+    tasks.launched(request["operation_id"])
+    await asyncio.sleep(0.05)
+    await coordinator.owner.stop()
+    assert coordinator.owner.key.prepared == 0
 
 
 @pytest.mark.asyncio
@@ -82,9 +103,10 @@ async def test_browser_access_leaves_an_active_key_alone(setup):
     from app.security.installation_key import InstallationKeyAuthority
     from test_installation_key import EmulatedPlatformProvider
 
-    coordinator, _, _, _ = setup
+    coordinator, tasks, _, _ = setup
     active = InstallationKeyAuthority(coordinator.owner.store, EmulatedPlatformProvider()).ensure_ready()
-    await browser_access(setup)
+    request, _, _ = await browser_access(setup)
+    await launched_key(coordinator, tasks, request["operation_id"])
     await coordinator.owner.stop()
     assert coordinator.owner.key.prepared == 0
     assert coordinator.owner.store.installation_key_reference() == active
@@ -102,9 +124,11 @@ async def test_a_key_failure_does_not_affect_browser_access(setup):
     coordinator, tasks, native, _ = setup
     coordinator.owner.key = RefusingKey()
     request, task, browser = await browser_access(setup)
+    await launched_key(coordinator, tasks, request["operation_id"])
     await coordinator.owner.stop()
     assert coordinator.owner.key.prepared == 1
-    assert tasks.current_native(native)[0]["task_id"] == task["task_id"] == browser.task_id
+    assert coordinator.receipt(native, request["operation_id"])["state"] == "waiting"
+    assert browser.task_id == task["task_id"]
     assert coordinator.owner.store.installation_key_reference() is None
 
 

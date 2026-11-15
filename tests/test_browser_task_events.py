@@ -122,9 +122,13 @@ def test_open_mints_an_entry_only_without_a_session_or_live_helper(tmp_path, mon
     path = "/api/v1/desktop/browser-tasks/" + task["task_id"] + "/open"
     with TestClient(app, base_url=ORIGIN) as client:
         assert client.post(path, json={}, headers=headers(browser)).status_code == 401
+        launched = tasks.launch_signal(task["operation_id"])
+        assert not launched.is_set()
         response = client.post(path, json={}, headers=headers(native))
         assert response.status_code == 200
         assert set(response.json()) == {"state", "entry_code"} and response.json()["state"] == "entry"
+        # The returned route lets the click's deferred key preparation start.
+        assert launched.is_set()
         # The reissue fenced the earlier helper generation.
         assert client.get("/api/v1/browser-tasks/payload", headers=headers(browser)).status_code == 401
         tasks.complete(task["operation_id"])

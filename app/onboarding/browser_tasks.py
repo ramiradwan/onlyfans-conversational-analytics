@@ -1,6 +1,7 @@
 """Task-bound browser observations; only domain services can authorize Full work."""
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 
@@ -105,6 +106,18 @@ class BrowserTasks:
         self.helpers = HelperStreams()
         # Set by the runtime companion router: sends an authentication task to the paired session.
         self.dispatcher = None
+        self._launches = {}
+
+    def launch_signal(self, operation_id):
+        """An event set once an open request for this operation's task has returned its route."""
+        if len(self._launches) >= 64 and operation_id not in self._launches:
+            self._launches.pop(next(iter(self._launches))).set()
+        return self._launches.setdefault(operation_id, asyncio.Event())
+
+    def launched(self, operation_id):
+        signal = self._launches.pop(operation_id, None)
+        if signal is not None:
+            signal.set()
 
     def prepare(self, operation, purpose, *, deadline=None):
         if self.extension_id is None:

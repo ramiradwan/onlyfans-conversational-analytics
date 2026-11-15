@@ -22,6 +22,9 @@ from app.security.browser_authentication import BrowserAuthenticationRefused
 from app.security.hosted_grants import HostedGrantUnavailable
 from app.security.installation_key import InstallationKeyError
 
+# Key preparation for browser access starts once its launch returns, or after this many seconds.
+KEY_AFTER_LAUNCH_SECONDS = 2.0
+
 
 class ProvisioningSetupOwner:
     def __init__(self, store, *, browser_tasks, ceremonies, initial, registered, key,
@@ -34,7 +37,7 @@ class ProvisioningSetupOwner:
         self.sources = SetupSourceLifecycle(store, self.journeys, self.contexts)
         self.progress = scoped_durable_provisioning_progress(lambda: store)
         self._effects = OwnerEffects()
-        self._key_task, self._key_closed = None, False
+        self._key_task, self._key_launch, self._key_closed = None, None, False
         # Effect threads recheck their original domain context at admission.
         from threading import RLock
         gate = RLock()
@@ -484,7 +487,7 @@ class ProvisioningSetupOwner:
         if operation["action"] == "browser.access":
             self.browser_tasks.prepare(operation, "browser.access")
             if not reconcile:
-                self._prepare_missing_key()
+                self._prepare_missing_key(operation["operation_id"])
             return OperationResult("waiting")
         if operation["action"] == "account.connect":
             if stale:
@@ -698,21 +701,33 @@ class ProvisioningSetupOwner:
             "intended_creator_id": selected["creator_account_id"], "attempt_id": secrets.token_urlsafe(32),
             "completion": completion, "source_expires_at": expiry, **organization}
 
-    def _prepare_missing_key(self):
-        """Create a missing installation key in the background without replacing an active one."""
+    def _prepare_missing_key(self, operation_id):
+        """Create a missing installation key after the browser launch, never replacing an active one."""
         running = self._key_task is not None and not self._key_task.done()
         if self.key is None or self._key_closed or running:
             return
+        signal = getattr(self.browser_tasks, "launch_signal", None)
+        launched = asyncio.Event() if signal is None else signal(operation_id)
+        self._key_launch = launched
         def prepare():
             try:
                 if self.store.installation_key_reference() is None:
                     self.key.ensure_ready()
             except Exception:  # noqa: BLE001 - the account connection prepares the key again.
                 return
-        self._key_task = asyncio.create_task(asyncio.to_thread(prepare))
+        async def after_launch():
+            try:
+                await asyncio.wait_for(launched.wait(), KEY_AFTER_LAUNCH_SECONDS)
+            except TimeoutError:
+                pass
+            if not self._key_closed:
+                await asyncio.to_thread(prepare)
+        self._key_task = asyncio.create_task(after_launch())
 
     async def stop(self):
         self._key_closed = True
+        if self._key_launch is not None:
+            self._key_launch.set()
         if self._key_task is not None:
             await asyncio.gather(asyncio.shield(self._key_task), return_exceptions=True)
         self._effects.close_admission()

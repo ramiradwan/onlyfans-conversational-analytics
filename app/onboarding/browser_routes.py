@@ -192,6 +192,7 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
         if task_id in opening:
             return JSONResponse({"reason": "open_in_progress"}, status_code=429, headers=HEADERS)
         opening.add(task_id)
+        task = None
         try:
             try:
                 task = open_target(session, require_journey(task_id))
@@ -221,6 +222,8 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
             return JSONResponse({"state": "entry", "entry_code": code}, headers=HEADERS)
         finally:
             opening.discard(task_id)
+            if task is not None:
+                tasks.launched(task["operation_id"])
 
     @router.post("/api/v1/browser-tasks/pairing")
     async def compare_pairing(request: Request):
