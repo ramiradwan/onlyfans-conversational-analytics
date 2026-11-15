@@ -347,6 +347,10 @@ class ProvisioningSetupOwner:
                 self.completed()
 
     def _guard(self, operation, *, connection=None):
+        if connection is None:
+            # The source checks share one store connection. Each opening re-verifies the store files.
+            with self.store.database.read() as connection:
+                return self._guard(operation, connection=connection)
         selected = json.loads(operation["owner_scope_json"])
         row = self.sources.current(self.sources.effective(selected["source_journey_id"], connection=connection), connection=connection)
         if selected["installation_id"] is not None and row.installation_id != selected["installation_id"]:

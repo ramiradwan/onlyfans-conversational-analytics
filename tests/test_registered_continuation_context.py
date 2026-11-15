@@ -306,6 +306,33 @@ def test_native_account_command_resumes_only_the_explicit_classified_source(owne
     assert operation["journey_id"] == root
     assert owner.contexts.require_current(scope["source_journey_id"])["scope"]["creator_account_id"] == "creator-1"
 
+def test_a_send_guard_checks_its_source_through_one_store_connection(owner):
+    from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
+    _, original = selected(owner)
+    setup_owner = ProvisioningSetupOwner(owner.store, browser_tasks=SimpleNamespace(extension_id="a" * 32),
+        ceremonies=None, initial=None, registered=None, key=owner.key, finalize=lambda **_: None,
+        completion_ready=lambda: False)
+    current = owner.contexts.require_current(original.journey_id)
+    row = owner.journeys.require_current(original.journey_id)
+    reference = owner.store.installation_key_reference()
+    operation = {"owner_scope_json": json.dumps({"source_journey_id": original.journey_id,
+        "installation_id": row["installation_id"], "creator_account_id": current["scope"]["creator_account_id"],
+        "association_request_id": current["association_request_id"],
+        "key": {"installation_key_id": reference.installation_key_id,
+                "installation_key_jkt": reference.installation_key_jkt}})}
+    database = owner.store.database
+    opened, connect = [], database.connect
+
+    def counted():
+        opened.append(1)
+        return connect()
+
+    database.connect = counted
+    assert setup_owner._guard(operation).journey_id == original.journey_id
+    # One for the source and one for the installation key reference.
+    assert len(opened) == 2
+
+
 @pytest.mark.parametrize("state", ["expired", "revoked"])
 def test_provider_terminal_source_can_continue_before_local_presentation_expiry(owner, state):
     _, original = selected(owner)
