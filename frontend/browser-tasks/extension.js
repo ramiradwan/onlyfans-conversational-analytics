@@ -112,6 +112,19 @@ export function connectExtension({ payload, receive, runtime = globalThis.chrome
   } };
 }
 
+/** Asks the extension for the local waiting window of a sign-in task still being prepared.
+ * The window lasts while this port is open or until the ceremony opens in it. It carries no ceremony. */
+export function openWaiting({ payload, runtime = globalThis.chrome?.runtime }) {
+  let port = null;
+  try {
+    if (!runtime?.connect) return { close() {} };
+    port = runtime.connect(payload.extension_id, { name: PORT });
+    port.onDisconnect.addListener(() => { void runtime.lastError; port = null; });
+    port.postMessage({ type: 'waiting', payload });
+  } catch { port = null; }
+  return { close() { const current = port; port = null; try { current?.disconnect(); } catch { /* disconnected */ } } };
+}
+
 /** One fresh port after the first one died: attach, then a single finish or close. */
 export function reattachExtension({ payload, type, runtime = globalThis.chrome?.runtime, timeout = 5000 }) {
   if (!['finish', 'close'].includes(type)) return Promise.resolve(false);

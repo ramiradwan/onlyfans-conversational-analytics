@@ -1,6 +1,6 @@
 // The only pre-pairing browser port: one declared task in its exact helper tab.
 import { LOCAL_SERVICE_ORIGIN } from '../transport/local-service-endpoints.mjs';
-import { PORT, exact, isPayload, isObservation, helperGeneration } from '../../shared/browser-tasks/wire.mjs';
+import { PORT, exact, isPayload, isObservation, isPreparingPayload, helperGeneration } from '../../shared/browser-tasks/wire.mjs';
 import { createAuthenticationTaskSession } from './authentication-task-session.mjs';
 export const DESKTOP_PORT_NAME = PORT;
 export const DESKTOP_LINK_STORAGE_KEY = 'desktop_link_v1';
@@ -52,6 +52,8 @@ export function closeEndedHelper(generation) {
   return true;
 }
 export const ENDED_HELPER_GRACE_MS = 5000;
+// A waiting port never outlives the waiting window it asked for.
+export const WAITING_PORT_MS = 60000;
 
 export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, companion, authentication,
   onPaired = async () => {}, changeSources = [], now = Date.now, endedGraceMs = ENDED_HELPER_GRACE_MS } = {}) {
@@ -74,6 +76,8 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
   const close = entry => {
     if (entry.closed) return;
     entry.closed = true; clearTimeout(entry.timer); ports.delete(entry);
+    // A window the ceremony already took over is not affected.
+    if (entry.waiting) void Promise.resolve(authentication?.waiting?.('end', entry.waiting)).catch(() => undefined);
     release(entry);
     try { entry.port.disconnect(); } catch { /* disconnected */ }
   };
@@ -144,7 +148,7 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
   function connect(port) {
     if (port?.name !== PORT) return;
     if (!admitDesktopSender(port.sender)) { try { port.disconnect(); } catch { /* disconnected */ } return; }
-    const entry = { port, closed: false, released: false, ending: null, declared: null, desktop: true, replacement: null,
+    const entry = { port, closed: false, released: false, ending: null, declared: null, waiting: null, desktop: true, replacement: null,
       pairingPending: false, pairingCompleted: false,
       payload: null, context: null, last: null, authSession: null,
       controller: new AbortController(), lastOpen: -Infinity, timer: null, unsubscribe: null };
@@ -163,9 +167,25 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
           try { await closeHelper(entry); } finally { close(entry); }
           return;
         }
+        if (exact(message, ['type', 'payload']) && message.type === 'waiting') {
+          // The exact helper of a sign-in still being prepared asks for the local waiting window only.
+          const payload = message.payload;
+          if (entry.payload || entry.declared || entry.waiting || !authentication?.waiting || !isPreparingPayload(payload)
+            || payload.extension_id !== chromeApi.runtime.id
+            || payload.task.admission_generation !== helperGeneration(port.sender.url)) throw Error('task_changed');
+          const remaining = payload.task.expires_at * 1000 - now();
+          if (remaining <= 0 || remaining > 1800000) throw Error('task_expired');
+          await sameDocument(entry);
+          entry.waiting = { operation_id: payload.task.operation_id };
+          clearTimeout(entry.timer);
+          entry.timer = setTimeout(() => close(entry), WAITING_PORT_MS);
+          await authentication.waiting('open', { operation_id: payload.task.operation_id,
+            expires_at: Math.floor(payload.task.expires_at) });
+          return;
+        }
         if (exact(message, ['type', 'payload']) && message.type === 'attach') {
           const payload = message.payload;
-          if (entry.payload || entry.declared || !isPayload(payload) || payload.extension_id !== chromeApi.runtime.id
+          if (entry.payload || entry.declared || entry.waiting || !isPayload(payload) || payload.extension_id !== chromeApi.runtime.id
             || payload.task.admission_generation !== helperGeneration(port.sender.url)) throw Error('task_changed');
           // The exact helper document's own task. A refusal of it may still close that document.
           entry.declared = payload.task;
