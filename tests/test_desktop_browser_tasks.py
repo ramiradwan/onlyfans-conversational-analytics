@@ -256,7 +256,7 @@ async def initial_ceremony_case(setup, *, active_wait=False):
     coordinator.owner.initial = initial
     coordinator.owner.registered = SimpleNamespace()
     coordinator.owner.key = SimpleNamespace(reopen_existing=fixture.key.ensure_ready)
-    coordinator.owner.store.installation_key_reference = fixture.key.ensure_ready
+    coordinator.owner.store.installation_key_reference = lambda **_: fixture.key.ensure_ready()
     if not active_wait:
         initial.resume = lambda _: None
     await initial.prepare(scope["source_journey_id"])
