@@ -5,7 +5,7 @@ import { readBrowserTaskEvents } from './events.js';
 
 const AUTHENTICATION_POLL_MS = 500;
 // A sign-in task can open before its ceremony exists. Its helper reads again until the ceremony arrives.
-export const PREPARING_POLL_MS = 250;
+export const PREPARING_POLL_MS = 100;
 export const PREPARING_LIMIT_MS = 120000;
 // While the helper stream is healthy the payload read is only a safety check.
 export const STREAM_POLL_MS = 15000;

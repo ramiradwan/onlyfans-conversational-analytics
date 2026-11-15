@@ -692,6 +692,15 @@ describe('sign-in helper opened before its ceremony', () => {
       expect(h.request.mock.calls.filter(([path]) => path.endsWith('/payload'))).toHaveLength(3);
     } finally { h.client.stop(); vi.useRealTimers(); }
   });
+  it('attaches within a tenth of a second of the ceremony arriving', async () => {
+    vi.useFakeTimers();
+    const h = await run(ready => Object.assign([preparing(ready), ready], { last: ready }));
+    try {
+      const started = h.client.start();
+      await vi.advanceTimersByTimeAsync(100); await started;
+      expect(h.connect).toHaveBeenCalledOnce();
+    } finally { h.client.stop(); vi.useRealTimers(); }
+  });
   it.each(['cancelled', 'changed'])('attaches nothing when the preparing task is %s', async change => {
     vi.useFakeTimers();
     const h = await run(ready => {
