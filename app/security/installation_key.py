@@ -380,6 +380,16 @@ class InstallationKeyAuthority:
     @timing.measured("key", "reopen")
     def reopen_existing(self) -> InstallationKeyReference:
         """Verify the activated key without reserving, creating or activating one."""
+        reference = self._active_reference()
+        self._prove_usable(reference)
+        return reference
+
+    @timing.measured("key", "reopen")
+    def signing_reference(self) -> InstallationKeyReference:
+        """Verify the activated key for a proof its caller checks against the public key before sending."""
+        return self._active_reference()
+
+    def _active_reference(self) -> InstallationKeyReference:
         reference = self._store.installation_key_reference()
         if reference is None:
             raise InstallationKeyUnavailable("The installation key is not active")
@@ -398,7 +408,6 @@ class InstallationKeyAuthority:
             raise InstallationKeyPolicyError(
                 "The persisted installation key does not match its durable reference"
             )
-        self._prove_usable(reference)
         return reference
 
     @timing.measured("key", "sign")

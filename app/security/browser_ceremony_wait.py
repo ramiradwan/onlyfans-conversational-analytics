@@ -16,7 +16,9 @@ from app.security.hosted_grants import (
     HostedGrantUnavailable, HostedTransport, hosted_stream_tls_context, require_hosted_origin,
 )
 from app.security.initial_handoff import _require_proof_budget, timestamp
-from app.security.installation_continuation import ExistingInstallationKey, _decode, _document, canonical_request
+from app.security.installation_continuation import (
+    ExistingInstallationKey, _decode, _document, canonical_request, signing_reference,
+)
 from app.security.installation_key import verify_installation_proof
 
 PROFILE = "urn:bridge-clean:browser-ceremony-wait:v1"
@@ -106,7 +108,7 @@ class BrowserCeremonyWaitClient:
             raise HostedGrantUnavailable("Invalid ceremony wait request")
         if before_send is not None:
             before_send()
-        key = self.key.reopen_existing()
+        key = signing_reference(self.key)
         binding = request["binding"]
         if (binding["installation_key_id"], binding["installation_key_jkt"]) != (
                 key.installation_key_id, key.installation_key_jkt):

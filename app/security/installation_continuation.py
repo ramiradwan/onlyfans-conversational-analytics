@@ -50,6 +50,12 @@ class ExistingInstallationKey(Protocol):
     def sign_challenge(self, challenge: bytes) -> InstallationProof: ...
 
 
+def signing_reference(key: ExistingInstallationKey) -> InstallationKeyReference:
+    """The active key for a proof that is verified against its public key before it is sent."""
+    verify = getattr(key, "signing_reference", None)
+    return key.reopen_existing() if verify is None else verify()
+
+
 def _normalized(value: object, depth: int = 0) -> object:
     if depth > 16:
         raise HostedGrantUnavailable("Continuation document is too deep")
@@ -173,7 +179,7 @@ class InstallationContinuationClient:
         self.contract.validate("proof-challenge-request", target)
         if before_send is not None:
             before_send()
-        key = self.key.reopen_existing()
+        key = signing_reference(self.key)
         if request["scope"]["installation_key_id"] != key.installation_key_id:
             raise HostedGrantUnavailable("Continuation key changed")
         started = self.monotonic()

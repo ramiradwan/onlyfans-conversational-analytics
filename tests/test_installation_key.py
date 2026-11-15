@@ -150,6 +150,37 @@ def test_concurrent_preparation_from_two_authorities_activates_one_key(store):
     assert provider.create_calls == 1
 
 
+def test_a_signing_client_verifies_the_key_once_by_its_own_checked_proof(store):
+    from app.security.installation_continuation import signing_reference
+
+    class CountingProvider(EmulatedPlatformProvider):
+        signs = 0
+
+        def sign_digest(self, provider_key_name, digest):
+            self.signs += 1
+            return super().sign_digest(provider_key_name, digest)
+
+    provider = CountingProvider()
+    authority = InstallationKeyAuthority(store, provider)
+    active = authority.ensure_ready()
+    provider.signs = 0
+    assert authority.reopen_existing() == active and provider.signs == 1
+    provider.signs = 0
+    reference = signing_reference(authority)
+    proof = authority.sign_challenge(b"challenge")
+    assert reference == active and provider.signs == 1
+    assert verify_installation_proof(reference.public_key_jwk, b"challenge", proof)
+
+    replaced = InstallationKeyAuthority(store, EmulatedPlatformProvider())
+    with pytest.raises(InstallationKeyUnavailable):
+        replaced.signing_reference()
+
+    class ReopenOnly:
+        def reopen_existing(self):
+            return active
+    assert signing_reference(ReopenOnly()) == active
+
+
 def test_reopen_existing_never_creates_or_activates_a_missing_key(store):
     provider = EmulatedPlatformProvider()
     authority = InstallationKeyAuthority(store, provider)

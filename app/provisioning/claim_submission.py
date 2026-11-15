@@ -92,6 +92,9 @@ class _DeferredInstallationProofAuthority:
     def reopen_existing(self) -> InstallationKeyReference:
         return self._authority().reopen_existing()
 
+    def signing_reference(self) -> InstallationKeyReference:
+        return self._authority().signing_reference()
+
     def sign_challenge(self, challenge: bytes) -> InstallationProof:
         return self._authority().sign_challenge(challenge)
 

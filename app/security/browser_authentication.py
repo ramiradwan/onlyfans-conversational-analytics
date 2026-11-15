@@ -20,7 +20,7 @@ from app.core.resource_paths import resource_path
 from app.security.hosted_grants import HostedGrantUnavailable, HostedTransport
 from app.security.initial_handoff import _require_proof_budget, timestamp
 from app.security.installation_continuation import (
-    ExistingInstallationKey, _decode, _document, canonical_request,
+    ExistingInstallationKey, _decode, _document, canonical_request, signing_reference,
 )
 from app.security.installation_key import verify_installation_proof
 from contracts.loader import verify_snapshot_integrity
@@ -120,7 +120,7 @@ class BrowserAuthenticationClient:
         return max(0.0, delay) if math.isfinite(delay) else 0.0
 
     def _key(self, request):
-        key = self.key.reopen_existing()
+        key = signing_reference(self.key)
         binding = request["binding"]
         if (binding["installation_key_id"], binding["installation_key_jkt"]) != (
                 key.installation_key_id, key.installation_key_jkt):
