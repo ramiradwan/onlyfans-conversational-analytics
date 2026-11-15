@@ -1,6 +1,7 @@
 """Restricted desktop setup composition, with no runtime settings or analytics graph."""
 from __future__ import annotations
 
+import asyncio
 import json
 import secrets
 from datetime import datetime
@@ -33,6 +34,7 @@ class ProvisioningSetupOwner:
         self.sources = SetupSourceLifecycle(store, self.journeys, self.contexts)
         self.progress = scoped_durable_provisioning_progress(lambda: store)
         self._effects = OwnerEffects()
+        self._key_task, self._key_closed = None, False
         # Effect threads recheck their original domain context at admission.
         from threading import RLock
         gate = RLock()
@@ -481,6 +483,8 @@ class ProvisioningSetupOwner:
             return observed
         if operation["action"] == "browser.access":
             self.browser_tasks.prepare(operation, "browser.access")
+            if not reconcile:
+                self._prepare_missing_key()
             return OperationResult("waiting")
         if operation["action"] == "account.connect":
             if stale:
@@ -694,7 +698,23 @@ class ProvisioningSetupOwner:
             "intended_creator_id": selected["creator_account_id"], "attempt_id": secrets.token_urlsafe(32),
             "completion": completion, "source_expires_at": expiry, **organization}
 
+    def _prepare_missing_key(self):
+        """Create a missing installation key in the background without replacing an active one."""
+        running = self._key_task is not None and not self._key_task.done()
+        if self.key is None or self._key_closed or running:
+            return
+        def prepare():
+            try:
+                if self.store.installation_key_reference() is None:
+                    self.key.ensure_ready()
+            except Exception:  # noqa: BLE001 - the account connection prepares the key again.
+                return
+        self._key_task = asyncio.create_task(asyncio.to_thread(prepare))
+
     async def stop(self):
+        self._key_closed = True
+        if self._key_task is not None:
+            await asyncio.gather(asyncio.shield(self._key_task), return_exceptions=True)
         self._effects.close_admission()
         await self._effects.drain()
         if self.initial is not None:

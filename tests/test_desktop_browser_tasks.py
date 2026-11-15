@@ -16,9 +16,15 @@ from test_desktop_coordinator import command
 pytestmark = [pytest.mark.ci_tier("fast"), pytest.mark.windows_compat]
 
 
-class ExistingKeyOnly:
+class MissingKeyOnly:
+    def __init__(self):
+        self.prepared = 0
+
+    def ensure_ready(self):
+        self.prepared += 1
+
     def reopen_existing(self):
-        pytest.fail("Browser access does not touch an installation key")
+        pytest.fail("Browser access only creates a missing installation key")
 
 
 @pytest.fixture
@@ -28,7 +34,7 @@ def setup(tmp_path):
     admissions = ScopedAdmissions(store, stage="setup")
     tasks = BrowserTasks(admissions, extension_id="a" * 32)
     owner = ProvisioningSetupOwner(store, browser_tasks=tasks, ceremonies=None, initial=None, registered=None,
-        key=ExistingKeyOnly(), finalize=lambda **kwargs: pytest.fail("No finalization before account authority"), completion_ready=lambda: False)
+        key=MissingKeyOnly(), finalize=lambda **kwargs: pytest.fail("No finalization before account authority"), completion_ready=lambda: False)
     coordinator = DesktopOnboardingCoordinator(admissions, owner)
     native = admissions.consume(admissions.prepare_desktop(), role="desktop")
     return coordinator, tasks, native, now
@@ -44,6 +50,62 @@ async def browser_access(setup):
     code = coordinator.admissions.reissue_task_entry(native.identifier, generation=native.generation, task_id=task["task_id"])
     browser = coordinator.admissions.consume(code, role="browser_task")
     return request, task, browser
+
+
+@pytest.mark.asyncio
+async def test_browser_access_creates_a_missing_key_without_waiting_for_it(setup):
+    import threading
+
+    from app.security.installation_key import InstallationKeyAuthority
+    from test_installation_key import EmulatedPlatformProvider
+
+    coordinator, tasks, native, _ = setup
+    store, release = coordinator.owner.store, threading.Event()
+
+    class HeldProvider(EmulatedPlatformProvider):
+        def create_non_exportable_key(self, provider_key_name):
+            assert release.wait(timeout=10)
+            return super().create_non_exportable_key(provider_key_name)
+
+    provider = HeldProvider()
+    coordinator.owner.key = InstallationKeyAuthority(store, provider)
+    request, task, _ = await browser_access(setup)
+    assert task["operation_id"] == request["operation_id"]
+    assert store.installation_key_reference() is None
+    release.set()
+    await coordinator.owner.stop()
+    assert store.installation_key_reference() is not None and provider.create_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_browser_access_leaves_an_active_key_alone(setup):
+    from app.security.installation_key import InstallationKeyAuthority
+    from test_installation_key import EmulatedPlatformProvider
+
+    coordinator, _, _, _ = setup
+    active = InstallationKeyAuthority(coordinator.owner.store, EmulatedPlatformProvider()).ensure_ready()
+    await browser_access(setup)
+    await coordinator.owner.stop()
+    assert coordinator.owner.key.prepared == 0
+    assert coordinator.owner.store.installation_key_reference() == active
+
+
+@pytest.mark.asyncio
+async def test_a_key_failure_does_not_affect_browser_access(setup):
+    from app.security.installation_key import InstallationKeyUnavailable
+
+    class RefusingKey(MissingKeyOnly):
+        def ensure_ready(self):
+            super().ensure_ready()
+            raise InstallationKeyUnavailable("refused")
+
+    coordinator, tasks, native, _ = setup
+    coordinator.owner.key = RefusingKey()
+    request, task, browser = await browser_access(setup)
+    await coordinator.owner.stop()
+    assert coordinator.owner.key.prepared == 1
+    assert tasks.current_native(native)[0]["task_id"] == task["task_id"] == browser.task_id
+    assert coordinator.owner.store.installation_key_reference() is None
 
 
 def observation(browser):
