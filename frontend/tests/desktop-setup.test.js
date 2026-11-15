@@ -66,6 +66,25 @@ it('records when its click finds the browser task and when Chrome was launched, 
   expect(phases).toEqual(['click', 'command-send', 'task-found', 'launch']);
 });
 
+it('launches the browser for an accepted click while its receipt is still being read', async () => {
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const openBrowser = vi.fn(async () => true);
+  const subject = new DesktopSetupClient({ generation, storage: storage(), receive() {},
+    uuid: () => operationId, stream: () => () => {}, openBrowser,
+    request: async (url) => {
+      if (url.endsWith('/timing')) return new Promise(() => {});
+      if (url.includes('/operations/')) { await held; return response(record); }
+      return response(record, 202);
+    } });
+  subject.value = initial(); subject.session = session; subject.connected = true;
+  const acting = subject.act('browser.access');
+  await vi.waitFor(() => expect(openBrowser).toHaveBeenCalledTimes(1));
+  release();
+  await acting;
+  expect(openBrowser.mock.calls[0][1]).toBe(operationId);
+});
+
 it('selects the saved setup theme before the entry module can paint', () => {
   const meta = { setAttribute: vi.fn() };
   const earlyDocument = { documentElement: { dataset: {} }, querySelector: () => meta };

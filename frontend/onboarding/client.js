@@ -306,9 +306,8 @@ export class DesktopSetupClient {
       observe('command-send');
       await this.json('/api/v1/desktop/setup/commands', intent);
       if (epoch !== this.launchEpoch || !this.connected) return;
-      await this.receipt();
-      if (epoch !== this.launchEpoch || !this.connected) return;
-      if (this.launchOperation) await this.launchBrowser();
+      // The receipt read and the launch run together. The launch rechecks its operation.
+      await Promise.all([this.receipt(), this.launchOperation ? this.launchBrowser() : null]);
     } catch (error) {
       if (epoch !== this.launchEpoch || !this.connected) return;
       if (['setup_changed', 'action_unavailable', 'authority_unavailable', 'account_mismatch', 'operation_limit_reached'].includes(error.reason)) {
