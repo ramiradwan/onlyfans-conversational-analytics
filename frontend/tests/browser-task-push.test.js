@@ -70,6 +70,19 @@ describe('helper stream', () => {
     } finally { h.client.stop(); }
   });
 
+  it('reads its payload while its session read is still pending', async () => {
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    const h = helper({ respond: path => path.endsWith('/session')
+      ? held.then(() => ({ ok: true, status: 200, text: async () => JSON.stringify(session()) })) : null });
+    try {
+      const started = h.client.start();
+      await vi.waitFor(() => expect(h.request.mock.calls.map(([path]) => path.split('/').at(-1))).toEqual(['session', 'payload']));
+      release(); await started;
+      expect(h.client.payload).toEqual(h.value);
+    } finally { h.client.stop(); }
+  });
+
   it('ignores a frame for another task', async () => {
     const s = stream(), h = helper({ events: s.events });
     try {

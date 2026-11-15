@@ -84,12 +84,13 @@ export class BrowserTaskClient {
     this.declared = null;
     this.receive({ state: 'loading' });
     try {
-      const session = await this.json('session');
+      // The payload read needs no session value, so both reads run together. The payload is used only after the session checks.
+      const [session, first] = await Promise.all([this.json('session'), this.json('payload')]);
       if (run !== this.run) return;
       if (session.role !== 'browser_task' || session.generation !== this.generation
         || !/^[A-Za-z0-9_-]{43}$/u.test(session.csrf_token)) throw new Error('task_changed');
       this.session = session;
-      const payload = await this.prepared(run, await this.json('payload'));
+      const payload = await this.prepared(run, first);
       if (run !== this.run || payload === null) return;
       if (!isPayloadProjection(payload) || payload.task.admission_generation !== this.generation || payload.task.task_id !== session.task_id
         || payload.task.journey_id !== session.journey_id) throw new Error('task_changed');
