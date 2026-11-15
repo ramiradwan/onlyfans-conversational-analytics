@@ -121,6 +121,23 @@ async def test_a_fresh_selection_opens_the_store_once_before_it_is_sent(auth):
 
 
 @pytest.mark.asyncio
+async def test_a_helper_payload_reads_its_browser_step_through_one_store_opening(auth):
+    _, ceremonies, authentication, _, _, _, _ = auth
+    operation, _ = accept(auth)
+    await authentication.execute(operation, authorize=authorized, read_guard=authorized, reconcile=False)
+    database = ceremonies.store.database
+    opened, connect = [], database.connect
+
+    def counted():
+        opened.append(1)
+        return connect()
+
+    database.connect = counted
+    assert ceremonies.browser_entry(operation["operation_id"]) is not None
+    assert len(opened) == 1
+
+
+@pytest.mark.asyncio
 async def test_lost_selection_reply_restart_reads_exact_child_without_resending(auth):
     _, ceremonies, authentication, client, parent, _, _ = auth
     operation, _ = accept(auth)

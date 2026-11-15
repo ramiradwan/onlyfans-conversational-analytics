@@ -139,24 +139,28 @@ class BrowserCeremonies:
 
     def browser_entry(self, operation_id):
         """Read only nonauthorizing launch coordinates for the exact task."""
-        if self.authentication is not None and not self.authentication.can_open(operation_id):
-            return None
-        row = self.task_row(operation_id)
-        if (row is None or row["entry_reference"] is None or row["presentation_state"] != "active"
-                or timestamp(row["provider_expires_at"]) <= self.store._now()):
-            return None
-        binding = json.loads(row["binding_json"])
+        # Each helper payload read asks for this, so it opens the store once.
+        with self.store.database.read() as connection:
+            if self.authentication is not None and not self.authentication.can_open(operation_id, connection=connection):
+                return None
+            row = self.task_row(operation_id, connection=connection)
+            if (row is None or row["entry_reference"] is None or row["presentation_state"] != "active"
+                    or timestamp(row["provider_expires_at"]) <= self.store._now()):
+                return None
+            binding = json.loads(row["binding_json"])
+            recovery = (binding["purpose"] == "activate-complimentary" and self.authentication is not None
+                        and self.authentication.preparation_recovery(operation_id, connection=connection))
         result = {"entry_url": browser_entry_url(self.hosted_origin, row["entry_reference"]),
             "ceremony_id": row["ceremony_id"], "attempt_id": binding["attempt_id"],
             "completion": expected_completion(binding), "expires_at": row["provider_expires_at"]}
-        if (binding["purpose"] == "activate-complimentary" and self.authentication is not None
-                and self.authentication.preparation_recovery(operation_id)):
+        if recovery:
             result["preparation_recovery"] = True
         return result
 
-    def task_row(self, operation_id):
-        parent = operation_id if self.authentication is None else self.authentication.parent_operation(operation_id)
-        return self.row(parent)
+    def task_row(self, operation_id, *, connection=None):
+        parent = (operation_id if self.authentication is None
+                  else self.authentication.parent_operation(operation_id, connection=connection))
+        return self.row(parent, connection=connection)
 
     async def stop(self):
         # The proof clients can share one transport; drain all of them before any close.

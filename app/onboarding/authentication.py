@@ -60,21 +60,21 @@ class DesktopAuthentication:
             result.update(state="expired", actions=dict.fromkeys(value["actions"], False))
         return {"operation_id": parent, "browser_operation_id": browser_operation, **result}
 
-    def parent_operation(self, operation_id):
-        with self.store.database.read() as connection:
+    def parent_operation(self, operation_id, *, connection=None):
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
             row = connection.execute("SELECT parent_operation_id FROM desktop_authentication_commands WHERE operation_id=?",
                 (operation_id,)).fetchone()
         return operation_id if row is None else row["parent_operation_id"]
 
-    def can_open(self, operation_id):
-        return self._open_projection(operation_id) is not None
+    def can_open(self, operation_id, *, connection=None):
+        return self._open_projection(operation_id, connection=connection) is not None
 
-    def preparation_recovery(self, operation_id):
-        value = self._open_projection(operation_id)
+    def preparation_recovery(self, operation_id, *, connection=None):
+        value = self._open_projection(operation_id, connection=connection)
         return value is not None and value["state"] == "admitted"
 
-    def _open_projection(self, operation_id):
-        with self.store.database.read() as connection:
+    def _open_projection(self, operation_id, *, connection=None):
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
             selected = connection.execute("SELECT * FROM desktop_authentication_commands WHERE operation_id=?",
                 (operation_id,)).fetchone()
             if selected is None or selected["verb"] == "cancel":
