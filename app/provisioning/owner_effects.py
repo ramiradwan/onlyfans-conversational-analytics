@@ -50,10 +50,15 @@ class OwnerEffects:
     async def run(self, function, *args, journey_id=None, protected=True, **kwargs):
         queued = time.monotonic()
 
+        finished = []
+
         def execute():
             timing.observe("effect", "queue", "ok", (time.monotonic() - queued) * 1000)
-            with timing.phase("effect", "run"):
-                return function(*args, **kwargs)
+            try:
+                with timing.phase("effect", "run"):
+                    return function(*args, **kwargs)
+            finally:
+                finished.append(time.monotonic())
 
         locator = self._journey.get() if journey_id is None else journey_id
         try:
@@ -78,7 +83,12 @@ class OwnerEffects:
                 self._protected.discard(current)
 
         task.add_done_callback(completed)
-        return await asyncio.shield(task)
+        try:
+            return await asyncio.shield(task)
+        finally:
+            # Only a slow return to the waiting owner is recorded.
+            if finished and (waited := (time.monotonic() - finished[0]) * 1000) >= timing.SLOW_MS:
+                timing.observe("effect", "resume", "ok", waited)
 
     async def drain(self):
         while True:

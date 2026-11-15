@@ -88,7 +88,8 @@ class BrowserCeremonies:
             # restart or lost response can only read this operation.
             result = await self._effects.run(self.client.prepare, self.request(row, known=False),
                 before_send=authorize, journey_id=self._journey(operation_id))
-            self._bind(row, result, preparing=True)
+            with timing.phase("ceremony-prepare", "persist"):
+                self._bind(row, result, preparing=True)
             return result
 
     async def reconcile(self, operation_id, *, authorize):

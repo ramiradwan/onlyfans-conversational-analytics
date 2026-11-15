@@ -530,13 +530,15 @@ async def test_only_admitted_activation_preparation_emits_closed_task_recovery(t
 
 
 @pytest.mark.asyncio
-async def test_an_openable_fresh_provider_dispatch_uses_only_prepare_and_select(setup):
+async def test_an_openable_fresh_provider_dispatch_uses_only_prepare_and_select(setup, caplog):
     from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
     coordinator, ceremonies, ceremony_client, parent, binding, _ = setup
     client = AuthenticationClient()
     original = client.execute
+    order = []
 
     def select(*args, **kwargs):
+        order.append("select")
         result = original(*args, **kwargs)
         client.calls.pop()  # The fake builds its mutation response using its read helper.
         return result
@@ -563,12 +565,19 @@ async def test_an_openable_fresh_provider_dispatch_uses_only_prepare_and_select(
 
     owner = ProvisioningSetupOwner.__new__(ProvisioningSetupOwner)
     owner.store, owner.ceremonies, owner.browser_tasks = coordinator.store, ceremonies, tasks
-    owner.initial = owner.registered = SimpleNamespace(prepare=prepare, resume=lambda *_: None)
+    owner.initial = owner.registered = SimpleNamespace(prepare=prepare, resume=lambda *_: order.append("resume"))
     owner._guard, owner._binding = lambda *a, **k: None, lambda *_: binding
     owner._read_guard, owner.observe = lambda *_: None, lambda *_: None
     ceremonies.decisions = SimpleNamespace(refresh=decision)
-    result = await owner._connect(parent, reconcile=False)
+    with caplog.at_level("INFO", logger="app.onboarding.timing"):
+        result = await owner._connect(parent, reconcile=False)
     assert result.state == "waiting"
+    # The source wait resumes only after the selection is sent.
+    assert order == ["select", "resume"]
+    phases = re.findall(r"operation=(\S+) phase=(\S+)", caplog.text)
+    for point in (("ceremony-prepare", "persist"), ("authentication-select", "lookup"), ("authentication-select", "reserve"),
+                  ("authentication-select", "guard"), ("source", "resume")):
+        assert point in phases
     assert [verb for verb, _ in ceremony_client.calls] == ["prepare"]
     assert [verb for verb, _ in client.calls] == ["select"]
     assert reads == []
@@ -873,7 +882,7 @@ async def test_fresh_provider_dispatch_reports_unconfirmed_when_expired_or_unava
     from datetime import datetime, timezone
     from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
     from app.security.browser_authentication import BrowserAuthenticationRefused
-    coordinator, ceremonies, _, parent, binding, clock = setup
+    coordinator, ceremonies, ceremony_client, parent, binding, clock = setup
     client = AuthenticationClient()
     authentication = DesktopAuthentication(ceremonies.store, ceremonies, client)
     ceremonies.authentication = authentication
@@ -902,13 +911,19 @@ async def test_fresh_provider_dispatch_reports_unconfirmed_when_expired_or_unava
     async def prepare(*args):
         pass
 
-    def resume(*_):
-        if state == "missing":
-            clock[0] = datetime.fromtimestamp(parent["expires_at"], tz=timezone.utc)
+    real_prepare = ceremony_client.prepare
 
+    def prepare_ceremony(*args, **kwargs):
+        result = real_prepare(*args, **kwargs)
+        if state == "missing":
+            # The operation expires between the ceremony and the selection.
+            clock[0] = datetime.fromtimestamp(parent["expires_at"], tz=timezone.utc)
+        return result
+
+    ceremony_client.prepare = prepare_ceremony
     owner = ProvisioningSetupOwner.__new__(ProvisioningSetupOwner)
     owner.store, owner.ceremonies, owner.browser_tasks = coordinator.store, ceremonies, BrowserTasks(coordinator.admissions, extension_id="a" * 32)
-    owner.initial = owner.registered = SimpleNamespace(prepare=prepare, resume=resume)
+    owner.initial = owner.registered = SimpleNamespace(prepare=prepare, resume=lambda *_: None)
     owner._guard, owner._binding = lambda *a, **k: None, lambda *_: binding
     owner._read_guard, owner.observe = lambda *_: None, lambda *_: None
     result = await owner._connect(parent, reconcile=False)

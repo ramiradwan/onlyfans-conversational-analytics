@@ -560,10 +560,18 @@ class ProvisioningSetupOwner:
                 terminal = await self._terminal_initial_read(operation, result)
                 if terminal is not None:
                     return terminal
-            source.resume(selected["source_journey_id"])
-            if selecting:
-                authentication = await self.ceremonies.authentication.ensure_initial(operation, authorize=guard,
-                    read_guard=lambda: self._read_guard(operation), fresh=True)
+            if not selecting:
+                with timing.phase("source", "resume"):
+                    source.resume(selected["source_journey_id"])
+            else:
+                # The source wait resumes after the selection, so its store reads and
+                # requests do not run ahead of the selection send.
+                try:
+                    authentication = await self.ceremonies.authentication.ensure_initial(operation, authorize=guard,
+                        read_guard=lambda: self._read_guard(operation), fresh=True)
+                finally:
+                    with timing.phase("source", "resume"):
+                        source.resume(selected["source_journey_id"])
         except Exception:
             if early:
                 self._withdraw_early_task(operation)

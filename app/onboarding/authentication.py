@@ -380,11 +380,14 @@ class DesktopAuthentication:
 
     async def execute(self, operation, *, authorize, read_guard, reconcile, use_selection=False):
         async with self._lock:
-            row, request, verb, fresh, closures = self._reserve(operation)
+            label = "authentication-" + json.loads(operation["owner_scope_json"])["authentication_intent"]["verb"]
+            with timing.phase(label, "reserve"):
+                row, request, verb, fresh, closures = self._reserve(operation)
             parent = row["operation_id"]
             await self._recover_closed(parent, authorize=read_guard, rows=closures)
             if fresh and not reconcile:
-                authorize()
+                with timing.phase(label, "guard"):
+                    authorize()
                 if self.store._now().timestamp() >= operation["expires_at"]:
                     return OperationResult("refused", "operation_expired")
                 try:
@@ -419,7 +422,7 @@ class DesktopAuthentication:
     async def ensure_initial(self, operation, *, authorize, read_guard, fresh=False):
         intent = json.loads(operation["owner_scope_json"]).get("authentication_intent")
         if intent is not None:
-            with self.store.database.read() as connection:
+            with timing.phase("authentication-" + intent["verb"], "lookup"), self.store.database.read() as connection:
                 exists = connection.execute("SELECT 1 FROM desktop_authentication_commands WHERE operation_id=?",
                     (operation["operation_id"],)).fetchone() is not None
             if not exists:
