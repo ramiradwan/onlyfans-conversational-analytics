@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 import re
+import ssl
 import struct
 from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, nullcontext
@@ -236,6 +237,12 @@ def _hosted_origin(base_url: str) -> str:
     ):
         raise ValueError("Hosted base URL must be an HTTPS origin")
     return str(url.copy_with(path="/"))
+
+
+@lru_cache(maxsize=1)
+def hosted_stream_tls_context() -> ssl.SSLContext:
+    """One verifying TLS context for hosted event streams. Building one loads the CA bundle."""
+    return httpx.create_ssl_context(trust_env=False)
 
 
 class HTTPXHostedTransport:

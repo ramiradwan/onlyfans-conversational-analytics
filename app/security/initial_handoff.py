@@ -22,7 +22,7 @@ from contracts.loader import verify_snapshot_integrity
 
 from app.security.hosted_grants import (
     HostedGrantUnavailable, HostedTransport, InstallationProofAuthority,
-    _response_object, require_hosted_origin,
+    _response_object, hosted_stream_tls_context, require_hosted_origin,
 )
 
 PROFILE = "urn:bridge-clean:initial-installation-handoff:v2"
@@ -290,6 +290,7 @@ class InitialHandoffStream:
         event_name = "onboarding" if self.continuity else "initial-handoff"
         maximum = 16384 if self.continuity else 8192
         async with httpx.AsyncClient(base_url=self.origin, follow_redirects=False, trust_env=False,
+                                     verify=hosted_stream_tls_context(),
                                      timeout=httpx.Timeout(35.0, connect=10.0)) as client:
             async with client.stream("POST", path, json=envelope,
                                      headers={"Accept": "text/event-stream", "Accept-Encoding": "identity"}) as response:

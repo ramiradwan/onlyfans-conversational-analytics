@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import ssl
 from dataclasses import replace
 from pathlib import Path
 
@@ -134,6 +135,24 @@ async def test_malformed_wire_frames_are_refused(wire):
     subject, _ = client(stream_transport=transport)
     with pytest.raises(HostedGrantUnavailable):
         _ = [hint async for hint in subject.hints({"request": GOOD["request"]})]
+
+
+async def test_each_wait_reuses_one_tls_context(monkeypatch):
+    seen = []
+    real = httpx.AsyncClient
+
+    class Recording(real):
+        def __init__(self, *args, **kwargs):
+            seen.append(kwargs.get("verify"))
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(wait.httpx, "AsyncClient", Recording)
+    transport = httpx.MockTransport(lambda request: httpx.Response(
+        200, content=b": keepalive\n\n", headers={"content-type": "text/event-stream"}))
+    subject, _ = client(stream_transport=transport)
+    for _ in range(2):
+        _ = [hint async for hint in subject.hints({"request": GOOD["request"]})]
+    assert len(seen) == 2 and isinstance(seen[0], ssl.SSLContext) and seen[0] is seen[1]
 
 
 def test_other_ceremony_is_only_an_ignored_hint():

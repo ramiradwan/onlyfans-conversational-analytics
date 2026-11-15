@@ -13,7 +13,7 @@ import httpx
 from app.onboarding import timing
 from app.security.browser_ceremony import _P256_ORDER
 from app.security.hosted_grants import (
-    HostedGrantUnavailable, HostedTransport, require_hosted_origin,
+    HostedGrantUnavailable, HostedTransport, hosted_stream_tls_context, require_hosted_origin,
 )
 from app.security.initial_handoff import _require_proof_budget, timestamp
 from app.security.installation_continuation import ExistingInstallationKey, _decode, _document, canonical_request
@@ -152,8 +152,9 @@ class BrowserCeremonyWaitClient:
     async def hints(self, envelope: dict) -> AsyncIterator[Hint]:
         """Yield each hint for this ceremony until the server ends the stream."""
         ceremony_id = envelope["request"]["ceremony_id"]
+        # The shared TLS context keeps CA loading out of the event loop at each wait.
         async with httpx.AsyncClient(base_url=self.origin, follow_redirects=False, trust_env=False,
-                                     transport=self.stream_transport,
+                                     verify=hosted_stream_tls_context(), transport=self.stream_transport,
                                      timeout=httpx.Timeout(35.0, connect=10.0)) as client:
             timing.observe("wait", "protected-send", "ok", 0)
             started = self.monotonic()
