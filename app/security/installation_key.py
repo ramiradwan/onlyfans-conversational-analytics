@@ -326,26 +326,29 @@ class InstallationKeyAuthority:
         active = self._store.installation_key_reference()
         reservation = self._store.installation_key_reservation()
         if reservation is None:
-            reservation = self._store.reserve_installation_key(
-                InstallationKeyReservation(
-                    provider_name=PLATFORM_CRYPTO_PROVIDER,
-                    provider_key_name=f"bridge-clean.installation.v1.{uuid4()}",
-                    algorithm=INSTALLATION_KEY_ALGORITHM,
-                    created_at=self._now(),
+            with timing.phase("key", "reserve"):
+                reservation = self._store.reserve_installation_key(
+                    InstallationKeyReservation(
+                        provider_name=PLATFORM_CRYPTO_PROVIDER,
+                        provider_key_name=f"bridge-clean.installation.v1.{uuid4()}",
+                        algorithm=INSTALLATION_KEY_ALGORITHM,
+                        created_at=self._now(),
+                    )
                 )
-            )
         self._require_reservation_policy(reservation)
 
-        info = self._provider.key_info(reservation.provider_key_name)
+        with timing.phase("key", "lookup"):
+            info = self._provider.key_info(reservation.provider_key_name)
         if info is None:
             if active is not None:
                 raise InstallationKeyUnavailable(
                     "The persisted installation key is no longer available"
                 )
             try:
-                info = self._provider.create_non_exportable_key(
-                    reservation.provider_key_name
-                )
+                with timing.phase("key", "create"):
+                    info = self._provider.create_non_exportable_key(
+                        reservation.provider_key_name
+                    )
             except InstallationKeyAlreadyExists:
                 info = self._provider.key_info(reservation.provider_key_name)
                 if info is None:
@@ -363,7 +366,8 @@ class InstallationKeyAuthority:
 
         self._prove_usable(reference)
         if active is None:
-            self._store.activate_installation_key(reference)
+            with timing.phase("key", "activate"):
+                self._store.activate_installation_key(reference)
         return reference
 
     @timing.measured("key", "reopen")

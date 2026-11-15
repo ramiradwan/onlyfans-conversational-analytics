@@ -8,6 +8,7 @@ import platform
 import re
 from datetime import datetime, timezone
 
+from app.onboarding import timing
 from app.persistence.auth import ClaimSubmission, SQLiteAuthenticationStore, ProvisioningCandidate, ProvisioningCandidateState
 from app.persistence.onboarding import OnboardingJourneyStore, OnboardingJourneyUnavailable
 from app.provisioning.claim_submission import PRODUCT_VERSION, installation_proof_authority, hosted_transport
@@ -90,19 +91,20 @@ class InitialInstallationEnrollment:
                 raise InitialHandoffRefused("handoff_unconfirmed")
             operation = row["operation_id"] or self.journeys.new_operation()
             key = await self._effects.run(self.client.key.ensure_ready, journey_id=journey_id)
-            self._current_journey(journey_id)
-            public = json.loads(key.public_key_jwk)
-            request = {"profile": PROFILE, "operation_id": operation, "destination": {
-                "installation_id": row["installation_id"],
-                "installation_key": {"alg": "ES256", "kid": key.installation_key_id,
-                                     "jwk": {name: public[name] for name in ("crv", "kty", "x", "y")}},
-                "device": {"platform": "windows", "product_version": PRODUCT_VERSION,
-                           "display_name": (platform.node() or "This computer")[:128]},
-            }}
-            if row["prepare_json"] is not None:
-                request = json.loads(row["prepare_json"])
-            self._current_update(journey_id, state="preparing", operation_id=operation,
-                prepare_json=json.dumps(request, separators=(",", ":")))
+            with timing.phase("handoff-prepare", "persist"):
+                self._current_journey(journey_id)
+                public = json.loads(key.public_key_jwk)
+                request = {"profile": PROFILE, "operation_id": operation, "destination": {
+                    "installation_id": row["installation_id"],
+                    "installation_key": {"alg": "ES256", "kid": key.installation_key_id,
+                                         "jwk": {name: public[name] for name in ("crv", "kty", "x", "y")}},
+                    "device": {"platform": "windows", "product_version": PRODUCT_VERSION,
+                               "display_name": (platform.node() or "This computer")[:128]},
+                }}
+                if row["prepare_json"] is not None:
+                    request = json.loads(row["prepare_json"])
+                self._current_update(journey_id, state="preparing", operation_id=operation,
+                    prepare_json=json.dumps(request, separators=(",", ":")))
             def prepare_current():
                 return self.client.prepare(request, before_send=lambda: self._current_journey(journey_id))
             try:

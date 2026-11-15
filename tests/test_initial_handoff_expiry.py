@@ -59,6 +59,20 @@ async def test_fresh_journey_prepares_once_and_starts_its_wait(expiry_case):
 
 
 @pytest.mark.asyncio
+async def test_fresh_preparation_records_its_request_persistence(expiry_case, caplog):
+    import logging
+    from app.onboarding import timing
+    caplog.set_level(logging.INFO, logger=timing.__name__)
+    _, _, _, worker, _, _ = expiry_case
+    journey = worker.journeys.open()["journey_id"]
+
+    await worker.prepare(journey)
+
+    assert sum("operation=handoff-prepare phase=persist status=ok" in message
+               for message in caplog.messages) == 1
+
+
+@pytest.mark.asyncio
 async def test_existing_expired_journey_returns_typed_refusal_before_key_or_hosted_call(expiry_case):
     clock, _, client, worker, resumed, key_reads = expiry_case
     journey = worker.journeys.open()["journey_id"]

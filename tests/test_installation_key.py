@@ -96,6 +96,24 @@ def store(tmp_path: Path) -> SQLiteAuthenticationStore:
     return SQLiteAuthenticationStore(tmp_path / "auth.sqlite3")
 
 
+def test_key_preparation_records_each_step_of_a_fresh_and_a_reused_key(store, caplog):
+    import logging
+    import re
+    from app.onboarding import timing
+    caplog.set_level(logging.INFO, logger=timing.__name__)
+    authority = InstallationKeyAuthority(store, EmulatedPlatformProvider())
+
+    def phases():
+        found = [re.search(r"operation=key phase=(\S+) status=ok", message) for message in caplog.messages]
+        caplog.clear()
+        return [match.group(1) for match in found if match]
+
+    authority.ensure_ready()
+    assert phases() == ["reserve", "lookup", "create", "usability", "activate", "ensure"]
+    authority.ensure_ready()
+    assert phases() == ["lookup", "usability", "ensure"]
+
+
 def test_reopen_existing_never_creates_or_activates_a_missing_key(store):
     provider = EmulatedPlatformProvider()
     authority = InstallationKeyAuthority(store, provider)
