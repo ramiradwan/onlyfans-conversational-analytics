@@ -2,6 +2,7 @@ import { createWorkerParameterOwner } from './runtime/signing-parameters.mjs';
 import { openCreatorAccount } from './ui/actions.mjs';
 import { createSurfaceOpener, registerSurfaceNavigation } from './runtime/ui-surfaces.mjs';
 import { registerDesktopPort } from './runtime/desktop-port.mjs';
+import { tabChangeSource } from './runtime/tab-change-source.mjs';
 import { createBrowserTaskOwner } from './runtime/browser-task-owner.mjs';
 import { createBrowserAuth } from './runtime/browser-auth.mjs';
 import { observePopupCreation, observePopupRemoval, observeSignInStage, stageBegin, stageFlush, stageMark } from './runtime/sign-in-timing.mjs';
@@ -298,11 +299,7 @@ export const desktopPort = registerDesktopPort({
       chrome.storage.onChanged.addListener(listener);
       return () => chrome.storage.onChanged.removeListener(listener);
     }, { label: 'storage' }),
-    Object.assign((changed) => {
-      const listener = (_tabId, changeInfo) => { if (changeInfo?.status === 'complete') changed(); };
-      chrome.tabs?.onUpdated?.addListener(listener);
-      return () => chrome.tabs?.onUpdated?.removeListener?.(listener);
-    }, { label: 'tab' }),
+    tabChangeSource(chrome),
   ],
 });
 desktopPort.register();

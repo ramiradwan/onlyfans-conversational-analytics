@@ -4,6 +4,7 @@ import { BrowserTaskClient } from '../../frontend/browser-tasks/client.js';
 import { connectExtension, openWaiting } from '../../frontend/browser-tasks/extension.js';
 import { createBrowserAuth } from '../runtime/browser-auth.mjs';
 import { DESKTOP_PORT_NAME, registerDesktopPort } from '../runtime/desktop-port.mjs';
+import { tabChangeSource } from '../runtime/tab-change-source.mjs';
 import { payload, observation } from '../test-fixtures/browser-task.mjs';
 
 const ORIGIN = 'https://provider.example';
@@ -183,6 +184,39 @@ test('an attach records why it did not use its read ahead, and the stages up to 
   assert.deepEqual(helper[0].marks.map(value => value.phase), ['payload-ready', 'attach-sent']);
   for (const value of helper[0].marks) assert.deepEqual(Object.keys(value).sort(), ['elapsed_ms', 'operation', 'phase', 'status']);
 });
+
+// The waiting page, or a tab given as an event of its own, finishes loading after the read ahead.
+async function aheadAfterTabLoad(t, tabFor) {
+  const marks = [];
+  const stages = { begin: () => marks.push('attach-received'), mark: (id, phase) => marks.push(phase), flush() {} };
+  const onUpdated = { listeners: new Set(), addListener(fn) { this.listeners.add(fn); }, removeListener(fn) { this.listeners.delete(fn); } };
+  const extensionId = payload().extension_id;
+  const source = tabChangeSource({ runtime: { id: extensionId }, tabs: { onUpdated } });
+  const h = harness(t, { preparingReads: 3, prepared: true, stages, changeSources: [source],
+    onCreate: options => { if (options.url.endsWith('sign-in-waiting.html')) setTimeout(() => {
+      for (const [info, tab] of tabFor(options.url)) for (const fn of onUpdated.listeners) fn(80, info, tab);
+    }, 0); } });
+  await h.helper.start();
+  assert.equal(await until(() => h.updated.length > 0), true, `presentations: ${h.presentations.join(',')}`);
+  return marks[1];
+}
+
+test('the waiting page and the helper finishing their loads keep the read ahead', async t => {
+  assert.equal(await aheadAfterTabLoad(t, url => [[{ status: 'complete' }, { url }],
+    [{ status: 'complete' }, { url: 'http://bridge.localhost:17871/browser-tasks#presentation=1' }]]), 'ahead-reused');
+});
+
+for (const [name, events] of [
+  ['an OnlyFans tab finishing its load', [[{ status: 'complete' }, { url: 'https://onlyfans.com/' }]]],
+  ['a tab without a visible URL finishing its load', [[{ status: 'complete' }, {}]]],
+  ['a tab leaving OnlyFans for another site', [[{ status: 'loading', url: 'https://example.com/' }, { url: 'https://example.com/' }],
+    [{ status: 'complete' }, { url: 'https://example.com/' }]]],
+  ['a tab on a look-alike helper host', [[{ status: 'complete' }, { url: 'http://bridge.localhost:178710/' }]]],
+]) {
+  test(`${name} still discards the read ahead`, async t => {
+    assert.equal(await aheadAfterTabLoad(t, () => events), 'ahead-changed-tab');
+  });
+}
 
 test('an attach with an unchanged read ahead records its reuse', async t => {
   const marks = [];
