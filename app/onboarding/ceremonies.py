@@ -82,7 +82,8 @@ class BrowserCeremonies:
 
     async def prepare(self, operation_id, binding, *, authorize):
         async with self._lock:
-            row, fresh, journey = self._reserve(operation_id, binding, authorize)
+            # Store transactions run off the event loop, each awaited before the step that depends on it.
+            row, fresh, journey = await asyncio.to_thread(self._reserve, operation_id, binding, authorize)
             if not fresh:
                 return await self._read(row, authorize=authorize)
             # The exact request is durable before the single prepare send. A
@@ -90,7 +91,7 @@ class BrowserCeremonies:
             result = await self._effects.run(self.client.prepare, self.request(row, known=False),
                 before_send=authorize, journey_id=journey)
             with timing.phase("ceremony-prepare", "persist"):
-                self._bind(row, result, preparing=True)
+                await asyncio.to_thread(self._bind, row, result, preparing=True)
             return result
 
     async def reconcile(self, operation_id, *, authorize):

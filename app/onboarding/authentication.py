@@ -387,8 +387,9 @@ class DesktopAuthentication:
     async def execute(self, operation, *, authorize, read_guard, reconcile, use_selection=False):
         async with self._lock:
             label = "authentication-" + json.loads(operation["owner_scope_json"])["authentication_intent"]["verb"]
+            # The command is durable before its send. The write runs off the event loop.
             with timing.phase(label, "reserve"):
-                row, request, verb, fresh, closures = self._reserve(operation)
+                row, request, verb, fresh, closures = await asyncio.to_thread(self._reserve, operation)
             parent = row["operation_id"]
             await self._recover_closed(parent, authorize=read_guard, rows=closures)
             if fresh and not reconcile:
@@ -429,9 +430,12 @@ class DesktopAuthentication:
         """`current` is a projection the caller just read. Without a command to send, it is returned as is."""
         intent = json.loads(operation["owner_scope_json"]).get("authentication_intent")
         if intent is not None:
-            with timing.phase("authentication-" + intent["verb"], "lookup"), self.store.database.read() as connection:
-                exists = connection.execute("SELECT 1 FROM desktop_authentication_commands WHERE operation_id=?",
-                    (operation["operation_id"],)).fetchone() is not None
+            def lookup():
+                with self.store.database.read() as connection:
+                    return connection.execute("SELECT 1 FROM desktop_authentication_commands WHERE operation_id=?",
+                        (operation["operation_id"],)).fetchone() is not None
+            with timing.phase("authentication-" + intent["verb"], "lookup"):
+                exists = await asyncio.to_thread(lookup)
             if not exists:
                 await self.execute(operation, authorize=authorize, read_guard=read_guard, reconcile=False, use_selection=fresh)
                 if fresh:

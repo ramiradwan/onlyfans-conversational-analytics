@@ -1232,3 +1232,33 @@ async def test_store_work_between_a_selection_reply_and_its_task_runs_off_the_ev
     database.connect, client.execute, owner.browser_tasks.prepare = counted, replied, task
     assert (await owner._connect(parent, reconcile=False)).state == "waiting"
     assert window == [False] and on_loop == []
+
+@pytest.mark.asyncio
+async def test_a_fresh_sign_in_writes_its_reservations_off_the_event_loop_before_each_send(setup):
+    import threading
+    owner, parent, _, _ = await _fresh_initial_connect(setup)
+    database, loop_thread = owner.store.database, threading.get_ident()
+    transaction, on_loop, order = database.transaction, [], []
+    client = owner.ceremonies.authentication.client
+    prepare, select = owner.ceremonies.client.prepare, client.execute
+
+    def counted(*args, **kwargs):
+        if threading.get_ident() == loop_thread:
+            on_loop.append(1)
+        order.append("write")
+        return transaction(*args, **kwargs)
+
+    def prepared(*args, **kwargs):
+        order.append("prepare-send")
+        return prepare(*args, **kwargs)
+
+    def selected(*args, **kwargs):
+        order.append("select-send")
+        return select(*args, **kwargs)
+
+    database.transaction, owner.ceremonies.client.prepare, client.execute = counted, prepared, selected
+    assert (await owner._connect(parent, reconcile=False)).state == "waiting"
+    assert on_loop == []
+    # The ceremony and the command are each recorded before their send.
+    assert order.index("write") < order.index("prepare-send") < order.index("select-send")
+    assert "write" in order[order.index("prepare-send"):order.index("select-send")]

@@ -102,7 +102,8 @@ class InitialInstallationEnrollment:
             raise InitialHandoffRefused("handoff_unconfirmed")
         operation = row["operation_id"] or self.journeys.new_operation()
         key = await self._effects.run(self.client.key.ensure_ready, journey_id=journey_id)
-        with timing.phase("handoff-prepare", "persist"):
+
+        def persist():
             self._current_journey(journey_id)
             public = json.loads(key.public_key_jwk)
             request = {"profile": PROFILE, "operation_id": operation, "destination": {
@@ -116,8 +117,16 @@ class InitialInstallationEnrollment:
                 request = json.loads(row["prepare_json"])
             self._current_update(journey_id, state="preparing", operation_id=operation,
                 prepare_json=json.dumps(request, separators=(",", ":")))
+            return request
+        # The request is durable before it is sent. The write runs off the event loop.
+        with timing.phase("handoff-prepare", "persist"):
+            request = await asyncio.to_thread(persist)
+        # The first send signs with the key ensure_ready just proved. A retry reopens it.
+        ensured = [key]
+
         def prepare_current():
-            return self.client.prepare(request, before_send=lambda: self._current_journey(journey_id))
+            return self.client.prepare(request, before_send=lambda: self._current_journey(journey_id),
+                                       key=ensured.pop() if ensured else None)
         try:
             for attempt in range(3):
                 try:
@@ -131,8 +140,9 @@ class InitialInstallationEnrollment:
             self.journeys.update(journey_id, state="prepare-unknown", reason=None)
             events.publish()
             raise
-        row = self._current_update(journey_id, state="waiting", handoff_reference=prepared["reference"],
-                                   handoff_expires_at=prepared["expires_at"], reason=None)
+        row = await asyncio.to_thread(self._current_update, journey_id, state="waiting",
+                                      handoff_reference=prepared["reference"], handoff_expires_at=prepared["expires_at"],
+                                      reason=None)
         events.publish()
         if resume:
             self.resume(journey_id)

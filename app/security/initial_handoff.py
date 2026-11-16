@@ -20,7 +20,7 @@ from referencing import Registry, Resource
 
 from app.core.resource_paths import resource_path
 from app.onboarding import timing
-from app.security.installation_key import InstallationKeyUnavailable, verify_installation_proof
+from app.security.installation_key import InstallationKeyReference, InstallationKeyUnavailable, verify_installation_proof
 from contracts.loader import verify_snapshot_integrity
 
 from app.security.hosted_grants import (
@@ -223,14 +223,16 @@ class InitialHandoffClient:
                 pass
         return self.key.ensure_ready()
 
-    def envelope(self, operation: str, request: dict, *, before_send: Callable[[], None] | None = None) -> dict:
+    def envelope(self, operation: str, request: dict, *, before_send: Callable[[], None] | None = None,
+                 key: InstallationKeyReference | None = None) -> dict:
+        """`key` is a reference its caller proved usable in this same exchange. The proof below still checks it."""
         if operation not in {"prepare", "wait", "complete", "receipt"}:
             raise ValueError("Invalid handoff operation")
         purpose = "initial-handoff-" + operation
         challenge_request = {"profile": PROOF_PROFILE,
             "target": {"operation": purpose, "request": request}}
         validate_contract("proof-challenge-request", challenge_request)
-        key = self._signing_key()
+        key = self._signing_key() if key is None else key
         started = self.monotonic()
         challenge = self._request(CHALLENGE_PATH, challenge_request, expected=200, before_send=before_send)
         _require_proof_budget(started, self.monotonic())
@@ -250,8 +252,9 @@ class InitialHandoffClient:
         return {"request": request, "proof": {"challenge": challenge["challenge"], "key_id": key.installation_key_id,
                 "signature": base64.urlsafe_b64encode(proof.signature).rstrip(b"=").decode()}}
 
-    def prepare(self, request: dict, *, before_send: Callable[[], None] | None = None) -> dict:
-        envelope = self.envelope("prepare", request, before_send=before_send)
+    def prepare(self, request: dict, *, before_send: Callable[[], None] | None = None,
+                key: InstallationKeyReference | None = None) -> dict:
+        envelope = self.envelope("prepare", request, before_send=before_send, key=key)
         result = self._request(PATH_PREFIX + "prepare", envelope, expected=201, before_send=before_send)
         if (set(result) != {"profile", "reference", "operation_id", "expires_at"}
                 or result["profile"] != PROFILE or result["operation_id"] != request["operation_id"]):

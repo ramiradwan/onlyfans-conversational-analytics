@@ -179,9 +179,10 @@ class _HandoffFixture:
             installation_key_id="ik1.AAECAwQFBgcICQoLDA0ODw", installation_key_jkt="A" * 43,
             public_key_jwk=json.dumps({"crv": "P-256", "kty": "EC", "x": "A" * 43, "y": "A" * 43})))
 
-    def prepare(self, request, *, before_send=None):
+    def prepare(self, request, *, before_send=None, key=None):
         if before_send is not None:
             before_send()
+        self.keys = [*getattr(self, "keys", []), key]
         self.preparations.append(json.loads(json.dumps(request)))
         if self.failures:
             self.failures -= 1
@@ -218,6 +219,65 @@ async def test_lost_prepare_response_retries_same_exact_operation_with_new_clien
     assert len(client.preparations) == 2 and client.preparations[0] == client.preparations[1]
     assert worker.journeys.get(journey)["state"] == "waiting"
     await worker.stop()
+
+
+@pytest.mark.asyncio
+async def test_prepare_persists_its_request_off_the_event_loop_and_signs_first_with_the_ensured_key(tmp_path):
+    import threading
+    store = _seeded_store(tmp_path / "auth.sqlite3", INSTANT)
+    client = _HandoffFixture(failures=1)
+    worker = _enrollment_worker(store, client)
+    journey = worker.journeys.open()["journey_id"]
+    database, loop_thread, on_loop = store.database, threading.get_ident(), []
+    transaction = database.transaction
+
+    def counted(*args, **kwargs):
+        if threading.get_ident() == loop_thread:
+            on_loop.append(1)
+        return transaction(*args, **kwargs)
+
+    database.transaction = counted
+    ensured = client.key.ensure_ready
+    keys = []
+    client.key = SimpleNamespace(ensure_ready=lambda: keys.append(ensured()) or keys[-1])
+    prepare = client.prepare
+
+    def durable_first(request, **kwargs):
+        # The exact request is durable before its send.
+        assert json.loads(worker.journeys.get(journey)["prepare_json"]) == request
+        return prepare(request, **kwargs)
+
+    client.prepare = durable_first
+    assert (await worker.prepare(journey))["state"] == "waiting"
+    database.transaction = transaction
+    # Only the first send carries the key ensure_ready returned. The retry reopens it.
+    assert client.keys == [keys[0], None]
+    assert on_loop == []
+    await worker.stop()
+
+
+def test_a_handoff_proof_with_a_key_replaced_after_ensure_fails_closed(tmp_path):
+    from app.security.installation_key import InstallationKeyAuthority, InstallationKeyPolicyError
+    from test_installation_key import EmulatedPlatformProvider
+
+    record = json.loads((Path(__file__).parents[1] / "contracts/initial-installation-handoff-v2/proof-cases.json").read_text())[0]
+
+    class Transport:
+        def request(self, method, path, *, json_body):
+            value = {"profile": PROOF_PROFILE, "challenge": record["challenge"],
+                     "request_digest": hashlib.sha256(canonical(record["request"])).hexdigest(),
+                     "expires_at": (INSTANT + timedelta(seconds=60)).isoformat(timespec="milliseconds").replace("+00:00", "Z")}
+            return TransportResponse(200, json.dumps(value).encode(), "application/json")
+
+    provider = EmulatedPlatformProvider()
+    authority = InstallationKeyAuthority(SQLiteAuthenticationStore(tmp_path / "auth.sqlite3"), provider)
+    ensured = authority.ensure_ready()
+    client = InitialHandoffClient(Transport(), authority, clock=lambda: INSTANT)
+    assert client.envelope("prepare", record["request"], key=ensured)["proof"]["key_id"] == ensured.installation_key_id
+    # The provider key behind the ensured reference is replaced before the exchange signs.
+    provider._keys[ensured.provider_key_name] = ec.generate_private_key(ec.SECP256R1())
+    with pytest.raises(InstallationKeyPolicyError):
+        client.envelope("prepare", record["request"], key=ensured)
 
 
 @pytest.mark.asyncio
@@ -769,16 +829,17 @@ async def test_a_fresh_prepare_shares_its_loop_rechecks_and_still_sees_a_change_
     client = _HandoffFixture()
     worker = _enrollment_worker(store, client)
     journey = worker.journeys.open()["journey_id"]
-    database, connect, opened = store.database, store.database.connect, []
+    import threading
+    database, connect, opened, loop_thread = store.database, store.database.connect, [], threading.get_ident()
 
     def counting():
-        opened.append(1)
+        opened.append(threading.get_ident() == loop_thread)
         return connect()
 
     database.connect = counting
     assert (await worker.prepare(journey, resume=False))["state"] == "waiting"
-    # One shared connection, two write transactions and the send recheck on the effect thread.
-    assert len(opened) == 4
+    # The loop's rechecks share one connection. The writes and the send recheck open theirs off the loop.
+    assert opened.count(True) == 1
     await worker.stop()
     # A journey that expires while the key is read is refused by the next shared recheck.
     store = _seeded_store(tmp_path / "second.sqlite3", INSTANT)

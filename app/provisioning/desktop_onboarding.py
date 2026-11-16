@@ -566,9 +566,9 @@ class ProvisioningSetupOwner:
                     guard()
                     if self.store._now().timestamp() >= operation["expires_at"]:
                         return OperationResult("refused", "operation_expired")
-                    if selecting:
-                        with timing.phase("worker", "task"):
-                            early = self.browser_tasks.prepare_early(operation)
+                if selecting:
+                    with timing.phase("worker", "task"):
+                        early = await asyncio.to_thread(self.browser_tasks.prepare_early, operation)
                 # Source services own their durable operation IDs and lost-send rules.
                 # Retrying here retains that exact source, including on worker restart.
                 with timing.phase("source", "prepare"):
@@ -618,8 +618,8 @@ class ProvisioningSetupOwner:
                 timing.observe("authentication-read", "entry-pending" if entry is None else "entry-open", "ok", 0)
             if entry is not None:
                 timing.entry_ready(operation["operation_id"])
-                self.browser_tasks.prepare(operation, "browser.authentication", deadline=datetime.fromisoformat(
-                    entry["expires_at"].replace("Z", "+00:00")).timestamp())
+                await asyncio.to_thread(self.browser_tasks.prepare, operation, "browser.authentication",
+                    deadline=datetime.fromisoformat(entry["expires_at"].replace("Z", "+00:00")).timestamp())
             waiting = entry is not None or authentication is not None and authentication["state"] not in {"expired", "unavailable"}
             if early and not waiting:
                 # A waiting selection can receive its ceremony on a later read, so its task stays.

@@ -139,11 +139,43 @@ async def test_only_a_fresh_acceptance_is_announced_and_an_announcement_failure_
     coordinator.accepted = accepted
     request = command(coordinator.read(session))
     first = await coordinator.command(session, request)
-    assert await coordinator.command(session, request) == first
+    # A duplicate reads the same operation's current receipt. Its worker may have advanced it meanwhile.
+    again = await coordinator.command(session, request)
+    assert again["operation_id"] == first["operation_id"] and again["state"] in {"accepted", "completed"}
     await coordinator.drain()
     assert announced == [request["operation_id"]]
     assert coordinator.receipt(session, request["operation_id"])["state"] == "completed"
     assert len(owner.calls) == 1
+
+@pytest.mark.asyncio
+async def test_a_command_is_accepted_off_the_event_loop_and_a_cancelled_request_still_starts_it(setup):
+    import threading
+    coordinator, owner, session, _ = setup
+    loop_thread, on_loop = threading.get_ident(), []
+    accept, entered, release = coordinator._accept, threading.Event(), threading.Event()
+
+    def held(*args, **kwargs):
+        on_loop.append(threading.get_ident() == loop_thread)
+        entered.set()
+        release.wait(5)
+        return accept(*args, **kwargs)
+
+    request = command(coordinator.read(session))
+    coordinator._accept = held
+    pending = asyncio.create_task(coordinator.command(session, request))
+    assert await asyncio.to_thread(entered.wait, 5)
+    # The HTTP request goes away while its accept is in flight.
+    pending.cancel()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await pending
+    while coordinator._accepting:
+        await asyncio.sleep(0.01)
+    await coordinator.drain()
+    assert on_loop == [False]
+    assert coordinator.receipt(session, request["operation_id"])["state"] == "completed"
+    assert len(owner.calls) == 1
+
 
 @pytest.mark.asyncio
 async def test_lost_reply_recovers_receipt_without_repeating_mutation(setup):

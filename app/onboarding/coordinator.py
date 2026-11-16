@@ -104,6 +104,7 @@ class DesktopOnboardingCoordinator:
         self._watcher: asyncio.Task | None = None
         self._closed = False
         self._retry_at: dict[str, float] = {}
+        self._accepting: set[asyncio.Task] = set()
         self._probes: dict[str, asyncio.Task] = {}
         self._probe_at: dict[str, float] = {}
         self._waits: dict[str, asyncio.Task] = {}
@@ -295,17 +296,25 @@ class DesktopOnboardingCoordinator:
         validate(command, kind="command")
         if self._closed:
             raise CommandRefused("setup_unavailable")
-        operation, fresh = self._accept(session, command, actor=actor)
-        if fresh:
-            events.publish()
-            if self.accepted is not None:
-                try:
-                    self.accepted(operation)
-                except Exception:
-                    pass
-            self._start(operation, reconcile=False, actor=actor)
+        async def accept():
+            # The accept is durable before this returns. Its transaction runs off the event loop.
+            operation, fresh = await asyncio.to_thread(self._accept, session, command, actor=actor)
+            if fresh:
+                events.publish()
+                if self.accepted is not None:
+                    try:
+                        self.accepted(operation)
+                    except Exception:
+                        pass
+                if not self._closed:
+                    self._start(operation, reconcile=False, actor=actor)
+            return operation
         # HTTP cancellation cannot cancel accepted domain work. A duplicate only
         # observes its receipt; it never starts a second worker.
+        task = asyncio.create_task(accept())
+        self._accepting.add(task)
+        task.add_done_callback(self._accepting.discard)
+        operation = await asyncio.shield(task)
         return self._public(operation)
 
     async def reconcile(self, session, operation_id, *, actor=None):

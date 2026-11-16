@@ -231,8 +231,8 @@ async def test_expired_uncertain_preparation_reuses_exact_request_and_bounds_exp
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("boundary", ["internal-key", "signing"])
-async def test_production_prepare_rechecks_expiry_after_internal_key_and_signing(expiry_case, monkeypatch, boundary):
+@pytest.mark.parametrize("boundary", ["key", "signing"])
+async def test_production_prepare_rechecks_expiry_after_its_key_read_and_signing(expiry_case, monkeypatch, boundary):
     clock, _, fixture, worker, resumed, _ = expiry_case
     journey = worker.journeys.open()["journey_id"]
     import base64
@@ -249,7 +249,8 @@ async def test_production_prepare_rechecks_expiry_after_internal_key_and_signing
     jwk = json.dumps({"crv": "P-256", "kid": key_id, "kty": "EC", "x": encoded(numbers.x), "y": encoded(numbers.y)})
     def ensure_ready():
         key_reads.append(True)
-        if boundary == "internal-key" and len(key_reads) == 2:
+        # The first send signs with the key this read proved, so it is the only key read.
+        if boundary == "key":
             clock[0] += timedelta(minutes=31)
         current = read_key()
         return SimpleNamespace(installation_key_id=key_id, installation_key_jkt=current.installation_key_jkt, public_key_jwk=jwk)
@@ -272,8 +273,8 @@ async def test_production_prepare_rechecks_expiry_after_internal_key_and_signing
     with pytest.raises(InitialHandoffRefused) as refused:
         await worker.prepare(journey)
     assert refused.value.code == "journey_expired"
-    assert len(key_reads) == 2
-    assert requests == ([] if boundary == "internal-key" else [CHALLENGE_PATH])
+    assert len(key_reads) == 1
+    assert requests == ([] if boundary == "key" else [CHALLENGE_PATH])
     assert resumed == []
 
 
