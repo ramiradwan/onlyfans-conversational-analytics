@@ -224,7 +224,12 @@ test('identity refresh reports only the current document observation and stops w
   const afterNavigation = h.posts.length;
   h.control('refresh_identity');
   assert.equal(h.posts.at(-1).type, 'ofca.provisioning.identity.reset');
-  assert.equal(h.posts.length, afterNavigation);
+  assert.equal(h.posts.length, afterNavigation + 1);
+  assert.deepEqual(Object.keys(h.posts.at(-1)).sort(), ['page_epoch', 'type', 'version']);
+  assert.equal(h.posts.at(-1).page_epoch, h.posts.at(-2).page_epoch);
+  h.control('pause');
+  h.control('refresh_identity');
+  assert.equal(h.posts.length, afterNavigation + 1);
   h.control('stop');
   const count = h.posts.length;
   h.control('refresh_identity');

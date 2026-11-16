@@ -110,10 +110,13 @@ export function createBrowserTaskOwner({ chromeApi, onboarding, consentControlle
       const permitted = legal.configured && !legal.requires_reauthorization && full && consent.onlyfans_permission === true;
       // A paused authenticated channel names its pinned creator without reading
       // OnlyFans or unlocking capture storage. Helpers cannot supply this pin.
+      const presentation = owner.payload.task.purpose === 'browser.authentication';
       const account = permitted ? mode === 'paused' && pinnedAccountId !== null
-        ? pinnedAccountId : await identityBridge.currentAccountId() : null;
+        ? pinnedAccountId : await (presentation && identityBridge.presentedAccountId
+          ? identityBridge.presentedAccountId() : identityBridge.currentAccountId()) : null;
       if (account !== null && owner.payload.creator_account_id !== null && account !== owner.payload.creator_account_id) throw Error('account_mismatch');
-      const profile = permitted && mode !== 'paused' ? await identityBridge.currentProfile?.() : null;
+      const profile = permitted && mode !== 'paused' ? await (presentation && identityBridge.presentedProfile
+        ? identityBridge.presentedProfile() : identityBridge.currentProfile?.()) : null;
       if (profile && profile.creator_account_id !== account) throw Error('task_changed');
       if (permitted) {
         const [latest, currentLegal] = await Promise.all([consentController.status(), legalActivationController.status()]);

@@ -34,7 +34,7 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
       await consentController.initialize();
       for (;;) {
         const revision = identityRevision;
-        const observed = await identityBridge.currentAccountId();
+        const observed = await (identityBridge.presentedAccountId?.() ?? identityBridge.currentAccountId());
         if (observed !== null && (typeof observed !== 'string' || observed.length < 1 || observed.length > 200)) {
           throw Error('workspace_identity_unavailable');
         }

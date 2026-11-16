@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { identityNavigation, tick } from '../test-fixtures/identity-navigation.mjs';
 
 import { build } from 'esbuild';
 
@@ -26,6 +27,106 @@ const CONTENT_SENDER = Object.freeze({
 const PAGE_EPOCH_A = '10000000-0000-4000-8000-000000000001';
 const PAGE_EPOCH_B = '10000000-0000-4000-8000-000000000002';
 const PAGE_EPOCH_C = '10000000-0000-4000-8000-000000000003';
+
+for (const order of ['reset-first', 'url-first']) {
+  test(`same-document pending presentation needs no complete event (${order})`, async () => {
+    const h = identityNavigation(); await h.confirm();
+    let guard;
+    await h.identity.withCaptureContext(h.sender, async (_context, current) => { guard = current; });
+    await h.navigate(order);
+    assert.equal(h.refreshes.length, 1, 'the fence probes frame zero without complete');
+    assert.deepEqual(h.refreshes[0], [17, { type: 'ofca.capture.control', version: 1, action: 'refresh_identity' }, { frameId: 0 }]);
+    assert.equal(await h.identity.presentedAccountId(), 'synthetic-creator');
+    assert.deepEqual(await h.identity.presentedProfile(), { creator_account_id: 'synthetic-creator',
+      display_name: 'Synthetic Creator', username: 'synthetic_handle' });
+    assert.equal(await h.identity.currentAccountId(), null, 'pairing still requires confirmation');
+    assert.equal(await h.identity.currentProfile(), null);
+    assert.equal((await h.identity.contextFor(h.sender)).observed_platform_id, null);
+    assert.throws(guard, { code: 'stale_capture_context' });
+    h.identity.unregister();
+  });
+  for (const clear of ['new-document', 'confirmed-null', 'different-account', 'removed', 'clear', 'consent', 'startup', 'installed']) {
+    test(`pending presentation clears for ${clear} (${order})`, async () => {
+      const h = identityNavigation(); await h.confirm(); await h.navigate(order);
+      assert.equal(await h.identity.presentedAccountId(), 'synthetic-creator');
+      if (clear === 'new-document') await h.reset({ ...h.sender, documentId: 'replacement-document' });
+      if (clear === 'confirmed-null') await h.confirm(null);
+      if (clear === 'different-account') await h.confirm('synthetic-other');
+      if (clear === 'removed') h.chromeApi.tabs.onRemoved.emit(17);
+      if (clear === 'clear') await h.identity.clearContexts();
+      if (clear === 'consent') h.consent.consent_epoch = PAGE_EPOCH_C;
+      if (clear === 'startup') h.chromeApi.runtime.onStartup.emit();
+      if (clear === 'installed') h.chromeApi.runtime.onInstalled.emit({ reason: 'update' });
+      await tick();
+      assert.equal(await h.identity.presentedAccountId(), clear === 'different-account' ? 'synthetic-other' : null);
+      if (clear !== 'different-account') {
+        await h.reset();
+        assert.equal(await h.identity.presentedAccountId(), null, 'a later reset cannot revive cleared memory');
+      }
+      h.identity.unregister();
+    });
+  }
+}
+
+test('presentation waits for post-fence proof and does not inherit an unproven document', async () => {
+  const h = identityNavigation(); await h.confirm();
+  let refresh;
+  h.refresh = () => new Promise(resolve => { refresh = resolve; });
+  h.fence(); await tick();
+  let settled = false;
+  const account = h.identity.presentedAccountId().then(value => { settled = true; return value; });
+  await tick(); assert.equal(settled, false);
+  await h.reset({ ...h.sender, documentId: 'replacement-document' }); refresh();
+  assert.equal(await account, null);
+  h.identity.unregister();
+});
+
+test('an acknowledged refresh waits for the asynchronous same-document reset', async () => {
+  const h = identityNavigation(); await h.confirm();
+  h.fence(); await tick();
+  let settled = false;
+  const account = h.identity.presentedAccountId().then(value => { settled = true; return value; });
+  await tick(); assert.equal(settled, false);
+  await h.reset();
+  assert.equal(await account, 'synthetic-creator');
+  h.identity.unregister();
+});
+
+test('an unproven fence expires to unknown and never restores cached capture authority', async () => {
+  const h = identityNavigation(); await h.confirm(); h.fence();
+  assert.equal(await h.identity.presentedAccountId(), null);
+  assert.equal(await h.identity.currentAccountId(), null);
+  h.identity.unregister();
+});
+
+test('a reset queued before the latest fence cannot prove that fence', async () => {
+  const h = identityNavigation(); await h.confirm();
+  let publish;
+  const original = h.chromeApi.storage.session.set;
+  h.chromeApi.storage.session.set = (value, callback) => new Promise(resolve => {
+    publish = async () => { await original(value, callback); resolve(); };
+  });
+  const resetting = h.reset();
+  while (!publish) await tick();
+  h.fence(); h.chromeApi.storage.session.set = original;
+  await publish(); await resetting; await tick();
+  let settled = false;
+  const account = h.identity.presentedAccountId().then(value => { settled = true; return value; });
+  await tick(); assert.equal(settled, false);
+  await h.reset(); assert.equal(await account, 'synthetic-creator');
+  h.identity.unregister();
+});
+
+test('a cold bridge remembers its persisted confirmation before a reset and URL fence', async () => {
+  const h = identityNavigation(); await h.confirm(); h.identity.unregister();
+  const cold = createProvisioningIdentityBridge({ chromeApi: h.chromeApi, currentConsent: () => h.consent });
+  cold.register();
+  await h.reset();
+  h.refresh = () => h.reset(); h.fence(); await tick(); await tick();
+  assert.equal(await cold.presentedAccountId(), 'synthetic-creator');
+  assert.equal(await cold.currentAccountId(), null);
+  cold.unregister();
+});
 
 function storageArea(values) {
   return {
@@ -456,9 +557,9 @@ test('a completed loading cycle requests current-document identity without reviv
 
   h.tabUpdatedListeners[0](CONTENT_SENDER.tab.id, { status: 'complete' });
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(h.tabMessages, [[CONTENT_SENDER.tab.id, {
+  assert.deepEqual(h.tabMessages, Array.from({ length: 2 }, () => [CONTENT_SENDER.tab.id, {
     type: 'ofca.capture.control', version: 1, action: 'refresh_identity',
-  }, { frameId: 0 }]]);
+  }, { frameId: 0 }]));
   assert.equal(await h.bridge.currentAccountId(), null);
   await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
   assert.equal(await h.bridge.currentAccountId(), 'creator-a');

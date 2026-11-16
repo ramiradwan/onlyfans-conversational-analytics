@@ -13,6 +13,7 @@ export const PROVISIONING_IDENTITY_STORAGE_KEY = 'provisioning_authenticated_pro
 export const PROVISIONING_IDENTITY_STORAGE_SCHEMA = 'ofca-provisioning-identities/v2';
 
 const MAX_CONTEXTS = 32;
+const PRESENTATION_PROOF_TIMEOUT_MS = 1000;
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -159,6 +160,35 @@ export function createProvisioningIdentityBridge({
   const accountListeners = new Set();
   const notifyAccount = () => { for (const listener of accountListeners) listener(); };
   const observedDocuments = new Map();
+  const remembered = new Map();
+  const presentationFences = new Map();
+  let presentationConsentEpoch = currentConsent()?.consent_epoch;
+  const finishPresentationFence = (tabId) => {
+    const fence = presentationFences.get(tabId);
+    if (!fence) return;
+    clearTimeout(fence.timer);
+    presentationFences.delete(tabId);
+    fence.resolve();
+  };
+  const clearPresentation = () => {
+    remembered.clear();
+    for (const tabId of presentationFences.keys()) finishPresentationFence(tabId);
+  };
+  const syncPresentationConsent = () => {
+    const epoch = currentConsent()?.consent_epoch;
+    if (epoch !== presentationConsentEpoch) clearPresentation();
+    presentationConsentEpoch = epoch;
+  };
+  const remember = (context) => {
+    if (context.observed_platform_id === null || context.identity_conflict === true) return;
+    remembered.set(context.tab_id, { senderKey: context.sender_key,
+      accountId: context.observed_platform_id, ...profileLabels(context), proven: true });
+    if (remembered.size > MAX_CONTEXTS) {
+      const oldest = remembered.keys().next().value;
+      remembered.delete(oldest);
+      finishPresentationFence(oldest);
+    }
+  };
   let persistedContextTabs = null;
   const documentGenerations = new Map();
   const invalidateDocument = (tabId) => {
@@ -176,6 +206,7 @@ export function createProvisioningIdentityBridge({
   };
 
   const loadContexts = async () => {
+    syncPresentationConsent();
     const stored = await storageGet(sessionStorage, PROVISIONING_IDENTITY_STORAGE_KEY, chromeApi);
     const contexts = normalizeContexts(stored[PROVISIONING_IDENTITY_STORAGE_KEY]);
     persistedContextTabs = new Set(contexts.map((context) => context.tab_id));
@@ -210,8 +241,14 @@ export function createProvisioningIdentityBridge({
     }
     // Fence admitted captures before waiting for persistence or readiness.
     invalidateDocument(sender.tab.id);
+    syncPresentationConsent();
+    const last = remembered.get(sender.tab.id);
+    if (last && (last.senderKey !== senderKey || message.type !== PROVISIONING_IDENTITY_RESET_TYPE
+      && update.accountId !== last.accountId)) remembered.delete(sender.tab.id);
+    else if (last && message.type === PROVISIONING_IDENTITY_RESET_TYPE) last.proven = true;
     const previous = observedDocuments.get(sender.tab.id);
     const observed = { senderKey, pageEpoch: update.pageEpoch, accountId: update.accountId };
+    const presentationFence = presentationFences.get(sender.tab.id);
     observedDocuments.set(sender.tab.id, observed);
     if (!previous || previous.senderKey !== observed.senderKey
       || previous.pageEpoch !== observed.pageEpoch || previous.accountId !== observed.accountId) notifyAccount();
@@ -224,6 +261,15 @@ export function createProvisioningIdentityBridge({
       return serializeContext(async () => {
         if (generation !== admittedGeneration || !allowsIdentity()) return { ok: false };
         const contexts = await loadContexts();
+        if (message.type === PROVISIONING_IDENTITY_RESET_TYPE && !remembered.has(sender.tab.id)) {
+          const previousContext = contexts.find(context => context.sender_key === senderKey);
+          if (previousContext) {
+            remember(previousContext);
+            const last = remembered.get(sender.tab.id);
+            if (last) last.proven = observedDocuments.get(sender.tab.id) === observed
+              && presentationFences.get(sender.tab.id) === presentationFence;
+          }
+        }
         const retained = contexts.filter((context) => context.tab_id !== sender.tab.id);
         retained.push({
           sender_key: senderKey, tab_id: sender.tab.id, document_id: sender.documentId,
@@ -232,6 +278,10 @@ export function createProvisioningIdentityBridge({
           ...profileLabels(update),
         });
         await publishContexts(retained, contexts);
+        if (observedDocuments.get(sender.tab.id) === observed) {
+          if (message.type !== PROVISIONING_IDENTITY_RESET_TYPE) remember(retained.at(-1));
+          if (presentationFences.get(sender.tab.id) === presentationFence) finishPresentationFence(sender.tab.id);
+        }
         return { ok: true };
       });
     })().then(sendResponse, () => sendResponse({ ok: false }));
@@ -249,11 +299,37 @@ export function createProvisioningIdentityBridge({
     generation += 1;
     documentGenerations.clear();
     observedDocuments.clear();
+    clearPresentation();
     persistedContextTabs = null;
     notifyAccount();
     return serializeContext(async () => publishContexts([], await loadContexts()));
   };
-  const removeTab = (tabId) => {
+  const refreshIdentity = (tabId, fence) => {
+    fence.refreshSent = true;
+    void (async () => {
+      await ensureReady();
+      if (!allowsIdentity()) return;
+      await chromeApi.tabs?.sendMessage?.(tabId, {
+        type: PAGE_CONTROL_MESSAGE_TYPE, version: PAGE_CONTROL_VERSION, action: 'refresh_identity',
+      }, { frameId: 0 });
+    })().catch(() => {
+      if (presentationFences.get(tabId) === fence) finishPresentationFence(tabId);
+    });
+  };
+  const removeTab = (tabId, fenced = false) => {
+    syncPresentationConsent();
+    finishPresentationFence(tabId);
+    let fence;
+    if (fenced) {
+      const last = remembered.get(tabId);
+      if (last) last.proven = false;
+      let resolve;
+      const promise = new Promise(done => { resolve = done; });
+      fence = { promise, resolve, timer: setTimeout(() => {
+        if (presentationFences.get(tabId) === fence) finishPresentationFence(tabId);
+      }, PRESENTATION_PROOF_TIMEOUT_MS) };
+      presentationFences.set(tabId, fence);
+    } else remembered.delete(tabId);
     const affectsIdentity = persistedContextTabs === null || persistedContextTabs.has(tabId)
       || observedDocuments.has(tabId);
     invalidateDocument(tabId);
@@ -269,13 +345,25 @@ export function createProvisioningIdentityBridge({
       await ensureReady();
       return serializeContext(async () => {
         const contexts = await loadContexts();
+        if (fenced && presentationFences.get(tabId) === fence) {
+          if (!remembered.has(tabId)) {
+            const previous = contexts.find(context => context.tab_id === tabId);
+            if (previous) remember(previous);
+          }
+          const last = remembered.get(tabId);
+          if (last) {
+            if (!fence.refreshSent) { last.proven = false; refreshIdentity(tabId, fence); }
+          } else finishPresentationFence(tabId);
+        }
         const retained = contexts.filter((context) => context.tab_id !== tabId);
         await publishContexts(retained, contexts);
       });
     })().catch(() => undefined);
+    if (fenced && remembered.has(tabId)) refreshIdentity(tabId, fence);
   };
+  const tabRemoved = (tabId) => removeTab(tabId);
   const tabUpdated = (tabId, changeInfo) => {
-    if (changeInfo.status === 'loading' || changeInfo.url !== undefined) removeTab(tabId);
+    if (changeInfo.status === 'loading' || changeInfo.url !== undefined) removeTab(tabId, true);
     if (changeInfo.status === 'complete') {
       // Browser loading events can also occur without replacing the top-level
       // document. Re-observe through its current content bridge after clearing;
@@ -294,6 +382,27 @@ export function createProvisioningIdentityBridge({
   };
   const resetSession = () => { void clearContexts().catch(() => undefined); };
 
+  const presentedContexts = async () => {
+    for (;;) {
+      syncPresentationConsent();
+      // Wait outside the capture queue so a post-fence reset can prove its document.
+      while (presentationFences.size) await Promise.all([...presentationFences.values()].map(fence => fence.promise));
+      const presented = await serializeContext(async () => {
+        const contexts = await loadContexts();
+        return contexts.map(context => {
+          const last = remembered.get(context.tab_id);
+          if (context.observed_platform_id === null && last?.proven && last.senderKey === context.sender_key) {
+            return { ...context, observed_platform_id: last.accountId, ...profileLabels(last) };
+          }
+          const observed = observedDocuments.get(context.tab_id);
+          return observed && observed.senderKey !== context.sender_key
+            ? { ...context, observed_platform_id: null } : context;
+        });
+      });
+      if (!presentationFences.size) return presented;
+    }
+  };
+
   return Object.freeze({
     currentAccountId() { return serializeContext(async () => provisioningAccountId(await loadContexts())); },
     currentProfile() { return serializeContext(async () => {
@@ -303,6 +412,14 @@ export function createProvisioningIdentityBridge({
       const observed = contexts.findLast(context => context.observed_platform_id === accountId);
       return { creator_account_id: accountId, ...profileLabels(observed) };
     }); },
+    async presentedAccountId() { return provisioningAccountId(await presentedContexts()); },
+    async presentedProfile() {
+      const contexts = await presentedContexts();
+      const accountId = provisioningAccountId(contexts);
+      if (accountId === null) return null;
+      return { creator_account_id: accountId,
+        ...profileLabels(contexts.findLast(context => context.observed_platform_id === accountId)) };
+    },
     onAccountChange(listener) { accountListeners.add(listener); return () => accountListeners.delete(listener); },
     clearContexts,
     contextFor(sender) {
@@ -323,7 +440,7 @@ export function createProvisioningIdentityBridge({
     register() {
       if (registered) return;
       chromeApi.runtime.onMessage.addListener(internalListener);
-      chromeApi.tabs?.onRemoved?.addListener(removeTab);
+      chromeApi.tabs?.onRemoved?.addListener(tabRemoved);
       chromeApi.tabs?.onUpdated?.addListener(tabUpdated);
       chromeApi.runtime.onStartup?.addListener(resetSession);
       chromeApi.runtime.onInstalled?.addListener(resetSession);
@@ -332,7 +449,7 @@ export function createProvisioningIdentityBridge({
     unregister() {
       if (!registered) return;
       chromeApi.runtime.onMessage.removeListener?.(internalListener);
-      chromeApi.tabs?.onRemoved?.removeListener?.(removeTab);
+      chromeApi.tabs?.onRemoved?.removeListener?.(tabRemoved);
       chromeApi.tabs?.onUpdated?.removeListener?.(tabUpdated);
       chromeApi.runtime.onStartup?.removeListener?.(resetSession);
       chromeApi.runtime.onInstalled?.removeListener?.(resetSession);

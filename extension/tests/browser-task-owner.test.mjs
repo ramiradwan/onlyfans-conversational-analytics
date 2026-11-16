@@ -1,11 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { identityNavigation } from '../test-fixtures/identity-navigation.mjs';
 import { readFile } from 'node:fs/promises';
 import { createBrowserTaskOwner, attachInstalledHelpers } from '../runtime/browser-task-owner.mjs';
 import { payload, id } from '../test-fixtures/browser-task.mjs';
 import { NATIVE_LAUNCH_KEY } from '../runtime/onboarding-native-launch.mjs';
 import { isObservation } from '../../shared/browser-tasks/wire.mjs';
 import { BROWSER_TASK_INSTANCE_KEY, BROWSER_TASK_ADOPTION_KEY } from '../runtime/browser-task-entry.mjs';
+
+for (const purpose of ['browser.authentication', 'browser.access', 'browser.identity', 'browser.pairing-confirmation']) {
+  test(`${purpose} reads pending identity only for an existing sign-in`, async () => {
+    const h = identityNavigation(); await h.confirm();
+    const access = payload(), first = await h.owner.read(await h.owner.attach(access));
+    await h.navigate('reset-first');
+    const value = payload(); value.task = { ...value.task, task_id: id(13), purpose };
+    value.participant = Object.fromEntries(['instance_id', 'draft_scope_id', 'disclosure_bundle_id'].map(key => [key, first[key]]));
+    if (purpose === 'browser.authentication') value.creator_account_id = 'synthetic-creator';
+    const result = await h.owner.read(await h.owner.attach(value));
+    assert.equal(result.state, purpose === 'browser.authentication' ? 'ready' : 'needs-account');
+    assert.equal(result.creator_account_id, purpose === 'browser.authentication' ? 'synthetic-creator' : null);
+    if (purpose === 'browser.authentication') assert.equal(result.creator_display_name, 'Synthetic Creator');
+    else assert.equal(result.creator_display_name, undefined);
+    h.identity.unregister();
+  });
+}
 
 function harness() {
   const local = {}, session = {}, calls = { identity: 0, opened: 0, creator: 0 }, contexts = [], writes = [];

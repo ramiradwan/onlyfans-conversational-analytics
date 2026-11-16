@@ -624,6 +624,9 @@ import {
     // Navigation already removes the worker's old document context.
     else if (forwarding && creatorPlatformUserId !== null) {
       postProvisioningIdentity({ creator_account_id: creatorPlatformUserId, ...creatorLabels });
+    } else if (forwarding && creatorPlatformUserId === null && lastConfirmedCreatorId !== null) {
+      postPageMessage({ type: PROVISIONING_IDENTITY_RESET_TYPE,
+        version: PROVISIONING_IDENTITY_VERSION, page_epoch: pageEpoch });
     }
   }
 
