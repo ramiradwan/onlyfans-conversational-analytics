@@ -669,6 +669,62 @@ async def test_healthy_wait_suppresses_probe_and_retry(setup, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("wake", ["healthy", "frame", "expiry", "failure"])
+async def test_idle_confirmation_wakes_only_on_frame_expiry_or_failed_wait(setup, monkeypatch, wake):
+    import time
+    monkeypatch.setattr("app.onboarding.coordinator.RECOVERY_INTERVAL_SECONDS", 0.03)
+    monkeypatch.setattr("app.onboarding.coordinator.WAIT_BACKOFF_CAP_SECONDS", 0.3)
+    coordinator, owner, _, clock = setup
+    changed = asyncio.Event()
+    script = (changed, OSError("stream lost")) if wake == "failure" else (changed, _hint(2), "hold")
+    hints = Hints((_hint(1), *script))
+    prefetches, probes = [], []
+
+    async def prefetch(operation):
+        prefetches.append(True)
+        return 0.01
+
+    owner.prefetch = prefetch
+
+    async def probe(operation):
+        probes.append(True)
+        raise OSError("wait unavailable")
+
+    await _waited_connect(setup, hints, probe=probe)
+    await _until(lambda: coordinator._held and not coordinator._workers)
+    started, initial = time.monotonic(), clock[0]
+    coordinator.store._clock = lambda: initial + timedelta(seconds=time.monotonic() - started)
+    expiry = initial.timestamp() + (0.25 if wake == "expiry" else 10)
+    owner.confirmation_deadline = lambda _: expiry if coordinator.admissions._now() < expiry else None
+    owner.probe_interval = lambda _: 0.01 if coordinator.admissions._now() < expiry else None
+    passes, original = [], coordinator._pass_facts
+
+    def counted():
+        passes.append(True)
+        return original()
+
+    coordinator._pass_facts = counted
+    try:
+        await asyncio.sleep(0.06)
+        before, reads, prefetched = len(passes), len(owner.calls), len(prefetches)
+        await asyncio.sleep(0.12)
+        assert len(passes) == before
+        assert len(owner.calls) == reads
+        assert len(prefetches) == prefetched
+        if wake == "healthy":
+            return
+        if wake in {"frame", "failure"}:
+            changed.set()
+        await _until(lambda: len(owner.calls) == reads + 1)
+        await _until(lambda: not coordinator._workers)
+        await asyncio.sleep(0.01)
+        assert len(owner.calls) == reads + 1
+        assert not probes
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
 async def test_lost_wait_falls_back_to_probe_then_reconnects(setup, monkeypatch):
     monkeypatch.setattr("app.onboarding.coordinator.WAIT_BACKOFF_CAP_SECONDS", 0.3)
     coordinator, owner, session, _ = setup

@@ -232,10 +232,26 @@ class DesktopAuthentication:
             ceremony = self.ceremonies.row(parent, connection=connection)
             if ceremony is None or ceremony["ceremony_id"] is None:
                 return None
+            if self.confirmation_deadline(operation_id, connection=connection) is not None:
+                return PROBE_INTERVAL_SECONDS
             row = connection.execute("SELECT 1 FROM desktop_browser_tasks WHERE operation_id=? "
                 "AND purpose='browser.authentication' AND state IN ('pending','accepted','outcome_unknown') "
                 "AND expires_at>? LIMIT 1", (operation_id, self.store._now().timestamp())).fetchone()
         return None if row is None else PROBE_INTERVAL_SECONDS
+
+    def confirmation_deadline(self, operation_id, *, connection=None):
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
+            parent = self.parent_operation(operation_id, connection=connection)
+            row = connection.execute("SELECT d.projection_json,o.expires_at FROM desktop_decision_projections d "
+                "JOIN desktop_setup_operations o ON o.operation_id=d.operation_id WHERE d.operation_id=? "
+                "AND o.state IN ('accepted','waiting','outcome_unknown')", (parent,)).fetchone()
+        if row is None:
+            return None
+        projection = json.loads(row["projection_json"])
+        if projection["state"] != "confirmation-required":
+            return None
+        deadline = min(row["expires_at"], timestamp(projection["decision"]["expires_at"]).timestamp())
+        return deadline if deadline > self.store._now().timestamp() else None
 
     async def probe(self, operation_id, *, authorize):
         """Read the parent's current projection only. True when it differs from the last probe."""

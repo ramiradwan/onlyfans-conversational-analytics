@@ -116,6 +116,7 @@ class DesktopOnboardingCoordinator:
         self._closed_on: dict[str, str | None] = {}
         self._prefetches: dict[str, asyncio.Task] = {}
         self._prefetch_wake: dict[str, asyncio.Event] = {}
+        self._confirmation_at: dict[str, float] = {}
         # Presentation-only notice of a freshly accepted command; it never changes the operation.
         self.accepted: Callable[[dict], None] | None = None
 
@@ -466,7 +467,7 @@ class DesktopOnboardingCoordinator:
                 # One unavailable authority must not stop reconciliation
                 # for every later event. No observation proves rollback.
                 observed = OperationResult("outcome_unknown", "operation_unconfirmed")
-            facts.append((operation, recoverable, interval, observed))
+            facts.append((operation, recoverable, interval, observed, self._confirmation_deadline(operation)))
         return facts
 
     async def _watch(self):
@@ -485,10 +486,25 @@ class DesktopOnboardingCoordinator:
                 self._probe_at = {key: value for key, value in self._probe_at.items() if key in pending_ids}
                 self._hint_frames = {key: value for key, value in self._hint_frames.items() if key in pending_ids}
                 self._closed_on = {key: value for key, value in self._closed_on.items() if key in pending_ids}
+                self._confirmation_at = {key: value for key, value in self._confirmation_at.items() if key in pending_ids}
                 for operation_id in [key for key in self._waits if key not in pending_ids]:
                     self._waits.pop(operation_id).cancel()
-                retry_delays, remaining = [], []
-                for operation, recoverable, interval, observed in facts:
+                retry_delays, remaining, recovery = [], [], False
+                for operation, recoverable, interval, observed, confirmation in facts:
+                    operation_id = operation["operation_id"]
+                    now = self.admissions._now()
+                    expired = self._confirmation_at.get(operation_id, float("inf")) <= now
+                    if expired:
+                        self._confirmation_at.pop(operation_id, None)
+                        self._start(operation, reconcile=True, actor=None)
+                    if confirmation is not None:
+                        self._confirmation_at[operation_id] = confirmation
+                        prefetch = self._prefetches.get(operation_id)
+                        if prefetch is not None:
+                            prefetch.cancel()
+                        retry_delays.append(max(0, confirmation - now))
+                    if confirmation is None or operation_id not in self._held:
+                        recovery = True
                     if recoverable and interval is not None:
                         self._hold_wait(operation)
                     if observed is not None:
@@ -499,11 +515,10 @@ class DesktopOnboardingCoordinator:
                         # Only domain-approved recovery of accepted work. No
                         # new command, browser window or presentation is created.
                         clock = asyncio.get_running_loop().time()
-                        if interval is not None:
-                            if operation["operation_id"] in self._held:
-                                # A healthy held wait replaces both the probe
-                                # and the slow retry for this sign-in.
-                                continue
+                        if interval is not None and operation_id in self._held:
+                            # The held wait replaces probes and retries.
+                            continue
+                        if interval is not None and confirmation is None:
                             # A cheap read replaces the slow full retry while
                             # its sign-in is open. A change starts the full read.
                             if operation["operation_id"] not in self._probes:
@@ -513,7 +528,7 @@ class DesktopOnboardingCoordinator:
                                 else:
                                     retry_delays.append(due - clock)
                             continue
-                        if operation["operation_id"] in self._waits:
+                        if interval is None and operation["operation_id"] in self._waits:
                             self._waits.pop(operation["operation_id"]).cancel()
                         due = self._retry_at.setdefault(operation["operation_id"], clock + RECOVERY_INTERVAL_SECONDS)
                         if due <= clock:
@@ -526,7 +541,7 @@ class DesktopOnboardingCoordinator:
                 now = self.admissions._now()
                 deadlines = [operation["expires_at"] - now for operation in remaining if operation["expires_at"] > now]
                 deadlines.extend(retry_delays)
-                if facts:
+                if facts and recovery:
                     # Pairing and source owners can expire before the enclosing
                     # desktop command. Observe their result without requiring a
                     # renderer poll or replaying a protected command.
@@ -550,6 +565,14 @@ class DesktopOnboardingCoordinator:
         except Exception:
             return None
         return value if isinstance(value, (int, float)) and value > 0 else None
+
+    def _confirmation_deadline(self, operation):
+        deadline = getattr(self.owner, "confirmation_deadline", None)
+        try:
+            value = None if deadline is None else deadline(operation)
+        except Exception:
+            return None
+        return value if type(value) in {int, float} and value > self.admissions._now() else None
 
     def _start_probe(self, operation, interval):
         operation_id = operation["operation_id"]
@@ -608,6 +631,8 @@ class DesktopOnboardingCoordinator:
         async def run():
             try:
                 while not self._closed:
+                    if self._confirmation_deadline(operation) is not None:
+                        return
                     wake.clear()
                     delay = await self.owner.prefetch(operation)
                     if (isinstance(delay, bool) or not isinstance(delay, (int, float)) or not 0 < delay < 3600

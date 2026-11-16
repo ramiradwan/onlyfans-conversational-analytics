@@ -191,6 +191,14 @@ class RuntimeSetupOwner:
         return (value.probe_interval(operation) if kind == "setup"
             else value.ceremonies.authentication.probe_interval(operation["operation_id"]))
 
+    def confirmation_deadline(self, operation):
+        owner = self._probe_owner(operation)
+        if owner is None:
+            return None
+        kind, value = owner
+        return (value.confirmation_deadline(operation) if kind == "setup"
+            else value.ceremonies.authentication.confirmation_deadline(operation["operation_id"]))
+
     async def probe(self, operation):
         kind, value = self._probe_owner(operation)
         if kind == "setup":

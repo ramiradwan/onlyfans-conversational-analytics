@@ -67,6 +67,20 @@ def accept(decision):
 
 
 @pytest.mark.asyncio
+async def test_confirmation_keeps_a_wait_without_an_open_browser_task(decision):
+    from app.security.initial_handoff import timestamp
+    _, ceremonies, decisions, _, parent, _, clock, _ = decision
+    authentication = DesktopAuthentication(ceremonies.store, ceremonies, SimpleNamespace())
+    assert authentication.probe_interval(parent["operation_id"]) is not None
+    assert authentication.confirmation_deadline(parent["operation_id"]) == min(
+        parent["expires_at"], timestamp(decisions.presentation(parent["journey_id"], "account.connect")
+            ["projection"]["decision"]["expires_at"]).timestamp())
+    clock[0] += timedelta(hours=1)
+    assert authentication.confirmation_deadline(parent["operation_id"]) is None
+    assert authentication.probe_interval(parent["operation_id"]) is None
+
+
+@pytest.mark.asyncio
 async def test_reads_and_restart_recovery_never_submit_unconfirmed_consent(decision):
     _, _, decisions, client, parent, _, _, _ = decision
     operation = accept(decision)

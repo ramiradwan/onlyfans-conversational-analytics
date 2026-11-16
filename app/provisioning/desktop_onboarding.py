@@ -308,6 +308,10 @@ class ProvisioningSetupOwner:
         authentication = None if self.ceremonies is None else self.ceremonies.authentication
         return None if authentication is None else authentication.probe_interval(operation["operation_id"])
 
+    def confirmation_deadline(self, operation):
+        authentication = None if self.ceremonies is None else self.ceremonies.authentication
+        return None if authentication is None else authentication.confirmation_deadline(operation["operation_id"])
+
     async def probe(self, operation):
         authentication = self.ceremonies.authentication
         parent = authentication.parent_operation(operation["operation_id"])
