@@ -585,7 +585,6 @@ class DesktopOnboardingCoordinator:
             return
         task = asyncio.create_task(self._run_wait(operation))
         self._waits[operation_id] = task
-        self._prefetch(operation)
 
         def finished(wait):
             if self._waits.get(operation_id) is wait:
@@ -635,6 +634,8 @@ class DesktopOnboardingCoordinator:
             try:
                 async for hint in self.owner.wait(operation):
                     timing.observe("wait", "frame", "ok", 0)
+                    if not framed:
+                        self._prefetch(operation)
                     framed, read = True, False
                     if operation_id not in self._held:
                         self._held.add(operation_id)

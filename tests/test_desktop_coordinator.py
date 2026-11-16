@@ -895,10 +895,10 @@ def test_sign_in_phases_append_to_a_bounded_local_file(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_wait_and_prefetch_open_while_dispatch_worker_is_active(setup):
+async def test_wait_opens_during_dispatch_but_prefetch_waits_for_its_first_frame(setup):
     from app.provisioning.events import events
     coordinator, owner, session, _ = setup
-    opened, prefetched, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    opened, prefetched, release, frame = asyncio.Event(), asyncio.Event(), asyncio.Event(), asyncio.Event()
     ready = []
 
     async def execute(operation, **kwargs):
@@ -909,9 +909,9 @@ async def test_wait_and_prefetch_open_while_dispatch_worker_is_active(setup):
 
     async def wait(operation):
         opened.set()
+        await frame.wait()
+        yield _hint(1)
         await release.wait()
-        if False:
-            yield None
 
     async def prefetch(operation):
         prefetched.set()
@@ -924,6 +924,9 @@ async def test_wait_and_prefetch_open_while_dispatch_worker_is_active(setup):
     try:
         await coordinator.command(session, command(coordinator.read(session)))
         await asyncio.wait_for(opened.wait(), 1)
+        await asyncio.sleep(0.05)
+        assert not prefetched.is_set()
+        frame.set()
         await asyncio.wait_for(prefetched.wait(), 1)
         assert coordinator._workers
     finally:
@@ -941,9 +944,8 @@ async def test_prefetched_challenge_is_renewed_while_the_sign_in_stays_open(setu
         return OperationResult("waiting")
 
     async def wait(operation):
+        yield _hint(1)
         await release.wait()
-        if False:
-            yield None
 
     async def prefetch(operation):
         renewals.append(delay[0])

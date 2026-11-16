@@ -400,6 +400,20 @@ def notices_of(tasks, task):
 
 
 @pytest.mark.asyncio
+async def test_serving_an_open_sign_in_entry_starts_its_accepted_handoff_wait(tmp_path, monkeypatch):
+    import httpx
+    coordinator, _, _, task, browser, app = await sign_in_entry(tmp_path, monkeypatch, seconds=60)
+    served = []
+    coordinator.owner.entry_served = served.append
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
+            assert (await client.get("/api/v1/browser-tasks/payload", headers=headers(browser))).status_code == 200
+        assert served == [task["operation_id"]]
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
 async def test_a_served_sign_in_that_never_opens_shows_unavailable_and_ends_its_helper(tmp_path, monkeypatch):
     import httpx
     coordinator, tasks, native, task, browser, app = await sign_in_entry(tmp_path, monkeypatch)

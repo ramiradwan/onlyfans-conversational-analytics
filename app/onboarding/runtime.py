@@ -212,6 +212,10 @@ class RuntimeSetupOwner:
         return await value.ceremonies.authentication.prefetch(operation["operation_id"],
             authorize=lambda: value._proof_read_guard(operation))
 
+    def entry_served(self, operation_id):
+        if self.setup_owner is not None:
+            self.setup_owner.entry_served(operation_id)
+
     async def reconcile_hint(self, operation):
         selected = self._probe_owner(operation)
         if selected is None:

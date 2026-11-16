@@ -345,6 +345,20 @@ class ProvisioningSetupOwner:
             if self.ceremonies.decisions is not None:
                 self.ceremonies.decisions.hold_read(parent, authorize=read_guard, connection=connection)
 
+    def entry_served(self, operation_id):
+        if self.ceremonies is None or self.ceremonies.authentication is None or self.initial is None:
+            return
+        parent = self.ceremonies.authentication.parent_operation(operation_id)
+        with self.store.database.read() as connection:
+            operation = connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=? "
+                "AND action='account.connect' AND state IN ('accepted','waiting','outcome_unknown')", (parent,)).fetchone()
+        if operation is None:
+            return
+        selected = json.loads(operation["owner_scope_json"])
+        if selected["journey_kind"] == "initial-enrollment":
+            with timing.phase("source", "resume"):
+                self.initial.resume(selected["source_journey_id"])
+
     def authorize_initial_scope(self, journey_id, scope):
         """Bind initial completion to the accepted intent, including its exact recovery."""
         with self.store.database.read() as connection:
@@ -589,20 +603,19 @@ class ProvisioningSetupOwner:
                 terminal = await self._terminal_initial_read(operation, result)
                 if terminal is not None:
                     return terminal
-            if not selecting:
+            if not selecting and not (selected["journey_kind"] == "initial-enrollment" and intent is not None):
                 with timing.phase("source", "resume"):
                     source.resume(selected["source_journey_id"])
-            else:
+            if selecting:
                 authentication = await self.ceremonies.authentication.ensure_initial(operation, authorize=guard,
                     read_guard=lambda: self._read_guard(operation), fresh=True)
         except Exception:
-            if early:
-                self._withdraw_early_task(operation)
-            raise
-        finally:
             if deferred:
                 with timing.phase("source", "resume"):
                     source.resume(selected["source_journey_id"])
+            if early:
+                self._withdraw_early_task(operation)
+            raise
         if selecting:
             # Store reads between the selection reply and the task run off the event loop.
             entry = await asyncio.to_thread(self.ceremonies.browser_entry, operation["operation_id"])

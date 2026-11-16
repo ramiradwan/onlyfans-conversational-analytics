@@ -122,6 +122,9 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
         served = []
         response = await run_in_threadpool(timed_payload, request, time.monotonic(), served)
         for task in served:
+            entry_served = getattr(coordinator.owner, "entry_served", None)
+            if entry_served is not None:
+                entry_served(task["operation_id"])
             tasks.helpers.arm(task["task_id"], task["admission_generation"],
                               lambda task=task: attempt_live(task["task_id"], task["admission_generation"]))
         return response

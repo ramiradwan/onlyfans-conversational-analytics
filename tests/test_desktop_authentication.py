@@ -579,11 +579,12 @@ async def test_an_openable_fresh_provider_dispatch_uses_only_prepare_and_select(
     with caplog.at_level("INFO", logger="app.onboarding.timing"):
         result = await owner._connect(parent, reconcile=False)
     assert result.state == "waiting"
-    # The source wait resumes only after the ceremony and selection are sent.
-    assert order == [("prepare", {"resume": False}), "ceremony", "select", "resume"]
+    assert order == [("prepare", {"resume": False}), "ceremony", "select"]
+    owner.entry_served(parent["operation_id"])
+    assert order[-1] == "resume"
     phases = re.findall(r"operation=(\S+) phase=(\S+)", caplog.text)
     for point in (("ceremony-prepare", "persist"), ("authentication-select", "lookup"), ("authentication-select", "reserve"),
-                  ("authentication-select", "guard"), ("source", "resume")):
+                  ("authentication-select", "guard")):
         assert point in phases
     # The browser task is saved before any key or handoff work starts.
     assert phases.index(("worker", "task")) < phases.index(("source", "prepare"))
