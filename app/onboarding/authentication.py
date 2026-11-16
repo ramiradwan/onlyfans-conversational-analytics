@@ -228,6 +228,10 @@ class DesktopAuthentication:
     def probe_interval(self, operation_id):
         """Probe cadence while this operation's sign-in popup can still be open."""
         with self.store.database.read() as connection:
+            parent = self.parent_operation(operation_id, connection=connection)
+            ceremony = self.ceremonies.row(parent, connection=connection)
+            if ceremony is None or ceremony["ceremony_id"] is None:
+                return None
             row = connection.execute("SELECT 1 FROM desktop_browser_tasks WHERE operation_id=? "
                 "AND purpose='browser.authentication' AND state IN ('pending','accepted','outcome_unknown') "
                 "AND expires_at>? LIMIT 1", (operation_id, self.store._now().timestamp())).fetchone()

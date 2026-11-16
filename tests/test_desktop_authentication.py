@@ -996,6 +996,65 @@ async def _fresh_initial_connect(setup, *, fail=False, closed=0):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("reserved", [False, True])
+async def test_preparation_without_a_ceremony_does_not_start_a_wait_or_dirty_the_worker(setup, monkeypatch, reserved):
+    from app.provisioning.events import events
+    from test_desktop_coordinator import _until
+
+    monkeypatch.setattr("app.onboarding.coordinator.RECOVERY_INTERVAL_SECONDS", 3600)
+    coordinator, ceremonies, _, _, binding, _ = setup
+    owner, operation, _, _ = await _fresh_initial_connect(setup)
+    entered, release, waiting = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    authentication = ceremonies.authentication
+
+    async def prepare(*args, **kwargs):
+        if reserved:
+            ceremonies._reserve(operation["operation_id"], binding, authorized)
+        entered.set()
+        await release.wait()
+
+    class Waits:
+        def envelope(self, request, *, before_send):
+            before_send()
+            waiting.set()
+            return request
+
+        async def hints(self, envelope):
+            await asyncio.Event().wait()
+            yield
+
+    owner.initial.prepare = prepare
+    owner.automatic_recovery = lambda _: True
+    authentication.waits = Waits()
+    calls = []
+
+    async def counted(current, **kwargs):
+        calls.append(kwargs["reconcile"])
+        return await owner._connect(current, reconcile=kwargs["reconcile"])
+
+    owner.execute = counted
+    coordinator.owner = owner
+    coordinator._watcher = asyncio.create_task(coordinator._watch())
+    coordinator._start(operation, reconcile=False, actor=None)
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        events.publish()
+        await asyncio.sleep(0.15)
+        assert not coordinator._dirty
+        assert not coordinator._waits
+        assert not waiting.is_set()
+        release.set()
+        await asyncio.wait_for(waiting.wait(), 2)
+        await _until(lambda: not coordinator._workers)
+        assert ceremonies.browser_entry(operation["operation_id"]) is not None
+        assert calls == [False]
+        assert [verb for verb, _ in owner.client_calls] == ["select"]
+    finally:
+        release.set()
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
 async def test_a_fresh_sign_in_task_exists_before_preparation_so_a_browser_launch_overlaps_it(setup):
     owner, parent, during, task_states = await _fresh_initial_connect(setup)
     result = await owner._connect(parent, reconcile=False)
