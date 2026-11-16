@@ -202,12 +202,12 @@ test('an attach records why it did not use its read ahead, and the stages up to 
   await h.helper.start();
   assert.equal(await until(() => h.updated.length > 0), true, `presentations: ${h.presentations.join(',')}`);
   assert.deepEqual(marks.map(([phase]) => phase), ['attach-received', 'ahead-changed-tab', 'attach-done', 'read-done',
-    'authenticate-received', 'open-guarded', 'navigate-sent']);
+    'auth-published', 'authenticate-received', 'open-guarded', 'navigate-sent']);
   assert.ok(Number.isFinite(marks[0][1]));
-  // The helper sends its own stages once, after it attached.
+  // The helper records the auth status after its attach stages.
   const helper = h.timings.filter(value => value.marks);
-  assert.equal(helper.length, 1);
-  assert.deepEqual(helper[0].marks.map(value => value.phase), ['payload-ready', 'attach-sent']);
+  assert.equal(helper.length, 2);
+  assert.deepEqual(helper.flatMap(value => value.marks.map(mark => mark.phase)), ['payload-ready', 'attach-sent', 'auth-idle']);
   for (const value of helper[0].marks) assert.deepEqual(Object.keys(value).sort(), ['elapsed_ms', 'operation', 'phase', 'status']);
 });
 

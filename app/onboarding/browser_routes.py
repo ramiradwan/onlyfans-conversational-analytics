@@ -21,11 +21,11 @@ from app.security.companion_pairing import CompanionPairingError
 from app.security.hosted_grants import HostedGrantUnavailable
 
 
-HELPER_STAGES = frozenset({"stream-wake", "payload-ready", "attach-sent"})
+HELPER_STAGES = frozenset({"stream-wake", "payload-ready", "attach-sent", "auth-idle"})
 EXTENSION_STAGES = frozenset({"attach-received", "ahead-reused", "ahead-none", "ahead-age", "ahead-source",
     "ahead-changed-tab", "ahead-changed-storage", "ahead-changed-consent", "ahead-changed-account",
     "ahead-changed-authentication", "ahead-changed-other", "attach-done", "read-done", "authenticate-received",
-    "open-guarded", "navigate-sent", "not-ready"})
+    "open-guarded", "navigate-sent", "not-ready", "auth-published"})
 
 
 def browser_router(coordinator, tasks, ceremonies, *, pairing=None):

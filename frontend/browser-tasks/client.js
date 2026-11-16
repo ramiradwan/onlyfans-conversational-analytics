@@ -141,6 +141,10 @@ export class BrowserTaskClient {
         if (!['ready', 'paused', 'auth_idle'].includes(value.state)) this.releaseWaiting();
         if (value.state !== 'unavailable') this.extensionSeen = true;
         this.extensionState = value.state;
+        if (payload.task.purpose === 'browser.authentication' && value.state === 'auth_idle' && this.automatic) {
+          this.stage('auth-idle');
+          this.flushStages();
+        }
         if (value.state === 'auth_opening' && payload.task.purpose === 'browser.authentication' && !this.openedSent) {
           // The desktop's backstop learns that this sign-in's popup opened.
           this.openedSent = true;

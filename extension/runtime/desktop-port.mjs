@@ -304,8 +304,11 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
             entry.authSession = createAuthenticationTaskSession({ owner, context: entry.context,
               authentication, payload, authorize: () => current(entry), signal: entry.controller.signal,
               deadline: payload.task.expires_at * 1000, now, changed: () => changed('authentication'),
-              publish: status => send(entry, { type: 'authentication', task_id: payload.task.task_id,
-                admission_generation: payload.task.admission_generation, ...status }),
+              publish: status => {
+                send(entry, { type: 'authentication', task_id: payload.task.task_id,
+                  admission_generation: payload.task.admission_generation, ...status });
+                if (status.state === 'idle') stages.mark(payload.task.task_id, 'auth-published');
+              },
               onClose: reason => { if (!entry.released) { if (reason === 'expired') refuse(entry, 'task_expired'); else close(entry); } } });
           } else entry.timer = setTimeout(() => refuse(entry, 'task_expired'), remaining);
           entry.unsubscribe = companion.subscribe(announced => {

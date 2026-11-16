@@ -218,14 +218,14 @@ def test_stage_marks_are_recorded_together_only_when_every_label_is_closed(tmp_p
     helper_app = FastAPI()
     helper_app.include_router(browser_router(coordinator, tasks, None))
     with TestClient(helper_app, base_url=ORIGIN) as client:
-        good = {"marks": [mark("helper", "stream-wake"), mark("helper", "attach-sent")]}
+        good = {"marks": [mark("helper", "stream-wake"), mark("helper", "attach-sent"), mark("helper", "auth-idle")]}
         assert client.post(path, json=good, headers=headers(browser)).status_code == 204
         bad = {"marks": [mark("helper", "stream-wake"), mark("helper", "popup-create")]}
         assert client.post(path, json=bad, headers=headers(browser)).status_code == 400
     with TestClient(app, base_url="http://127.0.0.1:17871") as client:
         with client.websocket_connect(path, headers=socket_headers) as socket:
             socket.send_json({"marks": [mark("extension", "attach-received"), mark("extension", "ahead-changed-tab"),
-                                        mark("extension", "navigate-sent")]})
+                                        mark("extension", "auth-published"), mark("extension", "navigate-sent")]})
             with pytest.raises(WebSocketDisconnect) as ended:
                 socket.receive_text()
             assert ended.value.code == 1000
@@ -235,4 +235,4 @@ def test_stage_marks_are_recorded_together_only_when_every_label_is_closed(tmp_p
                 socket.receive_text()
             assert ended.value.code == 1008
     assert [message.split(" ")[2] for message in caplog.messages] == ["phase=stream-wake", "phase=attach-sent",
-        "phase=attach-received", "phase=ahead-changed-tab", "phase=navigate-sent"]
+        "phase=auth-idle", "phase=attach-received", "phase=ahead-changed-tab", "phase=auth-published", "phase=navigate-sent"]
