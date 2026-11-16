@@ -104,10 +104,18 @@ class DesktopEventResponse(StreamingResponse):
                         shown = notices
                 remaining = min(self.session.expires_at - self.coordinator.admissions._now(), self.deadline())
                 if remaining <= 0:
+                    yield "event: setup-end\ndata: {}\n\n"
                     return
+                timed_out = False
                 try:
                     await asyncio.wait_for(signal.wait(), min(15, remaining))
                 except TimeoutError:
+                    timed_out = True
+                remaining = min(self.session.expires_at - self.coordinator.admissions._now(), self.deadline())
+                if remaining <= 0:
+                    yield "event: setup-end\ndata: {}\n\n"
+                    return
+                if timed_out:
                     yield ": keepalive\n\n"
         except (AdmissionRefused, CommandRefused, HTTPException):
             return

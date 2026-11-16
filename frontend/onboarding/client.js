@@ -258,7 +258,8 @@ export class DesktopSetupClient {
         this.connected = false;
         this.intent = null;
         this.launchOperation = null;
-        this.notify(['session_unavailable', 'authorization_unavailable'].includes(error.message) ? error.message : 'status_unavailable');
+        this.notify(error.message === 'stream_expired' ? null
+          : ['session_unavailable', 'authorization_unavailable'].includes(error.message) ? error.message : 'status_unavailable');
         if (!['session_unavailable', 'authorization_unavailable'].includes(error.message)) {
           this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;

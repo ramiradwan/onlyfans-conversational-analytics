@@ -192,3 +192,40 @@ async def test_event_subscription_released_if_headers_cannot_be_sent(setup):
     with pytest.raises(ClientDisconnect):
         await response({"type": "http", "asgi": {"spec_version": "2.4"}}, receive, send)
     assert not active and len(events._listeners) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wake", ["timeout", "event"])
+@pytest.mark.parametrize("bound", ["session", "runtime"])
+async def test_planned_stream_end_rechecks_deadlines_before_another_read(setup, monkeypatch, wake, bound):
+    from datetime import datetime, timezone
+    coordinator, _, session, clock = setup
+    deadline, reads, original = [1000], [], coordinator.read
+
+    def read(*args, **kwargs):
+        reads.append(True)
+        return original(*args, **kwargs)
+
+    async def wait(awaitable, seconds):
+        awaitable.close()
+        if bound == "session":
+            clock[0] = datetime.fromtimestamp(session.expires_at, timezone.utc)
+        else:
+            deadline[0] = 0
+        if wake == "timeout":
+            raise TimeoutError
+
+    coordinator.read = read
+    response = DesktopEventResponse(coordinator, session, actor=lambda: None, active=set(), deadline=lambda: deadline[0])
+    response.listener = events.subscribe()
+    frames = response.frames()
+    try:
+        assert (await anext(frames)).startswith("event: setup\n")
+        monkeypatch.setattr("app.onboarding.routes.asyncio.wait_for", wait)
+        assert await anext(frames) == "event: setup-end\ndata: {}\n\n"
+        with pytest.raises(StopAsyncIteration):
+            await anext(frames)
+        assert reads == [True]
+    finally:
+        await frames.aclose()
+        events.unsubscribe(response.listener)

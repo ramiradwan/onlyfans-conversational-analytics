@@ -916,6 +916,35 @@ it('reads pushed frames across chunk boundaries and reports disconnection', asyn
   expect(receive).toHaveBeenCalledWith(JSON.stringify(initial()));
 });
 
+it('recognizes the planned setup stream end', async () => {
+  const stream = new ReadableStream({ start(controller) {
+    controller.enqueue(new TextEncoder().encode('event: setup-end\ndata: {}\n\n'));
+    controller.close();
+  } });
+  await expect(setupEvents(async () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } }),
+    {}, new AbortController().signal, vi.fn())).rejects.toThrow('stream_expired');
+});
+
+it('reconnects after a planned setup stream end without an interruption message', async () => {
+  vi.useFakeTimers();
+  const received = [], opened = vi.fn();
+  const subject = new DesktopSetupClient({ generation, storage: storage(), receive: value => received.push(value),
+    request: async () => response(session),
+    stream: async (_request, _headers, _signal, publish) => {
+      opened();
+      publish(JSON.stringify(initial()));
+      throw Error('stream_expired');
+    } });
+  try {
+    await subject.connect();
+    expect(received.every(value => value.error === null)).toBe(true);
+    expect(opened).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(opened).toHaveBeenCalledTimes(2);
+    expect(received.every(value => value.error === null)).toBe(true);
+  } finally { subject.stop(); vi.useRealTimers(); }
+});
+
 it('rejects dashboard and Chrome modules anywhere in the built setup graph', () => {
   const bundle = { 'setup.js': { type: 'chunk', isEntry: true, facadeModuleId: '/frontend/onboarding/index.html', fileName: 'setup.js', modules: {}, imports: ['shared.js'], dynamicImports: [] },
     'shared.js': { type: 'chunk', modules: { '/frontend/shared-setup/presentation.js': {} }, imports: [], dynamicImports: [] } };
