@@ -126,10 +126,22 @@ override visibility, reload a customer tab, or bypass current operation authorit
 
 ### Automatic recovery limits
 
-Navigation and transient failures of a platform identity read clear capture
-authority for that document; they do not assert sign-out or tear down the
-authenticated companion. Explicit authentication refusal and a confirmed creator
-switch still invalidate the companion. New capture waits for fresh identity.
+Same-document navigation preserves the hook's confirmed creator and request order.
+The worker fences URL/loading changes and immediately requests identity from the
+current hook. Confirmed readers wait for that bounded proof, and capture admission
+remains closed during the fence. The worker never restores authority from memory.
+The same document's proof preserves an existing pairing attempt and runtime channel.
+Observer status likewise requires proof from the same active document without
+depending on a loading completion event.
+
+Transient identity failures, a same-origin `/api2/` fetch or XHR 401, bfcache restore,
+prerender activation and cross-tab withdrawal leave capture unconfirmed until a
+fresh identity response. Non-identity 403 responses do not end a session. Explicit
+identity authentication refusal and a confirmed creator switch still invalidate
+the companion. Conflicting confirmation or confirmed sign-out withdraws peer tabs
+with the same incognito flag and retires their socket authority. Persisted withdrawal
+fences reject an old-epoch refresh across worker restarts. Presentation-only account
+and profile accessors remain available for unconfirmed states and grant no authority.
 
 Connection recovery uses exponential delays with jitter. Six unsuccessful or
 short-lived attempts trigger a five-minute cooldown. UI polling, alarms and worker

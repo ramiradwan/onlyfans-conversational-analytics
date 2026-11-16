@@ -4,6 +4,8 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { identityNavigation, tick } from '../test-fixtures/identity-navigation.mjs';
+import { assertCaptureContext } from '../runtime/capture-context.mjs';
+import { payload } from '../test-fixtures/browser-task.mjs';
 
 import { build } from 'esbuild';
 
@@ -142,7 +144,7 @@ function storageArea(values) {
   };
 }
 
-function bridgeHarness({ register = true } = {}) {
+function bridgeHarness({ register = true, ensureReady = async () => {} } = {}) {
   const session = {};
   const local = {};
   const internalListeners = [];
@@ -176,7 +178,7 @@ function bridgeHarness({ register = true } = {}) {
       async sendMessage(...args) { tabMessages.push(args); },
     },
   };
-  const bridge = createProvisioningIdentityBridge({ chromeApi, currentConsent: () => CONSENT });
+  const bridge = createProvisioningIdentityBridge({ chromeApi, currentConsent: () => CONSENT, ensureReady });
   if (register) bridge.register();
   return { bridge, chromeApi, externalListeners, internalListeners, local, session, tabUpdatedListeners, tabMessages };
 }
@@ -538,7 +540,8 @@ for (const operation of ['clear', 'remove']) test(`committed ${operation} publis
   else h.tabUpdatedListeners[0](CONTENT_SENDER.tab.id, { status: 'loading' });
   await new Promise((resolve) => setImmediate(resolve));
   await Promise.all(reads);
-  assert.deepEqual(observed, ['creator-a', null]);
+  if (operation === 'clear') assert.deepEqual(observed, ['creator-a', null]);
+  else assert.ok(observed.length >= 2 && observed.every(value => value === null), 'fenced reads wait for document proof');
 });
 
 test('identity capture exposes no unscoped external query listener', async () => {
@@ -584,4 +587,156 @@ test('companion status reads the identity owner without reentering its queue', {
   assert.equal(h.externalListeners.length, 0);
   assert.equal(await h.bridge.currentAccountId(), 'creator-a');
   assert.equal((await companion.status()).state, 'paired');
+});
+
+for (const order of ['hook-first', 'url-first']) {
+  test(`I1 I6: live-document proof restores confirmed readers and capture admission without complete (${order})`, async () => {
+    const h = identityNavigation(); await h.confirm();
+    let guard; await h.identity.withCaptureContext(h.sender, (_context, current) => { guard = current; });
+    h.refresh = () => h.confirm();
+    if (order === 'hook-first') await h.confirm();
+    h.fence();
+    const reading = h.identity.currentAccountId();
+    assert.equal(await reading, 'synthetic-creator');
+    assert.throws(guard, { code: 'stale_capture_context' });
+    const context = await h.identity.contextFor(h.sender);
+    assert.equal(assertCaptureContext({ sender: h.sender, extensionId: h.chromeApi.runtime.id, context,
+      configuration: { creator_account_id: 'synthetic-account', history_acquisition: {
+        authorized_platform_creator_id: 'synthetic-creator' } }, boundCreatorAccountId: 'synthetic-account',
+      observation: { creator_platform_user_id: 'synthetic-creator', page_epoch: context.page_epoch },
+      consent: h.consent, delivery: { consent_epoch: h.consent.consent_epoch } }), 'synthetic-creator');
+    assert.equal((await h.identity.currentProfile()).display_name, 'Synthetic Creator');
+    assert.equal((await h.owner.read(await h.owner.attach(payload()))).state, 'ready');
+    h.identity.unregister();
+  });
+}
+
+for (const signal of ['switch', 'sign-out']) {
+  test(`I2 I5: same-session ${signal} withdraws other tabs before persistence and targets their document`, async () => {
+    const h = bridgeHarness();
+    const second = { ...CONTENT_SENDER, tab: { id: 18, incognito: false }, documentId: 'synthetic-second' };
+    const privateTab = { ...CONTENT_SENDER, tab: { id: 19, incognito: true }, documentId: 'synthetic-private' };
+    await dispatch(h.internalListeners[0], update('synthetic-first'), CONTENT_SENDER);
+    await dispatch(h.internalListeners[0], update('synthetic-first', PAGE_EPOCH_B), second);
+    await dispatch(h.internalListeners[0], update('synthetic-private', PAGE_EPOCH_C), privateTab);
+    let guard, privateGuard;
+    await h.bridge.withCaptureContext(CONTENT_SENDER, (_context, current) => { guard = current; });
+    await h.bridge.withCaptureContext(privateTab, (_context, current) => { privateGuard = current; });
+    const original = h.chromeApi.storage.session.set;
+    let publish; h.chromeApi.storage.session.set = (value, callback) => { publish = () => original(value, callback); };
+    const changing = dispatch(h.internalListeners[0], update(signal === 'switch' ? 'synthetic-next' : null, PAGE_EPOCH_C), second);
+    assert.throws(guard, { code: 'stale_capture_context' });
+    assert.doesNotThrow(privateGuard);
+    while (!publish) await tick(); publish(); await changing; h.chromeApi.storage.session.set = original;
+    assert.equal(await h.bridge.contextFor(CONTENT_SENDER), null);
+    assert.equal((await h.bridge.contextFor(privateTab)).observed_platform_id, 'synthetic-private');
+    assert.ok(h.tabMessages.some(args => args[0] === 17 && args[1].action === 'withdraw_identity'
+      && args[2].documentId === CONTENT_SENDER.documentId));
+    assert.equal(h.tabMessages.some(args => args[0] === 19), false);
+    let secondGuard;
+    await h.bridge.withCaptureContext(second, (_context, current) => { secondGuard = current; });
+    await dispatch(h.internalListeners[0], update('synthetic-first'), CONTENT_SENDER);
+    assert.equal(await h.bridge.contextFor(CONTENT_SENDER), null, 'a delayed old-epoch refresh cannot revive withdrawn authority');
+    assert.doesNotThrow(secondGuard, 'a withdrawn refresh cannot withdraw the source confirmation');
+    await dispatch(h.internalListeners[0], update('synthetic-next', PAGE_EPOCH_B), CONTENT_SENDER);
+    assert.equal((await h.bridge.contextFor(CONTENT_SENDER)).observed_platform_id, 'synthetic-next');
+  });
+}
+
+test('cross-tab withdrawal covers a navigation fence and a cold worker persisted context', async () => {
+  for (const cold of [false, true]) {
+    const h = identityNavigation(); await h.confirm();
+    let bridge = h.identity;
+    if (cold) { bridge.unregister(); bridge = createProvisioningIdentityBridge({ chromeApi: h.chromeApi,
+      currentConsent: () => h.consent }); bridge.register(); }
+    else { h.fence(); await tick(); }
+    const other = { ...h.sender, tab: { id: 18 }, documentId: 'synthetic-other' };
+    await h.confirm('synthetic-next', other); await tick();
+    assert.equal(await bridge.contextFor(h.sender), null);
+    assert.ok(h.refreshes.some(args => args[0] === 17 && args[1].action === 'withdraw_identity'));
+    assert.equal(await bridge.presentedAccountId(), null, 'withdrawn tabs remain unconfirmed');
+    bridge.unregister();
+  }
+});
+
+test('I5 I6: different frame, document or consent cannot restore a fenced confirmation', async () => {
+  for (const boundary of ['frame', 'document', 'consent']) {
+    const h = identityNavigation(); await h.confirm();
+    h.refresh = async () => {
+      if (boundary === 'frame') return h.confirm('synthetic-creator', { ...h.sender, frameId: 1 });
+      if (boundary === 'document') return h.reset({ ...h.sender, documentId: 'synthetic-new-document' });
+      h.consent.consent_epoch = PAGE_EPOCH_C;
+    };
+    h.fence();
+    assert.equal(await h.identity.currentAccountId(), null);
+    assert.equal((await h.identity.contextFor(h.sender))?.observed_platform_id ?? null, null);
+    h.identity.unregister();
+  }
+});
+
+test('production runtime subscribes only to authority invalidation while surfaces still observe fences', async () => {
+  const source = await readFile(new URL('../background.js', import.meta.url), 'utf8');
+  assert.match(source, /provisioningIdentityBridge\.onAuthorityInvalidated\(\(\) => companionClient\.invalidate\(\)\)/);
+  assert.match(source, /provisioningIdentityBridge\.onAccountChange\(signalSurfaces\)/);
+});
+
+test('withdrawal survives a worker restart and an unconfirmed hook acknowledgement', async () => {
+  const h = identityNavigation(); await h.confirm();
+  const original = structuredClone(h.session[PROVISIONING_IDENTITY_STORAGE_KEY].contexts[0]);
+  const other = { ...h.sender, tab: { id: 18 }, documentId: 'synthetic-other' };
+  await h.confirm('synthetic-next', other); await h.reset(); h.identity.unregister();
+  const cold = createProvisioningIdentityBridge({ chromeApi: h.chromeApi, currentConsent: () => h.consent }); cold.register();
+  assert.deepEqual(await h.dispatch(update('synthetic-creator', original.page_epoch)), { ok: false });
+  assert.equal((await cold.contextFor(other)).observed_platform_id, 'synthetic-next');
+  assert.equal(await cold.contextFor(h.sender), null);
+  await h.confirm('synthetic-next');
+  assert.equal((await cold.contextFor(h.sender)).observed_platform_id, 'synthetic-next');
+  cold.unregister();
+});
+
+test('I5: a consent epoch change invalidates an already admitted capture immediately', async () => {
+  const h = identityNavigation(); await h.confirm();
+  let guard; await h.identity.withCaptureContext(h.sender, (_context, current) => { guard = current; });
+  h.consent.consent_epoch = PAGE_EPOCH_C;
+  assert.throws(guard, { code: 'stale_capture_context' });
+  assert.equal(await h.identity.currentAccountId(), null); h.identity.unregister();
+});
+
+test('I6: a navigation proof timeout cannot expose stored authority while readiness is blocked', async () => {
+  let ready = Promise.resolve(), release;
+  const h = bridgeHarness({ ensureReady: () => ready });
+  await dispatch(h.internalListeners[0], update('synthetic-creator'), CONTENT_SENDER);
+  ready = new Promise(resolve => { release = resolve; });
+  h.tabUpdatedListeners[0](17, { url: 'https://onlyfans.com/my/profile' });
+  assert.equal(await h.bridge.currentAccountId(), null);
+  assert.equal(await h.bridge.contextFor(CONTENT_SENDER), null);
+  release(); await tick(); h.bridge.unregister();
+});
+
+test('removed withdrawn tabs cannot return as fences on a later confirmation', async () => {
+  const h = identityNavigation(); await h.confirm();
+  const other = { ...h.sender, tab: { id: 18 }, documentId: 'synthetic-other' };
+  await h.confirm('synthetic-next', other);
+  h.chromeApi.tabs.onRemoved.emit(17); await tick();
+  await h.confirm('synthetic-next', other);
+  assert.equal(await h.identity.currentAccountId(), 'synthetic-next'); h.identity.unregister();
+});
+
+test('an unconfirmed reset withdraws no peer confirmation', async () => {
+  const h = identityNavigation(); await h.confirm();
+  const other = { ...h.sender, tab: { id: 18 }, documentId: 'synthetic-other' };
+  await h.confirm('synthetic-creator', other); await h.reset(other);
+  assert.equal((await h.identity.contextFor(h.sender)).observed_platform_id, 'synthetic-creator');
+  assert.equal(h.refreshes.some(args => args[1].action === 'withdraw_identity'), false);
+  h.identity.unregister();
+});
+
+test('I1 I2: a new capture cannot borrow the old persisted context after a replacement signal', async () => {
+  let ready = Promise.resolve(), release;
+  const h = bridgeHarness({ ensureReady: () => ready });
+  await dispatch(h.internalListeners[0], update('synthetic-first'), CONTENT_SENDER);
+  ready = new Promise(resolve => { release = resolve; });
+  const changing = dispatch(h.internalListeners[0], update('synthetic-next', PAGE_EPOCH_B), CONTENT_SENDER);
+  await h.bridge.withCaptureContext(CONTENT_SENDER, context => { assert.equal(context, null); });
+  release(); await changing;
 });

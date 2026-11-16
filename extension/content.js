@@ -247,6 +247,11 @@ import { CaptureDeliveryQueue } from './capture/delivery-queue.mjs';
       sendResponse?.({ ok: true });
       return false;
     }
+    if (message.action === 'withdraw_identity' && message.version === PAGE_CONTROL_VERSION && active) {
+      pageControl('withdraw_identity');
+      sendResponse?.({ ok: true });
+      return false;
+    }
     if (message.action === 'refresh_identity' && message.version === PAGE_CONTROL_VERSION && active) {
       window.postMessage({
         type: PAGE_CONTROL_MESSAGE_TYPE, version: PAGE_CONTROL_VERSION, action: 'refresh_identity',

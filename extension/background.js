@@ -85,7 +85,7 @@ export const provisioningIdentityBridge = createProvisioningIdentityBridge({
   allowsIdentity: () => consentController?.state.mode === 'full'
     && ['identity', 'full'].includes(consentController.phase),
 });
-provisioningIdentityBridge.onAccountChange(() => companionClient.invalidate());
+provisioningIdentityBridge.onAuthorityInvalidated(() => companionClient.invalidate());
 export const captureIngestion = new DeliveryCaptureIngestionService({
   runtime: agentRuntime,
   diagnostics: captureDiagnostics,

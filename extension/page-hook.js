@@ -191,6 +191,18 @@ import {
     }
   }
 
+  function withdrawIdentity() {
+    identityRequestSequence += 1;
+    socketAccountGeneration += 1;
+    pageEpoch = crypto.randomUUID();
+    replaceCreatorIdentity(null, true, false);
+  }
+
+  function observeSessionRefusal(url, status) {
+    if (url?.origin === targetOrigin && url.pathname.startsWith('/api2/')
+      && classifyPath(url.pathname) !== 'identity' && status === 401) withdrawIdentity();
+  }
+
   function boundedPayloads(value) {
     const pending = [{ value, depth: 0 }];
     const payloads = [];
@@ -425,9 +437,7 @@ import {
               socketCreatorId ??= currentCreator;
               if (socketCreatorId !== currentCreator) return;
             }
-            // SPA navigation fences frames until fresh identity evidence, but
-            // does not retire a socket for the same verified creator. Each new
-            // frame belongs to the current document epoch, unlike an old HTTP response.
+            // Same-document routes retain confirmed ownership and socket authority.
             const ownership = requestOwnership();
             let frame;
             try {
@@ -490,6 +500,7 @@ import {
         if (identitySequence !== null && identitySequence === identityRequestSequence) replaceCreatorIdentity(null, true, false);
         throw error;
       }
+      if (active) observeSessionRefusal(url, response.status);
       if (
         active
         && resource !== null
@@ -511,13 +522,14 @@ import {
     const resource = url?.origin === targetOrigin ? classifyPath(url.pathname) : null;
     if (
       active
-      && resource !== null
-      && (mode !== 'identity' || resource === 'identity')
+      && url?.origin === targetOrigin && url.pathname.startsWith('/api2/')
     ) {
       const ownership = requestOwnership();
       const identitySequence = resource === 'identity' ? ++identityRequestSequence : null;
       this.addEventListener('loadend', () => {
         if (!active) return;
+        observeSessionRefusal(url, this.status);
+        if (resource === null || (mode === 'identity' && resource !== 'identity')) return;
         try {
           if (this.status < 200 || this.status >= 300) throw new Error('capture_http_error');
           const body = parseBoundedJson(this.responseType === 'json'
@@ -538,26 +550,10 @@ import {
   XMLHttpRequest.prototype.open = installedXhrOpen;
   XMLHttpRequest.prototype.send = installedXhrSend;
 
-  const navigationChanged = () => {
-    identityRequestSequence += 1;
-    pageEpoch = crypto.randomUUID();
-    replaceCreatorIdentity(null, false, false);
-  };
-  const historyWrappers = [];
-  for (const method of ['pushState', 'replaceState']) {
-    const original = window.history?.[method];
-    if (typeof original !== 'function') continue;
-    const wrapped = function (...args) {
-      const previous = window.location.href;
-      const result = original.apply(this, args);
-      if (window.location.href !== previous) navigationChanged();
-      return result;
-    };
-    window.history[method] = wrapped;
-    historyWrappers.push({ method, original, wrapped });
-  }
-  window.addEventListener('popstate', navigationChanged);
-  window.addEventListener('hashchange', navigationChanged);
+  const restored = (event) => { if (event.persisted) withdrawIdentity(); };
+  const activated = () => withdrawIdentity();
+  window.addEventListener('pageshow', restored);
+  window.document?.addEventListener('prerenderingchange', activated);
 
   function stop() {
     if (!active) return;
@@ -582,11 +578,8 @@ import {
     }
     socketListeners.clear();
     window.removeEventListener('message', controlListener);
-    window.removeEventListener('popstate', navigationChanged);
-    window.removeEventListener('hashchange', navigationChanged);
-    for (const { method, original, wrapped } of historyWrappers) {
-      if (window.history[method] === wrapped) window.history[method] = original;
-    }
+    window.removeEventListener('pageshow', restored);
+    window.document?.removeEventListener('prerenderingchange', activated);
     delete globalThis.__OFCA_CAPTURE_MODE__;
     delete globalThis.__OFCA_PAGE_HOOK_CONTROLLER__;
   }
@@ -606,13 +599,14 @@ import {
       || Object.keys(message).length !== 3
       || message.type !== PAGE_CONTROL_MESSAGE_TYPE
       || message.version !== PAGE_CONTROL_VERSION
-      || !['stop', 'pause', 'resume', 'status', 'refresh_identity', 'reset_identity'].includes(message.action)
+      || !['stop', 'pause', 'resume', 'status', 'refresh_identity', 'reset_identity', 'withdraw_identity'].includes(message.action)
     ) return;
     if (message.action === 'reset_identity') {
       forwarding = false; captureGeneration += 1; previewGeneration += 1; identityRequestSequence += 1;
       socketAccountGeneration += 1; pendingPreview.length = 0; creatorPlatformUserId = null;
       previewCreatorId = null; lastConfirmedCreatorId = null; creatorLabels = {}; pageEpoch = crypto.randomUUID();
-    } else if (message.action === 'stop') stop();
+    } else if (message.action === 'withdraw_identity') withdrawIdentity();
+    else if (message.action === 'stop') stop();
     else if (message.action === 'status') postStatus();
     else if (message.action === 'pause') {
       forwarding = false;

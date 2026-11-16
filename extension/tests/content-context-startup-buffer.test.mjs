@@ -50,10 +50,11 @@ function harness({ timers = null } = {}) {
   const pageListeners = [];
   const delivered = [];
   const controls = [];
+  const pageControls = [];
   let contextCallback = null;
   const pageWindow = {
     location: { origin: 'https://onlyfans.com' },
-    postMessage() {},
+    postMessage(value) { pageControls.push(structuredClone(value)); },
     addEventListener(name, listener) {
       if (name === 'message') pageListeners.push(listener);
     },
@@ -101,6 +102,8 @@ function harness({ timers = null } = {}) {
   };
   return {
     delivered,
+    pageControls,
+    control(action) { let response; for (const fn of controls) fn({ type: 'ofca.capture.control', version: 1, action }, {}, value => { response = value; }); return response; },
     dispatch,
     pause() { for (const control of controls) control({ type: 'ofca.capture.control', version: 1, action: 'pause' }, {}, () => {}); },
     resolveContext(response) {
@@ -232,4 +235,13 @@ test('100 queue drops send at most 11 queue notifications in 10 seconds', () => 
     if (originalChrome === undefined) delete globalThis.chrome;
     else globalThis.chrome = originalChrome;
   }
+});
+
+test('cross-tab withdrawal reaches the live hook without pausing passive identity observation', async () => {
+  const h = harness(); h.resolveContext({ ok: true, mode: 'full', consent_epoch: CONSENT_EPOCH }); await flush();
+  assert.equal(h.control('withdraw_identity').ok, true);
+  assert.equal(h.pageControls.at(-1).action, 'withdraw_identity');
+  const reset = { type: 'ofca.provisioning.identity.reset', version: 1, page_epoch: PAGE_EPOCH };
+  h.dispatch(reset); await flush();
+  assert.deepEqual(h.delivered.at(-1), reset);
 });
