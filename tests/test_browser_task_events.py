@@ -207,6 +207,22 @@ def test_ended_records_one_display_notice_and_changes_no_task_state(tmp_path):
         assert client.get("/api/v1/desktop/browser-tasks/notices", headers=headers(browser)).status_code == 401
 
 
+@pytest.mark.parametrize("reason", ["needs_account", "needs_consent", "needs_permission"])
+def test_a_helper_reports_why_the_extension_cannot_open_its_task(tmp_path, reason):
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, native, _ = setup
+    _, task, browser = asyncio.run(browser_access(setup))
+    app = FastAPI()
+    app.include_router(browser_router(coordinator, tasks, None))
+    with TestClient(app, base_url=ORIGIN) as client:
+        before = task_row(coordinator, browser)["state"]
+        assert client.post("/api/v1/browser-tasks/ended", json={"reason": reason},
+                           headers=headers(browser)).status_code == 200
+        assert task_row(coordinator, browser)["state"] == before
+        notices = client.get("/api/v1/desktop/browser-tasks/notices", headers=headers(native))
+        assert notices.json() == {"notices": [{"task_id": task["task_id"], "reason": reason}]}
+
+
 @pytest.mark.asyncio
 async def test_the_desktop_stream_shows_a_helper_notice_and_its_clearing(tmp_path):
     setup = browser_setup.__wrapped__(tmp_path)

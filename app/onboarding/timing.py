@@ -33,7 +33,7 @@ PHASES = frozenset({"click", "command-send", "accept", "entry", "prepare", "bind
     "stream-wake", "payload-ready", "attach-sent", "attach-received", "ahead-reused", "ahead-none", "ahead-age",
     "ahead-source", "ahead-changed-tab", "ahead-changed-storage", "ahead-changed-consent", "ahead-changed-account",
     "ahead-changed-authentication", "ahead-changed-other", "attach-done", "read-done", "authenticate-received",
-    "open-guarded", "navigate-sent"})
+    "open-guarded", "navigate-sent", "not-ready"})
 # Event-loop work below this duration is not recorded.
 SLOW_MS = 25
 SINK_DIRECTORY = "diagnostics"

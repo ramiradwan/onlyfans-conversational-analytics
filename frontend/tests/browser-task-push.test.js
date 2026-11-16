@@ -237,6 +237,21 @@ describe('helper ending', () => {
     } finally { h.client.stop(); }
   });
 
+  it.each([['needs-account', 'needs_account'], ['needs-consent', 'needs_consent'], ['needs-permission', 'needs_permission']])(
+    'reports a sign-in the extension cannot open (%s) to Brain once, then closes', async (state, reason) => {
+      const order = [];
+      const h = helper({ respond: path => { if (path.endsWith('/ended')) order.push('ended'); return null; },
+        link: { end: vi.fn(() => { order.push('close'); return true; }) } });
+      try {
+        await h.client.start();
+        h.publish({ state, observation: observation() }); await settle(h);
+        h.publish({ state, observation: observation() }); await settle(h);
+        expect(h.received.at(-1).state).toBe('auth_access_required');
+        expect(h.posts).toEqual([['ended', { reason }]]);
+        expect(order).toEqual(['ended', 'close']);
+      } finally { h.client.stop(); }
+    });
+
   it('keeps an extension error shown when Brain did not record it', async () => {
     const h = helper({ respond: path => path.endsWith('/ended') ? { ok: false, status: 503, text: async () => '{}' } : null });
     try {

@@ -640,6 +640,20 @@ describe('desktop setup presentation', () => {
     for (const id of ['browser-reopen', 'sign-in-switch', 'sign-in-options']) expect(document.getElementById(id).hidden).toBe(true);
   });
 
+  it.each(['browser_needs_account', 'browser_needs_consent', 'browser_needs_permission'])(
+    'replaces the Chrome wait with the %s error and a Try again', error => {
+      mount();
+      const value = { ...initial(), next_task: 'account-connection', allowed_actions: ['auth.switch', 'auth.cancel'],
+        authentication: { ...signIn(), operation_id: operationId, browser_operation_id: operationId, state: 'selected',
+          actions: { select: false, cancel: true, open_browser: true, switch_account: true } } };
+      renderSetup(document, { snapshot: value, connected: true, error });
+      const status = document.getElementById('task-status').textContent;
+      expect(status).not.toBe('Finish signing in in Chrome.');
+      expect(status).toMatch(/then choose Try again\.$/);
+      expect(document.getElementById('browser-reopen').hidden).toBe(false);
+      expect(document.getElementById('browser-reopen').textContent).toBe('Try again');
+    });
+
   it('keeps the clicked provider busy in place until its sign-in is selected', () => {
     mount();
     const choosing = { ...initial(), next_task: 'account-connection', allowed_actions: ['account.connect'], authentication: signIn() };
@@ -944,6 +958,10 @@ describe('helper notices in the desktop', () => {
     notices(JSON.stringify({ notices: [] }));
     expect(received.at(-1).error).toBe(null);
     expect(() => notices(JSON.stringify({ notices: [{ task_id: 'x', reason: 'profile_mismatch' }] }))).toThrow('invalid_snapshot');
+    for (const reason of ['needs_account', 'needs_consent', 'needs_permission']) {
+      notices(JSON.stringify({ notices: [{ task_id: crypto.randomUUID(), reason }] }));
+      expect(received.at(-1).error).toBe('browser_' + reason);
+    }
     client.stop();
   });
   it('reads browser notice events and ignores unknown events', async () => {

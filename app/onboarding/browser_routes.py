@@ -25,7 +25,7 @@ HELPER_STAGES = frozenset({"stream-wake", "payload-ready", "attach-sent"})
 EXTENSION_STAGES = frozenset({"attach-received", "ahead-reused", "ahead-none", "ahead-age", "ahead-source",
     "ahead-changed-tab", "ahead-changed-storage", "ahead-changed-consent", "ahead-changed-account",
     "ahead-changed-authentication", "ahead-changed-other", "attach-done", "read-done", "authenticate-received",
-    "open-guarded", "navigate-sent"})
+    "open-guarded", "navigate-sent", "not-ready"})
 
 
 def browser_router(coordinator, tasks, ceremonies, *, pairing=None):

@@ -14,7 +14,9 @@ const STREAM_RETRY_CAP_MS = 5000;
 export const CLOSE_RETRY_MS = 1000;
 const CLOSE_ATTEMPTS = 3;
 // Reasons a helper reports to Brain before it asks the extension to close it.
-const ENDINGS = ['profile_mismatch', 'account_mismatch', 'task_changed', 'task_expired', 'unavailable'];
+const ENDINGS = ['profile_mismatch', 'account_mismatch', 'task_changed', 'task_expired', 'unavailable', 'auth_access_required'];
+// Why the extension cannot open a sign-in, as the desktop shows it.
+const ACCESS_REASONS = { 'needs-account': 'needs_account', 'needs-consent': 'needs_consent', 'needs-permission': 'needs_permission' };
 
 export class BrowserTaskClient {
   constructor({ generation, receive, request = globalThis.fetch.bind(globalThis), connect = connectExtension,
@@ -35,7 +37,8 @@ export class BrowserTaskClient {
   }
   /** Report why this helper ended, then ask the extension to close it. An error that would be lost stays shown. */
   async end(state) {
-    const reason = state === 'unavailable' && !this.extensionSeen ? 'extension_unavailable' : state;
+    const reason = state === 'unavailable' && !this.extensionSeen ? 'extension_unavailable'
+      : state === 'auth_access_required' ? ACCESS_REASONS[this.extensionState] ?? 'unavailable' : state;
     let reported = false;
     try { if (this.session) { await this.json('ended', { reason }); reported = true; } } catch { /* not recorded */ }
     // Without an extension nothing can close this tab. It stays as the install surface.

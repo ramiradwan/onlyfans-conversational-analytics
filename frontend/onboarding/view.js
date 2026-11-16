@@ -20,6 +20,9 @@ const errors = {
   extension_unavailable: 'The extension is not available in that Chrome profile. Install or turn it on, then choose Try again.',
   profile_mismatch: 'Chrome opened a different profile. Switch to the profile that has the extension, then choose Try again.',
   account_mismatch: 'The selected creator account does not match the browser account.',
+  browser_needs_account: 'Chrome does not recognise your creator account yet. Reload your OnlyFans tab, then choose Try again.',
+  browser_needs_consent: 'Browser access is not turned on in the extension. Turn it on, then choose Try again.',
+  browser_needs_permission: 'The extension cannot open OnlyFans. Allow its site access, then choose Try again.',
   operation_expired: 'This task expired.',
   activation_unavailable: 'Full analytics activation could not be prepared. Try again.',
 };
@@ -148,7 +151,8 @@ export function renderSetup(document, state) {
   get('task-action').dataset.action = action || '';
   get('browser-reopen').hidden = accepted || showingProviders || Boolean(decision) || !state.connected
     || (signIn ? !signIn.actions.open_browser || !(signIn.state === 'admitted'
-      || ['chrome_unavailable', 'browser_unavailable', 'extension_unavailable', 'profile_mismatch'].includes(reason)) : !value?.pending_operations.some(item => ['browser.access', 'browser.pair'].includes(item.action))
+      || ['chrome_unavailable', 'browser_unavailable', 'extension_unavailable', 'profile_mismatch', 'browser_needs_account',
+        'browser_needs_consent', 'browser_needs_permission'].includes(reason)) : !value?.pending_operations.some(item => ['browser.access', 'browser.pair'].includes(item.action))
       || reason === 'authority_unavailable' || !['browser-access', 'finish-setup'].includes(task));
   get('browser-reopen').disabled = controlsDisabled;
   get('browser-reopen').textContent = signIn ? 'Try again' : 'Continue connecting';

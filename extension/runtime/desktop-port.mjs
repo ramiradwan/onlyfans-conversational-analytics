@@ -156,6 +156,10 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
     if (entry.payload.task.purpose === 'browser.authentication' && ['ready', 'paused'].includes(observation.state)) {
       if (!authentication) throw Error('unavailable');
       await entry.authSession.refresh();
+    } else if (entry.payload.task.purpose === 'browser.authentication') {
+      // This sign-in cannot open its popup now, so its stages are sent here.
+      stages.mark(entry.payload.task.task_id, 'not-ready');
+      stages.flush(entry.payload.task.task_id);
     }
   }
   function changed(source = 'other') {

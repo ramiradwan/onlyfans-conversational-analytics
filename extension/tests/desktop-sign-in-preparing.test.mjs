@@ -24,7 +24,8 @@ async function until(predicate, limit = 5000) {
 }
 
 // Real helper, extension port and sign-in popup owner. Only Chrome and Brain's HTTP replies are simulated.
-function harness(t, { preparingReads, outcome = 'ready', nativeLaunch = true, prepared = false, stages, changeSources = [], onCreate = () => {} }) {
+function harness(t, { preparingReads, outcome = 'ready', nativeLaunch = true, prepared = false, stages, changeSources = [], onCreate = () => {},
+  extensionState = 'ready' }) {
   const ready = payload();
   Object.assign(ready.task, { purpose: 'browser.authentication', state: 'pending', expires_at: Math.floor(Date.now() / 1000) + 1790 });
   ready.creator_account_id = 'synthetic-creator';
@@ -34,7 +35,8 @@ function harness(t, { preparingReads, outcome = 'ready', nativeLaunch = true, pr
     expires_at: new Date(Date.now() + 600000).toISOString() };
   const preparing = { ...ready, ceremony: null };
   const cancelled = { ...preparing, task: { ...preparing.task, state: 'cancelled' } };
-  const observed = { ...observation(ready.task), state: 'ready', creator_account_id: 'synthetic-creator' };
+  const observed = { ...observation(ready.task), state: extensionState,
+    creator_account_id: ['ready', 'paused'].includes(extensionState) ? 'synthetic-creator' : null };
   const url = 'http://bridge.localhost:17871/browser-tasks#presentation=' + ready.task.admission_generation;
   const created = [], updated = [], removed = [];
   const chromeApi = {
@@ -69,7 +71,7 @@ function harness(t, { preparingReads, outcome = 'ready', nativeLaunch = true, pr
     return helperPort;
   } };
   let reads = 0, connects = 0;
-  const presentations = [], timings = [];
+  const presentations = [], timings = [], ended = [];
   const helper = new BrowserTaskClient({ generation: ready.task.admission_generation, nativeLaunch,
     receive: value => presentations.push(value.state), connect: options => connectExtension({ ...options, runtime }),
     wait: options => openWaiting({ ...options, runtime }),
@@ -77,6 +79,7 @@ function harness(t, { preparingReads, outcome = 'ready', nativeLaunch = true, pr
     request: async (path, options = {}) => {
       let response;
       if (path.endsWith('/timing')) timings.push(JSON.parse(options.body));
+      if (path.endsWith('/ended')) ended.push(JSON.parse(options.body));
       if (path.endsWith('/session')) response = { role: 'browser_task', generation: ready.task.admission_generation,
         csrf_token: 'A'.repeat(43), task_id: ready.task.task_id, journey_id: ready.task.journey_id };
       else if (path.endsWith('/payload')) response = reads++ < preparingReads ? preparing : outcome === 'ready' ? ready : cancelled;
@@ -84,7 +87,7 @@ function harness(t, { preparingReads, outcome = 'ready', nativeLaunch = true, pr
       return { ok: true, text: async () => JSON.stringify(response) };
     } });
   t.after(async () => { helper.stop(); ports.unregister?.(); await tick(); });
-  return { helper, created, updated, removed, presentations, timings, ready, calls, ports, chromeApi, get reads() { return reads; }, get connects() { return connects; } };
+  return { helper, created, updated, removed, presentations, timings, ended, ready, calls, ports, chromeApi, get reads() { return reads; }, get connects() { return connects; } };
 }
 
 for (const preparingReads of [0, 3]) {
@@ -183,6 +186,21 @@ test('an attach records why it did not use its read ahead, and the stages up to 
   assert.equal(helper.length, 1);
   assert.deepEqual(helper[0].marks.map(value => value.phase), ['payload-ready', 'attach-sent']);
   for (const value of helper[0].marks) assert.deepEqual(Object.keys(value).sort(), ['elapsed_ms', 'operation', 'phase', 'status']);
+});
+
+test('a sign-in the extension cannot open sends its stages, reports why and closes its helper', async t => {
+  const marks = [], flushed = [];
+  const stages = { begin: () => marks.push('attach-received'), mark: (id, phase) => marks.push(phase), flush: id => flushed.push(id) };
+  const h = harness(t, { preparingReads: 3, prepared: true, stages, extensionState: 'needs-account' });
+  await h.helper.start();
+  assert.equal(await until(() => h.ended.length > 0 && h.removed.length > 0), true, `presentations: ${h.presentations.join(',')}`);
+  assert.deepEqual(marks.slice(-2), ['read-done', 'not-ready']);
+  assert.equal(flushed[0], h.ready.task.task_id);
+  assert.deepEqual(h.ended, [{ reason: 'needs_account' }]);
+  assert.ok(h.presentations.includes('auth_access_required'));
+  // The waiting window closes and no ceremony opens.
+  assert.deepEqual(h.updated, []);
+  assert.deepEqual(h.removed, [41]);
 });
 
 // The waiting page, or a tab given as an event of its own, finishes loading after the read ahead.

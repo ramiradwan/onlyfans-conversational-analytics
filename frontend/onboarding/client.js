@@ -5,7 +5,8 @@ import { parseOnboardingJson } from '../../shared/onboarding/json.mjs';
 
 // A helper tab reports why it ended. The desktop shows it where retry lives.
 const NOTICE_ERRORS = { extension_unavailable: 'extension_unavailable', profile_mismatch: 'profile_mismatch',
-  account_mismatch: 'account_mismatch', task_expired: 'operation_expired', unavailable: 'browser_unavailable' };
+  account_mismatch: 'account_mismatch', task_expired: 'operation_expired', unavailable: 'browser_unavailable',
+  needs_account: 'browser_needs_account', needs_consent: 'browser_needs_consent', needs_permission: 'browser_needs_permission' };
 
 async function refreshNativePresentation(generation) {
   const invoke = globalThis.__TAURI__?.core?.invoke;

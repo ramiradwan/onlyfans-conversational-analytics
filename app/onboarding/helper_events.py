@@ -13,7 +13,8 @@ from app.provisioning.events import events
 
 TERMINAL = frozenset({"completed", "cancelled", "expired"})
 NOTICES = frozenset({"extension_unavailable", "profile_mismatch", "account_mismatch",
-                     "task_changed", "task_expired", "unavailable"})
+                     "task_changed", "task_expired", "unavailable",
+                     "needs_account", "needs_consent", "needs_permission"})
 FOCUS_SECONDS = 2.0
 
 
