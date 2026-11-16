@@ -29,7 +29,11 @@ PHASES = frozenset({"click", "command-send", "accept", "entry", "prepare", "bind
     "protected-send", "protected-receive", "observe", "recover", "ensure", "connect", "tls",
     "read", "watch", "renew", "waiting", "reserve", "lookup", "create", "activate", "persist",
     "entry-open", "entry-pending", "pickup", "popup-create", "resume", "guard",
-    "task", "task-found", "launch", "payload", "session-get", "payload-get", "payload-queue", "payload-handler"})
+    "task", "task-found", "launch", "payload", "session-get", "payload-get", "payload-queue", "payload-handler",
+    "stream-wake", "payload-ready", "attach-sent", "attach-received", "ahead-reused", "ahead-none", "ahead-age",
+    "ahead-source", "ahead-changed-tab", "ahead-changed-storage", "ahead-changed-consent", "ahead-changed-account",
+    "ahead-changed-authentication", "ahead-changed-other", "attach-done", "read-done", "authenticate-received",
+    "open-guarded", "navigate-sent"})
 # Event-loop work below this duration is not recorded.
 SLOW_MS = 25
 SINK_DIRECTORY = "diagnostics"
@@ -127,6 +131,16 @@ def observation(value, *, operation, phases, record=True):
     elif (value["status"] not in {"ok", "error", "cancelled"} or type(value["elapsed_ms"]) not in {int, float}
             or not math.isfinite(value["elapsed_ms"]) or not 0 <= value["elapsed_ms"] <= 3_600_000):
         raise ValueError("Invalid sign-in observation")
+
+
+def observations(values, *, operation, phases, limit):
+    """Validate every mark of a batch before recording any of them."""
+    if not isinstance(values, list) or not 0 < len(values) <= limit:
+        raise ValueError("Invalid sign-in observation")
+    for value in values:
+        observation(value, operation=operation, phases=phases, record=False)
+    for value in values:
+        observe(value["operation"], value["phase"], value["status"], value["elapsed_ms"])
 
 
 def completed(key, *, clock=time.monotonic):

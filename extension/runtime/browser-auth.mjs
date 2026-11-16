@@ -39,7 +39,7 @@ function validRecord(value) {
 }
 
 /** Journal only bounded correlation. Entry URLs, returned URLs and API errors are never stored. */
-export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onRemoved = () => {}, onCreated = () => {} }) {
+export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onRemoved = () => {}, onCreated = () => {}, onStage = () => {} }) {
   const active = new Map(), listeners = new Set();
   const launching = new Map(), watchers = new Set();
   let queue = Promise.resolve(), disposed = false;
@@ -242,6 +242,7 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
     await guard();
     if (disposed || expected.expires_at <= now()) throw Error('task_expired');
     if (waiting.get(operationId)?.closed) return closedWaiting();
+    onStage(payload.task.task_id, 'open-guarded');
     const placeholder = takeWaiting(operationId);
     const sequence = record.sequence;
     const entry = { task_id: record.task_id, admission_generation: payload.task.admission_generation, sequence, expires_at: record.expires_at, windowId: null, retired: false, stop: null };
@@ -253,6 +254,7 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
     if (placeholder !== null && Number.isSafeInteger(placeholder.windowId) && Number.isSafeInteger(placeholder.tabId)) {
       // The waiting window becomes this attempt's popup. Its removal from here on is closure.
       entry.windowId = placeholder.windowId;
+      onStage(payload.task.task_id, 'navigate-sent');
       void Promise.resolve()
         .then(() => chromeApi.tabs.update(placeholder.tabId, { url, active: true }))
         .then(() => {
@@ -267,6 +269,7 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
         });
       changed(); return view(record, payload);
     }
+    onStage(payload.task.task_id, 'navigate-sent');
     void Promise.resolve()
       .then(() => chromeApi.windows.create({ type: 'popup', url, focused: true, ...POPUP_SIZE }))
       .then(created => {

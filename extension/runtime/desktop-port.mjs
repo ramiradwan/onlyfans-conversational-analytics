@@ -66,11 +66,15 @@ function samePrepared(prepared, payload) {
     && JSON.stringify(prepared.participant) === JSON.stringify(payload.participant);
 }
 
+const NO_STAGES = Object.freeze({ begin() {}, mark() {}, flush() {} });
+
 export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, companion, authentication,
-  onPaired = async () => {}, changeSources = [], now = Date.now, endedGraceMs = ENDED_HELPER_GRACE_MS } = {}) {
+  onPaired = async () => {}, changeSources = [], now = Date.now, endedGraceMs = ENDED_HELPER_GRACE_MS, stages = NO_STAGES } = {}) {
   if (!owner || !companion) throw TypeError('Browser task owners are required');
   const ports = new Set(), tasks = new Map();
   let queue = Promise.resolve(), scheduled = false, registered = false, changes = 0;
+  // The source of each recent change, for the read-ahead stage mark only.
+  const changeLog = new Map();
   const serial = work => { const result = queue.then(work); queue = result.catch(() => undefined); return result; };
   const writeLink = () => Promise.resolve(chromeApi.storage.session.set({ [DESKTOP_LINK_STORAGE_KEY]: tasks.size })).catch(() => undefined);
   // Releases the task and its owner state. The port may stay open briefly for the helper's close.
@@ -83,6 +87,7 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
     if (session) session.close();
     else void owner.release?.(entry.context)?.catch(() => undefined);
     forgetPrepared(entry);
+    if (entry.payload) stages.flush(entry.payload.task.task_id);
     void writeLink();
   };
   const close = entry => {
@@ -135,10 +140,11 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
     const prepared = entry.prepared; entry.prepared = null;
     if (prepared?.owner) void Promise.resolve(owner.forget?.(prepared.owner)).catch(() => undefined);
   }
-  async function push(entry, ahead = null) {
+  async function push(entry, ahead = null, onRead = null) {
     await current(entry);
     // An observation read ahead is used only when no change source fired since it was read.
     const observation = ahead && ahead.changes === changes ? ahead.observation : await owner.read(entry.context);
+    onRead?.();
     await current(entry);
     if (!isObservation(observation)) throw Error('unavailable');
     const encoded = JSON.stringify(observation);
@@ -152,8 +158,10 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
       await entry.authSession.refresh();
     }
   }
-  function changed() {
+  function changed(source = 'other') {
     changes++;
+    changeLog.set(changes, source);
+    if (changeLog.size > 32) changeLog.delete(changeLog.keys().next().value);
     if (scheduled || tasks.size === 0) return;
     scheduled = true;
     void serial(async () => {
@@ -175,6 +183,7 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
     port.onDisconnect.addListener(() => close(entry));
     port.onMessage.addListener(message => {
       if (JSON.stringify(message)?.length > 8192) { refuse(entry, 'task_changed'); return; }
+      const received = now();
       void serial(async () => {
         if (entry.closed) return;
         if (entry.ending) {
@@ -252,6 +261,13 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
           }
           const ahead = prepared?.observation && prepared.changes === changes && now() - prepared.at < PREPARED_REUSE_MS
             && payload.entry_source === 'desktop' ? prepared : null;
+          // Diagnostics only: how long the attach waited for this port's queue, and why a read ahead was or was not used.
+          const taskId = payload.task.task_id;
+          stages.begin(taskId, now() - received);
+          stages.mark(taskId, !prepared?.observation ? 'ahead-none' : prepared.changes !== changes
+            ? 'ahead-changed-' + (changeLog.get(prepared.changes + 1) ?? 'other')
+            : now() - prepared.at >= PREPARED_REUSE_MS ? 'ahead-age' : payload.entry_source !== 'desktop' ? 'ahead-source' : 'ahead-reused',
+          prepared ? now() - prepared.at : 0);
           if (prepared?.owner && !ahead) void Promise.resolve(owner.forget(prepared.owner)).catch(() => undefined);
           // Until it attaches, a refusal forgets the prepared owner.
           entry.prepared = ahead;
@@ -270,6 +286,7 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
             ? await owner.attachPrepared(ahead.owner, payload, { authorize: () => current(entry), signal: entry.controller.signal })
             : await owner.attach(payload, { authorize: () => current(entry), signal: entry.controller.signal });
           entry.prepared = null;
+          stages.mark(taskId, 'attach-done');
           try { await current(entry); }
           catch (error) {
             const detached = entry.context; entry.context = null;
@@ -282,7 +299,7 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
             if (!authentication) throw Error('unavailable');
             entry.authSession = createAuthenticationTaskSession({ owner, context: entry.context,
               authentication, payload, authorize: () => current(entry), signal: entry.controller.signal,
-              deadline: payload.task.expires_at * 1000, now, changed,
+              deadline: payload.task.expires_at * 1000, now, changed: () => changed('authentication'),
               publish: status => send(entry, { type: 'authentication', task_id: payload.task.task_id,
                 admission_generation: payload.task.admission_generation, ...status }),
               onClose: reason => { if (!entry.released) { if (reason === 'expired') refuse(entry, 'task_expired'); else close(entry); } } });
@@ -295,7 +312,7 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
               }
             }
           });
-          void writeLink(); await push(entry, ahead); return;
+          void writeLink(); await push(entry, ahead, () => stages.mark(taskId, 'read-done')); return;
         }
         if (!exact(message, ['type', 'task_id', 'admission_generation']) || !entry.payload
           || message.task_id !== entry.payload.task.task_id || message.admission_generation !== entry.payload.task.admission_generation) throw Error('task_changed');
@@ -339,6 +356,7 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
           return;
         }
         if (purpose === 'browser.authentication' && message.type === 'authenticate' && authentication) {
+          stages.mark(entry.payload.task.task_id, 'authenticate-received');
           await authentication.launch(entry.payload, async () => {
             await current(entry);
             const observed = await owner.read(entry.context);
@@ -406,7 +424,7 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
     register() {
       if (registered) return; registered = true;
       void writeLink(); chromeApi.runtime.onConnectExternal.addListener(connect);
-      for (const source of changeSources) unsubscribers.push(source(changed));
+      for (const source of changeSources) unsubscribers.push(source(() => changed(source.label ?? 'other')));
     },
     changed,
     get connected() { return tasks.size; },

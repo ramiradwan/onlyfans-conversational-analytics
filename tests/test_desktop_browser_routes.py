@@ -200,3 +200,39 @@ def test_sign_in_payload_without_a_ceremony_waits_only_while_its_operation_prepa
             connection.execute("UPDATE desktop_setup_operations SET state='outcome_unknown' WHERE operation_id=?",
                 (operation["operation_id"],))
         assert client.get("/api/v1/browser-tasks/payload", headers=headers(browser)).status_code == 409
+
+def test_stage_marks_are_recorded_together_only_when_every_label_is_closed(tmp_path, caplog):
+    import logging
+    from starlette.websockets import WebSocketDisconnect
+    from app.transport.companion_origin import CompanionOriginBoundary
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, _, _ = setup
+    _, _, browser = asyncio.run(browser_access(setup))
+    app = FastAPI()
+    app.add_middleware(CompanionOriginBoundary)
+    app.include_router(browser_router(coordinator, tasks, None))
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    mark = lambda operation, phase: {"operation": operation, "phase": phase, "status": "ok", "elapsed_ms": 5}
+    socket_headers = {"Host": "127.0.0.1:17871", "Origin": "chrome-extension://" + "a" * 32}
+    path = "/api/v1/browser-tasks/timing"
+    helper_app = FastAPI()
+    helper_app.include_router(browser_router(coordinator, tasks, None))
+    with TestClient(helper_app, base_url=ORIGIN) as client:
+        good = {"marks": [mark("helper", "stream-wake"), mark("helper", "attach-sent")]}
+        assert client.post(path, json=good, headers=headers(browser)).status_code == 204
+        bad = {"marks": [mark("helper", "stream-wake"), mark("helper", "popup-create")]}
+        assert client.post(path, json=bad, headers=headers(browser)).status_code == 400
+    with TestClient(app, base_url="http://127.0.0.1:17871") as client:
+        with client.websocket_connect(path, headers=socket_headers) as socket:
+            socket.send_json({"marks": [mark("extension", "attach-received"), mark("extension", "ahead-changed-tab"),
+                                        mark("extension", "navigate-sent")]})
+            with pytest.raises(WebSocketDisconnect) as ended:
+                socket.receive_text()
+            assert ended.value.code == 1000
+        with client.websocket_connect(path, headers=socket_headers) as socket:
+            socket.send_json({"marks": [mark("extension", "read-done"), {**mark("extension", "attach-done"), "url": "x"}]})
+            with pytest.raises(WebSocketDisconnect) as ended:
+                socket.receive_text()
+            assert ended.value.code == 1008
+    assert [message.split(" ")[2] for message in caplog.messages] == ["phase=stream-wake", "phase=attach-sent",
+        "phase=attach-received", "phase=ahead-changed-tab", "phase=navigate-sent"]

@@ -21,7 +21,7 @@ export class BrowserTaskClient {
     reattach = reattachExtension, events = readBrowserTaskEvents, now = Date.now, nativeLaunch = false, wait = openWaiting }) {
     if (!UUID.test(generation)) throw new Error('session_unavailable');
     Object.assign(this, { generation, receive, request, connect, reattach, events, now, wait });
-    this.waiting = null; this.preparedLink = null;
+    this.waiting = null; this.preparedLink = null; this.stages = [];
     this.link = null; this.expiry = null; this.session = null; this.payload = null; this.serial = Promise.resolve(); this.run = 0;
     this.pollTimer = null; this.stream = null; this.streamTimer = null; this.streaming = false;
     this.pollBase = this.pollDelay = 2000;
@@ -61,6 +61,16 @@ export class BrowserTaskClient {
     if (!this.automatic || !this.session || this.payload !== null || !Number.isFinite(elapsed)) return;
     void this.json('timing', { operation: 'helper', phase, status: 'ok', elapsed_ms: Math.round(elapsed) }).catch(() => {});
   }
+  /** Sign-in stage marks of a desktop-opened helper, timed from navigation start and sent together once it attached. */
+  stage(phase) {
+    const elapsed = globalThis.performance?.now?.();
+    if (!this.automatic || !Number.isFinite(elapsed) || this.stages.length >= 8) return;
+    this.stages.push({ operation: 'helper', phase, status: 'ok', elapsed_ms: Math.round(elapsed) });
+  }
+  flushStages() {
+    const marks = this.stages.splice(0);
+    if (marks.length && this.session) void this.json('timing', { marks }).catch(() => {});
+  }
   async json(path, body) {
     const response = await this.request('/api/v1/browser-tasks/' + path, { credentials: 'same-origin', redirect: 'error', cache: 'no-store',
       ...(path === 'timing' ? { keepalive: true } : {}),
@@ -87,6 +97,7 @@ export class BrowserTaskClient {
     this.pairCodeSent = false;
     this.ending = null;
     this.declared = null;
+    this.stages = [];
     this.receive({ state: 'loading' });
     try {
       // The payload read needs no session value, so both reads run together. The payload is used only after the session checks.
@@ -120,7 +131,7 @@ export class BrowserTaskClient {
       this.preparedLink = null;
       const attach = receive => (typeof early?.attach === 'function' && early.attach(payload, receive) ? early
         : (early?.close?.(), this.connect({ payload, receive })));
-      this.link = this.lastLink = attach(value => {
+      const attaching = attach(value => {
         if (run !== this.run) return;
         // The ceremony has taken over the waiting window, or this sign-in will not open it.
         if (!['ready', 'paused', 'auth_idle'].includes(value.state)) this.releaseWaiting();
@@ -259,6 +270,9 @@ export class BrowserTaskClient {
           }
         }).catch(error => { if (run === this.run) { this.stop(); this.receive({ state: error.message, payload }); } });
       });
+      this.link = this.lastLink = attaching;
+      this.stage('attach-sent');
+      this.flushStages();
       this.schedulePoll(run);
       // A stream opened during preparation stays this generation's only stream.
       if (!this.stream) this.listen(run);
@@ -290,6 +304,7 @@ export class BrowserTaskClient {
       if (run !== this.run) return null;
       const next = await this.json('payload');
       if (run !== this.run) return null;
+      if (!isPreparingPayload(next)) this.stage('payload-ready');
       if (isPayloadProjection(next) && ['task_id', 'journey_id', 'operation_id', 'purpose', 'scope_digest', 'source_revision', 'expires_at']
         .some(key => next.task[key] !== first.task[key])) throw new Error('task_changed');
       current = next;
@@ -341,7 +356,7 @@ export class BrowserTaskClient {
   frame(run, value) {
     if (run !== this.run) return;
     if (!this.payload) {
-      if (value.type === 'task' && value.task_id === this.session?.task_id) this.preparingFrame();
+      if (value.type === 'task' && value.task_id === this.session?.task_id) { this.stage('stream-wake'); this.preparingFrame(); }
       return;
     }
     if (value.task_id !== this.payload.task.task_id) return;

@@ -21,6 +21,13 @@ from app.security.companion_pairing import CompanionPairingError
 from app.security.hosted_grants import HostedGrantUnavailable
 
 
+HELPER_STAGES = frozenset({"stream-wake", "payload-ready", "attach-sent"})
+EXTENSION_STAGES = frozenset({"attach-received", "ahead-reused", "ahead-none", "ahead-age", "ahead-source",
+    "ahead-changed-tab", "ahead-changed-storage", "ahead-changed-consent", "ahead-changed-account",
+    "ahead-changed-authentication", "ahead-changed-other", "attach-done", "read-done", "authenticate-received",
+    "open-guarded", "navigate-sent"})
+
+
 def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
     router = APIRouter()
     reports = AuthenticationTaskReports(coordinator, ceremonies)
@@ -60,6 +67,9 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
             if isinstance(value, dict) and value.get("phase") == "helper-finish":
                 timing.observation(value, operation="helper", phases={"helper-finish"}, record=False)
                 timing.helper_finish(task["operation_id"])
+            elif isinstance(value, dict) and set(value) == {"marks"}:
+                # Stage marks of one sign-in, sent together once the helper attached.
+                timing.observations(value["marks"], operation="helper", phases=HELPER_STAGES, limit=8)
             else:
                 # Loading steps, timed from this helper document's navigation start.
                 timing.observation(value, operation="helper", phases={"session-get", "payload-get", "payload", "waiting"})
@@ -76,9 +86,16 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
         await socket.accept()
         try:
             raw = await asyncio.wait_for(socket.receive_text(), 2)
-            if len(raw) > 256:
+            if len(raw) > 4096:
                 raise ValueError("Invalid sign-in observation")
-            timing.observation(json.loads(raw), operation="extension", phases={"popup-remove", "popup-create"})
+            value = json.loads(raw)
+            if isinstance(value, dict) and set(value) == {"marks"}:
+                # Stage marks of one sign-in attach, sent together once its popup navigates.
+                timing.observations(value["marks"], operation="extension", phases=EXTENSION_STAGES, limit=16)
+            elif len(raw) > 256:
+                raise ValueError("Invalid sign-in observation")
+            else:
+                timing.observation(value, operation="extension", phases={"popup-remove", "popup-create"})
         except (ValueError, TypeError, TimeoutError):
             await socket.close(code=1008)
             return
