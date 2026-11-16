@@ -220,6 +220,30 @@ describe('helper stream', () => {
       expect(h.posts.filter(([path]) => path === 'focused')).toHaveLength(1);
     } finally { h.client.stop(); }
   });
+
+  it('tells Brain once that its sign-in popup opened', async () => {
+    const h = helper();
+    try {
+      await h.client.start();
+      h.publish({ state: 'auth_idle' });
+      expect(h.posts.filter(([path]) => path === 'opened')).toEqual([]);
+      h.publish({ state: 'auth_opening' });
+      h.publish({ state: 'auth_opening' });
+      expect(h.posts.filter(([path]) => path === 'opened')).toEqual([['opened', {}]]);
+    } finally { h.client.stop(); }
+  });
+
+  it('stops and asks to be closed when Brain ends its sign-in', async () => {
+    const s = stream(), h = helper({ events: s.events });
+    try {
+      await h.client.start();
+      s.state.frame({ type: 'end', task_id: id(1), admission_generation: id(4) });
+      await h.client.ending;
+      expect(h.received.at(-1).state).toBe('task_changed');
+      expect(h.posts.filter(([path]) => path === 'ended')).toEqual([['ended', { reason: 'task_changed' }]]);
+      expect(h.end).toHaveBeenCalledOnce();
+    } finally { h.client.stop(); }
+  });
 });
 
 describe('helper ending', () => {
@@ -415,11 +439,14 @@ describe('helper stream reader', () => {
   it('reads only exact frames for this generation', async () => {
     const frames = [];
     const text = 'event: browser-task\ndata: ' + JSON.stringify({ task_id: id(1), admission_generation: id(4), state: 'completed' })
-      + '\n\n: keepalive\n\nevent: browser-task-focus\ndata: ' + JSON.stringify({ task_id: id(1), admission_generation: id(4) }) + '\n\n';
+      + '\n\n: keepalive\n\nevent: browser-task-focus\ndata: ' + JSON.stringify({ task_id: id(1), admission_generation: id(4) })
+      + '\n\nevent: browser-task-end\ndata: ' + JSON.stringify({ task_id: id(1), admission_generation: id(4) }) + '\n\n';
     const request = vi.fn(async () => response(text));
     await readBrowserTaskEvents({ request, generation: id(4), frame: value => frames.push(value) });
     expect(request.mock.calls[0][1].headers['X-Desktop-Generation']).toBe(id(4));
-    expect(frames.map(value => value.type)).toEqual(['task', 'focus']);
+    expect(frames.map(value => value.type)).toEqual(['task', 'focus', 'end']);
+    await expect(readBrowserTaskEvents({ request: async () => response('event: browser-task-end\ndata: '
+      + JSON.stringify({ task_id: id(1), admission_generation: id(5) }) + '\n\n'), generation: id(4), frame: () => {} })).rejects.toThrow('stream_invalid');
     for (const bad of [{ task_id: id(1), admission_generation: id(5), state: 'completed' },
       { task_id: id(1), admission_generation: id(4), state: 'done' },
       { task_id: id(1), admission_generation: id(4), state: 'completed', outcome: 'admitted' }]) {

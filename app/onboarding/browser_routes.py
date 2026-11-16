@@ -103,17 +103,35 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
             return
         await socket.close()
 
+    def attempt_live(task_id, generation):
+        """Whether this sign-in generation is still the task's unsettled attempt."""
+        if coordinator._closed:
+            return False
+        with coordinator.store.database.read() as connection:
+            row = connection.execute("SELECT t.admission_generation,t.state,t.expires_at,o.state AS operation_state "
+                "FROM desktop_browser_tasks t JOIN desktop_setup_operations o ON o.operation_id=t.operation_id "
+                "WHERE t.task_id=?", (task_id,)).fetchone()
+        return (row is not None and row["admission_generation"] == generation
+                and row["state"] in {"pending", "accepted", "outcome_unknown"}
+                and row["expires_at"] > coordinator.admissions._now()
+                and row["operation_state"] in {"accepted", "waiting", "outcome_unknown"})
+
     @router.get("/api/v1/browser-tasks/payload")
     async def payload(request: Request):
         # The handler runs on the thread pool, as a sync route would. Its wait and run are timed.
-        return await run_in_threadpool(timed_payload, request, time.monotonic())
+        served = []
+        response = await run_in_threadpool(timed_payload, request, time.monotonic(), served)
+        for task in served:
+            tasks.helpers.arm(task["task_id"], task["admission_generation"],
+                              lambda task=task: attempt_live(task["task_id"], task["admission_generation"]))
+        return response
 
-    def timed_payload(request, arrived):
+    def timed_payload(request, arrived, served):
         started, read, status = time.monotonic(), [], "error"
         try:
             # A preparing helper polls this route, so its reads share one store connection.
             with coordinator.store.database.shared_reads():
-                response = task_payload(request, read)
+                response = task_payload(request, read, served)
             status = "ok"
             return response
         finally:
@@ -121,7 +139,7 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
                 timing.observe("helper", "payload-queue", "ok", max(0, (started - arrived) * 1000))
                 timing.observe("helper", "payload-handler", status, max(0, (time.monotonic() - started) * 1000))
 
-    def task_payload(request, read):
+    def task_payload(request, read, served):
         _, task = task_session(request)
         read.append(task)
         entry = (ceremonies.browser_entry(task["operation_id"]) if ceremonies is not None
@@ -132,6 +150,7 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
             raise HTTPException(409, "Browser task changed")
         if entry is not None:
             timing.entry_served(task["operation_id"])
+            served.append(task)
         return JSONResponse({"profile": "browser-task.v1", "task": task,
             "extension_id": tasks.extension_id, "ceremony": entry, **tasks.attachment(task)}, headers=HEADERS)
 
@@ -164,6 +183,8 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
             reports.report(authentication_task(session), state="checking", notification=value)
         except (AdmissionRefused, HostedGrantUnavailable, ValueError):
             raise HTTPException(409, "Browser task changed") from None
+        if tasks is not None:
+            tasks.helpers.satisfy(session.task_id, session.generation)
         return JSONResponse({"state": "checking"}, status_code=202, headers=HEADERS)
 
     @router.post("/api/v1/browser-tasks/closed")
@@ -176,7 +197,18 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
             reports.report(authentication_task(session), state="closed")
         except (AdmissionRefused, HostedGrantUnavailable, ValueError):
             raise HTTPException(409, "Browser task changed") from None
+        if tasks is not None:
+            tasks.helpers.satisfy(session.task_id, session.generation)
         return JSONResponse({"state": "checking"}, status_code=202, headers=HEADERS)
+
+    @router.post("/api/v1/browser-tasks/opened")
+    async def opened(request: Request):
+        """The extension opened this sign-in's popup. Held in memory only."""
+        session, _ = task_session(request, mutation=True)
+        await body(request, empty=True)
+        if tasks is not None:
+            tasks.helpers.satisfy(session.task_id, session.generation)
+        return JSONResponse({"state": "opened"}, headers=HEADERS)
 
     @router.get("/api/v1/browser-tasks/events")
     def task_events(request: Request):

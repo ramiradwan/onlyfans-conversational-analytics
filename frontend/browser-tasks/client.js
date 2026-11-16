@@ -95,6 +95,7 @@ export class BrowserTaskClient {
     this.extensionState = null;
     this.authNotification = null;
     this.authState = null;
+    this.openedSent = false;
     this.pairStarted = false;
     this.pairFinished = false;
     this.pairCodeSent = false;
@@ -140,6 +141,11 @@ export class BrowserTaskClient {
         if (!['ready', 'paused', 'auth_idle'].includes(value.state)) this.releaseWaiting();
         if (value.state !== 'unavailable') this.extensionSeen = true;
         this.extensionState = value.state;
+        if (value.state === 'auth_opening' && payload.task.purpose === 'browser.authentication' && !this.openedSent) {
+          // The desktop's backstop learns that this sign-in's popup opened.
+          this.openedSent = true;
+          void this.json('opened', {}).catch(() => {});
+        }
         if (!['ready', 'paused', 'auth_idle'].includes(value.state)) {
           this.automatic = false;
           this.automaticPending = false;
@@ -358,6 +364,12 @@ export class BrowserTaskClient {
   }
   frame(run, value) {
     if (run !== this.run) return;
+    if (value.type === 'end' && value.task_id === this.session?.task_id) {
+      // The desktop gave up on this sign-in and shows its own error. This helper closes.
+      const payload = this.payload;
+      this.stop(); this.receive({ state: 'task_changed', payload });
+      return;
+    }
     if (!this.payload) {
       if (value.type === 'task' && value.task_id === this.session?.task_id) { this.stage('stream-wake'); this.preparingFrame(); }
       return;

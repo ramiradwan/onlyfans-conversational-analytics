@@ -65,9 +65,9 @@ function parseFrame(event, data, generation) {
     && UUID.test(value.task_id) && value.admission_generation === generation && STATES.includes(value.state)) {
     return { type: 'task', ...value };
   }
-  if (event === 'browser-task-focus' && exact(value, ['task_id', 'admission_generation'])
+  if (['browser-task-focus', 'browser-task-end'].includes(event) && exact(value, ['task_id', 'admission_generation'])
     && UUID.test(value.task_id) && value.admission_generation === generation) {
-    return { type: 'focus', ...value };
+    return { type: event === 'browser-task-end' ? 'end' : 'focus', ...value };
   }
   throw new Error('stream_invalid');
 }
