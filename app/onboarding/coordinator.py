@@ -441,6 +441,25 @@ class DesktopOnboardingCoordinator:
             self._start(operation, reconcile=True, actor=None)
         self._watcher = asyncio.create_task(self._watch())
 
+    def _pass_facts(self):
+        """The store reads of one watch pass: each pending operation with its recovery, probe and observation."""
+        facts = []
+        for operation in self._pending():
+            recover = getattr(self.owner, "automatic_recovery", None)
+            try:
+                recoverable = bool(recover is not None and recover(operation))
+            except Exception:
+                recoverable = False
+            interval = self._probe_interval(operation) if recoverable else None
+            try:
+                observed = self.owner.observe(operation)
+            except Exception:
+                # One unavailable authority must not stop reconciliation
+                # for every later event. No observation proves rollback.
+                observed = OperationResult("outcome_unknown", "operation_unconfirmed")
+            facts.append((operation, recoverable, interval, observed))
+        return facts
+
     async def _watch(self):
         listener = events.subscribe()
         signal = self._wake = listener[1]
@@ -448,71 +467,57 @@ class DesktopOnboardingCoordinator:
             while not self._closed:
                 signal.clear()
                 started = time.monotonic()
-                pending = self._pending()
-                pending_ids = {operation["operation_id"] for operation in pending}
+                # The pass reads off the event loop. A commit during the read wakes the next pass.
+                facts = await asyncio.to_thread(self._pass_facts)
+                if self._closed:
+                    break
+                pending_ids = {operation["operation_id"] for operation, *_ in facts}
                 self._retry_at = {key: value for key, value in self._retry_at.items() if key in pending_ids}
                 self._probe_at = {key: value for key, value in self._probe_at.items() if key in pending_ids}
                 self._hint_frames = {key: value for key, value in self._hint_frames.items() if key in pending_ids}
                 self._closed_on = {key: value for key, value in self._closed_on.items() if key in pending_ids}
                 for operation_id in [key for key in self._waits if key not in pending_ids]:
                     self._waits.pop(operation_id).cancel()
-                retry_delays = []
-                for operation in pending:
-                    recover = getattr(self.owner, "automatic_recovery", None)
-                    try:
-                        recoverable = recover is not None and recover(operation)
-                    except Exception:
-                        recoverable = False
-                    if recoverable and self._probe_interval(operation) is not None:
+                retry_delays, remaining = [], []
+                for operation, recoverable, interval, observed in facts:
+                    if recoverable and interval is not None:
                         self._hold_wait(operation)
-                    try:
-                        observed = self.owner.observe(operation)
-                    except Exception:
-                        # One unavailable authority must not stop reconciliation
-                        # for every later event. No observation proves rollback.
-                        observed = OperationResult("outcome_unknown", "operation_unconfirmed")
                     if observed is not None:
                         self._settle(operation, observed)
-                    elif operation["operation_id"] not in self._workers:
-                        recover = getattr(self.owner, "automatic_recovery", None)
-                        try:
-                            recoverable = recover is not None and recover(operation)
-                        except Exception:
-                            recoverable = False
-                        if recoverable:
-                            # Only domain-approved recovery of accepted work. No
-                            # new command, browser window or presentation is created.
-                            clock = asyncio.get_running_loop().time()
-                            interval = self._probe_interval(operation)
-                            if interval is not None:
-                                self._hold_wait(operation)
-                                if operation["operation_id"] in self._held:
-                                    # A healthy held wait replaces both the probe
-                                    # and the slow retry for this sign-in.
-                                    continue
-                                # A cheap read replaces the slow full retry while
-                                # its sign-in is open. A change starts the full read.
-                                if operation["operation_id"] not in self._probes:
-                                    due = self._probe_at.setdefault(operation["operation_id"], clock + interval)
-                                    if due <= clock:
-                                        self._start_probe(operation, interval)
-                                    else:
-                                        retry_delays.append(due - clock)
+                        continue
+                    remaining.append(operation)
+                    if operation["operation_id"] not in self._workers and recoverable:
+                        # Only domain-approved recovery of accepted work. No
+                        # new command, browser window or presentation is created.
+                        clock = asyncio.get_running_loop().time()
+                        if interval is not None:
+                            if operation["operation_id"] in self._held:
+                                # A healthy held wait replaces both the probe
+                                # and the slow retry for this sign-in.
                                 continue
-                            if operation["operation_id"] in self._waits:
-                                self._waits.pop(operation["operation_id"]).cancel()
-                            due = self._retry_at.setdefault(operation["operation_id"], clock + RECOVERY_INTERVAL_SECONDS)
-                            if due <= clock:
-                                self._start(operation, reconcile=True, actor=None)
-                            else:
-                                retry_delays.append(due - clock)
+                            # A cheap read replaces the slow full retry while
+                            # its sign-in is open. A change starts the full read.
+                            if operation["operation_id"] not in self._probes:
+                                due = self._probe_at.setdefault(operation["operation_id"], clock + interval)
+                                if due <= clock:
+                                    self._start_probe(operation, interval)
+                                else:
+                                    retry_delays.append(due - clock)
+                            continue
+                        if operation["operation_id"] in self._waits:
+                            self._waits.pop(operation["operation_id"]).cancel()
+                        due = self._retry_at.setdefault(operation["operation_id"], clock + RECOVERY_INTERVAL_SECONDS)
+                        if due <= clock:
+                            self._start(operation, reconcile=True, actor=None)
+                        else:
+                            retry_delays.append(due - clock)
                 elapsed = (time.monotonic() - started) * 1000
                 if elapsed >= timing.SLOW_MS:
                     timing.observe("snapshot", "watch", "ok", elapsed)
-                deadlines = [operation["expires_at"] - self.admissions._now() for operation in self._pending()
-                    if operation["expires_at"] > self.admissions._now()]
+                now = self.admissions._now()
+                deadlines = [operation["expires_at"] - now for operation in remaining if operation["expires_at"] > now]
                 deadlines.extend(retry_delays)
-                if pending:
+                if facts:
                     # Pairing and source owners can expire before the enclosing
                     # desktop command. Observe their result without requiring a
                     # renderer poll or replaying a protected command.
@@ -527,7 +532,6 @@ class DesktopOnboardingCoordinator:
         finally:
             self._wake = None
             events.unsubscribe(listener)
-
     def _probe_interval(self, operation):
         interval = getattr(self.owner, "probe_interval", None)
         if interval is None or getattr(self.owner, "probe", None) is None:

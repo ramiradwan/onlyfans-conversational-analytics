@@ -986,3 +986,52 @@ async def test_a_later_frame_with_the_outcome_a_hinted_read_closed_on_reads_noth
     await coordinator.drain()
     assert (len(hints), len(owner.calls)) == (3, 3)
     await coordinator.stop()
+
+@pytest.mark.asyncio
+async def test_a_watch_pass_reads_the_store_off_the_event_loop_and_keeps_a_wake_from_that_read(setup):
+    import threading
+    from app.provisioning.events import events
+    coordinator, owner, session, _ = setup
+    owner.result = OperationResult("waiting")
+    await coordinator.command(session, command(coordinator.read(session)))
+    await coordinator.drain()
+    database, loop_thread = coordinator.store.database, threading.get_ident()
+    connect, on_loop, observed = database.connect, [], []
+    state = {"commit": False, "done": False}
+
+    def counted():
+        if threading.get_ident() == loop_thread:
+            on_loop.append(1)
+        return connect()
+
+    def observe(operation):
+        with database.read() as connection:
+            connection.execute("SELECT 1").fetchone()
+        observed.append(threading.get_ident())
+        if state["commit"]:
+            # A commit lands while this pass reads. Its wake must reach the next pass.
+            state["commit"], state["done"] = False, True
+            events.publish()
+            return None
+        return OperationResult("completed") if state["done"] else None
+
+    owner.observe = observe
+    settled = asyncio.Event()
+    owner.settled = lambda operation, result: settled.set()
+    coordinator.start()
+    try:
+        async with asyncio.timeout(2):
+            while not observed:
+                await asyncio.sleep(0.005)
+        database.connect = counted
+        state["commit"] = True
+        events.publish()
+        async with asyncio.timeout(2):
+            await settled.wait()
+        database.connect = connect
+        assert loop_thread not in observed
+        # Only the settle's own write runs on the loop. Every pass read ran in a worker thread.
+        assert len(on_loop) <= 1
+    finally:
+        database.connect = connect
+        await coordinator.stop()
