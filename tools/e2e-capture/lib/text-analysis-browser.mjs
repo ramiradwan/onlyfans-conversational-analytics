@@ -266,13 +266,14 @@ export async function selectProfile(page, label, scenario) {
   const profile = fixture.scenarios[scenario];
   await page.getByRole('option', { name: `${profile.profile_id} · ${profile.revision}`, exact: true }).click();
 }
-export async function processingCommand(page, action, { unknown = false } = {}) {
+export async function processingCommand(page, action, { unknown = false, beforeConfirm = () => {} } = {}) {
   const panel = page.getByRole('region', { name: 'Account text processing', exact: true });
   await expect(panel.locator('[data-journey-state="textanalysis.processing_controls"]')).toBeVisible();
   const labels = { enable: 'Review enablement', pause: 'Pause processing', resume: 'Resume processing', retire: 'Retire processing' };
   await panel.getByRole('button', { name: labels[action], exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Review processing change', exact: true });
   await expect(dialog.locator('[data-journey-state="textanalysis.processing_review"]')).toBeVisible();
+  beforeConfirm();
   await dialog.getByRole('button', { name: 'Confirm processing change', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   if (unknown) return;

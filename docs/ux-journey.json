@@ -672,6 +672,11 @@
           "kind": "unit",
           "file": "tests/test_analytics_publication_events.py",
           "name": "test_publication_stream_is_account_scoped_and_reconciles_on_connect"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-processing.spec.mjs",
+          "name": "first saved finding is visible after explicit processing enablement"
         }
       ]
     },
