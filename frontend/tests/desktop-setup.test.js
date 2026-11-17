@@ -875,6 +875,24 @@ describe('desktop setup presentation', () => {
     expect(document.getElementById('task-reconcile')).toBeNull();
     expect(document.getElementById('task-status').textContent).toBe('Opening dashboard…');
   });
+  it('shows automatic passkey status recovery without asking the user to retry', () => {
+    mount();
+    const snapshot = { ...initial(), next_task: 'finish-setup', allowed_actions: ['browser.pair'] };
+    const authentication = { enrolled: null, checked: true, authenticated: false, busy: false,
+      error: 'passkey_status_network', recoveringStatus: true };
+    const get = id => document.getElementById(id);
+    renderSetup(document, { snapshot, connected: true, authentication });
+    expect(get('local-auth-status').textContent).toBe('Checking access automatically…');
+    expect(get('local-authenticate').hidden).toBe(true);
+    expect(get('local-auth-retry')).toBeNull();
+    expect(get('task-action').disabled).toBe(true);
+    renderSetup(document, { snapshot, connected: true, authentication: { ...authentication, recoveringStatus: false } });
+    expect(get('local-auth-status').textContent).toBe('Dipsy can’t check access on this computer right now.');
+    expect(get('local-authenticate').hidden).toBe(true);
+    renderSetup(document, { snapshot, connected: true, authentication: { ...authentication, enrolled: true, recoveringStatus: false, error: null } });
+    expect(get('local-authenticate').hidden).toBe(false);
+    expect(get('local-authenticate').textContent).toBe('Sign in');
+  });
   it('requires explicit local authentication before pairing or opening the dashboard', () => {
     mount();
     const snapshot = { ...initial(), next_task: 'finish-setup', allowed_actions: ['browser.pair'] };
@@ -907,7 +925,7 @@ describe('desktop setup presentation', () => {
     expect(get('local-access-description').textContent).toBe(description);
     expect(get('local-auth-status').textContent).toBe(guidance);
     expect(get('local-authenticate').hidden).toBe(true);
-    expect(get('local-auth-retry').hidden).toBe(true);
+    expect(get('local-auth-retry')).toBeNull();
     expect(get('task-status').textContent).toBe('');
     expect(get('task-action').disabled).toBe(true);
     expect(get('browser-reopen').hidden).toBe(true);

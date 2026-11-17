@@ -73,7 +73,6 @@ try {
     finally { render(); }
   });
   document.getElementById('local-authenticate').addEventListener('click', () => { void enrollment.authenticate(); });
-  document.getElementById('local-auth-retry').addEventListener('click', () => { void enrollment.check(); });
   window.addEventListener('pagehide', () => { finished = true; client.stop(); enrollment.stop(); });
   void client.connect();
 } catch {

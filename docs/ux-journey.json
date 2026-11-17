@@ -3077,6 +3077,10 @@
           "to": "desktop.setup_finish",
           "by": "user",
           "action": "local-authenticate"
+        },
+        {
+          "to": "desktop.setup_finish",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -3084,6 +3088,21 @@
           "kind": "unit",
           "file": "frontend/tests/desktop-setup.test.js",
           "name": "requires explicit local authentication before pairing or opening the dashboard"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "shows automatic passkey status recovery without asking the user to retry"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-enrollment.test.js",
+          "name": "automatically reads the committed registration outcome without another ceremony"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-enrollment.test.js",
+          "name": "bounds automatic status reads and recovers from a later pushed access change"
         }
       ]
     },

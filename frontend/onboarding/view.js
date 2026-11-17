@@ -27,13 +27,13 @@ const errors = {
   activation_unavailable: 'Full analytics activation could not be prepared. Try again.',
 };
 const passkeyErrors = {
-  passkey_status_unavailable: 'The local sign-in service could not report passkey status.',
-  passkey_status_network: 'The local sign-in service could not be reached.',
-  passkey_status_session: 'The sign-in status request was not authenticated.',
-  passkey_status_forbidden: 'Access to sign-in status was refused.',
-  passkey_status_invalid: 'The local sign-in service returned an invalid status response.',
+  passkey_status_unavailable: 'Dipsy can’t check access on this computer right now.',
+  passkey_status_network: 'Dipsy can’t check access on this computer right now.',
+  passkey_status_session: 'This setup session is no longer authorized.',
+  passkey_status_forbidden: 'Access on this computer could not be verified.',
+  passkey_status_invalid: 'Access on this computer could not be checked.',
   passkey_sign_in_required: 'Passkey created. Sign in to continue.',
-  passkey_start_unavailable: 'Sign-in could not start. Try again.',
+  passkey_start_unavailable: 'Sign-in could not start.',
   passkey_unconfirmed: 'Verification could not be confirmed.',
 };
 // No action here can restore access. Pushed updates replace this copy.
@@ -59,9 +59,11 @@ export function renderSetup(document, state) {
   get('local-authenticate').hidden = !needsAuthentication || authentication.enrolled === null;
   get('local-authenticate').disabled = !state.connected || authentication?.busy;
   get('local-authenticate').textContent = authentication?.enrolled ? 'Sign in' : 'Set up access';
-  get('local-auth-retry').hidden = !needsAuthentication || authentication.enrolled !== null || authentication.busy || !authentication.checked || Boolean(lapsed);
-  setStatus(get('local-auth-status'), lapsed?.[1] || passkeyErrors[authentication?.error]
-    || (authentication?.busy ? authentication.checked ? 'Waiting for verification…' : 'Checking passkey status…' : ''));
+  setStatus(get('local-auth-status'), lapsed?.[1]
+    || (authentication?.recoveringStatus ? 'Checking access automatically…' : null)
+    || (authentication?.checking ? 'Checking access on this computer…' : null)
+    || passkeyErrors[authentication?.error]
+    || (authentication?.busy ? 'Waiting for verification…' : ''));
   const task = value?.next_task;
   const decision = value?.decision?.action === 'connect-account' && value?.decision_status?.state !== 'accepted'
     ? value.decision : null;
