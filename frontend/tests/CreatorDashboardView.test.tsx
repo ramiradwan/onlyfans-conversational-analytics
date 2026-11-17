@@ -1,5 +1,5 @@
 import { ThemeProvider } from '@mui/material/styles';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,6 +9,7 @@ import type {
   BrowserSurfacePayload,
   ConversationSummary,
   HistoricalCoverage,
+  HistorySettings,
   ProjectionState,
   StateSnapshotPayload,
 } from '../src/protocol';
@@ -19,6 +20,7 @@ import { theme } from '../src/theme';
 import CreatorDashboardView from '../src/views/CreatorDashboardView';
 import { desktopFixture } from './desktopOnboardingFixture';
 import type { BrowserControlApi } from '../src/services/browserControlApi';
+import type { HistorySettingsApi } from '../src/services/historySettingsApi';
 
 const ACCOUNT_ID = 'creator-account';
 const AS_OF = '2026-07-19T12:00:00Z';
@@ -160,10 +162,10 @@ function readinessSource(ready: boolean | null) {
 }
 
 function mountDashboard(store: ReturnType<typeof createBridgeTransportStore>, source: ReturnType<typeof desktopFixture>,
-  browserApi?: BrowserControlApi) {
+  browserApi?: BrowserControlApi, historyApi?: HistorySettingsApi) {
   return render(<ThemeProvider theme={theme} defaultMode="light"><MemoryRouter>
     <CreatorDashboardView activationApi={{ redeem: vi.fn(async () => ({ state: 'checking' as const })) }}
-      store={store} onboardingApi={source.api} browserApi={browserApi} />
+      store={store} onboardingApi={source.api} browserApi={browserApi} historyApi={historyApi} historyStore={store} />
   </MemoryRouter></ThemeProvider>);
 }
 
@@ -203,7 +205,7 @@ describe('CreatorDashboardView', () => {
     expect(screen.getByRole('heading', { name: 'No new activity yet' })).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Overview' })).toBeNull();
     expect(screen.getByText('Not checked', { exact: true })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Review message history' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
     await act(async () => { store.applySnapshot(snapshot({ viewRevision: 2 })); });
     expect(screen.queryByRole('heading', { name: 'No new activity yet' })).toBeNull();
     expectStat('Messages', '19');
@@ -221,7 +223,7 @@ describe('CreatorDashboardView', () => {
       history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
     await renderDashboard(store);
     expect(screen.getByRole('heading', { name: 'Message collection is paused' })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Review message history' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
     expect(screen.queryByText("You're all set")).toBeNull();
   });
   it('opens the current browser review directly and never accepts collection from the dashboard', async () => {
@@ -234,7 +236,7 @@ describe('CreatorDashboardView', () => {
     const api: BrowserControlApi = { setCapture: vi.fn(async () => 'delivered'), open: vi.fn(async () => 'delivered') };
     mountDashboard(store, source, api);
     expect(screen.getByRole('heading', { name: 'Allow message collection' })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Review message history' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
     expect(source.api.begin).not.toHaveBeenCalled();
     const review = screen.getByRole('button', { name: 'Review in Chrome' });
     await act(async () => { fireEvent.click(review); fireEvent.click(review); });
@@ -247,7 +249,8 @@ describe('CreatorDashboardView', () => {
     expect(screen.getByText('Complete the review in Chrome.')).toBeTruthy();
     await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, legal_review_required: false } }));
     expect(screen.queryByRole('heading', { name: 'Allow message collection' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Review message history' })).toBeTruthy();
+    // Complete history is not offered again, even with no visible messages.
+    expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
     expect(source.api.begin).toHaveBeenCalledOnce();
   });
 
@@ -284,6 +287,61 @@ describe('CreatorDashboardView', () => {
     await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, capture: 'active' } }));
     expect(screen.queryByRole('heading', { name: 'Message collection is paused' })).toBeNull();
     expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
+  function historyReviewFixture(creator = ACCOUNT_ID) {
+    const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]),
+      coverage: { ...COMPLETE_COVERAGE, status: 'partial', phase: 'not_started', complete_as_of: null } }), conversations: [] });
+    const browser: BrowserSurfacePayload = { capture: 'active', site_access: 'granted',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF };
+    store.setAgent({ ...store.getState().agent!, browser, required_history_settings_revision: 1, applied_history_settings_revision: 1 });
+    const settings: HistorySettings = { creator_account_id: creator, settings_revision: 1,
+      consent_policy_version: 'history-consent-v1', consent_revision: null, authorized_platform_creator_id: null,
+      desired_state: 'not_started', effective_state: 'not_applied', effective_config_revision: null,
+      recent_window_days: 30, page_size: 50, pages_per_wake: 2, request_interval_ms: 1000, retry_limit: 3, updated_at: AS_OF };
+    const running: HistorySettings = { ...settings, settings_revision: 2, consent_revision: 'consent-1',
+      desired_state: 'running', effective_state: 'running' };
+    const api = { get: vi.fn(async () => settings), update: vi.fn(async () => running), revoke: vi.fn() };
+    const browserApi = { open: vi.fn(async () => 'delivered' as const), setCapture: vi.fn() };
+    const source = readinessSource(true);
+    mountDashboard(store, source, browserApi, api);
+    return { store, browser, api, browserApi, source };
+  }
+
+  it('reviews history in the dashboard, then requests Chrome permission only after explicit consent', async () => {
+    const { store, browser, api, browserApi } = historyReviewFixture();
+    expect(api.get).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Review message history' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add older conversations' });
+    const allow = await within(dialog).findByRole('button', { name: 'Allow message history' });
+    expect(allow.hasAttribute('disabled')).toBe(true);
+    expect(api.update).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+    await act(async () => { fireEvent.click(allow); fireEvent.click(allow); });
+    await waitFor(() => expect(api.update).toHaveBeenCalledExactlyOnceWith(1, expect.objectContaining({
+      desired_state: 'running', accept_consent: true, consent_policy_version: 'history-consent-v1',
+      recent_window_days: 30, page_size: 50,
+    }), expect.any(AbortSignal)));
+    expect(browserApi.open).not.toHaveBeenCalled();
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Allow Chrome access' }));
+    await waitFor(() => expect(browserApi.open).toHaveBeenCalledExactlyOnceWith('history', expect.any(AbortSignal)));
+    await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, history_permission: 'granted' } }));
+    expect(within(dialog).queryByRole('button', { name: 'Allow Chrome access' })).toBeNull();
+    expect(api.update).toHaveBeenCalledOnce();
+  });
+
+  it('never submits history consent when the review is dismissed or belongs to a different creator', async () => {
+    const { api, browserApi } = historyReviewFixture('other-creator');
+    fireEvent.click(screen.getByRole('button', { name: 'Review message history' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add older conversations' });
+    await within(dialog).findByText('Message history settings are unavailable for this account.');
+    expect(within(dialog).queryByRole('checkbox')).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(api.update).not.toHaveBeenCalled();
+    expect(browserApi.open).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add older conversations' })).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
   });
 
   it('shows the saved chat count after history completes', async () => {

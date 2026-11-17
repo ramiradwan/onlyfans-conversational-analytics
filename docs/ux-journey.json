@@ -19,7 +19,7 @@
         "frontend/src/components/OnboardingPasskeyTask.tsx",
         "frontend/src/components/SetupPrompt.tsx",
         "frontend/src/components/CompanionPairingControls.tsx",
-        "frontend/src/views/SettingsView.tsx",
+        "frontend/src/components/MessageHistoryControls.tsx",
         "frontend/src/components/dashboard/DashboardOverview.tsx",
         "frontend/src/components/CommercialActivationControls.tsx",
         "frontend/src/components/CreatorVaultControls.tsx",
@@ -1624,7 +1624,7 @@
       "id": "desktop.message_history",
       "surface": "desktop.app",
       "anchor": {
-        "file": "frontend/src/views/SettingsView.tsx",
+        "file": "frontend/src/components/MessageHistoryControls.tsx",
         "text": "data-journey-state=\"desktop.message_history\""
       },
       "transitions": [
@@ -1674,6 +1674,16 @@
           "kind": "unit",
           "file": "frontend/tests/SettingsView.test.tsx",
           "name": "single-flights duplicate clicks while the browser request is unresolved"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "reviews history in the dashboard, then requests Chrome permission only after explicit consent"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "never submits history consent when the review is dismissed or belongs to a different creator"
         }
       ]
     },
@@ -1729,6 +1739,11 @@
         {
           "to": "desktop.message_collection_review",
           "by": "system"
+        },
+        {
+          "to": "desktop.message_history",
+          "by": "user",
+          "action": "review-message-history"
         }
       ],
       "evidence": [

@@ -1,15 +1,16 @@
-import { Box, Button, Chip, Stack, Typography } from '@mui/material';
-import { Link as RouterLink } from 'react-router-dom';
+import { Box, Chip, Stack, Typography } from '@mui/material';
+import type { ReactNode } from 'react';
 
 import { Panel } from './ui';
 import type { BrowserSurfacePayload } from '../protocol';
 import { extensionLabel, type ExtensionConnection } from '../utils/statusCopy';
 
 /** An empty received snapshot has no distribution or activity chart to draw. */
-export function OnboardingEmptyActivity({ browser, connection, desktopConnected }: {
+export function OnboardingEmptyActivity({ browser, connection, desktopConnected, historyReview }: {
   browser: BrowserSurfacePayload | null;
   connection: ExtensionConnection;
   desktopConnected: boolean;
+  historyReview?: ReactNode;
 }) {
   const browserLabel = connection !== 'connected' ? extensionLabel(connection)
     : browser === null ? 'Not checked'
@@ -31,15 +32,7 @@ export function OnboardingEmptyActivity({ browser, connection, desktopConnected 
             <Typography variant="body2">Browser extension</Typography><Chip size="small" variant="outlined" label={browserLabel} />
           </Stack>
         </Panel>
-        {connection === 'connected' && desktopConnected && browser?.capture === 'active'
-          && browser.site_access === 'granted' && !browser.legal_review_required && <Panel component="section" emphasis="quiet" aria-labelledby="empty-history-title">
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-            <Typography component="h2" id="empty-history-title" variant="h6">Add older conversations</Typography>
-            <Chip size="small" variant="outlined" label="Optional" />
-          </Stack>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>Choose which conversations to add in Settings.</Typography>
-          <Button component={RouterLink} to="/settings#message-history" variant="outlined" sx={{ alignSelf: 'flex-start' }}>Review message history</Button>
-        </Panel>}
+        {historyReview}
       </Box>
     </Stack>
   );

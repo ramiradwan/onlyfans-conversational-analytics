@@ -1,18 +1,24 @@
 import {
   Box,
   Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Popover,
   Stack,
   Typography,
 } from '@mui/material';
-import { useId, useState, useSyncExternalStore } from 'react';
+import { useEffect, useId, useState, useSyncExternalStore } from 'react';
 
 import { BrowserExtensionControls } from '../components/BrowserExtensionControls';
 import { CommercialActivationControls } from '../components/CommercialActivationControls';
 import { DashboardOverview, type OverviewProgress } from '../components/dashboard/DashboardOverview';
 import { RecentConversations } from '../components/dashboard/RecentConversations';
+import { MessageHistoryControls } from '../components/MessageHistoryControls';
 import { OnboardingEmptyActivity } from '../components/OnboardingEmptyActivity';
 import { SetupPrompt } from '../components/SetupPrompt';
+import { Panel } from '../components/ui';
 import { LoadingFrame, ReservedRegion, StatusLine } from '../components/ui/ReservedRegion';
 import { usePermissions } from '../hooks/usePermissions';
 import type { AnalyticsMetric, HistoricalCoverage } from '../protocol';
@@ -22,9 +28,11 @@ import {
   type CapabilityLicenseApi,
 } from '../services/capabilityLicenseApi';
 import { desktopOnboardingApi, selectAnalysisReadiness, type DesktopOnboardingApi } from '../services/desktopOnboarding';
+import type { HistorySettingsApi } from '../services/historySettingsApi';
 import {
   bridgeTransportStore,
   type BridgeTransportState,
+  type BridgeTransportStore,
 } from '../store/transportStore';
 import { componentTokens, effectTokens } from '../theme/generated/tokens';
 import {
@@ -101,6 +109,8 @@ interface CreatorDashboardViewProps {
   activationApi?: CapabilityLicenseApi;
   onboardingApi?: DesktopOnboardingApi;
   browserApi?: BrowserControlApi;
+  historyApi?: HistorySettingsApi;
+  historyStore?: BridgeTransportStore;
 }
 
 function getIssue(
@@ -324,7 +334,11 @@ export default function CreatorDashboardView({
   activationApi = capabilityLicenseApi,
   onboardingApi = desktopOnboardingApi,
   browserApi = browserControlApi,
+  historyApi,
+  historyStore = bridgeTransportStore,
 }: CreatorDashboardViewProps) {
+  const [historyReviewScope, setHistoryReviewScope] = useState<string | null>(null);
+  const [historyDismissedScope, setHistoryDismissedScope] = useState<string | null>(null);
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
   const { canViewInbox, canManageHistorySync } = usePermissions();
   const desktop = useSyncExternalStore(onboardingApi.subscribe, onboardingApi.getState, onboardingApi.getState);
@@ -365,6 +379,36 @@ export default function CreatorDashboardView({
   const showSetup = !collectionReview && hasSnapshot && fullAnalyticsReady !== undefined
     && (connection !== 'connected' || fullAnalyticsReady !== true);
 
+  const historyScope = fullAnalyticsReady === true && analysis.availability === 'current'
+    && canManageHistorySync && state.creatorAccountId && browser?.capture === 'active'
+    && browser.site_access === 'granted' && !browser.legal_review_required
+    && desktop.snapshot?.journey_id && desktop.snapshot.generation
+    ? JSON.stringify([state.creatorAccountId, desktop.snapshot.journey_id, desktop.snapshot.generation]) : null;
+  useEffect(() => {
+    if (historyReviewScope !== historyScope) setHistoryReviewScope(null);
+  }, [historyScope, historyReviewScope]);
+  const historyEligible = historyScope !== null && state.conversations.length === 0
+    && !metrics.some(metric => typeof metric?.value === 'number' && metric.value > 0)
+    && setupIncomplete(state.coverage);
+  const historyPrompt = historyEligible && historyDismissedScope !== historyScope
+    ? <Panel component="section" emphasis="quiet" aria-labelledby="empty-history-title">
+      <Typography component="h2" id="empty-history-title" variant="h6">Add older conversations</Typography>
+      <Typography variant="body2" sx={{ color: 'text.secondary' }}>Use older messages to see results sooner.</Typography>
+      <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+        <Button variant="outlined" onClick={() => setHistoryReviewScope(historyScope)}>Review message history</Button>
+        <Button onClick={() => setHistoryDismissedScope(historyScope)}>Not now</Button>
+      </Stack>
+    </Panel> : null;
+  const historyDialog = historyScope !== null && historyReviewScope === historyScope && state.creatorAccountId
+    ? <Dialog open onClose={() => setHistoryReviewScope(null)} aria-labelledby="history-review-title" fullWidth maxWidth="sm">
+      <DialogTitle id="history-review-title">Add older conversations</DialogTitle>
+      <DialogContent>
+        <MessageHistoryControls key={historyScope} reviewCreatorId={state.creatorAccountId} store={historyStore}
+          api={historyApi} browserApi={browserApi} desktopApi={onboardingApi} />
+      </DialogContent>
+      <DialogActions><Button onClick={() => setHistoryReviewScope(null)}>Close</Button></DialogActions>
+    </Dialog> : null;
+
   const evidence = summarizeMetricEvidence(metrics);
   const progress = hasSnapshot ? historyProgress(state.coverage) : null;
   const emptyOnboarding = hasSnapshot
@@ -375,7 +419,8 @@ export default function CreatorDashboardView({
       <Stack spacing={3} sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}>
         <Typography component="h1" variant="h4">Dashboard</Typography>
         {collectionReview ?? <OnboardingEmptyActivity browser={browser}
-          connection={connection} desktopConnected={state.connection === 'connected'} />}
+          connection={connection} desktopConnected={state.connection === 'connected'} historyReview={historyPrompt} />}
+        {historyDialog}
       </Stack>
     </Box>
   );
@@ -392,6 +437,8 @@ export default function CreatorDashboardView({
           </Box>
         </Box>
         {collectionReview}
+        {historyPrompt}
+        {historyDialog}
         {/* The overview stacks its counts until md, so the stacked reservation holds until then. */}
         <ReservedRegion id="dashboard-overview" size={{ xs: 450, md: 300 }}>
           <Box data-region-content><DashboardOverview isLoading={!hasSnapshot} conversations={format(analytics?.total_conversations)} messages={format(analytics?.total_messages)} progress={progress} received={format(analytics?.inbound_messages)} sent={format(analytics?.outbound_messages)} split={directionSplit(analytics?.inbound_messages, analytics?.outbound_messages, readiness)} /></Box>
