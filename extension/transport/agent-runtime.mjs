@@ -117,6 +117,9 @@ export function createAgentRuntime(options = {}) {
           signer: lazySigner,
           configuration: () => configuration.activeDocument,
           onStateChanged: options.onHistoryStateChanged,
+          onPageCommitted: () => {
+            if (!signal.aborted) return transport?.flushOutbox?.();
+          },
           session: () => transport?.session == null ? null : { ...transport.session, applied_config_revision: identity.appliedConfigRevision },
         });
       }

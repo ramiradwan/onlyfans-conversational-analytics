@@ -394,6 +394,30 @@ def test_generation_start_requires_current_applied_consent_and_config() -> None:
     assert repositories.history.coverage(ACCOUNT_ID)["status"] == "unknown"
 
 
+def test_conversation_coverage_requires_inventory_to_be_frozen() -> None:
+    repositories = create_canonical_repositories("memory")
+    history = repositories.history
+    key, _ = commit_base_snapshot(history)
+    authorize_history(history)
+    generation = str(uuid4())
+    def observed(sequence, item):
+        return history.commit_delta(key, delta(sequence, {
+            "type": "coverage.observed", "evidence": {"generation_id": generation, **item},
+        }))
+    observed(1, {"type": "generation.started", "as_of": "2026-07-19T10:00:00Z",
+                 "authorization_revision": "consent-1"})
+    observed(2, {"type": "inventory.member", "conversation_id": "chat-1"})
+    early = {"type": "conversation.head_reconciled", "conversation_id": "chat-1",
+             "reconciled_through": "2026-07-19T10:01:00Z"}
+    with pytest.raises(InvariantViolation, match="conversation evidence requires frozen inventory"):
+        observed(3, early)
+    assert history.checkpoint(key) == 2
+    assert history.coverage(ACCOUNT_ID)["phase"] == "discovering"
+    observed(3, {"type": "inventory.ended", "observed_at": "2026-07-19T10:01:00Z"})
+    assert observed(4, early).status == "accepted"
+    assert history.coverage(ACCOUNT_ID)["phase"] == "backfilling"
+
+
 def test_new_nonmember_chat_invalidates_complete_coverage_but_retains_complete_as_of() -> None:
     repositories = create_canonical_repositories("memory")
     history = repositories.history

@@ -16,7 +16,7 @@ const twins = [
     Coordinator: ReadOnlyHistoryAcquisitionCoordinator },
 ];
 
-async function rig({ Outbox, Transport, Coordinator }) {
+async function rig({ Outbox, Transport, Coordinator }, { immediate = false, rejectFirstDrain = false, snapshotFence = false, enabled = true } = {}) {
   const outbox = new Outbox({ storage: new InMemoryIngestionStorage(), creatorAccountId: TRAVERSAL_ACCOUNT });
   const state = await outbox.initialize();
   const sent = [];
@@ -33,9 +33,20 @@ async function rig({ Outbox, Transport, Coordinator }) {
   transport.socket = { readyState: 1, send: data => sent.push(JSON.parse(data)) };
   transport.session = { creator_account_id: TRAVERSAL_ACCOUNT, connection_id: crypto.randomUUID(), fencing_token: 'synthetic' };
   await transport.flushOutbox();
+  transport.syncRequired = snapshotFence;
   transport.startHeartbeat(25_000);
+  let notices = 0;
+  const drains = [];
   const history = new Coordinator({ outbox,
-    configuration: () => traversalConfiguration({ pages_per_wake: 20 }),
+    ...(immediate ? { onPageCommitted: () => {
+      notices++;
+      const work = rejectFirstDrain && notices === 1
+        ? Promise.reject(new Error('Synthetic delivery unavailable'))
+        : transport.flushOutbox();
+      drains.push(work.catch(() => undefined));
+      return work;
+    } } : {}),
+    configuration: () => traversalConfiguration({ pages_per_wake: 20, enabled }),
     session: () => ({ ...transport.session, applied_config_revision: identity.appliedConfigRevision }),
     signer: { async read({ operation }) {
       if (operation === 'identity') return { success: true, operation, data: { id: TRAVERSAL_CREATOR } };
@@ -46,7 +57,9 @@ async function rig({ Outbox, Transport, Coordinator }) {
         boundary: operation === 'conversations' ? 'inventory_end' : 'history_start' } };
     } }, delay: async () => {} });
   await history.wake();
-  return { outbox, transport, sent, errors, async tick() {
+  await new Promise(resolve => setImmediate(resolve));
+  await Promise.all(drains);
+  return { outbox, transport, sent, errors, notices, async tick() {
     clock += 25_000;
     heartbeat();
     await new Promise(resolve => setImmediate(resolve));
@@ -74,6 +87,48 @@ for (const twin of twins) {
     assert.equal((await r.outbox.entries()).length, 0);
     await r.tick();
     assert.equal(r.sent.filter(message => message.type === 'ingest.delta').length, entries.length);
+    assert.equal(r.errors.length, 0);
+  });
+
+  test(`${twin.name} committed history requests delivery before the first heartbeat`, async () => {
+    const r = await rig(twin, { immediate: true });
+    const expected = (await r.outbox.entries()).map(item => item.source_seq);
+    assert.ok(r.notices > 0);
+    assert.equal(r.sent.filter(message => message.type === 'agent.heartbeat').length, 0);
+    const sent = () => r.sent.filter(message => message.type === 'ingest.delta');
+    assert.equal(sent().length, 4, 'the existing in-flight limit still applies');
+    for (let batch = 0; batch < 3 && (await r.outbox.entries()).length; batch++) {
+      await r.transport.dispatch({ type: 'ingest.ack', payload: {
+        committed_source_seq: sent().at(-1).payload.source_seq, snapshot_id: null, snapshot_progress: null,
+      } });
+    }
+    assert.deepEqual(sent().map(message => message.payload.source_seq), expected);
+    assert.ok(sent().some(message => message.payload.change.type === 'message.upsert'));
+    assert.equal((await r.outbox.entries()).length, 0);
+    assert.equal(r.sent.filter(message => message.type === 'agent.heartbeat').length, 0);
+    assert.equal(r.errors.length, 0);
+  });
+
+  test(`${twin.name} committed-page delivery cannot bypass snapshot repair or start disabled history`, async () => {
+    const fenced = await rig(twin, { immediate: true, snapshotFence: true });
+    assert.ok(fenced.notices > 0);
+    assert.equal(fenced.sent.filter(message => message.type === 'ingest.delta').length, 0);
+    assert.ok((await fenced.outbox.entries()).length > 0);
+    fenced.transport.syncRequired = false;
+    await fenced.tick();
+    assert.equal(fenced.sent.filter(message => message.type === 'ingest.delta').length, 4);
+    const disabled = await rig(twin, { immediate: true, enabled: false });
+    assert.equal(disabled.notices, 0);
+    assert.equal((await disabled.outbox.entries()).length, 0);
+  });
+
+  test(`${twin.name} failed delivery hint does not roll back or retry a committed history page`, async () => {
+    const r = await rig(twin, { immediate: true, rejectFirstDrain: true });
+    const entries = await r.outbox.entries();
+    assert.equal(entries.filter(item => item.change.evidence?.type === 'generation.started').length, 1);
+    assert.equal(entries.filter(item => item.change.evidence?.type === 'generation.closed').length, 1);
+    assert.equal(entries.filter(item => item.change.type === 'message.upsert').length, 1);
+    assert.ok(r.notices > 1);
     assert.equal(r.errors.length, 0);
   });
 
