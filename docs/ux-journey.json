@@ -2390,17 +2390,17 @@
       },
       "transitions": [
         {
-          "to": "browser.loading",
-          "by": "user",
-          "action": "task-retry"
-        },
-        {
           "to": "browser.task_completed",
           "by": "system"
         },
         {
           "to": "browser.status_reconnecting",
           "by": "system"
+        },
+        {
+          "to": "desktop.setup_loading",
+          "by": "user",
+          "action": "desktop-return"
         }
       ],
       "evidence": [
@@ -2408,6 +2408,11 @@
           "kind": "unit",
           "file": "frontend/tests/browser-tasks.test.js",
           "name": "renders task status and recovery without a second setup wizard"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "returns blocked browser setup to its desktop owner without restarting the helper"
         }
       ]
     },
@@ -2490,13 +2495,13 @@
       },
       "transitions": [
         {
-          "to": "browser.loading",
-          "by": "user",
-          "action": "task-retry"
-        },
-        {
           "to": "browser.task_completed",
           "by": "system"
+        },
+        {
+          "to": "desktop.setup_loading",
+          "by": "user",
+          "action": "desktop-return"
         }
       ],
       "evidence": [
@@ -2504,6 +2509,11 @@
           "kind": "unit",
           "file": "frontend/tests/browser-tasks.test.js",
           "name": "renders task status and recovery without a second setup wizard"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "returns blocked browser setup to its desktop owner without restarting the helper"
         }
       ]
     },
@@ -2631,6 +2641,11 @@
           "kind": "unit",
           "file": "frontend/tests/browser-task-push.test.js",
           "name": "reconciles a failed pushed status read without waiting for the healthy-stream watchdog"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "bounds initial connection recovery and never attaches after its budget is exhausted"
         }
       ]
     },
@@ -2819,11 +2834,6 @@
       },
       "transitions": [
         {
-          "to": "browser.loading",
-          "by": "user",
-          "action": "task-retry"
-        },
-        {
           "to": "desktop.setup_browser_access",
           "by": "user",
           "action": "desktop-return"
@@ -2838,6 +2848,11 @@
           "kind": "unit",
           "file": "frontend/tests/browser-tasks.test.js",
           "name": "renders task status and recovery without a second setup wizard"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "returns blocked browser setup to its desktop owner without restarting the helper"
         }
       ]
     },

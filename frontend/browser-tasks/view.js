@@ -11,9 +11,9 @@ const journeyStates = { loading: 'loading', unavailable: 'unavailable', profile_
   ready: 'ready', paused: 'paused', reported: 'reported' };
 const status = {
   loading: 'Reading the current task…',
-  unavailable: 'The extension is unavailable in this Chrome profile. Enable or install it, then retry.',
-  profile_mismatch: 'This task belongs to another Chrome profile.',
-  account_mismatch: 'Chrome is signed in to a different creator account. Open the intended account, then retry.',
+  unavailable: 'Enable or install the extension in this Chrome profile, then return to the desktop app.',
+  profile_mismatch: 'Switch to the Chrome profile you used for setup, then return to the desktop app.',
+  account_mismatch: 'Switch to the creator account you want to connect, then return to the desktop app.',
   auth_idle: 'Continue signing in to your account.',
   auth_opening: 'Waiting for sign-in to finish.',
   auth_checking: 'Checking the sign-in outcome…',
@@ -28,7 +28,7 @@ const status = {
   task_expired: 'This browser task expired.',
   task_changed: 'This browser task is no longer current.',
   task_completed: 'Browser task complete.',
-  service_unavailable: 'Browser task status could not be read. Retry.',
+  service_unavailable: 'Dipsy can’t confirm this step. Continue setup in the desktop app.',
   status_reconnecting: 'Waiting for the desktop app. Checking again automatically.',
   'needs-consent': 'Review browser access in the extension.',
   'needs-permission': 'Allow OnlyFans site access in the extension.',
@@ -42,20 +42,20 @@ export function renderBrowserTask(document, value) {
   const pairing = payload?.task.purpose === 'browser.pairing-confirmation';
   const state = Object.hasOwn(status, value.state) ? value.state : 'unavailable';
   document.querySelector('main').dataset.journeyState = 'browser.' + journeyStates[state];
-  setStatus(get('task-status'), status[state]);
+  setStatus(get('task-status'), !payload && state === 'service_unavailable'
+    ? 'Dipsy can’t connect right now. Open the desktop app to continue setup.' : status[state]);
   get('pairing-replace').hidden = !pairing || state !== 'pairing_saved';
   get('task-title').textContent = pairing ? 'Connect browser' : authentication ? 'Sign in' : 'Browser access';
   get('extension-open').hidden = authentication || pairing || !['needs-consent', 'needs-permission', 'needs-account'].includes(state);
   get('authentication-open').hidden = !authentication || !['auth_idle', 'auth_unconfirmed'].includes(state);
   get('extension-open').textContent = state === 'needs-account' ? 'Open creator account' : 'Open extension';
-  get('task-retry').hidden = !['unavailable', 'service_unavailable', 'account_mismatch'].includes(state);
   get('extension-install').hidden = state !== 'unavailable' || !payload;
   if (payload) {
     get('extension-install').href = 'https://chromewebstore.google.com/detail/' + payload.extension_id;
     get('desktop-return').href = 'ofca://onboarding/?journey=' + payload.task.journey_id;
   }
   get('desktop-return').hidden = !payload || !(['reported', 'task_completed', 'task_expired', 'task_changed', 'profile_mismatch',
-    'account_mismatch', 'auth_checking', 'auth_closed', 'auth_unconfirmed', 'auth_access_required', 'pairing_checking',
-    'pairing_unconfirmed', 'pairing_access_required'].includes(state) || (authentication || pairing) && state === 'unavailable');
+    'account_mismatch', 'unavailable', 'service_unavailable', 'auth_checking', 'auth_closed', 'auth_unconfirmed', 'auth_access_required', 'pairing_checking',
+    'pairing_unconfirmed', 'pairing_access_required'].includes(state));
   get('desktop-return').textContent = ['task_expired', 'task_changed', 'profile_mismatch'].includes(state) ? 'Continue setup' : 'Continue in desktop';
 }

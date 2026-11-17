@@ -13,6 +13,17 @@ const STREAM_RETRY_CAP_MS = 5000;
 // An extension that is reloading may miss a helper's request to close. It is asked again, a few times.
 export const CLOSE_RETRY_MS = 1000;
 const CLOSE_ATTEMPTS = 3;
+const INITIAL_READ_TIMEOUT_MS = 3000;
+const INITIAL_READ_DELAYS = [1000, 2000, 4000];
+
+function waitForInitialRead(delay, signal) {
+  return new Promise(resolve => {
+    const finish = () => { clearTimeout(timer); signal.removeEventListener('abort', finish); resolve(); };
+    const timer = setTimeout(finish, delay);
+    if (signal.aborted) finish();
+    else signal.addEventListener('abort', finish, { once: true });
+  });
+}
 // Reasons a helper reports to Brain before it asks the extension to close it.
 const ENDINGS = ['profile_mismatch', 'account_mismatch', 'task_changed', 'task_expired', 'unavailable', 'auth_access_required'];
 // Why the extension cannot open a sign-in, as the desktop shows it.
@@ -26,6 +37,7 @@ export class BrowserTaskClient {
     this.waiting = null; this.preparedLink = null; this.stages = [];
     this.link = null; this.expiry = null; this.session = null; this.payload = null; this.serial = Promise.resolve(); this.run = 0;
     this.pollTimer = null; this.stream = null; this.streamTimer = null; this.streaming = false;
+    this.initialReadController = null;
     this.pollBase = this.pollDelay = 2000;
     this.nativeLaunch = nativeLaunch === true;
     this.lastLink = null; this.ending = null; this.extensionSeen = false; this.reattached = false;
@@ -74,19 +86,62 @@ export class BrowserTaskClient {
     const marks = this.stages.splice(0);
     if (marks.length && this.session) void this.json('timing', { marks }).catch(() => {});
   }
-  async json(path, body) {
+  async json(path, body, signal) {
     const response = await this.request('/api/v1/browser-tasks/' + path, { credentials: 'same-origin', redirect: 'error', cache: 'no-store',
       ...(path === 'timing' ? { keepalive: true } : {}),
+      ...(signal ? { signal } : {}),
       headers: { 'X-Desktop-Generation': this.generation,
         ...(body === undefined ? {} : { 'Content-Type': 'application/json', 'X-Desktop-CSRF': this.session.csrf_token }) },
       ...(body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) }) });
-    if (!response.ok) throw new Error([401, 409].includes(response.status) ? 'task_changed' : 'service_unavailable');
-    return parseOnboardingJson(await response.text());
+    if (!response.ok) {
+      const error = new Error([401, 409].includes(response.status) ? 'task_changed' : 'service_unavailable');
+      error.status = response.status;
+      throw error;
+    }
+    const text = await response.text();
+    try { return parseOnboardingJson(text); }
+    catch (error) {
+      // Malformed bootstrap responses are not transport failures.
+      if (signal) throw Error('invalid_response');
+      throw error;
+    }
+  }
+  async initialRead(path, signal) {
+    // Only bootstrap GETs can be retried here. No extension port or ceremony
+    // has started yet; the validated session and payload still fence attachment.
+    for (let attempt = 0; ; attempt++) {
+      if (signal.aborted) throw Error('service_unavailable');
+      const controller = new AbortController();
+      let timeout, cancel;
+      try {
+        const cancellation = new Promise((_, reject) => {
+          cancel = () => {
+            controller.abort();
+            reject(Error('service_unavailable'));
+          };
+          signal.addEventListener('abort', cancel, { once: true });
+          timeout = setTimeout(() => {
+            reject(new TypeError('read timeout'));
+            controller.abort();
+          }, INITIAL_READ_TIMEOUT_MS);
+        });
+        return await Promise.race([this.json(path, undefined, controller.signal), cancellation]);
+      } catch (error) {
+        if (signal.aborted || !(error instanceof TypeError || error?.status >= 500)
+          || attempt >= INITIAL_READ_DELAYS.length) throw error;
+        this.receive({ state: 'status_reconnecting' });
+      } finally {
+        clearTimeout(timeout);
+        signal.removeEventListener('abort', cancel);
+      }
+      await waitForInitialRead(INITIAL_READ_DELAYS[attempt], signal);
+    }
   }
   async start() {
     const automatic = this.nativeLaunch;
     this.nativeLaunch = false;
     this.stop(); const run = this.run;
+    const controller = this.initialReadController = new AbortController();
     this.automatic = automatic;
     this.statusUnavailable = false;
     this.statusReadSequence = 0;
@@ -107,11 +162,26 @@ export class BrowserTaskClient {
     try {
       // The payload read needs no session value, so both reads run together. The payload is used only after the session checks.
       const took = {};
+      const initialAbort = new AbortController();
+      const abortInitial = () => initialAbort.abort();
+      controller.signal.addEventListener('abort', abortInitial, { once: true });
       const timed = path => {
         const begun = globalThis.performance?.now?.();
-        return this.json(path).then(value => { took[path] = globalThis.performance?.now?.() - begun; return value; });
+        return this.initialRead(path, initialAbort.signal).then(value => {
+          took[path] = globalThis.performance?.now?.() - begun;
+          return value;
+        }, error => {
+          initialAbort.abort();
+          throw error;
+        });
       };
-      const [session, first] = await Promise.all([timed('session'), timed('payload')]);
+      let session, first;
+      try {
+        [session, first] = await Promise.all([timed('session'), timed('payload')]);
+      } finally {
+        controller.signal.removeEventListener('abort', abortInitial);
+        initialAbort.abort();
+      }
       if (run !== this.run) return;
       if (session.role !== 'browser_task' || session.generation !== this.generation
         || !/^[A-Za-z0-9_-]{43}$/u.test(session.csrf_token)) throw new Error('task_changed');
@@ -125,6 +195,7 @@ export class BrowserTaskClient {
       if (!isPayloadProjection(payload) || payload.task.admission_generation !== this.generation || payload.task.task_id !== session.task_id
         || payload.task.journey_id !== session.journey_id) throw new Error('task_changed');
       this.payload = payload;
+      this.receive({ state: 'loading', payload });
       // A sign-in popup closes when this read sees its task end.
       this.fallbackPoll = payload.task.purpose === 'browser.authentication' ? AUTHENTICATION_POLL_MS : 2000;
       this.pollBase = this.pollDelay = this.streaming ? STREAM_POLL_MS : this.fallbackPoll;
@@ -292,6 +363,8 @@ export class BrowserTaskClient {
       if (!this.stream) this.listen(run);
     } catch (error) {
       if (run === this.run) { this.stop(); this.receive({ state: ['task_changed', 'task_expired'].includes(error.message) ? error.message : 'service_unavailable', payload: this.payload }); }
+    } finally {
+      if (this.initialReadController === controller) this.initialReadController = null;
     }
   }
   /** Waits while Brain prepares the ceremony of an already admitted sign-in task.
@@ -511,6 +584,7 @@ export class BrowserTaskClient {
     this.preparedLink?.close(); this.preparedLink = null;
     this.nativeLaunch = false; this.automatic = false; this.run++; this.link?.close(); this.link = null;
     clearTimeout(this.expiry); clearTimeout(this.pollTimer); clearTimeout(this.streamTimer);
+    this.initialReadController?.abort(); this.initialReadController = null;
     this.stream?.abort(); this.stream = null; this.streaming = false;
     this.wakePreparing = null; this.preparingChanged = false;
   }

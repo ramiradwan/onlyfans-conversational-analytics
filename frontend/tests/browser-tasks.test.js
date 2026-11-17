@@ -212,6 +212,113 @@ describe('scoped browser helper', () => {
       }
     }
   });
+  it('returns blocked browser setup to its desktop owner without restarting the helper', () => {
+    document.documentElement.innerHTML = readFileSync('browser-tasks/index.html', 'utf8');
+    for (const state of ['unavailable', 'account_mismatch', 'profile_mismatch', 'service_unavailable']) {
+      const value = payload();
+      renderBrowserTask(document, { state, payload: value });
+      expect(document.getElementById('task-retry')).toBeNull();
+      expect(document.getElementById('desktop-return').hidden).toBe(false);
+      expect(document.getElementById('desktop-return').getAttribute('href')).toBe('ofca://onboarding/?journey=' + value.task.journey_id);
+      expect(document.getElementById('authentication-open').hidden).toBe(true);
+      expect(document.getElementById('extension-open').hidden).toBe(true);
+      expect(document.getElementById('extension-install').hidden).toBe(state !== 'unavailable');
+    }
+    renderBrowserTask(document, { state: 'service_unavailable' });
+    expect(document.getElementById('desktop-return').hidden).toBe(true);
+    expect(document.getElementById('task-status').textContent).toBe('Dipsy can’t connect right now. Open the desktop app to continue setup.');
+  });
+  it.each(['session', 'payload'])('recovers an initial %s read before attaching to the browser', async stage => {
+    vi.useFakeTimers();
+    const value = authenticationPayload(), receive = vi.fn(), authenticate = vi.fn(() => true);
+    let unavailable = true, publish;
+    const request = vi.fn(async path => {
+      if (unavailable && path.endsWith('/' + stage)) return { ok: false, status: 503 };
+      return { ok: true, text: async () => JSON.stringify(path.endsWith('/session')
+        ? { role: 'browser_task', generation: id(4), task_id: id(1), journey_id: id(2), csrf_token: 'A'.repeat(43) } : value) };
+    });
+    const connect = vi.fn(({ receive: send }) => { publish = send; return { close: vi.fn(), authenticate }; });
+    const events = vi.fn(() => new Promise(() => {}));
+    const client = new BrowserTaskClient({ generation: id(4), request, receive, connect, events, nativeLaunch: true });
+    try {
+      const started = client.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(receive.mock.calls.at(-1)[0].state).toBe('status_reconnecting');
+      expect(connect).not.toHaveBeenCalled();
+      unavailable = false;
+      await vi.advanceTimersByTimeAsync(1000); await started;
+      expect(connect).toHaveBeenCalledOnce();
+      expect(events).toHaveBeenCalledOnce();
+      expect(authenticate).not.toHaveBeenCalled();
+      publish({ state: 'auth_idle' }); await client.serial;
+      expect(authenticate).toHaveBeenCalledOnce();
+      expect(request.mock.calls.filter(([path]) => path.endsWith('/' + stage)).length).toBe(stage === 'session' ? 2 : 3);
+      expect(request.mock.calls.filter(([path]) => !path.endsWith('/timing')).every(([, options]) => options.method === undefined)).toBe(true);
+    } finally { client.stop(); vi.useRealTimers(); }
+  });
+  it('bounds initial connection recovery and never attaches after its budget is exhausted', async () => {
+    vi.useFakeTimers();
+    const request = vi.fn(async () => ({ ok: false, status: 503 }));
+    const connect = vi.fn(), receive = vi.fn(), events = vi.fn();
+    const client = new BrowserTaskClient({ generation: id(4), request, connect, receive, events });
+    try {
+      const started = client.start();
+      await vi.advanceTimersByTimeAsync(7000); await started;
+      expect(request.mock.calls.filter(([path]) => path.endsWith('/session'))).toHaveLength(4);
+      expect(request.mock.calls.filter(([path]) => path.endsWith('/payload'))).toHaveLength(4);
+      expect(receive.mock.calls.at(-1)[0].state).toBe('service_unavailable');
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(request.mock.calls.filter(([path]) => path.endsWith('/session'))).toHaveLength(4);
+      expect(request.mock.calls.filter(([path]) => path.endsWith('/payload'))).toHaveLength(4);
+      expect(connect).not.toHaveBeenCalled(); expect(events).not.toHaveBeenCalled();
+    } finally { client.stop(); vi.useRealTimers(); }
+  });
+  it.each([401, 403, 409])('does not retry a refused initial session: %s', async status => {
+    vi.useFakeTimers();
+    const request = vi.fn(async () => ({ ok: false, status }));
+    const connect = vi.fn(), receive = vi.fn();
+    const client = new BrowserTaskClient({ generation: id(4), request, connect, receive });
+    try {
+      await client.start();
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(request.mock.calls.filter(([path]) => path.endsWith('/session'))).toHaveLength(1);
+      expect(request.mock.calls.filter(([path]) => path.endsWith('/payload'))).toHaveLength(1);
+      expect(connect).not.toHaveBeenCalled();
+      expect(receive.mock.calls.at(-1)[0].state).toBe(status === 403 ? 'service_unavailable' : 'task_changed');
+    } finally { client.stop(); vi.useRealTimers(); }
+  });
+  it('does not retry an invalid initial response or attach to the extension', async () => {
+    vi.useFakeTimers();
+    const request = vi.fn(async () => ({ ok: true, text: async () => '{"role":"browser_task","role":"browser_task"}' }));
+    const connect = vi.fn(), receive = vi.fn();
+    const client = new BrowserTaskClient({ generation: id(4), request, connect, receive });
+    try {
+      await client.start();
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(request.mock.calls.filter(([path]) => path.endsWith('/session'))).toHaveLength(1);
+      expect(request.mock.calls.filter(([path]) => path.endsWith('/payload'))).toHaveLength(1);
+      expect(connect).not.toHaveBeenCalled();
+      expect(receive.mock.calls.at(-1)[0].state).toBe('service_unavailable');
+    } finally { client.stop(); vi.useRealTimers(); }
+  });
+  it.each(['timeout', 'delay', 'in-flight'])('retires initial connection recovery when the page closes: %s', async phase => {
+    vi.useFakeTimers();
+    const receive = vi.fn(), connect = vi.fn();
+    const request = vi.fn(async () => phase === 'delay' ? { ok: false, status: 503 } : new Promise(() => {}));
+    const client = new BrowserTaskClient({ generation: id(4), request, receive, connect });
+    try {
+      const started = client.start();
+      await vi.advanceTimersByTimeAsync(phase === 'timeout' ? 3000 : 0);
+      const calls = request.mock.calls.length;
+      const signal = request.mock.calls[0][1].signal;
+      client.stop(); await started;
+      await vi.advanceTimersByTimeAsync(60000);
+      if (phase !== 'delay') expect(signal.aborted).toBe(true);
+      expect(request).toHaveBeenCalledTimes(calls);
+      expect(connect).not.toHaveBeenCalled();
+      expect(receive.mock.calls.at(-1)[0].state).not.toBe('service_unavailable');
+    } finally { client.stop(); vi.useRealTimers(); }
+  });
   it('treats missing or disabled discovery as unavailable', async () => {
     for (const runtime of [null, { connect() { throw Error('disabled'); } }]) {
       const receive = vi.fn();
