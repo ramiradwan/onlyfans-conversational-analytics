@@ -199,6 +199,14 @@ class RuntimeSetupOwner:
         return (value.confirmation_deadline(operation) if kind == "setup"
             else value.ceremonies.authentication.confirmation_deadline(operation["operation_id"]))
 
+    def waiting_for_sign_in(self, operation):
+        owner = self._probe_owner(operation)
+        if owner is None or operation["action"] not in {"account.connect", "activation.review"}:
+            return False
+        kind, value = owner
+        return (value.waiting_for_sign_in(operation) if kind == "setup"
+            else value.ceremonies.authentication.waiting_for_sign_in(operation["operation_id"]))
+
     async def probe(self, operation):
         kind, value = self._probe_owner(operation)
         if kind == "setup":

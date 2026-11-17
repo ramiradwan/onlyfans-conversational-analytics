@@ -89,6 +89,7 @@ async def test_clean_eof_is_distinct_from_timeout_and_preserves_the_hint(caplog)
 async def test_coordinator_records_eligibility_reopen_and_the_recovery_trigger(setup, monkeypatch, caplog):
     caplog.set_level(logging.INFO, logger=timing.__name__)
     monkeypatch.setattr("app.onboarding.coordinator.RECOVERY_INTERVAL_SECONDS", 0.03)
+    monkeypatch.setattr("app.onboarding.coordinator.CONFIRMATION_BACKOFF_CAP_SECONDS", 0.04)
     monkeypatch.setattr("app.onboarding.coordinator.WAIT_BACKOFF_CAP_SECONDS", 0.04)
     coordinator, owner, _, _ = setup
     lost = asyncio.Event()
@@ -101,7 +102,7 @@ async def test_coordinator_records_eligibility_reopen_and_the_recovery_trigger(s
         lost.set()
         await _until(lambda: len(hints.opened) >= 3)
         await _until(lambda: len(owner.calls) >= before + 2)
-        assert any("phase=retry " in message for message in messages(caplog, "worker"))
+        assert any("phase=wait-fallback " in message for message in messages(caplog, "worker"))
         observed = messages(caplog, "wait")
         for phase in ("eligible", "confirmation-live", "reopen", "released", "fallback", "backoff"):
             assert any(f"phase={phase} " in message for message in observed), phase

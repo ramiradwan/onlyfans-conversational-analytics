@@ -21,6 +21,7 @@ FACTS = ("browser_access", "installation", "account", "configuration", "enrollme
 FACT_STATES = frozenset({"unknown", "missing", "verified", "paused"})
 RECOVERY_INTERVAL_SECONDS = 15
 WAIT_BACKOFF_CAP_SECONDS = 15
+CONFIRMATION_BACKOFF_CAP_SECONDS = 60
 
 
 class CommandRefused(ValueError):
@@ -104,6 +105,7 @@ class DesktopOnboardingCoordinator:
         self._watcher: asyncio.Task | None = None
         self._closed = False
         self._retry_at: dict[str, float] = {}
+        self._retry_failures: dict[str, int] = {}
         self._accepting: set[asyncio.Task] = set()
         self._probes: dict[str, asyncio.Task] = {}
         self._probe_at: dict[str, float] = {}
@@ -117,6 +119,7 @@ class DesktopOnboardingCoordinator:
         self._prefetches: dict[str, asyncio.Task] = {}
         self._prefetch_wake: dict[str, asyncio.Event] = {}
         self._confirmation_at: dict[str, float] = {}
+        self._wait_marks: dict[tuple[str | None, str], float | None] = {}
         # Presentation-only notice of a freshly accepted command; it never changes the operation.
         self.accepted: Callable[[dict], None] | None = None
 
@@ -341,7 +344,17 @@ class DesktopOnboardingCoordinator:
         def finished(worker):
             if self._workers.get(operation_id) is worker:
                 self._workers.pop(operation_id, None)
-                self._retry_at[operation_id] = asyncio.get_running_loop().time() + RECOVERY_INTERVAL_SECONDS
+                try:
+                    result = worker.result()
+                except (Exception, asyncio.CancelledError):
+                    result = OperationResult("outcome_unknown", "operation_unconfirmed")
+                failures = self._retry_failures.get(operation_id, 0) if result is not None and result.state == "outcome_unknown" else 0
+                self._retry_at[operation_id] = asyncio.get_running_loop().time() + min(
+                    CONFIRMATION_BACKOFF_CAP_SECONDS, RECOVERY_INTERVAL_SECONDS * 2 ** min(failures, 2))
+                if result is not None and result.state == "outcome_unknown":
+                    self._retry_failures[operation_id] = min(failures + 1, 2)
+                else:
+                    self._retry_failures.pop(operation_id, None)
                 if operation_id in self._dirty:
                     dirty_hint = self._dirty.pop(operation_id)
                     if not self._closed:
@@ -384,6 +397,7 @@ class DesktopOnboardingCoordinator:
         self._settle(operation, result)
         if result.state != "outcome_unknown":
             await self._refresh_authentication_parent(operation)
+        return result
 
     def _authentication_parent(self, operation):
         if self._closed or operation["action"] not in {"auth.select", "auth.cancel", "auth.switch"}:
@@ -460,6 +474,12 @@ class DesktopOnboardingCoordinator:
                 recoverable = bool(recover is not None and recover(operation))
             except Exception:
                 recoverable = False
+            waiting = getattr(self.owner, "waiting_for_sign_in", None)
+            if recoverable and waiting is not None:
+                try:
+                    recoverable = not waiting(operation)
+                except Exception:
+                    pass
             interval = self._probe_interval(operation) if recoverable else None
             try:
                 observed = self.owner.observe(operation)
@@ -483,10 +503,12 @@ class DesktopOnboardingCoordinator:
                     break
                 pending_ids = {operation["operation_id"] for operation, *_ in facts}
                 self._retry_at = {key: value for key, value in self._retry_at.items() if key in pending_ids}
+                self._retry_failures = {key: value for key, value in self._retry_failures.items() if key in pending_ids}
                 self._probe_at = {key: value for key, value in self._probe_at.items() if key in pending_ids}
                 self._hint_frames = {key: value for key, value in self._hint_frames.items() if key in pending_ids}
                 self._closed_on = {key: value for key, value in self._closed_on.items() if key in pending_ids}
                 self._confirmation_at = {key: value for key, value in self._confirmation_at.items() if key in pending_ids}
+                self._wait_marks = {key: value for key, value in self._wait_marks.items() if key[0] in pending_ids}
                 for operation_id in [key for key in self._waits if key not in pending_ids]:
                     self._waits.pop(operation_id).cancel()
                 retry_delays, remaining, recovery = [], [], False
@@ -498,16 +520,25 @@ class DesktopOnboardingCoordinator:
                         self._confirmation_at.pop(operation_id, None)
                         timing.observe("worker", "expiry", "ok", 0)
                         self._start(operation, reconcile=True, actor=None)
+                    if confirmation is None:
+                        self._confirmation_at.pop(operation_id, None)
                     if confirmation is not None:
                         self._confirmation_at[operation_id] = confirmation
                         prefetch = self._prefetches.get(operation_id)
                         if prefetch is not None:
                             prefetch.cancel()
                         retry_delays.append(max(0, confirmation - now))
-                    if confirmation is None or operation_id not in self._held:
+                    if recoverable and (confirmation is None or operation_id not in self._waits):
                         recovery = True
                     if recoverable and interval is not None:
                         self._hold_wait(operation)
+                    if interval is None:
+                        wait = self._waits.pop(operation_id, None)
+                        if wait is not None:
+                            wait.cancel()
+                        prefetch = self._prefetches.get(operation_id)
+                        if prefetch is not None:
+                            prefetch.cancel()
                     if observed is not None:
                         self._settle(operation, observed)
                         continue
@@ -519,6 +550,9 @@ class DesktopOnboardingCoordinator:
                         if interval is not None and operation_id in self._held:
                             # The held wait replaces probes and retries.
                             continue
+                        if confirmation is not None and operation_id in self._waits:
+                            # The wait owns recovery and backoff during confirmation.
+                            continue
                         if interval is not None and confirmation is None:
                             # A cheap read replaces the slow full retry while
                             # its sign-in is open. A change starts the full read.
@@ -529,8 +563,6 @@ class DesktopOnboardingCoordinator:
                                 else:
                                     retry_delays.append(due - clock)
                             continue
-                        if interval is None and operation["operation_id"] in self._waits:
-                            self._waits.pop(operation["operation_id"]).cancel()
                         due = self._retry_at.setdefault(operation["operation_id"], clock + RECOVERY_INTERVAL_SECONDS)
                         if due <= clock:
                             timing.observe("worker", "retry", "ok", 0)
@@ -561,7 +593,7 @@ class DesktopOnboardingCoordinator:
     def _probe_interval(self, operation):
         interval = getattr(self.owner, "probe_interval", None)
         if interval is None or getattr(self.owner, "probe", None) is None:
-            timing.observe("wait", "ineligible", "ok", 0)
+            self._wait_mark(operation, "eligibility", None)
             return None
         try:
             value = interval(operation)
@@ -569,7 +601,7 @@ class DesktopOnboardingCoordinator:
             timing.observe("wait", "eligibility-error", "error", 0)
             return None
         result = value if isinstance(value, (int, float)) and value > 0 else None
-        timing.observe("wait", "eligible" if result is not None else "ineligible", "ok", 0)
+        self._wait_mark(operation, "eligibility", result)
         return result
 
     def _confirmation_deadline(self, operation):
@@ -580,8 +612,19 @@ class DesktopOnboardingCoordinator:
             timing.observe("wait", "eligibility-error", "error", 0)
             return None
         result = value if type(value) in {int, float} and value > self.admissions._now() else None
-        timing.observe("wait", "confirmation-live" if result is not None else "confirmation-absent", "ok", 0)
+        self._wait_mark(operation, "confirmation", result)
         return result
+
+    def _wait_mark(self, operation, kind, value):
+        key = operation.get("operation_id"), kind
+        if key in self._wait_marks and self._wait_marks[key] == value:
+            return
+        if len(self._wait_marks) >= 256:
+            self._wait_marks.pop(next(iter(self._wait_marks)))
+        self._wait_marks[key] = value
+        phase = (("eligible" if value is not None else "ineligible") if kind == "eligibility"
+            else ("confirmation-live" if value is not None else "confirmation-absent"))
+        timing.observe("wait", phase, "ok", 0)
 
     def _start_probe(self, operation, interval):
         operation_id = operation["operation_id"]
@@ -642,7 +685,7 @@ class DesktopOnboardingCoordinator:
         async def run():
             try:
                 while not self._closed:
-                    if self._confirmation_deadline(operation) is not None:
+                    if self._confirmation_deadline(operation) is not None or self._probe_interval(operation) is None:
                         return
                     wake.clear()
                     delay = await self.owner.prefetch(operation)
@@ -677,7 +720,8 @@ class DesktopOnboardingCoordinator:
                     if operation_id not in self._held:
                         self._held.add(operation_id)
                         self._probe_at.pop(operation_id, None)
-                        attempt = 0
+                        if self._confirmation_deadline(operation) is None:
+                            attempt = 0
                     if hint != last:
                         last = hint
                         timing.mark(operation_id, "frame")
@@ -696,13 +740,18 @@ class DesktopOnboardingCoordinator:
                 self._held.discard(operation_id)
                 if self._wake is not None:
                     self._wake.set()
-            if not framed and not read and not self._closed:
-                # A refused or empty wait may have met a ceremony that already moved.
-                # One proof read per run of frameless attempts settles it.
+            if self._closed or self._probe_interval(operation) is None:
+                return
+            confirmation = self._confirmation_deadline(operation) is not None
+            if confirmation or not framed and not read:
+                # A failed confirmation wait gets one recovery read.
                 read = True
                 timing.observe("wait", "fallback", "ok", 0)
                 self._reconcile_soon(operation)
-            if delay is None:
+            if confirmation:
+                delay = max(delay or 0, min(CONFIRMATION_BACKOFF_CAP_SECONDS,
+                    RECOVERY_INTERVAL_SECONDS * 2 ** min(attempt, 2)))
+            elif delay is None:
                 delay = min(WAIT_BACKOFF_CAP_SECONDS, 0.25 * 2 ** attempt) * random.uniform(0.5, 1.0)
             attempt += 1
             with timing.phase("wait", "backoff"):

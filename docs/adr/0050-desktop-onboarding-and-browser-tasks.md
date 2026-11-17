@@ -53,6 +53,8 @@ Retain the latest admitted browser-access observation as setup progress for its 
 
 A live confirmation and its outcome wait follow the original server decision deadline across local presentation replacement. An explicit account connection refreshes only an unprepared local initial draft within command admission. It never extends a prepared source, customer session or server decision.
 
+Once a known ended decision returns to sign-in selection, untouched setup performs no periodic reconciliation or proof reads. A frame, expiry, changed fact or explicit command still wakes the coordinator immediately. Failed live waits and uncertain reconciliation use bounded recovery delays of 15, 30, 60 and then 60 seconds. Wait eligibility and confirmation diagnostics record value changes only.
+
 The coordinator delegates to existing domain services rather than duplicating their authority. Publish verified facts, separate local/Full readiness, pending operations and allowed actions. Subscribe before authoritative reads and retain invalidations received while busy. Commands carry unique operation IDs and exact expected scope/generation. Reads and renders do not initiate protected mutations. Closing a page or losing a reply cannot establish cancellation or justify another mutation.
 
 ## Confirmation

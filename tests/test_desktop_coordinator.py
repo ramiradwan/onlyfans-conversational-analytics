@@ -692,6 +692,8 @@ async def test_idle_confirmation_wakes_only_on_frame_expiry_or_failed_wait(setup
 
     await _waited_connect(setup, hints, probe=probe)
     await _until(lambda: coordinator._held and not coordinator._workers)
+    # Measure from the held wait.
+    probes.clear()
     started, initial = time.monotonic(), clock[0]
     coordinator.store._clock = lambda: initial + timedelta(seconds=time.monotonic() - started)
     expiry = initial.timestamp() + (0.25 if wake == "expiry" else 10)

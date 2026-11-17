@@ -253,6 +253,30 @@ class DesktopAuthentication:
         deadline = timestamp(projection["decision"]["expires_at"]).timestamp()
         return deadline if deadline > self.store._now().timestamp() else None
 
+    def waiting_for_sign_in(self, operation_id):
+        """A known ended decision needs another explicit selection, not a retry."""
+        with self.store.database.read() as connection:
+            parent = self.parent_operation(operation_id, connection=connection)
+            if self._closures(connection, parent):
+                return False
+            row = connection.execute("SELECT projection_json FROM desktop_decision_projections WHERE operation_id=?",
+                (parent,)).fetchone()
+            decision = None if row is None else json.loads(row[0])
+            if decision is not None and decision["state"] == "accepted":
+                return False
+            if self.can_open(operation_id, connection=connection):
+                return False
+            if (decision is not None and decision["state"] == "confirmation-required"
+                    and timestamp(decision["decision"]["expires_at"]) <= self.store._now()):
+                return True
+            row = connection.execute("SELECT projection_json FROM desktop_authentication_projections WHERE operation_id=?",
+                (parent,)).fetchone()
+        if row is None:
+            return False
+        authentication = json.loads(row[0])
+        return (authentication["state"] in {"selection-required", "reauthentication-required", "expired", "unavailable"}
+            or timestamp(authentication["expires_at"]) <= self.store._now())
+
     async def probe(self, operation_id, *, authorize):
         """Read the parent's current projection only. True when it differs from the last probe."""
         parent = self.parent_operation(operation_id)
