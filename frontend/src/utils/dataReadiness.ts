@@ -53,7 +53,8 @@ export function formatAdditiveMetric(
   if (
     metric?.value === null ||
     metric?.value === undefined ||
-    readiness.projection.status !== 'current'
+    readiness.projection.status !== 'current' ||
+    metric.projection_revision !== readiness.projection.projected_revision
   ) {
     return '—';
   }
@@ -109,19 +110,24 @@ export function humanizeCoverageReason(reason: string | null, whenAbsent: string
   return COVERAGE_REASON_TEXT[reason] ?? whenAbsent;
 }
 
+/** The inventory is frozen only when the owner enters backfill. */
+export function coverageProgressPercent(coverage: HistoricalCoverage): number | null {
+  if (coverage.status === 'complete') return 100;
+  const total = coverage.discovered_conversations;
+  if (coverage.phase !== 'backfilling' || total === null || total <= 0
+    || coverage.complete_conversations >= total) return null;
+  return Math.min(99, Math.round(coverage.complete_conversations / total * 100));
+}
+
 export function coverageProgressLabel(coverage: HistoricalCoverage): string {
   if (coverage.status === 'complete') return coverage.discovered_conversations === null ? 'History saved.' : `History saved for ${new Intl.NumberFormat('en-US').format(coverage.complete_conversations)} chats`;
   if (coverage.phase === 'paused') return 'History paused';
   if (coverage.phase === 'blocked') return 'History needs attention';
   if (coverage.phase === 'not_started') return 'History not started';
-  if (coverage.discovered_conversations && coverage.discovered_conversations > 0) {
-    const percent = Math.min(
-      100,
-      Math.round(
-        (coverage.complete_conversations / coverage.discovered_conversations) * 100,
-      ),
-    );
-    return `History ${percent}% synced`;
-  }
-  return coverage.phase === 'discovering' ? 'Finding conversations' : 'Syncing history';
+  const percent = coverageProgressPercent(coverage);
+  if (percent !== null) return `History ${percent}% synced`;
+  if (coverage.phase === 'discovering') return 'Finding conversations';
+  if (coverage.phase === 'backfilling' && coverage.discovered_conversations !== null
+    && coverage.complete_conversations >= coverage.discovered_conversations) return 'Checking saved history';
+  return coverage.phase === 'repairing' ? 'Checking message history' : 'Syncing history';
 }

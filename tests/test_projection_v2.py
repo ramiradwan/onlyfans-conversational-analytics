@@ -230,6 +230,29 @@ def material(repositories: CanonicalRepositories) -> tuple:
     return analyses, nodes, edges, analytics
 
 
+def test_first_passive_message_is_visible_without_completed_history() -> None:
+    repositories = create_canonical_repositories("memory")
+    key = commit_seed(repositories)
+    repositories.projection.catch_up(ACCOUNT)
+    before = repositories.projection.snapshot(ACCOUNT)
+    assert before["analytics"]["total_messages"]["value"] == 0
+    assert before["coverage"]["status"] == "unknown"
+    commit_message_delta(
+        repositories, key, sequence=1, origin="passive", message=raw_message("message-1")
+    )
+    assert repositories.projection.catch_up(ACCOUNT) is not None
+    after = repositories.projection.snapshot(ACCOUNT)
+    assert after["coverage"]["status"] == "unknown"
+    assert after["coverage"]["phase"] == "not_started"
+    assert after["projection"]["status"] == "current"
+    assert after["analytics"]["total_messages"]["value"] == 1
+    assert after["analytics"]["total_messages"]["basis"] == "synced_subset"
+    assert after["analytics"]["total_messages"]["sample_size"] == 1
+    assert after["analytics"]["total_messages"]["projection_revision"] == after["projection"]["projected_revision"]
+    assert after["analytics"]["inbound_messages"]["value"] == 1
+    assert after["conversations"][0]["latest_message"]["message_id"] == "message-1"
+
+
 def test_passive_and_signer_messages_have_identical_durable_nlp_lpg_and_analytics() -> None:
     projected: list[CanonicalRepositories] = []
     for origin in ("passive", "signer"):

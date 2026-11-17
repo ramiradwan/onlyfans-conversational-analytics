@@ -92,8 +92,12 @@ export function DashboardOverview({
             <LinearProgress
               data-journey-state="desktop.history_syncing"
               sx={{ visibility: progress.complete ? 'hidden' : 'visible',
-                '& .MuiLinearProgress-bar': { animation: 'none', transform: 'none !important', clipPath: `inset(0 ${100 - (progress.percent ?? 35)}% 0 0)` },
-                '& .MuiLinearProgress-bar2': { display: 'none' } }}
+                ...(progress.percent === null ? {
+                  '@media (prefers-reduced-motion: reduce)': { '& .MuiLinearProgress-bar': { display: 'none' } },
+                } : {
+                  '& .MuiLinearProgress-bar': { animation: 'none', transform: 'none !important', clipPath: `inset(0 ${100 - progress.percent}% 0 0)` },
+                  '& .MuiLinearProgress-bar2': { display: 'none' },
+                }) }}
               aria-label={progress.label}
               variant={progress.percent === null ? 'indeterminate' : 'determinate'}
               value={progress.percent ?? undefined}

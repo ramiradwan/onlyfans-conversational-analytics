@@ -18,6 +18,7 @@ import type {
   StateSnapshotPayload,
   SystemStatePayload,
 } from '../protocol';
+import { coverageProgressPercent } from '../utils/dataReadiness';
 
 export type BridgeConnectionState =
   | 'idle'
@@ -188,12 +189,7 @@ function validConversations(conversations: readonly ConversationRecord[]): boole
 
 function progress(coverage: HistoricalCoverage): SnapshotProgress {
   const discovered = coverage.discovered_conversations;
-  const percentage =
-    discovered !== null && discovered > 0
-      ? Math.min(100, Math.round((coverage.complete_conversations / discovered) * 100))
-      : coverage.status === 'complete'
-        ? 100
-        : null;
+  const percentage = coverageProgressPercent(coverage);
   return {
     phase: coverage.phase,
     discoveredConversations: discovered,

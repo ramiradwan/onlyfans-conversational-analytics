@@ -1756,6 +1756,26 @@
           "kind": "visual",
           "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "populated"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "shows the first saved message without waiting for history or asking for another action"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "does not show an unverified metric as first activity"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "does not show a percentage before discovery closes or before history is verified complete"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_projection_v2.py",
+          "name": "test_first_passive_message_is_visible_without_completed_history"
         }
       ]
     },

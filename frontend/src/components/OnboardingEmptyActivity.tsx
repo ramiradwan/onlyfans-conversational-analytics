@@ -6,11 +6,12 @@ import type { BrowserSurfacePayload } from '../protocol';
 import { extensionLabel, type ExtensionConnection } from '../utils/statusCopy';
 
 /** An empty received snapshot has no distribution or activity chart to draw. */
-export function OnboardingEmptyActivity({ browser, connection, desktopConnected, historyReview }: {
+export function OnboardingEmptyActivity({ browser, connection, desktopConnected, historyReview, waitingForMessages = false }: {
   browser: BrowserSurfacePayload | null;
   connection: ExtensionConnection;
   desktopConnected: boolean;
   historyReview?: ReactNode;
+  waitingForMessages?: boolean;
 }) {
   const browserLabel = connection !== 'connected' ? extensionLabel(connection)
     : browser === null ? 'Not checked'
@@ -19,8 +20,9 @@ export function OnboardingEmptyActivity({ browser, connection, desktopConnected,
   return (
     <Stack spacing={3}>
       <Panel component="section" emphasis="dominant" aria-labelledby="empty-activity-title">
-        <Typography component="h2" id="empty-activity-title" variant="h5">No new activity yet</Typography>
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>No conversations have been received.</Typography>
+        <Typography component="h2" id="empty-activity-title" variant="h5">{waitingForMessages ? 'Waiting for messages' : 'No new activity yet'}</Typography>
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>{waitingForMessages
+          ? 'Activity appears here when Dipsy receives messages.' : 'No conversations have been received.'}</Typography>
       </Panel>
       <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 1fr) minmax(0, 1fr)' } }}>
         <Panel component="section" aria-labelledby="empty-connection-title">

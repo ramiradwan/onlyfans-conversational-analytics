@@ -344,6 +344,54 @@ describe('CreatorDashboardView', () => {
     expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
   });
 
+  it('shows the first saved message without waiting for history or asking for another action', async () => {
+    const coverage: HistoricalCoverage = { ...COMPLETE_COVERAGE, status: 'unknown', phase: 'not_started',
+      generation_id: null, as_of: null, discovered_conversations: null, complete_conversations: 0, complete_as_of: null };
+    const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0], 'synced_subset'), coverage }), conversations: [] });
+    store.setAgent({ ...store.getState().agent!, browser: { capture: 'active', site_access: 'granted',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
+    const source = readinessSource(true);
+    const historyApi = { get: vi.fn(), update: vi.fn(), revoke: vi.fn() };
+    mountDashboard(store, source, undefined, historyApi);
+    expect(screen.getByRole('heading', { name: 'Waiting for messages' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    expect(historyApi.get).not.toHaveBeenCalled();
+    expect(historyApi.update).not.toHaveBeenCalled();
+    await act(async () => {
+      store.applySnapshot(snapshot({ analyticsView: analytics([1, 1, 1, 0], 'synced_subset', 5),
+        coverage, projection: { ...CURRENT_PROJECTION, canonical_revision: 5, projected_revision: 5 }, viewRevision: 2 }));
+    });
+    expect(screen.queryByRole('heading', { name: 'Waiting for messages' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
+    expectStat('Messages', '1+');
+    expectSplit('Received', '1+');
+    expect(screen.getByText(/Counts include messages synced so far/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open inbox' }).getAttribute('href')).toBe('/inbox');
+    expect(source.api.begin).not.toHaveBeenCalled();
+    expect(historyApi.update).not.toHaveBeenCalled();
+  });
+
+  it('does not show an unverified metric as first activity', async () => {
+    const store = readyStore({ ...snapshot({ analyticsView: analytics([1, 1, 1, 0], 'synced_subset', 3) }) });
+    await renderDashboard(store);
+    expectStat('Messages', '\u2014');
+    expect(screen.queryByText(/Counts include messages synced so far/)).toBeNull();
+  });
+
+  it('does not show a percentage before discovery closes or before history is verified complete', async () => {
+    const coverage: HistoricalCoverage = { ...COMPLETE_COVERAGE, status: 'partial', phase: 'discovering',
+      discovered_conversations: 4, complete_conversations: 0, complete_as_of: null };
+    const store = readyStore(snapshot({ analyticsView: analytics([1, 1, 1, 0], 'synced_subset'), coverage }));
+    await renderDashboard(store);
+    expect(overview().getByRole('progressbar', { name: 'Finding conversations' }).getAttribute('aria-valuenow')).toBeNull();
+    expect(store.getState().snapshotProgress.percentage).toBeNull();
+    await act(async () => store.applySnapshot(snapshot({ analyticsView: analytics([1, 1, 1, 0], 'synced_subset'),
+      coverage: { ...coverage, phase: 'backfilling', complete_conversations: 4 }, viewRevision: 2 })));
+    expect(overview().getByRole('progressbar', { name: 'Checking saved history' }).getAttribute('aria-valuenow')).toBeNull();
+    expect(store.getState().snapshotProgress.percentage).toBeNull();
+    expect(screen.queryByText('History 100% synced')).toBeNull();
+  });
+
   it('shows the saved chat count after history completes', async () => {
     await renderDashboard(readyStore());
     expect(overview().getByText('History saved for 1 chats')).toBeTruthy();

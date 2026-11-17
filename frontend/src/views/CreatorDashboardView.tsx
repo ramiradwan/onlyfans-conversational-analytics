@@ -37,6 +37,7 @@ import {
 import { componentTokens, effectTokens } from '../theme/generated/tokens';
 import {
   coverageProgressLabel,
+  coverageProgressPercent,
   formatAdditiveMetric,
   humanizeCoverageReason,
   humanizeProjectionReason,
@@ -207,14 +208,7 @@ function historyProgress(coverage: HistoricalCoverage): OverviewProgress | null 
   if (coverage.status === 'complete') return { label: coverageProgressLabel(coverage), percent: 100, complete: true };
   if (coverage.phase === 'not_started') return null;
   if (coverage.phase === 'paused' || coverage.phase === 'blocked') return null;
-  const discovered = coverage.discovered_conversations;
-  return {
-    label: coverageProgressLabel(coverage),
-    percent:
-      discovered && discovered > 0
-        ? Math.min(100, (coverage.complete_conversations / discovered) * 100)
-        : null,
-  };
+  return { label: coverageProgressLabel(coverage), percent: coverageProgressPercent(coverage) };
 }
 
 function directionSplit(
@@ -223,7 +217,9 @@ function directionSplit(
   readiness: DataReadiness,
 ): { received: number; sent: number } | null {
   if (readiness.projection.status !== 'current') return null;
-  if (typeof inbound?.value !== 'number' || typeof outbound?.value !== 'number') return null;
+  if (typeof inbound?.value !== 'number' || typeof outbound?.value !== 'number'
+    || inbound.projection_revision !== readiness.projection.projected_revision
+    || outbound.projection_revision !== readiness.projection.projected_revision) return null;
   return { received: inbound.value, sent: outbound.value };
 }
 
@@ -409,17 +405,25 @@ export default function CreatorDashboardView({
       <DialogActions><Button onClick={() => setHistoryReviewScope(null)}>Close</Button></DialogActions>
     </Dialog> : null;
 
-  const evidence = summarizeMetricEvidence(metrics);
+  const visibleMetrics = metrics.filter(metric => metric?.value !== null && metric?.value !== undefined
+    && metric.projection_revision === readiness.projection.projected_revision
+    && readiness.projection.status === 'current');
+  const evidence = summarizeMetricEvidence(visibleMetrics);
   const progress = hasSnapshot ? historyProgress(state.coverage) : null;
-  const emptyOnboarding = hasSnapshot
-    && state.conversations.length === 0 && issue === null && fullAnalyticsReady === true
-    && state.connection === 'connected' && metrics.every((metric) => metric?.value === 0 && metric.basis === 'complete');
+  const emptySnapshot = hasSnapshot && state.conversations.length === 0 && issue === null
+    && fullAnalyticsReady === true && state.connection === 'connected' && state.readModelState === 'realtime'
+    && visibleMetrics.length === metrics.length && visibleMetrics.every(metric => metric?.value === 0);
+  const completeEmpty = state.coverage.status === 'complete' && metrics.every(metric => metric?.basis === 'complete');
+  const waitingForMessages = emptySnapshot && !completeEmpty && setupIncomplete(state.coverage)
+    && historyScope !== null;
+  const emptyOnboarding = emptySnapshot && (completeEmpty || waitingForMessages);
   if (emptyOnboarding) return (
     <Box data-scroll-container sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pb: 3 }}>
       <Stack spacing={3} sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}>
         <Typography component="h1" variant="h4">Dashboard</Typography>
         {collectionReview ?? <OnboardingEmptyActivity browser={browser}
-          connection={connection} desktopConnected={state.connection === 'connected'} historyReview={historyPrompt} />}
+          connection={connection} desktopConnected={state.connection === 'connected'} historyReview={historyPrompt}
+          waitingForMessages={waitingForMessages} />}
         {historyDialog}
       </Stack>
     </Box>
@@ -445,7 +449,7 @@ export default function CreatorDashboardView({
           {!hasSnapshot && <Box sx={{ position: 'absolute', inset: 0 }}><LoadingFrame label="Loading dashboard…" /></Box>}
         </ReservedRegion>
         <ReservedRegion id="dashboard-basis" size={{ xs: 128, sm: 88 }}>
-          {hasSnapshot && evidence !== null && <Box data-region-content><NumbersBasis evidence={evidence} messagesCounted={analytics?.total_messages?.sample_size ?? null} syncing={progress !== null && !progress.complete} /></Box>}
+          {hasSnapshot && evidence !== null && <Box data-region-content><NumbersBasis evidence={evidence} messagesCounted={visibleMetrics.includes(analytics?.total_messages) ? analytics?.total_messages?.sample_size ?? null : null} syncing={progress !== null && !progress.complete} /></Box>}
         </ReservedRegion>
         {/* Holds four conversations. Below sm the heading and the inbox link can take extra lines. */}
         <ReservedRegion id="dashboard-recent" size={{ xs: 472, sm: 448 }} regionRole="scroll">
