@@ -1827,6 +1827,21 @@
           "kind": "unit",
           "file": "tests/test_desktop_activation.py",
           "name": "test_accepted_activation_delivery_recovers_after_presentation_expiry"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "opens a newly prepared offer after an explicit review without another click"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "does not expose or confirm an offer for the previously displayed creator"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "rejects a click from an outdated rendered offer before sending a command"
         }
       ]
     },

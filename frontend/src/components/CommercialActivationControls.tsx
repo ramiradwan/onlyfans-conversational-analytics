@@ -51,31 +51,52 @@ export function CommercialActivationControls({
   const codeScope = useRef<string | null>(null);
   const codeInput = useRef<HTMLInputElement | null>(null);
   const codeFormId = useId();
-  const [offerOpen, setOfferOpen] = useState(true);
+  // Only an action in this presentation opens a review. A pending offer can
+  // be reviewed again explicitly after navigation or dismissal.
+  const [openReviewScope, setOpenReviewScope] = useState<string | null>(null);
+  const [unconfirmedOffer, setUnconfirmedOffer] = useState<string | null>(null);
   const [choosingAccount, setChoosingAccount] = useState(false);
   const choicesElement = useRef<HTMLDivElement | null>(null);
   const switchElement = useRef<HTMLButtonElement | null>(null);
   const previousChoosing = useRef(false);
   const entryOperation = useRef<AbortController | null>(null);
+  const entryScope = useRef<string | null>(null);
+  const previousReviewScope = useRef<string | null>(null);
   const desktop = useSyncExternalStore(onboarding.subscribe, onboarding.getState, onboarding.getState);
   const { value: readiness, checking, availability } = selectAnalysisReadiness(desktop, creatorAccountId);
   const error = !checking && desktop.connected && availability !== 'current' ? "Activation couldn't be checked." : null;
-  const decision = desktop.snapshot?.decision?.action === 'activate-complimentary' && desktop.snapshot?.decision_status?.state !== 'accepted' ? desktop.snapshot.decision : null;
-  const decisionStatus = desktop.snapshot?.decision_status?.state;
-  const authentication = desktop.snapshot?.authentication;
-  const allowed = desktop.snapshot?.allowed_actions || [];
+  const snapshot = desktop.snapshot;
+  const ownerCreator = snapshot?.analysis_readiness.creator_account_id;
+  const sameCreator = Boolean(ownerCreator && (creatorAccountId === undefined || ownerCreator === creatorAccountId));
+  const currentAuthority = desktop.connected && sameCreator && availability === 'current';
+  const decision = sameCreator && readiness?.commercial_authority !== 'active' && snapshot?.decision?.action === 'activate-complimentary'
+    && snapshot.decision_status?.state !== 'accepted' ? snapshot.decision : null;
+  const decisionStatus = sameCreator ? snapshot?.decision_status?.state : undefined;
+  const authentication = sameCreator ? snapshot?.authentication : null;
+  const allowed = currentAuthority ? snapshot?.allowed_actions || [] : [];
+  const reviewScope = sameCreator && snapshot ? JSON.stringify([snapshot.generation, snapshot.journey_id, ownerCreator]) : null;
+  const offerOpen = reviewScope !== null && openReviewScope === reviewScope;
+  const setOfferOpen = (open: boolean) => setOpenReviewScope(open ? reviewScope : null);
+  const offerIdentity = decision && reviewScope ? JSON.stringify([reviewScope, decision.operation_id, decision.offer.offer_version_id]) : null;
+  // A rendered offer must not confirm a newer decision that arrived before React
+  // could paint it. The command owner independently rechecks admission.
+  const currentPresentation = () => {
+    const current = onboarding.getState();
+    return current.connected && current.snapshot === snapshot && current.snapshot?.analysis_readiness.creator_account_id === ownerCreator;
+  };
   const accepted = decisionStatus === 'accepted';
   const canSelect = !accepted && authentication?.actions.select && allowed.includes('auth.select');
-  const accountLabel = desktop.snapshot?.facts.authenticated_account_label;
+  const accountLabel = sameCreator ? snapshot?.facts.authenticated_account_label : null;
   const canSwitch = !accepted && authentication?.state === 'admitted'
     && authentication.actions.switch_account && allowed.includes('auth.switch');
   const choosingProvider = Boolean(canSelect || (choosingAccount && canSwitch));
   const providers = (['google', 'microsoft-personal', 'telegram', 'tiktok', 'default'] as const).filter(provider => authentication?.choices[provider]);
-  const canConfirm = desktop.connected && decision !== null && desktop.snapshot?.allowed_actions.includes('activation.confirm');
-  const activationOutcome = desktop.snapshot?.pending_operations.find(value => value.action === 'activation.review');
-  const pendingActivation = desktop.snapshot?.pending_operations.some(value => value.action === 'activation.review') === true;
-  const canOpen = desktop.connected && (pendingActivation || desktop.snapshot?.allowed_actions.includes('activation.review'));
-  const canRedeem = desktop.connected && availability === 'current';
+  const canConfirm = currentAuthority && decision !== null && allowed.includes('activation.confirm')
+    && unconfirmedOffer !== offerIdentity && !snapshot?.pending_operations.some(value => value.action === 'activation.confirm');
+  const activationOutcome = sameCreator ? snapshot?.pending_operations.find(value => value.action === 'activation.review') : undefined;
+  const pendingActivation = Boolean(activationOutcome);
+  const canOpen = currentAuthority && !pendingActivation && allowed.includes('activation.review');
+  const canRedeem = currentAuthority;
   const ownerScope = desktop.connected && desktop.snapshot
     ? `${desktop.snapshot.generation}:${desktop.snapshot.journey_id}:${desktop.snapshot.analysis_readiness.creator_account_id}:${creatorAccountId}` : 'unconfirmed';
   useRevealHold(checking);
@@ -83,6 +104,16 @@ export function CommercialActivationControls({
   useEffect(() => () => { entryOperation.current?.abort(); codeOperation.current?.abort(); }, []);
   useEffect(() => { if (codeOpen) codeInput.current?.focus(); }, [codeOpen]);
   useEffect(() => { setChoosingAccount(false); }, [authentication?.authentication_attempt?.authentication_attempt_id]);
+  useEffect(() => {
+    const previous = previousReviewScope.current;
+    previousReviewScope.current = reviewScope;
+    if (previous === null || previous === reviewScope) return;
+    entryOperation.current?.abort();
+    entryOperation.current = null;
+    entryScope.current = null;
+    setOpening(false); setOpeningAction(null); setEntryError(null);
+    setOpenReviewScope(null); setChoosingAccount(false);
+  }, [reviewScope]);
   useEffect(() => {
     if (choosingAccount) choicesElement.current?.querySelector('button')?.focus();
     else if (previousChoosing.current) switchElement.current?.focus();
@@ -105,12 +136,15 @@ export function CommercialActivationControls({
     if (codeBusy || codePending || (entryOperation.current && !entryOperation.current.signal.aborted)) return;
     const permitted = action === 'activation.confirm' ? canConfirm : action === 'auth.select' ? canSelect
       : action === 'auth.switch' ? canSwitch : canOpen;
-    if (!desktop.connected || !permitted || (provider && !providers.includes(provider))) {
+    if (!currentPresentation()) return;
+    if (!currentAuthority || !permitted || (provider && !providers.includes(provider))) {
+      entryScope.current = reviewScope;
       setEntryError('Full analytics setup is unavailable on this page.');
       return;
     }
     const controller = new AbortController();
     entryOperation.current = controller;
+    entryScope.current = reviewScope;
     setOpening(true);
     setOfferOpen(true);
     setOpeningAction(action);
@@ -120,9 +154,12 @@ export function CommercialActivationControls({
       else await onboarding.begin(action);
       setChoosingAccount(false);
     } catch (cause) {
-      if (!controller.signal.aborted) setEntryError(cause instanceof Error && cause.message === 'browser_unavailable'
-        ? 'The browser action could not be confirmed.' : action === 'activation.confirm' ? 'Activation could not be confirmed.'
-          : 'Sign-in could not be opened. Try again.');
+      if (!controller.signal.aborted) {
+        if (action === 'activation.confirm') setUnconfirmedOffer(offerIdentity);
+        setEntryError(cause instanceof Error && cause.message === 'browser_unavailable'
+          ? 'The browser action could not be confirmed.' : action === 'activation.confirm' ? 'Activation could not be confirmed.'
+            : 'Sign-in could not be opened.');
+      }
     } finally {
       if (entryOperation.current === controller) {
         entryOperation.current = null;
@@ -132,11 +169,11 @@ export function CommercialActivationControls({
   };
 
   const reopenBrowser = async () => {
-    if (!desktop.connected || entryOperation.current || !authentication?.actions.open_browser || !authentication.browser_operation_id) return;
-    const controller = new AbortController(); entryOperation.current = controller;
+    if (!currentAuthority || !currentPresentation() || entryOperation.current || !authentication?.actions.open_browser || !authentication.browser_operation_id) return;
+    const controller = new AbortController(); entryOperation.current = controller; entryScope.current = reviewScope;
     setOpening(true); setOpeningAction('browser.open'); setEntryError(null);
     try { await onboarding.openBrowser(authentication.browser_operation_id); }
-    catch { if (!controller.signal.aborted) setEntryError('Chrome could not be opened. Try again.'); }
+    catch { if (!controller.signal.aborted) setEntryError('Chrome could not be opened.'); }
     finally {
       if (entryOperation.current === controller) {
         entryOperation.current = null;
@@ -161,7 +198,7 @@ export function CommercialActivationControls({
   }, [ownerScope]);
 
   const redeemCode = async () => {
-    if (!canRedeem || codeOperation.current || opening || codePending) return;
+    if (!canRedeem || !currentPresentation() || codeOperation.current || opening || codePending) return;
     const value = code.trim();
     if (!CAPABILITY_LICENSE_CONTINUATION_PATTERN.test(value)) {
       setCodeError('Enter the full activation code and try again.'); return;
@@ -188,8 +225,8 @@ export function CommercialActivationControls({
   const activationRequired = readiness?.commercial_authority === 'required';
   const activationUnavailable = readiness?.commercial_authority === 'unavailable';
   const browserLaunchError = desktop.error === 'browser_unavailable' ? 'The browser action could not be confirmed.'
-    : desktop.error === 'chrome_unavailable' ? 'Chrome could not be opened. Try again.' : null;
-  const noticeError = entryError ?? error ?? (!codeOpen ? codeError : null) ?? browserLaunchError;
+    : desktop.error === 'chrome_unavailable' ? 'Chrome could not be opened.' : null;
+  const noticeError = (entryScope.current === reviewScope ? entryError : null) ?? error ?? (!codeOpen ? codeError : null) ?? browserLaunchError;
   const status: SectionStatus | null = checking && readiness === null
     ? null
     : fullReady
@@ -213,7 +250,7 @@ export function CommercialActivationControls({
               : authentication?.state === 'retired' ? 'Sign-in was cancelled.'
                 : authentication?.state === 'unavailable' ? 'The sign-in request could not be confirmed.'
                   : authentication?.state === 'selected' || decisionStatus === 'awaiting-authentication' ? 'Finish signing in in Chrome.'
-                    : decisionStatus === 'unavailable' || activationOutcome?.reason === 'activation_unavailable' || desktop.error === 'activation_unavailable' ? 'Full analytics activation could not be prepared. Try again.'
+                    : decisionStatus === 'unavailable' || activationOutcome?.reason === 'activation_unavailable' || desktop.error === 'activation_unavailable' ? 'Full analytics activation could not be prepared.'
                       : checking && !decision ? 'Checking activation…'
               : activeButBlocked ? "New messages aren't being analyzed"
                 : activationUnavailable || readiness === null ? "Activation couldn't be checked." : null);
@@ -232,8 +269,8 @@ export function CommercialActivationControls({
         disabled={!desktop.connected || opening || codeBusy || codePending} describedBy="activation-notice"
         onSelect={provider => void openSetup(choosingAccount ? 'auth.switch' : 'auth.select', provider)} /></Box>}
       {offer && !fullReady && <>
-        <Button onClick={() => setOfferOpen(true)} aria-haspopup="dialog" variant="outlined">Review activation offer</Button>
-        <Dialog open={offerOpen} onClose={() => setOfferOpen(false)} aria-labelledby="activation-offer-title" fullWidth maxWidth="sm"
+        <Button onClick={() => { if (currentPresentation()) setOfferOpen(true); }} disabled={!currentAuthority} aria-haspopup="dialog" variant="outlined">Review activation offer</Button>
+        <Dialog open={offerOpen && sameCreator} onClose={() => setOfferOpen(false)} aria-labelledby="activation-offer-title" fullWidth maxWidth="sm"
           slotProps={{ backdrop: { sx: theme => ({ ...theme.effects.glassmorphism(theme) }) } }}>
         <DialogTitle id="activation-offer-title">{choosingAccount ? 'Sign in to Full analytics with another account' : offer.description}</DialogTitle>
         <DialogContent>{choosingAccount ? <Stack spacing={2}>
@@ -271,8 +308,9 @@ export function CommercialActivationControls({
         aria-describedby="activation-notice" variant="outlined">Set up Full analytics</Button>}
       {!fullReady && <Stack direction="row" useFlexGap sx={{ flexWrap: 'wrap', ml: -1 }} spacing={1}>
         {!accepted && !choosingProvider && authentication?.actions.open_browser && authentication.browser_operation_id
-          && (authentication.state === 'admitted' || entryError !== null || browserLaunchError !== null) && <Button
-          onClick={() => void reopenBrowser()} disabled={!desktop.connected || opening}>Try again</Button>}
+          && currentAuthority && !desktop.browserLaunchPending
+          && (authentication.state === 'admitted' || browserLaunchError !== null) && <Button
+          onClick={() => void reopenBrowser()} disabled={!currentAuthority || opening}>Open Chrome</Button>}
         {canSwitch && !offer && !choosingAccount && <Button ref={switchElement} onClick={() => setChoosingAccount(true)} disabled={!desktop.connected || opening || codeBusy || codePending}>Sign in to Full analytics with another account</Button>}
         {choosingAccount && !offer && <Button onClick={() => setChoosingAccount(false)} disabled={opening}>Back</Button>}
       </Stack>}
