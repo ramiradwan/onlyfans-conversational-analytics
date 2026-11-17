@@ -1248,3 +1248,21 @@ async def test_restart_reconciles_original_automatic_finalization(setup):
         assert len(owner.admissions) == 1
     finally:
         await reopened.stop()
+
+
+@pytest.mark.asyncio
+async def test_drain_completes_when_caller_wakes_directly_from_worker_settlement(setup):
+    coordinator, owner, session, _ = setup
+    ready_for_finalization(coordinator, owner, session)
+    settled = asyncio.Event()
+    owner.settled = lambda operation, result: settled.set()
+    coordinator.start()
+    try:
+        async with asyncio.timeout(5):
+            await settled.wait()
+            await coordinator.drain()
+        assert not coordinator._workers
+        assert len(owner.calls) == 1
+        assert coordinator.receipt(session, owner.calls[0][0]["operation_id"])["state"] == "completed"
+    finally:
+        await coordinator.stop()

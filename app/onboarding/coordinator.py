@@ -444,6 +444,25 @@ class DesktopOnboardingCoordinator:
             self._start(operation, reconcile=True, actor=actor)
         return self._public(operation)
 
+    def _finish_worker(self, operation_id, worker, result):
+        if self._workers.get(operation_id) is not worker:
+            return
+        self._workers.pop(operation_id, None)
+        failures = self._retry_failures.get(operation_id, 0) if result is not None and result.state == "outcome_unknown" else 0
+        self._retry_at[operation_id] = asyncio.get_running_loop().time() + min(
+            CONFIRMATION_BACKOFF_CAP_SECONDS, RECOVERY_INTERVAL_SECONDS * 2 ** min(failures, 2))
+        if result is not None and result.state == "outcome_unknown":
+            self._retry_failures[operation_id] = min(failures + 1, 2)
+        else:
+            self._retry_failures.pop(operation_id, None)
+        if operation_id in self._dirty:
+            dirty_hint = self._dirty.pop(operation_id)
+            if not self._closed:
+                current = next((row for row in self._pending() if row["operation_id"] == operation_id), None)
+                if current is not None:
+                    self._start(current, reconcile=True, actor=None, hint=dirty_hint)
+        events.publish()
+
     def _start(self, operation, *, reconcile, actor, hint=False):
         operation_id = operation["operation_id"]
         running = self._workers.get(operation_id)
@@ -455,26 +474,11 @@ class DesktopOnboardingCoordinator:
         self._workers[operation_id] = task
 
         def finished(worker):
-            if self._workers.get(operation_id) is worker:
-                self._workers.pop(operation_id, None)
-                try:
-                    result = worker.result()
-                except (Exception, asyncio.CancelledError):
-                    result = OperationResult("outcome_unknown", "operation_unconfirmed")
-                failures = self._retry_failures.get(operation_id, 0) if result is not None and result.state == "outcome_unknown" else 0
-                self._retry_at[operation_id] = asyncio.get_running_loop().time() + min(
-                    CONFIRMATION_BACKOFF_CAP_SECONDS, RECOVERY_INTERVAL_SECONDS * 2 ** min(failures, 2))
-                if result is not None and result.state == "outcome_unknown":
-                    self._retry_failures[operation_id] = min(failures + 1, 2)
-                else:
-                    self._retry_failures.pop(operation_id, None)
-                if operation_id in self._dirty:
-                    dirty_hint = self._dirty.pop(operation_id)
-                    if not self._closed:
-                        current = next((row for row in self._pending() if row["operation_id"] == operation_id), None)
-                        if current is not None:
-                            self._start(current, reconcile=True, actor=None, hint=dirty_hint)
-                events.publish()
+            try:
+                result = worker.result()
+            except (Exception, asyncio.CancelledError):
+                result = OperationResult("outcome_unknown", "operation_unconfirmed")
+            self._finish_worker(operation_id, worker, result)
 
         task.add_done_callback(finished)
 
@@ -483,34 +487,41 @@ class DesktopOnboardingCoordinator:
         operation_id = operation["operation_id"]
         frame = self._hint_frames.pop(operation_id, None) if hint else None
         result = None
+        outcome = OperationResult("outcome_unknown", "operation_unconfirmed")
         try:
-            if hint and getattr(self.owner, "reconcile_hint", None) is not None:
-                if (frame is not None and operation_id in self._closed_on and self._closed_on[operation_id] == frame[2]
-                        and self._probe_interval(operation) is None):
-                    # A hinted read already closed this task on the same outcome. Nothing is left to read.
-                    return
-                closed = await self.owner.reconcile_hint(operation)
-                if closed is False:
-                    self._prefetch(operation)
-                    return
-                if closed is True:
-                    self._closed_on[operation_id] = None if frame is None else frame[2]
-                    if operation["action"] in {"auth.select", "auth.switch"}:
-                        # The read that closed the task admitted this child's own attempt, which completes it.
-                        result = OperationResult("completed")
-                # A completed task is published before the remaining owner reads.
-            if result is None:
-                result = await self.owner.execute(operation, reconcile=reconcile, actor=actor)
-        except asyncio.CancelledError:
-            self._settle(operation, OperationResult("outcome_unknown", "operation_unconfirmed"))
-            raise
-        except Exception:
-            # No transport exception proves that a protected operation rolled back.
-            result = OperationResult("outcome_unknown", "operation_unconfirmed")
-        self._settle(operation, result)
-        if result.state != "outcome_unknown":
-            await self._refresh_authentication_parent(operation)
-        return result
+            try:
+                if hint and getattr(self.owner, "reconcile_hint", None) is not None:
+                    if (frame is not None and operation_id in self._closed_on and self._closed_on[operation_id] == frame[2]
+                            and self._probe_interval(operation) is None):
+                        # A hinted read already closed this task on the same outcome. Nothing is left to read.
+                        outcome = None
+                        return None
+                    closed = await self.owner.reconcile_hint(operation)
+                    if closed is False:
+                        self._prefetch(operation)
+                        outcome = None
+                        return None
+                    if closed is True:
+                        self._closed_on[operation_id] = None if frame is None else frame[2]
+                        if operation["action"] in {"auth.select", "auth.switch"}:
+                            # The read that closed the task admitted this child's own attempt, which completes it.
+                            result = OperationResult("completed")
+                    # A completed task is published before the remaining owner reads.
+                if result is None:
+                    result = await self.owner.execute(operation, reconcile=reconcile, actor=actor)
+            except asyncio.CancelledError:
+                self._settle(operation, OperationResult("outcome_unknown", "operation_unconfirmed"))
+                raise
+            except Exception:
+                # No transport exception proves that a protected operation rolled back.
+                result = OperationResult("outcome_unknown", "operation_unconfirmed")
+            outcome = result
+            self._settle(operation, result)
+            if result.state != "outcome_unknown":
+                await self._refresh_authentication_parent(operation)
+            return result
+        finally:
+            self._finish_worker(operation_id, asyncio.current_task(), outcome)
 
     def _authentication_parent(self, operation):
         if self._closed or operation["action"] not in {"auth.select", "auth.cancel", "auth.switch"}:
