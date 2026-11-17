@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   AnalyticsMetric,
   AnalyticsView,
+  BrowserSurfacePayload,
   ConversationSummary,
   HistoricalCoverage,
   ProjectionState,
@@ -17,6 +18,7 @@ import { useUserStore } from '../src/store/userStore';
 import { theme } from '../src/theme';
 import CreatorDashboardView from '../src/views/CreatorDashboardView';
 import { desktopFixture } from './desktopOnboardingFixture';
+import type { BrowserControlApi } from '../src/services/browserControlApi';
 
 const ACCOUNT_ID = 'creator-account';
 const AS_OF = '2026-07-19T12:00:00Z';
@@ -157,10 +159,11 @@ function readinessSource(ready: boolean | null) {
   return fixture;
 }
 
-function mountDashboard(store: ReturnType<typeof createBridgeTransportStore>, source: ReturnType<typeof desktopFixture>) {
+function mountDashboard(store: ReturnType<typeof createBridgeTransportStore>, source: ReturnType<typeof desktopFixture>,
+  browserApi?: BrowserControlApi) {
   return render(<ThemeProvider theme={theme} defaultMode="light"><MemoryRouter>
     <CreatorDashboardView activationApi={{ redeem: vi.fn(async () => ({ state: 'checking' as const })) }}
-      store={store} onboardingApi={source.api} />
+      store={store} onboardingApi={source.api} browserApi={browserApi} />
   </MemoryRouter></ThemeProvider>);
 }
 
@@ -200,7 +203,7 @@ describe('CreatorDashboardView', () => {
     expect(screen.getByRole('heading', { name: 'No new activity yet' })).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Overview' })).toBeNull();
     expect(screen.getByText('Not checked', { exact: true })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Review' }).getAttribute('href')).toBe('/settings#message-history');
+    expect(screen.queryByRole('link', { name: 'Review message history' })).toBeNull();
     await act(async () => { store.applySnapshot(snapshot({ viewRevision: 2 })); });
     expect(screen.queryByRole('heading', { name: 'No new activity yet' })).toBeNull();
     expectStat('Messages', '19');
@@ -217,9 +220,72 @@ describe('CreatorDashboardView', () => {
     store.setAgent({ ...store.getState().agent!, browser: { capture: 'paused', site_access: 'granted',
       history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
     await renderDashboard(store);
-    expect(screen.getByText('Paused', { exact: true })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Message collection is paused' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Review message history' })).toBeNull();
     expect(screen.queryByText("You're all set")).toBeNull();
   });
+  it('opens the current browser review directly and never accepts collection from the dashboard', async () => {
+    const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]) }), conversations: [] });
+    const browser: BrowserSurfacePayload = { capture: 'active', site_access: 'granted',
+      history_permission: 'missing', legal_review_required: true, reported_at: AS_OF };
+    store.setAgent({ ...store.getState().agent!, browser });
+    const source = readinessSource(true);
+    source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['browser.access'] } });
+    const api: BrowserControlApi = { setCapture: vi.fn(async () => 'delivered'), open: vi.fn(async () => 'delivered') };
+    mountDashboard(store, source, api);
+    expect(screen.getByRole('heading', { name: 'Allow message collection' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Review message history' })).toBeNull();
+    expect(source.api.begin).not.toHaveBeenCalled();
+    const review = screen.getByRole('button', { name: 'Review in Chrome' });
+    await act(async () => { fireEvent.click(review); fireEvent.click(review); });
+    expect(source.api.begin).toHaveBeenCalledExactlyOnceWith('browser.access');
+    expect(api.setCapture).not.toHaveBeenCalled();
+    expect(api.open).not.toHaveBeenCalled();
+    await act(async () => source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: [],
+      pending_operations: [{ operation_id: '22222222-2222-4222-8222-222222222222', action: 'browser.access', state: 'waiting', reason: 'none' }] } }));
+    expect(screen.queryByRole('button', { name: 'Review in Chrome' })).toBeNull();
+    expect(screen.getByText('Complete the review in Chrome.')).toBeTruthy();
+    await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, legal_review_required: false } }));
+    expect(screen.queryByRole('heading', { name: 'Allow message collection' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Review message history' })).toBeTruthy();
+    expect(source.api.begin).toHaveBeenCalledOnce();
+  });
+
+  it('does not offer browser review without matching current authority or hide existing activity', async () => {
+    const store = readyStore();
+    store.setAgent({ ...store.getState().agent!, browser: { capture: 'active', site_access: 'needs_approval',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
+    const source = readinessSource(true);
+    mountDashboard(store, source);
+    expectStat('Messages', '19');
+    expect(screen.getByRole('heading', { name: 'Allow OnlyFans access' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Review in Chrome' })).toBeNull();
+    await act(async () => source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['browser.access'] } }));
+    expect(screen.getByRole('button', { name: 'Review in Chrome' })).toBeTruthy();
+    await act(async () => source.readiness({ schema: 'ofca-analysis-readiness/v1', commercial_authority: 'active',
+      analysis_admission: 'admitted' }, 'different-creator'));
+    expect(screen.queryByRole('button', { name: 'Review in Chrome' })).toBeNull();
+    expectStat('Messages', '19');
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
+  it('leaves paused collection untouched until an explicit resume and waits for pushed confirmation', async () => {
+    const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]) }), conversations: [] });
+    const browser: BrowserSurfacePayload = { capture: 'paused', site_access: 'granted',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF };
+    store.setAgent({ ...store.getState().agent!, browser });
+    const api: BrowserControlApi = { setCapture: vi.fn(async () => 'delivered'), open: vi.fn(async () => 'delivered') };
+    const source = readinessSource(true);
+    mountDashboard(store, source, api);
+    expect(api.setCapture).not.toHaveBeenCalled();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Resume collecting' })));
+    expect(api.setCapture).toHaveBeenCalledExactlyOnceWith('resume', expect.any(AbortSignal));
+    expect(screen.getByRole('heading', { name: 'Message collection is paused' })).toBeTruthy();
+    await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, capture: 'active' } }));
+    expect(screen.queryByRole('heading', { name: 'Message collection is paused' })).toBeNull();
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
   it('shows the saved chat count after history completes', async () => {
     await renderDashboard(readyStore());
     expect(overview().getByText('History saved for 1 chats')).toBeTruthy();

@@ -7,6 +7,7 @@ import {
 } from '@mui/material';
 import { useId, useState, useSyncExternalStore } from 'react';
 
+import { BrowserExtensionControls } from '../components/BrowserExtensionControls';
 import { CommercialActivationControls } from '../components/CommercialActivationControls';
 import { DashboardOverview, type OverviewProgress } from '../components/dashboard/DashboardOverview';
 import { RecentConversations } from '../components/dashboard/RecentConversations';
@@ -15,6 +16,7 @@ import { SetupPrompt } from '../components/SetupPrompt';
 import { LoadingFrame, ReservedRegion, StatusLine } from '../components/ui/ReservedRegion';
 import { usePermissions } from '../hooks/usePermissions';
 import type { AnalyticsMetric, HistoricalCoverage } from '../protocol';
+import { browserControlApi, type BrowserControlApi } from '../services/browserControlApi';
 import {
   capabilityLicenseApi,
   type CapabilityLicenseApi,
@@ -98,6 +100,7 @@ interface CreatorDashboardViewProps {
   store?: CreatorDashboardStore;
   activationApi?: CapabilityLicenseApi;
   onboardingApi?: DesktopOnboardingApi;
+  browserApi?: BrowserControlApi;
 }
 
 function getIssue(
@@ -320,9 +323,10 @@ export default function CreatorDashboardView({
   store = bridgeTransportStore,
   activationApi = capabilityLicenseApi,
   onboardingApi = desktopOnboardingApi,
+  browserApi = browserControlApi,
 }: CreatorDashboardViewProps) {
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
-  const { canViewInbox } = usePermissions();
+  const { canViewInbox, canManageHistorySync } = usePermissions();
   const desktop = useSyncExternalStore(onboardingApi.subscribe, onboardingApi.getState, onboardingApi.getState);
   const analysis = selectAnalysisReadiness(desktop, state.creatorAccountId);
   const fullAnalyticsReady = analysis.checking ? undefined : analysis.value === null ? null
@@ -347,8 +351,19 @@ export default function CreatorDashboardView({
   const format = (metric: AnalyticsMetric | null | undefined) =>
     formatAdditiveMetric(metric, readiness, (value) => Number(value) > 9_999_999 ? '10M+' : NUMBER_FORMAT.format(value)).replace(/\+\+$/, '+');
   const issue = getIssue(state, hasSnapshot && metrics.some((metric) => format(metric) !== '—'));
-  const showSetup = hasSnapshot && fullAnalyticsReady !== undefined
-    && (extensionConnection(state.agent) !== 'connected' || fullAnalyticsReady !== true);
+  const agent = state.agent as BridgeTransportState['agent'];
+  const connection = extensionConnection(agent);
+  const browser = connection === 'connected' && state.connection === 'connected'
+    && agent?.creator_account_id === state.creatorAccountId ? agent?.browser ?? null : null;
+  // Collection is a separate decision. Only promote it when the current account
+  // has Full analytics and the extension actually reported an unmet prerequisite.
+  const collectionReview = fullAnalyticsReady === true && canManageHistorySync && state.creatorAccountId && browser
+    && (browser.capture !== 'active' || browser.legal_review_required || browser.site_access !== 'granted')
+    ? <BrowserExtensionControls key={state.creatorAccountId} browser={browser} api={browserApi}
+      onboarding={onboardingApi} connection={connection} canManage={canManageHistorySync}
+      continuationCreatorId={state.creatorAccountId} /> : null;
+  const showSetup = !collectionReview && hasSnapshot && fullAnalyticsReady !== undefined
+    && (connection !== 'connected' || fullAnalyticsReady !== true);
 
   const evidence = summarizeMetricEvidence(metrics);
   const progress = hasSnapshot ? historyProgress(state.coverage) : null;
@@ -359,8 +374,8 @@ export default function CreatorDashboardView({
     <Box data-scroll-container sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pb: 3 }}>
       <Stack spacing={3} sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}>
         <Typography component="h1" variant="h4">Dashboard</Typography>
-        <OnboardingEmptyActivity browser={(state.agent as BridgeTransportState['agent'])?.browser ?? null}
-          connection={extensionConnection(state.agent)} desktopConnected={state.connection === 'connected'} />
+        {collectionReview ?? <OnboardingEmptyActivity browser={browser}
+          connection={connection} desktopConnected={state.connection === 'connected'} />}
       </Stack>
     </Box>
   );
@@ -376,6 +391,7 @@ export default function CreatorDashboardView({
               : fullAnalyticsReady === undefined ? 'Checking setup…' : null} />
           </Box>
         </Box>
+        {collectionReview}
         {/* The overview stacks its counts until md, so the stacked reservation holds until then. */}
         <ReservedRegion id="dashboard-overview" size={{ xs: 450, md: 300 }}>
           <Box data-region-content><DashboardOverview isLoading={!hasSnapshot} conversations={format(analytics?.total_conversations)} messages={format(analytics?.total_messages)} progress={progress} received={format(analytics?.inbound_messages)} sent={format(analytics?.outbound_messages)} split={directionSplit(analytics?.inbound_messages, analytics?.outbound_messages, readiness)} /></Box>
@@ -388,13 +404,13 @@ export default function CreatorDashboardView({
         <ReservedRegion id="dashboard-recent" size={{ xs: 472, sm: 448 }} regionRole="scroll">
           {hasSnapshot ? <Box data-region-content><RecentConversations conversations={state.conversations} showInboxLink={canViewInbox} /></Box> : <LoadingFrame label="Loading dashboard…" />}
         </ReservedRegion>
-        <ReservedRegion id="dashboard-setup" size={{ xs: 720, sm: 600 }} regionRole="scroll">
-          {showSetup && <Box data-region-content>
-            {extensionConnection(state.agent) === 'connected'
+        {showSetup && <ReservedRegion id="dashboard-setup" size={{ xs: 720, sm: 600 }} regionRole="scroll">
+          <Box data-region-content>
+            {connection === 'connected'
               ? <CommercialActivationControls api={activationApi} onboarding={onboardingApi} creatorAccountId={state.creatorAccountId} />
               : <SetupPrompt extensionConnected={false} fullAnalyticsReady={fullAnalyticsReady === true} title="Finish setup" />}
-          </Box>}
-        </ReservedRegion>
+          </Box>
+        </ReservedRegion>}
       </Stack>
     </Box>
   );

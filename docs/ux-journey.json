@@ -1725,6 +1725,10 @@
           "to": "desktop.message_history",
           "by": "user",
           "action": "open-settings"
+        },
+        {
+          "to": "desktop.message_collection_review",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -1754,6 +1758,10 @@
         },
         {
           "to": "extension.full_ready",
+          "by": "system"
+        },
+        {
+          "to": "desktop.message_collection_review",
           "by": "system"
         }
       ],
@@ -3618,6 +3626,42 @@
           "kind": "unit",
           "file": "frontend/tests/TextAnalysisReissueControls.test.tsx",
           "name": "discovers the original request after remount without starting a replacement"
+        }
+      ]
+    },
+    {
+      "id": "desktop.message_collection_review",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/BrowserExtensionControls.tsx",
+        "text": "data-journey-state=\"desktop.message_collection_review\""
+      },
+      "transitions": [
+        {
+          "to": "browser.loading",
+          "by": "user",
+          "action": "review-collection"
+        },
+        {
+          "to": "desktop.numbers_ready",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "opens the current browser review directly and never accepts collection from the dashboard"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "does not offer browser review without matching current authority or hide existing activity"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "leaves paused collection untouched until an explicit resume and waits for pushed confirmation"
         }
       ]
     }

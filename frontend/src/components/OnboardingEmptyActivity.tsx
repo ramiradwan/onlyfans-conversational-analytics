@@ -31,14 +31,15 @@ export function OnboardingEmptyActivity({ browser, connection, desktopConnected 
             <Typography variant="body2">Browser extension</Typography><Chip size="small" variant="outlined" label={browserLabel} />
           </Stack>
         </Panel>
-        <Panel component="section" emphasis="quiet" aria-labelledby="empty-history-title">
+        {connection === 'connected' && desktopConnected && browser?.capture === 'active'
+          && browser.site_access === 'granted' && !browser.legal_review_required && <Panel component="section" emphasis="quiet" aria-labelledby="empty-history-title">
           <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
             <Typography component="h2" id="empty-history-title" variant="h6">Add older conversations</Typography>
             <Chip size="small" variant="outlined" label="Optional" />
           </Stack>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>Choose which conversations to add in Settings.</Typography>
-          <Button component={RouterLink} to="/settings#message-history" variant="outlined" sx={{ alignSelf: 'flex-start' }}>Review</Button>
-        </Panel>
+          <Button component={RouterLink} to="/settings#message-history" variant="outlined" sx={{ alignSelf: 'flex-start' }}>Review message history</Button>
+        </Panel>}
       </Box>
     </Stack>
   );
