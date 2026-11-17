@@ -60,8 +60,9 @@ it('records when its click finds the browser task and when Chrome was launched, 
     } });
   subject.value = initial(); subject.session = session; subject.connected = true;
   await subject.act('browser.access');
+  subject.value = { ...subject.value, pending_operations: [record] };
   subject.remember(operationId);
-  await subject.launchBrowser(true, null);
+  await subject.launchBrowser(true, operationId);
   const phases = calls.filter(([url]) => url.endsWith('/timing')).map(([, body]) => body.phase);
   expect(phases).toEqual(['click', 'command-send', 'task-found', 'launch']);
 });
