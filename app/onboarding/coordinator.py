@@ -6,12 +6,8 @@ import json
 import random
 import time
 from dataclasses import dataclass, field
-<<<<<<< HEAD
 from typing import AsyncIterator, Callable, Protocol
-=======
-from typing import AsyncIterator, Protocol
 from uuid import uuid4
->>>>>>> 39e1f6df (Complete verified local setup automatically)
 
 from app.onboarding import timing
 from app.onboarding.admission import AdmittedSession, ScopedAdmissions
