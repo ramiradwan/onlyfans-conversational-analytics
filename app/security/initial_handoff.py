@@ -329,11 +329,17 @@ class InitialHandoffStream:
         path = "/v1/onboarding/streams" if self.continuity else PATH_PREFIX + "wait"
         event_name = "onboarding" if self.continuity else "initial-handoff"
         maximum = 16384 if self.continuity else 8192
-        async with httpx.AsyncClient(base_url=self.origin, follow_redirects=False, trust_env=False,
+        operation = "source" if self.continuity else "handoff-wait"
+        async with timing.stream(operation), httpx.AsyncClient(base_url=self.origin, follow_redirects=False, trust_env=False,
                                      verify=hosted_stream_tls_context(),
                                      timeout=httpx.Timeout(35.0, connect=10.0)) as client:
+            timing.observe(operation, "protected-send", "ok", 0)
+            started = time.monotonic()
             async with client.stream("POST", path, json=envelope,
                                      headers={"Accept": "text/event-stream", "Accept-Encoding": "identity"}) as response:
+                timing.observe(operation, "protected-receive", "ok" if response.status_code == 200 else "error",
+                    max(0, (time.monotonic() - started) * 1000),
+                    http=response.status_code if 100 <= response.status_code <= 599 else None)
                 if self.continuity and response.status_code == 403:
                     raise OnboardingStreamAdmissionRefused("Onboarding stream admission refused")
                 if (response.status_code != 200 or response.headers.get("content-type", "").split(";")[0] != "text/event-stream"
@@ -381,7 +387,9 @@ class InitialHandoffStream:
                             if event_id is not None:
                                 raise HostedGrantUnavailable("Duplicate onboarding cursor")
                             event_id = line[3:].strip()
-                        elif not line.startswith(":"):
+                        elif line.startswith(":"):
+                            timing.observe(operation, "keepalive", "ok", 0)
+                        else:
                             raise HostedGrantUnavailable("Unknown onboarding stream field")
                 if pending or data or event or event_id is not None:
                     raise HostedGrantUnavailable("Incomplete onboarding stream frame")

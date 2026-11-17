@@ -1,16 +1,19 @@
 """Sign-in phase timing with closed labels and deltas only. No identifiers, URLs or credentials."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import os
 import secrets
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
+
+import httpx
 
 logger = logging.getLogger(__name__)
 POINTS = ("frame", "reconciled", "completed", "sent")
@@ -33,7 +36,12 @@ PHASES = frozenset({"click", "command-send", "accept", "entry", "prepare", "bind
     "stream-wake", "payload-ready", "attach-sent", "attach-received", "ahead-reused", "ahead-none", "ahead-age",
     "ahead-source", "ahead-changed-tab", "ahead-changed-storage", "ahead-changed-consent", "ahead-changed-account",
     "ahead-changed-authentication", "ahead-changed-other", "attach-done", "read-done", "authenticate-received",
-    "open-guarded", "navigate-sent", "not-ready", "auth-published", "auth-idle"})
+    "open-guarded", "navigate-sent", "not-ready", "auth-published", "auth-idle",
+    "stream-open", "stream-eof", "stream-read-timeout", "stream-connect-timeout", "stream-write-timeout",
+    "stream-pool-timeout", "stream-transport-error", "stream-error", "stream-cancel", "keepalive",
+    "eligible", "ineligible", "eligibility-error", "confirmation-live", "confirmation-absent",
+    "retry", "expiry", "probe", "released", "fallback", "backoff", "unavailable", "failed",
+    "wait-frame", "wait-fallback"})
 # Event-loop work below this duration is not recorded.
 SLOW_MS = 25
 SINK_DIRECTORY = "diagnostics"
@@ -110,6 +118,30 @@ def phase(operation, point, *, clock=time.monotonic, minimum_ms=0):
         elapsed = max(0, (clock() - started) * 1000)
         if elapsed >= minimum_ms or status != "ok":
             observe(operation, point, status, elapsed)
+
+
+@asynccontextmanager
+async def stream(operation, *, clock=time.monotonic):
+    """Record stream age and a closed end category without inspecting exception text."""
+    started, point, status = clock(), "stream-eof", "ok"
+    observe(operation, "stream-open", "ok", 0)
+    try:
+        yield
+    except BaseException as error:
+        status = "error"
+        if isinstance(error, (asyncio.CancelledError, GeneratorExit)):
+            point, status = "stream-cancel", "cancelled"
+        else:
+            point = next((label for kind, label in (
+                (httpx.ReadTimeout, "stream-read-timeout"),
+                (httpx.ConnectTimeout, "stream-connect-timeout"),
+                (httpx.WriteTimeout, "stream-write-timeout"),
+                (httpx.PoolTimeout, "stream-pool-timeout"),
+                (httpx.TransportError, "stream-transport-error"),
+            ) if isinstance(error, kind)), "stream-error")
+        raise
+    finally:
+        observe(operation, point, status, min(3_600_000, max(0, (clock() - started) * 1000)))
 
 
 def measured(operation, point):

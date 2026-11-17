@@ -155,7 +155,7 @@ class BrowserCeremonyWaitClient:
         """Yield each hint for this ceremony until the server ends the stream."""
         ceremony_id = envelope["request"]["ceremony_id"]
         # The shared TLS context keeps CA loading out of the event loop at each wait.
-        async with httpx.AsyncClient(base_url=self.origin, follow_redirects=False, trust_env=False,
+        async with timing.stream("wait"), httpx.AsyncClient(base_url=self.origin, follow_redirects=False, trust_env=False,
                                      verify=hosted_stream_tls_context(), transport=self.stream_transport,
                                      timeout=httpx.Timeout(35.0, connect=10.0)) as client:
             timing.observe("wait", "protected-send", "ok", 0)
@@ -202,6 +202,7 @@ class BrowserCeremonyWaitClient:
                         elif line.startswith("data:"):
                             data.append(line[5:].lstrip())
                         elif line.startswith(":"):
+                            timing.observe("wait", "keepalive", "ok", 0)
                             size = 0 if not (event or data) else size
                         else:
                             raise HostedGrantUnavailable("Unknown ceremony wait field")
