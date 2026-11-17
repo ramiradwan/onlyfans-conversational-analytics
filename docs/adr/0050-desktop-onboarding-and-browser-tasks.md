@@ -5,7 +5,7 @@
 - Status: Accepted.
 - Decision authority: Product owner, through approval of the desktop onboarding implementation plan.
 - Supersedes: ADR 0047's single browser workspace and extension-owned Full presentation; ADR 0045's direct Chrome access from Bridge; ADR 0048's browser return presentation. ADR 0049's durable ownership, fencing and uncertain-outcome requirements remain authoritative.
-- Amended: 2026-11-08, 2026-11-12 (proposed: push-based end of the sign-in popup), 2026-11-14 (wording: the sign-in popup may open on a local waiting page first)
+- Amended: 2026-11-08, 2026-11-12 (proposed: push-based end of the sign-in popup), 2026-11-14 (wording: the sign-in popup may open on a local waiting page first), 2026-11-17 (browser setup progress survives presentation expiry)
 
 ## Decision
 
@@ -48,6 +48,8 @@ The product has not launched and has no existing users. Replace superseded onboa
 New ceremony records require individual retention classifications: expiring contexts and proof challenges, bounded notification correlations, unresolved worker outcomes, committed commercial authority and security events do not share one deletion timer. Existing domain retention remains authoritative.
 
 Local task admission records are presentation working state: delete completed, cancelled and expired task records at their original admission deadline, and delete their unreferenced retired presentations. Preserve accepted or uncertain work for domain reconciliation. Task-creation limits must never prevent a fresh native presentation from reconciling existing work.
+
+Retain the latest admitted browser-access observation as setup progress for its exact journey and installation key, independently of task and presentation expiry. This display evidence grants no browser admission or account authority. A newer observation for that key replaces it, including consent withdrawal, permission loss or sign-out. A missing or changed installation key invalidates it. An old task cannot bind that progress to a replacement key. Expired account decisions return to the sign-in choices on Account connection while browser setup remains established. Presentation renewal and reads never start protected work. The next explicit sign-in uses the existing authentication route and requires a fresh live decision before connection.
 
 The coordinator delegates to existing domain services rather than duplicating their authority. Publish verified facts, separate local/Full readiness, pending operations and allowed actions. Subscribe before authoritative reads and retain invalidations received while busy. Commands carry unique operation IDs and exact expected scope/generation. Reads and renders do not initiate protected mutations. Closing a page or losing a reply cannot establish cancellation or justify another mutation.
 

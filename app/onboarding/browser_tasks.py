@@ -216,27 +216,75 @@ class BrowserTasks:
             connection.execute("INSERT INTO desktop_browser_observations VALUES (?,?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET "
                 "admission_generation=excluded.admission_generation,epoch=excluded.epoch,revision=excluded.revision,observation_json=excluded.observation_json",
                 (task["task_id"], task["admission_generation"], value["epoch"], value["revision"], encoded))
+            self._save_progress(connection, value)
             self.admissions._require(connection, session.identifier, role="browser_task", generation=session.generation)
         events.publish()
 
     def read(self, journey_id, *, operation_id=None):
-        if journey_id is None:
+        rows = self._observations(journey_id, operation_id=operation_id)
+        if len(rows) != 1:
             return None
+        return validate_observation(json.loads(rows[0]["observation_json"]))
+
+    def _observations(self, journey_id, *, operation_id=None):
+        if journey_id is None:
+            return []
         with self.store.database.read() as connection:
-            rows = connection.execute("SELECT o.observation_json FROM desktop_browser_observations o "
+            return connection.execute("SELECT o.observation_json FROM desktop_browser_observations o "
                 "JOIN desktop_browser_tasks t ON t.task_id=o.task_id "
                 "JOIN desktop_presentations p ON p.generation=t.desktop_generation "
                 "WHERE t.journey_id=? AND t.admission_generation=o.admission_generation AND t.expires_at>? "
                 "AND (? IS NULL OR t.operation_id=?) "
                 "AND t.state NOT IN ('cancelled','expired') AND p.state='active' AND p.expires_at>?",
                 (journey_id, self.admissions._now(), operation_id, operation_id, self.admissions._now())).fetchall()
-        if len(rows) != 1:
-            return None
-        return validate_observation(json.loads(rows[0]["observation_json"]))
+
+    def _save_progress(self, connection, value):
+        key = self.store.installation_key_reference(connection=connection)
+        if key is None:
+            return
+        previous = connection.execute("SELECT * FROM desktop_browser_progress WHERE journey_id=?", (value["journey_id"],)).fetchone()
+        if (previous is not None and (previous["installation_key_id"], previous["installation_key_jkt"]) != (
+                key.installation_key_id, key.installation_key_jkt)
+                and json.loads(previous["observation_json"])["task_id"] == value["task_id"]):
+            return
+        connection.execute("INSERT INTO desktop_browser_progress VALUES (?,?,?,?) ON CONFLICT(journey_id) DO UPDATE SET "
+            "installation_key_id=excluded.installation_key_id,installation_key_jkt=excluded.installation_key_jkt,"
+            "observation_json=excluded.observation_json", (value["journey_id"], key.installation_key_id,
+                key.installation_key_jkt, canonical(value).decode()))
+
+    def progress(self, journey_id):
+        """Browser setup evidence for display, independent of task admission."""
+        with self.store.database.read() as connection:
+            row = connection.execute("SELECT * FROM desktop_browser_progress WHERE journey_id=?", (journey_id,)).fetchone()
+            key = self.store.installation_key_reference(connection=connection)
+            if row is not None and (key is None or (row["installation_key_id"], row["installation_key_jkt"]) != (
+                    key.installation_key_id, key.installation_key_jkt)):
+                return None
+            live = self._observations(journey_id)
+            if len(live) > 1:
+                return None
+            if not live and row is None:
+                return None
+            value = live[0]["observation_json"] if live else row["observation_json"]
+            observed = validate_observation(json.loads(value))
+            return observed if observed["extension_id"] == self.extension_id else None
+
+    def _remember_progress(self, connection, operation_id):
+        rows = connection.execute("SELECT o.observation_json FROM desktop_browser_observations o "
+            "JOIN desktop_browser_tasks t ON t.task_id=o.task_id WHERE t.operation_id=? "
+            "AND t.admission_generation=o.admission_generation AND t.expires_at>? "
+            "AND t.purpose IN ('browser.access','browser.identity')", (require_journey(operation_id), self.admissions._now())).fetchall()
+        if len(rows) == 1:
+            self._save_progress(connection, validate_observation(json.loads(rows[0]["observation_json"])))
+
+    def remember_progress(self, operation_id):
+        with self.store.database.transaction() as connection:
+            self._remember_progress(connection, operation_id)
 
     def complete(self, operation_id):
         """Called only after the coordinator reads the relevant domain outcome."""
         with self.store.database.transaction() as connection:
+            self._remember_progress(connection, operation_id)
             connection.execute("UPDATE desktop_browser_tasks SET state='completed' WHERE operation_id=? AND state IN ('pending','accepted','outcome_unknown')",
                                (require_journey(operation_id),))
         timing.completed(operation_id)

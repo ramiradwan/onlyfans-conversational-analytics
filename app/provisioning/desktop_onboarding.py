@@ -134,7 +134,7 @@ class ProvisioningSetupOwner:
         except OnboardingJourneyUnavailable:
             journey = None
             reason = "authority_unavailable"
-        browser = self.browser_tasks.read(journey_id)
+        browser = self.browser_tasks.progress(journey_id)
         progress, creator, selection_reason = self._selection(journey, browser)
         recovery = self._recovery(journey_id, source_journey, connection=connection) if journey is None else None
         if recovery is not None:
@@ -223,7 +223,7 @@ class ProvisioningSetupOwner:
     def observe(self, operation):
         scope = json.loads(operation["owner_scope_json"])
         if operation["action"] == "browser.access":
-            observed = self.browser_tasks.read(operation["journey_id"])
+            observed = self.browser_tasks.progress(operation["journey_id"])
             if observed is not None and observed["state"] in {"ready", "paused"}:
                 return OperationResult("completed")
             if operation["expires_at"] <= self.store._now().timestamp():
@@ -731,6 +731,7 @@ class ProvisioningSetupOwner:
             try:
                 if self.store.installation_key_reference() is None:
                     self.key.ensure_ready()
+                self.browser_tasks.remember_progress(operation_id)
             except Exception:  # noqa: BLE001 - the account connection prepares the key again.
                 return
         async def after_launch():

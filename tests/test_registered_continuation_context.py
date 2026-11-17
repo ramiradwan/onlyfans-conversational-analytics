@@ -285,7 +285,7 @@ def test_native_account_command_resumes_only_the_explicit_classified_source(owne
     root = str(uuid4())
     observed = observation(SimpleNamespace(task_id=str(uuid4()), journey_id=root, generation=str(uuid4())))
     observed["creator_account_id"] = "creator-1"
-    browser = SimpleNamespace(extension_id="a" * 32, read=lambda _: observed)
+    browser = SimpleNamespace(extension_id="a" * 32, progress=lambda _: observed)
     setup_owner = ProvisioningSetupOwner(owner.store, browser_tasks=browser, ceremonies=None,
         initial=None, registered=None, key=owner.key, finalize=lambda **_: None, completion_ready=lambda: False)
     admissions = ScopedAdmissions(owner.store, stage="setup")
