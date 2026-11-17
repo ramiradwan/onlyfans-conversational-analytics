@@ -28,7 +28,14 @@ try {
       location.replace('/');
     }
   };
-  const enrollment = new DesktopEnrollment({ receive: render, refresh: () => client.connect() });
+  const enrollment = new DesktopEnrollment({ receive: render, refresh: () => {
+    if (finished) return;
+    // No action or navigation may use the snapshot from the previous operator
+    // session. Only the first fresh setup event can restore connected state.
+    current = { ...current, connected: false };
+    render();
+    return client.connect();
+  } });
   client = new DesktopSetupClient({ generation: fields.get('presentation'), receive: state => {
     if (current.snapshot?.authentication?.authentication_attempt?.authentication_attempt_id
       !== state.snapshot?.authentication?.authentication_attempt?.authentication_attempt_id) choosingAccount = false;
@@ -43,7 +50,12 @@ try {
     catch { client.notify('operation_unconfirmed'); }
     finally { acting = null; render(); }
   };
-  document.getElementById('task-action').addEventListener('click', event => { void act(event.currentTarget.dataset.action); });
+  document.getElementById('task-action').addEventListener('click', event => {
+    const button = event.currentTarget;
+    if (finished || button.hidden || button.disabled || !button.dataset.action || !current.connected
+      || !current.snapshot?.allowed_actions.includes(button.dataset.action)) return;
+    void act(button.dataset.action);
+  });
   for (const button of document.querySelectorAll('#sign-in-options [data-provider]')) {
     button.addEventListener('click', event => {
       const { action, provider: selected } = event.currentTarget.dataset;

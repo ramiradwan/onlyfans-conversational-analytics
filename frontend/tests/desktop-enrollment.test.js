@@ -104,6 +104,22 @@ describe('native local enrollment', () => {
     await h.owner.authenticate();
     expect(h.refresh).toHaveBeenCalledOnce();
   });
+  it.each(['ceremony', 'status'])('retires the old projection before publishing authenticated access: %s', async mode => {
+    const h = setup(true);
+    await h.owner.check();
+    const order = [];
+    h.refresh.mockImplementation(() => { order.push('refresh'); });
+    h.receive.mockImplementation(value => { if (value.authenticated) order.push('authenticated'); });
+    if (mode === 'ceremony') await h.owner.authenticate();
+    else {
+      h.api.state.mockResolvedValue({ enrolled: true, authenticated: true });
+      await h.owner.check({ quiet: true });
+    }
+    expect(order[0]).toBe('refresh');
+    expect(order.slice(1)).toContain('authenticated');
+    expect(h.refresh).toHaveBeenCalledOnce();
+    h.owner.stop();
+  });
   it('preserves a committed enrollment without starting registration again', async () => {
     const h = setup(); await h.owner.check();
     h.api.enroll.mockRejectedValue(new EnrollmentOutcomeError(true));

@@ -7,7 +7,7 @@ const tasks = {
   'finish-setup': ['Finish setup', 'Set up access to this computer and connect the browser.', 'setup_finish'],
   complete: ['Setup complete', '', 'setup_complete'],
 };
-const actions = { 'browser.access': 'Set up browser access', 'account.connect': 'Sign in', 'account.confirm': 'Connect account', 'browser.pair': 'Connect browser' };
+const actions = { 'browser.access': 'Set up browser access', 'account.connect': 'Sign in', 'account.confirm': 'Connect account', 'browser.pair': 'Connect extension' };
 const errors = {
   status_unavailable: 'The setup connection was interrupted. Reconnecting…',
   session_unavailable: 'The desktop session could not be restored. Try again.',
@@ -53,13 +53,15 @@ export function renderSetup(document, state) {
   const value = state.snapshot;
   const authentication = state.authentication;
   const needsAuthentication = Boolean(authentication && !authentication.authenticated);
+  const localAccessReady = !authentication || (authentication.checked && authentication.authenticated
+    && !authentication.busy && !authentication.error);
   const lapsed = needsAuthentication && accessCopy[authentication.access] || null;
   get('local-access').hidden = !needsAuthentication;
   get('local-access').dataset.journeyState = 'desktop.setup_local_access';
   setStatus(get('local-access-description'), lapsed?.[0] || 'Use a passkey to sign in on this computer.');
   get('local-authenticate').hidden = !needsAuthentication || authentication.enrolled === null;
   get('local-authenticate').disabled = !state.connected || authentication?.busy;
-  get('local-authenticate').textContent = authentication?.enrolled ? 'Sign in' : 'Set up access';
+  get('local-authenticate').textContent = authentication?.enrolled ? 'Sign in with passkey' : 'Set up passkey';
   setStatus(get('local-auth-status'), lapsed?.[1]
     || (authentication?.recoveringStatus ? 'Checking access automatically…' : null)
     || (authentication?.checking ? 'Checking access on this computer…' : null)
@@ -88,16 +90,30 @@ export function renderSetup(document, state) {
     && (signInActions.includes(state.acting) || state.pending && value?.pending_operations.some(item =>
       item.operation_id === state.pending && signInActions.includes(item.action))));
   const showingProviders = choosingProvider || opening;
-  const controlsDisabled = !state.connected || needsAuthentication || Boolean(state.acting);
+  const controlsDisabled = !state.connected || !localAccessReady || Boolean(state.acting);
+  const pairingPending = task === 'finish-setup' && (state.acting === 'browser.pair'
+    || value?.pending_operations.some(item => item.action === 'browser.pair'));
+  const pairingAvailable = task === 'finish-setup' && state.connected && localAccessReady && !state.error
+    && allowed.includes('browser.pair') && !pairingPending;
   const [title, description, journeyState] = tasks[task] || (state.error
     ? ['Setup unavailable', '', 'setup_unavailable'] : ['Loading setup', 'Reading local setup status…', 'setup_loading']);
   document.querySelector('main').dataset.journeyState = 'desktop.' + (state.error === 'status_unavailable' || state.error === 'session_unavailable'
     ? 'setup_unavailable' : journeyState);
-  get('task-title').textContent = title;
-  get('task-description').textContent = choosingAccount ? 'Choose how to sign in with another account.'
-    : showingProviders ? 'Choose how to sign in. You will confirm the account connection here.'
-      : decision ? 'Review the account and computer, then confirm the connection.' : description;
-  get('task-description').hidden = !description;
+  const securing = task === 'finish-setup' && needsAuthentication;
+  const waitingForAccess = task === 'finish-setup' && authentication && !needsAuthentication
+    && (!localAccessReady || !state.connected);
+  const connecting = pairingPending && state.connected && localAccessReady;
+  get('task-title').textContent = securing ? 'Secure your app'
+    : waitingForAccess ? 'Getting ready' : connecting ? 'Connecting the extension'
+      : pairingAvailable ? 'Connect the browser extension' : title;
+  const taskDescription = securing ? '' : waitingForAccess ? 'Checking access on this computer…'
+    : connecting ? 'Keep Chrome open while Dipsy connects.'
+      : pairingAvailable ? 'Connect Chrome to Dipsy so they can work together.'
+        : choosingAccount ? 'Choose how to sign in with another account.'
+          : showingProviders ? 'Choose how to sign in. You will confirm the account connection here.'
+            : decision ? 'Review the account and computer, then confirm the connection.' : description;
+  get('task-description').textContent = taskDescription;
+  get('task-description').hidden = !taskDescription;
   get('decision-details').hidden = !decision || choosingAccount;
   const label = decision && value?.creator_label?.creator_id === decision.creator_id ? value.creator_label : null;
   get('decision-account').textContent = decision ? label?.display_name || (label?.username ? '@' + label.username
@@ -130,11 +146,11 @@ export function renderSetup(document, state) {
     || value.pending_operations.some(item => item.action === 'setup.finalize'));
   const progress = task === 'complete' ? state.continuing ? 'Opening dashboard…' : ''
     : state.acting === 'auth.cancel' ? 'Cancelling sign-in…'
-    : opening || state.acting && ['auth.select', 'auth.switch', 'account.connect', 'browser.open'].includes(state.acting) ? 'Opening Chrome…'
+    : opening || state.acting && ['auth.select', 'auth.switch', 'account.connect', 'browser.open', 'browser.pair'].includes(state.acting) ? 'Opening Chrome…'
       : finalizing ? 'Preparing Dipsy on this computer…'
         : accepted ? 'Account connection accepted. Finishing setup…'
         : choosingProvider ? '' : signInMessage || (decisionStatus === 'awaiting-authentication' ? 'Finish signing in in Chrome.'
-          : decisionStatus === 'unavailable' ? 'This sign-in request is unavailable.' : pending && !decision ? 'Waiting for the current action to finish.' : '');
+          : decisionStatus === 'unavailable' ? 'This sign-in request is unavailable.' : pending && !decision && !connecting ? 'Waiting for the current action to finish.' : '');
   // The access section explains a lapse. Nothing progresses until access returns,
   // so the task line then names only errors unrelated to it.
   const unfinished = canSelect && signIn?.state === 'reauthentication-required' && !state.acting;
@@ -152,15 +168,17 @@ export function renderSetup(document, state) {
   const action = decision && allowed.includes('account.confirm') ? 'account.confirm'
     : allowed.find(item => actions[item] && (item !== 'browser.access' || task === 'browser-access')
       && (item !== 'account.connect' || signIn?.state === 'admitted'));
-  get('task-action').hidden = !action || showingProviders || accepted;
-  get('task-action').disabled = controlsDisabled || (decision ? Boolean(state.pending) : pending);
-  get('task-action').textContent = value?.continuation_available ? 'Continue setup'
+  const taskAction = get('task-action');
+  taskAction.hidden = !action || showingProviders || accepted || !localAccessReady
+    || action === 'browser.pair' && (!pairingAvailable || pending);
+  taskAction.disabled = controlsDisabled || (decision ? Boolean(state.pending) : pending);
+  taskAction.textContent = value?.continuation_available && action === 'account.connect' ? 'Continue setup'
     : action === 'account.connect' && signIn?.state === 'admitted' ? 'Continue' : actions[action] || '';
-  get('task-action').dataset.action = action || '';
+  taskAction.dataset.action = taskAction.hidden ? '' : action;
   const recoveryTarget = browserRecoveryTarget(value, reason ?? null);
   const browserReopen = get('browser-reopen');
   browserReopen.hidden = !recoveryTarget || accepted || showingProviders || Boolean(decision) || !state.connected
-    || Boolean(state.browserLaunchPending || state.acting || needsAuthentication);
+    || Boolean(state.browserLaunchPending || state.acting || !localAccessReady);
   browserReopen.disabled = controlsDisabled;
   browserReopen.dataset.operation = browserReopen.hidden ? '' : recoveryTarget;
   browserReopen.textContent = 'Open Chrome';

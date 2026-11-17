@@ -985,7 +985,7 @@ describe('desktop setup presentation', () => {
     expect(get('local-authenticate').hidden).toBe(true);
     renderSetup(document, { snapshot, connected: true, authentication: { ...authentication, enrolled: true, recoveringStatus: false, error: null } });
     expect(get('local-authenticate').hidden).toBe(false);
-    expect(get('local-authenticate').textContent).toBe('Sign in');
+    expect(get('local-authenticate').textContent).toBe('Sign in with passkey');
   });
   it('requires explicit local authentication before pairing or opening the dashboard', () => {
     mount();
@@ -995,7 +995,10 @@ describe('desktop setup presentation', () => {
         authentication: { enrolled, checked: true, authenticated: false, busy: false } });
       expect(document.getElementById('local-access').hidden).toBe(false);
       expect(document.getElementById('local-access').dataset.journeyState).toBe('desktop.setup_local_access');
-      expect(document.getElementById('local-authenticate').textContent).toBe(enrolled ? 'Sign in' : 'Set up access');
+      expect(document.getElementById('local-authenticate').textContent).toBe(enrolled ? 'Sign in with passkey' : 'Set up passkey');
+      expect(document.getElementById('task-action').hidden).toBe(true);
+      expect(document.getElementById('task-action').dataset.action).toBe('');
+      expect(document.getElementById('task-title').textContent).toBe('Secure your app');
       expect(document.getElementById('task-action').disabled).toBe(true);
       expect(document.getElementById('open-dashboard')).toBeNull();
     }
@@ -1003,6 +1006,38 @@ describe('desktop setup presentation', () => {
       authentication: { enrolled: true, checked: true, authenticated: true, busy: false } });
     expect(document.getElementById('local-access').hidden).toBe(true);
     expect(document.getElementById('task-action').disabled).toBe(false);
+    expect(document.getElementById('task-action').hidden).toBe(false);
+    expect(document.getElementById('task-action').textContent).toBe('Connect extension');
+    expect(document.getElementById('task-title').textContent).toBe('Connect the browser extension');
+    expect(document.getElementById('task-description').textContent).toBe('Connect Chrome to Dipsy so they can work together.');
+  });
+  it('shows pairing as a single explicit action only after fresh local access and suppresses it during connection', () => {
+    mount();
+    const snapshot = { ...initial(), next_task: 'finish-setup', allowed_actions: ['browser.pair'] };
+    const authentication = { enrolled: true, checked: true, authenticated: true, busy: false };
+    const get = id => document.getElementById(id);
+    for (const state of [
+      { connected: false, authentication },
+      { connected: true, authentication: { ...authentication, checked: false } },
+      { connected: true, authentication: { ...authentication, busy: true } },
+      { connected: true, authentication: { ...authentication, error: 'passkey_unconfirmed' } },
+      { connected: true, authentication, error: 'status_unavailable' },
+    ]) {
+      renderSetup(document, { snapshot, ...state });
+      expect(get('task-action').hidden).toBe(true);
+      expect(get('task-action').dataset.action).toBe('');
+    }
+    renderSetup(document, { snapshot, connected: true, authentication, acting: 'browser.pair' });
+    expect(get('task-action').hidden).toBe(true);
+    expect(get('task-title').textContent).toBe('Connecting the extension');
+    expect(get('task-status').textContent).toBe('Opening Chrome…');
+    renderSetup(document, { snapshot: { ...snapshot, allowed_actions: [], pending_operations: [
+      { ...record, action: 'browser.pair', state: 'waiting' },
+    ] }, connected: true, authentication, browserLaunchPending: true });
+    expect(get('task-action').hidden).toBe(true);
+    expect(get('browser-reopen').hidden).toBe(true);
+    expect(get('task-description').textContent).toBe('Keep Chrome open while Dipsy connects.');
+    expect(get('task-status').textContent).toBe('');
   });
   it.each([
     ['renewing', 'Renewing access on this computer. This window updates when renewal finishes.', 'Renewal needs an internet connection.'],

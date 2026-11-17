@@ -2276,6 +2276,16 @@
           "kind": "unit",
           "file": "tests/test_continuation_finalization.py",
           "name": "test_automatic_setup_finalization_uses_real_verified_grant_and_configuration_writes"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "shows pairing as a single explicit action only after fresh local access and suppresses it during connection"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "waits for a new authenticated snapshot before offering the explicit extension connection"
         }
       ]
     },
@@ -3183,6 +3193,16 @@
           "kind": "unit",
           "file": "frontend/tests/desktop-enrollment.test.js",
           "name": "bounds automatic status reads and recovers from a later pushed access change"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "shows pairing as a single explicit action only after fresh local access and suppresses it during connection"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "waits for a new authenticated snapshot before offering the explicit extension connection"
         }
       ]
     },

@@ -52,9 +52,11 @@ export class DesktopEnrollment {
       if (!controller.signal.aborted) {
         outcome = 'available';
         // Keep a ceremony's message when the read only confirms the shown state.
+        // Retire the pre-authentication setup projection before publishing
+        // restored access. A fresh authenticated snapshot owns the next action.
+        if (rechecking && value.authenticated && !wasAuthenticated) void this.refresh();
         this.publish({ ...value, checked: true, access: null, recoveringStatus: false, ...(this.state.enrolled === null ? { error: null } : {}) });
         this.retryCount = 0;
-        if (rechecking && value.authenticated && !wasAuthenticated) void this.refresh();
       }
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -91,9 +93,10 @@ export class DesktopEnrollment {
       if (this.state.enrolled) await this.api.login(controller.signal);
       else await this.api.enroll(controller.signal);
       if (!controller.signal.aborted) {
-        this.publish({ enrolled: true, authenticated: true });
         // The reconnect owns a long-lived event stream; it is not a new command.
+        // Retire the old projection before exposing the authenticated result.
         void this.refresh();
+        this.publish({ enrolled: true, authenticated: true });
       }
     } catch (cause) {
       if (controller.signal.aborted) return;

@@ -118,6 +118,34 @@ it('continues with unresolved optional activation without creating or reconcilin
   expect(owners.client.act).not.toHaveBeenCalled();
 });
 
+it('waits for a new authenticated snapshot before offering the explicit extension connection', async () => {
+  const snapshot = { ...ready(), next_task: 'finish-setup', local_ready: false, allowed_actions: ['browser.pair'] };
+  const button = document.getElementById('task-action');
+  publish(snapshot);
+  expect(button.hidden).toBe(true);
+  button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  expect(owners.client.act).not.toHaveBeenCalled();
+  owners.enrollment.refresh();
+  authenticate();
+  expect(button.hidden).toBe(true);
+  button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  expect(owners.client.act).not.toHaveBeenCalled();
+  publish(snapshot);
+  expect(button.hidden).toBe(false);
+  expect(button.textContent).toBe('Connect extension');
+  expect(owners.client.act).not.toHaveBeenCalled();
+  button.click();
+  await Promise.resolve();
+  expect(owners.client.act).toHaveBeenCalledExactlyOnceWith('browser.pair', undefined);
+});
+it('does not navigate from the old setup snapshot while authenticated status is being refreshed', () => {
+  publish();
+  owners.enrollment.refresh();
+  authenticate();
+  expect(replace).not.toHaveBeenCalled();
+  publish();
+  expect(replace).toHaveBeenCalledExactlyOnceWith('/');
+});
 it('opens the exact operation rendered on the current browser recovery button', async () => {
   owners.client.session.stage = 'setup';
   const selected = '22222222-2222-4222-8222-222222222222';
