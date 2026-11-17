@@ -1801,6 +1801,11 @@
           "kind": "unit",
           "file": "tests/test_projection_v2.py",
           "name": "test_first_passive_message_is_visible_without_completed_history"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/capture.spec.mjs",
+          "name": "first captured activity becomes visible before history is complete"
         }
       ]
     },

@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 
 import { expect, test } from '@playwright/test';
 import playwrightExpect from '../node_modules/playwright/lib/matchers/expect.js';
@@ -201,6 +202,114 @@ function expectNoDrops(state) {
 function expectStablePersistenceProof(after, before) {
   expect(after).toEqual(before);
 }
+
+test('first captured activity becomes visible before history is complete', async ({}, testInfo) => {
+  assertBuiltSpa();
+  assertBuiltExtension();
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'ofca-e2e-first-activity-'));
+  const paths = {
+    canonicalDatabasePath: path.join(temporaryRoot, 'canonical.sqlite3'),
+    projectionDatabasePath: path.join(temporaryRoot, 'projections.sqlite3'),
+  };
+  const authDatabasePath = path.join(temporaryRoot, 'auth.sqlite3');
+  let brain = null;
+  let context = null;
+  const pageErrors = [];
+  const started = performance.now();
+  const elapsed = () => Math.round(performance.now() - started);
+  try {
+    context = await launchExtensionBrowser(path.join(temporaryRoot, 'chromium-profile'));
+    const worker = await extensionWorker(context);
+    const browserAvailable = elapsed();
+    const actualExtensionId = extensionId(worker);
+    brain = new BrainProcess({ authDatabasePath, ...paths, extensionId: actualExtensionId });
+    await brain.start();
+    const listenerReady = elapsed();
+    const popup = await openPopup(context, actualExtensionId, pageErrors);
+    await connectFullAnalytics(context, popup, worker);
+    await expect.poll(async () => (await extensionState(worker)).capturePhase).toBe('identity');
+    await popup.close();
+    const bindingPage = context.pages()[0] ?? await context.newPage();
+    await establishBrowserWebAuthnSession(bindingPage, authDatabasePath);
+    let pairing;
+    try {
+      pairing = await pairCompanionForCapture(context);
+    } catch (error) {
+      console.error('First activity pairing session diagnostics', JSON.stringify({
+        sessionFailures: brain.sessionFailures(),
+        worker: buildWorkerRecoveryDiagnostic(await extensionState(worker).catch(() => null)),
+      }));
+      throw error;
+    }
+    expect(pairing.creatorAccountId).toBe('dev-creator-account');
+    expect(pairing.extensionId).toBe(actualExtensionId);
+    const paired = elapsed();
+
+    const platform = new SyntheticPlatform();
+    await platform.install(context);
+    const platformPage = context.pages()[0] ?? await context.newPage();
+    await platformPage.goto('https://onlyfans.com/', { waitUntil: 'domcontentloaded' });
+    const token = await platformPage.evaluate(() => globalThis.fixtureDocumentToken);
+    await expect.poll(() => platformPage.evaluate(() => globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.mode)).toBe('full');
+    await expect.poll(() => contentBridgeIsActive(worker)).toBe(true);
+    await readPlatform(platformPage, IDENTITY_PATH);
+    await waitForObservedCreatorIdentity(worker, token, SYNTHETIC.creatorId);
+    const identityObserved = elapsed();
+    await waitForExtensionState(worker, state => state.runtimeReady && state.socketOpen && state.sessionBound
+      && state.syncRequired === false && state.appliedConfigRevision === BOOTSTRAP_CONFIG_REVISION
+      && state.enabledResources.includes('messages') && state.outbox?.acknowledgedSourceSeq === 0,
+    'The bound capture policy was not ready.');
+    const captureReady = elapsed();
+    const before = await readBrainSummary(context);
+    expect([null, 0]).toContain(before.messageCount);
+    expect(before.conversationCount).toBe(0);
+    expect(before.coverage.status).not.toBe('complete');
+
+    // Have the real authenticated dashboard open before the first source event.
+    // No history authorization, refresh, navigation or other user action after it.
+    const dashboardPage = await context.newPage();
+    dashboardPage.on('pageerror', error => pageErrors.push(error.message));
+    await dashboardPage.goto(BRAIN_ORIGIN + '/', { waitUntil: 'domcontentloaded' });
+    const dashboard = dashboardPage.getByRole('main');
+    await expect(dashboard.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
+    const metric = dashboard.getByRole('region', { name: 'Overview' }).getByRole('group', { name: 'Messages' });
+    await expect(metric.getByText('1+', { exact: true })).toHaveCount(0);
+    await platformPage.evaluate(() => globalThis.fixtureOpenSocket());
+    await expect.poll(() => platform.openSockets.size).toBeGreaterThan(0);
+    const sourceSent = elapsed();
+    platform.sendInitialMessageOnlyPeer();
+    // Measure the first visible result independently of post-result diagnostics.
+    await expect(metric.getByText('1+', { exact: true })).toBeVisible();
+    const firstActivityVisible = elapsed();
+    await expect(dashboard.getByRole('link', { name: 'Open inbox' })).toBeVisible();
+    const summary = await waitForBrain(context, value => value.messageCount === 1
+      && value.conversationCount === 1 && value.analyticsBasis === 'synced_subset'
+      && value.projection.status === 'current', 'First captured message was not projected.');
+    expect(summary.coverage.status).not.toBe('complete');
+    expect(summary.analytics.total_messages.sample_size).toBe(1);
+    expect(summary.analytics.total_messages.projection_revision).toBe(summary.projection.projected_revision);
+    const proof = await readSqliteProof(paths);
+    expect(proof.canonicalMessageCount).toBe(1);
+    expect(proof.readModelMessageCount).toBe(1);
+    expect(proof.eventSequences).toEqual([1, 2]);
+    expect(platform.websocketFramesSent).toBe(1);
+    expect(pageErrors).toEqual([]);
+    platform.assertFailClosed();
+    await testInfo.attach('first-activity-timing', { contentType: 'application/json',
+      body: JSON.stringify({
+        schema: 'first-activity-timing.v1', scope: 'synthetic-source-browser',
+        browser_available_ms: browserAvailable, listener_ready_ms: listenerReady,
+        pairing_observed_ms: paired, identity_observed_ms: identityObserved,
+        capture_ready_ms: captureReady, source_sent_ms: sourceSent,
+        first_activity_visible_ms: firstActivityVisible,
+        source_to_visible_ms: firstActivityVisible - sourceSent,
+      }) });
+  } finally {
+    await context?.close().catch(() => undefined);
+    await brain?.stop().catch(() => undefined);
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
 
 test('real MV3 capture proves exact ordering, durable replay, and alarm recovery', async () => {
   // Repeated intentional worker termination can now open the real five-minute

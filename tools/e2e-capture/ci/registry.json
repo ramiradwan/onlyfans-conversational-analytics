@@ -5,6 +5,7 @@
   "repeat_index": 0,
   "tests": [
     {"id":"capture-replay","file":"tests/capture.spec.mjs","title_path":["real MV3 capture proves exact ordering, durable replay, and alarm recovery"],"shard":"core","retry_override":null},
+    {"id":"first-captured-activity","file":"tests/capture.spec.mjs","title_path":["first captured activity becomes visible before history is complete"],"shard":"core","retry_override":null},
     {"id":"catchup-enabled","file":"tests/catchup.spec.mjs","title_path":["unopened chats recover after downtime with catchup_enabled=true"],"shard":"catchup","retry_override":0},
     {"id":"catchup-disabled","file":"tests/catchup.spec.mjs","title_path":["unopened chats recover after downtime with catchup_enabled=false"],"shard":"catchup","retry_override":0},
     {"id":"heartbeat-liveness","file":"tests/heartbeat-liveness.spec.mjs","title_path":["paired Agent heartbeat advances without capture traffic"],"shard":"core","retry_override":null},
