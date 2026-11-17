@@ -649,6 +649,7 @@
         "app/analytics/retention_store.py",
         "app/analytics/provenance.py",
         "app/analytics/scheduling.py",
+        "app/analytics/publication_events.py",
         "app/analytics/runtime.py",
         "app/analytics/rebuild.*",
         "app/analytics/identity.py",
