@@ -2573,6 +2573,10 @@
         {
           "to": "browser.status_reconnecting",
           "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2615,6 +2619,46 @@
           "kind": "unit",
           "file": "frontend/tests/browser-tasks.test.js",
           "name": "returns blocked browser setup to its desktop owner without restarting the helper"
+        }
+      ]
+    },
+    {
+      "id": "browser.extension_disconnected",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'extension_disconnected'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_loading",
+          "by": "user",
+          "action": "desktop-return"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "reports extension disconnection after a verified port drops without reopening a second port or repeating sign-in"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "does not restart pairing or reattach after an invalid response or explicit refusal"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "distinguishes an extension refusal from initial discovery failure on the actual port adapter"
         }
       ]
     },
@@ -2716,6 +2760,11 @@
           "kind": "unit",
           "file": "frontend/tests/browser-tasks.test.js",
           "name": "returns blocked browser setup to its desktop owner without restarting the helper"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "fails closed for an unknown browser presentation rather than recommending installation"
         }
       ]
     },
@@ -2826,6 +2875,10 @@
         {
           "to": "browser.service_unavailable",
           "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2848,6 +2901,21 @@
           "kind": "unit",
           "file": "frontend/tests/browser-tasks.test.js",
           "name": "bounds initial connection recovery and never attaches after its budget is exhausted"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "reconciles a completed task when a verified port drops without reopening a second port"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "does not reattach when a fresh admission read refuses access after connection loss"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "does not report disconnection after the helper closes during the fresh admission read"
         }
       ]
     },
@@ -2869,6 +2937,10 @@
         },
         {
           "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
           "by": "system"
         }
       ],
@@ -2899,6 +2971,10 @@
         {
           "to": "browser.status_reconnecting",
           "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2927,6 +3003,10 @@
         },
         {
           "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
           "by": "system"
         }
       ],
@@ -2957,6 +3037,10 @@
         {
           "to": "browser.status_reconnecting",
           "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2985,6 +3069,10 @@
         },
         {
           "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
           "by": "system"
         }
       ],
@@ -3082,6 +3170,10 @@
         {
           "to": "browser.status_reconnecting",
           "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -3120,6 +3212,10 @@
         {
           "to": "browser.status_reconnecting",
           "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -3153,6 +3249,10 @@
         },
         {
           "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
           "by": "system"
         }
       ],
@@ -3204,11 +3304,6 @@
       },
       "transitions": [
         {
-          "to": "browser.auth_opening",
-          "by": "user",
-          "action": "authentication-open"
-        },
-        {
           "to": "desktop.setup_account_connection",
           "by": "user",
           "action": "desktop-return"
@@ -3220,6 +3315,10 @@
         {
           "to": "browser.status_reconnecting",
           "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -3227,6 +3326,11 @@
           "kind": "unit",
           "file": "frontend/tests/browser-tasks.test.js",
           "name": "renders focused authentication and ordinary Chrome recovery without declaring success"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "notifies Brain to read an uncertain authentication outcome without retrying its operation"
         }
       ]
     },
@@ -3370,6 +3474,10 @@
         {
           "to": "browser.status_reconnecting",
           "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -3399,6 +3507,10 @@
         },
         {
           "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
           "by": "system"
         }
       ],
@@ -3542,6 +3654,10 @@
         },
         {
           "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
           "by": "system"
         }
       ],

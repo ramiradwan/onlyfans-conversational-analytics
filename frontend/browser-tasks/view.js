@@ -6,19 +6,20 @@ const journeyStates = { loading: 'loading', unavailable: 'unavailable', profile_
   pairing_saved: 'pairing_saved',
   pairing_unconfirmed: 'pairing_unconfirmed', pairing_access_required: 'pairing_access_required',
   task_expired: 'task_expired', task_changed: 'task_changed', task_completed: 'task_completed', service_unavailable: 'service_unavailable',
-  status_reconnecting: 'status_reconnecting',
+  status_reconnecting: 'status_reconnecting', extension_disconnected: 'extension_disconnected',
   'needs-consent': 'needs_consent', 'needs-permission': 'needs_permission', 'needs-account': 'needs_account',
   ready: 'ready', paused: 'paused', reported: 'reported' };
 const status = {
   loading: 'Reading the current task…',
-  unavailable: 'Enable or install the extension in this Chrome profile, then return to the desktop app.',
+  unavailable: 'Check that the extension is turned on in this Chrome profile, then return to the desktop app.',
+  extension_disconnected: 'Dipsy couldn’t connect to the extension. Continue setup in the desktop app.',
   profile_mismatch: 'Switch to the Chrome profile you used for setup, then return to the desktop app.',
   account_mismatch: 'Switch to the creator account you want to connect, then return to the desktop app.',
   auth_idle: 'Continue signing in to your account.',
   auth_opening: 'Waiting for sign-in to finish.',
   auth_checking: 'Checking the sign-in outcome…',
   auth_closed: 'Sign-in window closed. Continue in the desktop app.',
-  auth_unconfirmed: 'The sign-in outcome has not been confirmed.',
+  auth_unconfirmed: 'Checking whether sign-in finished…',
   auth_access_required: 'Browser access is required for this request.',
   pairing_connecting: 'Connecting this browser to the desktop app…',
   pairing_checking: 'Checking the browser connection…',
@@ -40,14 +41,14 @@ export function renderBrowserTask(document, value) {
   const get = id => document.getElementById(id), payload = value.payload;
   const authentication = payload?.task.purpose === 'browser.authentication';
   const pairing = payload?.task.purpose === 'browser.pairing-confirmation';
-  const state = Object.hasOwn(status, value.state) ? value.state : 'unavailable';
+  const state = Object.hasOwn(status, value.state) ? value.state : 'service_unavailable';
   document.querySelector('main').dataset.journeyState = 'browser.' + journeyStates[state];
   setStatus(get('task-status'), !payload && state === 'service_unavailable'
     ? 'Dipsy can’t connect right now. Open the desktop app to continue setup.' : status[state]);
   get('pairing-replace').hidden = !pairing || state !== 'pairing_saved';
   get('task-title').textContent = pairing ? 'Connect browser' : authentication ? 'Sign in' : 'Browser access';
   get('extension-open').hidden = authentication || pairing || !['needs-consent', 'needs-permission', 'needs-account'].includes(state);
-  get('authentication-open').hidden = !authentication || !['auth_idle', 'auth_unconfirmed'].includes(state);
+  get('authentication-open').hidden = !authentication || state !== 'auth_idle';
   get('extension-open').textContent = state === 'needs-account' ? 'Open creator account' : 'Open extension';
   get('extension-install').hidden = state !== 'unavailable' || !payload;
   if (payload) {
@@ -55,7 +56,7 @@ export function renderBrowserTask(document, value) {
     get('desktop-return').href = 'ofca://onboarding/?journey=' + payload.task.journey_id;
   }
   get('desktop-return').hidden = !payload || !(['reported', 'task_completed', 'task_expired', 'task_changed', 'profile_mismatch',
-    'account_mismatch', 'unavailable', 'service_unavailable', 'auth_checking', 'auth_closed', 'auth_unconfirmed', 'auth_access_required', 'pairing_checking',
+    'account_mismatch', 'unavailable', 'extension_disconnected', 'service_unavailable', 'auth_checking', 'auth_closed', 'auth_unconfirmed', 'auth_access_required', 'pairing_checking',
     'pairing_unconfirmed', 'pairing_access_required'].includes(state));
   get('desktop-return').textContent = ['task_expired', 'task_changed', 'profile_mismatch'].includes(state) ? 'Continue setup' : 'Continue in desktop';
 }

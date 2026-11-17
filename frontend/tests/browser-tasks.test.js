@@ -214,7 +214,7 @@ describe('scoped browser helper', () => {
   });
   it('returns blocked browser setup to its desktop owner without restarting the helper', () => {
     document.documentElement.innerHTML = readFileSync('browser-tasks/index.html', 'utf8');
-    for (const state of ['unavailable', 'account_mismatch', 'profile_mismatch', 'service_unavailable']) {
+    for (const state of ['unavailable', 'extension_disconnected', 'account_mismatch', 'profile_mismatch', 'service_unavailable']) {
       const value = payload();
       renderBrowserTask(document, { state, payload: value });
       expect(document.getElementById('task-retry')).toBeNull();
@@ -338,7 +338,7 @@ describe('scoped browser helper', () => {
     expect(receive.mock.calls.at(-1)[0].state).toBe('needs-consent');
     expect(link.open()).toBe(true);
     port.onMessage.emit({ type: 'state', observation: { ...observation(value.task), instance_id: id(90), revision: 2 } });
-    expect(receive.mock.calls.at(-1)[0].state).toBe('unavailable');
+    expect(receive.mock.calls.at(-1)[0].state).toBe('invalid_response');
     expect(link.open()).toBe(false); expect(port.disconnect).toHaveBeenCalledOnce();
   });
   it('does not deliver intermediate consent decisions to Brain and reports only the admitted account observation', async () => {
@@ -564,7 +564,7 @@ describe('scoped browser helper', () => {
     for (const state of ['auth_idle', 'auth_opening', 'auth_checking', 'auth_unconfirmed', 'auth_access_required', 'unavailable']) {
       renderBrowserTask(document, { state, payload: value });
       expect(document.querySelector('main').dataset.journeyState).toBe('browser.' + state);
-      expect(document.getElementById('authentication-open').hidden).toBe(!['auth_idle', 'auth_unconfirmed'].includes(state));
+      expect(document.getElementById('authentication-open').hidden).toBe(state !== 'auth_idle');
       expect(document.getElementById('extension-open').hidden).toBe(true);
     }
     // Sign-in stays in the extension popup. No second Chrome route exists.
@@ -586,7 +586,7 @@ describe('scoped browser helper', () => {
       if (invalid) notification.attempt_id = 'B'.repeat(43);
       port.onMessage.emit({ type: 'authentication', task_id: value.task.task_id, admission_generation: value.task.admission_generation,
         state: 'checking', notification });
-      expect(receive.mock.calls.at(-1)[0].state).toBe(invalid ? 'unavailable' : 'auth_checking');
+      expect(receive.mock.calls.at(-1)[0].state).toBe(invalid ? 'invalid_response' : 'auth_checking');
       link.close();
     }
   });
@@ -610,6 +610,10 @@ describe('scoped browser helper', () => {
     expect(received.at(-1).state).toBe('auth_unconfirmed');
     publish({ state: 'auth_checking', notification }); await client.serial;
     expect(received.at(-1).state).toBe('auth_unconfirmed');
+    expect(await client.authenticate()).toBe(false);
+    publish({ state: 'auth_idle', notification: null });
+    expect(received.at(-1).state).toBe('auth_unconfirmed');
+    expect(await client.authenticate()).toBe(false);
     const mutations = request.mock.calls.filter(([, options]) => options.method === 'POST');
     expect(mutations).toHaveLength(1);
     expect(mutations[0][0]).toBe('/api/v1/browser-tasks/notification');
@@ -629,7 +633,7 @@ describe('scoped browser helper', () => {
       await vi.advanceTimersByTimeAsync(20000);
       expect(receive.mock.calls.at(-1)[0].state).toBe('needs-consent');
       await vi.advanceTimersByTimeAsync(5000);
-      expect(receive).toHaveBeenLastCalledWith({ state: 'unavailable' });
+      expect(receive).toHaveBeenLastCalledWith({ state: 'connection_lost' });
       expect(link.open()).toBe(false);
       const count = port.postMessage.mock.calls.length;
       await vi.advanceTimersByTimeAsync(40000);
@@ -637,7 +641,7 @@ describe('scoped browser helper', () => {
       link.close();
     } finally { vi.useRealTimers(); }
   });
-  it('reconciles a dropped port refusal and keeps the desktop return locator on retry', async () => {
+  it('reconciles a dropped port refusal without reusing a refused admission on restart', async () => {
     const value = payload(), received = [];
     let publish, retired = false;
     const request = vi.fn(async path => {
@@ -656,7 +660,9 @@ describe('scoped browser helper', () => {
     // The only write is this helper's own ending report.
     expect(request.mock.calls.filter(([path]) => !path.endsWith('/ended')).every(([, options]) => options.method === undefined)).toBe(true);
     await client.start();
-    expect(received.at(-1)).toEqual({ state: 'task_changed', payload: value });
+    expect(received.at(-1)).toEqual({ state: 'task_changed', payload: null });
+    expect(client.session).toBeNull();
+    expect(client.lastLink).toBeNull();
     client.stop();
   });
   it('requires an exact helper path and canonical presentation fragment', () => {
@@ -674,7 +680,7 @@ describe('scoped browser helper', () => {
       expect(link.pair()).toBe(true);
       port.onMessage.emit({ type: 'pairing', state: 'compare', task_id: changed ? id(99) : value.task.task_id,
         admission_generation: value.task.admission_generation, comparison_code: '042917' });
-      expect(receive.mock.calls.at(-1)[0]).toEqual(changed ? { state: 'unavailable' }
+      expect(receive.mock.calls.at(-1)[0]).toEqual(changed ? { state: 'invalid_response' }
         : { state: 'pairing_compare', comparison_code: '042917' });
       link.close();
     }
@@ -687,7 +693,7 @@ describe('scoped browser helper', () => {
     port.onMessage.emit({ type: 'pairing-completed', task_id: kind === 'task' ? id(99) : value.task.task_id,
       admission_generation: kind === 'generation' ? id(99) : value.task.admission_generation,
       ...(kind === 'extra' ? { paired: true } : {}) });
-    expect(receive).toHaveBeenLastCalledWith({ state: kind === 'exact' ? 'pairing_completed' : 'unavailable' });
+    expect(receive).toHaveBeenLastCalledWith({ state: kind === 'exact' ? 'pairing_completed' : 'invalid_response' });
     link.close();
   });
   it.each(['brain-first', 'extension-first', 'lost-comparison-reply', 'replace', 'expired'])(
@@ -888,4 +894,163 @@ describe('sign-in helper opened before its ceremony', () => {
       expect(h.receive.mock.calls.at(-1)[0].state).toBe('task_changed');
     } finally { h.client.stop(); vi.useRealTimers(); }
   });
+});
+
+function reconnectingHelper(value, options = {}) {
+  const ports = [], received = [], posts = [];
+  let outcome = value;
+  const request = vi.fn(async (path, requestOptions) => {
+    if (requestOptions.method === 'POST') posts.push([path.split('/').at(-1), JSON.parse(requestOptions.body)]);
+    const response = options.respond?.(path, requestOptions);
+    if (response) return response;
+    const body = path.endsWith('/session') ? { role: 'browser_task', generation: id(4), task_id: id(1),
+      journey_id: id(2), csrf_token: 'A'.repeat(43) } : path.endsWith('/payload') ? outcome : { state: 'checking' };
+    return { ok: true, text: async () => JSON.stringify(body) };
+  });
+  const connect = vi.fn(({ receive }) => {
+    const port = { receive, close: vi.fn(), authenticate: vi.fn(() => true), pair: vi.fn(() => true),
+      open: vi.fn(() => true) };
+    ports.push(port);
+    return port;
+  });
+  const client = new BrowserTaskClient({ generation: id(4), nativeLaunch: options.nativeLaunch ?? false,
+    receive: state => received.push(state), request, connect, reattach: vi.fn(async () => false),
+    events: ({ signal }) => new Promise(resolve => signal.addEventListener('abort', resolve, { once: true })) });
+  return { client, connect, received, ports, posts, setOutcome: next => { outcome = next; } };
+}
+
+it('reports extension disconnection after a verified port drops without reopening a second port or repeating sign-in', async () => {
+  const value = authenticationPayload(), h = reconnectingHelper(value, { nativeLaunch: true });
+  try {
+    await h.client.start();
+    h.ports[0].receive({ state: 'auth_idle', notification: null });
+    await h.client.serial;
+    expect(h.ports[0].authenticate).toHaveBeenCalledOnce();
+    h.ports[0].receive({ state: 'auth_opening' });
+    const notification = { ceremony_id: value.ceremony.ceremony_id, attempt_id: value.ceremony.attempt_id, notification: 'unavailable' };
+    h.ports[0].receive({ state: 'auth_checking', notification });
+    await h.client.serial;
+    expect(h.received.at(-1).state).toBe('auth_unconfirmed');
+    expect(await h.client.authenticate()).toBe(false);
+    expect(h.ports[0].authenticate).toHaveBeenCalledOnce();
+    h.ports[0].receive({ state: 'connection_lost' });
+    await h.client.serial; await h.client.ending;
+    expect(h.connect).toHaveBeenCalledOnce();
+    expect(h.received.at(-1).state).toBe('extension_disconnected');
+    expect(h.posts.filter(([path]) => !['timing', 'opened'].includes(path))).toEqual([
+      ['notification', notification], ['ended', { reason: 'unavailable' }],
+    ]);
+    document.documentElement.innerHTML = readFileSync('browser-tasks/index.html', 'utf8');
+    renderBrowserTask(document, h.received.at(-1));
+    expect(document.getElementById('extension-install').hidden).toBe(true);
+    expect(document.getElementById('authentication-open').hidden).toBe(true);
+    expect(document.getElementById('desktop-return').hidden).toBe(false);
+  } finally { h.client.stop(); }
+});
+
+it('reconciles a completed task when a verified port drops without reopening a second port', async () => {
+  const value = authenticationPayload(), h = reconnectingHelper(value);
+  try {
+    await h.client.start();
+    h.ports[0].receive({ state: 'auth_opening' });
+    h.setOutcome({ ...value, task: { ...value.task, state: 'completed' }, ceremony: null });
+    h.ports[0].receive({ state: 'connection_lost' });
+    await h.client.serial;
+    expect(h.received.at(-1).state).toBe('task_completed');
+    expect(h.connect).toHaveBeenCalledOnce();
+    expect(h.ports[0].authenticate).not.toHaveBeenCalled();
+    expect(h.posts.filter(([path]) => !['timing', 'opened'].includes(path))).toEqual([]);
+  } finally { h.client.stop(); }
+});
+
+it('does not restart pairing or reattach after an invalid response or explicit refusal', async () => {
+  for (const reason of ['connection_lost', 'invalid_response', 'extension_refused']) {
+    const value = payload(); value.task.purpose = 'browser.pairing-confirmation'; value.creator_account_id = 'synthetic-creator';
+    const h = reconnectingHelper(value);
+    try {
+      await h.client.start();
+      h.ports[0].receive({ state: 'ready' }); await h.client.serial;
+      expect(h.ports[0].pair).toHaveBeenCalledOnce();
+      h.ports[0].receive({ state: reason }); await h.client.serial; await h.client.ending;
+      expect(h.connect).toHaveBeenCalledOnce();
+      expect(h.ports[0].pair).toHaveBeenCalledOnce();
+      expect(h.received.at(-1).state).toBe(reason === 'invalid_response' ? 'service_unavailable' : 'extension_disconnected');
+    } finally { h.client.stop(); }
+  }
+});
+
+it('coalesces sign-in clicks and fences a delayed launch against a lost port', async () => {
+  const value = authenticationPayload();
+  let release;
+  const h = reconnectingHelper(value, { respond: path => {
+    if (path.endsWith('/payload') && release === null) return new Promise(resolve => { release = () =>
+      resolve({ ok: true, text: async () => JSON.stringify(value) }); });
+  } });
+  try {
+    await h.client.start();
+    h.ports[0].receive({ state: 'auth_idle' });
+    release = null;
+    const first = h.client.authenticate();
+    expect(await h.client.authenticate()).toBe(false);
+    h.ports[0].receive({ state: 'connection_lost' });
+    release();
+    expect(await first).toBe(false);
+    await h.client.serial;
+    expect(h.connect).toHaveBeenCalledOnce();
+    expect(h.ports[0].authenticate).not.toHaveBeenCalled();
+    expect(h.received.at(-1).state).toBe('extension_disconnected');
+  } finally { h.client.stop(); }
+});
+
+it('fails closed for an unknown browser presentation rather than recommending installation', () => {
+  document.documentElement.innerHTML = readFileSync('browser-tasks/index.html', 'utf8');
+  renderBrowserTask(document, { state: 'unknown', payload: payload() });
+  expect(document.querySelector('main').dataset.journeyState).toBe('browser.service_unavailable');
+  expect(document.getElementById('extension-install').hidden).toBe(true);
+  expect(document.getElementById('desktop-return').hidden).toBe(false);
+});
+
+it('does not reattach when a fresh admission read refuses access after connection loss', async () => {
+  let refused = false;
+  const h = reconnectingHelper(authenticationPayload(), { respond: path =>
+    refused && path.endsWith('/payload') ? { ok: false, status: 403 } : null });
+  try {
+    await h.client.start();
+    h.ports[0].receive({ state: 'auth_idle' });
+    refused = true;
+    h.ports[0].receive({ state: 'connection_lost' });
+    await h.client.serial;
+    expect(h.received.at(-1).state).toBe('service_unavailable');
+    expect(h.connect).toHaveBeenCalledOnce();
+    expect(h.posts).toEqual([]);
+  } finally { h.client.stop(); }
+});
+
+it('distinguishes an extension refusal from initial discovery failure on the actual port adapter', () => {
+  const value = payload(), receive = vi.fn();
+  const port = { onMessage: event(), onDisconnect: event(), postMessage: vi.fn(), disconnect: vi.fn() };
+  const link = connectExtension({ payload: value, receive, runtime: { connect: () => port } });
+  port.onMessage.emit({ type: 'refused', reason: 'unavailable' });
+  expect(receive).toHaveBeenLastCalledWith({ state: 'extension_refused' });
+  expect(link.open()).toBe(false);
+  link.end();
+});
+
+it('does not report disconnection after the helper closes during the fresh admission read', async () => {
+  const value = authenticationPayload();
+  let release;
+  const h = reconnectingHelper(value, { respond: path => {
+    if (path.endsWith('/payload') && release === null) return new Promise(resolve => { release = () =>
+      resolve({ ok: true, text: async () => JSON.stringify(value) }); });
+  } });
+  await h.client.start();
+  h.ports[0].receive({ state: 'auth_idle' });
+  release = null;
+  h.ports[0].receive({ state: 'connection_lost' });
+  await Promise.resolve();
+  h.client.stop();
+  release();
+  await h.client.serial;
+  expect(h.connect).toHaveBeenCalledOnce();
+  expect(h.posts).toEqual([]);
 });

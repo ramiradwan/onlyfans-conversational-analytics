@@ -16,7 +16,11 @@ export function connectExtension({ payload, receive, runtime = globalThis.chrome
     try { port?.disconnect(); } catch { /* disconnected */ }
   };
   // A port lost while it only read ahead reports nothing. The helper attaches on a fresh port instead.
-  const unavailable = () => { if (closed) return; close(); if (!finishing && !preparing) receive({ state: 'unavailable' }); };
+  const unavailable = (state = last ? 'connection_lost' : 'unavailable') => {
+    if (closed) return;
+    close();
+    if (!finishing && !preparing) receive({ state });
+  };
   if (!preparing) timer = setTimeout(unavailable, timeout);
   try {
     if (!runtime?.connect) throw new Error('unavailable');
@@ -37,7 +41,7 @@ export function connectExtension({ payload, receive, runtime = globalThis.chrome
         refused = true; closed = true; clearTimeout(timer); clearInterval(heartbeat);
         clearTimeout(focusTimer); focusResolve?.(false); focusResolve = null;
         timer = setTimeout(() => { refused = false; try { kept.disconnect(); } catch { /* disconnected */ } }, timeout);
-        receive({ state: value.reason }); return;
+        receive({ state: value.reason === 'unavailable' ? 'extension_refused' : value.reason }); return;
       }
       if (last && focusResolve && own(value) && value.type === 'focused') {
         clearTimeout(focusTimer); focusResolve(true); focusResolve = null; return;
@@ -59,11 +63,11 @@ export function connectExtension({ payload, receive, runtime = globalThis.chrome
         clearTimeout(timer); receive({ state: 'pairing_completed' }); return;
       }
       if (!exact(value, ['type', 'observation']) || value.type !== 'state' || !isObservation(value.observation)
-        || !sameTask(value.observation, payload.task) || value.observation.extension_id !== payload.extension_id) { unavailable(); return; }
+        || !sameTask(value.observation, payload.task) || value.observation.extension_id !== payload.extension_id) { unavailable('invalid_response'); return; }
       const observation = value.observation;
       if (last && (last.instance_id !== observation.instance_id || last.epoch !== observation.epoch
         || observation.revision < last.revision || (observation.revision === last.revision && JSON.stringify(last) !== JSON.stringify(observation)))) {
-        unavailable(); return;
+        unavailable('invalid_response'); return;
       }
       clearTimeout(timer); last = observation;
       // An idle MV3 worker closes its ports. Keep only this finite admitted task

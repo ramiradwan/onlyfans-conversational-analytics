@@ -25,7 +25,7 @@ function waitForInitialRead(delay, signal) {
   });
 }
 // Reasons a helper reports to Brain before it asks the extension to close it.
-const ENDINGS = ['profile_mismatch', 'account_mismatch', 'task_changed', 'task_expired', 'unavailable', 'auth_access_required'];
+const ENDINGS = ['profile_mismatch', 'account_mismatch', 'task_changed', 'task_expired', 'unavailable', 'auth_access_required', 'extension_disconnected'];
 // Why the extension cannot open a sign-in, as the desktop shows it.
 const ACCESS_REASONS = { 'needs-account': 'needs_account', 'needs-consent': 'needs_consent', 'needs-permission': 'needs_permission' };
 
@@ -49,12 +49,14 @@ export class BrowserTaskClient {
   }
   /** Report why this helper ended, then ask the extension to close it. An error that would be lost stays shown. */
   async end(state) {
-    const reason = state === 'unavailable' && !this.extensionSeen ? 'extension_unavailable'
-      : state === 'auth_access_required' ? ACCESS_REASONS[this.extensionState] ?? 'unavailable' : state;
+    const run = this.run;
+    const reason = state === 'extension_disconnected' ? 'unavailable'
+      : state === 'unavailable' && !this.extensionSeen ? 'extension_unavailable'
+        : state === 'auth_access_required' ? ACCESS_REASONS[this.extensionState] ?? 'unavailable' : state;
     let reported = false;
     try { if (this.session) { await this.json('ended', { reason }); reported = true; } } catch { /* not recorded */ }
-    // Without an extension nothing can close this tab. It stays as the install surface.
-    if (reason === 'extension_unavailable') return;
+    // Never close a newer helper after the original ending report settles.
+    if (run !== this.run || reason === 'extension_unavailable') return;
     // Brain already knows a changed or expired task. Other reasons close only once the desktop has them.
     if (!reported && !['task_changed', 'task_expired'].includes(reason)) return;
     if (this.lastLink?.end?.() === true) return;
@@ -101,9 +103,8 @@ export class BrowserTaskClient {
     const text = await response.text();
     try { return parseOnboardingJson(text); }
     catch (error) {
-      // Malformed bootstrap responses are not transport failures.
-      if (signal) throw Error('invalid_response');
-      throw error;
+      // An invalid response is never a transient connection failure.
+      throw Error('invalid_response', { cause: error });
     }
   }
   async initialRead(path, signal) {
@@ -143,6 +144,12 @@ export class BrowserTaskClient {
     this.stop(); const run = this.run;
     const controller = this.initialReadController = new AbortController();
     this.automatic = automatic;
+    this.portEpoch = 0;
+    this.extensionSeen = false;
+    this.reattached = false;
+    this.lastLink = null;
+    this.session = null;
+    this.payload = null;
     this.statusUnavailable = false;
     this.statusReadSequence = 0;
     this.lastPresentation = null;
@@ -205,13 +212,16 @@ export class BrowserTaskClient {
       this.expiry = setTimeout(() => { this.stop(); this.receive({ state: 'task_expired', payload }); }, remaining);
       const early = this.preparedLink;
       this.preparedLink = null;
+      const portEpoch = ++this.portEpoch;
       const attach = receive => (typeof early?.attach === 'function' && early.attach(payload, receive) ? early
         : (early?.close?.(), this.connect({ payload, receive })));
       const attaching = attach(value => {
-        if (run !== this.run) return;
+        if (run !== this.run || portEpoch !== this.portEpoch) return;
         // The ceremony has taken over the waiting window, or this sign-in will not open it.
         if (!['ready', 'paused', 'auth_idle'].includes(value.state)) this.releaseWaiting();
-        if (value.state !== 'unavailable') this.extensionSeen = true;
+        if (!['unavailable', 'connection_lost', 'invalid_response', 'extension_refused'].includes(value.state) || value.observation) {
+          this.extensionSeen = true;
+        }
         this.extensionState = value.state;
         if (payload.task.purpose === 'browser.authentication' && value.state === 'auth_idle' && this.automatic) {
           this.stage('auth-idle');
@@ -226,6 +236,10 @@ export class BrowserTaskClient {
           this.automatic = false;
           this.automaticPending = false;
           this.authEpoch++;
+        }
+        if (value.state === 'auth_idle' && this.authNotification) {
+          this.receive({ state: this.authState ?? 'auth_checking', payload });
+          return;
         }
         if (value.state === 'auth_idle' && this.automaticPending) {
           this.receive({ state: 'auth_opening', payload });
@@ -262,8 +276,8 @@ export class BrowserTaskClient {
             if (this.finishCompleted(current)) return;
             if (this.link?.authenticate() !== true) throw Error('unavailable');
           }).catch(error => {
-            if (run === this.run) { this.stop(); this.receive({ state: error.message === 'task_changed' ? 'task_changed'
-              : error.message === 'task_expired' ? 'task_expired' : 'unavailable', payload }); }
+            if (run === this.run && portEpoch === this.portEpoch) { this.stop(); this.receive({ state: error.message === 'task_changed' ? 'task_changed'
+              : error.message === 'task_expired' ? 'task_expired' : 'service_unavailable', payload }); }
           });
           return;
         }
@@ -325,15 +339,24 @@ export class BrowserTaskClient {
           }).catch(() => { if (run === this.run) { this.stop(); this.receive({ state: 'service_unavailable', payload }); } });
           return;
         }
-        if (value.state === 'unavailable') {
-          // Chrome may deliver disconnect before the port's final refusal.
-          // Read admission before attributing that disconnect to the extension.
+        if (value.state === 'invalid_response') {
+          this.stop();
+          this.receive({ state: 'service_unavailable', payload });
+          return;
+        }
+        if (['unavailable', 'connection_lost', 'extension_refused'].includes(value.state)) {
+          // Read admission before attributing a disconnect to the extension.
+          // A previously admitted extension or explicit refusal is not absence;
+          // desktop owns any follow-up recovery without reopening a second port.
+          const disconnected = this.extensionSeen || value.state !== 'unavailable';
           this.serial = this.serial.then(async () => {
-            if (run !== this.run) return;
+            if (run !== this.run || portEpoch !== this.portEpoch) return;
             const current = await this.currentPayload();
-            if (run === this.run && !this.finishCompleted(current)) this.receive({ state: 'unavailable', payload });
+            if (run === this.run && portEpoch === this.portEpoch && !this.finishCompleted(current)) {
+              this.receive({ state: disconnected ? 'extension_disconnected' : 'unavailable', payload });
+            }
           }).catch(error => {
-            if (run === this.run) { this.stop(); this.receive({ state: error.message === 'task_changed' ? 'task_changed' : 'service_unavailable', payload }); }
+            if (run === this.run && portEpoch === this.portEpoch) { this.stop(); this.receive({ state: error.message === 'task_changed' ? 'task_changed' : 'service_unavailable', payload }); }
           });
           return;
         }
@@ -483,6 +506,10 @@ export class BrowserTaskClient {
         const payload = this.payload;
         this.stop(); this.receive({ state: error.message, payload }); return;
       }
+      if (error.message === 'invalid_response' || error.status >= 400 && error.status < 500) {
+        const payload = this.payload;
+        this.stop(); this.receive({ state: 'service_unavailable', payload }); return;
+      }
       this.pollDelay = Math.min((this.statusUnavailable ? this.pollDelay : this.fallbackPoll) * 2, 15000);
       this.statusUnavailable = true;
       this.receive({ state: 'status_reconnecting', payload: this.payload });
@@ -563,14 +590,20 @@ export class BrowserTaskClient {
     }
   }
   async authenticate() {
-    const run = this.run;
+    if (this.extensionState !== 'auth_idle' || this.automaticPending || this.authNotification
+      || this.statusUnavailable || this.payload?.task.purpose !== 'browser.authentication') return false;
+    const run = this.run, epoch = this.authEpoch, portEpoch = this.portEpoch;
+    this.automaticPending = true;
+    this.receive({ state: 'auth_opening', payload: this.payload });
     try {
       const payload = await this.currentPayload();
-      if (run !== this.run) return false;
+      if (run !== this.run || portEpoch !== this.portEpoch || epoch !== this.authEpoch
+        || this.extensionState !== 'auth_idle' || this.authNotification) return false;
       if (this.finishCompleted(payload)) return false;
-      return this.link?.authenticate() === true;
+      if (this.link?.authenticate() !== true) throw Error('unavailable');
+      return true;
     } catch (error) {
-      if (run === this.run) { this.stop(); this.receive({ state: error.message === 'task_changed' ? 'task_changed' : 'service_unavailable', payload: this.payload }); }
+      if (run === this.run && portEpoch === this.portEpoch) { this.stop(); this.receive({ state: error.message === 'task_changed' ? 'task_changed' : 'service_unavailable', payload: this.payload }); }
       return false;
     }
   }
