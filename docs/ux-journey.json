@@ -1452,6 +1452,10 @@
           "to": "desktop.setup_prompt",
           "by": "user",
           "action": "sign-in-with-passkey"
+        },
+        {
+          "to": "desktop.setup_prompt",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -1474,6 +1478,41 @@
           "kind": "visual",
           "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "passkey"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "recovers transient passkey status automatically without presenting a retry action"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "reconciles a lost registration finish without another passkey ceremony"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "reconciles a lost sign-in finish before offering another ceremony"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "reconciles a later pushed access change after the status recovery budget ends"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "does not repeat a definite refusal when the same access hint is pushed again"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "retires a stalled status read and ignores a late answer after recovery"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "disables sign-in while a pushed access change is being verified"
         }
       ]
     },
@@ -3291,6 +3330,16 @@
           "kind": "unit",
           "file": "frontend/tests/desktop-continuation.test.js",
           "name": "waits for a new authenticated snapshot before offering the explicit extension connection"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-enrollment.test.js",
+          "name": "reconciles an unconfirmed sign-in finish without a second ceremony"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-enrollment.test.js",
+          "name": "does not repeat a deterministic refusal on an unchanged pushed access value"
         }
       ]
     },

@@ -1,6 +1,5 @@
-import { AccessFollower, createWebAuthnApi, EnrollmentOutcomeError, lapsedAccess, LoginOutcomeError, WebAuthnStatusError } from '../shared-setup/webauthn.ts';
+import { AccessFollower, createWebAuthnApi, EnrollmentOutcomeError, lapsedAccess, LoginOutcomeError, PASSKEY_STATUS_RETRY_DELAYS, WebAuthnStatusError } from '../shared-setup/webauthn.ts';
 
-const STATUS_RETRY_DELAYS = [1000, 2000, 4000];
 
 /** The native presentation uses the existing WebAuthn owner and session. */
 export class DesktopEnrollment {
@@ -47,6 +46,7 @@ export class DesktopEnrollment {
     this.watch();
     if (!quiet) this.publish({ busy: true, checking: true, error: null });
     let outcome = null;
+    let refused = false;
     try {
       const value = await this.api.state(controller.signal);
       if (!controller.signal.aborted) {
@@ -64,8 +64,9 @@ export class DesktopEnrollment {
         outcome = error instanceof WebAuthnStatusError ? error.access : null;
         if (access) this.publish({ checked: true, enrolled: null, authenticated: false, access, recoveringStatus: false, error: null });
         else {
-          const kind = error instanceof WebAuthnStatusError ? error.kind : 'unavailable';
-          const delay = ['network', 'unavailable'].includes(kind) ? STATUS_RETRY_DELAYS[this.retryCount] : undefined;
+          const kind = error instanceof WebAuthnStatusError ? error.kind : 'invalid';
+          const delay = ['network', 'unavailable'].includes(kind) ? PASSKEY_STATUS_RETRY_DELAYS[this.retryCount] : undefined;
+          refused = !['network', 'unavailable'].includes(kind);
           this.publish({ checked: true, enrolled: null, authenticated: false, access: null,
             recoveringStatus: delay !== undefined,
             error: kind === 'unavailable' ? 'passkey_status_unavailable' : 'passkey_status_' + kind });
@@ -79,7 +80,8 @@ export class DesktopEnrollment {
       if (this.controller === controller) {
         this.controller = null;
         if (!quiet) this.publish({ busy: false, checking: false });
-        this.follower.release(outcome);
+        if (refused) this.follower.releaseRefused();
+        else this.follower.release(outcome);
       }
     }
   }
@@ -100,7 +102,8 @@ export class DesktopEnrollment {
       }
     } catch (cause) {
       if (controller.signal.aborted) return;
-      reconcile = cause instanceof EnrollmentOutcomeError && cause.enrolled === null;
+      reconcile = (cause instanceof EnrollmentOutcomeError && cause.enrolled === null)
+        || (cause instanceof LoginOutcomeError && cause.outcomeUnknown);
       this.publish(reconcile
         ? { enrolled: null, recoveringStatus: true, error: 'passkey_status_unavailable' }
         : cause instanceof EnrollmentOutcomeError && cause.enrolled

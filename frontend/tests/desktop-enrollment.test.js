@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DesktopEnrollment } from '../onboarding/enrollment.js';
-import { EnrollmentOutcomeError, WebAuthnStatusError } from '../shared-setup/webauthn';
+import { EnrollmentOutcomeError, LoginOutcomeError, WebAuthnStatusError } from '../shared-setup/webauthn';
 
 function setup(enrolled = false) {
   const api = { state: vi.fn(async () => ({ enrolled, authenticated: false })),
@@ -158,6 +158,23 @@ describe('native local enrollment', () => {
       expect(h.api.enroll).toHaveBeenCalledOnce(); expect(h.api.login).not.toHaveBeenCalled();
     } finally { h.owner.stop(); vi.useRealTimers(); }
   });
+  it('reconciles an unconfirmed sign-in finish without a second ceremony', async () => {
+    vi.useFakeTimers();
+    const h = setup(true);
+    try {
+      await h.owner.check();
+      h.api.login.mockRejectedValue(new LoginOutcomeError('finish', true));
+      await h.owner.authenticate();
+      expect(h.owner.state).toMatchObject({ enrolled: null, recoveringStatus: true });
+      await h.owner.authenticate();
+      expect(h.api.login).toHaveBeenCalledOnce();
+      h.api.state.mockResolvedValue({ enrolled: true, authenticated: true });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.owner.state).toMatchObject({ authenticated: true, recoveringStatus: false });
+      expect(h.refresh).toHaveBeenCalledOnce();
+      expect(h.api.login).toHaveBeenCalledOnce();
+    } finally { h.owner.stop(); vi.useRealTimers(); }
+  });
   it('bounds automatic status reads and recovers from a later pushed access change', async () => {
     vi.useFakeTimers();
     const h = setup(true), stream = pushed(h);
@@ -191,6 +208,22 @@ describe('native local enrollment', () => {
       expect(h.api.login).not.toHaveBeenCalled(); expect(h.api.enroll).not.toHaveBeenCalled();
     } finally { h.owner.stop(); vi.useRealTimers(); }
   });
+  it('does not repeat a deterministic refusal on an unchanged pushed access value', async () => {
+    const h = setup(true); const stream = pushed(h);
+    let reject;
+    h.api.state.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
+    const check = h.owner.check();
+    stream.push('available');
+    reject(new WebAuthnStatusError('forbidden', 403));
+    await check;
+    stream.push('available'); await settle();
+    expect(h.api.state).toHaveBeenCalledOnce();
+    h.api.state.mockRejectedValue(lapsed('removed'));
+    stream.push('removed'); await settle();
+    expect(h.api.state).toHaveBeenCalledTimes(2);
+    expect(h.owner.state.access).toBe('removed');
+    h.owner.stop();
+  });
   it('retires scheduled status recovery when setup closes', async () => {
     vi.useFakeTimers();
     const h = setup();
@@ -205,7 +238,7 @@ describe('native local enrollment', () => {
     } finally { h.owner.stop(); vi.useRealTimers(); }
   });
   it('keeps an unavailable status distinct from a cancelled or rejected verification', async () => {
-    const h = setup(); h.api.state.mockRejectedValueOnce(Error('unavailable'));
+    const h = setup(); h.api.state.mockRejectedValueOnce(new WebAuthnStatusError('unavailable'));
     await h.owner.check(); await h.owner.authenticate();
     expect(h.api.enroll).not.toHaveBeenCalled();
     expect(h.owner.state.error).toBe('passkey_status_unavailable');
