@@ -1954,6 +1954,36 @@
           "kind": "unit",
           "file": "frontend/tests/CommercialActivationControls.test.tsx",
           "name": "rejects a click from an outdated rendered offer before sending a command"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "blocks competing activation paths while the original desktop command is unconfirmed"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "does not reopen acceptance of the same unconfirmed offer after presentation renewal"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "preserves accepted code recovery across disconnect and renewal without resubmitting"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "allows only a different code after a definite code refusal"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "never carries an uncertain code into a different creator account"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "retires a pending code response on presentation replacement and resumes only the original code"
         }
       ]
     },

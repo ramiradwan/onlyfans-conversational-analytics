@@ -47,8 +47,13 @@ export function CommercialActivationControls({
   const [codeError, setCodeError] = useState<string | null>(null);
   const [codeBusy, setCodeBusy] = useState(false);
   const [codePending, setCodePending] = useState(false);
+  const [codeUnconfirmed, setCodeUnconfirmed] = useState(false);
+  const [refusedCode, setRefusedCode] = useState<string | null>(null);
+  const attemptedCode = useRef<string | null>(null);
+  const codePresentation = useRef<string | null>(null);
   const codeOperation = useRef<AbortController | null>(null);
   const codeScope = useRef<string | null>(null);
+  const codeCreator = useRef<string | null>(null);
   const codeInput = useRef<HTMLInputElement | null>(null);
   const codeFormId = useId();
   // Only an action in this presentation opens a review. A pending offer can
@@ -77,28 +82,36 @@ export function CommercialActivationControls({
   const reviewScope = sameCreator && snapshot ? JSON.stringify([snapshot.generation, snapshot.journey_id, ownerCreator]) : null;
   const offerOpen = reviewScope !== null && openReviewScope === reviewScope;
   const setOfferOpen = (open: boolean) => setOpenReviewScope(open ? reviewScope : null);
-  const offerIdentity = decision && reviewScope ? JSON.stringify([reviewScope, decision.operation_id, decision.offer.offer_version_id]) : null;
+  const ownerScope = sameCreator && snapshot ? JSON.stringify([snapshot.journey_id, ownerCreator]) : null;
+  // Renewal changes the presentation, not the original commercial decision.
+  const offerIdentity = decision && ownerScope ? JSON.stringify([ownerScope, decision.operation_id, decision.offer.offer_version_id]) : null;
   // A rendered offer must not confirm a newer decision that arrived before React
   // could paint it. The command owner independently rechecks admission.
   const currentPresentation = () => {
     const current = onboarding.getState();
-    return current.connected && current.snapshot === snapshot && current.snapshot?.analysis_readiness.creator_account_id === ownerCreator;
+    return current.connected && current.snapshot === snapshot && current.pending === desktop.pending
+      && current.snapshot?.analysis_readiness.creator_account_id === ownerCreator;
   };
   const accepted = decisionStatus === 'accepted';
-  const canSelect = !accepted && authentication?.actions.select && allowed.includes('auth.select');
+  const unprojectedOperation = Boolean(desktop.pending && !snapshot?.pending_operations.some(item => item.operation_id === desktop.pending));
+  const pendingConfirmation = Boolean(snapshot?.pending_operations.some(item => item.action === 'activation.confirm'));
+  const unresolvedCommand = unprojectedOperation || pendingConfirmation;
+  const codeInProgress = codeBusy || codePending || codeUnconfirmed;
+  const canSelect = !accepted && !unresolvedCommand && !codeInProgress && authentication?.actions.select && allowed.includes('auth.select');
   const accountLabel = sameCreator ? snapshot?.facts.authenticated_account_label : null;
-  const canSwitch = !accepted && authentication?.state === 'admitted'
+  const canSwitch = !accepted && !unresolvedCommand && !codeInProgress && authentication?.state === 'admitted'
     && authentication.actions.switch_account && allowed.includes('auth.switch');
   const choosingProvider = Boolean(canSelect || (choosingAccount && canSwitch));
   const providers = (['google', 'microsoft-personal', 'telegram', 'tiktok', 'default'] as const).filter(provider => authentication?.choices[provider]);
   const canConfirm = currentAuthority && decision !== null && allowed.includes('activation.confirm')
-    && unconfirmedOffer !== offerIdentity && !snapshot?.pending_operations.some(value => value.action === 'activation.confirm');
+    && unconfirmedOffer !== offerIdentity && !unresolvedCommand && !codeInProgress;
   const activationOutcome = sameCreator ? snapshot?.pending_operations.find(value => value.action === 'activation.review') : undefined;
   const pendingActivation = Boolean(activationOutcome);
-  const canOpen = currentAuthority && !pendingActivation && allowed.includes('activation.review');
-  const canRedeem = currentAuthority;
-  const ownerScope = desktop.connected && desktop.snapshot
-    ? `${desktop.snapshot.generation}:${desktop.snapshot.journey_id}:${desktop.snapshot.analysis_readiness.creator_account_id}:${creatorAccountId}` : 'unconfirmed';
+  const canOpen = currentAuthority && !pendingActivation && !unresolvedCommand && !codeInProgress && allowed.includes('activation.review');
+  // Code recovery may continue an accepted activation, not compete with an
+  // outstanding confirmation or an unacknowledged desktop command.
+  const canRedeem = currentAuthority && !unresolvedCommand && (!pendingActivation || accepted || decision !== null)
+    && (!unconfirmedOffer || unconfirmedOffer !== offerIdentity);
   useRevealHold(checking);
 
   useEffect(() => () => { entryOperation.current?.abort(); codeOperation.current?.abort(); }, []);
@@ -133,7 +146,7 @@ export function CommercialActivationControls({
   }, [decisionStatus]);
 
   const openSetup = async (action: 'activation.review' | 'activation.confirm' | 'auth.select' | 'auth.switch' = 'activation.review', provider?: SignInProvider) => {
-    if (codeBusy || codePending || (entryOperation.current && !entryOperation.current.signal.aborted)) return;
+    if (codeOperation.current || codeInProgress || unresolvedCommand || (entryOperation.current && !entryOperation.current.signal.aborted)) return;
     const permitted = action === 'activation.confirm' ? canConfirm : action === 'auth.select' ? canSelect
       : action === 'auth.switch' ? canSwitch : canOpen;
     if (!currentPresentation()) return;
@@ -148,14 +161,14 @@ export function CommercialActivationControls({
     setOpening(true);
     setOfferOpen(true);
     setOpeningAction(action);
+    if (action === 'activation.confirm') setUnconfirmedOffer(offerIdentity);
     setEntryError(null);
     try {
       if (provider) await onboarding.begin(action, { provider });
       else await onboarding.begin(action);
-      setChoosingAccount(false);
+      if (!controller.signal.aborted) setChoosingAccount(false);
     } catch (cause) {
       if (!controller.signal.aborted) {
-        if (action === 'activation.confirm') setUnconfirmedOffer(offerIdentity);
         setEntryError(cause instanceof Error && cause.message === 'browser_unavailable'
           ? 'The browser action could not be confirmed.' : action === 'activation.confirm' ? 'Activation could not be confirmed.'
             : 'Sign-in could not be opened.');
@@ -169,7 +182,7 @@ export function CommercialActivationControls({
   };
 
   const reopenBrowser = async () => {
-    if (!currentAuthority || !currentPresentation() || entryOperation.current || !authentication?.actions.open_browser || !authentication.browser_operation_id) return;
+    if (!currentAuthority || !currentPresentation() || codeInProgress || unresolvedCommand || entryOperation.current || !authentication?.actions.open_browser || !authentication.browser_operation_id) return;
     const controller = new AbortController(); entryOperation.current = controller; entryScope.current = reviewScope;
     setOpening(true); setOpeningAction('browser.open'); setEntryError(null);
     try { await onboarding.openBrowser(authentication.browser_operation_id); }
@@ -186,31 +199,53 @@ export function CommercialActivationControls({
     if (readiness?.commercial_authority !== 'active') return;
     stopOpeningSetup();
     codeOperation.current?.abort(); codeOperation.current = null;
-    codeScope.current = null;
-    setCode(''); setCodeOpen(false); setCodeBusy(false); setCodePending(false); setCodeError(null);
+    codeScope.current = null; codeCreator.current = null; codePresentation.current = null; attemptedCode.current = null;
+    setCode(''); setCodeOpen(false); setCodeBusy(false); setCodePending(false); setCodeUnconfirmed(false); setRefusedCode(null); setCodeError(null);
   }, [readiness?.commercial_authority]);
 
   useEffect(() => {
-    if (codeScope.current === null || codeScope.current === ownerScope) return;
-    codeOperation.current?.abort(); codeOperation.current = null; codeScope.current = null;
-    setCodeBusy(false); setCodePending(false);
-    setCodeError("Activation hasn't been confirmed yet.");
-  }, [ownerScope]);
+    // Losing the presentation is not evidence of a different owner.
+    if (codeScope.current === null) return;
+    const changedOwner = creatorAccountId !== undefined && creatorAccountId !== codeCreator.current
+      || ownerCreator != null && ownerCreator !== codeCreator.current
+      || ownerScope !== null && codeScope.current !== ownerScope;
+    if (changedOwner) {
+      codeOperation.current?.abort(); codeOperation.current = null;
+      codeScope.current = null; codeCreator.current = null; codePresentation.current = null; attemptedCode.current = null;
+      setCode(''); setCodeOpen(false); setCodeBusy(false); setCodePending(false);
+      setCodeUnconfirmed(false); setRefusedCode(null); setCodeError(null);
+      return;
+    }
+    if (codeOperation.current && (!desktop.connected || codePresentation.current !== reviewScope)) {
+      codeOperation.current.abort(); codeOperation.current = null;
+      setCodeBusy(false); setCodeUnconfirmed(true);
+      setCodeError("Activation couldn't be confirmed.");
+    }
+  }, [ownerScope, reviewScope, desktop.connected, ownerCreator, creatorAccountId]);
 
   const redeemCode = async () => {
-    if (!canRedeem || !currentPresentation() || codeOperation.current || opening || codePending) return;
+    if (!canRedeem || !currentPresentation() || codeOperation.current || entryOperation.current || opening || codePending || ownerScope === null) return;
     const value = code.trim();
+    if (refusedCode === value || codeUnconfirmed && (attemptedCode.current !== value || codeScope.current !== ownerScope)) return;
     if (!CAPABILITY_LICENSE_CONTINUATION_PATTERN.test(value)) {
-      setCodeError('Enter the full activation code and try again.'); return;
+      setCodeError('Enter the full activation code.'); return;
     }
     const controller = new AbortController(); codeOperation.current = controller;
     codeScope.current = ownerScope;
+    codeCreator.current = ownerCreator ?? null;
+    codePresentation.current = reviewScope;
+    attemptedCode.current = value;
     setCodeBusy(true); setCodeError(null);
     try {
       await api.redeem(value, controller.signal);
-      if (!controller.signal.aborted) setCodePending(true);
+      if (!controller.signal.aborted) { setCodePending(true); setCodeUnconfirmed(false); setRefusedCode(null); }
     } catch (cause) {
-      if (!controller.signal.aborted) { codeScope.current = null; setCodeError(safeMessage(cause)); }
+      if (!controller.signal.aborted) {
+        const outcome = cause instanceof CapabilityLicenseApiError ? cause.outcome : 'unknown';
+        setCodeUnconfirmed(outcome === 'unknown' || codeUnconfirmed && outcome === 'not_sent');
+        setRefusedCode(outcome === 'refused' ? value : null);
+        setCodeError(safeMessage(cause));
+      }
     } finally {
       if (codeOperation.current === controller) {
         codeOperation.current = null; setCodeBusy(false);
@@ -242,6 +277,7 @@ export function CommercialActivationControls({
     : fullReady ? null : opening ? openingAction === 'activation.confirm' ? 'Confirming activation…'
       : openingAction === 'activation.review' ? 'Preparing activation…' : 'Opening Chrome…'
         : accepted ? 'Activation accepted. Checking Full analytics…'
+          : unresolvedCommand ? 'Activation has not been confirmed.'
           : choosingProvider ? choosingAccount ? 'Choose how to sign in with another account.' : 'Choose how to sign in.'
             : activationOutcome?.state === 'waiting' && activationOutcome.reason === 'activation_unavailable' ? 'Checking the activation offer.'
               : activationOutcome?.state === 'outcome_unknown' ? 'Activation has not been confirmed.'
@@ -307,7 +343,7 @@ export function CommercialActivationControls({
         onClick={() => void openSetup()} disabled={!canOpen || !canRedeem || opening || checking || codeBusy || codePending}
         aria-describedby="activation-notice" variant="outlined">Set up Full analytics</Button>}
       {!fullReady && <Stack direction="row" useFlexGap sx={{ flexWrap: 'wrap', ml: -1 }} spacing={1}>
-        {!accepted && !choosingProvider && authentication?.actions.open_browser && authentication.browser_operation_id
+        {!accepted && !unresolvedCommand && !codeInProgress && !choosingProvider && authentication?.actions.open_browser && authentication.browser_operation_id
           && currentAuthority && !desktop.browserLaunchPending
           && (authentication.state === 'admitted' || browserLaunchError !== null) && <Button
           onClick={() => void reopenBrowser()} disabled={!currentAuthority || opening}>Open Chrome</Button>}
@@ -321,13 +357,22 @@ export function CommercialActivationControls({
         {codeOpen && <Stack id={codeFormId} component="form" spacing={2} sx={{ mt: 2, maxWidth: 480 }}
           onSubmit={event => { event.preventDefault(); void redeemCode(); }}>
           <TextField inputRef={codeInput} label="Activation code" autoComplete="off" fullWidth size="small" value={code}
-            disabled={!canRedeem || codeBusy || codePending || opening}
+            disabled={!canRedeem || codeBusy || codePending || codeUnconfirmed || opening}
             slotProps={{ htmlInput: { spellCheck: false, maxLength: 256, 'aria-describedby': `${codeFormId}-status` } }}
-            onChange={event => { setCode(event.target.value); setCodeError(null); }} />
+            onChange={event => {
+              if (!codeUnconfirmed && ownerScope !== null) {
+                codeScope.current = ownerScope;
+                codeCreator.current = ownerCreator ?? null;
+                setCode(event.target.value); setCodeError(null);
+              }
+            }} />
           <Box id={`${codeFormId}-status`}><StatusLine essential id="activation-code-feedback"
             text={codeBusy || codePending ? 'Checking activation…' : codeError} tone={codeError ? 'error' : 'secondary'} /></Box>
           <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-            <Button type="submit" variant="outlined" disabled={!canRedeem || codeBusy || codePending || opening || !code.trim()}>Activate</Button>
+            <Button type="submit" variant="outlined" disabled={!canRedeem || codeBusy || codePending || opening || !code.trim() || refusedCode === code.trim()
+              || codeUnconfirmed && (codeScope.current !== ownerScope || attemptedCode.current !== code.trim())}>
+              {codeUnconfirmed ? 'Resume activation' : 'Activate'}
+            </Button>
           </Stack>
         </Stack>}
       </Box>}

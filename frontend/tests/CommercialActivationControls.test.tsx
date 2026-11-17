@@ -267,7 +267,7 @@ describe('native commercial activation', () => {
     expect(document.activeElement).toBe(input);
     fireEvent.change(input, { target: { value: 'incomplete' } });
     fireEvent.click(screen.getByRole('button', { name: 'Activate', exact: true }));
-    expect(screen.getByText('Enter the full activation code and try again.')).toBeTruthy();
+    expect(screen.getByText('Enter the full activation code.')).toBeTruthy();
     expect(api.redeem).not.toHaveBeenCalled();
     expect(fixture.api.begin).not.toHaveBeenCalled();
   });
@@ -333,7 +333,7 @@ describe('native commercial activation', () => {
     expect(redeem).toHaveBeenCalledOnce();
   });
 
-  it('retires a pending code response on presentation replacement and retains explicit retry', async () => {
+  it('retires a pending code response on presentation replacement and resumes only the original code', async () => {
     const fixture = desktopFixture();
     let reject!: (reason: Error) => void;
     const redeem = vi.fn().mockImplementationOnce(() => new Promise((_, rejectPromise) => { reject = rejectPromise; }))
@@ -350,8 +350,12 @@ describe('native commercial activation', () => {
     await act(async () => reject(new Error('late response')));
     expect((screen.getByLabelText('Activation code') as HTMLInputElement).value).toBe(code);
     expect(redeem).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole('button', { name: 'Activate', exact: true }));
+    expect(screen.getByLabelText('Activation code')).toHaveProperty('disabled', true);
+    fireEvent.change(screen.getByLabelText('Activation code'), { target: { value: 'clr1.' + 'B'.repeat(43) } });
+    expect(screen.getByLabelText('Activation code')).toHaveProperty('value', code);
+    fireEvent.click(screen.getByRole('button', { name: 'Resume activation' }));
     await waitFor(() => expect(redeem).toHaveBeenCalledTimes(2));
+    expect(redeem).toHaveBeenNthCalledWith(2, code, expect.any(AbortSignal));
   });
 
   it.each([false, true])('retires code feedback when the displayed creator changes after acceptance=%s', async accepted => {
@@ -519,4 +523,98 @@ describe('native commercial activation', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.body.textContent).not.toMatch(/reference_id|license_id|issuance_id|seat_id|package|organization_id|installation_id|proof|signature|JWS/i);
   });
+});
+
+it('blocks competing activation paths while the original desktop command is unconfirmed', async () => {
+  const fixture = desktopFixture();
+  const api = makeApi();
+  mount(api, fixture.api);
+  fireEvent.click(await screen.findByRole('button', { name: 'Use an activation code' }));
+  fireEvent.change(screen.getByLabelText('Activation code'), { target: { value: 'clr1.' + 'A'.repeat(43) } });
+  await act(async () => fixture.publish({ pending: '33333333-3333-4333-8333-333333333333', error: 'operation_unconfirmed' }));
+  expect(screen.getByText('Activation has not been confirmed.')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Set up Full analytics' })).toHaveProperty('disabled', true);
+  expect(screen.getByRole('button', { name: 'Activate', exact: true })).toHaveProperty('disabled', true);
+  fireEvent.click(screen.getByRole('button', { name: 'Activate', exact: true }));
+  expect(api.redeem).not.toHaveBeenCalled();
+  expect(fixture.api.begin).not.toHaveBeenCalled();
+  await act(async () => fixture.publish({ pending: null, error: null }));
+  expect(screen.getByRole('button', { name: 'Activate', exact: true })).toHaveProperty('disabled', false);
+  expect(api.redeem).not.toHaveBeenCalled();
+});
+
+it('does not reopen acceptance of the same unconfirmed offer after presentation renewal', async () => {
+  const fixture = withDecision();
+  const begin = vi.fn().mockRejectedValue(Error('reply lost'));
+  mount(makeApi(), { ...fixture.api, begin });
+  openReview();
+  fireEvent.click(await screen.findByRole('button', { name: 'Activate for free' }));
+  await screen.findByText('Activation could not be confirmed.');
+  await act(async () => fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!,
+    generation: '33333333-3333-4333-8333-333333333333' } }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  openReview();
+  expect(screen.getByRole('button', { name: 'Activate for free' })).toHaveProperty('disabled', true);
+  fireEvent.click(screen.getByRole('button', { name: 'Activate for free' }));
+  expect(begin).toHaveBeenCalledOnce();
+});
+
+it('preserves accepted code recovery across disconnect and renewal without resubmitting', async () => {
+  const fixture = desktopFixture();
+  const api = makeApi();
+  mount(api, fixture.api);
+  fireEvent.click(await screen.findByRole('button', { name: 'Use an activation code' }));
+  const code = 'clr1.' + 'A'.repeat(43);
+  fireEvent.change(screen.getByLabelText('Activation code'), { target: { value: code } });
+  fireEvent.click(screen.getByRole('button', { name: 'Activate', exact: true }));
+  await screen.findByText('Checking activation…');
+  await act(async () => {});
+  await act(async () => fixture.publish({ connected: false }));
+  await act(async () => fixture.publish({ connected: true, snapshot: { ...fixture.api.getState().snapshot!,
+    generation: '33333333-3333-4333-8333-333333333333' } }));
+  expect(screen.getByLabelText('Activation code')).toHaveProperty('value', code);
+  expect(screen.getByRole('button', { name: 'Activate', exact: true })).toHaveProperty('disabled', true);
+  expect(screen.queryByRole('button', { name: 'Resume activation' })).toBeNull();
+  expect(api.redeem).toHaveBeenCalledOnce();
+  await act(async () => fixture.readiness(active));
+  expect(screen.getByText('On')).toBeTruthy();
+  expect(screen.queryByLabelText('Activation code')).toBeNull();
+});
+
+it('allows only a different code after a definite code refusal', async () => {
+  const fixture = desktopFixture();
+  const api = makeApi({ redeem: vi.fn().mockRejectedValueOnce(new CapabilityLicenseApiError('This code has expired.', 410, 'refused'))
+    .mockResolvedValue({ state: 'checking' }) });
+  mount(api, fixture.api);
+  fireEvent.click(await screen.findByRole('button', { name: 'Use an activation code' }));
+  const input = screen.getByLabelText('Activation code');
+  fireEvent.change(input, { target: { value: 'clr1.' + 'A'.repeat(43) } });
+  fireEvent.click(screen.getByRole('button', { name: 'Activate', exact: true }));
+  await screen.findByText('This code has expired.');
+  expect(screen.getByRole('button', { name: 'Activate', exact: true })).toHaveProperty('disabled', true);
+  expect(screen.queryByRole('button', { name: 'Resume activation' })).toBeNull();
+  expect(input).toHaveProperty('disabled', false);
+  fireEvent.change(input, { target: { value: 'clr1.' + 'B'.repeat(43) } });
+  fireEvent.click(screen.getByRole('button', { name: 'Activate', exact: true }));
+  await waitFor(() => expect(api.redeem).toHaveBeenCalledTimes(2));
+  expect(api.redeem).toHaveBeenNthCalledWith(2, 'clr1.' + 'B'.repeat(43), expect.any(AbortSignal));
+});
+
+it('never carries an uncertain code into a different creator account', async () => {
+  const fixture = desktopFixture();
+  const api = makeApi({ redeem: vi.fn().mockRejectedValue(new CapabilityLicenseApiError("Activation couldn't be confirmed.")) });
+  mount(api, fixture.api);
+  fireEvent.click(await screen.findByRole('button', { name: 'Use an activation code' }));
+  fireEvent.change(screen.getByLabelText('Activation code'), { target: { value: 'clr1.' + 'A'.repeat(43) } });
+  fireEvent.click(screen.getByRole('button', { name: 'Activate', exact: true }));
+  await screen.findByRole('button', { name: 'Resume activation' });
+  await act(async () => fixture.publish({ connected: false }));
+  expect(screen.getByRole('button', { name: 'Resume activation' })).toHaveProperty('disabled', true);
+  await act(async () => fixture.readiness(required, 'another-creator'));
+  await act(async () => fixture.publish({ connected: true }));
+  expect(screen.queryByRole('button', { name: 'Resume activation' })).toBeNull();
+  expect(screen.queryByLabelText('Activation code')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Use an activation code' }));
+  expect(screen.getByLabelText('Activation code')).toHaveProperty('value', '');
+  expect(api.redeem).toHaveBeenCalledOnce();
 });

@@ -31,6 +31,7 @@ describe('owner-driven onboarding controls', () => {
       redeem: vi.fn(),
     };
     render(<ThemeProvider theme={theme}><CommercialActivationControls api={api} onboarding={{ ...desktop.api, begin }} /></ThemeProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Review activation offer' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Activate for free' }));
     expect(begin).toHaveBeenCalledExactlyOnceWith('activation.confirm');
     await act(async () => desktop.publish({ snapshot: { ...desktop.api.getState().snapshot!, revision: 1, decision: null,
