@@ -207,6 +207,57 @@ describe('helper stream', () => {
     } finally { h.client.stop(); vi.useRealTimers(); }
   });
 
+  it('recovers status immediately on a pushed invalidation without restarting the task', async () => {
+    vi.useFakeTimers();
+    const s = stream();
+    let unavailable = false;
+    const authenticate = vi.fn();
+    const h = helper({ events: s.events, link: { authenticate }, respond: path =>
+      unavailable && path.endsWith('/payload') ? { ok: false, status: 503 } : null });
+    try {
+      await h.client.start();
+      h.publish({ state: 'auth_idle' });
+      unavailable = true;
+      s.state.frame(frame('accepted')); await h.client.serial;
+      expect(h.received.at(-1).state).toBe('status_reconnecting');
+      const before = h.reads();
+      unavailable = false;
+      s.state.frame(frame('outcome_unknown')); await h.client.serial;
+      expect(h.reads() - before).toBe(1);
+      expect(h.received.at(-1).state).toBe('auth_idle');
+      expect(authenticate).not.toHaveBeenCalled();
+      expect(h.posts).toEqual([]);
+      expect(h.close).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(h.reads() - before).toBe(1);
+    } finally { h.client.stop(); vi.useRealTimers(); }
+  });
+
+  it('reconciles a failed pushed status read without waiting for the healthy-stream watchdog', async () => {
+    vi.useFakeTimers();
+    const s = stream();
+    let unavailable = false;
+    const h = helper({ events: s.events, respond: path =>
+      unavailable && path.endsWith('/payload') ? { ok: false, status: 503 } : null });
+    try {
+      await h.client.start();
+      h.publish({ state: 'auth_idle' });
+      unavailable = true;
+      s.state.frame(frame('accepted')); await h.client.serial;
+      expect(h.received.at(-1).state).toBe('status_reconnecting');
+      unavailable = false;
+      h.complete();
+      const before = h.reads();
+      await vi.advanceTimersByTimeAsync(999);
+      expect(h.reads()).toBe(before);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(h.reads() - before).toBe(1);
+      expect(h.received.at(-1).state).toBe('task_completed');
+      expect(h.finish).toHaveBeenCalledOnce();
+      expect(h.posts.filter(([path]) => path !== 'timing')).toEqual([]);
+    } finally { h.client.stop(); vi.useRealTimers(); }
+  });
+
   it('confirms focus to Brain only after the extension focused this helper', async () => {
     const s = stream(), h = helper({ events: s.events });
     try {

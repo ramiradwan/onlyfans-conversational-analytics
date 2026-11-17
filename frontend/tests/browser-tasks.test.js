@@ -199,7 +199,7 @@ describe('scoped browser helper', () => {
     });
   it('renders task status and recovery without a second setup wizard', () => {
     document.documentElement.innerHTML = readFileSync('browser-tasks/index.html', 'utf8');
-    for (const state of ['loading', 'unavailable', 'profile_mismatch', 'account_mismatch', 'task_expired', 'task_changed', 'service_unavailable',
+    for (const state of ['loading', 'unavailable', 'profile_mismatch', 'account_mismatch', 'task_expired', 'task_changed', 'service_unavailable', 'status_reconnecting',
       'needs-consent', 'needs-permission', 'needs-account', 'ready', 'paused', 'reported', 'task_completed']) {
       renderBrowserTask(document, { state, payload: payload() });
       expect(document.querySelector('main').dataset.journeyState).toBe('browser.' + state.replaceAll('-', '_'));
@@ -365,10 +365,15 @@ describe('scoped browser helper', () => {
       const started = reads();
       await vi.advanceTimersByTimeAsync(500);
       expect(reads() - started).toBe(kind === 'authentication' ? 1 : 0);
-      // A failed read backs off as before and returns to the task's own interval.
+      // A failed status read backs off without requiring customer intervention.
       unavailable = true;
       await vi.advanceTimersByTimeAsync(kind === 'authentication' ? 500 : 1500);
-      expect(received.at(-1).state).toBe('service_unavailable');
+      expect(received.at(-1).state).toBe('status_reconnecting');
+      document.documentElement.innerHTML = readFileSync('browser-tasks/index.html', 'utf8');
+      renderBrowserTask(document, received.at(-1));
+      expect(document.getElementById('task-status').textContent).toBe('Waiting for the desktop app. Checking again automatically.');
+      expect([...document.querySelectorAll('.setup-actions > *')].every(element => element.hidden)).toBe(true);
+      expect(close).not.toHaveBeenCalled();
       unavailable = false;
       await vi.advanceTimersByTimeAsync(kind === 'authentication' ? 1000 : 4000);
       completed = true;
@@ -379,6 +384,48 @@ describe('scoped browser helper', () => {
       expect(finish).toHaveBeenCalledOnce();
       await vi.advanceTimersByTimeAsync(5000);
       expect(reads() - before).toBe(1);
+    } finally { client.stop(); vi.useRealTimers(); }
+  });
+  it('renders automatic status recovery without a retry action', () => {
+    document.documentElement.innerHTML = readFileSync('browser-tasks/index.html', 'utf8');
+    renderBrowserTask(document, { state: 'status_reconnecting', payload: authenticationPayload() });
+    expect(document.getElementById('task-status').textContent).toBe('Waiting for the desktop app. Checking again automatically.');
+    expect([...document.querySelectorAll('.setup-actions > *')].every(element => element.hidden)).toBe(true);
+    expect(document.querySelector('main').dataset.journeyState).toBe('browser.status_reconnecting');
+  });
+  it.each(['restore', 'changed', 'expired'])('reconciles interrupted status reads without restarting sign-in: %s', async outcome => {
+    vi.useFakeTimers();
+    const value = authenticationPayload(), receive = vi.fn(), authenticate = vi.fn(), close = vi.fn();
+    let publish, unavailable = false, changed = false;
+    const request = vi.fn(async path => {
+      if (path.endsWith('/payload') && unavailable) return { ok: false, status: 503 };
+      if (path.endsWith('/payload') && changed) return { ok: false, status: 409 };
+      return { ok: true, text: async () => JSON.stringify(path.endsWith('/session')
+        ? { role: 'browser_task', generation: id(4), task_id: id(1), journey_id: id(2), csrf_token: 'A'.repeat(43) }
+        : value) };
+    });
+    const connect = vi.fn(({ receive: send }) => { publish = send; return { close, authenticate }; });
+    const events = vi.fn(() => new Promise(() => {}));
+    const client = new BrowserTaskClient({ generation: id(4), request, connect, receive, events });
+    try {
+      await client.start();
+      publish({ state: 'auth_idle' });
+      unavailable = true;
+      await vi.advanceTimersByTimeAsync(500);
+      expect(receive.mock.calls.at(-1)[0].state).toBe('status_reconnecting');
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(receive.mock.calls.at(-1)[0].state).toBe('status_reconnecting');
+      unavailable = false;
+      changed = outcome === 'changed';
+      if (outcome === 'expired') client.now = () => Date.parse(value.ceremony.expires_at) + 1;
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(receive.mock.calls.at(-1)[0].state).toBe(outcome === 'restore' ? 'auth_idle'
+        : outcome === 'changed' ? 'task_changed' : 'task_expired');
+      expect(connect).toHaveBeenCalledOnce();
+      expect(authenticate).not.toHaveBeenCalled();
+      expect(request.mock.calls.filter(([path]) => path.endsWith('/session'))).toHaveLength(1);
+      expect(request.mock.calls.every(([path, options]) => options.method === undefined || path.endsWith('/ended'))).toBe(true);
+      expect(close).toHaveBeenCalledTimes(outcome === 'restore' ? 0 : 1);
     } finally { client.stop(); vi.useRealTimers(); }
   });
   it.each(['task_id', 'journey_id', 'operation_id', 'scope_digest', 'source_revision', 'admission_generation', 'expires_at', 'creator_account_id'])(
@@ -660,7 +707,7 @@ it.each(['pairing_saved', 'auth_unconfirmed'])('restores the last %s presentatio
     await client.start(); publish({ state });
     unavailable = true;
     await vi.advanceTimersByTimeAsync(2000);
-    expect(receive.mock.calls.at(-1)[0].state).toBe('service_unavailable');
+    expect(receive.mock.calls.at(-1)[0].state).toBe('status_reconnecting');
     unavailable = false;
     await vi.advanceTimersByTimeAsync(4000);
     expect(receive.mock.calls.at(-1)[0].state).toBe(state);

@@ -2367,6 +2367,10 @@
         {
           "to": "browser.pairing_saved",
           "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2393,6 +2397,10 @@
         {
           "to": "browser.task_completed",
           "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2415,6 +2423,10 @@
           "to": "desktop.setup_browser_access",
           "by": "user",
           "action": "desktop-return"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2496,6 +2508,133 @@
       ]
     },
     {
+      "id": "browser.status_reconnecting",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'status_reconnecting'"
+      },
+      "transitions": [
+        {
+          "to": "browser.loading",
+          "by": "system"
+        },
+        {
+          "to": "browser.unavailable",
+          "by": "system"
+        },
+        {
+          "to": "browser.profile_mismatch",
+          "by": "system"
+        },
+        {
+          "to": "browser.account_mismatch",
+          "by": "system"
+        },
+        {
+          "to": "browser.needs_consent",
+          "by": "system"
+        },
+        {
+          "to": "browser.needs_permission",
+          "by": "system"
+        },
+        {
+          "to": "browser.needs_account",
+          "by": "system"
+        },
+        {
+          "to": "browser.ready",
+          "by": "system"
+        },
+        {
+          "to": "browser.paused",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_idle",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_opening",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_checking",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_unconfirmed",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_access_required",
+          "by": "system"
+        },
+        {
+          "to": "browser.pairing_connecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.pairing_checking",
+          "by": "system"
+        },
+        {
+          "to": "browser.pairing_unconfirmed",
+          "by": "system"
+        },
+        {
+          "to": "browser.pairing_access_required",
+          "by": "system"
+        },
+        {
+          "to": "browser.pairing_saved",
+          "by": "system"
+        },
+        {
+          "to": "browser.task_changed",
+          "by": "system"
+        },
+        {
+          "to": "browser.task_expired",
+          "by": "system"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.reported",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_closed",
+          "by": "system"
+        },
+        {
+          "to": "browser.service_unavailable",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders automatic status recovery without a retry action"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-task-push.test.js",
+          "name": "recovers status immediately on a pushed invalidation without restarting the task"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-task-push.test.js",
+          "name": "reconciles a failed pushed status read without waiting for the healthy-stream watchdog"
+        }
+      ]
+    },
+    {
       "id": "browser.needs_consent",
       "surface": "browser.task",
       "anchor": {
@@ -2509,6 +2648,10 @@
         },
         {
           "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
           "by": "system"
         }
       ],
@@ -2535,6 +2678,10 @@
         {
           "to": "browser.task_completed",
           "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2559,6 +2706,10 @@
         },
         {
           "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
           "by": "system"
         }
       ],
@@ -2585,6 +2736,10 @@
         {
           "to": "browser.task_completed",
           "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2609,6 +2764,10 @@
         },
         {
           "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
           "by": "system"
         }
       ],
@@ -2668,6 +2827,10 @@
           "to": "desktop.setup_browser_access",
           "by": "user",
           "action": "desktop-return"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2697,6 +2860,10 @@
         },
         {
           "to": "browser.auth_opening",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
           "by": "system"
         }
       ],
@@ -2732,6 +2899,10 @@
         {
           "to": "browser.task_completed",
           "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2761,6 +2932,10 @@
         },
         {
           "to": "browser.auth_closed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
           "by": "system"
         }
       ],
@@ -2824,6 +2999,10 @@
         {
           "to": "browser.task_completed",
           "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2849,6 +3028,10 @@
         },
         {
           "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
           "by": "system"
         }
       ],
@@ -2927,6 +3110,10 @@
         {
           "to": "browser.pairing_saved",
           "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2952,6 +3139,10 @@
         },
         {
           "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
           "by": "system"
         }
       ],
@@ -2979,6 +3170,10 @@
         {
           "to": "browser.task_completed",
           "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -3004,6 +3199,10 @@
         },
         {
           "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
           "by": "system"
         }
       ],
@@ -3083,6 +3282,10 @@
         },
         {
           "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
           "by": "system"
         }
       ],

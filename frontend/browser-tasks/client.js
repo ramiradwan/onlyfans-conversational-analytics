@@ -30,7 +30,7 @@ export class BrowserTaskClient {
     this.nativeLaunch = nativeLaunch === true;
     this.lastLink = null; this.ending = null; this.extensionSeen = false; this.reattached = false;
     this.receive = value => {
-      if (value.state !== 'service_unavailable') this.lastPresentation = value;
+      if (!['service_unavailable', 'status_reconnecting'].includes(value.state)) this.lastPresentation = value;
       receive(value);
       if (ENDINGS.includes(value.state) && !this.ending) this.ending = this.end(value.state).catch(() => undefined);
     };
@@ -88,7 +88,8 @@ export class BrowserTaskClient {
     this.nativeLaunch = false;
     this.stop(); const run = this.run;
     this.automatic = automatic;
-    this.pollUnavailable = false;
+    this.statusUnavailable = false;
+    this.statusReadSequence = 0;
     this.lastPresentation = null;
     this.authEpoch = 0;
     this.automaticPending = false;
@@ -363,7 +364,8 @@ export class BrowserTaskClient {
       if (!healthy) this.preparingFrame();
       return;
     }
-    this.pollBase = this.pollDelay = healthy ? STREAM_POLL_MS : this.fallbackPoll;
+    this.pollBase = healthy ? STREAM_POLL_MS : this.fallbackPoll;
+    if (!this.statusUnavailable) this.pollDelay = this.pollBase;
     this.schedulePoll(run);
   }
   frame(run, value) {
@@ -386,39 +388,37 @@ export class BrowserTaskClient {
       }).catch(() => undefined);
       return;
     }
-    // A frame is only an invalidation. Completion still follows a confirmed payload read.
-    this.serial = this.serial.then(async () => {
-      if (run !== this.run) return;
-      const current = await this.currentPayload();
-      if (run === this.run) this.finishCompleted(current);
-    }).catch(error => {
-      if (run !== this.run || !['task_expired', 'task_changed'].includes(error.message)) return;
-      const payload = this.payload;
-      this.stop(); this.receive({ state: error.message, payload });
-    });
+    // A frame is only an invalidation. Use the same authoritative read as the fallback.
+    this.serial = this.serial.then(() => this.reconcileStatus(run));
+  }
+  async reconcileStatus(run) {
+    if (run !== this.run) return;
+    const sequence = ++this.statusReadSequence;
+    // A delayed safety read must not overwrite the result of a newer invalidation.
+    const current = () => run === this.run && sequence === this.statusReadSequence;
+    try {
+      const value = await this.currentPayload();
+      if (!current() || this.finishCompleted(value)) return;
+      this.pollDelay = this.pollBase;
+      if (this.statusUnavailable) {
+        this.statusUnavailable = false;
+        if (this.lastPresentation) this.receive(this.lastPresentation);
+      }
+    } catch (error) {
+      if (!current()) return;
+      if (['task_expired', 'task_changed'].includes(error.message)) {
+        const payload = this.payload;
+        this.stop(); this.receive({ state: error.message, payload }); return;
+      }
+      this.pollDelay = Math.min((this.statusUnavailable ? this.pollDelay : this.fallbackPoll) * 2, 15000);
+      this.statusUnavailable = true;
+      this.receive({ state: 'status_reconnecting', payload: this.payload });
+    }
+    if (current()) this.schedulePoll(run);
   }
   schedulePoll(run) {
     clearTimeout(this.pollTimer);
-    this.pollTimer = setTimeout(async () => {
-      if (run !== this.run) return;
-      try {
-        const value = await this.currentPayload();
-        if (run !== this.run || this.finishCompleted(value)) return;
-        this.pollDelay = this.pollBase;
-        if (this.pollUnavailable && this.lastPresentation) this.receive(this.lastPresentation);
-        this.pollUnavailable = false;
-      } catch (error) {
-        if (run !== this.run) return;
-        if (['task_expired', 'task_changed'].includes(error.message)) {
-          const payload = this.payload;
-          this.stop(); this.receive({ state: error.message, payload }); return;
-        }
-        this.pollDelay = Math.min(this.pollDelay * 2, 15000);
-        this.pollUnavailable = true;
-        this.receive({ state: 'service_unavailable', payload: this.payload });
-      }
-      if (run === this.run) this.schedulePoll(run);
-    }, this.pollDelay);
+    this.pollTimer = setTimeout(() => { void this.reconcileStatus(run); }, this.pollDelay);
   }
 
   async replacePairing() {

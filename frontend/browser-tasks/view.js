@@ -6,6 +6,7 @@ const journeyStates = { loading: 'loading', unavailable: 'unavailable', profile_
   pairing_saved: 'pairing_saved',
   pairing_unconfirmed: 'pairing_unconfirmed', pairing_access_required: 'pairing_access_required',
   task_expired: 'task_expired', task_changed: 'task_changed', task_completed: 'task_completed', service_unavailable: 'service_unavailable',
+  status_reconnecting: 'status_reconnecting',
   'needs-consent': 'needs_consent', 'needs-permission': 'needs_permission', 'needs-account': 'needs_account',
   ready: 'ready', paused: 'paused', reported: 'reported' };
 const status = {
@@ -28,6 +29,7 @@ const status = {
   task_changed: 'This browser task is no longer current.',
   task_completed: 'Browser task complete.',
   service_unavailable: 'Browser task status could not be read. Retry.',
+  status_reconnecting: 'Waiting for the desktop app. Checking again automatically.',
   'needs-consent': 'Review browser access in the extension.',
   'needs-permission': 'Allow OnlyFans site access in the extension.',
   'needs-account': 'Open your creator account in Chrome.',
