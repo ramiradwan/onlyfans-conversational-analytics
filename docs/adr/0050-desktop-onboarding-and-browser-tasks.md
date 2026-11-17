@@ -51,6 +51,8 @@ Local task admission records are presentation working state: delete completed, c
 
 Retain the latest admitted browser-access observation as setup progress for its exact journey and installation key, independently of task and presentation expiry. This display evidence grants no browser admission or account authority. A newer observation for that key replaces it, including consent withdrawal, permission loss or sign-out. A missing or changed installation key invalidates it. An old task cannot bind that progress to a replacement key. Expired account decisions return to the sign-in choices on Account connection while browser setup remains established. Presentation renewal and reads never start protected work. The next explicit sign-in uses the existing authentication route and requires a fresh live decision before connection.
 
+A live confirmation and its outcome wait follow the original server decision deadline across local presentation replacement. An explicit account connection refreshes only an unprepared local initial draft within command admission. It never extends a prepared source, customer session or server decision.
+
 The coordinator delegates to existing domain services rather than duplicating their authority. Publish verified facts, separate local/Full readiness, pending operations and allowed actions. Subscribe before authoritative reads and retain invalidations received while busy. Commands carry unique operation IDs and exact expected scope/generation. Reads and renders do not initiate protected mutations. Closing a page or losing a reply cannot establish cancellation or justify another mutation.
 
 ## Confirmation

@@ -242,7 +242,7 @@ class DesktopAuthentication:
     def confirmation_deadline(self, operation_id, *, connection=None):
         with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
             parent = self.parent_operation(operation_id, connection=connection)
-            row = connection.execute("SELECT d.projection_json,o.expires_at FROM desktop_decision_projections d "
+            row = connection.execute("SELECT d.projection_json FROM desktop_decision_projections d "
                 "JOIN desktop_setup_operations o ON o.operation_id=d.operation_id WHERE d.operation_id=? "
                 "AND o.state IN ('accepted','waiting','outcome_unknown')", (parent,)).fetchone()
         if row is None:
@@ -250,7 +250,7 @@ class DesktopAuthentication:
         projection = json.loads(row["projection_json"])
         if projection["state"] != "confirmation-required":
             return None
-        deadline = min(row["expires_at"], timestamp(projection["decision"]["expires_at"]).timestamp())
+        deadline = timestamp(projection["decision"]["expires_at"]).timestamp()
         return deadline if deadline > self.store._now().timestamp() else None
 
     async def probe(self, operation_id, *, authorize):

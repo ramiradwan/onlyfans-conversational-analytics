@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from app.onboarding import timing
@@ -211,6 +211,11 @@ class ProvisioningSetupOwner:
                 raise CommandRefused("authority_unavailable") from None
             connection.execute("UPDATE desktop_setup_journeys SET source_journey_id=? WHERE journey_id=?", (source, journey_id))
             row = connection.execute("SELECT * FROM onboarding_journeys WHERE journey_id=?", (source,)).fetchone()
+            if (action == "account.connect" and row["kind"] == "initial-enrollment" and row["state"] == "new"
+                    and row["operation_id"] is None and row["prepare_json"] is None):
+                # Refresh only the local draft during explicit admission.
+                connection.execute("UPDATE onboarding_journeys SET expires_at=? WHERE journey_id=?",
+                    ((self.store._now() + timedelta(minutes=30)).isoformat(), source))
             accepted.update(source_journey_id=source, journey_kind=row["kind"],
                 journey_revision=row["revision"], installation_id=row["installation_id"])
             if row["kind"] == "registered-continuation":
