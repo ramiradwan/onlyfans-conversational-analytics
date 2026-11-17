@@ -2256,6 +2256,26 @@
           "kind": "unit",
           "file": "frontend/tests/desktop-continuation.test.js",
           "name": "opens the exact operation rendered on the current browser recovery button"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "shows automatic local configuration without a Continue action"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_coordinator.py",
+          "name": "test_automatically_finalizes_verified_account_once_without_renderer_action"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_coordinator.py",
+          "name": "test_restart_reconciles_original_automatic_finalization"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_continuation_finalization.py",
+          "name": "test_automatic_setup_finalization_uses_real_verified_grant_and_configuration_writes"
         }
       ]
     },

@@ -869,6 +869,21 @@ describe('desktop setup presentation', () => {
     }
   });
 
+  it('shows automatic local configuration without a Continue action', () => {
+    mount();
+    const value = { ...initial(), next_task: 'finish-setup', allowed_actions: ['setup.finalize'],
+      facts: { ...initial().facts, installation: 'verified', account: 'verified' } };
+    for (const snapshot of [value, { ...value, allowed_actions: [],
+      pending_operations: [{ ...record, action: 'setup.finalize' }] }]) {
+      renderSetup(document, { snapshot, connected: true });
+      expect(document.getElementById('task-action').hidden).toBe(true);
+      expect(document.getElementById('task-status').textContent).toBe('Preparing Dipsy on this computer…');
+    }
+    renderSetup(document, { snapshot: { ...value, allowed_actions: [], reason: 'authority_unavailable' }, connected: true });
+    expect(document.getElementById('task-action').hidden).toBe(true);
+    expect(document.getElementById('task-status').textContent).toBe('Account authorization is unavailable.');
+  });
+
   it('renders the three local setup tasks and optional activation from one projection', () => {
     mount();
     for (const [next_task, anchor] of [['browser-access', 'browser_access'], ['account-connection', 'account_connection'], ['finish-setup', 'finish']]) {

@@ -27,6 +27,9 @@ KEY_AFTER_LAUNCH_SECONDS = 2.0
 
 
 class ProvisioningSetupOwner:
+    # Finalization consumes only an existing, verified account approval.
+    automatic_finalization = True
+
     def __init__(self, store, *, browser_tasks, ceremonies, initial, registered, key,
                  finalize, completion_ready, completed=lambda: None):
         self.store, self.browser_tasks, self.ceremonies = store, browser_tasks, ceremonies

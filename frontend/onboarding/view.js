@@ -7,7 +7,7 @@ const tasks = {
   'finish-setup': ['Finish setup', 'Set up access to this computer and connect the browser.', 'setup_finish'],
   complete: ['Setup complete', '', 'setup_complete'],
 };
-const actions = { 'browser.access': 'Set up browser access', 'account.connect': 'Sign in', 'account.confirm': 'Connect account', 'setup.finalize': 'Continue', 'browser.pair': 'Connect browser' };
+const actions = { 'browser.access': 'Set up browser access', 'account.connect': 'Sign in', 'account.confirm': 'Connect account', 'browser.pair': 'Connect browser' };
 const errors = {
   status_unavailable: 'The setup connection was interrupted. Reconnecting…',
   session_unavailable: 'The desktop session could not be restored. Try again.',
@@ -126,10 +126,13 @@ export function renderSetup(document, state) {
   const reason = state.error || (value?.reason === 'none' ? null : value?.reason) || operationReason;
   const signInMessage = { selected: 'Finish signing in in Chrome.', expired: 'This sign-in request expired.',
     retired: 'Sign-in was cancelled.', unavailable: 'The sign-in request could not be confirmed.' }[signIn?.state];
+  const finalizing = task === 'finish-setup' && (allowed.includes('setup.finalize')
+    || value.pending_operations.some(item => item.action === 'setup.finalize'));
   const progress = task === 'complete' ? state.continuing ? 'Opening dashboard…' : ''
     : state.acting === 'auth.cancel' ? 'Cancelling sign-in…'
     : opening || state.acting && ['auth.select', 'auth.switch', 'account.connect', 'browser.open'].includes(state.acting) ? 'Opening Chrome…'
-      : accepted ? 'Account connection accepted. Finishing setup…'
+      : finalizing ? 'Preparing Dipsy on this computer…'
+        : accepted ? 'Account connection accepted. Finishing setup…'
         : choosingProvider ? '' : signInMessage || (decisionStatus === 'awaiting-authentication' ? 'Finish signing in in Chrome.'
           : decisionStatus === 'unavailable' ? 'This sign-in request is unavailable.' : pending && !decision ? 'Waiting for the current action to finish.' : '');
   // The access section explains a lapse. Nothing progresses until access returns,
