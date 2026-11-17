@@ -236,3 +236,28 @@ def test_stage_marks_are_recorded_together_only_when_every_label_is_closed(tmp_p
             assert ended.value.code == 1008
     assert [message.split(" ")[2] for message in caplog.messages] == ["phase=stream-wake", "phase=attach-sent",
         "phase=auth-idle", "phase=attach-received", "phase=ahead-changed-tab", "phase=auth-published", "phase=navigate-sent"]
+
+
+@pytest.mark.parametrize("phase", ["popup-close-observed", "popup-end-requested", "popup-saved-end-requested",
+    "popup-expiry-requested", "popup-waiting-end-requested", "popup-waiting-restart-requested",
+    "popup-navigation-failed", "popup-helper-end-received", "popup-paired-end-received"])
+def test_popup_lifecycle_marks_accept_no_identifiers(tmp_path, phase, caplog):
+    import logging
+    from starlette.websockets import WebSocketDisconnect
+    from app.transport.companion_origin import CompanionOriginBoundary
+    coordinator, tasks, _, _ = browser_setup.__wrapped__(tmp_path)
+    app = FastAPI()
+    app.add_middleware(CompanionOriginBoundary)
+    app.include_router(browser_router(coordinator, tasks, None))
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    mark = {"operation": "extension", "phase": phase, "status": "ok", "elapsed_ms": 0}
+    socket_headers = {"Host": "127.0.0.1:17871", "Origin": "chrome-extension://" + "a" * 32}
+    with TestClient(app, base_url="http://127.0.0.1:17871") as client:
+        for extra, code in [({}, 1000), ({"window_id": 1}, 1008)]:
+            with client.websocket_connect("/api/v1/browser-tasks/timing", headers=socket_headers) as socket:
+                socket.send_json({**mark, **extra})
+                with pytest.raises(WebSocketDisconnect) as ended:
+                    socket.receive_text()
+                assert ended.value.code == code
+    assert len(caplog.messages) == 1
+    assert "phase=" + phase in caplog.messages[0]

@@ -81,7 +81,7 @@ export function renderSetup(document, state) {
   const signInActions = ['account.connect', 'auth.select', 'auth.switch'];
   // Brain reports no sign-in projection while the accepted command has not selected yet.
   const opening = Boolean(state.provider && !state.error && task === 'account-connection'
-    && !['selected', 'admitted'].includes(signIn?.state)
+    && !['selected', 'admitted', 'reauthentication-required'].includes(signIn?.state)
     && (signInActions.includes(state.acting) || state.pending && value?.pending_operations.some(item =>
       item.operation_id === state.pending && signInActions.includes(item.action))));
   const showingProviders = choosingProvider || opening;
@@ -131,7 +131,9 @@ export function renderSetup(document, state) {
           : decisionStatus === 'unavailable' ? 'This sign-in request is unavailable.' : pending && !decision ? 'Waiting for the current action to finish.' : '');
   // The access section explains a lapse. Nothing progresses until access returns,
   // so the task line then names only errors unrelated to it.
-  setStatus(get('task-status'), (lapsed ? reason !== 'authority_unavailable' && errors[reason] : errors[reason] || progress) || '');
+  const unfinished = canSelect && signIn?.state === 'reauthentication-required' && !state.acting;
+  setStatus(get('task-status'), (lapsed ? reason !== 'authority_unavailable' && errors[reason]
+    : unfinished ? 'Sign-in did not finish.' : errors[reason] || progress) || '');
   get('sign-in-options').hidden = !showingProviders;
   for (const button of get('sign-in-options').querySelectorAll('[data-provider]')) {
     // Without a projection the opening choices keep the visibility they were clicked in.

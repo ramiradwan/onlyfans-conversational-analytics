@@ -39,7 +39,7 @@ function validRecord(value) {
 }
 
 /** Journal only bounded correlation. Entry URLs, returned URLs and API errors are never stored. */
-export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onRemoved = () => {}, onCreated = () => {}, onStage = () => {} }) {
+export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onRemoved = () => {}, onCreated = () => {}, onStage = () => {}, onLifecycle = () => {} }) {
   const active = new Map(), listeners = new Set();
   const launching = new Map(), watchers = new Set();
   let queue = Promise.resolve(), disposed = false;
@@ -55,7 +55,7 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
     if (!Array.isArray(saved) || saved.length > 8 || JSON.stringify(saved).length > 8192
       || !saved.every(validRecord) || new Set(saved.map(value => value.task_id)).size !== saved.length) throw Error('authentication_unavailable');
     const records = saved.filter(value => value.expires_at > now());
-    for (const [key, value] of active) if (value.expires_at <= now()) { active.delete(key); retire(value); }
+    for (const [key, value] of active) if (value.expires_at <= now()) { active.delete(key); retire(value, 'popup-expiry-requested'); }
     if (records.length !== saved.length) await save(records);
     return records;
   }
@@ -100,6 +100,7 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
     if (!saved || saved.admission_generation !== generation || saved.sequence !== record.sequence) return false;
     const started = now();
     await rememberPopup(record.task_id, null);
+    onLifecycle('popup-saved-end-requested');
     await Promise.resolve().then(() => chromeApi.windows.remove(saved.window_id)).then(() => onRemoved(now() - started))
       .catch(() => undefined);
     return true;
@@ -138,6 +139,7 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
     const outcome = closed => { if (!done) { stop(); settle(closed); } };
     const removed = windowId => {
       if (entry.windowId !== null && windowId === entry.windowId) {
+        onLifecycle('popup-close-observed');
         void rememberPopup(entry.task_id, null).catch(() => undefined);
         outcome(true);
       }
@@ -148,10 +150,12 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
     return { fail: () => outcome(false) };
   }
   /** Removes a popup whose sign-in is over. The extension's own removal is never closure. */
-  function retire(entry) {
+  function retire(entry, phase = 'popup-end-requested') {
     entry.retired = true; entry.stop?.();
+    entry.retirementPhase = phase;
     if (Number.isInteger(entry.windowId)) {
       const started = now();
+      onLifecycle(phase);
       void rememberPopup(entry.task_id, null).catch(() => undefined);
       void Promise.resolve().then(() => chromeApi.windows.remove(entry.windowId)).then(() => onRemoved(now() - started))
         .catch(() => undefined);
@@ -167,6 +171,7 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
     if (waiting.get(operationId) !== entry) return;
     waiting.delete(operationId); clearTimeout(entry.timer); syncWaiting();
     if (!entry.closed && Number.isSafeInteger(entry.windowId)) {
+      onLifecycle('popup-waiting-end-requested');
       void Promise.resolve().then(() => chromeApi.windows.remove(entry.windowId)).catch(() => undefined);
     }
     void saveWaiting();
@@ -179,7 +184,9 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
     return entry;
   }
   const waitingRemoved = windowId => {
-    for (const entry of waiting.values()) if (entry.windowId === windowId && !entry.closed) { entry.closed = true; void saveWaiting(); }
+    for (const entry of waiting.values()) if (entry.windowId === windowId && !entry.closed) {
+      onLifecycle('popup-close-observed'); entry.closed = true; void saveWaiting();
+    }
   };
   let listening = false;
   // Listens for removals only while a waiting window exists.
@@ -196,7 +203,10 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
     const saved = (await chromeApi.storage.session?.get(BROWSER_AUTH_WAITING_KEY))?.[BROWSER_AUTH_WAITING_KEY];
     if (saved !== null && typeof saved === 'object' && !Array.isArray(saved) && Object.keys(saved).length <= 8) {
       for (const [key, windowId] of Object.entries(saved)) {
-        if (UUID.test(key) && Number.isSafeInteger(windowId)) await Promise.resolve().then(() => chromeApi.windows.remove(windowId)).catch(() => undefined);
+        if (UUID.test(key) && Number.isSafeInteger(windowId)) {
+          onLifecycle('popup-waiting-restart-requested');
+          await Promise.resolve().then(() => chromeApi.windows.remove(windowId)).catch(() => undefined);
+        }
       }
     }
     if (saved !== undefined) await chromeApi.storage.session?.set({ [BROWSER_AUTH_WAITING_KEY]: {} });
@@ -259,12 +269,13 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
         .then(() => chromeApi.tabs.update(placeholder.tabId, { url, active: true }))
         .then(() => {
           onCreated(now() - started);
-          if (entry.retired) { retire(entry); return; }
+          if (entry.retired) { retire(entry, entry.retirementPhase); return; }
           return rememberPopup(record.task_id, { admission_generation: payload.task.admission_generation,
             sequence, window_id: entry.windowId }).catch(() => undefined);
         })
         .catch(() => {
           popup.fail();
+          onLifecycle('popup-navigation-failed');
           void Promise.resolve().then(() => chromeApi.windows.remove(placeholder.windowId)).catch(() => undefined);
         });
       changed(); return view(record, payload);
@@ -276,7 +287,7 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
         if (!Number.isInteger(created?.id)) throw Error('authentication_unconfirmed');
         onCreated(now() - started);
         entry.windowId = created.id;
-        if (entry.retired) { retire(entry); return; }
+        if (entry.retired) { retire(entry, entry.retirementPhase); return; }
         return rememberPopup(record.task_id, { admission_generation: payload.task.admission_generation,
           sequence, window_id: created.id }).catch(() => undefined);
       })
@@ -312,6 +323,7 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
           if (!Number.isSafeInteger(created?.id) || !Number.isSafeInteger(tabId)) throw Error('authentication_unconfirmed');
           entry.windowId = created.id; entry.tabId = tabId;
           if (waiting.get(operationId) !== entry) {
+            onLifecycle('popup-waiting-end-requested');
             await Promise.resolve().then(() => chromeApi.windows.remove(created.id)).catch(() => undefined);
             return;
           }
@@ -332,9 +344,10 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
       })).finally(() => launching.delete(reservation));
     },
     /** The browser task for this ceremony is over. Its popup is removed and the outcome stays uncertain. */
-    retire(payload) {
+    retire(payload, source) {
       return serial(async () => {
         const records = await load(), record = find(records, await binding(payload));
+        if (record && ['helper', 'paired'].includes(source)) onLifecycle(`popup-${source}-end-received`);
         const entry = record && active.get(record.task_id);
         if (!entry || entry.sequence !== record.sequence) {
           if (record && record.phase === 'opening' && await retireSaved(record, payload.task.admission_generation)) {
@@ -355,6 +368,7 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
         if (disposed || !UUID.test(task_id) || !UUID.test(admission_generation)) return;
         const records = await load(), record = records.find(value => value.task_id === task_id);
         if (!record || record.phase !== 'opening') return;
+        onLifecycle('popup-paired-end-received');
         const entry = active.get(task_id);
         if (entry) {
           if (entry.sequence !== record.sequence || entry.admission_generation !== admission_generation) return;

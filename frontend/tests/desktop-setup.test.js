@@ -600,6 +600,22 @@ describe('desktop setup presentation', () => {
     choices: { google: true, 'microsoft-personal': true, telegram: false, tiktok: false, default: true },
     actions: { select: true, cancel: false, open_browser: false, switch_account: false }, authentication_attempt: null });
 
+  it('offers one click sign-in choices and plain unfinished copy after the popup ends', () => {
+    mount();
+    const value = { ...initial(), next_task: 'account-connection', allowed_actions: ['auth.select'],
+      pending_operations: [{ ...record, action: 'auth.select', state: 'outcome_unknown', reason: 'operation_unconfirmed' }],
+      authentication: { ...signIn(), operation_id: operationId, browser_operation_id: operationId,
+        state: 'reauthentication-required' } };
+    renderSetup(document, { snapshot: value, connected: true, pending: operationId, provider: 'google' });
+    expect(document.getElementById('task-status').textContent).toBe('Sign-in did not finish.');
+    expect(document.getElementById('sign-in-options').hidden).toBe(false);
+    const button = document.querySelector('[data-provider="google"]');
+    expect(button.disabled).toBe(false);
+    expect(button.hasAttribute('aria-busy')).toBe(false);
+    expect(button.dataset.action).toBe('auth.select');
+    expect(document.getElementById('browser-reopen').hidden).toBe(true);
+  });
+
   it('renders only configured provider choices with the governed initial action', () => {
     mount();
     const value = { ...initial(), next_task: 'account-connection', allowed_actions: ['account.connect'],

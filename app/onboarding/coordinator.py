@@ -204,7 +204,10 @@ class DesktopOnboardingCoordinator:
                 for action, permitted in (("auth.select", "select"), ("auth.cancel", "cancel"), ("auth.switch", "switch_account")):
                     if authentication["actions"][permitted]:
                         actions.append(action)
-        actions = [name for name in actions if all(item["action"] != name for item in pending)]
+        actions = [name for name in actions if all(item["action"] != name or (
+            name == "auth.select" and authentication is not None
+            and authentication["state"] == "reauthentication-required" and authentication["actions"]["select"]
+            and item["operation_id"] == authentication["browser_operation_id"]) for item in pending)]
         if view.permitted_actions is not None:
             actions = [name for name in actions if name in view.permitted_actions]
         return validate({"profile": SNAPSHOT_PROFILE, "kind": "snapshot", "journey_id": journey_id,
@@ -288,6 +291,13 @@ class DesktopOnboardingCoordinator:
             # The journal cannot silently jump from one selected workspace to another.
             connection.execute("UPDATE desktop_presentations SET journey_id=? WHERE generation=?",
                                (journey, current.generation))
+            if (action == "auth.select" and authentication["state"] == "reauthentication-required"
+                    and authentication["actions"]["select"]):
+                # The replacement click retires only the ended selection's local receipt.
+                connection.execute("UPDATE desktop_setup_operations SET state='refused',reason='operation_unconfirmed' "
+                    "WHERE operation_id=? AND journey_id=? AND action='auth.select' "
+                    "AND state IN ('accepted','waiting','outcome_unknown')",
+                    (authentication["browser_operation_id"], journey))
             connection.execute("INSERT INTO desktop_setup_operations VALUES (?,?,?,?,?,?,?,?,'accepted','none',?,?)",
                 (command["operation_id"], journey, command["action"], request_digest, current.generation,
                  expected["scope_digest"], expected["revision"], canonical(accepted.scope).decode(), now, current.expires_at))

@@ -95,7 +95,10 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
             elif len(raw) > 256:
                 raise ValueError("Invalid sign-in observation")
             else:
-                timing.observation(value, operation="extension", phases={"popup-remove", "popup-create"})
+                timing.observation(value, operation="extension", phases={"popup-remove", "popup-create",
+                    "popup-close-observed", "popup-end-requested", "popup-saved-end-requested", "popup-expiry-requested",
+                    "popup-waiting-end-requested", "popup-waiting-restart-requested", "popup-navigation-failed",
+                    "popup-helper-end-received", "popup-paired-end-received"})
         except (ValueError, TypeError, TimeoutError):
             await socket.close(code=1008)
             return

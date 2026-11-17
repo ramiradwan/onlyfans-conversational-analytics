@@ -58,9 +58,18 @@ class DesktopAuthentication:
                     if json.loads(row["request_json"])["authentication_attempt_id"] == attempt["authentication_attempt_id"]:
                         browser_operation = row["operation_id"]
                         break
+            ended = browser_operation is not None and current.execute(
+                "SELECT 1 FROM desktop_browser_tasks t LEFT JOIN desktop_authentication_closures c "
+                "ON c.task_id=t.task_id AND c.operation_id=t.operation_id "
+                "WHERE t.operation_id=? AND t.purpose='browser.authentication' "
+                "AND (t.state IN ('completed','cancelled','expired') OR c.operation_id IS NOT NULL)",
+                (browser_operation,)).fetchone() is not None
         result = {name: value[name] for name in ("state", "choices", "actions", "authentication_attempt")}
         if timestamp(value["expires_at"]) <= self.store._now():
             result.update(state="expired", actions=dict.fromkeys(value["actions"], False))
+        elif ended and value["state"] == "selected":
+            result.update(state="reauthentication-required",
+                actions=dict(select=True, cancel=False, open_browser=False, switch_account=False))
         return {"operation_id": parent, "browser_operation_id": browser_operation, **result}
 
     def parent_operation(self, operation_id, *, connection=None):

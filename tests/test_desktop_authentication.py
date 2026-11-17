@@ -375,6 +375,57 @@ async def close_task(auth):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("ended", ["closed", "completed", "cancelled"])
+async def test_ended_unadmitted_popup_projects_choices_without_effects_and_click_selects(auth, ended):
+    coordinator, _, authentication, client, parent, native, _ = auth
+    operation, browser, admitted = await close_task(auth)
+    if ended == "closed":
+        authentication.close_for_task(browser.task_id, browser.generation, authorize=admitted)
+    else:
+        with coordinator.store.database.transaction() as connection:
+            connection.execute("UPDATE desktop_browser_tasks SET state=? WHERE task_id=?", (ended, browser.task_id))
+    before = copy.deepcopy(client.calls)
+    with coordinator.store.database.read() as connection:
+        saved = connection.execute("SELECT projection_json FROM desktop_authentication_projections").fetchone()[0]
+    for _ in range(2):
+        presentation = authentication.presentation(parent["journey_id"], "account.connect")
+        assert presentation["state"] == "reauthentication-required"
+        assert presentation["actions"] == dict(select=True, cancel=False, open_browser=False, switch_account=False)
+        coordinator.owner.scope["desktop_authentication"] = presentation
+        snapshot = coordinator.read(native)
+        assert "auth.select" in snapshot["allowed_actions"]
+        assert snapshot["decision"] is None
+    assert client.calls == before
+    with coordinator.store.database.read() as connection:
+        assert connection.execute("SELECT projection_json FROM desktop_authentication_projections").fetchone()[0] == saved
+        assert connection.execute("SELECT state FROM desktop_setup_operations WHERE operation_id=?",
+            (operation["operation_id"],)).fetchone()[0] == "accepted"
+    previous = client.current
+    fresh, _ = accept(auth, provider="default")
+    intent = json.loads(fresh["owner_scope_json"])["authentication_intent"]
+    assert intent["expected_previous_attempt_id"] == previous
+    assert client.calls == before
+    assert (await authentication.execute(fresh, authorize=authorized, read_guard=authorized, reconcile=False)).state == "waiting"
+    assert client.current != previous
+    assert client.attempts[client.current]["provider"] == "default"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("admitted", [False, True])
+async def test_open_popup_waits_and_admitted_ended_popup_keeps_confirmation_semantics(auth, admitted):
+    coordinator, _, authentication, client, parent, _, _ = auth
+    _, browser, _ = await close_task(auth)
+    if admitted:
+        client.attempts[client.current]["state"] = "admitted"
+        await authentication.refresh(parent["operation_id"], authorize=authorized)
+        with coordinator.store.database.transaction() as connection:
+            connection.execute("UPDATE desktop_browser_tasks SET state='completed' WHERE task_id=?", (browser.task_id,))
+    value = authentication.presentation(parent["journey_id"], "account.connect")
+    assert value["state"] == ("admitted" if admitted else "selected")
+    assert value["actions"]["select"] is False
+
+
+@pytest.mark.asyncio
 async def test_close_is_durable_duplicate_safe_and_recovery_outlives_document(auth):
     coordinator, ceremonies, authentication, client, parent, _, _ = auth
     operation, browser, admitted = await close_task(auth)

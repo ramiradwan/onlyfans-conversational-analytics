@@ -54,7 +54,7 @@ export function createPairedBrowserTasks({ owner, authentication, now = Date.now
         if (entry) {
           if (entry.payload.task.admission_generation !== admission_generation) return;
           active.delete(task_id);
-          await authentication.retire(entry.payload);
+          await authentication.retire(entry.payload, 'paired');
           entry.close();
           return;
         }

@@ -5,7 +5,7 @@ import { registerDesktopPort } from './runtime/desktop-port.mjs';
 import { tabChangeSource } from './runtime/tab-change-source.mjs';
 import { createBrowserTaskOwner } from './runtime/browser-task-owner.mjs';
 import { createBrowserAuth } from './runtime/browser-auth.mjs';
-import { observePopupCreation, observePopupRemoval, observeSignInStage, stageBegin, stageFlush, stageMark } from './runtime/sign-in-timing.mjs';
+import { observePopupCreation, observePopupLifecycle, observePopupRemoval, observeSignInStage, stageBegin, stageFlush, stageMark } from './runtime/sign-in-timing.mjs';
 import { createPairedBrowserTasks } from './runtime/paired-browser-tasks.mjs';
 import { onboardingHostedOrigin } from './runtime/onboarding-release-config.mjs';
 import { registerOnboardingWorkspace } from './runtime/onboarding-entry.mjs';
@@ -289,7 +289,7 @@ chrome.tabs?.onUpdated?.addListener((_tabId, changeInfo) => {
 });
 provisioningIdentityBridge.onAccountChange(signalSurfaces);
 
-export const browserAuth = createBrowserAuth({ chromeApi: chrome, hostedOrigin: onboardingHostedOrigin, onRemoved: observePopupRemoval, onCreated: observePopupCreation, onStage: observeSignInStage });
+export const browserAuth = createBrowserAuth({ chromeApi: chrome, hostedOrigin: onboardingHostedOrigin, onRemoved: observePopupRemoval, onLifecycle: observePopupLifecycle, onCreated: observePopupCreation, onStage: observeSignInStage });
 export const browserTaskOwner = createBrowserTaskOwner({ chromeApi: chrome, onboarding, consentController,
   legalActivationController, identityBridge: provisioningIdentityBridge, openCreatorAccount, authentication: browserAuth });
 export const pairedBrowserTasks = createPairedBrowserTasks({ owner: browserTaskOwner, authentication: browserAuth });

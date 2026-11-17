@@ -14,6 +14,12 @@ function observe(phase, elapsedMs) {
 
 export function observePopupRemoval(elapsedMs) { observe('popup-remove', elapsedMs); }
 
+const POPUP_LIFECYCLE = new Set(['popup-close-observed', 'popup-end-requested', 'popup-saved-end-requested',
+  'popup-expiry-requested', 'popup-waiting-end-requested', 'popup-waiting-restart-requested', 'popup-navigation-failed',
+  'popup-helper-end-received', 'popup-paired-end-received']);
+
+export function observePopupLifecycle(phase) { if (POPUP_LIFECYCLE.has(phase)) observe(phase, 0); }
+
 /** From the helper's open request to the popup holding the ceremony page. Navigation starts there. */
 export function observePopupCreation(elapsedMs) { observe('popup-create', elapsedMs); }
 

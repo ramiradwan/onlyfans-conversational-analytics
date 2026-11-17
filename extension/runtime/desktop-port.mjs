@@ -346,7 +346,7 @@ export function registerDesktopPort({ chromeApi = globalThis.chrome, owner, comp
           if (documents.length !== 1 || documents[0].frameId !== 0
             || documents[0].documentId !== entry.port.sender.documentId || documents[0].result !== true) throw Error('task_changed');
           // A finished helper ends its sign-in. Its popup is removed without claiming closure.
-          if (purpose === 'browser.authentication') await Promise.resolve(authentication?.retire?.(entry.payload)).catch(() => undefined);
+          if (purpose === 'browser.authentication') await Promise.resolve(authentication?.retire?.(entry.payload, 'helper')).catch(() => undefined);
           send(entry, { type: 'finished', task_id: entry.payload.task.task_id,
             admission_generation: entry.payload.task.admission_generation });
           close(entry); return;

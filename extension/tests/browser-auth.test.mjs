@@ -74,7 +74,7 @@ const event = () => { const listeners = new Set();
 const WINDOW_BASE = 917331000, TAB_BASE = 828441000;
 function harness(t) {
   let clock = Date.now();
-  const stored = {}, flows = [], listeners = new Set(), alarms = new Map(), removed = [], focused = [];
+  const stored = {}, flows = [], listeners = new Set(), alarms = new Map(), removed = [], focused = [], lifecycle = [];
   const onUpdated = event(), onRemoved = event();
   const control = { createFailure: null, createGate: null };
   const chromeApi = { runtime: { id: 'a'.repeat(32) }, storage: { local: {
@@ -99,11 +99,53 @@ function harness(t) {
     async update(windowId, options) { focused.push([windowId, options]); return { id: windowId }; },
     onRemoved,
   } };
-  const make = () => { const owner = createBrowserAuth({ chromeApi, hostedOrigin: ORIGIN, now: () => clock }); t.after(() => owner.dispose()); return owner; };
-  return { owner: make(), make, stored, flows, alarms, chromeApi, removed, focused, control, onUpdated, onRemoved,
+  const make = () => { const owner = createBrowserAuth({ chromeApi, hostedOrigin: ORIGIN, now: () => clock,
+    onLifecycle: phase => lifecycle.push(phase) }); t.after(() => owner.dispose()); return owner; };
+  return { owner: make(), make, stored, flows, alarms, chromeApi, removed, focused, control, onUpdated, onRemoved, lifecycle,
     request: index => request(clock, index),
     advance(ms) { clock += ms; }, async alarm() { for (const fn of listeners) fn({ name: 'browser-auth-expiry' }); await tick(); } };
 }
+
+test('popup diagnostics distinguish observed closure from requested task end and expiry without identifiers', async t => {
+  const h = harness(t), value = h.request();
+  await h.owner.launch(value, async () => {}); await tick();
+  h.flows[0].close(); await tick();
+  assert.deepEqual(h.lifecycle, ['popup-close-observed']);
+  const next = h.request(2);
+  await h.owner.launch(next, async () => {}); await tick();
+  await h.owner.retire(next); await tick();
+  assert.deepEqual(h.lifecycle, ['popup-close-observed', 'popup-end-requested']);
+  await h.owner.launch(h.request(3), async () => {}); await tick();
+  h.advance(121000); await h.alarm();
+  assert.deepEqual(h.lifecycle, ['popup-close-observed', 'popup-end-requested', 'popup-expiry-requested']);
+});
+
+test('popup lifecycle timing admits only closed labels', async t => {
+  const prior = globalThis.WebSocket, sockets = [];
+  globalThis.WebSocket = class {
+    constructor() { sockets.push(this); }
+    send(value) { this.value = JSON.parse(value); this.onclose(); }
+    close() { this.onclose(); }
+  };
+  t.after(() => { globalThis.WebSocket = prior; });
+  const { observePopupLifecycle } = await import('../runtime/sign-in-timing.mjs');
+  assert.equal(typeof observePopupLifecycle, 'function');
+  observePopupLifecycle('untrusted-value');
+  assert.equal(sockets.length, 0);
+  observePopupLifecycle('popup-close-observed'); sockets[0].onopen();
+  assert.deepEqual(sockets[0].value, { operation: 'extension', phase: 'popup-close-observed', status: 'ok', elapsed_ms: 0 });
+});
+
+test('popup diagnostics identify the helper and paired task end routes', async t => {
+  const h = harness(t);
+  for (const [index, source] of [[1, 'helper'], [2, 'paired']]) {
+    const value = h.request(index);
+    await h.owner.launch(value, async () => {}); await tick();
+    await h.owner.retire(value, source); await tick();
+  }
+  assert.deepEqual(h.lifecycle, ['popup-helper-end-received', 'popup-end-requested',
+    'popup-paired-end-received', 'popup-end-requested']);
+});
 const RECORD_KEYS = ['attempt_id', 'ceremony_id', 'closed_generation', 'expires_at', 'fingerprint', 'notification', 'phase', 'sequence', 'task_id'];
 function assertBoundedJournal(h) {
   const journal = JSON.stringify(h.stored[BROWSER_AUTH_KEY] ?? []);
