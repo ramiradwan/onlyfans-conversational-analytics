@@ -300,7 +300,7 @@ describe('CreatorDashboardView', () => {
       desired_state: 'not_started', effective_state: 'not_applied', effective_config_revision: null,
       recent_window_days: 30, page_size: 50, pages_per_wake: 2, request_interval_ms: 1000, retry_limit: 3, updated_at: AS_OF };
     const running: HistorySettings = { ...settings, settings_revision: 2, consent_revision: 'consent-1',
-      desired_state: 'running', effective_state: 'running' };
+      authorized_platform_creator_id: 'platform-creator-1', desired_state: 'running', effective_state: 'running' };
     const api = { get: vi.fn(async () => settings), update: vi.fn(async () => running), revoke: vi.fn() };
     const browserApi = { open: vi.fn(async () => 'delivered' as const), setCapture: vi.fn() };
     const source = readinessSource(true);

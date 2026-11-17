@@ -27,7 +27,6 @@ import { desktopOnboardingApi, selectAnalysisReadiness, type DesktopOnboardingAp
 import { focusDesktopWindow } from '../services/desktopWindow';
 import {
   historySettingsApi as defaultHistorySettingsApi,
-  HistorySettingsApiError,
   type HistorySettingsApi,
 } from '../services/historySettingsApi';
 import { bridgeTransportStore, type BridgeTransportStore } from '../store/transportStore';
@@ -52,11 +51,38 @@ interface PermissionReturn {
   delivered: boolean;
 }
 
-function changeFailure(cause: unknown, fallback: string): string {
-  if (cause instanceof HistorySettingsApiError && (cause.status === 409 || cause.status === 412)) {
-    return 'Message history settings changed. Review the current settings and try again.';
+interface HistoryChange {
+  before: HistorySettings;
+  desired: 'running' | 'paused' | 'revoked';
+  acceptConsent: boolean;
+}
+
+const CHANGE_UNCONFIRMED = "Your change hasn't been confirmed.";
+
+function sameEffect(change: HistoryChange, next: HistorySettings): boolean {
+  const before = change.before;
+  if (next.creator_account_id !== before.creator_account_id
+    || next.consent_policy_version !== before.consent_policy_version
+    || next.desired_state !== change.desired) return false;
+  if (change.desired === 'revoked') {
+    return next.consent_revision === null && next.authorized_platform_creator_id === null;
   }
-  return fallback;
+  if (next.recent_window_days !== before.recent_window_days || next.page_size !== before.page_size
+    || next.pages_per_wake !== before.pages_per_wake || next.request_interval_ms !== before.request_interval_ms
+    || next.retry_limit !== before.retry_limit) return false;
+  if (change.acceptConsent) {
+    return next.consent_revision !== null && next.consent_revision !== before.consent_revision
+      && next.authorized_platform_creator_id !== null
+      && (before.authorized_platform_creator_id === null
+        || next.authorized_platform_creator_id === before.authorized_platform_creator_id);
+  }
+  return next.consent_revision === before.consent_revision
+    && next.authorized_platform_creator_id === before.authorized_platform_creator_id;
+}
+
+function settingsIdentity(value: HistorySettings | null): string | null {
+  return value === null ? null : JSON.stringify([value.creator_account_id, value.settings_revision,
+    value.consent_policy_version, value.consent_revision, value.authorized_platform_creator_id]);
 }
 
 /** Shared history consent, permission, progress and management controls. */
@@ -68,13 +94,21 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
     store.getState,
     store.getState,
   );
-  const [settings, setSettings] = useState<HistorySettings | null>(null);
+  const [loadedSettings, setSettings] = useState<HistorySettings | null>(null);
+  const latest = useRef<HistorySettings | null>(null);
+  const accountId = reviewCreatorId ?? transport.creatorAccountId;
+  const settings = loadedSettings && (accountId === null || loadedSettings.creator_account_id === accountId)
+    ? loadedSettings : null;
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [consentAccepted, setConsentAccepted] = useState(false);
-  const [confirmRevoke, setConfirmRevoke] = useState(false);
-  const [loadRevision, setLoadRevision] = useState(0);
+  const [consentSelection, setConsentSelection] = useState<string | null>(null);
+  const [revokeSelection, setRevokeSelection] = useState<string | null>(null);
+  const identity = settingsIdentity(settings);
+  const consentAccepted = identity !== null && consentSelection === identity;
+  const confirmRevoke = identity !== null && revokeSelection === identity;
+  const [pendingChange, setPendingChange] = useState<HistoryChange | null>(null);
+  const [recoveryWake, setRecoveryWake] = useState(0);
   const desktop = useSyncExternalStore(desktopApi.subscribe, desktopApi.getState, desktopApi.getState);
   const [permissionReturn, setPermissionReturn] = useState<PermissionReturn | null>(null);
   const consumedPermissionReturn = useRef<PermissionReturn | null>(null);
@@ -97,11 +131,64 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
       && browser?.capture === 'active' && browser.site_access === 'granted' && !browser.legal_review_required;
   };
   const reviewAvailable = reviewCurrent();
+  const reviewGeneration = review ? desktop.snapshot?.generation : undefined;
+  const reviewJourney = review ? desktop.snapshot?.journey_id : undefined;
   useEffect(() => {
-    if (!review) return;
     setBusy(false);
+    setPendingChange(null);
+    setRevokeSelection(null);
+    setConsentSelection(null);
     return () => { mutation.current?.abort(); mutation.current = null; };
-  }, [review, reviewCreatorId, desktop.snapshot?.generation, desktop.snapshot?.journey_id, transport.creatorAccountId]);
+  }, [review, reviewCreatorId, reviewGeneration, reviewJourney, transport.creatorAccountId]);
+
+  const currentAccount = (value: HistorySettings) => {
+    const current = store.getState().creatorAccountId;
+    const owner = desktopApi.getState().snapshot;
+    return current !== null && current === value.creator_account_id && current === accountId
+      && (!review || (owner?.generation === reviewGeneration && owner?.journey_id === reviewJourney));
+  };
+  const acceptSnapshot = (next: HistorySettings) => {
+    if ((accountId !== null && next.creator_account_id !== accountId)
+      || store.getState().creatorAccountId !== transport.creatorAccountId
+      || (latest.current !== null && (latest.current.creator_account_id !== next.creator_account_id
+        || latest.current.settings_revision > next.settings_revision))) return false;
+    latest.current = next;
+    setSettings(next);
+    return true;
+  };
+
+  // Only a current, changed owner snapshot can settle an interrupted write.
+  // A read of the old revision does not prove a delayed request never committed.
+  const reconcileChange = async (change: HistoryChange, signal: AbortSignal) => {
+    try {
+      const next = await api.get(signal);
+      if (signal.aborted || !currentAccount(change.before) || !currentAccount(next)
+        || next.settings_revision < change.before.settings_revision
+        || (next.settings_revision === change.before.settings_revision
+          && next.consent_policy_version === change.before.consent_policy_version)) return false;
+      if (!acceptSnapshot(next)) return false;
+      if (sameEffect(change, next)) {
+        setError(null);
+        if (change.desired === 'revoked') store.clearMessageCache();
+      } else {
+        setError('Message history settings changed.');
+      }
+      setPendingChange(null);
+      return true;
+    } catch { return false; }
+  };
+
+  useEffect(() => {
+    if (pendingChange === null) return;
+    const wake = () => setRecoveryWake(value => value + 1);
+    const visible = () => { if (document.visibilityState === 'visible') wake(); };
+    window.addEventListener('focus', wake);
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      window.removeEventListener('focus', wake);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [pendingChange]);
   useRevealHold(loading);
 
   useEffect(() => {
@@ -140,50 +227,67 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
-    setConsentAccepted(false);
-    if (review) setSettings(null);
-    void api.get(controller.signal).then(
-      (next) => {
-        if (controller.signal.aborted) return;
-        if (reviewCreatorId !== undefined && next.creator_account_id !== reviewCreatorId) {
-          setError('Message history settings are unavailable for this account.');
+    setConsentSelection(null);
+    latest.current = null;
+    setSettings(null);
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const load = () => {
+      void api.get(controller.signal).then(
+        (next) => {
+          if (controller.signal.aborted) return;
+          if (!acceptSnapshot(next)) {
+            setError('Message history settings are unavailable for this account.');
+            setLoading(false);
+            return;
+          }
+          setError(null);
           setLoading(false);
-          return;
-        }
-        setSettings(next);
-        setError(null);
-        setLoading(false);
-      },
-      () => {
-        if (controller.signal.aborted) return;
-        setError("Message history settings couldn't be loaded.");
-        setLoading(false);
-      },
-    );
-    return () => controller.abort();
-  }, [api, loadRevision, transport.creatorAccountId, review, reviewCreatorId]);
+        },
+        () => {
+          if (controller.signal.aborted) return;
+          if (++attempts < 3) {
+            timer = setTimeout(load, 1000 * 2 ** (attempts - 1));
+            return;
+          }
+          setError("Message history settings couldn't be loaded.");
+          setLoading(false);
+        },
+      );
+    };
+    load();
+    return () => {
+      controller.abort();
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [api, transport.creatorAccountId, review, reviewCreatorId, reviewGeneration, reviewJourney]);
 
   useEffect(() => {
     if (busy || settings === null) return;
     const ownerChanged = Math.max(transport.agent?.required_history_settings_revision ?? 0,
       transport.agent?.applied_history_settings_revision ?? 0) > settings.settings_revision;
-    if (!ownerChanged && (settings.desired_state === 'not_started'
+    if (pendingChange === null && !ownerChanged && (settings.desired_state === 'not_started'
       || settings.desired_state === settings.effective_state)) return;
     const controller = new AbortController();
     let delay = ownerChanged ? 0 : 1000;
     let attempts = 0;
     let timer: ReturnType<typeof setTimeout>;
     const refresh = async () => {
+      let settled = false;
       try {
-        const next = await api.get(controller.signal);
-        if (controller.signal.aborted || (reviewCreatorId !== undefined && next.creator_account_id !== reviewCreatorId)) return;
-        setSettings((current) => current !== null
-          && next.settings_revision >= current.settings_revision ? next : current);
+        if (pendingChange !== null) {
+          settled = await reconcileChange(pendingChange, controller.signal);
+          if (settled) return;
+        } else {
+          const next = await api.get(controller.signal);
+          if (controller.signal.aborted || mutation.current || !currentAccount(next)) return;
+          acceptSnapshot(next);
+        }
       } catch {
         // A disconnected extension or temporary local API failure must not
         // leave a successful acknowledgement hidden until manual navigation.
       } finally {
-        if (!controller.signal.aborted && ++attempts < 3) {
+        if (!settled && !controller.signal.aborted && ++attempts < 3) {
           delay = Math.min(Math.max(delay * 2, 1000), 15_000);
           timer = setTimeout(() => void refresh(), delay);
         }
@@ -195,23 +299,17 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
       clearTimeout(timer);
     };
   }, [api, busy, settings?.settings_revision, settings?.desired_state, settings?.effective_state,
-    transport.agent?.applied_history_settings_revision, transport.agent?.required_history_settings_revision, reviewCreatorId]);
+    transport.agent?.applied_history_settings_revision, transport.agent?.required_history_settings_revision,
+    transport.creatorAccountId, transport.connection, reviewAvailable, reviewCreatorId, reviewGeneration, reviewJourney,
+    pendingChange, recoveryWake]);
 
-  const refreshAfterConflict = async (cause: unknown, signal?: AbortSignal) => {
-    if (!(cause instanceof HistorySettingsApiError) || ![409, 412].includes(cause.status ?? 0)) return;
-    try {
-      const next = await api.get(signal);
-      if (signal?.aborted || (review && (!reviewCurrent() || next.creator_account_id !== reviewCreatorId))) return;
-      setSettings(current => current && current.creator_account_id === next.creator_account_id
-        && next.settings_revision >= current.settings_revision ? next : current);
-      setConsentAccepted(false);
-    } catch { /* Preserve the failed command and its current settings for an explicit retry. */ }
-  };
-
-  const allowBrowserHistory = async () => {
-    if (permissionRequest.current || (review && (!canManageHistorySync || !reviewCurrent()
-      || settings?.creator_account_id !== reviewCreatorId || !settings.consent_revision
-      || settings.desired_state !== 'running' || store.getState().agent?.browser?.history_permission !== 'missing'))) return;
+  const allowBrowserHistory = async (value = settings) => {
+    const current = store.getState();
+    if (permissionRequest.current || pendingChange || !canManageHistorySync || !value
+      || !currentAccount(value) || !reviewCurrent() || latest.current !== value || !value.consent_revision
+      || value.desired_state !== 'running' || current.connection !== 'connected'
+      || current.agent?.creator_account_id !== value.creator_account_id
+      || current.agent.browser?.history_permission !== 'missing') return;
     const controller = new AbortController();
     permissionRequest.current = controller;
     setOpeningPermission(true);
@@ -232,7 +330,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
     } catch {
       if (controller.signal.aborted) return;
       setPermissionReturn(current => current === intent ? null : current);
-      setError('Chrome permission could not be opened. Try again.');
+      setError('Chrome permission could not be opened.');
     } finally {
       if (permissionRequest.current === controller) {
         permissionRequest.current = null;
@@ -241,60 +339,63 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
     }
   };
 
-  const update = async (desiredState: 'running' | 'paused', acceptConsent = false) => {
-    if (settings === null || mutation.current || (review && (!canManageHistorySync || !reviewCurrent()
-      || settings.creator_account_id !== reviewCreatorId || !acceptConsent || !consentAccepted
-      || (settings.consent_revision !== null && settings.desired_state !== 'revoked')))) return;
+  const submitChange = async (desired: HistoryChange['desired'], acceptConsent = false) => {
+    if (!settings || loading || busy || pendingChange || mutation.current || !canManageHistorySync
+      || !currentAccount(settings) || latest.current !== settings || !reviewCurrent()) return;
+    const hasReceipt = settings.consent_revision !== null && settings.desired_state !== 'revoked';
+    if (desired === 'revoked' ? review || !confirmRevoke || !hasReceipt
+      : acceptConsent ? !consentAccepted || hasReceipt || desired !== 'running'
+        : review || !hasReceipt || desired === settings.desired_state) return;
+    const change: HistoryChange = { before: settings, desired, acceptConsent };
     const controller = new AbortController();
     mutation.current = controller;
     setBusy(true);
     setError(null);
+    setConsentSelection(null);
     try {
-      const input = {
-        desired_state: desiredState,
-        consent_policy_version: acceptConsent ? settings.consent_policy_version : null,
-        accept_consent: acceptConsent,
-        recent_window_days: settings.recent_window_days,
-        page_size: settings.page_size,
-        pages_per_wake: settings.pages_per_wake,
-        request_interval_ms: settings.request_interval_ms,
-        retry_limit: settings.retry_limit,
-      };
-      const next = review ? await api.update(settings.settings_revision, input, controller.signal)
-        : await api.update(settings.settings_revision, input);
-      if (controller.signal.aborted || (review && (!reviewCurrent() || next.creator_account_id !== reviewCreatorId))) return;
-      setSettings(next);
-      setConsentAccepted(false);
-      if (!review && desiredState === 'running' && transport.agent?.browser?.history_permission === 'missing') await allowBrowserHistory();
-    } catch (cause) {
-      if (controller.signal.aborted) return;
-      await refreshAfterConflict(cause, review ? controller.signal : undefined);
-      if (!controller.signal.aborted) {
-        setConsentAccepted(false);
-        setError(changeFailure(cause, review ? 'Your consent could not be confirmed.' : "Your change couldn't be saved. Try again."));
+      const next = desired === 'revoked' ? await api.revoke(settings.settings_revision, controller.signal)
+        : await api.update(settings.settings_revision, {
+          desired_state: desired,
+          consent_policy_version: acceptConsent ? settings.consent_policy_version : null,
+          accept_consent: acceptConsent,
+          recent_window_days: settings.recent_window_days,
+          page_size: settings.page_size,
+          pages_per_wake: settings.pages_per_wake,
+          request_interval_ms: settings.request_interval_ms,
+          retry_limit: settings.retry_limit,
+        }, controller.signal);
+      if (controller.signal.aborted || !currentAccount(settings)) return;
+      if (!currentAccount(next) || next.settings_revision <= settings.settings_revision || !acceptSnapshot(next)) {
+        throw new Error('unconfirmed_history_change');
+      }
+      if (sameEffect(change, next)) {
+        if (desired === 'revoked') store.clearMessageCache();
+        // Preserve the existing Settings gesture, but never open Chrome
+        // after a read-only reconciliation of a competing or lost write.
+        if (!review && desired === 'running') await allowBrowserHistory(next);
+      } else {
+        setError('Message history settings changed.');
+      }
+    } catch {
+      if (controller.signal.aborted || !currentAccount(settings)) return;
+      if (!await reconcileChange(change, controller.signal)
+        && !controller.signal.aborted && currentAccount(settings)) {
+        setPendingChange(change);
+        setError(CHANGE_UNCONFIRMED);
       }
     } finally {
-      if (mutation.current === controller) { mutation.current = null; setBusy(false); }
+      if (mutation.current === controller) {
+        mutation.current = null;
+        setRevokeSelection(null);
+        setBusy(false);
+      }
     }
   };
 
-  const revoke = async () => {
-    if (settings === null) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const next = await api.revoke(settings.settings_revision);
-      setSettings(next);
-      store.clearMessageCache();
-      setConfirmRevoke(false);
-    } catch (cause) {
-      await refreshAfterConflict(cause);
-      setConfirmRevoke(false);
-      setError(changeFailure(cause, "Message history couldn't be turned off. Try again."));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const update = (desired: 'running' | 'paused', acceptConsent = false) => submitChange(desired, acceptConsent);
+  const revoke = () => submitChange('revoked');
+  const controlsDisabled = loading || busy || pendingChange !== null || accountId === null
+    || transport.creatorAccountId !== accountId;
 
   const hasConsent = settings !== null
     && settings.consent_revision !== null
@@ -304,7 +405,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   const { completeConversations, discoveredConversations } = transport.snapshotProgress;
   const agent = transport.connection === 'connected' ? transport.agent : null;
   const waitingForExtension = settings !== null && !hasConsent && extensionConnection(agent) === 'offline';
-  const presentation = settings ? presentHistory(settings, agent, transport.coverage) : null;
+  const presentation = settings && !pendingChange ? presentHistory(settings, agent, transport.coverage) : null;
   const permissionNeeded = hasConsent && !paused && agent?.browser?.history_permission === 'missing';
 
   return (
@@ -325,7 +426,8 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
       />
 
       {!reviewAvailable && <Alert severity="info">Message history is unavailable for this account right now.</Alert>}
-      <StatusLine id="history-feedback" tone={error ? 'error' : 'secondary'} text={error ?? presentation?.detail ?? null} />
+      <StatusLine id="history-feedback" tone={error && error !== 'Message history settings changed.' ? 'error' : 'secondary'}
+        text={error ?? presentation?.detail ?? null} />
 
       {loading ? (
         <Stack spacing={1} role="status" aria-label="Loading message history settings">
@@ -369,7 +471,8 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
               control={(
                 <Checkbox
                   checked={consentAccepted}
-                  onChange={(event) => setConsentAccepted(event.target.checked)}
+                  disabled={controlsDisabled}
+                  onChange={(event) => setConsentSelection(event.target.checked ? identity : null)}
                 />
               )}
               label="I allow read-only syncing of my older messages to this computer."
@@ -384,7 +487,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
             >
               {!hasConsent ? (
                 <Button
-                  disabled={!consentAccepted || busy}
+                  disabled={!consentAccepted || controlsDisabled}
                   onClick={() => void update('running', true)}
                   startIcon={<PlayCircleOutlinedIcon />}
                   variant="contained"
@@ -392,10 +495,10 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
                   {review ? 'Allow message history' : 'Turn on message history'}
                 </Button>
               ) : permissionNeeded ? (
-                <Button disabled={busy || openingPermission} onClick={() => void allowBrowserHistory()} variant="contained">Allow Chrome access</Button>
+                <Button disabled={controlsDisabled || openingPermission} onClick={() => void allowBrowserHistory()} variant="contained">Allow Chrome access</Button>
               ) : review ? null : paused ? (
                 <Button
-                  disabled={busy}
+                  disabled={controlsDisabled}
                   onClick={() => void update('running')}
                   size="small"
                   startIcon={<PlayCircleOutlinedIcon />}
@@ -405,7 +508,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
                 </Button>
               ) : (
                 <Button
-                  disabled={busy}
+                  disabled={controlsDisabled}
                   onClick={() => void update('paused')}
                   size="small"
                   startIcon={<PauseCircleOutlinedIcon />}
@@ -416,8 +519,8 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
               )}
               {hasConsent && !review && (
                 <Button
-                  disabled={busy}
-                  onClick={() => setConfirmRevoke(true)}
+                  disabled={controlsDisabled}
+                  onClick={() => setRevokeSelection(identity)}
                   size="small"
                   sx={{ color: 'text.secondary' }}
                 >
@@ -427,9 +530,9 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
             </Stack>
           )}
         </Stack>
-      ) : error && reviewAvailable ? <Button onClick={() => setLoadRevision(value => value + 1)}>Try again</Button> : null}
+      ) : null}
 
-      <Dialog open={confirmRevoke} onClose={() => !busy && setConfirmRevoke(false)}>
+      <Dialog open={confirmRevoke} onClose={() => !busy && setRevokeSelection(null)}>
         <DialogTitle>Turn off message history?</DialogTitle>
         <DialogContent>
           <DialogContentText>
@@ -437,8 +540,8 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button disabled={busy} onClick={() => setConfirmRevoke(false)}>Cancel</Button>
-          <Button color="error" disabled={busy} onClick={() => void revoke()} variant="contained">
+          <Button disabled={controlsDisabled} onClick={() => setRevokeSelection(null)}>Cancel</Button>
+          <Button color="error" disabled={controlsDisabled} onClick={() => void revoke()} variant="contained">
             Turn off
           </Button>
         </DialogActions>

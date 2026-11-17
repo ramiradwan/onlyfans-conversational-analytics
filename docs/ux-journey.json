@@ -1748,6 +1748,26 @@
           "kind": "unit",
           "file": "frontend/tests/CreatorDashboardView.test.tsx",
           "name": "never submits history consent when the review is dismissed or belongs to a different creator"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "requires new consent for the current policy and preserves the current configuration"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "keeps an unconfirmed write disabled until a later authoritative revision is available"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "reconciles an already revoked receipt without issuing a second revocation"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "discards an interrupted change when the creator account changes"
         }
       ]
     },
