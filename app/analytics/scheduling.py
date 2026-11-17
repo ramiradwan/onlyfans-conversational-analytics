@@ -293,7 +293,10 @@ class InProcessProjectionScheduler:
                     raise ProjectionCoordinatorClosed()
                 self._active_publications += 1
             try:
-                (candidate.publication_pipeline or self.pipeline).publish_candidate(candidate)
+                result = (candidate.publication_pipeline or self.pipeline).publish_candidate(candidate)
+                if result.changed:
+                    from app.analytics.publication_events import publication_events
+                    publication_events.publish(candidate.creator_account_id)
             finally:
                 with self._state_lock:
                     self._active_publications -= 1

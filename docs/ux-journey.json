@@ -652,6 +652,26 @@
           "kind": "browser",
           "file": "tools/e2e-capture/tests/text-analysis-processing.spec.mjs",
           "name": "processing commands preserve durable enrollment and canonical findings"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TaskFindings.test.tsx",
+          "name": "displays a newly published saved finding without another message or refresh click"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/analyticsStore.test.ts",
+          "name": "reloads saved analytics on publication with no conversation revision change and coalesces overlapping notices"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_nlp_runtime.py",
+          "name": "test_saved_findings_publication_notifies_without_new_canonical_data"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_analytics_publication_events.py",
+          "name": "test_publication_stream_is_account_scoped_and_reconciles_on_connect"
         }
       ]
     },
