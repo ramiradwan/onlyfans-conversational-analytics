@@ -2085,6 +2085,11 @@
           "to": "browser.loading",
           "by": "user",
           "action": "task-action"
+        },
+        {
+          "to": "browser.loading",
+          "by": "user",
+          "action": "browser-reopen"
         }
       ],
       "evidence": [
@@ -2092,6 +2097,16 @@
           "kind": "unit",
           "file": "frontend/tests/desktop-setup.test.js",
           "name": "renders the three local setup tasks and optional activation from one projection"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "does not offer browser recovery while the desktop status is uncertain"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "opens the exact operation rendered on the current browser recovery button"
         }
       ]
     },
@@ -2110,6 +2125,11 @@
         {
           "to": "desktop.setup_unavailable",
           "by": "system"
+        },
+        {
+          "to": "browser.loading",
+          "by": "user",
+          "action": "browser-reopen"
         }
       ],
       "evidence": [
@@ -2182,6 +2202,16 @@
           "kind": "unit",
           "file": "tests/test_registered_continuation_context.py",
           "name": "test_native_account_command_resumes_only_the_explicit_classified_source"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "does not offer browser recovery while the desktop status is uncertain"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "opens the exact operation rendered on the current browser recovery button"
         }
       ]
     },
@@ -2204,6 +2234,11 @@
         {
           "to": "desktop.setup_local_access",
           "by": "system"
+        },
+        {
+          "to": "browser.loading",
+          "by": "user",
+          "action": "browser-reopen"
         }
       ],
       "evidence": [
@@ -2211,6 +2246,16 @@
           "kind": "unit",
           "file": "frontend/tests/desktop-setup.test.js",
           "name": "renders the three local setup tasks and optional activation from one projection"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "does not offer browser recovery while the desktop status is uncertain"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "opens the exact operation rendered on the current browser recovery button"
         }
       ]
     },

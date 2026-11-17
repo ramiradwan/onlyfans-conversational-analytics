@@ -59,10 +59,11 @@ try {
     choosingAccount = false; render(); document.getElementById('sign-in-switch').focus();
   });
   document.getElementById('task-reconnect').addEventListener('click', () => { void client.connect(); });
-  document.getElementById('browser-reopen').addEventListener('click', async () => {
-    if (acting) return;
+  document.getElementById('browser-reopen').addEventListener('click', async event => {
+    const button = event.currentTarget, operation = button.dataset.operation;
+    if (acting || button.hidden || button.disabled || !operation) return;
     acting = 'browser.open'; render();
-    try { await client.launchBrowser(true, current.snapshot?.authentication?.browser_operation_id || undefined); }
+    try { await client.launchBrowser(true, operation); }
     catch { client.notify('browser_unavailable'); }
     finally { acting = null; render(); }
   });

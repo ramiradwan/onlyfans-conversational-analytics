@@ -1,4 +1,5 @@
 import { focusTransition, setStatus } from '../shared-setup/presentation.js';
+import { browserRecoveryTarget } from './browser-task.js';
 
 const tasks = {
   'browser-access': ['Browser access', 'Allow the extension to use this Chrome profile and select the creator account.', 'setup_browser_access'],
@@ -15,14 +16,14 @@ const errors = {
   operation_refused: 'The action was refused.',
   authority_unavailable: 'Account authorization is unavailable.',
   browser_unavailable: 'The browser connection is unavailable.',
-  chrome_unavailable: 'Chrome could not be found. Install Chrome, then try again.',
+  chrome_unavailable: 'Install Chrome to continue setup.',
   browser_preparing: 'The browser task is being prepared.',
-  extension_unavailable: 'The extension is not available in that Chrome profile. Install or turn it on, then choose Try again.',
-  profile_mismatch: 'Chrome opened a different profile. Switch to the profile that has the extension, then choose Try again.',
-  account_mismatch: 'The selected creator account does not match the browser account.',
-  browser_needs_account: 'Chrome does not recognise your creator account yet. Reload your OnlyFans tab, then choose Try again.',
-  browser_needs_consent: 'Browser access is not turned on in the extension. Turn it on, then choose Try again.',
-  browser_needs_permission: 'The extension cannot open OnlyFans. Allow its site access, then choose Try again.',
+  extension_unavailable: 'Install or turn on the extension in Chrome to continue setup.',
+  profile_mismatch: 'Switch to the Chrome profile that has the extension.',
+  account_mismatch: 'Switch to the creator account you want to connect in Chrome.',
+  browser_needs_account: 'Chrome does not recognise your creator account yet. Open your creator account in Chrome.',
+  browser_needs_consent: 'Browser access is not turned on in the extension. Turn it on in Chrome.',
+  browser_needs_permission: 'The extension cannot open OnlyFans. Allow its site access in Chrome.',
   operation_expired: 'This task expired.',
   activation_unavailable: 'Full analytics activation could not be prepared. Try again.',
 };
@@ -153,13 +154,13 @@ export function renderSetup(document, state) {
   get('task-action').textContent = value?.continuation_available ? 'Continue setup'
     : action === 'account.connect' && signIn?.state === 'admitted' ? 'Continue' : actions[action] || '';
   get('task-action').dataset.action = action || '';
-  get('browser-reopen').hidden = accepted || showingProviders || Boolean(decision) || !state.connected
-    || (signIn ? !signIn.actions.open_browser || !(signIn.state === 'admitted'
-      || ['chrome_unavailable', 'browser_unavailable', 'extension_unavailable', 'profile_mismatch', 'browser_needs_account',
-        'browser_needs_consent', 'browser_needs_permission'].includes(reason)) : !value?.pending_operations.some(item => ['browser.access', 'browser.pair'].includes(item.action))
-      || reason === 'authority_unavailable' || !['browser-access', 'finish-setup'].includes(task));
-  get('browser-reopen').disabled = controlsDisabled;
-  get('browser-reopen').textContent = signIn ? 'Try again' : 'Continue connecting';
+  const recoveryTarget = browserRecoveryTarget(value, reason ?? null);
+  const browserReopen = get('browser-reopen');
+  browserReopen.hidden = !recoveryTarget || accepted || showingProviders || Boolean(decision) || !state.connected
+    || Boolean(state.browserLaunchPending || state.acting || needsAuthentication);
+  browserReopen.disabled = controlsDisabled;
+  browserReopen.dataset.operation = browserReopen.hidden ? '' : recoveryTarget;
+  browserReopen.textContent = 'Open Chrome';
   get('sign-in-switch').hidden = !canSwitch || choosingAccount;
   get('sign-in-switch').textContent = 'Use a different sign-in account';
   get('sign-in-switch').disabled = controlsDisabled;

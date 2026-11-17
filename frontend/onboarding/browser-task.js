@@ -1,4 +1,31 @@
-import { exact, isTask } from '../../shared/browser-tasks/wire.mjs';
+import { exact, isTask, UUID } from '../../shared/browser-tasks/wire.mjs';
+
+const browserActions = { 'browser-access': 'browser.access', 'finish-setup': 'browser.pair' };
+const authenticationActions = ['account.connect', 'auth.select', 'auth.switch'];
+const recoverableBrowserReasons = ['chrome_unavailable', 'browser_unavailable', 'extension_unavailable', 'profile_mismatch',
+  'account_mismatch', 'browser_needs_account', 'browser_needs_consent', 'browser_needs_permission'];
+
+/** Select only the operation that owns the visible setup task. Never guess from pending order. */
+export function browserRecoveryTarget(snapshot, reason = null) {
+  if (!snapshot || snapshot.decision || snapshot.decision_status?.state === 'accepted') return null;
+  const pending = snapshot.pending_operations;
+  const signIn = snapshot.authentication;
+  const authentication = snapshot.next_task === 'account-connection';
+  if (authentication && (!signIn?.actions.open_browser
+    || !UUID.test(signIn.browser_operation_id ?? '')
+    || !(signIn.state === 'admitted' && !reason || recoverableBrowserReasons.includes(reason)))) return null;
+  if (!authentication && (!browserActions[snapshot.next_task]
+    || reason && !recoverableBrowserReasons.includes(reason))) return null;
+  const matches = pending.filter(item => authentication
+    ? item.operation_id === signIn.browser_operation_id && authenticationActions.includes(item.action)
+    : item.action === browserActions[snapshot.next_task]);
+  if (matches.length !== 1) return null;
+  const operation = matches[0];
+  if (!UUID.test(operation.operation_id) || !['accepted', 'waiting', 'outcome_unknown'].includes(operation.state)
+    || operation.reason !== 'none' && !recoverableBrowserReasons.includes(operation.reason)
+    || operation.state === 'outcome_unknown' && !recoverableBrowserReasons.includes(reason)) return null;
+  return operation.operation_id;
+}
 
 export async function openSetupCode(client, invoke = code =>
   globalThis.__TAURI__.core.invoke('desktop_setup_code', { entryCode: code })) {
