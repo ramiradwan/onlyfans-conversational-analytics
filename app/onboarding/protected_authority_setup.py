@@ -119,7 +119,8 @@ class ProtectedAuthoritySetupOwner:
                     projection = json.loads(ceremony["projection_json"])
                     actual = projection["authentication_attempt"]
                     # The current read, not an old child receipt, admits the next
-                    # explicit gesture. Never project an ordinary browser launch.
+                    # explicit gesture. The protected browser affordance has
+                    # no ordinary browser operation locator.
                     if ((child is None and actual is None and projection["state"]=="selection-required")
                             or (child is not None and actual is not None
                                 and actual["authentication_attempt_id"]==child["attempt_id"]
@@ -131,7 +132,9 @@ class ProtectedAuthoritySetupOwner:
                             "actions":{"select":bool(projection["actions"]["select"] and
                                 (child is None or child["sequence"]<32)),
                                 "cancel":bool(projection["actions"]["cancel"]),
-                                "open_browser":False,"switch_account":False},
+                                "open_browser":bool(child is not None and child["state"]=="selected"
+                                    and not child["open_claimed"] and projection["actions"]["open_browser"]),
+                                "switch_account":False},
                             "authentication_attempt":actual}}
                     return {"state":"checking"}
                 if row["read_attempts"]>=MAX_READS:
@@ -198,6 +201,80 @@ class ProtectedAuthoritySetupOwner:
             "recovery_id":request["recovery_id"],"scope_digest":offer["scope_digest"],
             "operation_id":command_id,"journey_id":journey_id}})
 
+    def _selected_browser_child(self,connection,parent_id,attempt_id):
+        rows=connection.execute("SELECT * FROM desktop_setup_operations WHERE action='auth.select' "
+            "AND state='completed' AND json_extract(owner_scope_json,'$.protected_recovery_child.parent_operation_id')=? "
+            "AND json_extract(owner_scope_json,'$.protected_recovery_child.request.authentication_attempt_id')=? LIMIT 2",
+            (parent_id,attempt_id)).fetchall()
+        if len(rows)!=1:
+            raise HostedGrantUnavailable("Protected authentication selection unavailable")
+        selection=dict(rows[0])
+        intent,parent,binding,source=self._saved_child(connection,selection,require_pending=False)
+        self._authorize(parent,connection=connection)
+        child=self.browser.journal.child(connection,binding["recovery_id"])
+        if (intent["verb"]!="select" or source["state"]!="prepared" or not self._was_claimed(intent,child)
+                or child["state"]!="selected"):
+            raise HostedGrantUnavailable("Protected authentication selection changed")
+        return selection,parent,binding,source,child
+
+    def admit_browser_launch(self,connection,session,*,tasks,parent_id,attempt_id):
+        if not self.enabled:
+            raise HostedGrantUnavailable("Protected recovery is disabled")
+        selection,parent,binding,source,child=self._selected_browser_child(connection,parent_id,attempt_id)
+        if session.journey_id!=parent["journey_id"]:
+            raise HostedGrantUnavailable("Protected browser journey changed")
+        authorize=lambda **kw:self._authorize(parent,**kw)
+        rid=binding["recovery_id"]
+        ceremony=self.browser.journal.row(connection,rid)
+        if ceremony is None:
+            raise HostedGrantUnavailable("Protected ceremony unavailable")
+        claim=self.browser.journal.claim_browser_open(connection,rid,authorize=authorize)
+        if claim["attempt_id"]!=attempt_id:
+            raise HostedGrantUnavailable("Protected authentication attempt changed")
+        # The native launcher receives only a local one-use code. The hosted
+        # URL is recomputed and checked at consumption, never returned here.
+        return tasks.prepare_protected(connection,session,selection=selection,recovery_id=rid,
+            attempt_id=attempt_id,deadline=timestamp(ceremony["expires_at"]).timestamp())
+
+    def resolve_browser_launch(self,connection,task,dispatch):
+        if not self.enabled:
+            raise HostedGrantUnavailable("Protected recovery is disabled")
+        binding=connection.execute("SELECT * FROM protected_recovery_desktop_admissions WHERE recovery_id=?",
+            (dispatch["recovery_id"],)).fetchone()
+        if binding is None:
+            raise HostedGrantUnavailable("Protected browser source unavailable")
+        selection,parent,binding,source,child=self._selected_browser_child(connection,binding["operation_id"],dispatch["attempt_id"])
+        if (task["operation_id"]!=selection["operation_id"] or task["journey_id"]!=parent["journey_id"]
+                or task["scope_digest"]!=selection["scope_digest"] or task["source_revision"]!=selection["source_revision"]
+                or task["purpose"]!="browser.authentication" or binding["recovery_id"]!=dispatch["recovery_id"]):
+            raise HostedGrantUnavailable("Protected browser task changed")
+        return self.browser.journal._guard_browser_open(connection,binding["recovery_id"],child["attempt_id"],
+            authorize=lambda **kw:self._authorize(parent,**kw))
+
+    def _entry_deadline(self,connection,child):
+        if child is None or not child["open_claimed"]:
+            return None
+        now=self.store._now().timestamp()
+        row=connection.execute("SELECT min(t.expires_at,p.expires_at,e.expires_at) FROM protected_recovery_browser_dispatches d "
+            "JOIN desktop_browser_tasks t ON t.task_id=d.task_id JOIN desktop_presentations p ON p.generation=t.desktop_generation "
+            "JOIN desktop_admission_entries e ON e.reference_id=t.task_id AND e.role='browser_task' "
+            "AND e.generation=t.admission_generation "
+            "WHERE d.attempt_id=? AND t.state='pending' AND t.expires_at>? AND p.state='active' AND p.expires_at>? "
+            "AND e.expires_at>?",(child["attempt_id"],now,now,now)).fetchone()
+        return None if row is None else row[0]
+
+    def _entry_pending(self,connection,child):
+        return self._entry_deadline(connection,child) is not None
+
+    @staticmethod
+    def _retire_browser_entry(connection,attempt_id):
+        # Explicit cancellation irrevocably fences an unspent launch even if
+        # the subsequent hosted cancellation has an unknown result.
+        connection.execute("DELETE FROM desktop_admission_entries WHERE role='browser_task' AND reference_id IN "
+            "(SELECT task_id FROM protected_recovery_browser_dispatches WHERE attempt_id=?)",(attempt_id,))
+        connection.execute("UPDATE desktop_browser_tasks SET state='cancelled' WHERE state='pending' AND task_id IN "
+            "(SELECT task_id FROM protected_recovery_browser_dispatches WHERE attempt_id=?)",(attempt_id,))
+
     def _pending_child(self,connection,parent_id):
         return connection.execute("SELECT 1 FROM desktop_setup_operations WHERE state IN "
             "('accepted','waiting','outcome_unknown') AND json_extract(owner_scope_json,"
@@ -226,6 +303,8 @@ class ProtectedAuthoritySetupOwner:
                 authorize=lambda **kw:self._authorize(parent,**kw))
         except (HostedGrantUnavailable,ValueError):
             raise CommandRefused("authority_unavailable") from None
+        if verb=="cancel":
+            self._retire_browser_entry(connection,request["authentication_attempt_id"])
         return AcceptedContext(journey_id,{"protected_recovery_child":{
             "parent_operation_id":parent_id,"recovery_id":binding["recovery_id"],"verb":verb,
             "operation_id":command_id,"request":request}})
@@ -465,13 +544,13 @@ class ProtectedAuthoritySetupOwner:
             with self.store.database.read() as connection:
                 if self._pending_child(connection,operation["operation_id"]):
                     return OperationResult("waiting")
-            _,source,request,ceremony,child=await asyncio.to_thread(self._state,operation)
+            binding,source,request,ceremony,child=await asyncio.to_thread(self._state,operation)
             if source["state"] in {"reserved","prepare-claimed"}:
                 await self._effects.run(self._authority_exchange,operation,"prepare",journey_id=journey)
                 outcome=self.observe(operation)
                 if outcome is not None:
                     return outcome
-                _,source,request,ceremony,child=await asyncio.to_thread(self._state,operation)
+                binding,source,request,ceremony,child=await asyncio.to_thread(self._state,operation)
             rid=request["recovery_id"]
             if source["state"]=="committed" or ceremony is not None and ceremony["committed_seen"]:
                 await self._effects.run(self._authority_exchange,operation,"deliver",journey_id=journey)
@@ -482,11 +561,22 @@ class ProtectedAuthoritySetupOwner:
                 # Deterministic preparation of the exact already-admitted
                 # source. No child selection or browser launch is authorized.
                 await self.browser.prepare(request,journey_id=journey,authorize=authorize)
-                _,source,request,ceremony,child=await asyncio.to_thread(self._state,operation)
-            elif ceremony["ceremony_id"] is None or child is not None and child["open_claimed"]:
+                binding,source,request,ceremony,child=await asyncio.to_thread(self._state,operation)
+            elif ceremony["ceremony_id"] is None or child is not None and child["open_claimed"] and child["state"]=="selected":
+                with self.store.database.read() as connection:
+                    if self._entry_pending(connection,child):
+                        return OperationResult("waiting")
                 if await asyncio.to_thread(self._claim_read,operation):
-                    await self.browser.observe_ceremony(rid,journey_id=journey,authorize=authorize)
-                    _,source,request,ceremony,child=await asyncio.to_thread(self._state,operation)
+                    if (ceremony["ceremony_id"] is not None and ceremony["entry_reference"] is not None
+                            and self.store._now()<timestamp(ceremony["expires_at"])
+                            and (ceremony["projection_json"] is not None or binding["read_attempts"]%2==0)):
+                        # A missing child projection does not establish
+                        # noncommit. Alternate original ceremony and child
+                        # reads when uncertain, within the same durable budget.
+                        await self.browser.observe_authentication(rid,journey_id=journey,authorize=authorize)
+                    else:
+                        await self.browser.observe_ceremony(rid,journey_id=journey,authorize=authorize)
+                    binding,source,request,ceremony,child=await asyncio.to_thread(self._state,operation)
             if ceremony is not None and ceremony["committed_seen"]:
                 await self._effects.run(self._authority_exchange,operation,"deliver",journey_id=journey)
                 return self.observe(operation) or OperationResult("outcome_unknown","operation_unconfirmed")
@@ -532,12 +622,15 @@ class ProtectedAuthoritySetupOwner:
                 return False
             if ceremony is None or not ceremony["prepare_claimed"]:
                 return now<timestamp(source["source_expires_at"]).timestamp() and now<source["created_at"]+1800
-            if binding["read_attempts"]>=MAX_READS:
+            if binding["read_attempts"]>=MAX_READS or now>=source["created_at"]+1860:
                 return False
-            return (ceremony["ceremony_id"] is None and now<source["created_at"]+1860
-                or ceremony["ceremony_id"] is not None and (child is not None and bool(child["open_claimed"])
-                    or ceremony["projection_json"] is None and ceremony["entry_reference"] is not None
-                    and now<timestamp(ceremony["expires_at"]).timestamp()))
+            if child is not None and child["open_claimed"] and child["state"]=="selected":
+                with self.store.database.read() as connection:
+                    return not self._entry_pending(connection,child)
+            return (ceremony["ceremony_id"] is None
+                or ceremony["ceremony_id"] is not None and child is None
+                    and ceremony["projection_json"] is None and ceremony["entry_reference"] is not None
+                    and now<timestamp(ceremony["expires_at"]).timestamp())
         except (HostedGrantUnavailable,ValueError):
             return False
 
@@ -547,9 +640,17 @@ class ProtectedAuthoritySetupOwner:
         return getattr(self.base,"probe_interval",lambda _:None)(operation)
 
     def confirmation_deadline(self, operation):
-        if self.handles(operation):
+        if not self.handles(operation):
+            return getattr(self.base,"confirmation_deadline",lambda _:None)(operation)
+        if not self.enabled or self._child_intent(operation) is not None:
             return None
-        return getattr(self.base,"confirmation_deadline",lambda _:None)(operation)
+        try:
+            with self.store.database.read() as connection:
+                binding,_=self._saved(connection,operation)
+                child=self.browser.journal.child(connection,binding["recovery_id"])
+                return self._entry_deadline(connection,child)
+        except (HostedGrantUnavailable,ValueError):
+            return None
 
     def waiting_for_sign_in(self, operation):
         if self.handles(operation):

@@ -248,6 +248,17 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
         current = {task["task_id"] for task in tasks.current_native(session)}
         return JSONResponse({"notices": tasks.helpers.notices(current)}, headers=HEADERS)
 
+    @router.post("/api/v1/desktop/setup/protected-browser/open")
+    async def open_protected(request: Request):
+        from app.onboarding.coordinator import CommandRefused
+        session=authorize(coordinator.admissions,request,role="desktop",mutation=True)
+        value=await body(request)
+        try:
+            code=await run_in_threadpool(coordinator.open_protected_browser,session,value,tasks=tasks)
+        except (AdmissionRefused,CommandRefused,ValueError):
+            raise HTTPException(409,"Protected sign-in is unavailable") from None
+        return JSONResponse({"entry_code":code},headers=HEADERS)
+
     opening: set[str] = set()
 
     def open_target(session, task_id):
@@ -255,6 +266,8 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
             _, parent = coordinator.admissions._require(connection, session.identifier, role="desktop",
                 generation=session.generation)
             task = connection.execute("SELECT * FROM desktop_browser_tasks WHERE task_id=?", (task_id,)).fetchone()
+            if coordinator.admissions._protected_task(connection,task_id):
+                return None
         if (task is None or task["journey_id"] != parent["journey_id"]
                 or task["expires_at"] <= coordinator.admissions._now()
                 or task["state"] not in {"pending", "accepted", "outcome_unknown"}):

@@ -276,6 +276,41 @@ class DesktopOnboardingCoordinator:
     def _public(row):
         return {name: row[name] for name in ("operation_id", "action", "state", "reason")}
 
+    def open_protected_browser(self,session,request,*,tasks):
+        """Admit exactly one native browser entry for the current protected child."""
+        from app.security.hosted_grants import HostedGrantUnavailable
+        if self._closed:
+            raise CommandRefused("setup_unavailable")
+        if (not isinstance(request,dict) or set(request)!={"parent_operation_id","attempt_id","expected"}
+                or not isinstance(request["expected"],dict) or set(request["expected"])!={"generation","revision","scope_digest"}
+                or type(request["expected"]["revision"]) is not int):
+            raise ValueError("Invalid protected browser request")
+        require_journey(request["parent_operation_id"])
+        from app.security.initial_handoff import valid_uuid7
+        if not valid_uuid7(request["attempt_id"]):
+            raise ValueError("Invalid protected authentication attempt")
+        admit=getattr(self.owner,"admit_browser_launch",None)
+        if admit is None:
+            raise CommandRefused("action_unavailable")
+        with self.store.database.transaction() as connection:
+            current=self._current(connection,session)
+            snapshot=self._snapshot(connection,current)
+            if any(request["expected"][key]!=snapshot[key] for key in ("generation","revision","scope_digest")):
+                raise CommandRefused("setup_changed")
+            auth=snapshot["authentication"]
+            if (snapshot.get("authority_recovery")!="sign-in-required" or auth is None or not auth["actions"]["open_browser"]
+                    or auth["operation_id"]!=request["parent_operation_id"] or auth["authentication_attempt"] is None
+                    or auth["authentication_attempt"]["authentication_attempt_id"]!=request["attempt_id"]):
+                raise CommandRefused("action_unavailable")
+            try:
+                code=admit(connection,current,tasks=tasks,parent_id=request["parent_operation_id"],attempt_id=request["attempt_id"])
+            except HostedGrantUnavailable:
+                raise CommandRefused("authority_unavailable") from None
+            self._current(connection,session)
+            connection.execute("UPDATE desktop_setup_journeys SET revision=revision+1 WHERE journey_id=?",(current.journey_id,))
+        events.publish()
+        return code
+
     def receipt(self, session, operation_id):
         require_journey(operation_id)
         with self.store.database.read() as connection:

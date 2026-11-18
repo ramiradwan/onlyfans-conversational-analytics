@@ -7,6 +7,7 @@ import markup from '../onboarding/index.html?raw';
 import { DesktopSetupClient } from '../onboarding/client.js';
 import { snapshot } from '../onboarding/contract.js';
 import { setupEvents } from '../onboarding/events.js';
+import { openProtectedBrowser } from '../onboarding/browser-task.js';
 import { renderSetup } from '../onboarding/view.js';
 import { assertSetupIsolation, assertDashboardIsolation, assertReceivingIsolation } from '../scripts/setup-isolation.js';
 import { applyTheme } from '../shared-setup/presentation.js';
@@ -1397,4 +1398,60 @@ it('allows an explicit protected successor or cancellation while its exact paren
     expect(calls.filter(([url]) => url.endsWith('/commands'))[0][1]).toMatchObject({ action, recover_authority: true });
     expect(openBrowser).not.toHaveBeenCalled();
   }
+});
+
+it('consumes a protected browser entry directly without creating helper storage', async () => {
+  const destination = 'https://provider.example/onboarding/browser-ceremonies/' + 'B'.repeat(43);
+  const replace = vi.fn(), scrub = vi.fn(), local = { setItem: vi.fn() };
+  const request = vi.fn(async () => response({ protected_browser_url: destination }));
+  await runInNewContext(entryScript, { URL, URLSearchParams,
+    location: { pathname: '/browser-tasks/entry', hash: '#code=' + 'A'.repeat(43), replace },
+    history: { replaceState: scrub }, document: { getElementById: () => ({}) }, sessionStorage: local, fetch: request });
+  expect(scrub).toHaveBeenCalledBefore(request);
+  expect(replace).toHaveBeenCalledExactlyOnceWith(destination);
+  expect(local.setItem).not.toHaveBeenCalled();
+  expect(request).toHaveBeenCalledOnce();
+});
+
+it.each(['http://provider.example/onboarding/browser-ceremonies/' + 'B'.repeat(43),
+  'https://provider.example/other', 'https://provider.example/onboarding/browser-ceremonies/' + 'B'.repeat(43) + '?other=x',
+  'https://username@provider.example/onboarding/browser-ceremonies/' + 'B'.repeat(43)])(
+  'does not navigate an invalid protected entry response %s', async destination => {
+    const replace = vi.fn(), local = { setItem: vi.fn() };
+    await runInNewContext(entryScript, { URL, URLSearchParams,
+      location: { pathname: '/browser-tasks/entry', hash: '#code=' + 'A'.repeat(43), replace },
+      history: { replaceState: vi.fn() }, document: { getElementById: () => ({}) }, sessionStorage: local,
+      fetch: vi.fn(async () => response({ protected_browser_url: destination })) });
+    expect(replace).not.toHaveBeenCalled();
+    expect(local.setItem).not.toHaveBeenCalled();
+  });
+
+const protectedSelected = () => ({ ...initial(), journey_id: operationId, next_task: 'account-connection',
+  authority_recovery: 'sign-in-required', authentication: { operation_id: operationId, browser_operation_id: null,
+    state: 'selected', actions: { select: false, cancel: true, open_browser: true, switch_account: false },
+    authentication_attempt: { authentication_attempt_id: '0198a1b2-c3d4-7300-8000-000000000063', provider: 'default', mode: 'sign-in' } } });
+
+it('protected launch requests only a one-use code for the exact selected child', async () => {
+  const invoke = vi.fn(), value = protectedSelected();
+  const client = { value, connected: true, json: vi.fn(async () => ({ entry_code: 'A'.repeat(43) })) };
+  expect(await openProtectedBrowser(client, invoke)).toBe(true);
+  expect(client.json).toHaveBeenCalledExactlyOnceWith('/api/v1/desktop/setup/protected-browser/open', {
+    parent_operation_id: operationId, attempt_id: value.authentication.authentication_attempt.authentication_attempt_id,
+    expected: { generation, revision: value.revision, scope_digest: value.scope_digest },
+  });
+  expect(invoke).toHaveBeenCalledExactlyOnceWith('A'.repeat(43));
+  client.value.authentication.actions.open_browser = false;
+  await expect(openProtectedBrowser(client, invoke)).rejects.toThrow('browser_unavailable');
+  expect(client.json).toHaveBeenCalledOnce();
+});
+
+it('a stale protected launch response cannot launch a different child or workspace', async () => {
+  const invoke = vi.fn(), value = protectedSelected();
+  const client = { value, connected: true, json: vi.fn(async () => {
+    client.value = { ...value, authority_recovery: 'checking', authentication: null };
+    return { entry_code: 'A'.repeat(43) };
+  }) };
+  expect(await openProtectedBrowser(client, invoke)).toBe(false);
+  expect(invoke).not.toHaveBeenCalled();
+  expect(client.json).toHaveBeenCalledOnce();
 });

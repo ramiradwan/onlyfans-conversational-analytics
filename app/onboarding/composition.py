@@ -136,7 +136,13 @@ def attach_desktop_setup(application, *, core, launcher_token,
         values = [value for value in (tasks.next_expiry(), next_authority_expiry(admissions.authentication)) if value is not None]
         return min(values, default=1800.0)
 
-    application.include_router(admission_router(admissions, launcher_token=launcher_token))
+    def consume_protected_entry(code):
+        if coordinator._closed:
+            from app.onboarding.admission import AdmissionRefused
+            raise AdmissionRefused("setup_unavailable")
+        return tasks.consume_protected(code,resolve=getattr(coordinator.owner,"resolve_browser_launch",None))
+    protected_entry=consume_protected_entry if getattr(coordinator.owner,"resolve_browser_launch",None) is not None else None
+    application.include_router(admission_router(admissions, launcher_token=launcher_token,protected_entry=protected_entry))
     def notices(session):
         return tasks.helpers.notices({task["task_id"] for task in tasks.current_native(session)})
 

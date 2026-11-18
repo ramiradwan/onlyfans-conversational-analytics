@@ -148,7 +148,8 @@
         "0047_activation_review_replacements.sql": "9e9ec45d5c07b6e2592427110b2c6fee8d8eb2c210fef128814fa22f51f2e19e",
         "0048_installation_authority_recoveries.sql": "5241f95d78ee638e1aa03c6176cea27b0e29cb04758201f2cd091fedd6992d83",
         "0049_protected_recovery_browser.sql": "26d25540fad3f35f12294f6f99eb36032333ff72ddc9ee348be933c9ceb4aaba",
-        "0050_protected_recovery_desktop.sql": "652422ca223e7ba57e7fa7a43157feb1df00e4898535a7dac0a6594f8652712d"
+        "0050_protected_recovery_desktop.sql": "652422ca223e7ba57e7fa7a43157feb1df00e4898535a7dac0a6594f8652712d",
+        "0051_protected_recovery_browser_dispatch.sql": "06a67109881193549b267c8ed038ca74305c371c7b32ce80d8660677ac10e851"
       }
     },
     {

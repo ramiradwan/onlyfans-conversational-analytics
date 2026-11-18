@@ -406,7 +406,8 @@ async def test_child_commands_are_explicit_exact_and_never_dispatch(installed,st
     assert selected["authentication"]["state"]=="selected"
     assert selected["authentication"]["authentication_attempt"]["authentication_attempt_id"]==plan["request"]["authentication_attempt_id"]
     assert selected["allowed_actions"]==["auth.cancel"]
-    assert not selected["authentication"]["actions"]["open_browser"]
+    assert selected["authentication"]["actions"]["open_browser"]
+    assert selected["authentication"]["browser_operation_id"] is None
     cancel=child_command(coordinator,session,"auth.cancel")
     receipt=await coordinator.command(session,cancel)
     await coordinator.drain()
@@ -589,5 +590,281 @@ async def test_expired_child_send_claim_cannot_send_but_retained_reads_stay_poss
             owner._authorize_child(operation,connection=c,mutation=True)
         owner._authorize_child(operation,connection=c)
     assert not auth_calls(state,"select")
+    await coordinator.stop()
+    await owner.stop()
+
+def launch_request(coordinator,session):
+    snapshot=coordinator.read(session)
+    auth=snapshot["authentication"]
+    assert snapshot["authority_recovery"]=="sign-in-required" and auth["actions"]["open_browser"]
+    return {"parent_operation_id":auth["operation_id"],
+        "attempt_id":auth["authentication_attempt"]["authentication_attempt_id"],
+        "expected":{key:snapshot[key] for key in ("generation","revision","scope_digest")}}
+
+
+async def selected_parent(case, *, stage="setup"):
+    coordinator,owner,base,state,session,parent=await prepared_parent(case,stage=stage)
+    receipt=await coordinator.command(session,child_command(coordinator,session))
+    await coordinator.drain()
+    assert coordinator.receipt(session,receipt["operation_id"])["state"]=="completed"
+    from app.onboarding.browser_tasks import BrowserTasks
+    tasks=BrowserTasks(coordinator.admissions,extension_id=None)
+    return coordinator,owner,base,state,session,parent,tasks
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage",["setup","runtime"])
+async def test_one_use_protected_native_entry_and_original_signed_delivery(installed,stage):
+    from app.onboarding.admission import AdmissionRefused
+    from app.security.browser_ceremony import browser_entry_url
+    case=installed
+    coordinator,owner,base,state,session,parent,tasks=await selected_parent(case,stage=stage)
+    launch=launch_request(coordinator,session)
+    before=len(state["calls"])
+    with pytest.raises(CommandRefused):
+        coordinator.open_protected_browser(session,{**launch,"expected":{**launch["expected"],"revision":0}},tasks=tasks)
+    code=coordinator.open_protected_browser(session,launch,tasks=tasks)
+    assert len(code)==43 and len(state["calls"])==before
+    with pytest.raises(CommandRefused):
+        coordinator.open_protected_browser(session,launch,tasks=tasks)
+    with case.store.database.read() as c:
+        dispatch=dict(c.execute("SELECT * FROM protected_recovery_browser_dispatches").fetchone())
+        assert dispatch["attempt_id"]==launch["attempt_id"] and dispatch["recovery_id"]==rid(parent)
+        child=owner.browser.journal.child(c,rid(parent))
+        assert child["open_claimed"]
+        task=dict(c.execute("SELECT * FROM desktop_browser_tasks WHERE task_id=?",(dispatch["task_id"],)).fetchone())
+        assert task["state"]=="pending"
+        ceremony=owner.browser.journal.row(c,rid(parent))
+        expected=browser_entry_url(owner.recovery.origin.rstrip("/"),ceremony["entry_reference"])
+        hosted=json.loads(owner.recovery.row(c,rid(parent))["request_json"])
+    # No ordinary task, helper, paired session or reissue can consume the code.
+    assert tasks.current_native(session)==[]
+    with pytest.raises(AdmissionRefused):
+        coordinator.admissions.consume(code,role="browser_task")
+    for reissue in (coordinator.admissions.reissue_task_entry,coordinator.admissions.rebind_paired_task):
+        with pytest.raises(AdmissionRefused):
+            reissue(session.identifier,generation=session.generation,task_id=task["task_id"])
+    assert not coordinator.read(session)["authentication"]["actions"]["open_browser"]
+    assert coordinator.read(session)["allowed_actions"]==["auth.cancel"]
+    # A parent worker cannot clear the projection while the local entry awaits consumption.
+    case.clock[0]+=timedelta(seconds=16)
+    assert not owner.automatic_recovery(parent)
+    assert owner.confirmation_deadline(parent)==task["expires_at"]
+    assert (await owner.execute(parent,reconcile=True)).state=="waiting"
+    assert len(state["calls"])==before
+    assert tasks.consume_protected(code,resolve=owner.resolve_browser_launch)==expected
+    assert tasks.consume_protected(code,resolve=owner.resolve_browser_launch) is None
+    with pytest.raises(AdmissionRefused):
+        coordinator.admissions.consume(code,role="browser_task")
+    with case.store.database.read() as c:
+        assert c.execute("SELECT state FROM desktop_browser_tasks WHERE task_id=?",(task["task_id"],)).fetchone()[0]=="completed"
+        assert c.execute("SELECT count(*) FROM desktop_admission_sessions WHERE role='browser_task'").fetchone()[0]==0
+        assert len(c.execute("SELECT * FROM verified_grant_references").fetchall())==len(case.grants)
+    # Browser consumption is not authentication. Only a verified proof-bound
+    # current Provider read followed by independent delivery completes recovery.
+    assert coordinator.receipt(session,parent["operation_id"])["state"]=="waiting"
+    state["auth_state"]="admitted"
+    state["verifier"],state["result"]=signed_delivery(case,hosted)
+    assert owner.automatic_recovery(parent)
+    await coordinator.reconcile(session,parent["operation_id"])
+    await coordinator.drain()
+    assert coordinator.receipt(session,parent["operation_id"])["state"]=="completed"
+    assert [request for family,verb,request in state["calls"] if family=="authority" and verb=="deliver"]==[hosted]
+    assert "authority_recovery" not in coordinator.read(session)
+    assert not base.calls
+    await coordinator.stop()
+    await owner.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change",["cancel","revoke","expire","reattach","disabled"])
+async def test_old_protected_entry_is_fenced_without_reissue(installed,change):
+    from app.onboarding.admission import AdmissionRefused
+    from app.onboarding.browser_tasks import BrowserTasks
+    case=installed
+    coordinator,owner,_,state,session,parent,tasks=await selected_parent(case)
+    launch=launch_request(coordinator,session)
+    code=coordinator.open_protected_browser(session,launch,tasks=tasks)
+    if change=="cancel":
+        receipt=await coordinator.command(session,child_command(coordinator,session,"auth.cancel"))
+        await coordinator.drain()
+        assert coordinator.receipt(session,receipt["operation_id"])["state"]=="completed"
+    elif change=="revoke":
+        with case.store.database.transaction() as c:
+            case.store._revoke_in_transaction(c,RevocationKey(RevocationScopeType.INSTALLATION,case.scope["installation_id"]),reason="test")
+    elif change=="expire":
+        case.clock[0]+=timedelta(seconds=301)
+    elif change=="reattach":
+        await coordinator.stop()
+        await owner.stop()
+        reopened=SQLiteAuthenticationStore(case.path,clock=lambda:case.clock[0])
+        coordinator,owner,_,state=build(case,store=reopened,state=state)
+        session=connect(coordinator)
+        tasks=BrowserTasks(coordinator.admissions,extension_id=None)
+    else:
+        await coordinator.stop()
+        await owner.stop()
+        coordinator,owner,_,state=build(case,state=state,enabled=False)
+        session=connect(coordinator)
+        tasks=BrowserTasks(coordinator.admissions,extension_id=None)
+    if change=="cancel":
+        assert tasks.consume_protected(code,resolve=owner.resolve_browser_launch) is None
+    else:
+        with pytest.raises((AdmissionRefused,HostedGrantUnavailable)):
+            tasks.consume_protected(code,resolve=owner.resolve_browser_launch)
+    with pytest.raises(AdmissionRefused):
+        coordinator.admissions.consume(code,role="browser_task")
+    with pytest.raises(CommandRefused):
+        coordinator.open_protected_browser(session,launch,tasks=tasks)
+    with coordinator.store.database.read() as c:
+        assert c.execute("SELECT count(*) FROM desktop_admission_sessions WHERE role='browser_task'").fetchone()[0]==0
+        assert c.execute("SELECT open_claimed FROM protected_recovery_authentication_children").fetchone()[0]==1
+    assert len(auth_calls(state,"select"))==1
+    await coordinator.stop()
+    await owner.stop()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_launch_allows_only_fresh_successor_entry(installed):
+    case=installed
+    coordinator,owner,_,state,session,parent,tasks=await selected_parent(case)
+    first=launch_request(coordinator,session)
+    old=coordinator.open_protected_browser(session,first,tasks=tasks)
+    await coordinator.command(session,child_command(coordinator,session,"auth.cancel"))
+    await coordinator.drain()
+    await coordinator.command(session,child_command(coordinator,session))
+    await coordinator.drain()
+    successor=launch_request(coordinator,session)
+    assert successor["attempt_id"]!=first["attempt_id"]
+    code=coordinator.open_protected_browser(session,successor,tasks=tasks)
+    assert old!=code
+    assert tasks.consume_protected(old,resolve=owner.resolve_browser_launch) is None
+    assert tasks.consume_protected(code,resolve=owner.resolve_browser_launch).startswith("https://fixture.invalid/")
+    with case.store.database.read() as c:
+        assert c.execute("SELECT count(*) FROM protected_recovery_browser_dispatches").fetchone()[0]==2
+    await coordinator.stop()
+    await owner.stop()
+
+
+def test_http_protected_browser_entry_uses_native_admission_without_helper_cookie(installed):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.onboarding.admission_routes import admission_router, ORIGIN, CSRF
+    from app.onboarding.browser_tasks import BrowserTasks
+    from app.onboarding.browser_routes import browser_router
+    from app.onboarding.routes import desktop_router
+    from test_desktop_browser_routes import headers
+    case=installed
+    coordinator,owner,_,state=build(case,stage="runtime")
+    session=connect(coordinator)
+    tasks=BrowserTasks(coordinator.admissions,extension_id=None)
+    app=FastAPI()
+    app.include_router(desktop_router(coordinator))
+    app.include_router(browser_router(coordinator,tasks,None))
+    app.include_router(admission_router(coordinator.admissions,launcher_token="T"*43,
+        protected_entry=lambda code:tasks.consume_protected(code,resolve=owner.resolve_browser_launch)))
+    with TestClient(app,base_url=ORIGIN) as client:
+        command_path="/api/v1/desktop/setup/commands"
+        parent=recovery_command(coordinator,session)
+        assert client.post(command_path,json=parent,headers=headers(session)).status_code==202
+        client.portal.call(coordinator.drain)
+        select=child_command(coordinator,session)
+        assert client.post(command_path,json=select,headers=headers(session)).status_code==202
+        client.portal.call(coordinator.drain)
+        launch=launch_request(coordinator,session)
+        path="/api/v1/desktop/setup/protected-browser/open"
+        assert client.post(path,json=launch,headers={k:v for k,v in headers(session).items() if k!=CSRF}).status_code==403
+        assert client.post(path,json=launch,headers={**headers(session),"Origin":"https://foreign.invalid"}).status_code==403
+        opened=client.post(path,json=launch,headers=headers(session))
+        assert opened.status_code==200 and set(opened.json())=={"entry_code"}
+        assert client.post(path,json=launch,headers=headers(session)).status_code==409
+        code=opened.json()["entry_code"]
+        with case.store.database.read() as c:
+            task=c.execute("SELECT task_id FROM protected_recovery_browser_dispatches").fetchone()[0]
+        assert client.get("/api/v1/desktop/browser-tasks",headers=headers(session)).json()=={"tasks":[]}
+        assert client.post(f"/api/v1/desktop/browser-tasks/{task}/open",json={},headers=headers(session)).json()=={"state":"unavailable"}
+        assert client.post(f"/api/v1/desktop/browser-tasks/{task}/entry",json={},headers=headers(session)).status_code==409
+        consume="/api/v1/browser-tasks/entry/consume"
+        assert client.post(consume,json={"code":code},headers={"Origin":"https://foreign.invalid"}).status_code==403
+        entry=client.post(consume,json={"code":code},headers={"Origin":ORIGIN})
+        assert entry.status_code==200 and set(entry.json())=={"protected_browser_url"}
+        assert entry.json()["protected_browser_url"].startswith("https://fixture.invalid/onboarding/browser-ceremonies/")
+        assert "set-cookie" not in entry.headers
+        assert client.post(consume,json={"code":code},headers={"Origin":ORIGIN}).status_code==401
+        assert client.get("/api/v1/browser-tasks/payload",headers=headers(session)).status_code==401
+        client.portal.call(coordinator.stop)
+        client.portal.call(owner.stop)
+
+@pytest.mark.asyncio
+async def test_consumed_entry_restart_observes_original_commit_and_lost_delivery(installed):
+    from app.onboarding.browser_tasks import BrowserTasks
+    case=installed
+    coordinator,owner,_,state,session,parent,tasks=await selected_parent(case,stage="runtime")
+    launch=launch_request(coordinator,session)
+    code=coordinator.open_protected_browser(session,launch,tasks=tasks)
+    assert tasks.consume_protected(code,resolve=owner.resolve_browser_launch)
+    with case.store.database.read() as c:
+        hosted=json.loads(owner.recovery.row(c,rid(parent))["request_json"])
+    await coordinator.stop()
+    await owner.stop()
+    case.clock[0]+=timedelta(seconds=16)
+    reopened=SQLiteAuthenticationStore(case.path,clock=lambda:case.clock[0])
+    coordinator,owner,base,state=build(case,store=reopened,state=state,stage="runtime")
+    session=connect(coordinator)
+    tasks=BrowserTasks(coordinator.admissions,extension_id=None)
+    assert tasks.consume_protected(code,resolve=owner.resolve_browser_launch) is None
+    with pytest.raises(CommandRefused):
+        coordinator.open_protected_browser(session,launch,tasks=tasks)
+    assert not coordinator.read(session)["authentication"]["actions"]["open_browser"]
+    state["auth_state"]="admitted"
+    state["verifier"],state["result"]=signed_delivery(case,hosted)
+    state["lose_delivery"]=True
+    coordinator.start()
+    await coordinator.drain()
+    assert coordinator.receipt(session,parent["operation_id"])["state"]=="outcome_unknown"
+    await coordinator.stop()
+    await owner.stop()
+    case.clock[0]+=timedelta(seconds=16)
+    coordinator,owner,base,state=build(case,store=reopened,state=state,stage="runtime")
+    session=connect(coordinator)
+    coordinator.start()
+    await coordinator.drain()
+    assert coordinator.receipt(session,parent["operation_id"])["state"]=="completed"
+    assert [request for family,verb,request in state["calls"] if family=="authority" and verb=="deliver"]==[hosted,hosted]
+    assert len(auth_calls(state,"select"))==1 and not base.calls
+    await coordinator.stop()
+    await owner.stop()
+
+
+@pytest.mark.asyncio
+async def test_missing_child_projection_observes_original_ceremony_within_budget(installed):
+    case=installed
+    coordinator,owner,_,state,session,parent,tasks=await selected_parent(case)
+    launch=launch_request(coordinator,session)
+    code=coordinator.open_protected_browser(session,launch,tasks=tasks)
+    assert tasks.consume_protected(code,resolve=owner.resolve_browser_launch)
+    with case.store.database.read() as c:
+        hosted=json.loads(owner.recovery.row(c,rid(parent))["request_json"])
+    case.clock[0]+=timedelta(seconds=16)
+    # A missing child projection is not an explicit retirement or noncommit.
+    state["auth_state"]="unavailable"
+    state["child"]=None
+    assert (await owner.execute(parent,reconcile=True)).state=="waiting"
+    with case.store.database.read() as c:
+        binding=owner.recovery.row(c,rid(parent))
+        assert binding["state"]=="prepared"
+        assert owner.browser.journal.row(c,rid(parent))["projection_json"] is None
+        attempts=c.execute("SELECT read_attempts FROM protected_recovery_desktop_admissions").fetchone()[0]
+    state["committed"]=True
+    state["verifier"],state["result"]=signed_delivery(case,hosted)
+    for _ in range(3):
+        case.clock[0]+=timedelta(seconds=61)
+        outcome=await owner.execute(parent,reconcile=True)
+        if outcome.state=="completed":
+            break
+    assert outcome.state=="completed"
+    assert [request for family,verb,request in state["calls"] if family=="authority" and verb=="deliver"]==[hosted]
+    with case.store.database.read() as c:
+        assert c.execute("SELECT read_attempts FROM protected_recovery_desktop_admissions").fetchone()[0]<=attempts+3
     await coordinator.stop()
     await owner.stop()

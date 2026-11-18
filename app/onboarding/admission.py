@@ -137,6 +137,8 @@ class ScopedAdmissions:
             if row is None or row["role"] != role or row["stage"] != self.stage or row["expires_at"] <= now:
                 raise AdmissionRefused("entry_invalid")
             reference = self._reference(connection, row, now, pending_desktop=True)
+            if role == "browser_task" and self._protected_task(connection,reference["task_id"]):
+                raise AdmissionRefused("task_scope_invalid")
             if role == "desktop":
                 connection.execute("UPDATE desktop_presentations SET state='retired' WHERE generation<>?", (row["generation"],))
                 connection.execute("UPDATE desktop_presentations SET state='active' WHERE generation=?", (row["generation"],))
@@ -162,7 +164,10 @@ class ScopedAdmissions:
         if (row is None or row["role"] != role or row["stage"] != self.stage or row["expires_at"] <= now
                 or (generation is not None and row["generation"] != generation)):
             raise AdmissionRefused("session_invalid")
-        return row, self._reference(connection, row, now)
+        reference=self._reference(connection,row,now)
+        if role=="browser_task" and self._protected_task(connection,reference["task_id"]):
+            raise AdmissionRefused("task_scope_invalid")
+        return row, reference
 
     def _reference(self, connection, row, now, *, pending_desktop=False):
         if row["role"] == "desktop":
@@ -227,6 +232,61 @@ class ScopedAdmissions:
             code = self._entry(connection, "browser_task", task_id, admission_generation, expires, now)
             return task_id, code
 
+    @staticmethod
+    def _protected_task(connection, task_id):
+        return connection.execute("SELECT * FROM protected_recovery_browser_dispatches WHERE task_id=?",
+            (task_id,)).fetchone()
+
+    def prepare_protected_task(self, connection, session, *, selection, recovery_id, attempt_id, deadline):
+        """Internal protected owner port; claim and issue occur in one transaction."""
+        _, parent = self._require(connection,session.identifier,role="desktop",generation=session.generation)
+        now=self._now()
+        self._capacity(connection)
+        saved=connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?",
+            (selection["operation_id"],)).fetchone()
+        claimed=connection.execute("SELECT recovery_id,state,open_claimed FROM protected_recovery_authentication_children WHERE attempt_id=?",
+            (attempt_id,)).fetchone()
+        intent=json.loads(selection["owner_scope_json"]).get("protected_recovery_child",{})
+        if (saved is None or dict(saved)!=selection or claimed is None or claimed["recovery_id"]!=recovery_id
+                or claimed["state"]!="selected" or not claimed["open_claimed"]
+                or intent.get("recovery_id")!=recovery_id or intent.get("verb")!="select"
+                or intent.get("request",{}).get("authentication_attempt_id")!=attempt_id
+                or parent["journey_id"]!=selection["journey_id"] or selection["action"]!="auth.select"
+                or selection["state"]!="completed" or deadline<=now
+                or connection.execute("SELECT 1 FROM desktop_browser_tasks WHERE operation_id=?",
+                    (selection["operation_id"],)).fetchone()):
+            raise AdmissionRefused("task_scope_changed")
+        expires=min(now+300,parent["expires_at"],deadline)
+        if expires<=now:
+            raise AdmissionRefused("task_expired")
+        task_id,generation=str(uuid4()),str(uuid4())
+        connection.execute("INSERT INTO desktop_browser_tasks VALUES (?,?,?,?,?,?,?,?,?,'pending',?)",
+            (task_id,selection["journey_id"],parent["generation"],selection["operation_id"],
+                "browser.authentication",selection["scope_digest"],selection["source_revision"],generation,self.stage,expires))
+        connection.execute("INSERT INTO protected_recovery_browser_dispatches VALUES (?,?,?)",
+            (task_id,recovery_id,attempt_id))
+        return self._entry(connection,"browser_task",task_id,generation,expires,now)
+
+    def consume_protected_entry(self, code, *, resolve):
+        """Spend a protected code without issuing any browser-helper session."""
+        with self.authentication.database.transaction() as connection:
+            row=connection.execute("SELECT * FROM desktop_admission_entries WHERE code_digest=?",(_digest(code),)).fetchone()
+            if row is None or row["role"]!="browser_task":
+                return None
+            dispatch=self._protected_task(connection,row["reference_id"])
+            if dispatch is None:
+                return None
+            now=self._now()
+            if row["stage"]!=self.stage or row["expires_at"]<=now or not callable(resolve):
+                raise AdmissionRefused("entry_invalid")
+            task=self._reference(connection,row,now)
+            if task["state"]!="pending":
+                raise AdmissionRefused("task_scope_changed")
+            url=resolve(connection,dict(task),dict(dispatch))
+            connection.execute("DELETE FROM desktop_admission_entries WHERE code_digest=?",(_digest(code),))
+            connection.execute("UPDATE desktop_browser_tasks SET state='completed' WHERE task_id=?",(task["task_id"],))
+            return url
+
     def reissue_task_entry(self, identifier: str, *, generation: str, task_id: str) -> str:
         return self._rebind_task(identifier, generation=generation, task_id=task_id, browser_entry=True)
 
@@ -243,6 +303,8 @@ class ScopedAdmissions:
             if (task is None or task["journey_id"] != parent["journey_id"] or task["stage"] != self.stage
                     or task["expires_at"] <= now or task["state"] not in {"pending", "accepted", "outcome_unknown"}):
                 raise AdmissionRefused("browser_task_unavailable")
+            if self._protected_task(connection,task_id):
+                raise AdmissionRefused("task_scope_invalid")
             next_generation = str(uuid4())
             # Reattachment changes presentation only, never the accepted operation or deadline.
             connection.execute("UPDATE desktop_browser_tasks SET desktop_generation=?, admission_generation=?, expires_at=? WHERE task_id=?",
