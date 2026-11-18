@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 from contextlib import nullcontext
 
 from app.onboarding import timing
@@ -11,9 +12,11 @@ from app.onboarding.held_reads import HeldReads
 from app.persistence.onboarding import require_journey
 from app.provisioning.events import events
 from app.provisioning.owner_effects import OwnerEffects
-from app.security.browser_ceremony import PROFILE, PROOF_PROFILE, browser_entry_url, expected_completion
+from app.security.browser_ceremony import PROFILE, PROOF_PROFILE, binding_digest, browser_entry_url, expected_completion
+from app.security.browser_ceremony_replacement import PROFILE as REPLACEMENT_PROFILE, PROOF_PROFILE as REPLACEMENT_PROOF_PROFILE
+from app.security.browser_ceremony_replacement import _contract as replacement_contract
 from app.security.hosted_grants import HostedGrantUnavailable
-from app.security.initial_handoff import timestamp
+from app.security.initial_handoff import timestamp, valid_uuid7
 
 
 class BrowserCeremonies:
@@ -79,6 +82,67 @@ class BrowserCeremonies:
                                (operation_id, hosted_operation, encoded))
             return (dict(connection.execute("SELECT * FROM desktop_browser_ceremonies WHERE operation_id=?", (operation_id,)).fetchone()),
                     True, operation["journey_id"])
+
+    def replacement_reservation(self, operation_id, predecessor_operation_id, *, connection=None):
+        """Return the retained nonauthorizing request, including after a restart."""
+        require_journey(operation_id)
+        if not valid_uuid7(predecessor_operation_id):
+            raise ValueError("Invalid predecessor operation reference")
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
+            row = connection.execute(
+                "SELECT request_json FROM desktop_browser_ceremony_replacements "
+                "WHERE parent_operation_id=? AND predecessor_operation_id=?",
+                (operation_id, predecessor_operation_id)).fetchone()
+        return None if row is None else json.loads(row["request_json"])
+
+    def reserve_replacement(self, operation_id, predecessor, *, authorize):
+        """Reserve an exact ordinary successor; Provider still decides admission.
+
+        The caller must be an explicitly admitted current owner command. This
+        reservation does not send a proof, retire a task, or expose a successor.
+        Never infer noncommit from local expiry or an unavailable read.
+        """
+        from app.persistence.auth import _new_uuid7
+        require_journey(operation_id)
+        with self.store.database.transaction() as connection:
+            authorize(connection=connection)
+            row = self.row(operation_id, connection=connection)
+            operation = connection.execute(
+                "SELECT * FROM desktop_setup_operations WHERE operation_id=?", (operation_id,)).fetchone()
+            now = self.store._now()
+            if (row is None or operation is None
+                    or operation["state"] not in {"accepted", "waiting", "outcome_unknown"}
+                    or operation["action"] not in {"account.connect", "activation.review"}
+                    or operation["expires_at"] <= now.timestamp()
+                    or row["presentation_state"] not in {"retired", "expired"}
+                    or row["domain_status"] not in {"pending", "awaiting-authentication", "awaiting-confirmation"}
+                    or row["ceremony_id"] is None or row["provider_revision"] is None):
+                raise HostedGrantUnavailable("Browser ceremony replacement is unavailable")
+            binding = json.loads(row["binding_json"])
+            if timestamp(binding["source_expires_at"]) <= now:
+                raise HostedGrantUnavailable("Browser ceremony replacement source expired")
+            expected = {"predecessor_operation_id": row["hosted_operation_id"],
+                "predecessor_ceremony_id": row["ceremony_id"],
+                "predecessor_binding_digest": binding_digest(binding),
+                "predecessor_revision": row["provider_revision"]}
+            if predecessor != expected:
+                raise HostedGrantUnavailable("Browser ceremony replacement predecessor changed")
+            saved = self.replacement_reservation(operation_id, row["hosted_operation_id"], connection=connection)
+            if saved is not None:
+                if any(saved[name] != value for name, value in expected.items()):
+                    raise HostedGrantUnavailable("Browser ceremony replacement predecessor changed")
+                return saved
+            request = {"profile": REPLACEMENT_PROFILE, **expected,
+                "successor_operation_id": _new_uuid7(now), "successor_attempt_id": secrets.token_urlsafe(32)}
+            replacement_contract().validate("proof-challenge-request", {"profile": REPLACEMENT_PROOF_PROFILE,
+                "target": {"operation": "browser-ceremony-replace", "request": request}})
+            connection.execute(
+                "INSERT INTO desktop_browser_ceremony_replacements "
+                "(predecessor_operation_id,parent_operation_id,successor_operation_id,request_json,source_expires_at,created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (row["hosted_operation_id"], operation_id, request["successor_operation_id"],
+                 canonical(request).decode(), binding["source_expires_at"], now.timestamp()))
+        return request
 
     async def prepare(self, operation_id, binding, *, authorize):
         async with self._lock:

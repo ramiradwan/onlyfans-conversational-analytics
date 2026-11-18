@@ -212,3 +212,90 @@ async def test_shared_proof_transport_closes_only_after_every_owner_drains(setup
     await asyncio.wait_for(stopping, 5)
     await effect
     assert closed
+
+
+def replacement_predecessor(ceremonies, operation):
+    row = ceremonies.row(operation["operation_id"])
+    return {"predecessor_operation_id": row["hosted_operation_id"],
+        "predecessor_ceremony_id": row["ceremony_id"],
+        "predecessor_binding_digest": binding_digest(json.loads(row["binding_json"])),
+        "predecessor_revision": row["provider_revision"]}
+
+
+@pytest.mark.asyncio
+async def test_replacement_reservation_survives_restart_without_renewing_or_sending(setup):
+    _, ceremonies, client, operation, binding, _ = setup
+    local_id = operation["operation_id"]
+    await ceremonies.prepare(local_id, binding, authorize=authorized)
+    client.state = "retired"
+    client.revision = 2
+    await ceremonies.reconcile(local_id, authorize=authorized)
+    predecessor = replacement_predecessor(ceremonies, operation)
+    previous = ceremonies.row(local_id)
+    request = ceremonies.reserve_replacement(local_id, predecessor, authorize=authorized)
+    assert request["predecessor_operation_id"] == previous["hosted_operation_id"]
+    assert request["successor_operation_id"] != previous["hosted_operation_id"]
+    assert request["successor_attempt_id"] != binding["attempt_id"]
+    reopened = BrowserCeremonies(ceremonies.store, client, hosted_origin=ceremonies.hosted_origin)
+    assert reopened.replacement_reservation(local_id, previous["hosted_operation_id"]) == request
+    assert reopened.reserve_replacement(local_id, predecessor, authorize=authorized) == request
+    assert reopened.row(local_id) == previous
+    assert reopened.browser_entry(local_id) is None
+    assert [kind for kind, _ in client.calls] == ["prepare", "read"]
+    with reopened.store.database.read() as connection:
+        row = dict(connection.execute("SELECT * FROM desktop_browser_ceremony_replacements").fetchone())
+        assert row["source_expires_at"] == binding["source_expires_at"]
+        assert json.loads(row["request_json"]) == request
+        assert "entry_reference" not in row["request_json"] and "proof" not in row["request_json"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["active", "stale-revision", "wrong-digest", "wrong-ceremony",
+    "source-expired", "committed", "unavailable", "revoked", "authorization", "parent-refused", "unread"])
+async def test_replacement_reservation_refuses_noncurrent_or_unsafe_predecessor(setup, change):
+    coordinator, ceremonies, client, operation, binding, clock = setup
+    local_id = operation["operation_id"]
+    await ceremonies.prepare(local_id, binding, authorize=authorized)
+    if change != "unread":
+        client.state = "active" if change == "active" else "retired"
+        client.revision = 2
+        await ceremonies.reconcile(local_id, authorize=authorized)
+    predecessor = replacement_predecessor(ceremonies, operation)
+    guard = authorized
+    if change == "stale-revision":
+        predecessor["predecessor_revision"] -= 1
+    elif change == "wrong-digest":
+        predecessor["predecessor_binding_digest"] = "0" * 64
+    elif change == "wrong-ceremony":
+        predecessor["predecessor_ceremony_id"] = predecessor["predecessor_operation_id"]
+    elif change == "source-expired":
+        clock[0] += timedelta(hours=1)
+    elif change in {"committed", "unavailable", "revoked"}:
+        with ceremonies.store.database.transaction() as connection:
+            connection.execute("UPDATE desktop_browser_ceremonies SET domain_status=? WHERE operation_id=?",
+                (change, local_id))
+    elif change == "authorization":
+        def guard(connection=None):
+            raise HostedGrantUnavailable("Denied")
+    elif change == "parent-refused":
+        coordinator._settle(operation, OperationResult("refused", "operation_expired"))
+    with pytest.raises(HostedGrantUnavailable):
+        ceremonies.reserve_replacement(local_id, predecessor, authorize=guard)
+    with ceremonies.store.database.read() as connection:
+        assert connection.execute("SELECT count(*) FROM desktop_browser_ceremony_replacements").fetchone()[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_replacement_reservation_cannot_select_new_successor_after_predecessor_revision_changes(setup):
+    _, ceremonies, client, operation, binding, _ = setup
+    local_id = operation["operation_id"]
+    await ceremonies.prepare(local_id, binding, authorize=authorized)
+    client.state, client.revision = "retired", 2
+    await ceremonies.reconcile(local_id, authorize=authorized)
+    predecessor = replacement_predecessor(ceremonies, operation)
+    first = ceremonies.reserve_replacement(local_id, predecessor, authorize=authorized)
+    client.revision += 1
+    await ceremonies.reconcile(local_id, authorize=authorized)
+    with pytest.raises(HostedGrantUnavailable):
+        ceremonies.reserve_replacement(local_id, replacement_predecessor(ceremonies, operation), authorize=authorized)
+    assert ceremonies.replacement_reservation(local_id, predecessor["predecessor_operation_id"]) == first

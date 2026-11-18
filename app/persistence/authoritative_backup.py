@@ -49,6 +49,7 @@ SECURITY_TABLES = (
     'text_analysis_authority_references','text_analysis_reissue_operations',
     'nlp_dependency_authority','signing_publication_authority',
     'desktop_authentication_commands','desktop_authentication_closures','desktop_browser_ceremonies',
+    'desktop_browser_ceremony_replacements','desktop_browser_progress',
     'desktop_pairing_operations','desktop_activation_sources','desktop_admission_entries',
     'desktop_admission_sessions','desktop_authentication_projections','desktop_browser_observations','desktop_browser_progress',
     'desktop_browser_task_dispatches','desktop_browser_tasks','desktop_decision_projections','desktop_presentations',

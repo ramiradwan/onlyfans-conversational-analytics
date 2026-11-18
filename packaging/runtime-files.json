@@ -137,7 +137,8 @@
         "0036_authoritative_pair.sql": "93686f6dd3a6a804b2d33fa8afec00129ea799f54d516f000eb68ebd2e5b398b",
         "0037_text_analysis_reissue.sql": "b786935312c86ac75d0a8cdab3a7e7817b69f914309e2360f6f1a191073968be",
         "0038_browser_task_dispatches.sql": "4ae5296c0fecf397f9152b71f9a80cc6b69956e77cf67f1bce043715ef822ffc",
-        "0039_desktop_browser_progress.sql": "d2d0b9a84506841dcb0e341544feefa00d26385a47cef177afb732ddfa0ba848"
+        "0039_desktop_browser_progress.sql": "d2d0b9a84506841dcb0e341544feefa00d26385a47cef177afb732ddfa0ba848",
+        "0040_desktop_browser_ceremony_replacements.sql": "75e5990a3b2733a0334d1a2bb2e0a3cfe2945ab1da1e27e3b64451cdd59d2008"
       }
     },
     {
