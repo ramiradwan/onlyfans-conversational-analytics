@@ -65,15 +65,34 @@ class CatchupLedger:
         ).fetchone()
         return row[0]
 
+    @staticmethod
+    def _existing(c, account):
+        row = c.execute("SELECT * FROM message_catchup WHERE creator_account_id=?", (account,)).fetchone()
+        return None if row is None else dict(row)
+
     def _load(self, c, account):
+        r = self._existing(c, account)
+        if r is not None and r["last_closed_at"] is not None:
+            return r
         baseline = self._baseline(c, account)
-        c.execute("""INSERT OR IGNORE INTO message_catchup
-            (creator_account_id,uncertain_since,last_closed_at) VALUES (?,?,?)""",
-            (account, baseline, baseline))
-        r = dict(c.execute("SELECT * FROM message_catchup WHERE creator_account_id=?", (account,)).fetchone())
+        if r is None:
+            c.execute("""INSERT OR IGNORE INTO message_catchup
+                (creator_account_id,uncertain_since,last_closed_at) VALUES (?,?,?)""",
+                (account, baseline, baseline))
+            r = self._existing(c, account)
         if r["last_closed_at"] is None and baseline is not None:
             r["last_closed_at"] = baseline
             r["uncertain_since"] = earlier(r["uncertain_since"], baseline)
+        return r
+
+    def _stable_row(self, c, account, now):
+        """A snapshot can answer only when no durable transition is needed."""
+        r = self._existing(c, account)
+        if r is None or r["last_closed_at"] is None:
+            return None  # Initialization/baseline seeding uses the writer.
+        original = r.copy()
+        if not self._tick(c, r, now, persist=False) or r != original:
+            return None
         return r
 
     @staticmethod
@@ -85,6 +104,8 @@ class CatchupLedger:
 
     @staticmethod
     def _active(c, r):
+        if r["active_check_id"] is None:
+            return None
         row = c.execute("SELECT * FROM message_checks WHERE check_id=? AND creator_account_id=? AND state IN ('active','suspended')",
                         (r["active_check_id"], r["creator_account_id"])).fetchone()
         return None if row is None else dict(row)
@@ -104,7 +125,7 @@ class CatchupLedger:
         last = r["last_heartbeat_at"] if r["session_present"] else r["disconnected_at"]
         return last is not None and (now - instant(last)).total_seconds() <= self.policy.agent_lease_timeout_seconds
 
-    def _tick(self, c, r, now):
+    def _tick(self, c, r, now, *, persist=True):
         live = self._live(r, now)
         if not live and r["last_heartbeat_at"] is not None and not r["loss_recorded"]:
             self._trigger(c, r, r["last_heartbeat_at"])
@@ -121,13 +142,18 @@ class CatchupLedger:
         r["observing"] = int(observing)
         check = self._active(c, r)
         if check is not None and check["state"] == "suspended" and check["suspended_day"] < now.date().isoformat():
+            if not persist:
+                return False
             midnight = datetime.combine(instant(check["suspended_day"]).date() + timedelta(days=1), datetime.min.time(), timezone.utc)
             check.update(state="active", lease_expires_at=(midnight + timedelta(seconds=self.policy.catchup_lease_seconds)).isoformat())
             c.execute("UPDATE message_checks SET state='active',suspended_day=NULL,lease_expires_at=? WHERE check_id=?", (check["lease_expires_at"], check["check_id"]))
         if check is not None and check["state"] == "active" and now >= instant(check["lease_expires_at"]):
+            if not persist:
+                return False
             c.execute("UPDATE message_checks SET state='abandoned',reason='lease_expired' WHERE check_id=?", (check["check_id"],))
             r["active_check_id"] = None
             r["incomplete"] = 1
+        return True
 
     def admit(self, account, *, installation, stream, supported, now):
         with self.database.transaction() as c:
@@ -220,8 +246,9 @@ class CatchupLedger:
         row = c.execute("SELECT * FROM history_settings WHERE creator_account_id=?", (account,)).fetchone()
         return {} if row is None else dict(row)
 
-    def _paused(self, c, r, now):
-        config = self._configuration(c, r["creator_account_id"])
+    def _paused(self, c, r, now, *, config=None):
+        if config is None:
+            config = self._configuration(c, r["creator_account_id"])
         desired = config.get("desired_state")
         if desired == "paused":
             return "user_paused"
@@ -242,84 +269,113 @@ class CatchupLedger:
         return None
 
     def begin(self, account, value, *, now, required_config_revision=None):
-        with self.database.transaction() as c:
+        def read(c):
+            r = self._stable_row(c, account, now)
+            if r is not None:
+                return self._begin(c, r, account, value, now, required_config_revision, read_only=True)
+            return None
+
+        def write(c):
             r = self._load(c, account)
             self._tick(c, r, now)
-            def done(result):
+            return self._begin(c, r, account, value, now, required_config_revision)
+
+        return self.database.read_or_transaction(read, write)
+
+    def _begin(self, c, r, account, value, now, required_config_revision, *, read_only=False):
+        def done(result):
+            if not read_only:
                 self._save(c, r)
-                return result
-            def deferred(reason, seconds=60):
-                return done(dict(result="deferred", retry_after_seconds=max(1, seconds), reason=reason))
-            if not self.policy.catchup_enabled or not r["supported"]:
-                return done({"result": "not_needed"})
-            config = self._configuration(c, account)
-            required_revision = required_config_revision or config.get("effective_config_revision")
-            if (self._paused(c, r, now) is not None or r["last_report_at"] is None
-                or value["worker_instance_id"] != r["last_worker_instance_id"]
-                or value["config_revision"] != required_revision):
-                return deferred("not_runnable")
-            active = self._active(c, r)
-            renewal = active is not None and (value["active_check_id"] == active["check_id"] or value["request_id"] == active["request_id"])
-            if active is not None and not renewal:
-                return deferred("check_active")
-            remaining = self._remaining(c, account, now)
-            if remaining == 0:
-                if renewal:
-                    c.execute("UPDATE message_checks SET state='suspended',suspended_day=? WHERE check_id=?", (now.date().isoformat(), active["check_id"]))
-                tomorrow = datetime.combine(now.date() + timedelta(days=1), datetime.min.time(), timezone.utc)
-                return deferred("daily_cap", int((tomorrow - now).total_seconds()))
+            return result
+        def deferred(reason, seconds=60):
+            return done(dict(result="deferred", retry_after_seconds=max(1, seconds), reason=reason))
+        if not self.policy.catchup_enabled or not r["supported"]:
+            return done({"result": "not_needed"})
+        config = self._configuration(c, account)
+        required_revision = required_config_revision or config.get("effective_config_revision")
+        if (self._paused(c, r, now, config=config) is not None or r["last_report_at"] is None
+            or value["worker_instance_id"] != r["last_worker_instance_id"]
+            or value["config_revision"] != required_revision):
+            return deferred("not_runnable")
+        active = self._active(c, r)
+        renewal = active is not None and (value["active_check_id"] == active["check_id"] or value["request_id"] == active["request_id"])
+        if active is not None and not renewal:
+            return deferred("check_active")
+        remaining = self._remaining(c, account, now)
+        if remaining == 0:
             if renewal:
-                active["lease_expires_at"] = (now + timedelta(seconds=self.policy.catchup_lease_seconds)).isoformat()
-                c.execute("UPDATE message_checks SET state='active',suspended_day=NULL,lease_expires_at=?,agent_installation_id=?,agent_stream_id=? WHERE check_id=?",
-                          (active["lease_expires_at"], r["agent_installation_id"], r["agent_stream_id"], active["check_id"]))
+                if read_only:
+                    return None
+                c.execute("UPDATE message_checks SET state='suspended',suspended_day=? WHERE check_id=?", (now.date().isoformat(), active["check_id"]))
+            tomorrow = datetime.combine(now.date() + timedelta(days=1), datetime.min.time(), timezone.utc)
+            return deferred("daily_cap", int((tomorrow - now).total_seconds()))
+        if renewal:
+            if read_only:
+                return None
+            active["lease_expires_at"] = (now + timedelta(seconds=self.policy.catchup_lease_seconds)).isoformat()
+            c.execute("UPDATE message_checks SET state='active',suspended_day=NULL,lease_expires_at=?,agent_installation_id=?,agent_stream_id=? WHERE check_id=?",
+                      (active["lease_expires_at"], r["agent_installation_id"], r["agent_stream_id"], active["check_id"]))
+        else:
+            if r["gap_open"]:
+                if self._baseline(c, account) is None:
+                    return deferred("history_incomplete")
+                if not r["observing"] and r["blind_catchup_done"]:
+                    return done({"result": "not_needed"})
+                if r["last_grant_at"] is not None:
+                    wait = self.policy.catchup_grant_min_interval_minutes * 60 - (now - instant(r["last_grant_at"])).total_seconds()
+                    if wait > 0:
+                        return deferred("grant_interval", int(wait + 0.999))
+                kind = "catch_up"
             else:
-                if r["gap_open"]:
-                    if self._baseline(c, account) is None:
-                        return deferred("history_incomplete")
-                    if not r["observing"] and r["blind_catchup_done"]:
-                        return done({"result": "not_needed"})
-                    if r["last_grant_at"] is not None:
-                        wait = self.policy.catchup_grant_min_interval_minutes * 60 - (now - instant(r["last_grant_at"])).total_seconds()
-                        if wait > 0:
-                            return deferred("grant_interval", int(wait + 0.999))
-                    kind = "catch_up"
-                else:
-                    if not r["observing"] or (r["next_canary_at"] is not None and now < instant(r["next_canary_at"])):
-                        return done({"result": "not_needed"})
-                    kind = "canary"
-                active = dict(check_id=str(uuid4()), creator_account_id=account, kind=kind, epoch=r["gap_epoch"],
-                              uncertain_since=r["uncertain_since"], granted_at=now.isoformat(), blind=int(not r["observing"]),
-                              lease_expires_at=(now + timedelta(seconds=self.policy.catchup_lease_seconds)).isoformat(),
-                              state="active", request_id=value["request_id"], agent_installation_id=r["agent_installation_id"], agent_stream_id=r["agent_stream_id"])
-                c.execute("INSERT INTO message_checks(" + ",".join(active) + ") VALUES (" + ",".join("?" for _ in active) + ")", tuple(active.values()))
-                r.update(active_check_id=active["check_id"], last_grant_at=now.isoformat(), incomplete=0)
-            return done(dict(result="granted", check_id=active["check_id"], kind=active["kind"], gap_epoch=active["epoch"],
-                             uncertain_since=active["uncertain_since"], granted_at=active["granted_at"], blind=bool(active["blind"]),
-                             page_budget=min(remaining, self.policy.catchup_grant_page_chunk), lease_expires_at=active["lease_expires_at"], resume=renewal))
+                if not r["observing"] or (r["next_canary_at"] is not None and now < instant(r["next_canary_at"])):
+                    return done({"result": "not_needed"})
+                kind = "canary"
+            if read_only:
+                return None
+            active = dict(check_id=str(uuid4()), creator_account_id=account, kind=kind, epoch=r["gap_epoch"],
+                          uncertain_since=r["uncertain_since"], granted_at=now.isoformat(), blind=int(not r["observing"]),
+                          lease_expires_at=(now + timedelta(seconds=self.policy.catchup_lease_seconds)).isoformat(),
+                          state="active", request_id=value["request_id"], agent_installation_id=r["agent_installation_id"], agent_stream_id=r["agent_stream_id"])
+            c.execute("INSERT INTO message_checks(" + ",".join(active) + ") VALUES (" + ",".join("?" for _ in active) + ")", tuple(active.values()))
+            r.update(active_check_id=active["check_id"], last_grant_at=now.isoformat(), incomplete=0)
+        return done(dict(result="granted", check_id=active["check_id"], kind=active["kind"], gap_epoch=active["epoch"],
+                         uncertain_since=active["uncertain_since"], granted_at=active["granted_at"], blind=bool(active["blind"]),
+                         page_budget=min(remaining, self.policy.catchup_grant_page_chunk), lease_expires_at=active["lease_expires_at"], resume=renewal))
 
     def state(self, account, *, now=None):
         now = now or datetime.now(timezone.utc)
-        with self.database.transaction() as c:
+
+        def read(c):
+            r = self._stable_row(c, account, now)
+            return None if r is None else self._state(c, r, account, now)
+
+        def write(c):
             r = self._load(c, account)
             self._tick(c, r, now)
-            paused = self._paused(c, r, now)
-            active = self._active(c, r)
-            status, reason = "current", None
-            if paused is not None:
-                status, reason = "paused", paused
-            elif active is not None and active["state"] == "active":
-                status, reason = "checking", active["kind"]
-            elif r["last_closed_at"] is None:
-                status, reason = "never_checked", None
-            elif r["gap_open"] or not r["observing"] or active is not None:
-                status = "behind"
-                reason = ("daily_cap" if self._remaining(c, account, now) == 0 else
-                          "not_observing" if not r["observing"] else
-                          "check_incomplete" if r["incomplete"] else "awaiting_check")
+            result = self._state(c, r, account, now)
             self._save(c, r)
-            return dict(status=status, reason=reason, gap_epoch=r["gap_epoch"], uncertain_since=r["uncertain_since"],
-                        check_id=r["active_check_id"], last_closed_at=r["last_closed_at"],
-                        observing_since=r["observing_since"], evaluated_at=now.isoformat())
+            return result
+
+        return self.database.read_or_transaction(read, write)
+
+    def _state(self, c, r, account, now):
+        paused = self._paused(c, r, now)
+        active = self._active(c, r)
+        status, reason = "current", None
+        if paused is not None:
+            status, reason = "paused", paused
+        elif active is not None and active["state"] == "active":
+            status, reason = "checking", active["kind"]
+        elif r["last_closed_at"] is None:
+            status, reason = "never_checked", None
+        elif r["gap_open"] or not r["observing"] or active is not None:
+            status = "behind"
+            reason = ("daily_cap" if self._remaining(c, account, now) == 0 else
+                      "not_observing" if not r["observing"] else
+                      "check_incomplete" if r["incomplete"] else "awaiting_check")
+        return dict(status=status, reason=reason, gap_epoch=r["gap_epoch"], uncertain_since=r["uncertain_since"],
+                    check_id=r["active_check_id"], last_closed_at=r["last_closed_at"],
+                    observing_since=r["observing_since"], evaluated_at=now.isoformat())
 
     def supported(self, account):
         with self.database.read() as c:
