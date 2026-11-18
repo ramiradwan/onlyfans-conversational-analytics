@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 import { FIXED_NOW, startHarness } from './capture.mjs';
 import { auditScrolling, installWatcher, readWatcher } from './shift-watcher.mjs';
 import { renderSurfaceState, SURFACE_STATES } from '../../extension/qualification/surface-fixtures.mjs';
-import { publishActivation } from './desktop-decision-fixtures.mjs';
+import { openActivationReview } from './desktop-decision-fixtures.mjs';
 
 let browser, harness;
 before(async () => { browser = await chromium.launch(); harness = await startHarness(); });
@@ -644,7 +644,7 @@ for (const width of [320, 390, 600]) test(`supported activation recovery grows b
     const push = (method, ...args) => page.evaluate(({ method, args }) => window.__workspaceFixture[method](...args), { method, args });
     await push('snapshot', 'fresh'); await push('connection', 'connected');
     for (const key of await push('pending')) await push('release', key, 'fresh');
-    await publishActivation(page, 'review');
+    await openActivationReview(page);
     await push('desktopActionError', 'reply_lost');
     await page.getByRole('button', { name: 'Activate for free' }).click();
     const expected = 'Activation could not be confirmed.';

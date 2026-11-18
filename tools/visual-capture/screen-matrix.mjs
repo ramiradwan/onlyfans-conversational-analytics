@@ -1,4 +1,4 @@
-import { publishActivation } from './desktop-decision-fixtures.mjs';
+import { openActivationReview, publishActivation } from './desktop-decision-fixtures.mjs';
 
 export const FIXED_NOW = '2026-06-30T12:05:00.000Z';
 export const MODES = ['light', 'dark'];
@@ -120,7 +120,7 @@ return [
   },
   {
     workspace: 'settings', state: 'fresh', variant: 'activation-review', viewports: ['narrow'], modes: ['light', 'dark'],
-    act: page => publishActivation(page, 'review'),
+    act: page => openActivationReview(page),
     ready: page => page.getByRole('button', { name: 'Activate for free' }),
   },
   {
@@ -138,7 +138,7 @@ return [
   {
     workspace: 'settings', state: 'fresh', variant: 'activation-error', viewports: ['narrow'], modes: ['light'],
     act: async (page) => {
-      await publishActivation(page, 'review');
+      await openActivationReview(page);
       await page.evaluate(() => window.__workspaceFixture.desktopActionError('reply_lost'));
       await page.getByRole('button', { name: 'Activate for free' }).click();
     },
