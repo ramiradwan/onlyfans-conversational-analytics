@@ -31,7 +31,7 @@
 }
 .onboarding-workspace main.onboarding-card { width: 100%; max-width: none; margin: 0; display: block; }
 .onboarding-workspace .onboarding-facts:empty { display: none; }
-.onboarding-header .brand-mark { width: 32px; min-height: 32px; display: grid; place-content: center; color: var(--dipsy-intent-brand-main); background: var(--dipsy-intent-brand-light); border-radius: var(--dipsy-radius-control); }
+.onboarding-header .brand-mark { width: 32px; min-height: 32px; display: grid; place-content: center; color: var(--dipsy-color-on-primary); background: var(--dipsy-color-primary); border-radius: var(--dipsy-radius-compact); }
 .onboarding-card h1, .onboarding-card h2 { margin: 0 0 16px; font-size: var(--dipsy-static-task-heading-size); line-height: 1.25; font-weight: var(--dipsy-font-weight-semibold); }
 .onboarding-card p { margin: 0 0 16px; }
 .onboarding-card p:empty { display: none; }

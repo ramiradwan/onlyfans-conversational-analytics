@@ -101,6 +101,24 @@ describe('AppBar freshness authority', () => {
       expect(getStatusPresentation(input).label).toBe('History not verified');
     }
   });
+  it('does not show a settled result while current same-account collection is restricted', () => {
+    const catchupFreshness = { status: 'current' as const, reason: null, uncertain_since: null, last_closed_at: AS_OF, observing_since: AS_OF };
+    const browser = { capture: 'active' as const, site_access: 'granted' as const, history_permission: 'granted' as const,
+      legal_review_required: false, history_error_code: null, schema: 'ofca-browser-surface/v2' as const };
+    const cases = [
+      [{ ...browser, capture: 'off' as const }, 'Collection off'],
+      [{ ...browser, capture: 'paused' as const }, 'Paused by you'],
+      [{ ...browser, legal_review_required: true }, 'Collection consent needed'],
+      [{ ...browser, site_access: 'needs_approval' as const }, 'Needs attention'],
+      [browser, 'Up to date'],
+    ] as const;
+    for (const [report, label] of cases) {
+      const current = state({ catchupFreshness, agent: { ...state().agent!, browser: report } });
+      expect(getStatusPresentation(current).label).toBe(label);
+    }
+    const other = state({ catchupFreshness, agent: { ...state().agent!, creator_account_id: 'other', browser: { ...browser, capture: 'off' } } });
+    expect(getStatusPresentation(other).label).toBe('Up to date');
+  });
   it('follows catch-up state independently of the live arrival indicator', () => {
     const catchupFreshness = { status: 'current' as const, reason: null, uncertain_since: null, last_closed_at: AS_OF, observing_since: AS_OF };
     expect(getStatusPresentation(state({ catchupFreshness, liveFreshness: { ...state().liveFreshness, status: 'unknown' } })).label).toBe('Up to date');
