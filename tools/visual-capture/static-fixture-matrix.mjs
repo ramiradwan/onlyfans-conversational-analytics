@@ -1,8 +1,11 @@
 import { SURFACE_STATES } from '../../extension/qualification/surface-states.mjs';
+import { BROWSER_TASK_STATES, DESKTOP_ONBOARDING_STATES } from './onboarding-surface-states.mjs';
 
 export function staticFixtureDescriptors() {
   return [
     ...Object.entries(SURFACE_STATES).map(([name, state]) => ({ surface: state.surface, name, state, widths: state.surface === 'popup' ? [390, 320] : [1440, 390] })),
+    ...Object.entries(DESKTOP_ONBOARDING_STATES).map(([name, state]) => ({ surface: 'desktop-onboarding', name, state, widths: [1440, 390] })),
+    ...Object.entries(BROWSER_TASK_STATES).map(([name, state]) => ({ surface: 'browser-task', name, state, widths: [1440, 390] })),
   ];
 }
 

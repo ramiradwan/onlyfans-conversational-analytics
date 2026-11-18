@@ -1,6 +1,7 @@
 // Registered observer identities only; browser strings never enter retained metadata.
 export const OBSERVER_REGIONS = Object.freeze(Object.fromEntries(Object.entries({
   home: ['freshness-status', 'issue-band', 'dashboard-notice', 'dashboard-overview', 'dashboard-basis', 'dashboard-recent', 'dashboard-setup'],
+  'dashboard-continuation': ['freshness-status', 'issue-band'],
   analytics: ['freshness-status', 'issue-band', 'analytics-content'],
   inbox: ['freshness-status', 'issue-band', 'inbox-notice', 'inbox-content'],
   settings: ['freshness-status', 'issue-band', 'settings-browser', 'settings-history', 'settings-activation', 'settings-vault'],
@@ -10,6 +11,8 @@ export const OBSERVER_REGIONS = Object.freeze(Object.fromEntries(Object.entries(
   popup: ['popup-content', 'popup-status', 'surface-feedback'],
   setup: ['extension-stage', 'surface-feedback'],
   options: ['options-notice', 'options-capture', 'options-connection', 'options-data', 'surface-feedback'],
+  'desktop-onboarding': [],
+  'browser-task': [],
 }).map(([view, regions]) => [view, Object.freeze(regions)])));
 
 const PHASES = Object.freeze({

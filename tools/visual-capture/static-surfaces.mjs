@@ -10,6 +10,7 @@ import { inspectTaskCopy } from './task-copy.mjs';
 import { assertStaticAccessibility } from './static-accessibility.mjs';
 import { installSurfaceFixture } from '../../extension/qualification/surface-runtime-fixture.mjs';
 import { staticFixtures } from './static-fixtures.mjs';
+import { onboardingStaticAssets } from './onboarding-static-fixtures.mjs';
 import { staticCases } from './static-fixture-matrix.mjs';
 import { staticConfiguration } from './ci/inventory.mjs';
 import { installWatcher, readWatcher } from './shift-watcher.mjs';
@@ -92,7 +93,7 @@ async function inspect(page, fixture, width, session) {
       }
     }
     const task = null;
-    const control = page.locator((await page.locator('dialog[open]').count()) ? 'dialog[open] button:visible:enabled' : 'button:visible:enabled, a.primary-link:visible').first();
+    const control = page.locator((await page.locator('dialog[open]').count()) ? 'dialog[open] button:visible:enabled' : 'button:visible:enabled, a.primary-link:visible, a.button:visible').first();
     if (await control.count()) {
       const stops = await page.locator('button:visible:enabled, a[href]:visible, input:visible:enabled, textarea:visible:enabled, select:visible:enabled').count();
       for (let index = 0; index < stops + 2 && !await control.evaluate(node => node === document.activeElement && node.matches(':focus-visible')); index++) {
@@ -112,6 +113,7 @@ export async function captureStaticSurfaces(browser, outDir, recorder = null) {
   await mkdir(directory, { recursive: true });
   const popupCss = await readFile(join(root, 'extension/popup.css'), 'utf8');
   const setupCss = await readFile(join(root, 'extension/setup.css'), 'utf8');
+  const onboardingAssets = await onboardingStaticAssets();
   const fixtures = await staticFixtures();
   const entries = [], failures = [], checks = [];
   const cases = staticCases(fixtures);
@@ -133,7 +135,15 @@ export async function captureStaticSurfaces(browser, outDir, recorder = null) {
         const unexpected = [];
         page.on('pageerror', (error) => unexpected.push(error.message));
         await page.addInitScript(observeStaticPaint, KEY_ELEMENTS);
-        if (fixture.state) await page.addInitScript(installSurfaceFixture, fixture.state);
+        if (fixture.injectedSurface) {
+          await page.addInitScript(({ state, theme }) => {
+            localStorage.setItem('mui-mode', theme);
+            window.__staticSurfaceFixture = state;
+          }, { state: fixture.state, theme: mode });
+        } else if (fixture.state) {
+          await page.addInitScript(installSurfaceFixture, fixture.state);
+        }
+        const documentPath = fixture.urlPath ?? `/${fixture.surface}.html`;
         await page.route('**/*', async (route) => {
           const url = new URL(route.request().url());
           if (url.origin !== ORIGIN) { unexpected.push('Unexpected network request'); return route.abort(); }
@@ -142,13 +152,14 @@ export async function captureStaticSurfaces(browser, outDir, recorder = null) {
           }
           if (url.pathname === '/popup.css') return route.fulfill({ contentType: 'text/css', body: popupCss });
           if (url.pathname === '/setup.css') return route.fulfill({ contentType: 'text/css', body: setupCss });
+          if (Object.hasOwn(onboardingAssets, url.pathname)) return route.fulfill(onboardingAssets[url.pathname]);
           if (fixture.script && url.pathname === `/${fixture.surface}.js`) return route.fulfill({ contentType: 'text/javascript', body: fixture.script });
-          if (url.pathname === `/${fixture.surface}.html`) return route.fulfill({ contentType: 'text/html', body: fixture.html });
+          if (url.pathname === documentPath) return route.fulfill({ contentType: 'text/html', body: fixture.html });
           return route.fulfill({ status: 404 });
         });
         try {
-          const hash = fixture.state?.hash ?? (fixture.surface === 'setup' ? 'journey=11111111-1111-4111-8111-111111111111' : '');
-          await page.goto(ORIGIN + `/${fixture.surface}.html${hash ? '#' + hash : ''}`, { waitUntil: 'networkidle' });
+          const hash = fixture.injectedSurface ? '' : (fixture.state?.hash ?? (fixture.surface === 'setup' ? 'journey=11111111-1111-4111-8111-111111111111' : ''));
+          await page.goto(ORIGIN + `${documentPath}${hash ? '#' + hash : ''}`, { waitUntil: 'networkidle' });
           if (fixture.state) await page.waitForFunction(() => document.querySelector('main[data-ready="true"]') || document.querySelector('#runtime-unavailable:not(.hidden)'));
           if (fixture.state?.dialog) await page.locator('#delete-local-data').click();
           await page.evaluate(() => document.fonts.ready);
