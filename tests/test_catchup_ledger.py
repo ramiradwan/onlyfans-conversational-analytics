@@ -384,6 +384,137 @@ def test_snapshot_replay_cannot_move_completion_or_gap(rig):
         assert c.execute("SELECT completed_at FROM message_checks WHERE check_id=?", (check["check_id"],)).fetchone()[0] == completed
 
 
+def test_stable_state_and_not_needed_use_read_only_snapshot(rig, monkeypatch):
+    r = rig
+    current(r)
+    saved = row(r)
+    database = r.h.database
+    original_connect = database.connect
+    opened = []
+
+    def counted():
+        connection = original_connect()
+        opened.append(connection)
+        return connection
+
+    def unexpected_writer(*args, **kwargs):
+        pytest.fail("unchanged catchup state must not enter a durable write transaction")
+
+    monkeypatch.setattr(database, "connect", counted)
+    monkeypatch.setattr(database, "_transaction", unexpected_writer)
+    assert state(r)["status"] == "current"
+    assert r.l.begin(ACCOUNT_ID, request(), now=r.clock.now) == {"result": "not_needed"}
+    assert len(opened) == 2
+    assert row(r) == saved
+
+
+def test_due_canary_reuses_connection_but_rechecks_under_writer(rig, monkeypatch):
+    r = rig
+    current(r)
+    database = r.h.database
+    with database.transaction() as connection:
+        connection.execute("UPDATE message_catchup SET next_canary_at=? WHERE creator_account_id=?",
+                           (r.clock.now.isoformat(), ACCOUNT_ID))
+    original_connect = database.connect
+    opened = []
+
+    def counted():
+        connection = original_connect()
+        opened.append(connection)
+        return connection
+
+    monkeypatch.setattr(database, "connect", counted)
+    check = grant(r)
+    assert check["kind"] == "canary"
+    assert len(opened) == 1
+    assert row(r)["active_check_id"] == check["check_id"]
+
+
+def test_grant_rechecks_after_competing_admission(rig, monkeypatch):
+    from contextlib import contextmanager
+
+    r = rig
+    current(r)
+    database = r.h.database
+    with database.transaction() as connection:
+        connection.execute("UPDATE message_catchup SET next_canary_at=? WHERE creator_account_id=?",
+                           (r.clock.now.isoformat(), ACCOUNT_ID))
+    original = database._transaction
+    competing = []
+
+    @contextmanager
+    def interleave(connection, *, immediate):
+        # The original caller has dropped its read snapshot, but has not
+        # acquired the write transaction yet. Another request wins the grant.
+        monkeypatch.setattr(database, "_transaction", original)
+        competing.append(grant(r))
+        with original(connection, immediate=immediate):
+            yield connection
+
+    monkeypatch.setattr(database, "_transaction", interleave)
+    result = r.l.begin(ACCOUNT_ID, request(), now=r.clock.now)
+    assert result["result"] == "deferred" and result["reason"] == "check_active"
+    assert competing[0]["kind"] == "canary"
+    assert row(r)["active_check_id"] == competing[0]["check_id"]
+
+
+def test_read_or_transaction_enforces_snapshot_and_reloads_after_concurrent_write(rig):
+    from app.persistence import sqlite_api
+
+    database = rig.h.database
+    with database.transaction() as connection:
+        connection.execute("CREATE TABLE catchup_snapshot_probe(value INTEGER)")
+        connection.execute("INSERT INTO catchup_snapshot_probe VALUES (1)")
+    read_connection = []
+
+    def read(connection):
+        read_connection.append(connection)
+        assert connection.execute("PRAGMA query_only").fetchone()[0] == 1
+        assert connection.execute("SELECT value FROM catchup_snapshot_probe").fetchone()[0] == 1
+        with pytest.raises(sqlite_api.OperationalError):
+            connection.execute("UPDATE catchup_snapshot_probe SET value=99")
+        with database.transaction() as other:
+            other.execute("UPDATE catchup_snapshot_probe SET value=2")
+        assert connection.execute("SELECT value FROM catchup_snapshot_probe").fetchone()[0] == 1
+        return None
+
+    def write(connection):
+        assert connection is read_connection[0]
+        assert connection.execute("PRAGMA query_only").fetchone()[0] == 0
+        assert connection.execute("PRAGMA synchronous").fetchone()[0] == 2
+        assert connection.execute("SELECT value FROM catchup_snapshot_probe").fetchone()[0] == 2
+        connection.execute("UPDATE catchup_snapshot_probe SET value=3")
+        return "committed"
+
+    assert database.read_or_transaction(read, write) == "committed"
+    with database.read() as connection:
+        assert connection.execute("SELECT value FROM catchup_snapshot_probe").fetchone()[0] == 3
+
+
+@pytest.mark.parametrize("supported, expected_connections", [(False, 1), (True, 2)])
+def test_live_freshness_reuses_the_supported_and_ingest_reads(rig, monkeypatch, supported, expected_connections):
+    r = rig
+    current(r)
+    r.l.admit(ACCOUNT_ID, installation=str(INSTALLATION_ID), stream=str(STREAM_ID),
+              supported=supported, now=r.clock.now)
+    database = r.h.database
+    original_connect = database.connect
+    opened = []
+
+    def counted():
+        connection = original_connect()
+        opened.append(connection)
+        return connection
+
+    monkeypatch.setattr(database, "connect", counted)
+    value = r.h.live_freshness(ACCOUNT_ID, now=r.clock.now)
+    if supported:
+        assert value["status"] == "current"
+    else:
+        assert value["status"] in ("unknown", "current", "delayed")
+    assert len(opened) == expected_connections
+
+
 def test_old_delta_shape_stays_valid_and_check_id_is_accepted():
     old = delta(1, {"type": "message.upsert", "message": raw_message("sample")}).model_dump(mode="json", exclude_unset=True)
     assert "check_id" not in old

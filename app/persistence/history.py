@@ -1715,26 +1715,29 @@ class HistoryRepository:
 
     def live_freshness(self, account_id: str, now: datetime | None = None) -> dict[str, Any]:
         now = now or utc_now()
-        if self.catchup.supported(account_id):
-            status = self.catchup.state(account_id, now=now)
+        # Reuse the supported check and ingest-state read within this synchronous
+        # operation. A catchup transition still gets its own durable transaction.
+        with self.database.shared_reads():
+            if self.catchup.supported(account_id):
+                status = self.catchup.state(account_id, now=now)
+                with self.database.read() as connection:
+                    row = connection.execute("SELECT last_observed_at,last_committed_at,pending_event_count FROM live_ingest_state WHERE creator_account_id=?", (account_id,)).fetchone()
+                return {"status": "current" if status["status"] == "current" else "delayed",
+                        "last_observed_at": None if row is None else row[0],
+                        "last_committed_at": None if row is None else row[1], "expires_at": None,
+                        "pending_count": None if row is None else row[2], "reason": status["reason"]}
             with self.database.read() as connection:
-                row = connection.execute("SELECT last_observed_at,last_committed_at,pending_event_count FROM live_ingest_state WHERE creator_account_id=?", (account_id,)).fetchone()
-            return {"status": "current" if status["status"] == "current" else "delayed",
-                    "last_observed_at": None if row is None else row[0],
-                    "last_committed_at": None if row is None else row[1], "expires_at": None,
-                    "pending_count": None if row is None else row[2], "reason": status["reason"]}
-        with self.database.read() as connection:
-            row = connection.execute(
-                """SELECT last_observed_at,last_committed_at,expires_at,pending_event_count
-                   FROM live_ingest_state WHERE creator_account_id=?""", (account_id,)
-            ).fetchone()
-            if row is None:
-                return {"status": "unknown", "last_observed_at": None, "last_committed_at": None,
-                        "expires_at": None, "pending_count": None, "reason": "no_live_observation"}
-            current = datetime.fromisoformat(row[2]) > now and int(row[3] or 0) == 0
-            return {"status": "current" if current else "delayed", "last_observed_at": row[0],
-                    "last_committed_at": row[1], "expires_at": row[2],
-                    "pending_count": row[3], "reason": None if current else "live_observation_expired"}
+                row = connection.execute(
+                    """SELECT last_observed_at,last_committed_at,expires_at,pending_event_count
+                       FROM live_ingest_state WHERE creator_account_id=?""", (account_id,)
+                ).fetchone()
+                if row is None:
+                    return {"status": "unknown", "last_observed_at": None, "last_committed_at": None,
+                            "expires_at": None, "pending_count": None, "reason": "no_live_observation"}
+                current = datetime.fromisoformat(row[2]) > now and int(row[3] or 0) == 0
+                return {"status": "current" if current else "delayed", "last_observed_at": row[0],
+                        "last_committed_at": row[1], "expires_at": row[2],
+                        "pending_count": row[3], "reason": None if current else "live_observation_expired"}
 
     def history_settings(self, account_id: str) -> dict[str, Any]:
         now = _iso(utc_now())

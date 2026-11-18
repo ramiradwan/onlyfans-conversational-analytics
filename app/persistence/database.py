@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 from threading import RLock, get_ident, local
-from typing import Iterator
+from typing import Callable, Iterator, TypeVar
 
 from app.persistence import sqlite_api as sqlite3
 from app.persistence.private_files import (
@@ -19,6 +19,9 @@ from app.security.local_data_key import (
     database_key,
     protect_local_secret,
 )
+
+
+_T = TypeVar('_T')
 
 
 class SQLiteConfigurationError(RuntimeError):
@@ -318,6 +321,14 @@ class LocalSQLite:
     def transaction(self, *, immediate: bool = True) -> Iterator[sqlite3.Connection]:
         connection = self.connect()
         try:
+            with self._transaction(connection, immediate=immediate):
+                yield connection
+        finally:
+            connection.close()
+
+    @contextmanager
+    def _transaction(self, connection: sqlite3.Connection, *, immediate: bool) -> Iterator[sqlite3.Connection]:
+        try:
             connection.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
             # BEGIN IMMEDIATE forces WAL/SHM creation before caller-controlled
             # values are written, so their DACL/mode can be verified first.
@@ -330,6 +341,33 @@ class LocalSQLite:
         except BaseException:
             connection.rollback()
             raise
+
+    def read_or_transaction(
+        self, read: Callable[[sqlite3.Connection], _T | None], write: Callable[[sqlite3.Connection], _T],
+    ) -> _T:
+        """Evaluate on a consistent, enforced read-only snapshot first.
+
+        A read result of None requires a durable transaction. Discard the
+        snapshot and re-evaluate under the ordinary write transaction on the
+        same native connection; never promote a stale snapshot to a writer.
+        """
+        connection = self.connect()
+        try:
+            connection.execute("PRAGMA query_only = ON")
+            if connection.execute("PRAGMA query_only").fetchone()[0] != 1:
+                raise SQLiteConfigurationError("SQLite query-only mode was refused")
+            connection.execute("BEGIN")
+            try:
+                result = read(connection)
+            finally:
+                connection.rollback()
+            if result is not None:
+                return result
+            connection.execute("PRAGMA query_only = OFF")
+            if connection.execute("PRAGMA query_only").fetchone()[0] != 0:
+                raise SQLiteConfigurationError("SQLite query-only mode could not be cleared")
+            with self._transaction(connection, immediate=True):
+                return write(connection)
         finally:
             connection.close()
 
