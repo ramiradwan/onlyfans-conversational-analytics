@@ -432,17 +432,39 @@ def test_windows_backend_bench_falsifiers(fault: str) -> None:
         _assert_bench_repeats_product_ci(bench, _workflow_document())
 
 
+def _assert_bench_shards_match_product_ci(run: str, product: dict[str, Any]) -> None:
+    import re
+
+    shards = "".join(str(shard) for shard in product["jobs"]["windows-full-shards"]["strategy"]["matrix"]["shard"])
+    pattern = re.compile(re.search(r"=~ (\S+) \]\]", run).group(1))
+    assert {str(shard) for shard in range(10) if pattern.fullmatch(f"bench/windows-backend/s{shard}-w4-load")} == set(shards)
+    assert f"[{shards}]:[234]:load|[{shards}]:[234]:worksteal) ;;" in run
+
+
 def test_windows_backend_bench_branch_names_select_only_supported_parameters() -> None:
     import re
 
     run = _bench_document()["jobs"]["plan"]["steps"][0]["run"]
+    _assert_bench_shards_match_product_ci(run, _workflow_document())
     pattern = re.compile(re.search(r"=~ (\S+) \]\]", run).group(1))
     accepted = {"bench/windows-backend/s2-w3-load": ("2", "3", "load"),
                 "bench/windows-backend/s1-w2-worksteal-r1": ("1", "2", "worksteal"),
+                "bench/windows-backend/s3-w4-load": ("3", "4", "load"),
                 "bench/windows-backend/s2-w4-load-round-3": ("2", "4", "load")}
     for name, groups in accepted.items():
         assert pattern.fullmatch(name).groups()[:3] == groups
-    for name in ("bench/windows-backend/s3-w3-load", "bench/windows-backend/s2-w8-load",
+    for name in ("bench/windows-backend/s4-w3-load", "bench/windows-backend/s0-w3-load",
+                 "bench/windows-backend/s2-w8-load",
                  "bench/windows-backend/s2-w3-loadfile", "bench/windows-backend/s2-w3-load-R1",
                  "bench/windows-backend/x/s2-w3-load", "main"):
         assert pattern.fullmatch(name) is None, name
+
+
+@pytest.mark.parametrize("old,new", [("s([123])-w", "s([12])-w"), ("s([123])-w", "s([1234])-w"),
+                                     ("[123]:[234]:load", "[12]:[234]:load"),
+                                     ("[123]:[234]:worksteal", "[1234]:[234]:worksteal")])
+def test_windows_backend_bench_shards_cannot_drift_from_product_ci(old: str, new: str) -> None:
+    run = _bench_document()["jobs"]["plan"]["steps"][0]["run"]
+    assert old in run
+    with pytest.raises(AssertionError):
+        _assert_bench_shards_match_product_ci(run.replace(old, new, 1), _workflow_document())
