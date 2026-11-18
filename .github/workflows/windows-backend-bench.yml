@@ -107,6 +107,8 @@ jobs:
     timeout-minutes: 90
     env:
       CI_PYTEST_LIVE_PROGRESS: '1'
+      # Monitor progress outside pytest; timed native traceback dumps can crash Windows CPython.
+      CI_PYTEST_WATCHDOG_SECONDS: '600'
     steps:
       - name: Checkout exact Product revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -183,7 +185,7 @@ jobs:
           CI_PYTEST_WORKERS: ${{ needs.plan.outputs.workers }}
           CI_PYTEST_DIST: ${{ needs.plan.outputs.dist }}
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-full-regression-${{ needs.plan.outputs.shard }}/junit.xml
-            -o faulthandler_timeout=600 -o faulthandler_exit_on_timeout=false
+            -o faulthandler_timeout=0
         run: python tools/test_backend.py --lane windows-full-regression --shard ${{ needs.plan.outputs.shard }}
       - name: Stop host counter sampling
         if: always()

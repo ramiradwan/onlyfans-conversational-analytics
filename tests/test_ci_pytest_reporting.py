@@ -25,9 +25,12 @@ def run_suite(tmp_path, source, *arguments, environment=None):
     for name, content in sources.items():
         (tmp_path / name).write_text(content, encoding="utf-8")
     destination = tmp_path / "evidence"
-    env = dict(os.environ, PYTHONPATH=str(ROOT), PYTEST_ADDOPTS="", CI_TEST_LANE="report-fixture", CI_REPORT_DIR=str(destination),
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [str(ROOT), os.environ.get("PYTHONPATH")])),
+               PYTEST_ADDOPTS="", CI_PYTEST_WATCHDOG_SECONDS="", CI_TEST_LANE="report-fixture", CI_REPORT_DIR=str(destination),
                PRODUCT_SHA="a" * 40, GITHUB_RUN_ID="123", GITHUB_RUN_ATTEMPT="2", GITHUB_JOB="backend-fast",
                GITHUB_STEP_SUMMARY=str(tmp_path / "github-summary.md"))
+    for name in ("PYTEST_XDIST_WORKER", "PYTEST_XDIST_WORKER_COUNT", "PYTEST_XDIST_TESTRUNUID"):
+        env.pop(name, None)
     env.update(environment or {})
     result = subprocess.run([sys.executable, "-m", "pytest", "-p", "tools.ci_pytest", "--junitxml=" + str(tmp_path / "original.xml"),
                              *arguments], cwd=tmp_path, env=env, text=True, capture_output=True, timeout=30)
@@ -373,10 +376,11 @@ def phase_signature(report):
                    json.dumps(phase.get("subtest"), sort_keys=True)) for phase in report["reports"])
 
 
-def test_parallel_lane_report_equals_serial_execution_evidence(tmp_path):
+def test_parallel_lane_report_equals_serial_execution_evidence(tmp_path, monkeypatch):
     pytest.importorskip("xdist")
     from tools import ci_gate
 
+    monkeypatch.setenv("CI_PYTEST_WATCHDOG_SECONDS", "600")
     code, serial, merged, output = run_lane_suite(tmp_path)
     assert code == merged["exit_code"] == serial["exit_code"] == 0
     assert merged["complete"] is True and "phase" not in merged
@@ -400,6 +404,8 @@ def test_parallel_lane_report_equals_serial_execution_evidence(tmp_path):
     # The gate reads every JSON file in a lane artifact as a lane report.
     assert sorted(path.name for path in output.rglob("*.json")) == ["report.json"]
     assert len(list(output.glob("progress-gw*-parallel.jsonl"))) == 2
+    for phase in ("parallel", "serial"):
+        assert "monitor stopped" in (output / f"watchdog-{phase}.log").read_text(encoding="utf-8")
     assert "# Backend: lane-fixture" in (output / "summary.md").read_text(encoding="utf-8")
     from tools import test_backend_parallel as parallel
     assert parallel.junit_outcomes(output / "junit.xml") == parallel.junit_outcomes(tmp_path / "serial/junit.xml")
@@ -525,3 +531,99 @@ def test_distributed_controller_requires_identical_worker_collections():
         evidence = ci_pytest.Evidence(config)
         evidence.worker_collections, evidence.worker_failures = collections, failures
         assert evidence.adopt_worker_collection() is False
+
+
+WATCHDOG_SAMPLE = """import os, time
+from pathlib import Path
+import pytest
+
+@pytest.mark.parametrize("case", [0, 1])
+def test_slow(case, request):
+    directory = Path(os.environ["CI_REPORT_DIR"])
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    journal = "progress-" + worker if worker else "progress"
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        try:
+            lines = (directory / "watchdog.log").read_text(encoding="utf-8").splitlines()
+        except OSError:
+            lines = []
+        if any(journal + ": no progress" in line and request.node.nodeid in line
+               and "phase=call" in line for line in lines):
+            return
+        time.sleep(0.02)
+    pytest.fail("external watchdog did not report this test")
+"""
+
+
+@pytest.mark.parametrize("workers", [0, 2])
+def test_external_watchdog_reports_stalled_test_without_terminating_it(tmp_path, workers):
+    if workers:
+        pytest.importorskip("xdist")
+    arguments = ["-n", str(workers), "--max-worker-restart=0"] if workers else []
+    result, report, destination = run_suite(
+        tmp_path, WATCHDOG_SAMPLE, *arguments,
+        "-o", "faulthandler_timeout=0",
+        environment={"CI_PYTEST_WATCHDOG_SECONDS": "0.1"},
+    )
+    assert result.returncode == report["exit_code"] == 0, result.stdout + result.stderr
+    log = (destination / "watchdog.log").read_text(encoding="utf-8")
+    assert "no progress for" in log
+    assert "test_sample.py::test_slow[0]" in log
+    assert "test_sample.py::test_slow[1]" in log
+    assert "phase=call" in log
+    assert "monitor stopped" in log
+    assert "Timeout (" not in result.stderr
+    assert "no progress for" in result.stdout
+    if workers:
+        assert "progress-gw0: no progress" in log
+        assert "progress-gw1: no progress" in log
+        assert log.count("external progress monitor started") == 1
+
+
+def test_external_watchdog_preserves_test_failure(tmp_path):
+    result, report, destination = run_suite(
+        tmp_path, "def test_bad(): assert False\n",
+        "-o", "faulthandler_timeout=0",
+        environment={"CI_PYTEST_WATCHDOG_SECONDS": "0.1"},
+    )
+    assert result.returncode == report["exit_code"] == 1
+    assert "monitor stopped" in (destination / "watchdog.log").read_text(encoding="utf-8")
+
+
+def test_watchdog_journal_handles_partial_records_and_resumed_progress(tmp_path):
+    from tools.ci_pytest_watchdog import Journal
+    path = tmp_path / "progress-gw0.jsonl"
+    journal = Journal(0)
+    path.write_bytes(b'{"event":"phase_start","nodeid":"test_slow","when":"call"}\n{"event":')
+    journal.poll(path, 1)
+    assert journal.warning("gw0", 2, 2) is None
+    assert "test_slow" in journal.warning("gw0", 3, 2)
+    assert journal.warning("gw0", 4, 2) is None
+    with path.open("ab") as stream:
+        stream.write(b'"test_finish","nodeid":"test_slow"}\n')
+    journal.poll(path, 5)
+    assert journal.warning("gw0", 6, 2) is None
+    with path.open("ab") as stream:
+        stream.write(b'{"event":"session_finish"}\n')
+    journal.poll(path, 7)
+    assert journal.warning("gw0", 100, 2) is None
+
+
+def test_external_watchdog_exits_if_controller_dies(tmp_path):
+    env = dict(os.environ, PYTHONPATH=str(ROOT))
+    script = (
+        "from pathlib import Path\n"
+        "import os, sys, time\n"
+        "from tools.ci_pytest_watchdog import start\n"
+        "directory = Path(sys.argv[1])\n"
+        "process = start(directory, 0.1, distributed=False)\n"
+        "deadline = time.monotonic() + 5\n"
+        "while not (directory / 'watchdog.log').is_file() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.02)\n"
+        "os._exit(17)\n"
+    )
+    result = subprocess.run([sys.executable, "-c", script, str(tmp_path)],
+                            env=env, capture_output=True, text=True, timeout=15)
+    assert result.returncode == 17
+    assert "monitor stopped" in (tmp_path / "watchdog.log").read_text(encoding="utf-8")

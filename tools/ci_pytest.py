@@ -63,6 +63,7 @@ class Evidence:
         self.worker_failures = []
         self.progress_stream = None
         self.progress_sequence = 0
+        self.watchdog = None
 
     def lane(self):
         windows_shard = self.config.getoption("ci_windows_shard")
@@ -104,6 +105,23 @@ class Evidence:
         except OSError as error:
             self.close_progress()
             print(f"Could not write optional CI progress journal: {error}", file=sys.stderr)
+
+    def start_watchdog(self):
+        seconds = os.environ.get("CI_PYTEST_WATCHDOG_SECONDS")
+        if not seconds or is_worker(self.config) or self.config.option.collectonly:
+            return
+        from tools import ci_pytest_watchdog
+        try:
+            self.watchdog = ci_pytest_watchdog.start(
+                self.output_directory(), seconds, distributed=is_distributed(self.config))
+        except (OSError, ValueError) as error:
+            print(f"[ci-watchdog] could not start: {error}", file=sys.stderr, flush=True)
+
+    def stop_watchdog(self):
+        if self.watchdog is not None:
+            from tools import ci_pytest_watchdog
+            process, self.watchdog = self.watchdog, None
+            ci_pytest_watchdog.stop(process)
 
     def close_progress(self):
         stream, self.progress_stream = self.progress_stream, None
@@ -325,6 +343,7 @@ class ReportCollector:
 
 def pytest_sessionstart(session):
     session.config._ci_evidence.start_progress()
+    session.config._ci_evidence.start_watchdog()
     session.config.pluginmanager.register(ReportCollector(session.config._ci_evidence), "ci-phase-collector")
 
 
@@ -342,6 +361,7 @@ def pytest_unconfigure(config):
     evidence = getattr(config, "_ci_evidence", None)
     if evidence is not None:
         evidence.close_progress()
+        evidence.stop_watchdog()
 
 
 def summary(payload):
@@ -389,6 +409,7 @@ def pytest_sessionfinish(session, exitstatus):
     evidence = session.config._ci_evidence
     evidence.progress("session_finish", exit_code=int(exitstatus))
     evidence.close_progress()
+    evidence.stop_watchdog()
     if is_worker(session.config):
         return  # The controller records the merged worker evidence.
     output = evidence.output_directory()

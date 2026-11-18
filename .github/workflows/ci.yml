@@ -447,6 +447,8 @@ jobs:
     timeout-minutes: 60
     env:
       CI_PYTEST_LIVE_PROGRESS: '1'
+      # Monitor progress outside pytest; timed native traceback dumps can crash Windows CPython.
+      CI_PYTEST_WATCHDOG_SECONDS: '600'
     steps:
       - name: Checkout exact Product revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -533,7 +535,7 @@ jobs:
           CI_REPORT_DIR: artifacts/ci-tests/windows-platform-contract-${{ matrix.shard }}
           CI_PYTEST_WORKERS: '4'
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-platform-contract-${{ matrix.shard }}/junit.xml
-            -o faulthandler_timeout=600 -o faulthandler_exit_on_timeout=false
+            -o faulthandler_timeout=0
         run: python tools/test_backend.py --lane windows-platform-contract --shard ${{ matrix.shard }}
       - name: Stop host counter sampling
         if: always()
@@ -547,7 +549,7 @@ jobs:
           CI_TEST_LANE: windows-production-boot
           CI_REPORT_DIR: artifacts/ci-tests/windows-production-boot
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-production-boot/junit.xml
-            -o faulthandler_timeout=600 -o faulthandler_exit_on_timeout=false
+            -o faulthandler_timeout=0
       - name: Test Windows persistent SQLCipher general profile
         if: matrix.shard == 1
         env:
@@ -555,7 +557,7 @@ jobs:
           CI_TEST_LANE: windows-persistence-general
           CI_REPORT_DIR: artifacts/ci-tests/windows-persistence-general
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-persistence-general/junit.xml
-            --ci-profile=tier_b_general -o faulthandler_timeout=600 -o faulthandler_exit_on_timeout=false
+            --ci-profile=tier_b_general -o faulthandler_timeout=0
         run: |
           python -m pytest --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestPersistentGeneral --junitxml=artifacts/ci-tests/windows-persistence-general/junit.xml -vv
       - name: Test Windows persistent SQLCipher deletion profile
@@ -565,7 +567,7 @@ jobs:
           CI_TEST_LANE: windows-persistence-deletion
           CI_REPORT_DIR: artifacts/ci-tests/windows-persistence-deletion
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-persistence-deletion/junit.xml
-            --ci-profile=tier_b_deletion -o faulthandler_timeout=600 -o faulthandler_exit_on_timeout=false
+            --ci-profile=tier_b_deletion -o faulthandler_timeout=0
         run: |
           python -m pytest --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion --junitxml=artifacts/ci-tests/windows-persistence-deletion/junit.xml -vv
       - name: Test Windows persistent SQLCipher smoke profile
@@ -575,7 +577,7 @@ jobs:
           CI_TEST_LANE: windows-persistence-smoke
           CI_REPORT_DIR: artifacts/ci-tests/windows-persistence-smoke
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-persistence-smoke/junit.xml
-            --ci-profile=windows_persistence_smoke -o faulthandler_timeout=600 -o faulthandler_exit_on_timeout=false
+            --ci-profile=windows_persistence_smoke -o faulthandler_timeout=0
         run: |
           python -m pytest --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke --junitxml=artifacts/ci-tests/windows-persistence-smoke/junit.xml -vv
       - name: Setup CPython 3.13 for socket-loop contracts
@@ -605,7 +607,7 @@ jobs:
           CI_REPORT_DIR: artifacts/ci-tests/windows-python313-loop-contract
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-python313-loop-contract/junit.xml
-            -o faulthandler_timeout=600 -o faulthandler_exit_on_timeout=false
+            -o faulthandler_timeout=0
         run: |
           $root = Join-Path $env:RUNNER_TEMP "ofca-loop-python313"
           $python = Join-Path $root "Scripts/python.exe"
@@ -666,6 +668,8 @@ jobs:
     timeout-minutes: 20
     env:
       CI_PYTEST_LIVE_PROGRESS: '1'
+      # Monitor progress outside pytest; timed native traceback dumps can crash Windows CPython.
+      CI_PYTEST_WATCHDOG_SECONDS: '600'
     steps:
       - name: Checkout exact Product revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -741,7 +745,7 @@ jobs:
           CI_REPORT_DIR: artifacts/ci-tests/analytics-windows-contract
           CI_PYTEST_WORKERS: '4'
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/analytics-windows-contract/junit.xml
-            -o faulthandler_timeout=600 -o faulthandler_exit_on_timeout=false
+            -o faulthandler_timeout=0
         run: python tools/test_backend.py --lane analytics-windows-contract
       - name: Stop host counter sampling
         if: always()
@@ -773,6 +777,8 @@ jobs:
           - 3
     env:
       CI_PYTEST_LIVE_PROGRESS: '1'
+      # Monitor progress outside pytest; timed native traceback dumps can crash Windows CPython.
+      CI_PYTEST_WATCHDOG_SECONDS: '600'
     steps:
       - name: Checkout exact Product revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -848,7 +854,7 @@ jobs:
           CI_REPORT_DIR: artifacts/ci-tests/windows-full-regression-${{ matrix.shard }}
           CI_PYTEST_WORKERS: '4'
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-full-regression-${{ matrix.shard }}/junit.xml
-            -o faulthandler_timeout=600 -o faulthandler_exit_on_timeout=false
+            -o faulthandler_timeout=0
         run: python tools/test_backend.py --lane windows-full-regression --shard ${{ matrix.shard }}
       - name: Stop host counter sampling
         if: always()
@@ -884,6 +890,8 @@ jobs:
     timeout-minutes: 45
     env:
       CI_PYTEST_LIVE_PROGRESS: '1'
+      # Monitor progress outside pytest; timed native traceback dumps can crash Windows CPython.
+      CI_PYTEST_WATCHDOG_SECONDS: '600'
     steps:
       - name: Checkout exact Product revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -958,7 +966,7 @@ jobs:
           CI_TEST_LANE: analytics-scale-qualification
           CI_REPORT_DIR: artifacts/ci-tests/analytics-scale-qualification
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/analytics-scale-qualification/junit.xml
-            -o faulthandler_timeout=600 -o faulthandler_exit_on_timeout=false
+            -o faulthandler_timeout=0
         run: python tools/test_backend.py scale -- --ignore=tests/test_packaged_runtime.py --ignore=tests/test_installation_key.py
       - name: Stop host counter sampling
         if: always()

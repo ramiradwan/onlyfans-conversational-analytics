@@ -56,6 +56,8 @@ def worker_environment(directory, index, port_base, port_width):
     environment = os.environ.copy()
     for name in ("PYTEST_ADDOPTS", "CI_REPORT_DIR", "CI_TEST_LANE", "HYPOTHESIS_PROFILE"):
         environment.pop(name, None)
+    if os.name == "nt":
+        environment.setdefault("CI_PYTEST_WATCHDOG_SECONDS", "600")
     return phase_environment(environment, directory, index, port_base, port_width)
 
 
@@ -138,7 +140,7 @@ def build_command(directory, args, *, serial):
             "-p", "tools.test_backend_parallel", "-p", "tools.ci_pytest",
             "-n", "0" if serial else str(args.workers), f"--dist={args.dist}", "--maxschedchunk=1", "--max-worker-restart=0",
             f"--basetemp={directory / 'basetemp'}", f"--junitxml={directory / 'junit.xml'}",
-            "-o", "tmp_path_retention_policy=failed", "-o", "faulthandler_timeout=300",
+            "-o", "tmp_path_retention_policy=failed", "-o", "faulthandler_timeout=0" if os.name == "nt" else "faulthandler_timeout=300",
             "-m", EXPRESSION + (" and serial" if serial else " and not serial"), *EXCLUSIONS]
 
 
@@ -286,6 +288,8 @@ def run_lane(command, environment, output, *, workers, work_root, run, port_base
         merge_junit(junits, output / "junit.xml", merged["wall_seconds"])
     for journal in sorted(work.glob("*/progress*.jsonl")):
         shutil.copyfile(journal, output / f"{journal.stem}-{journal.parent.name}.jsonl")
+    for watchdog in sorted(work.glob("*/watchdog.log")):
+        shutil.copyfile(watchdog, output / f"watchdog-{watchdog.parent.name}.log")
     ci_pytest.write_report(output, merged)
     if not merged["complete"]:
         print("Worker evidence is incomplete; see the phase journals", file=sys.stderr, flush=True)
