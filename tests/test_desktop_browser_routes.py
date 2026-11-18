@@ -56,6 +56,59 @@ def test_popup_timing_is_local_closed_and_cannot_reconcile(tmp_path, caplog):
         assert connection.execute("SELECT count(*) FROM desktop_setup_operations").fetchone()[0] == 0
 
 
+def test_a_helper_records_its_loading_steps_only_under_closed_labels(tmp_path, caplog):
+    import logging
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, _, _ = setup
+    _, _, browser = asyncio.run(browser_access(setup))
+    app = FastAPI()
+    app.include_router(browser_router(coordinator, tasks, None))
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    with TestClient(app, base_url=ORIGIN) as client:
+        for phase, status in (("session-get", 204), ("payload-get", 204), ("payload", 204), ("waiting", 204),
+                              ("payload-queue", 400), ("launch", 400), ("popup-create", 400)):
+            value = {"operation": "helper", "phase": phase, "status": "ok", "elapsed_ms": 90}
+            assert client.post("/api/v1/browser-tasks/timing", json=value, headers=headers(browser)).status_code == status, phase
+        value = {"operation": "helper", "phase": "waiting", "status": "ok", "elapsed_ms": 90, "url": "private"}
+        assert client.post("/api/v1/browser-tasks/timing", json=value, headers=headers(browser)).status_code == 400
+    assert caplog.messages == ["event=sign_in_phase operation=helper phase=session-get status=ok elapsed_ms=90",
+        "event=sign_in_phase operation=helper phase=payload-get status=ok elapsed_ms=90",
+        "event=sign_in_phase operation=helper phase=payload status=ok elapsed_ms=90",
+        "event=sign_in_phase operation=helper phase=waiting status=ok elapsed_ms=90"]
+
+
+def test_popup_creation_timing_is_a_closed_local_observation(tmp_path, caplog):
+    import logging
+    from starlette.websockets import WebSocketDisconnect
+    from app.transport.companion_origin import CompanionOriginBoundary
+    coordinator, tasks, _, _ = browser_setup.__wrapped__(tmp_path)
+    app = FastAPI()
+    app.add_middleware(CompanionOriginBoundary)
+    app.include_router(browser_router(coordinator, tasks, None))
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    socket_headers = {"Host": "127.0.0.1:17871", "Origin": "chrome-extension://" + "a" * 32}
+    with TestClient(app, base_url="http://127.0.0.1:17871") as client:
+        with client.websocket_connect("/api/v1/browser-tasks/timing", headers=socket_headers) as socket:
+            socket.send_json({"operation": "extension", "phase": "popup-create", "status": "ok", "elapsed_ms": 31})
+            with pytest.raises(WebSocketDisconnect) as ended:
+                socket.receive_text()
+            assert ended.value.code == 1000
+    assert caplog.messages == ["event=sign_in_phase operation=extension phase=popup-create status=ok elapsed_ms=31"]
+
+
+def test_a_helper_first_ceremony_read_is_timed_once_from_the_open_browser_step(caplog):
+    import logging
+    from app.onboarding import timing
+    timing.reset()
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    clock = iter([10.0, 10.25, 10.5])
+    timing.entry_served("operation-1", clock=lambda: 9.0)
+    timing.entry_ready("operation-1", clock=lambda: next(clock))
+    timing.entry_served("operation-1", clock=lambda: next(clock))
+    timing.entry_served("operation-1", clock=lambda: next(clock))
+    assert caplog.messages == ["event=sign_in_phase operation=helper phase=pickup status=ok elapsed_ms=250"]
+
+
 def test_browser_payload_and_observation_are_closed_and_role_scoped(tmp_path):
     setup = browser_setup.__wrapped__(tmp_path)
     coordinator, tasks, native, _ = setup
@@ -127,3 +180,84 @@ def test_completed_authentication_payload_withdraws_launch_authority(tmp_path, m
         assert value["ceremony"] is None and value["task"]["state"] == "completed"
         assert {key: item for key, item in value["task"].items() if key != "state"} == {
             key: item for key, item in before["task"].items() if key != "state"}
+
+
+def test_sign_in_payload_without_a_ceremony_waits_only_while_its_operation_prepares(tmp_path):
+    coordinator, ceremonies, _, operation, _, _ = ceremony_setup.__wrapped__(tmp_path)
+    tasks = BrowserTasks(coordinator.admissions, extension_id="a" * 32)
+    task_id = tasks.prepare(operation, "browser.authentication")
+    native = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(), role="desktop")
+    entry = coordinator.admissions.reissue_task_entry(native.identifier, generation=native.generation, task_id=task_id)
+    browser = coordinator.admissions.consume(entry, role="browser_task")
+    app = FastAPI()
+    app.include_router(browser_router(coordinator, tasks, ceremonies))
+    with TestClient(app, base_url=ORIGIN) as client:
+        response = client.get("/api/v1/browser-tasks/payload", headers=headers(browser))
+        assert response.status_code == 200
+        VALIDATOR.validate(response.json())
+        assert response.json()["ceremony"] is None and response.json()["task"]["state"] == "pending"
+        with coordinator.store.database.transaction() as connection:
+            connection.execute("UPDATE desktop_setup_operations SET state='outcome_unknown' WHERE operation_id=?",
+                (operation["operation_id"],))
+        assert client.get("/api/v1/browser-tasks/payload", headers=headers(browser)).status_code == 409
+
+def test_stage_marks_are_recorded_together_only_when_every_label_is_closed(tmp_path, caplog):
+    import logging
+    from starlette.websockets import WebSocketDisconnect
+    from app.transport.companion_origin import CompanionOriginBoundary
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, _, _ = setup
+    _, _, browser = asyncio.run(browser_access(setup))
+    app = FastAPI()
+    app.add_middleware(CompanionOriginBoundary)
+    app.include_router(browser_router(coordinator, tasks, None))
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    mark = lambda operation, phase: {"operation": operation, "phase": phase, "status": "ok", "elapsed_ms": 5}
+    socket_headers = {"Host": "127.0.0.1:17871", "Origin": "chrome-extension://" + "a" * 32}
+    path = "/api/v1/browser-tasks/timing"
+    helper_app = FastAPI()
+    helper_app.include_router(browser_router(coordinator, tasks, None))
+    with TestClient(helper_app, base_url=ORIGIN) as client:
+        good = {"marks": [mark("helper", "stream-wake"), mark("helper", "attach-sent"), mark("helper", "auth-idle")]}
+        assert client.post(path, json=good, headers=headers(browser)).status_code == 204
+        bad = {"marks": [mark("helper", "stream-wake"), mark("helper", "popup-create")]}
+        assert client.post(path, json=bad, headers=headers(browser)).status_code == 400
+    with TestClient(app, base_url="http://127.0.0.1:17871") as client:
+        with client.websocket_connect(path, headers=socket_headers) as socket:
+            socket.send_json({"marks": [mark("extension", "attach-received"), mark("extension", "ahead-changed-tab"),
+                                        mark("extension", "auth-published"), mark("extension", "navigate-sent")]})
+            with pytest.raises(WebSocketDisconnect) as ended:
+                socket.receive_text()
+            assert ended.value.code == 1000
+        with client.websocket_connect(path, headers=socket_headers) as socket:
+            socket.send_json({"marks": [mark("extension", "read-done"), {**mark("extension", "attach-done"), "url": "x"}]})
+            with pytest.raises(WebSocketDisconnect) as ended:
+                socket.receive_text()
+            assert ended.value.code == 1008
+    assert [message.split(" ")[2] for message in caplog.messages] == ["phase=stream-wake", "phase=attach-sent",
+        "phase=auth-idle", "phase=attach-received", "phase=ahead-changed-tab", "phase=auth-published", "phase=navigate-sent"]
+
+
+@pytest.mark.parametrize("phase", ["popup-close-observed", "popup-end-requested", "popup-saved-end-requested",
+    "popup-expiry-requested", "popup-waiting-end-requested", "popup-waiting-restart-requested",
+    "popup-navigation-failed", "popup-helper-end-received", "popup-paired-end-received"])
+def test_popup_lifecycle_marks_accept_no_identifiers(tmp_path, phase, caplog):
+    import logging
+    from starlette.websockets import WebSocketDisconnect
+    from app.transport.companion_origin import CompanionOriginBoundary
+    coordinator, tasks, _, _ = browser_setup.__wrapped__(tmp_path)
+    app = FastAPI()
+    app.add_middleware(CompanionOriginBoundary)
+    app.include_router(browser_router(coordinator, tasks, None))
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    mark = {"operation": "extension", "phase": phase, "status": "ok", "elapsed_ms": 0}
+    socket_headers = {"Host": "127.0.0.1:17871", "Origin": "chrome-extension://" + "a" * 32}
+    with TestClient(app, base_url="http://127.0.0.1:17871") as client:
+        for extra, code in [({}, 1000), ({"window_id": 1}, 1008)]:
+            with client.websocket_connect("/api/v1/browser-tasks/timing", headers=socket_headers) as socket:
+                socket.send_json({**mark, **extra})
+                with pytest.raises(WebSocketDisconnect) as ended:
+                    socket.receive_text()
+                assert ended.value.code == code
+    assert len(caplog.messages) == 1
+    assert "phase=" + phase in caplog.messages[0]

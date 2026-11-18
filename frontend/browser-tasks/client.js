@@ -1,20 +1,29 @@
-import { isPayloadProjection, UUID } from '../../shared/browser-tasks/wire.mjs';
+import { isPayloadProjection, isPreparingPayload, UUID } from '../../shared/browser-tasks/wire.mjs';
 import { parseOnboardingJson } from '../../shared/onboarding/json.mjs';
-import { connectExtension, reattachExtension } from './extension.js';
+import { connectExtension, openWaiting, reattachExtension } from './extension.js';
 import { readBrowserTaskEvents } from './events.js';
 
 const AUTHENTICATION_POLL_MS = 500;
+// A sign-in task can open before its ceremony exists. Its helper reads again until the ceremony arrives.
+export const PREPARING_POLL_MS = 100;
+export const PREPARING_LIMIT_MS = 120000;
 // While the helper stream is healthy the payload read is only a safety check.
 export const STREAM_POLL_MS = 15000;
 const STREAM_RETRY_CAP_MS = 5000;
+// An extension that is reloading may miss a helper's request to close. It is asked again, a few times.
+export const CLOSE_RETRY_MS = 1000;
+const CLOSE_ATTEMPTS = 3;
 // Reasons a helper reports to Brain before it asks the extension to close it.
-const ENDINGS = ['profile_mismatch', 'account_mismatch', 'task_changed', 'task_expired', 'unavailable'];
+const ENDINGS = ['profile_mismatch', 'account_mismatch', 'task_changed', 'task_expired', 'unavailable', 'auth_access_required'];
+// Why the extension cannot open a sign-in, as the desktop shows it.
+const ACCESS_REASONS = { 'needs-account': 'needs_account', 'needs-consent': 'needs_consent', 'needs-permission': 'needs_permission' };
 
 export class BrowserTaskClient {
   constructor({ generation, receive, request = globalThis.fetch.bind(globalThis), connect = connectExtension,
-    reattach = reattachExtension, events = readBrowserTaskEvents, now = Date.now, nativeLaunch = false }) {
+    reattach = reattachExtension, events = readBrowserTaskEvents, now = Date.now, nativeLaunch = false, wait = openWaiting }) {
     if (!UUID.test(generation)) throw new Error('session_unavailable');
-    Object.assign(this, { generation, receive, request, connect, reattach, events, now });
+    Object.assign(this, { generation, receive, request, connect, reattach, events, now, wait });
+    this.waiting = null; this.preparedLink = null; this.stages = [];
     this.link = null; this.expiry = null; this.session = null; this.payload = null; this.serial = Promise.resolve(); this.run = 0;
     this.pollTimer = null; this.stream = null; this.streamTimer = null; this.streaming = false;
     this.pollBase = this.pollDelay = 2000;
@@ -28,7 +37,8 @@ export class BrowserTaskClient {
   }
   /** Report why this helper ended, then ask the extension to close it. An error that would be lost stays shown. */
   async end(state) {
-    const reason = state === 'unavailable' && !this.extensionSeen ? 'extension_unavailable' : state;
+    const reason = state === 'unavailable' && !this.extensionSeen ? 'extension_unavailable'
+      : state === 'auth_access_required' ? ACCESS_REASONS[this.extensionState] ?? 'unavailable' : state;
     let reported = false;
     try { if (this.session) { await this.json('ended', { reason }); reported = true; } } catch { /* not recorded */ }
     // Without an extension nothing can close this tab. It stays as the install surface.
@@ -39,9 +49,30 @@ export class BrowserTaskClient {
     await this.reattachOnce('close');
   }
   async reattachOnce(type) {
-    if (this.reattached || !this.payload) return false;
+    // A helper that ended while its sign-in was prepared closes with the task it read.
+    const payload = this.payload ?? (type === 'close' ? this.declared : null);
+    if (this.reattached || !payload) return false;
     this.reattached = true;
-    return this.reattach({ payload: this.payload, type }).catch(() => false);
+    for (let attempt = 1; ; attempt++) {
+      const done = await this.reattach({ payload, type }).catch(() => false);
+      if (done || type !== 'close' || attempt === CLOSE_ATTEMPTS) return done;
+      await new Promise(resolve => { setTimeout(resolve, CLOSE_RETRY_MS); });
+    }
+  }
+  /** A sign-in helper the desktop opened records its loading steps, timed from its navigation start unless given. */
+  loaded(phase, elapsed = globalThis.performance?.now?.()) {
+    if (!this.automatic || !this.session || this.payload !== null || !Number.isFinite(elapsed)) return;
+    void this.json('timing', { operation: 'helper', phase, status: 'ok', elapsed_ms: Math.round(elapsed) }).catch(() => {});
+  }
+  /** Sign-in stage marks of a desktop-opened helper, timed from navigation start and sent together once it attached. */
+  stage(phase) {
+    const elapsed = globalThis.performance?.now?.();
+    if (!this.automatic || !Number.isFinite(elapsed) || this.stages.length >= 8) return;
+    this.stages.push({ operation: 'helper', phase, status: 'ok', elapsed_ms: Math.round(elapsed) });
+  }
+  flushStages() {
+    const marks = this.stages.splice(0);
+    if (marks.length && this.session) void this.json('timing', { marks }).catch(() => {});
   }
   async json(path, body) {
     const response = await this.request('/api/v1/browser-tasks/' + path, { credentials: 'same-origin', redirect: 'error', cache: 'no-store',
@@ -64,33 +95,61 @@ export class BrowserTaskClient {
     this.extensionState = null;
     this.authNotification = null;
     this.authState = null;
+    this.openedSent = false;
     this.pairStarted = false;
     this.pairFinished = false;
     this.pairCodeSent = false;
     this.ending = null;
+    this.declared = null;
+    this.stages = [];
     this.receive({ state: 'loading' });
     try {
-      const session = await this.json('session');
+      // The payload read needs no session value, so both reads run together. The payload is used only after the session checks.
+      const took = {};
+      const timed = path => {
+        const begun = globalThis.performance?.now?.();
+        return this.json(path).then(value => { took[path] = globalThis.performance?.now?.() - begun; return value; });
+      };
+      const [session, first] = await Promise.all([timed('session'), timed('payload')]);
       if (run !== this.run) return;
       if (session.role !== 'browser_task' || session.generation !== this.generation
         || !/^[A-Za-z0-9_-]{43}$/u.test(session.csrf_token)) throw new Error('task_changed');
       this.session = session;
-      const payload = await this.json('payload');
-      if (run !== this.run) return;
+      // Each first read records its own round trip; the payload step stays timed from navigation start.
+      this.loaded('session-get', took.session);
+      this.loaded('payload-get', took.payload);
+      this.loaded('payload');
+      const payload = await this.prepared(run, first);
+      if (run !== this.run || payload === null) return;
       if (!isPayloadProjection(payload) || payload.task.admission_generation !== this.generation || payload.task.task_id !== session.task_id
         || payload.task.journey_id !== session.journey_id) throw new Error('task_changed');
       this.payload = payload;
       // A sign-in popup closes when this read sees its task end.
       this.fallbackPoll = payload.task.purpose === 'browser.authentication' ? AUTHENTICATION_POLL_MS : 2000;
-      this.pollBase = this.pollDelay = this.fallbackPoll;
+      this.pollBase = this.pollDelay = this.streaming ? STREAM_POLL_MS : this.fallbackPoll;
       if (this.finishCompleted(payload)) return;
       const remaining = payload.task.expires_at * 1000 - this.now();
       if (remaining <= 0 || remaining > 1800000) throw new Error('task_expired');
       this.expiry = setTimeout(() => { this.stop(); this.receive({ state: 'task_expired', payload }); }, remaining);
-      this.link = this.lastLink = this.connect({ payload, receive: value => {
+      const early = this.preparedLink;
+      this.preparedLink = null;
+      const attach = receive => (typeof early?.attach === 'function' && early.attach(payload, receive) ? early
+        : (early?.close?.(), this.connect({ payload, receive })));
+      const attaching = attach(value => {
         if (run !== this.run) return;
+        // The ceremony has taken over the waiting window, or this sign-in will not open it.
+        if (!['ready', 'paused', 'auth_idle'].includes(value.state)) this.releaseWaiting();
         if (value.state !== 'unavailable') this.extensionSeen = true;
         this.extensionState = value.state;
+        if (payload.task.purpose === 'browser.authentication' && value.state === 'auth_idle' && this.automatic) {
+          this.stage('auth-idle');
+          this.flushStages();
+        }
+        if (value.state === 'auth_opening' && payload.task.purpose === 'browser.authentication' && !this.openedSent) {
+          // The desktop's backstop learns that this sign-in's popup opened.
+          this.openedSent = true;
+          void this.json('opened', {}).catch(() => {});
+        }
         if (!['ready', 'paused', 'auth_idle'].includes(value.state)) {
           this.automatic = false;
           this.automaticPending = false;
@@ -223,12 +282,60 @@ export class BrowserTaskClient {
             this.complete('reported', payload);
           }
         }).catch(error => { if (run === this.run) { this.stop(); this.receive({ state: error.message, payload }); } });
-      } });
+      });
+      this.link = this.lastLink = attaching;
+      this.stage('attach-sent');
+      this.flushStages();
       this.schedulePoll(run);
-      this.listen(run);
+      // A stream opened during preparation stays this generation's only stream.
+      if (!this.stream) this.listen(run);
     } catch (error) {
       if (run === this.run) { this.stop(); this.receive({ state: ['task_changed', 'task_expired'].includes(error.message) ? error.message : 'service_unavailable', payload: this.payload }); }
     }
+  }
+  /** Waits while Brain prepares the ceremony of an already admitted sign-in task.
+   * A sign-in that opens itself shows the extension's waiting window meanwhile. The extension only reads ahead. */
+  async prepared(run, first) {
+    let current = first;
+    const started = this.now();
+    const own = isPreparingPayload(first) && first.task.admission_generation === this.generation
+      && first.task.task_id === this.session.task_id && first.task.journey_id === this.session.journey_id;
+    if (own) this.declared = first;
+    if (this.automatic && own) { this.waiting = this.wait({ payload: first }); this.loaded('waiting'); }
+    // The extension reads ahead on the port this helper attaches with once the ceremony exists.
+    if (own) this.preparedLink = this.connect({ payload: first, prepare: true, receive: () => {} });
+    while (isPreparingPayload(current)) {
+      if (current.task.admission_generation !== this.generation || current.task.task_id !== this.session.task_id
+        || current.task.journey_id !== this.session.journey_id
+        || first !== current && ['task_id', 'journey_id', 'operation_id', 'purpose', 'scope_digest', 'source_revision', 'expires_at']
+          .some(key => current.task[key] !== first.task[key])) throw new Error('task_changed');
+      if (current.task.expires_at * 1000 <= this.now()) throw new Error('task_expired');
+      if (this.now() - started >= PREPARING_LIMIT_MS) throw new Error('service_unavailable');
+      // The task's stream says when its payload changed. The timer reads only while that stream is down.
+      if (!this.stream) this.listen(run);
+      await this.preparingWake(this.streaming ? STREAM_POLL_MS : PREPARING_POLL_MS);
+      if (run !== this.run) return null;
+      const next = await this.json('payload');
+      if (run !== this.run) return null;
+      if (!isPreparingPayload(next)) this.stage('payload-ready');
+      if (isPayloadProjection(next) && ['task_id', 'journey_id', 'operation_id', 'purpose', 'scope_digest', 'source_revision', 'expires_at']
+        .some(key => next.task[key] !== first.task[key])) throw new Error('task_changed');
+      current = next;
+    }
+    return current;
+  }
+  /** Resolves on the next frame for this task, or after the delay. A frame during a read is kept for the next wait. */
+  preparingWake(delay) {
+    if (this.preparingChanged) { this.preparingChanged = false; return Promise.resolve(); }
+    return new Promise(resolve => {
+      const wake = () => { clearTimeout(this.pollTimer); if (this.wakePreparing === wake) this.wakePreparing = null; resolve(); };
+      this.wakePreparing = wake;
+      this.pollTimer = setTimeout(wake, delay);
+    });
+  }
+  preparingFrame() {
+    if (this.wakePreparing) this.wakePreparing();
+    else this.preparingChanged = true;
   }
   listen(run) {
     const controller = new AbortController();
@@ -251,11 +358,27 @@ export class BrowserTaskClient {
   streamHealth(run, healthy) {
     if (run !== this.run || this.streaming === healthy) return;
     this.streaming = healthy;
+    if (!this.payload) {
+      // A preparing helper whose stream dropped reads again at once, then on its short timer.
+      if (!healthy) this.preparingFrame();
+      return;
+    }
     this.pollBase = this.pollDelay = healthy ? STREAM_POLL_MS : this.fallbackPoll;
     this.schedulePoll(run);
   }
   frame(run, value) {
-    if (run !== this.run || !this.payload || value.task_id !== this.payload.task.task_id) return;
+    if (run !== this.run) return;
+    if (value.type === 'end' && value.task_id === this.session?.task_id) {
+      // The desktop gave up on this sign-in and shows its own error. This helper closes.
+      const payload = this.payload;
+      this.stop(); this.receive({ state: 'task_changed', payload });
+      return;
+    }
+    if (!this.payload) {
+      if (value.type === 'task' && value.task_id === this.session?.task_id) { this.stage('stream-wake'); this.preparingFrame(); }
+      return;
+    }
+    if (value.task_id !== this.payload.task.task_id) return;
     if (value.type === 'focus') {
       this.serial = this.serial.then(async () => {
         if (run !== this.run || await this.link?.focus?.() !== true || run !== this.run) return;
@@ -349,7 +472,10 @@ export class BrowserTaskClient {
     this.receive({ state, payload });
     // A helper whose port died earlier makes one fresh attachment to finish.
     void Promise.resolve(link?.finish ? link.finish() : false).catch(() => false)
-      .then(finished => { link?.close(); if (finished !== true && state === 'task_completed') return this.reattachOnce('finish'); });
+      .then(finished => {
+        link?.close();
+        if (finished !== true) return this.reattachOnce(state === 'task_completed' ? 'finish' : 'close');
+      });
   }
   async open() {
     const run = this.run;
@@ -375,9 +501,17 @@ export class BrowserTaskClient {
       return false;
     }
   }
+  releaseWaiting() {
+    const waiting = this.waiting;
+    this.waiting = null;
+    waiting?.close();
+  }
   stop() {
+    this.releaseWaiting();
+    this.preparedLink?.close(); this.preparedLink = null;
     this.nativeLaunch = false; this.automatic = false; this.run++; this.link?.close(); this.link = null;
     clearTimeout(this.expiry); clearTimeout(this.pollTimer); clearTimeout(this.streamTimer);
     this.stream?.abort(); this.stream = null; this.streaming = false;
+    this.wakePreparing = null; this.preparingChanged = false;
   }
 }

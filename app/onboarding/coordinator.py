@@ -6,7 +6,7 @@ import json
 import random
 import time
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Protocol
+from typing import AsyncIterator, Callable, Protocol
 
 from app.onboarding import timing
 from app.onboarding.admission import AdmittedSession, ScopedAdmissions
@@ -21,6 +21,7 @@ FACTS = ("browser_access", "installation", "account", "configuration", "enrollme
 FACT_STATES = frozenset({"unknown", "missing", "verified", "paused"})
 RECOVERY_INTERVAL_SECONDS = 15
 WAIT_BACKOFF_CAP_SECONDS = 15
+CONFIRMATION_BACKOFF_CAP_SECONDS = 60
 
 
 class CommandRefused(ValueError):
@@ -104,13 +105,23 @@ class DesktopOnboardingCoordinator:
         self._watcher: asyncio.Task | None = None
         self._closed = False
         self._retry_at: dict[str, float] = {}
+        self._retry_failures: dict[str, int] = {}
+        self._accepting: set[asyncio.Task] = set()
         self._probes: dict[str, asyncio.Task] = {}
         self._probe_at: dict[str, float] = {}
         self._waits: dict[str, asyncio.Task] = {}
         self._held: set[str] = set()
         self._wake: asyncio.Event | None = None
         self._dirty: dict[str, bool] = {}
+        # The wait frame behind the next hinted run, and the frame outcome a hinted read already closed a task on.
+        self._hint_frames: dict[str, tuple] = {}
+        self._closed_on: dict[str, str | None] = {}
         self._prefetches: dict[str, asyncio.Task] = {}
+        self._prefetch_wake: dict[str, asyncio.Event] = {}
+        self._confirmation_at: dict[str, float] = {}
+        self._wait_marks: dict[tuple[str | None, str], float | None] = {}
+        # Presentation-only notice of a freshly accepted command; it never changes the operation.
+        self.accepted: Callable[[dict], None] | None = None
 
     def _current(self, connection, session):
         row, parent = self.admissions._require(connection, session.identifier, role="desktop", generation=session.generation)
@@ -126,7 +137,8 @@ class DesktopOnboardingCoordinator:
 
     def read(self, session: AdmittedSession, *, actor=None) -> dict:
         """No journal writes, owner work, task creation or network calls."""
-        with self.store.database.read() as connection:
+        # The owner's reads for this snapshot share its connection.
+        with self.store.database.shared_reads(), self.store.database.read() as connection:
             return self._snapshot(connection, self._current(connection, session), actor=actor)
 
     def _snapshot(self, connection, session, *, actor=None, view=None):
@@ -192,7 +204,10 @@ class DesktopOnboardingCoordinator:
                 for action, permitted in (("auth.select", "select"), ("auth.cancel", "cancel"), ("auth.switch", "switch_account")):
                     if authentication["actions"][permitted]:
                         actions.append(action)
-        actions = [name for name in actions if all(item["action"] != name for item in pending)]
+        actions = [name for name in actions if all(item["action"] != name or (
+            name == "auth.select" and authentication is not None
+            and authentication["state"] == "reauthentication-required" and authentication["actions"]["select"]
+            and item["operation_id"] == authentication["browser_operation_id"]) for item in pending)]
         if view.permitted_actions is not None:
             actions = [name for name in actions if name in view.permitted_actions]
         return validate({"profile": SNAPSHOT_PROFILE, "kind": "snapshot", "journey_id": journey_id,
@@ -276,6 +291,13 @@ class DesktopOnboardingCoordinator:
             # The journal cannot silently jump from one selected workspace to another.
             connection.execute("UPDATE desktop_presentations SET journey_id=? WHERE generation=?",
                                (journey, current.generation))
+            if (action == "auth.select" and authentication["state"] == "reauthentication-required"
+                    and authentication["actions"]["select"]):
+                # The replacement click retires only the ended selection's local receipt.
+                connection.execute("UPDATE desktop_setup_operations SET state='refused',reason='operation_unconfirmed' "
+                    "WHERE operation_id=? AND journey_id=? AND action='auth.select' "
+                    "AND state IN ('accepted','waiting','outcome_unknown')",
+                    (authentication["browser_operation_id"], journey))
             connection.execute("INSERT INTO desktop_setup_operations VALUES (?,?,?,?,?,?,?,?,'accepted','none',?,?)",
                 (command["operation_id"], journey, command["action"], request_digest, current.generation,
                  expected["scope_digest"], expected["revision"], canonical(accepted.scope).decode(), now, current.expires_at))
@@ -288,12 +310,25 @@ class DesktopOnboardingCoordinator:
         validate(command, kind="command")
         if self._closed:
             raise CommandRefused("setup_unavailable")
-        operation, fresh = self._accept(session, command, actor=actor)
-        if fresh:
-            events.publish()
-            self._start(operation, reconcile=False, actor=actor)
+        async def accept():
+            # The accept is durable before this returns. Its transaction runs off the event loop.
+            operation, fresh = await asyncio.to_thread(self._accept, session, command, actor=actor)
+            if fresh:
+                events.publish()
+                if self.accepted is not None:
+                    try:
+                        self.accepted(operation)
+                    except Exception:
+                        pass
+                if not self._closed:
+                    self._start(operation, reconcile=False, actor=actor)
+            return operation
         # HTTP cancellation cannot cancel accepted domain work. A duplicate only
         # observes its receipt; it never starts a second worker.
+        task = asyncio.create_task(accept())
+        self._accepting.add(task)
+        task.add_done_callback(self._accepting.discard)
+        operation = await asyncio.shield(task)
         return self._public(operation)
 
     async def reconcile(self, session, operation_id, *, actor=None):
@@ -319,7 +354,17 @@ class DesktopOnboardingCoordinator:
         def finished(worker):
             if self._workers.get(operation_id) is worker:
                 self._workers.pop(operation_id, None)
-                self._retry_at[operation_id] = asyncio.get_running_loop().time() + RECOVERY_INTERVAL_SECONDS
+                try:
+                    result = worker.result()
+                except (Exception, asyncio.CancelledError):
+                    result = OperationResult("outcome_unknown", "operation_unconfirmed")
+                failures = self._retry_failures.get(operation_id, 0) if result is not None and result.state == "outcome_unknown" else 0
+                self._retry_at[operation_id] = asyncio.get_running_loop().time() + min(
+                    CONFIRMATION_BACKOFF_CAP_SECONDS, RECOVERY_INTERVAL_SECONDS * 2 ** min(failures, 2))
+                if result is not None and result.state == "outcome_unknown":
+                    self._retry_failures[operation_id] = min(failures + 1, 2)
+                else:
+                    self._retry_failures.pop(operation_id, None)
                 if operation_id in self._dirty:
                     dirty_hint = self._dirty.pop(operation_id)
                     if not self._closed:
@@ -332,14 +377,27 @@ class DesktopOnboardingCoordinator:
 
     async def _run(self, operation, *, reconcile, actor, hint=False, queued=None):
         timing.observe("worker", "entry", "ok", 0 if queued is None else (time.monotonic() - queued) * 1000)
+        operation_id = operation["operation_id"]
+        frame = self._hint_frames.pop(operation_id, None) if hint else None
+        result = None
         try:
             if hint and getattr(self.owner, "reconcile_hint", None) is not None:
+                if (frame is not None and operation_id in self._closed_on and self._closed_on[operation_id] == frame[2]
+                        and self._probe_interval(operation) is None):
+                    # A hinted read already closed this task on the same outcome. Nothing is left to read.
+                    return
                 closed = await self.owner.reconcile_hint(operation)
                 if closed is False:
                     self._prefetch(operation)
                     return
+                if closed is True:
+                    self._closed_on[operation_id] = None if frame is None else frame[2]
+                    if operation["action"] in {"auth.select", "auth.switch"}:
+                        # The read that closed the task admitted this child's own attempt, which completes it.
+                        result = OperationResult("completed")
                 # A completed task is published before the remaining owner reads.
-            result = await self.owner.execute(operation, reconcile=reconcile, actor=actor)
+            if result is None:
+                result = await self.owner.execute(operation, reconcile=reconcile, actor=actor)
         except asyncio.CancelledError:
             self._settle(operation, OperationResult("outcome_unknown", "operation_unconfirmed"))
             raise
@@ -349,6 +407,7 @@ class DesktopOnboardingCoordinator:
         self._settle(operation, result)
         if result.state != "outcome_unknown":
             await self._refresh_authentication_parent(operation)
+        return result
 
     def _authentication_parent(self, operation):
         if self._closed or operation["action"] not in {"auth.select", "auth.cancel", "auth.switch"}:
@@ -416,72 +475,117 @@ class DesktopOnboardingCoordinator:
             self._start(operation, reconcile=True, actor=None)
         self._watcher = asyncio.create_task(self._watch())
 
+    def _pass_facts(self):
+        """The store reads of one watch pass: each pending operation with its recovery, probe and observation."""
+        facts = []
+        for operation in self._pending():
+            recover = getattr(self.owner, "automatic_recovery", None)
+            try:
+                recoverable = bool(recover is not None and recover(operation))
+            except Exception:
+                recoverable = False
+            waiting = getattr(self.owner, "waiting_for_sign_in", None)
+            if recoverable and waiting is not None:
+                try:
+                    recoverable = not waiting(operation)
+                except Exception:
+                    pass
+            interval = self._probe_interval(operation) if recoverable else None
+            try:
+                observed = self.owner.observe(operation)
+            except Exception:
+                # One unavailable authority must not stop reconciliation
+                # for every later event. No observation proves rollback.
+                observed = OperationResult("outcome_unknown", "operation_unconfirmed")
+            facts.append((operation, recoverable, interval, observed, self._confirmation_deadline(operation)))
+        return facts
+
     async def _watch(self):
         listener = events.subscribe()
         signal = self._wake = listener[1]
         try:
             while not self._closed:
                 signal.clear()
-                pending = self._pending()
-                pending_ids = {operation["operation_id"] for operation in pending}
+                started = time.monotonic()
+                # The pass reads off the event loop. A commit during the read wakes the next pass.
+                facts = await asyncio.to_thread(self._pass_facts)
+                if self._closed:
+                    break
+                pending_ids = {operation["operation_id"] for operation, *_ in facts}
                 self._retry_at = {key: value for key, value in self._retry_at.items() if key in pending_ids}
+                self._retry_failures = {key: value for key, value in self._retry_failures.items() if key in pending_ids}
                 self._probe_at = {key: value for key, value in self._probe_at.items() if key in pending_ids}
+                self._hint_frames = {key: value for key, value in self._hint_frames.items() if key in pending_ids}
+                self._closed_on = {key: value for key, value in self._closed_on.items() if key in pending_ids}
+                self._confirmation_at = {key: value for key, value in self._confirmation_at.items() if key in pending_ids}
+                self._wait_marks = {key: value for key, value in self._wait_marks.items() if key[0] in pending_ids}
                 for operation_id in [key for key in self._waits if key not in pending_ids]:
                     self._waits.pop(operation_id).cancel()
-                retry_delays = []
-                for operation in pending:
-                    recover = getattr(self.owner, "automatic_recovery", None)
-                    try:
-                        recoverable = recover is not None and recover(operation)
-                    except Exception:
-                        recoverable = False
-                    if recoverable and self._probe_interval(operation) is not None:
+                retry_delays, remaining, recovery = [], [], False
+                for operation, recoverable, interval, observed, confirmation in facts:
+                    operation_id = operation["operation_id"]
+                    now = self.admissions._now()
+                    expired = self._confirmation_at.get(operation_id, float("inf")) <= now
+                    if expired:
+                        self._confirmation_at.pop(operation_id, None)
+                        timing.observe("worker", "expiry", "ok", 0)
+                        self._start(operation, reconcile=True, actor=None)
+                    if confirmation is None:
+                        self._confirmation_at.pop(operation_id, None)
+                    if confirmation is not None:
+                        self._confirmation_at[operation_id] = confirmation
+                        prefetch = self._prefetches.get(operation_id)
+                        if prefetch is not None:
+                            prefetch.cancel()
+                        retry_delays.append(max(0, confirmation - now))
+                    if recoverable and (confirmation is None or operation_id not in self._waits):
+                        recovery = True
+                    if recoverable and interval is not None:
                         self._hold_wait(operation)
-                    try:
-                        observed = self.owner.observe(operation)
-                    except Exception:
-                        # One unavailable authority must not stop reconciliation
-                        # for every later event. No observation proves rollback.
-                        observed = OperationResult("outcome_unknown", "operation_unconfirmed")
+                    if interval is None:
+                        wait = self._waits.pop(operation_id, None)
+                        if wait is not None:
+                            wait.cancel()
+                        prefetch = self._prefetches.get(operation_id)
+                        if prefetch is not None:
+                            prefetch.cancel()
                     if observed is not None:
                         self._settle(operation, observed)
-                    elif operation["operation_id"] not in self._workers:
-                        recover = getattr(self.owner, "automatic_recovery", None)
-                        try:
-                            recoverable = recover is not None and recover(operation)
-                        except Exception:
-                            recoverable = False
-                        if recoverable:
-                            # Only domain-approved recovery of accepted work. No
-                            # new command, browser window or presentation is created.
-                            clock = asyncio.get_running_loop().time()
-                            interval = self._probe_interval(operation)
-                            if interval is not None:
-                                self._hold_wait(operation)
-                                if operation["operation_id"] in self._held:
-                                    # A healthy held wait replaces both the probe
-                                    # and the slow retry for this sign-in.
-                                    continue
-                                # A cheap read replaces the slow full retry while
-                                # its sign-in is open. A change starts the full read.
-                                if operation["operation_id"] not in self._probes:
-                                    due = self._probe_at.setdefault(operation["operation_id"], clock + interval)
-                                    if due <= clock:
-                                        self._start_probe(operation, interval)
-                                    else:
-                                        retry_delays.append(due - clock)
-                                continue
-                            if operation["operation_id"] in self._waits:
-                                self._waits.pop(operation["operation_id"]).cancel()
-                            due = self._retry_at.setdefault(operation["operation_id"], clock + RECOVERY_INTERVAL_SECONDS)
-                            if due <= clock:
-                                self._start(operation, reconcile=True, actor=None)
-                            else:
-                                retry_delays.append(due - clock)
-                deadlines = [operation["expires_at"] - self.admissions._now() for operation in self._pending()
-                    if operation["expires_at"] > self.admissions._now()]
+                        continue
+                    remaining.append(operation)
+                    if operation["operation_id"] not in self._workers and recoverable:
+                        # Only domain-approved recovery of accepted work. No
+                        # new command, browser window or presentation is created.
+                        clock = asyncio.get_running_loop().time()
+                        if interval is not None and operation_id in self._held:
+                            # The held wait replaces probes and retries.
+                            continue
+                        if confirmation is not None and operation_id in self._waits:
+                            # The wait owns recovery and backoff during confirmation.
+                            continue
+                        if interval is not None and confirmation is None:
+                            # A cheap read replaces the slow full retry while
+                            # its sign-in is open. A change starts the full read.
+                            if operation["operation_id"] not in self._probes:
+                                due = self._probe_at.setdefault(operation["operation_id"], clock + interval)
+                                if due <= clock:
+                                    self._start_probe(operation, interval)
+                                else:
+                                    retry_delays.append(due - clock)
+                            continue
+                        due = self._retry_at.setdefault(operation["operation_id"], clock + RECOVERY_INTERVAL_SECONDS)
+                        if due <= clock:
+                            timing.observe("worker", "retry", "ok", 0)
+                            self._start(operation, reconcile=True, actor=None)
+                        else:
+                            retry_delays.append(due - clock)
+                elapsed = (time.monotonic() - started) * 1000
+                if elapsed >= timing.SLOW_MS:
+                    timing.observe("snapshot", "watch", "ok", elapsed)
+                now = self.admissions._now()
+                deadlines = [operation["expires_at"] - now for operation in remaining if operation["expires_at"] > now]
                 deadlines.extend(retry_delays)
-                if pending:
+                if facts and recovery:
                     # Pairing and source owners can expire before the enclosing
                     # desktop command. Observe their result without requiring a
                     # renderer poll or replaying a protected command.
@@ -496,16 +600,41 @@ class DesktopOnboardingCoordinator:
         finally:
             self._wake = None
             events.unsubscribe(listener)
-
     def _probe_interval(self, operation):
         interval = getattr(self.owner, "probe_interval", None)
         if interval is None or getattr(self.owner, "probe", None) is None:
+            self._wait_mark(operation, "eligibility", None)
             return None
         try:
             value = interval(operation)
         except Exception:
+            timing.observe("wait", "eligibility-error", "error", 0)
             return None
-        return value if isinstance(value, (int, float)) and value > 0 else None
+        result = value if isinstance(value, (int, float)) and value > 0 else None
+        self._wait_mark(operation, "eligibility", result)
+        return result
+
+    def _confirmation_deadline(self, operation):
+        deadline = getattr(self.owner, "confirmation_deadline", None)
+        try:
+            value = None if deadline is None else deadline(operation)
+        except Exception:
+            timing.observe("wait", "eligibility-error", "error", 0)
+            return None
+        result = value if type(value) in {int, float} and value > self.admissions._now() else None
+        self._wait_mark(operation, "confirmation", result)
+        return result
+
+    def _wait_mark(self, operation, kind, value):
+        key = operation.get("operation_id"), kind
+        if key in self._wait_marks and self._wait_marks[key] == value:
+            return
+        if len(self._wait_marks) >= 256:
+            self._wait_marks.pop(next(iter(self._wait_marks)))
+        self._wait_marks[key] = value
+        phase = (("eligible" if value is not None else "ineligible") if kind == "eligibility"
+            else ("confirmation-live" if value is not None else "confirmation-absent"))
+        timing.observe("wait", phase, "ok", 0)
 
     def _start_probe(self, operation, interval):
         operation_id = operation["operation_id"]
@@ -522,6 +651,7 @@ class DesktopOnboardingCoordinator:
                 changed, delay = True, RECOVERY_INTERVAL_SECONDS
             self._probe_at[operation_id] = asyncio.get_running_loop().time() + delay
             if changed and not self._closed:
+                timing.observe("worker", "probe", "ok", 0)
                 self._start(operation, reconcile=True, actor=None)
 
         task = asyncio.create_task(run())
@@ -539,9 +669,9 @@ class DesktopOnboardingCoordinator:
         operation_id = operation["operation_id"]
         if self._closed or operation_id in self._waits or getattr(self.owner, "wait", None) is None:
             return
+        timing.observe("wait", "entry", "ok", 0)
         task = asyncio.create_task(self._run_wait(operation))
         self._waits[operation_id] = task
-        self._prefetch(operation)
 
         def finished(wait):
             if self._waits.get(operation_id) is wait:
@@ -553,53 +683,97 @@ class DesktopOnboardingCoordinator:
         task.add_done_callback(finished)
 
     def _prefetch(self, operation):
+        """Keep one fresh read challenge while this sign-in can still be open."""
         operation_id = operation["operation_id"]
-        if self._closed or operation_id in self._prefetches or getattr(self.owner, "prefetch", None) is None:
+        if self._closed or getattr(self.owner, "prefetch", None) is None:
             return
+        if operation_id in self._prefetches:
+            self._prefetch_wake[operation_id].set()
+            return
+        wake = self._prefetch_wake[operation_id] = asyncio.Event()
 
         async def run():
             try:
-                await self.owner.prefetch(operation)
+                while not self._closed:
+                    if self._confirmation_deadline(operation) is not None or self._probe_interval(operation) is None:
+                        return
+                    wake.clear()
+                    delay = await self.owner.prefetch(operation)
+                    if (isinstance(delay, bool) or not isinstance(delay, (int, float)) or not 0 < delay < 3600
+                            or self._probe_interval(operation) is None):
+                        return
+                    try:
+                        await asyncio.wait_for(wake.wait(), delay)
+                    except TimeoutError:
+                        pass
+                    if self._probe_interval(operation) is None:
+                        return
             except Exception:
                 pass
             finally:
                 self._prefetches.pop(operation_id, None)
+                self._prefetch_wake.pop(operation_id, None)
 
         self._prefetches[operation_id] = asyncio.create_task(run())
 
     async def _run_wait(self, operation):
-        operation_id, attempt, last = operation["operation_id"], 0, None
+        operation_id, attempt, last, read = operation["operation_id"], 0, None, False
         while not self._closed and self._probe_interval(operation) is not None:
-            delay = None
+            delay, framed = None, False
+            timing.observe("wait", "reopen", "ok", 0)
             try:
                 async for hint in self.owner.wait(operation):
                     timing.observe("wait", "frame", "ok", 0)
+                    if not framed:
+                        self._prefetch(operation)
+                    framed, read = True, False
                     if operation_id not in self._held:
                         self._held.add(operation_id)
                         self._probe_at.pop(operation_id, None)
-                        attempt = 0
+                        if self._confirmation_deadline(operation) is None:
+                            attempt = 0
                     if hint != last:
                         last = hint
                         timing.mark(operation_id, "frame")
-                        self._reconcile_soon(operation)
+                        self._reconcile_soon(operation, frame=hint)
             except asyncio.CancelledError:
                 raise
             except CeremonyWaitUnavailable as error:
+                timing.observe("wait", "unavailable", "error", 0)
                 delay = error.retry_after
             except Exception:
                 # A lost wait proves nothing. The probe resumes at once.
+                timing.observe("wait", "failed", "error", 0)
                 pass
             finally:
+                timing.observe("wait", "released", "ok", 0)
                 self._held.discard(operation_id)
                 if self._wake is not None:
                     self._wake.set()
-            if delay is None:
+            if self._closed or self._probe_interval(operation) is None:
+                return
+            confirmation = self._confirmation_deadline(operation) is not None
+            if confirmation or not framed and not read:
+                # A failed confirmation wait gets one recovery read.
+                read = True
+                timing.observe("wait", "fallback", "ok", 0)
+                self._reconcile_soon(operation)
+            if confirmation:
+                delay = max(delay or 0, min(CONFIRMATION_BACKOFF_CAP_SECONDS,
+                    RECOVERY_INTERVAL_SECONDS * 2 ** min(attempt, 2)))
+            elif delay is None:
                 delay = min(WAIT_BACKOFF_CAP_SECONDS, 0.25 * 2 ** attempt) * random.uniform(0.5, 1.0)
             attempt += 1
-            await asyncio.sleep(delay)
+            with timing.phase("wait", "backoff"):
+                await asyncio.sleep(delay)
 
-    def _reconcile_soon(self, operation):
+    def _reconcile_soon(self, operation, frame=None):
         """Reconcile now, or once more after a running reconciliation whose read may predate the hint."""
+        timing.observe("worker", "wait-fallback" if frame is None else "wait-frame", "ok", 0)
+        if frame is None:
+            self._hint_frames.pop(operation["operation_id"], None)
+        else:
+            self._hint_frames[operation["operation_id"]] = frame
         self._start(operation, reconcile=True, actor=None, hint=True)
 
     async def drain(self):

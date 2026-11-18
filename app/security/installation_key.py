@@ -9,6 +9,7 @@ import json
 import os
 import secrets
 import struct
+import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -46,6 +47,8 @@ _NCRYPT_PERSIST_FLAG = 0x80000000
 _NCRYPT_SILENT_FLAG = 0x00000040
 _NTE_EXISTS = 0x8009000F
 _NTE_BAD_KEYSET = 0x80090016
+# Serializes key preparation across authority instances in this process.
+_PREPARATION_LOCK = threading.Lock()
 _P256_ORDER = int(
     "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551",
     16,
@@ -321,30 +324,38 @@ class InstallationKeyAuthority:
         self._provider = provider
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
+    @timing.measured("key", "ensure")
     def ensure_ready(self) -> InstallationKeyReference:
+        with _PREPARATION_LOCK:
+            return self._ensure_ready()
+
+    def _ensure_ready(self) -> InstallationKeyReference:
         active = self._store.installation_key_reference()
         reservation = self._store.installation_key_reservation()
         if reservation is None:
-            reservation = self._store.reserve_installation_key(
-                InstallationKeyReservation(
-                    provider_name=PLATFORM_CRYPTO_PROVIDER,
-                    provider_key_name=f"bridge-clean.installation.v1.{uuid4()}",
-                    algorithm=INSTALLATION_KEY_ALGORITHM,
-                    created_at=self._now(),
+            with timing.phase("key", "reserve"):
+                reservation = self._store.reserve_installation_key(
+                    InstallationKeyReservation(
+                        provider_name=PLATFORM_CRYPTO_PROVIDER,
+                        provider_key_name=f"bridge-clean.installation.v1.{uuid4()}",
+                        algorithm=INSTALLATION_KEY_ALGORITHM,
+                        created_at=self._now(),
+                    )
                 )
-            )
         self._require_reservation_policy(reservation)
 
-        info = self._provider.key_info(reservation.provider_key_name)
+        with timing.phase("key", "lookup"):
+            info = self._provider.key_info(reservation.provider_key_name)
         if info is None:
             if active is not None:
                 raise InstallationKeyUnavailable(
                     "The persisted installation key is no longer available"
                 )
             try:
-                info = self._provider.create_non_exportable_key(
-                    reservation.provider_key_name
-                )
+                with timing.phase("key", "create"):
+                    info = self._provider.create_non_exportable_key(
+                        reservation.provider_key_name
+                    )
             except InstallationKeyAlreadyExists:
                 info = self._provider.key_info(reservation.provider_key_name)
                 if info is None:
@@ -362,12 +373,23 @@ class InstallationKeyAuthority:
 
         self._prove_usable(reference)
         if active is None:
-            self._store.activate_installation_key(reference)
+            with timing.phase("key", "activate"):
+                self._store.activate_installation_key(reference)
         return reference
 
     @timing.measured("key", "reopen")
     def reopen_existing(self) -> InstallationKeyReference:
         """Verify the activated key without reserving, creating or activating one."""
+        reference = self._active_reference()
+        self._prove_usable(reference)
+        return reference
+
+    @timing.measured("key", "reopen")
+    def signing_reference(self) -> InstallationKeyReference:
+        """Verify the activated key for a proof its caller checks against the public key before sending."""
+        return self._active_reference()
+
+    def _active_reference(self) -> InstallationKeyReference:
         reference = self._store.installation_key_reference()
         if reference is None:
             raise InstallationKeyUnavailable("The installation key is not active")
@@ -386,7 +408,6 @@ class InstallationKeyAuthority:
             raise InstallationKeyPolicyError(
                 "The persisted installation key does not match its durable reference"
             )
-        self._prove_usable(reference)
         return reference
 
     @timing.measured("key", "sign")

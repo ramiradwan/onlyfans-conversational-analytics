@@ -122,9 +122,13 @@ def test_open_mints_an_entry_only_without_a_session_or_live_helper(tmp_path, mon
     path = "/api/v1/desktop/browser-tasks/" + task["task_id"] + "/open"
     with TestClient(app, base_url=ORIGIN) as client:
         assert client.post(path, json={}, headers=headers(browser)).status_code == 401
+        launched = tasks.launch_signal(task["operation_id"])
+        assert not launched.is_set()
         response = client.post(path, json={}, headers=headers(native))
         assert response.status_code == 200
         assert set(response.json()) == {"state", "entry_code"} and response.json()["state"] == "entry"
+        # The returned route lets the click's deferred key preparation start.
+        assert launched.is_set()
         # The reissue fenced the earlier helper generation.
         assert client.get("/api/v1/browser-tasks/payload", headers=headers(browser)).status_code == 401
         tasks.complete(task["operation_id"])
@@ -203,6 +207,22 @@ def test_ended_records_one_display_notice_and_changes_no_task_state(tmp_path):
         assert client.get("/api/v1/desktop/browser-tasks/notices", headers=headers(browser)).status_code == 401
 
 
+@pytest.mark.parametrize("reason", ["needs_account", "needs_consent", "needs_permission"])
+def test_a_helper_reports_why_the_extension_cannot_open_its_task(tmp_path, reason):
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, native, _ = setup
+    _, task, browser = asyncio.run(browser_access(setup))
+    app = FastAPI()
+    app.include_router(browser_router(coordinator, tasks, None))
+    with TestClient(app, base_url=ORIGIN) as client:
+        before = task_row(coordinator, browser)["state"]
+        assert client.post("/api/v1/browser-tasks/ended", json={"reason": reason},
+                           headers=headers(browser)).status_code == 200
+        assert task_row(coordinator, browser)["state"] == before
+        notices = client.get("/api/v1/desktop/browser-tasks/notices", headers=headers(native))
+        assert notices.json() == {"notices": [{"task_id": task["task_id"], "reason": reason}]}
+
+
 @pytest.mark.asyncio
 async def test_the_desktop_stream_shows_a_helper_notice_and_its_clearing(tmp_path):
     setup = browser_setup.__wrapped__(tmp_path)
@@ -225,3 +245,275 @@ async def test_the_desktop_stream_shows_a_helper_notice_and_its_clearing(tmp_pat
         assert (event, value) == ("browser-notices", {"notices": []})
     finally:
         await served.close()
+
+
+def test_open_of_a_sign_in_task_still_preparing_mints_no_entry(tmp_path):
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, native, _ = setup
+    _, task, browser = asyncio.run(browser_access(setup))
+
+    async def dispatcher(request, session, task_id):
+        return "preparing"
+
+    tasks.dispatcher = dispatcher
+    with coordinator.store.database.transaction() as connection:
+        connection.execute("UPDATE desktop_browser_tasks SET purpose='browser.authentication' WHERE task_id=?",
+                           (task["task_id"],))
+    app = FastAPI()
+    app.include_router(browser_router(coordinator, tasks, None))
+    path = "/api/v1/desktop/browser-tasks/" + task["task_id"] + "/open"
+    with TestClient(app, base_url=ORIGIN) as client:
+        assert client.post(path, json={}, headers=headers(native)).json() == {"state": "unavailable"}
+    with coordinator.store.database.read() as connection:
+        assert connection.execute("SELECT count(*) FROM desktop_admission_entries").fetchone()[0] == 0
+
+
+def test_a_preparing_sign_in_poll_reads_its_payload_through_one_store_connection(tmp_path, monkeypatch):
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, _, _ = setup
+    _, task, browser = asyncio.run(browser_access(setup))
+    with coordinator.store.database.transaction() as connection:
+        connection.execute("UPDATE desktop_browser_tasks SET purpose='browser.authentication' WHERE task_id=?",
+                           (task["task_id"],))
+
+    class Preparing:
+        def browser_entry(self, operation_id):
+            with coordinator.store.database.read() as connection:
+                connection.execute("SELECT 1 FROM desktop_setup_operations WHERE operation_id=?", (operation_id,))
+            return None
+
+    database, opened = coordinator.store.database, []
+    connect = database.connect
+    monkeypatch.setattr(database, "connect", lambda *args, **kwargs: opened.append(1) or connect(*args, **kwargs))
+    app = FastAPI()
+    app.include_router(browser_router(coordinator, tasks, Preparing()))
+    with TestClient(app, base_url=ORIGIN) as client:
+        opened.clear()
+        response = client.get("/api/v1/browser-tasks/payload", headers=headers(browser))
+        assert response.status_code == 200 and response.json()["ceremony"] is None
+        assert response.json()["task"]["task_id"] == task["task_id"]
+        assert len(opened) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_preparing_sign_in_stream_frames_its_entry_opening_without_a_state_change(tmp_path):
+    from app.provisioning.events import events
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, _, _ = setup
+    _, task, browser = await browser_access(setup)
+    opened = [False]
+    served = Served(BrowserTaskEventResponse(coordinator, browser, task_row(coordinator, browser), tasks.helpers,
+                                             entry=lambda row: opened[0])).start()
+    try:
+        assert (await served.frame())[1]["state"] == "pending"
+        events.publish()
+        with pytest.raises(TimeoutError):
+            await served.frame(timeout=0.2)
+        opened[0] = True
+        events.publish()
+        event, value = await served.frame()
+        assert event == "browser-task"
+        assert value == {"task_id": task["task_id"], "admission_generation": browser.generation, "state": "pending"}
+    finally:
+        await served.close()
+
+
+@pytest.mark.asyncio
+async def test_open_reissues_at_once_for_a_sign_in_helper_still_waiting_for_its_ceremony(tmp_path):
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, native, _ = setup
+    _, task, browser = await browser_access(setup)
+    with coordinator.store.database.transaction() as connection:
+        connection.execute("UPDATE desktop_browser_tasks SET purpose='browser.authentication' WHERE task_id=?",
+                           (task["task_id"],))
+
+    class Preparing:
+        def browser_entry(self, operation_id):
+            return None
+
+    served = Served(BrowserTaskEventResponse(coordinator, browser, task_row(coordinator, browser), tasks.helpers)).start()
+    try:
+        await served.frame()
+        app = FastAPI()
+        app.include_router(browser_router(coordinator, tasks, Preparing()))
+        import httpx
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
+            response = await asyncio.wait_for(client.post("/api/v1/desktop/browser-tasks/" + task["task_id"] + "/open",
+                                                          json={}, headers=headers(native)), 1)
+        assert response.json()["state"] == "entry"
+    finally:
+        await served.close()
+
+@pytest.mark.asyncio
+async def test_a_helper_stream_reads_its_task_off_the_event_loop_and_keeps_a_wake_from_that_read(tmp_path):
+    import threading
+    from app.provisioning.events import events
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, _, _ = setup
+    _, task, browser = await browser_access(setup)
+    loop_thread, threads, opened = threading.get_ident(), [], [False, False]
+
+    def entry(row):
+        threads.append(threading.get_ident())
+        if opened[1]:
+            # A commit lands while this read is in flight. Its wake must reach the next pass.
+            opened[0], opened[1] = True, False
+            events.publish()
+            return False
+        return opened[0]
+
+    served = Served(BrowserTaskEventResponse(coordinator, browser, task_row(coordinator, browser), tasks.helpers,
+                                             entry=entry)).start()
+    try:
+        assert (await served.frame())[1]["state"] == "pending"
+        opened[1] = True
+        events.publish()
+        event, value = await served.frame()
+        assert event == "browser-task" and value["state"] == "pending"
+        assert opened == [True, False] and len(threads) >= 3
+        assert loop_thread not in threads
+    finally:
+        await served.close()
+
+class Opened:
+    """A sign-in ceremony whose entry exists."""
+
+    def browser_entry(self, operation_id):
+        return {"entry": "served"}
+
+
+async def sign_in_entry(tmp_path, monkeypatch, *, seconds=0.1):
+    monkeypatch.setattr(helper_events, "BACKSTOP_SECONDS", seconds)
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, native, _ = setup
+    _, task, browser = await browser_access(setup)
+    with coordinator.store.database.transaction() as connection:
+        connection.execute("UPDATE desktop_browser_tasks SET purpose='browser.authentication' WHERE task_id=?",
+                           (task["task_id"],))
+    app = FastAPI()
+    app.include_router(browser_router(coordinator, tasks, Opened()))
+    return coordinator, tasks, native, task, browser, app
+
+
+def notices_of(tasks, task):
+    return tasks.helpers.notices({task["task_id"]})
+
+
+@pytest.mark.asyncio
+async def test_serving_an_open_sign_in_entry_starts_its_accepted_handoff_wait(tmp_path, monkeypatch):
+    import httpx
+    coordinator, _, _, task, browser, app = await sign_in_entry(tmp_path, monkeypatch, seconds=60)
+    served = []
+    coordinator.owner.entry_served = served.append
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
+            assert (await client.get("/api/v1/browser-tasks/payload", headers=headers(browser))).status_code == 200
+        assert served == [task["operation_id"]]
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_served_sign_in_that_never_opens_shows_unavailable_and_ends_its_helper(tmp_path, monkeypatch):
+    import httpx
+    coordinator, tasks, native, task, browser, app = await sign_in_entry(tmp_path, monkeypatch)
+    served = Served(BrowserTaskEventResponse(coordinator, browser, task_row(coordinator, browser), tasks.helpers)).start()
+    try:
+        await served.frame()
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
+            assert (await client.get("/api/v1/browser-tasks/payload", headers=headers(browser))).status_code == 200
+        before = task_row(coordinator, browser)["state"]
+        event, value = await served.frame(timeout=0.3)
+        assert (event, value) == ("browser-task-end", {"task_id": task["task_id"], "admission_generation": browser.generation})
+        assert notices_of(tasks, task) == [{"task_id": task["task_id"], "reason": "unavailable"}]
+        assert task_row(coordinator, browser)["state"] == before
+        await asyncio.wait_for(served.task, 1)
+    finally:
+        await served.close()
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_reported_as_task_changed_gives_way_to_the_backstop_notice(tmp_path, monkeypatch):
+    import httpx
+    coordinator, tasks, native, task, browser, app = await sign_in_entry(tmp_path, monkeypatch)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
+        assert (await client.get("/api/v1/browser-tasks/payload", headers=headers(browser))).status_code == 200
+        # The helper of a refused attach reports task_changed and closes. The app shows nothing for it.
+        assert (await client.post("/api/v1/browser-tasks/ended", json={"reason": "task_changed"},
+                                  headers=headers(browser))).status_code == 200
+        await asyncio.sleep(0.3)
+    assert notices_of(tasks, task) == [{"task_id": task["task_id"], "reason": "unavailable"}]
+
+
+@pytest.mark.asyncio
+async def test_a_shown_helper_notice_is_kept_when_the_backstop_fires(tmp_path, monkeypatch):
+    import httpx
+    coordinator, tasks, native, task, browser, app = await sign_in_entry(tmp_path, monkeypatch)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
+        assert (await client.get("/api/v1/browser-tasks/payload", headers=headers(browser))).status_code == 200
+        assert (await client.post("/api/v1/browser-tasks/ended", json={"reason": "needs_account"},
+                                  headers=headers(browser))).status_code == 200
+        await asyncio.sleep(0.3)
+    assert notices_of(tasks, task) == [{"task_id": task["task_id"], "reason": "needs_account"}]
+
+
+@pytest.mark.asyncio
+async def test_an_opened_popup_stops_the_backstop_and_a_late_one_changes_nothing(tmp_path, monkeypatch):
+    import httpx
+    coordinator, tasks, native, task, browser, app = await sign_in_entry(tmp_path, monkeypatch)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
+        assert (await client.get("/api/v1/browser-tasks/payload", headers=headers(browser))).status_code == 200
+        assert (await client.post("/api/v1/browser-tasks/opened", json={}, headers=headers(browser))).json() == {"state": "opened"}
+        await asyncio.sleep(0.3)
+        assert notices_of(tasks, task) == []
+    coordinator, tasks, native, task, browser, app = await sign_in_entry(tmp_path / "late", monkeypatch)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
+        assert (await client.get("/api/v1/browser-tasks/payload", headers=headers(browser))).status_code == 200
+        await asyncio.sleep(0.3)
+        assert (await client.post("/api/v1/browser-tasks/opened", json={}, headers=headers(browser))).status_code == 200
+        assert notices_of(tasks, task) == [{"task_id": task["task_id"], "reason": "unavailable"}]
+
+
+@pytest.mark.asyncio
+async def test_the_backstop_of_a_settled_or_replaced_attempt_does_nothing(tmp_path, monkeypatch):
+    import httpx
+    coordinator, tasks, native, task, browser, app = await sign_in_entry(tmp_path, monkeypatch)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
+        assert (await client.get("/api/v1/browser-tasks/payload", headers=headers(browser))).status_code == 200
+        tasks.complete(task["operation_id"])
+        await asyncio.sleep(0.3)
+    assert notices_of(tasks, task) == []
+    coordinator, tasks, native, task, browser, app = await sign_in_entry(tmp_path / "replaced", monkeypatch)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
+        assert (await client.get("/api/v1/browser-tasks/payload", headers=headers(browser))).status_code == 200
+        # Try again reissues the entry. The earlier generation's timer no longer speaks for the task.
+        coordinator.admissions.reissue_task_entry(native.identifier, generation=native.generation, task_id=task["task_id"])
+        await asyncio.sleep(0.3)
+    assert notices_of(tasks, task) == []
+
+
+def test_a_sign_in_payload_read_records_its_queue_wait_and_handler_time(tmp_path, caplog):
+    import logging
+    import re
+    setup = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, _, _ = setup
+    _, task, browser = asyncio.run(browser_access(setup))
+
+    class Preparing:
+        def browser_entry(self, operation_id):
+            return None
+
+    app = FastAPI()
+    app.include_router(browser_router(coordinator, tasks, Preparing()))
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    with TestClient(app, base_url=ORIGIN) as client:
+        # A browser-access helper polls for a long time and records nothing.
+        assert client.get("/api/v1/browser-tasks/payload", headers=headers(browser)).status_code == 200
+        assert not caplog.messages
+        with coordinator.store.database.transaction() as connection:
+            connection.execute("UPDATE desktop_browser_tasks SET purpose='browser.authentication' WHERE task_id=?",
+                               (task["task_id"],))
+        assert client.get("/api/v1/browser-tasks/payload", headers=headers(browser)).status_code == 200
+    assert [re.sub(r"elapsed_ms=\d+", "elapsed_ms=n", message) for message in caplog.messages] == [
+        "event=sign_in_phase operation=helper phase=payload-queue status=ok elapsed_ms=n",
+        "event=sign_in_phase operation=helper phase=payload-handler status=ok elapsed_ms=n"]

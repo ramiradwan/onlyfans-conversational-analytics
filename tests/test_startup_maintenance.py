@@ -37,6 +37,20 @@ def test_fresh_inspection_does_not_create_root_key_configuration_or_database(tmp
     assert not root.exists()
 
 
+def test_sign_in_timing_diagnostics_do_not_block_a_fresh_root(tmp_path, monkeypatch):
+    from app.onboarding import timing
+    root = tmp_path / "fresh"
+    root.mkdir()
+    monkeypatch.setattr(timing, "_sink", None)
+    timing.record_to(root)
+    timing.observe("key", "sign", "ok", 3)
+    assert (root / "diagnostics" / "sign-in-timing.log").is_file()
+    assert inspect_retained_state(root).mode == "fresh"
+    (root / "unrelated").mkdir()
+    with pytest.raises(StartupRefused, match="retained_root_unrecognized"):
+        inspect_retained_state(root)
+
+
 @pytest.mark.parametrize('payload', [b'', b'interrupted-encrypted-restore'])
 def test_restore_journal_refuses_before_provisioning_or_key_access(tmp_path, monkeypatch, payload):
     from app.core import startup_maintenance

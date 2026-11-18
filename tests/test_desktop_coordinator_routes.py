@@ -32,6 +32,18 @@ def test_phase_observation_is_scoped_closed_and_has_no_authority(setup, caplog):
     assert caplog.messages == ["event=sign_in_phase operation=frontend phase=command-send status=ok elapsed_ms=12"]
 
 
+def test_launch_steps_are_recorded_and_helper_steps_are_not_accepted_here(setup, caplog):
+    import logging
+    coordinator, owner, session, _ = setup
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    with client_for(coordinator, session) as client:
+        for phase, status in (("task-found", 204), ("launch", 204), ("waiting", 400), ("payload", 400)):
+            value = {"operation": "frontend", "phase": phase, "status": "ok", "elapsed_ms": 40}
+            assert client.post("/api/v1/desktop/setup/timing", json=value).status_code == status, phase
+    assert caplog.messages == ["event=sign_in_phase operation=frontend phase=task-found status=ok elapsed_ms=40",
+        "event=sign_in_phase operation=frontend phase=launch status=ok elapsed_ms=40"]
+
+
 def client_for(coordinator, session):
     app = FastAPI()
     app.include_router(desktop_router(coordinator))
@@ -114,6 +126,57 @@ async def test_event_subscribes_before_read_and_retains_changes_while_sending(se
 
 
 @pytest.mark.asyncio
+async def test_event_snapshot_reads_leave_the_event_loop_free(setup):
+    import threading
+    coordinator, _, session, _ = setup
+    response = DesktopEventResponse(coordinator, session, actor=lambda: None, active=set(), deadline=lambda: 1000)
+    loop = asyncio.get_running_loop()
+    original = coordinator.read
+    observed = []
+
+    def read(*args, **kwargs):
+        # Other loop work, such as a sign-in effect's result, runs while the snapshot is read.
+        ran = threading.Event()
+        loop.call_soon_threadsafe(ran.set)
+        observed.append(ran.wait(1))
+        return original(*args, **kwargs)
+
+    coordinator.read = read
+
+    async def send(message):
+        if message["type"] == "http.response.body" and message["body"].startswith(b"event: setup"):
+            raise OSError("disconnected")
+
+    async def receive():
+        await asyncio.Event().wait()
+
+    with pytest.raises(ClientDisconnect):
+        await asyncio.wait_for(response({"type": "http", "asgi": {"spec_version": "2.4"}}, receive, send), 5)
+    assert observed == [True]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("actions", "warmed"), [(["account.connect"], 1), (["auth.select"], 1), ([], 0)])
+async def test_a_view_that_can_start_a_sign_in_warms_the_hosted_connection(setup, actions, warmed):
+    coordinator, _, session, _ = setup
+    calls = []
+    response = DesktopEventResponse(coordinator, session, actor=lambda: None, active=set(), deadline=lambda: 1000,
+                                    warm=lambda: calls.append(1))
+    coordinator.read = lambda *args, **kwargs: {"allowed_actions": actions}
+
+    async def send(message):
+        if message["type"] == "http.response.body" and message["body"].startswith(b"event: setup"):
+            raise OSError("disconnected")
+
+    async def receive():
+        await asyncio.Event().wait()
+
+    with pytest.raises(ClientDisconnect):
+        await asyncio.wait_for(response({"type": "http", "asgi": {"spec_version": "2.4"}}, receive, send), 5)
+    assert len(calls) == warmed
+
+
+@pytest.mark.asyncio
 async def test_event_subscription_released_if_headers_cannot_be_sent(setup):
     coordinator, _, session, _ = setup
     active = set()
@@ -129,3 +192,40 @@ async def test_event_subscription_released_if_headers_cannot_be_sent(setup):
     with pytest.raises(ClientDisconnect):
         await response({"type": "http", "asgi": {"spec_version": "2.4"}}, receive, send)
     assert not active and len(events._listeners) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wake", ["timeout", "event"])
+@pytest.mark.parametrize("bound", ["session", "runtime"])
+async def test_planned_stream_end_rechecks_deadlines_before_another_read(setup, monkeypatch, wake, bound):
+    from datetime import datetime, timezone
+    coordinator, _, session, clock = setup
+    deadline, reads, original = [1000], [], coordinator.read
+
+    def read(*args, **kwargs):
+        reads.append(True)
+        return original(*args, **kwargs)
+
+    async def wait(awaitable, seconds):
+        awaitable.close()
+        if bound == "session":
+            clock[0] = datetime.fromtimestamp(session.expires_at, timezone.utc)
+        else:
+            deadline[0] = 0
+        if wake == "timeout":
+            raise TimeoutError
+
+    coordinator.read = read
+    response = DesktopEventResponse(coordinator, session, actor=lambda: None, active=set(), deadline=lambda: deadline[0])
+    response.listener = events.subscribe()
+    frames = response.frames()
+    try:
+        assert (await anext(frames)).startswith("event: setup\n")
+        monkeypatch.setattr("app.onboarding.routes.asyncio.wait_for", wait)
+        assert await anext(frames) == "event: setup-end\ndata: {}\n\n"
+        with pytest.raises(StopAsyncIteration):
+            await anext(frames)
+        assert reads == [True]
+    finally:
+        await frames.aclose()
+        events.unsubscribe(response.listener)

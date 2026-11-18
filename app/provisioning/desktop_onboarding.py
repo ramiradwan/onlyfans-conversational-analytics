@@ -1,9 +1,10 @@
 """Restricted desktop setup composition, with no runtime settings or analytics graph."""
 from __future__ import annotations
 
+import asyncio
 import json
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from app.onboarding import timing
@@ -17,8 +18,12 @@ from app.provisioning.owner_effects import OwnerEffects
 from app.provisioning.progress import scoped_durable_provisioning_progress
 from app.provisioning.state import local_setup_facts
 from app.provisioning.setup_sources import SetupSourceLifecycle
+from app.security.browser_authentication import BrowserAuthenticationRefused
 from app.security.hosted_grants import HostedGrantUnavailable
 from app.security.installation_key import InstallationKeyError
+
+# Key preparation for browser access starts once its launch returns, or after this many seconds.
+KEY_AFTER_LAUNCH_SECONDS = 2.0
 
 
 class ProvisioningSetupOwner:
@@ -32,6 +37,7 @@ class ProvisioningSetupOwner:
         self.sources = SetupSourceLifecycle(store, self.journeys, self.contexts)
         self.progress = scoped_durable_provisioning_progress(lambda: store)
         self._effects = OwnerEffects()
+        self._key_task, self._key_launch, self._key_closed = None, None, False
         # Effect threads recheck their original domain context at admission.
         from threading import RLock
         gate = RLock()
@@ -128,7 +134,7 @@ class ProvisioningSetupOwner:
         except OnboardingJourneyUnavailable:
             journey = None
             reason = "authority_unavailable"
-        browser = self.browser_tasks.read(journey_id)
+        browser = self.browser_tasks.progress(journey_id)
         progress, creator, selection_reason = self._selection(journey, browser)
         recovery = self._recovery(journey_id, source_journey, connection=connection) if journey is None else None
         if recovery is not None:
@@ -205,6 +211,11 @@ class ProvisioningSetupOwner:
                 raise CommandRefused("authority_unavailable") from None
             connection.execute("UPDATE desktop_setup_journeys SET source_journey_id=? WHERE journey_id=?", (source, journey_id))
             row = connection.execute("SELECT * FROM onboarding_journeys WHERE journey_id=?", (source,)).fetchone()
+            if (action == "account.connect" and row["kind"] == "initial-enrollment" and row["state"] == "new"
+                    and row["operation_id"] is None and row["prepare_json"] is None):
+                # Refresh only the local draft during explicit admission.
+                connection.execute("UPDATE onboarding_journeys SET expires_at=? WHERE journey_id=?",
+                    ((self.store._now() + timedelta(minutes=30)).isoformat(), source))
             accepted.update(source_journey_id=source, journey_kind=row["kind"],
                 journey_revision=row["revision"], installation_id=row["installation_id"])
             if row["kind"] == "registered-continuation":
@@ -217,7 +228,7 @@ class ProvisioningSetupOwner:
     def observe(self, operation):
         scope = json.loads(operation["owner_scope_json"])
         if operation["action"] == "browser.access":
-            observed = self.browser_tasks.read(operation["journey_id"])
+            observed = self.browser_tasks.progress(operation["journey_id"])
             if observed is not None and observed["state"] in {"ready", "paused"}:
                 return OperationResult("completed")
             if operation["expires_at"] <= self.store._now().timestamp():
@@ -247,11 +258,31 @@ class ProvisioningSetupOwner:
                         and source.operation_id is None and not self._work()
                         and source.expires_at <= self.store._now()):
                     return OperationResult("refused", "operation_expired")
-            view = self.read(operation["journey_id"])
-            if (view.facts["account"] == "verified" and view.facts["installation"] == "verified"
-                    and view.scope["creator_account_id"] == scope["creator_account_id"]):
+            creator = self._verified_creator(operation["journey_id"])
+            if creator is not None and creator == scope["creator_account_id"]:
                 return OperationResult("completed")
         return None
+
+    def _verified_creator(self, journey_id):
+        """The creator when `read` would show a verified account and installation, else None."""
+        # Only the account and installation facts of the view, so a pass during sign-in reads little.
+        source_journey = self._source(journey_id)
+        try:
+            journey = self._journey(source_journey)
+        except OnboardingJourneyUnavailable:
+            return None
+        if journey is None or journey.state in {"expired", "revoked"}:
+            return None
+        progress, creator, _ = self._selection(journey, self.browser_tasks.read(journey_id))
+        if progress["stage"] != "finalization_ready" or creator is None:
+            return None
+        try:
+            verified_grant_bindings(store=self.store, request=FinalizationRequest(progress["association_request_id"], creator),
+                trusted_journey_id=source_journey if journey.kind == "registered-continuation" else None)
+        except (FinalizationRefused, ValueError):
+            return None
+        facts = local_setup_facts(self.store, journey={"kind": journey.kind, "state": journey.state})
+        return creator if facts["installation"] == "verified" else None
 
     def _finalized(self, scope):
         if not self.completion_ready():
@@ -282,6 +313,15 @@ class ProvisioningSetupOwner:
         authentication = None if self.ceremonies is None else self.ceremonies.authentication
         return None if authentication is None else authentication.probe_interval(operation["operation_id"])
 
+    def confirmation_deadline(self, operation):
+        authentication = None if self.ceremonies is None else self.ceremonies.authentication
+        return None if authentication is None else authentication.confirmation_deadline(operation["operation_id"])
+
+    def waiting_for_sign_in(self, operation):
+        authentication = None if self.ceremonies is None else self.ceremonies.authentication
+        return (operation["action"] == "account.connect" and authentication is not None
+                and authentication.waiting_for_sign_in(operation["operation_id"]))
+
     async def probe(self, operation):
         authentication = self.ceremonies.authentication
         parent = authentication.parent_operation(operation["operation_id"])
@@ -297,15 +337,41 @@ class ProvisioningSetupOwner:
     async def prefetch(self, operation):
         authentication = self.ceremonies.authentication
         parent = authentication.parent_operation(operation["operation_id"])
-        await authentication.prefetch(operation["operation_id"],
+        return await authentication.prefetch(operation["operation_id"],
             authorize=lambda: self._read_guard({"operation_id": parent}))
 
     async def reconcile_hint(self, operation):
         def guard():
-            self._guard(operation)
-            parent = self.ceremonies.authentication.parent_operation(operation["operation_id"])
-            self._read_guard({"operation_id": parent})
+            # Runs before each step of the hinted read, so its checks share one store connection.
+            with self.store.database.read() as connection:
+                self._guard(operation, connection=connection)
+                parent = self.ceremonies.authentication.parent_operation(operation["operation_id"], connection=connection)
+                self._read_guard({"operation_id": parent}, connection)
+        self.hold_reads(operation["operation_id"])
         return await self.ceremonies.authentication.reconcile_task(operation["operation_id"], authorize=guard)
+
+    def hold_reads(self, operation_id):
+        """Fetch the parent's ceremony and decision read challenges while the hinted read runs."""
+        with self.store.database.read() as connection:
+            parent = self.ceremonies.authentication.parent_operation(operation_id, connection=connection)
+            read_guard = lambda: self._read_guard({"operation_id": parent})
+            self.ceremonies.hold_read(parent, authorize=read_guard, connection=connection)
+            if self.ceremonies.decisions is not None:
+                self.ceremonies.decisions.hold_read(parent, authorize=read_guard, connection=connection)
+
+    def entry_served(self, operation_id):
+        if self.ceremonies is None or self.ceremonies.authentication is None or self.initial is None:
+            return
+        parent = self.ceremonies.authentication.parent_operation(operation_id)
+        with self.store.database.read() as connection:
+            operation = connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=? "
+                "AND action='account.connect' AND state IN ('accepted','waiting','outcome_unknown')", (parent,)).fetchone()
+        if operation is None:
+            return
+        selected = json.loads(operation["owner_scope_json"])
+        if selected["journey_kind"] == "initial-enrollment":
+            with timing.phase("source", "resume"):
+                self.initial.resume(selected["source_journey_id"])
 
     def authorize_initial_scope(self, journey_id, scope):
         """Bind initial completion to the accepted intent, including its exact recovery."""
@@ -326,12 +392,16 @@ class ProvisioningSetupOwner:
                 self.completed()
 
     def _guard(self, operation, *, connection=None):
+        if connection is None:
+            # The source checks share one store connection. Each opening re-verifies the store files.
+            with self.store.database.read() as connection:
+                return self._guard(operation, connection=connection)
         selected = json.loads(operation["owner_scope_json"])
         row = self.sources.current(self.sources.effective(selected["source_journey_id"], connection=connection), connection=connection)
         if selected["installation_id"] is not None and row.installation_id != selected["installation_id"]:
             raise HostedGrantUnavailable("Selected installation changed")
         expected_key = selected["key"]
-        current_key = self.store.installation_key_reference()
+        current_key = self.store.installation_key_reference(connection=connection)
         if expected_key is not None and (current_key is None or (
                 expected_key["installation_key_id"], expected_key["installation_key_jkt"]) != (
                 current_key.installation_key_id, current_key.installation_key_jkt)):
@@ -425,23 +495,36 @@ class ProvisioningSetupOwner:
         return recovered["journey_id"]
 
     async def execute(self, operation, *, reconcile, actor=None):
-        observed = self.observe(operation)
+        stale = False
+        recovered = None
+        # The checks that precede the first await share one store connection.
+        with self.store.database.shared_reads():
+            with timing.phase("worker", "observe"):
+                observed = self.observe(operation)
+            if observed is None and operation["action"] == "account.connect":
+                selected = json.loads(operation["owner_scope_json"])
+                source = self.sources.resolve(selected["source_journey_id"])
+                stale = (selected["journey_kind"] == "initial-enrollment" and source is not None
+                         and source.expires_at <= self.store._now()
+                         and self.ceremonies is not None and self.ceremonies.row(operation["operation_id"]) is not None)
+                if not stale:
+                    with timing.phase("worker", "recover"):
+                        recovered = self._recover_initial_source(operation)
         if observed is not None:
             return observed
         if operation["action"] == "browser.access":
             self.browser_tasks.prepare(operation, "browser.access")
+            if not reconcile:
+                self._prepare_missing_key(operation["operation_id"])
             return OperationResult("waiting")
         if operation["action"] == "account.connect":
-            selected = json.loads(operation["owner_scope_json"])
-            source = self.sources.resolve(selected["source_journey_id"])
-            if (selected["journey_kind"] == "initial-enrollment" and source is not None
-                    and source.expires_at <= self.store._now()
-                    and self.ceremonies is not None and self.ceremonies.row(operation["operation_id"]) is not None):
+            if stale:
                 result = await self.ceremonies.reconcile(operation["operation_id"], authorize=lambda: self._read_guard(operation))
                 terminal = await self._terminal_initial_read(operation, result)
                 if terminal is not None:
                     return terminal
-            recovered = self._recover_initial_source(operation)
+                with timing.phase("worker", "recover"):
+                    recovered = self._recover_initial_source(operation)
             if recovered is not None:
                 # The original initial owner replays only its idempotent prepare
                 # or reads its accepted completion receipt. No new ceremony.
@@ -449,12 +532,25 @@ class ProvisioningSetupOwner:
                 return self.observe(operation) or OperationResult("outcome_unknown", "operation_unconfirmed")
             return await self._connect(operation, reconcile=reconcile)
         if operation["action"].startswith("auth.") and self.ceremonies is not None and self.ceremonies.authentication is not None:
-            parent = json.loads(operation["owner_scope_json"])["authentication_intent"]["parent_operation_id"]
-            result = await self.ceremonies.authentication.execute(operation, reconcile=reconcile,
-                authorize=lambda: self._guard(operation), read_guard=lambda: self._read_guard({"operation_id": parent}))
+            intent = json.loads(operation["owner_scope_json"])["authentication_intent"]
+            parent = intent["parent_operation_id"]
+            early = False
+            if not reconcile and intent["verb"] in {"select", "switch"}:
+                with timing.phase("worker", "task"):
+                    early = self.browser_tasks.prepare_early(operation)
+            try:
+                result = await self.ceremonies.authentication.execute(operation, reconcile=reconcile,
+                    authorize=lambda: self._guard(operation), read_guard=lambda: self._read_guard({"operation_id": parent}))
+            except Exception:
+                if early:
+                    self._withdraw_early_task(operation)
+                raise
             entry = self.ceremonies.browser_entry(operation["operation_id"])
             if result.state == "waiting" and entry is not None:
+                timing.entry_ready(operation["operation_id"])
                 self.browser_tasks.prepare(operation, "browser.authentication", deadline=datetime.fromisoformat(entry["expires_at"].replace("Z", "+00:00")).timestamp())
+            elif early and result.state != "waiting":
+                self._withdraw_early_task(operation)
             return result
         if operation["action"] == "account.confirm" and self.ceremonies is not None and self.ceremonies.decisions is not None:
             parent = json.loads(operation["owner_scope_json"])["desktop_decision"]["operation_id"]
@@ -487,35 +583,74 @@ class ProvisioningSetupOwner:
         saved = self.ceremonies.row(operation["operation_id"])
         selected = json.loads(operation["owner_scope_json"])
         source = self.initial if selected["journey_kind"] == "initial-enrollment" else self.registered
-        if saved is None:
-            guard()
-            if self.store._now().timestamp() >= operation["expires_at"]:
-                return OperationResult("refused", "operation_expired")
-            # Source services own their durable operation IDs and lost-send rules.
-            # Retrying here retains that exact source, including on worker restart.
-            with timing.phase("source", "prepare"):
-                await source.prepare(selected["source_journey_id"])
-            guard()
-            with timing.phase("binding", "binding"):
-                binding = self._binding(operation)
-            await self.ceremonies.prepare(operation["operation_id"], binding, authorize=guard)
-        else:
-            result = await self.ceremonies.reconcile(operation["operation_id"], authorize=lambda: self._read_guard(operation))
-            terminal = await self._terminal_initial_read(operation, result)
-            if terminal is not None:
-                return terminal
-        source.resume(selected["source_journey_id"])
         intent = selected.get("authentication_intent")
-        if (saved is None and not reconcile and selected["journey_kind"] == "initial-enrollment"
-                and intent is not None and intent["verb"] == "select"
-                and intent["expected_previous_attempt_id"] is None and self.ceremonies.authentication is not None):
-            authentication = await self.ceremonies.authentication.ensure_initial(operation, authorize=guard,
-                read_guard=lambda: self._read_guard(operation), fresh=True)
-            entry = self.ceremonies.browser_entry(operation["operation_id"])
+        selecting = (saved is None and not reconcile and selected["journey_kind"] == "initial-enrollment"
+                     and intent is not None and intent["verb"] == "select"
+                     and intent["expected_previous_attempt_id"] is None and self.ceremonies.authentication is not None)
+        early = deferred = False
+        try:
+            if saved is None:
+                with self.store.database.shared_reads():
+                    guard()
+                    if self.store._now().timestamp() >= operation["expires_at"]:
+                        return OperationResult("refused", "operation_expired")
+                if selecting:
+                    with timing.phase("worker", "task"):
+                        early = await asyncio.to_thread(self.browser_tasks.prepare_early, operation)
+                # Source services own their durable operation IDs and lost-send rules.
+                # Retrying here retains that exact source, including on worker restart.
+                with timing.phase("source", "prepare"):
+                    if selecting:
+                        # The source wait resumes after the selection, so its store reads
+                        # and requests do not run ahead of the ceremony and selection sends.
+                        await source.prepare(selected["source_journey_id"], resume=False)
+                        deferred = True
+                    else:
+                        await source.prepare(selected["source_journey_id"])
+                with self.store.database.shared_reads():
+                    guard()
+                    with timing.phase("binding", "binding"):
+                        binding = self._binding(operation)
+                await self.ceremonies.prepare(operation["operation_id"], binding, authorize=guard)
+            else:
+                result = await self.ceremonies.reconcile(operation["operation_id"], authorize=lambda: self._read_guard(operation))
+                terminal = await self._terminal_initial_read(operation, result)
+                if terminal is not None:
+                    return terminal
+            if not selecting and not (selected["journey_kind"] == "initial-enrollment" and intent is not None):
+                with timing.phase("source", "resume"):
+                    source.resume(selected["source_journey_id"])
+            if selecting:
+                authentication = await self.ceremonies.authentication.ensure_initial(operation, authorize=guard,
+                    read_guard=lambda: self._read_guard(operation), fresh=True)
+        except Exception:
+            if deferred:
+                with timing.phase("source", "resume"):
+                    source.resume(selected["source_journey_id"])
+            if early:
+                self._withdraw_early_task(operation)
+            raise
+        if selecting:
+            # Store reads between the selection reply and the task run off the event loop.
+            entry = await asyncio.to_thread(self.ceremonies.browser_entry, operation["operation_id"])
+            timing.observe("authentication-select", "entry-pending" if entry is None else "entry-open", "ok", 0)
+            if entry is None and authentication is not None and authentication["state"] not in {"expired", "unavailable"}:
+                # A selection reply can precede its browser step; one current read can open it at once.
+                try:
+                    authentication = await self.ceremonies.authentication.refresh(operation["operation_id"],
+                        authorize=lambda: self._read_guard(operation))
+                except (HostedGrantUnavailable, BrowserAuthenticationRefused):
+                    pass
+                entry = await asyncio.to_thread(self.ceremonies.browser_entry, operation["operation_id"])
+                timing.observe("authentication-read", "entry-pending" if entry is None else "entry-open", "ok", 0)
             if entry is not None:
-                self.browser_tasks.prepare(operation, "browser.authentication", deadline=datetime.fromisoformat(
-                    entry["expires_at"].replace("Z", "+00:00")).timestamp())
+                timing.entry_ready(operation["operation_id"])
+                await asyncio.to_thread(self.browser_tasks.prepare, operation, "browser.authentication",
+                    deadline=datetime.fromisoformat(entry["expires_at"].replace("Z", "+00:00")).timestamp())
             waiting = entry is not None or authentication is not None and authentication["state"] not in {"expired", "unavailable"}
+            if early and not waiting:
+                # A waiting selection can receive its ceremony on a later read, so its task stays.
+                self._withdraw_early_task(operation)
             return OperationResult("waiting" if waiting else "outcome_unknown",
                                    "none" if waiting else "operation_unconfirmed")
         authentication = None
@@ -526,7 +661,7 @@ class ProvisioningSetupOwner:
             operation["operation_id"], authorize=lambda: self._read_guard(operation))
         if self.ceremonies.authentication is not None and decision is not None and decision["state"] == "awaiting-authentication":
             authentication = await self.ceremonies.authentication.ensure_initial(operation, authorize=guard,
-                read_guard=lambda: self._read_guard(operation))
+                read_guard=lambda: self._read_guard(operation), current=authentication)
         entry = self.ceremonies.browser_entry(operation["operation_id"])
         if entry is not None and decision is not None and decision["state"] == "awaiting-authentication":
             self.browser_tasks.prepare(operation, "browser.authentication", deadline=datetime.fromisoformat(entry["expires_at"].replace("Z", "+00:00")).timestamp())
@@ -539,20 +674,37 @@ class ProvisioningSetupOwner:
         return OperationResult("waiting" if waiting else "outcome_unknown",
                                "none" if waiting else "operation_unconfirmed")
 
-    def _read_guard(self, operation):
+    def _withdraw_early_task(self, operation):
+        # Only a task that never received a ceremony is withdrawn; failures leave it to expire.
+        try:
+            if self.ceremonies.browser_entry(operation["operation_id"]) is None:
+                self.browser_tasks.withdraw_preparing(operation["operation_id"])
+        except Exception:
+            pass
+
+    def _read_guard(self, operation, connection=None):
         """Retained proof reads may settle an expired presentation, never renew it."""
-        saved = self.ceremonies.row(operation["operation_id"])
+        if connection is None:
+            # The ceremony and key checks share one store connection.
+            with self.store.database.read() as connection:
+                return self._read_guard(operation, connection)
+        saved = self.ceremonies.row(operation["operation_id"], connection=connection)
         if saved is None:
             raise HostedGrantUnavailable("Browser ceremony is unavailable")
         binding = json.loads(saved["binding_json"])
-        key = self.key.reopen_existing()
-        if (binding["installation_key_id"], binding["installation_key_jkt"]) != (key.installation_key_id, key.installation_key_jkt):
+        # Each proof exchange reopens the provider key and verifies it against this reference.
+        key = self.store.installation_key_reference(connection=connection)
+        if key is None or (binding["installation_key_id"], binding["installation_key_jkt"]) != (
+                key.installation_key_id, key.installation_key_jkt):
             raise HostedGrantUnavailable("Browser ceremony key changed")
 
     def _binding(self, operation):
         selected = json.loads(operation["owner_scope_json"])
         journey = self._guard(operation)
-        key = self.key.reopen_existing()
+        # The ceremony proof reopens the provider key and refuses a binding that differs from it.
+        key = self.store.installation_key_reference()
+        if key is None:
+            raise HostedGrantUnavailable("Installation key is unavailable")
         if selected["creator_account_id"] is None:
             raise HostedGrantUnavailable("Browser account is unavailable")
         if journey.kind == "initial-enrollment":
@@ -577,7 +729,36 @@ class ProvisioningSetupOwner:
             "intended_creator_id": selected["creator_account_id"], "attempt_id": secrets.token_urlsafe(32),
             "completion": completion, "source_expires_at": expiry, **organization}
 
+    def _prepare_missing_key(self, operation_id):
+        """Create a missing installation key after the browser launch, never replacing an active one."""
+        running = self._key_task is not None and not self._key_task.done()
+        if self.key is None or self._key_closed or running:
+            return
+        signal = getattr(self.browser_tasks, "launch_signal", None)
+        launched = asyncio.Event() if signal is None else signal(operation_id)
+        self._key_launch = launched
+        def prepare():
+            try:
+                if self.store.installation_key_reference() is None:
+                    self.key.ensure_ready()
+                self.browser_tasks.remember_progress(operation_id)
+            except Exception:  # noqa: BLE001 - the account connection prepares the key again.
+                return
+        async def after_launch():
+            try:
+                await asyncio.wait_for(launched.wait(), KEY_AFTER_LAUNCH_SECONDS)
+            except TimeoutError:
+                pass
+            if not self._key_closed:
+                await asyncio.to_thread(prepare)
+        self._key_task = asyncio.create_task(after_launch())
+
     async def stop(self):
+        self._key_closed = True
+        if self._key_launch is not None:
+            self._key_launch.set()
+        if self._key_task is not None:
+            await asyncio.gather(asyncio.shield(self._key_task), return_exceptions=True)
         self._effects.close_admission()
         await self._effects.drain()
         if self.initial is not None:

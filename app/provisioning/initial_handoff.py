@@ -8,6 +8,7 @@ import platform
 import re
 from datetime import datetime, timezone
 
+from app.onboarding import timing
 from app.persistence.auth import ClaimSubmission, SQLiteAuthenticationStore, ProvisioningCandidate, ProvisioningCandidateState
 from app.persistence.onboarding import OnboardingJourneyStore, OnboardingJourneyUnavailable
 from app.provisioning.claim_submission import PRODUCT_VERSION, installation_proof_authority, hosted_transport
@@ -51,11 +52,14 @@ def _continuity_failure_reason(error: Exception) -> str:
 class InitialInstallationEnrollment:
     def __init__(self, store: SQLiteAuthenticationStore, *, hosted_origin: str,
                  client=None, stream=None, grants=None, continuity=None, continuity_stream=None,
-                 authorize_scope=None) -> None:
+                 authorize_scope=None, transport=None) -> None:
         self.store = store
         self.journeys = OnboardingJourneyStore(store)
         key = installation_proof_authority(store) if client is None else client.key
-        transport = hosted_transport(hosted_origin) if client is None else client.transport
+        # A supplied transport is shared with its creator, which closes it.
+        self._closes_transport = transport is None
+        if transport is None:
+            transport = hosted_transport(hosted_origin) if client is None else client.transport
         self.client = client or InitialHandoffClient(transport, key)
         self.stream = stream or InitialHandoffStream(hosted_origin)
         self.grants = grants or HostedGrantClient(transport, key, store)
@@ -74,22 +78,32 @@ class InitialInstallationEnrollment:
     def bind_effect_gate(self, lock, guard):
         self._effects.bind_effect_gate(lock, guard)
 
-    async def prepare(self, journey_id: str) -> dict:
+    async def prepare(self, journey_id: str, *, resume: bool = True) -> dict:
+        """Prepare or reuse the handoff. With resume=False the caller resumes its wait later."""
+        # The rechecks made on this loop share one connection. Each is still a fresh read.
         async with self._lock:
-            try:
-                row = self._current_journey(journey_id)
-            except OnboardingJourneyUnavailable as error:
-                raise InitialHandoffRefused(error.code) from None
-            if row["state"] in {"completing", "unknown", "completed"}:
+            with self.store.database.shared_reads():
+                return await self._prepare(journey_id, resume=resume)
+
+    async def _prepare(self, journey_id: str, *, resume: bool) -> dict:
+        try:
+            row = self._current_journey(journey_id)
+        except OnboardingJourneyUnavailable as error:
+            raise InitialHandoffRefused(error.code) from None
+        if row["state"] in {"completing", "unknown", "completed"}:
+            if resume:
                 self.resume(journey_id)
-                return {"state": row["state"], "journey_id": journey_id}
-            if row["state"] == "waiting" and row["handoff_reference"]:
+            return {"state": row["state"], "journey_id": journey_id}
+        if row["state"] == "waiting" and row["handoff_reference"]:
+            if resume:
                 self.resume(journey_id)
-                return self._browser_entry(row)
-            if row["state"] not in {"new", "preparing", "prepare-unknown"}:
-                raise InitialHandoffRefused("handoff_unconfirmed")
-            operation = row["operation_id"] or self.journeys.new_operation()
-            key = await self._effects.run(self.client.key.ensure_ready, journey_id=journey_id)
+            return self._browser_entry(row)
+        if row["state"] not in {"new", "preparing", "prepare-unknown"}:
+            raise InitialHandoffRefused("handoff_unconfirmed")
+        operation = row["operation_id"] or self.journeys.new_operation()
+        key = await self._effects.run(self.client.key.ensure_ready, journey_id=journey_id)
+
+        def persist():
             self._current_journey(journey_id)
             public = json.loads(key.public_key_jwk)
             request = {"profile": PROFILE, "operation_id": operation, "destination": {
@@ -103,26 +117,36 @@ class InitialInstallationEnrollment:
                 request = json.loads(row["prepare_json"])
             self._current_update(journey_id, state="preparing", operation_id=operation,
                 prepare_json=json.dumps(request, separators=(",", ":")))
-            def prepare_current():
-                return self.client.prepare(request, before_send=lambda: self._current_journey(journey_id))
-            try:
-                for attempt in range(3):
-                    try:
-                        prepared = await self._effects.run(prepare_current, journey_id=journey_id)
-                        break
-                    except HostedGrantUnavailable:
-                        if attempt == 2:
-                            raise
-                        await asyncio.sleep(0.25 * 2 ** attempt)
-            except Exception:
-                self.journeys.update(journey_id, state="prepare-unknown", reason=None)
-                events.publish()
-                raise
-            row = self._current_update(journey_id, state="waiting", handoff_reference=prepared["reference"],
-                                       handoff_expires_at=prepared["expires_at"], reason=None)
+            return request
+        # The request is durable before it is sent. The write runs off the event loop.
+        with timing.phase("handoff-prepare", "persist"):
+            request = await asyncio.to_thread(persist)
+        # The first send signs with the key ensure_ready just proved. A retry reopens it.
+        ensured = [key]
+
+        def prepare_current():
+            return self.client.prepare(request, before_send=lambda: self._current_journey(journey_id),
+                                       key=ensured.pop() if ensured else None)
+        try:
+            for attempt in range(3):
+                try:
+                    prepared = await self._effects.run(prepare_current, journey_id=journey_id)
+                    break
+                except HostedGrantUnavailable:
+                    if attempt == 2:
+                        raise
+                    await asyncio.sleep(0.25 * 2 ** attempt)
+        except Exception:
+            self.journeys.update(journey_id, state="prepare-unknown", reason=None)
             events.publish()
+            raise
+        row = await asyncio.to_thread(self._current_update, journey_id, state="waiting",
+                                      handoff_reference=prepared["reference"], handoff_expires_at=prepared["expires_at"],
+                                      reason=None)
+        events.publish()
+        if resume:
             self.resume(journey_id)
-            return self._browser_entry(row)
+        return self._browser_entry(row)
 
     def _current_journey(self, journey_id: str) -> dict:
         if self._stopped:
@@ -516,4 +540,5 @@ class InitialInstallationEnrollment:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await self._effects.drain()
-        self.grants.close()
+        if self._closes_transport:
+            self.grants.close()

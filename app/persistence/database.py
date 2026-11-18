@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
-from threading import RLock, local
+from threading import RLock, get_ident, local
 from typing import Iterator
 
 from app.persistence import sqlite_api as sqlite3
@@ -166,6 +167,7 @@ class LocalSQLite:
         self.busy_timeout_ms = busy_timeout_ms
         self._connection_owner_token = object()
         self._private_observation_local = local()
+        self._shared_read: ContextVar[list | None] = ContextVar("shared_read", default=None)
         self.key_scope = key_scope or self.store_name
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -282,7 +284,30 @@ class LocalSQLite:
         _configure_connection_cipher(connection, self._encryption_key)
 
     @contextmanager
+    def shared_reads(self) -> Iterator[None]:
+        """Within this block, reads on this thread and context reuse one connection.
+
+        Transactions still open their own connection. Tasks or threads started in
+        the block open their own connections, including after the block ends.
+        """
+        if self._shared_read.get() is not None:
+            yield
+            return
+        holder = [self.connect(), get_ident()]
+        token = self._shared_read.set(holder)
+        try:
+            yield
+        finally:
+            self._shared_read.reset(token)
+            connection, holder[0] = holder[0], None
+            connection.close()
+
+    @contextmanager
     def read(self) -> Iterator[sqlite3.Connection]:
+        holder = self._shared_read.get()
+        if holder is not None and holder[0] is not None and holder[1] == get_ident():
+            yield holder[0]
+            return
         connection = self.connect()
         try:
             yield connection

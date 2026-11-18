@@ -475,6 +475,27 @@ test('a fresh port for an ended task may close only that exact helper document',
   assert.equal(h.calls.closeDocument, 1, 'a payload for another extension declares nothing');
 });
 
+test('an ended helper asks a fresh port to close its own document without attaching or displacing a live helper', async t => {
+  const h = harness(t), live = h.connect(sender({ url: ORIGIN + '/browser-tasks#presentation=' + id(5), documentId: 'document-2', tab: { id: 13, windowId: 4 } }));
+  h.tabs.set(13, { url: ORIGIN + '/browser-tasks#presentation=' + id(5), windowId: 4 });
+  await h.attach(live, { ...h.value, task: { ...h.value.task, admission_generation: id(5) } });
+  assert.equal(h.portOwner.connected, 1);
+  const preparing = { ...h.value, ceremony: null, creator_account_id: 'creator-test',
+    task: { ...h.value.task, purpose: 'browser.authentication', state: 'pending' } };
+  for (const [name, value, closes] of [['other extension', { ...preparing, extension_id: 'b'.repeat(32) }, 0],
+    ['other generation', { ...preparing, task: { ...preparing.task, admission_generation: id(88) } }, 0],
+    ['preparing', preparing, 1], ['cancelled', { ...h.value, task: { ...h.value.task, state: 'cancelled' } }, 1]]) {
+    const before = h.calls.closeDocument, port = h.connect();
+    port.onMessage.emit({ type: 'end', payload: value }); await tick(); await tick();
+    assert.equal(h.calls.closeDocument - before, closes, name);
+    if (closes) assert.deepEqual(h.calls.lastClose.target, { tabId: 12, documentIds: ['document-1'] }, name);
+    assert.equal(port.disconnected, true, name);
+  }
+  assert.equal(h.calls.attach, 1, 'only the live helper attached');
+  assert.equal(h.portOwner.connected, 1, 'the live helper keeps its task');
+  assert.equal(live.disconnected, false);
+});
+
 test('focus brings forward only the current admitted helper tab', async t => {
   const h = harness(t), port = h.connect(); await h.attach(port);
   const focused = [];

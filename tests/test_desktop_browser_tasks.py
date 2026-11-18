@@ -16,9 +16,15 @@ from test_desktop_coordinator import command
 pytestmark = [pytest.mark.ci_tier("fast"), pytest.mark.windows_compat]
 
 
-class ExistingKeyOnly:
+class MissingKeyOnly:
+    def __init__(self):
+        self.prepared = 0
+
+    def ensure_ready(self):
+        self.prepared += 1
+
     def reopen_existing(self):
-        pytest.fail("Browser access does not touch an installation key")
+        pytest.fail("Browser access only creates a missing installation key")
 
 
 @pytest.fixture
@@ -28,7 +34,7 @@ def setup(tmp_path):
     admissions = ScopedAdmissions(store, stage="setup")
     tasks = BrowserTasks(admissions, extension_id="a" * 32)
     owner = ProvisioningSetupOwner(store, browser_tasks=tasks, ceremonies=None, initial=None, registered=None,
-        key=ExistingKeyOnly(), finalize=lambda **kwargs: pytest.fail("No finalization before account authority"), completion_ready=lambda: False)
+        key=MissingKeyOnly(), finalize=lambda **kwargs: pytest.fail("No finalization before account authority"), completion_ready=lambda: False)
     coordinator = DesktopOnboardingCoordinator(admissions, owner)
     native = admissions.consume(admissions.prepare_desktop(), role="desktop")
     return coordinator, tasks, native, now
@@ -44,6 +50,86 @@ async def browser_access(setup):
     code = coordinator.admissions.reissue_task_entry(native.identifier, generation=native.generation, task_id=task["task_id"])
     browser = coordinator.admissions.consume(code, role="browser_task")
     return request, task, browser
+
+
+async def launched_key(coordinator, tasks, operation_id):
+    tasks.launched(operation_id)
+    await coordinator.owner._key_task
+
+
+@pytest.mark.asyncio
+async def test_browser_access_creates_a_missing_key_once_its_launch_returns(setup):
+    from app.security.installation_key import InstallationKeyAuthority
+    from test_installation_key import EmulatedPlatformProvider
+
+    coordinator, tasks, native, _ = setup
+    store, provider = coordinator.owner.store, EmulatedPlatformProvider()
+    coordinator.owner.key = InstallationKeyAuthority(store, provider)
+    request, _, _ = await browser_access(setup)
+    assert coordinator.receipt(native, request["operation_id"])["state"] == "waiting"
+    await asyncio.sleep(0.05)
+    assert store.installation_key_reference() is None and provider.create_calls == 0
+    await launched_key(coordinator, tasks, request["operation_id"])
+    assert store.installation_key_reference() is not None and provider.create_calls == 1
+    await coordinator.owner.stop()
+
+
+@pytest.mark.asyncio
+async def test_stopping_before_the_launch_returns_prepares_no_key(setup):
+    coordinator, _, _, _ = setup
+    await browser_access(setup)
+    await coordinator.owner.stop()
+    assert coordinator.owner.key.prepared == 0
+
+
+@pytest.mark.asyncio
+async def test_only_the_browser_access_click_prepares_a_missing_key(setup):
+    coordinator, tasks, _, _ = setup
+    request, _, _ = await browser_access(setup)
+    with coordinator.store.database.read() as connection:
+        operation = dict(connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?",
+            (request["operation_id"],)).fetchone())
+    await launched_key(coordinator, tasks, request["operation_id"])
+    coordinator.owner.key = MissingKeyOnly()
+    assert (await coordinator.owner.execute(operation, reconcile=True)).state == "waiting"
+    tasks.launched(request["operation_id"])
+    await asyncio.sleep(0.05)
+    await coordinator.owner.stop()
+    assert coordinator.owner.key.prepared == 0
+
+
+@pytest.mark.asyncio
+async def test_browser_access_leaves_an_active_key_alone(setup):
+    from app.security.installation_key import InstallationKeyAuthority
+    from test_installation_key import EmulatedPlatformProvider
+
+    coordinator, tasks, _, _ = setup
+    active = InstallationKeyAuthority(coordinator.owner.store, EmulatedPlatformProvider()).ensure_ready()
+    request, _, _ = await browser_access(setup)
+    await launched_key(coordinator, tasks, request["operation_id"])
+    await coordinator.owner.stop()
+    assert coordinator.owner.key.prepared == 0
+    assert coordinator.owner.store.installation_key_reference() == active
+
+
+@pytest.mark.asyncio
+async def test_a_key_failure_does_not_affect_browser_access(setup):
+    from app.security.installation_key import InstallationKeyUnavailable
+
+    class RefusingKey(MissingKeyOnly):
+        def ensure_ready(self):
+            super().ensure_ready()
+            raise InstallationKeyUnavailable("refused")
+
+    coordinator, tasks, native, _ = setup
+    coordinator.owner.key = RefusingKey()
+    request, task, browser = await browser_access(setup)
+    await launched_key(coordinator, tasks, request["operation_id"])
+    await coordinator.owner.stop()
+    assert coordinator.owner.key.prepared == 1
+    assert coordinator.receipt(native, request["operation_id"])["state"] == "waiting"
+    assert browser.task_id == task["task_id"]
+    assert coordinator.owner.store.installation_key_reference() is None
 
 
 def observation(browser):
@@ -256,6 +342,7 @@ async def initial_ceremony_case(setup, *, active_wait=False):
     coordinator.owner.initial = initial
     coordinator.owner.registered = SimpleNamespace()
     coordinator.owner.key = SimpleNamespace(reopen_existing=fixture.key.ensure_ready)
+    coordinator.owner.store.installation_key_reference = lambda **_: fixture.key.ensure_ready()
     if not active_wait:
         initial.resume = lambda _: None
     await initial.prepare(scope["source_journey_id"])
@@ -452,3 +539,51 @@ async def test_browser_retry_recovery_refuses_unproven_or_ambiguous_scopes(setup
     view = coordinator.owner.read(retry["journey_id"])
     assert view.scope["source_recovery"] is None
     assert view.reason == "authority_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_an_account_connect_opens_the_store_six_times_before_its_ceremony_send(setup, monkeypatch):
+    coordinator, initial, _, operation, _, _, _ = await initial_ceremony_case(setup)
+    with coordinator.store.database.transaction() as connection:
+        connection.execute("DELETE FROM desktop_browser_ceremonies")
+    owner = coordinator.owner
+    database, connect, opened = coordinator.store.database, coordinator.store.database.connect, []
+    guards, guard = [], owner._guard
+
+    def counted():
+        opened.append(1)
+        return connect()
+
+    def checked(*args, **kwargs):
+        guards.append(1)
+        return guard(*args, **kwargs)
+
+    class Sent(Exception):
+        pass
+
+    async def send(*args, **kwargs):
+        raise Sent()
+
+    monkeypatch.setattr(database, "connect", counted)
+    monkeypatch.setattr(owner, "_guard", checked)
+    monkeypatch.setattr(owner.ceremonies._effects, "run", send)
+    with pytest.raises(Sent):
+        await owner.execute(operation, reconcile=False)
+    # Every guard check still runs.
+    assert len(guards) == 7
+    # Shared reads before each await, then the handoff journey read and the ceremony reservation.
+    assert len(opened) == 6
+
+@pytest.mark.asyncio
+async def test_a_setup_snapshot_read_opens_the_store_once(setup, monkeypatch):
+    coordinator, _, _, _, _, _, native = await initial_ceremony_case(setup)
+    database, connect, opened = coordinator.store.database, coordinator.store.database.connect, []
+    expected = coordinator.read(native)
+
+    def counted():
+        opened.append(1)
+        return connect()
+
+    monkeypatch.setattr(database, "connect", counted)
+    assert coordinator.read(native) == expected
+    assert len(opened) == 1

@@ -1,25 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { identityNavigation } from '../test-fixtures/identity-navigation.mjs';
 import { readFile } from 'node:fs/promises';
 import { createBrowserTaskOwner, attachInstalledHelpers } from '../runtime/browser-task-owner.mjs';
 import { payload, id } from '../test-fixtures/browser-task.mjs';
 import { NATIVE_LAUNCH_KEY } from '../runtime/onboarding-native-launch.mjs';
 import { isObservation } from '../../shared/browser-tasks/wire.mjs';
+import { BROWSER_TASK_INSTANCE_KEY, BROWSER_TASK_ADOPTION_KEY } from '../runtime/browser-task-entry.mjs';
+
+for (const purpose of ['browser.authentication', 'browser.access', 'browser.identity', 'browser.pairing-confirmation']) {
+  test(`${purpose} reads pending identity only for an existing sign-in`, async () => {
+    const h = identityNavigation(); await h.confirm();
+    const access = payload(), first = await h.owner.read(await h.owner.attach(access));
+    await h.navigate('reset-first');
+    const value = payload(); value.task = { ...value.task, task_id: id(13), purpose };
+    value.participant = Object.fromEntries(['instance_id', 'draft_scope_id', 'disclosure_bundle_id'].map(key => [key, first[key]]));
+    if (purpose === 'browser.authentication') value.creator_account_id = 'synthetic-creator';
+    const result = await h.owner.read(await h.owner.attach(value));
+    assert.equal(result.state, purpose === 'browser.authentication' ? 'ready' : 'needs-account');
+    assert.equal(result.creator_account_id, purpose === 'browser.authentication' ? 'synthetic-creator' : null);
+    if (purpose === 'browser.authentication') assert.equal(result.creator_display_name, 'Synthetic Creator');
+    else assert.equal(result.creator_display_name, undefined);
+    h.identity.unregister();
+  });
+}
 
 function harness() {
-  const local = {}, session = {}, calls = { identity: 0, opened: 0, creator: 0 };
+  const local = {}, session = {}, calls = { identity: 0, opened: 0, creator: 0 }, contexts = [], writes = [];
   const draft_scope = { scope_id: id(7), disclosure_bundle_id: 'b'.repeat(64) };
   let record = null, account = 'creator-a', profile = null;
   const consent = { consent: { mode: 'off', consent_epoch: 'epoch-1' }, onlyfans_permission: false };
   const legal = { configured: true, requires_reauthorization: false };
-  const storage = data => ({ async get(key) { return { [key]: data[key] }; }, async set(value) { Object.assign(data, value); } });
+  const storage = data => ({ async get(key) { return { [key]: data[key] }; }, async set(value) { writes.push(Object.keys(value)); Object.assign(data, value); } });
   const chromeApi = { runtime: { id: 'a'.repeat(32) }, storage: { local: storage(local), session: storage(session) } };
   const owner = createBrowserTaskOwner({ chromeApi, onboarding: {
-    async browserTaskContext(journey) { if (record && record.journey_id !== journey) throw Error('task_changed'); return { record, draft_scope }; },
+    async browserTaskContext(journey, options) { contexts.push(options?.reconcile); if (record && record.journey_id !== journey) throw Error('task_changed'); return { record, draft_scope }; },
     async openBrowserTask(task) { calls.opened++; record = { journey_id: task.journey_id, draft_scope }; },
   }, consentController: { async status() { return consent; } }, legalActivationController: { async status() { return legal; } },
   identityBridge: { async currentAccountId() { calls.identity++; return account; }, async currentProfile() { return profile; } }, openCreatorAccount: () => { calls.creator++; } });
-  return { owner, consent, legal, local, session, calls, draft_scope, setRecord: value => { record = value; }, setAccount: value => { account = value; },
+  return { owner, consent, legal, local, session, calls, contexts, writes, draft_scope, setRecord: value => { record = value; }, setAccount: value => { account = value; },
     setProfile: value => { profile = value; } };
 }
 
@@ -128,4 +147,34 @@ test('install arrival refreshes only exact helper URLs without closing or focusi
   run(window, { href: 'https://onlyfans.com/', reload() { reloads++; } });
   assert.equal(reloads, 0, 'a navigated tab is not touched');
   run(window, { href: helper, reload() { reloads++; } }); assert.equal(reloads, 1);
+});
+
+test('a prepared owner reads without writing and attaches with the adoption write', async () => {
+  const h = harness(), value = payload();
+  await assert.rejects(h.owner.prepare(value), /unavailable/);
+  assert.deepEqual(h.writes, []);
+  h.local[BROWSER_TASK_INSTANCE_KEY] = id(42);
+  h.setRecord({ journey_id: value.task.journey_id, draft_scope: h.draft_scope });
+  h.consent.consent.mode = 'full'; h.consent.onlyfans_permission = true;
+  const prepared = await h.owner.prepare(value);
+  const observed = await h.owner.read(prepared);
+  assert.equal(observed.state, 'ready');
+  assert.deepEqual(h.writes, []);
+  assert.deepEqual(h.contexts, [false, false, false]);
+  const attached = await h.owner.attachPrepared(prepared, value);
+  assert.equal(attached, prepared);
+  assert.deepEqual(h.writes, [[BROWSER_TASK_ADOPTION_KEY]]);
+  assert.equal(h.local[BROWSER_TASK_ADOPTION_KEY].instance_id, id(42));
+  await h.owner.read(attached);
+  assert.equal(h.contexts.at(-1), true);
+});
+
+test('a forgotten prepared owner reads nothing and cannot attach', async () => {
+  const h = harness(), value = payload();
+  h.local[BROWSER_TASK_INSTANCE_KEY] = id(42);
+  const prepared = await h.owner.prepare(value);
+  await h.owner.forget(prepared);
+  await assert.rejects(h.owner.read(prepared), /task_changed/);
+  await assert.rejects(h.owner.attachPrepared(prepared, value), /task_changed/);
+  assert.deepEqual(h.writes, []);
 });

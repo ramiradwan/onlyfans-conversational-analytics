@@ -20,7 +20,7 @@ from app.core.resource_paths import resource_path
 from app.security.hosted_grants import HostedGrantUnavailable, HostedTransport
 from app.security.initial_handoff import _require_proof_budget, timestamp
 from app.security.installation_continuation import (
-    ExistingInstallationKey, _decode, _document, canonical_request,
+    ExistingInstallationKey, _decode, _document, canonical_request, signing_reference,
 )
 from app.security.installation_key import verify_installation_proof
 from contracts.loader import verify_snapshot_integrity
@@ -31,6 +31,9 @@ CHALLENGE_PATH = "/v1/onboarding/browser-authentication-selection-proof-challeng
 PATH_PREFIX = "/v1/onboarding/browser-authentication-selections:"
 MAX_REQUEST_BYTES = 8192
 MAX_RESPONSE_BYTES = 16384
+# A prefetched read challenge is replaced well inside the 60-second proof budget.
+PREFETCH_RENEW_AFTER_SECONDS = 40
+PREFETCH_RENEW_MARGIN_SECONDS = 15
 _P256_ORDER = int("FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551", 16)
 _REFUSAL_STATUS = {
     "invalid": {400, 413}, "proof_invalid": {401}, "authentication_required": {401},
@@ -107,8 +110,17 @@ class BrowserAuthenticationClient:
             raise HostedGrantUnavailable("Only current authentication can be prefetched")
         return self._challenge("read", request, before_send=before_send)
 
+    def renewal_delay(self, ticket) -> float:
+        """Seconds until a prefetched challenge should be replaced; zero once used or near expiry."""
+        if ticket.used:
+            return 0.0
+        local = ticket.started + PREFETCH_RENEW_AFTER_SECONDS - self.monotonic()
+        remote = (timestamp(ticket.challenge["expires_at"]) - self.clock()).total_seconds() - PREFETCH_RENEW_MARGIN_SECONDS
+        delay = min(local, remote)
+        return max(0.0, delay) if math.isfinite(delay) else 0.0
+
     def _key(self, request):
-        key = self.key.reopen_existing()
+        key = signing_reference(self.key)
         binding = request["binding"]
         if (binding["installation_key_id"], binding["installation_key_jkt"]) != (
                 key.installation_key_id, key.installation_key_jkt):

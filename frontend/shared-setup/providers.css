@@ -54,6 +54,7 @@
 .provider-choices .provider-button:hover { box-shadow: inset 0 0 0 1px var(--provider-border); }
 .provider-choices .provider-button:focus-visible { outline: 2px solid var(--provider-text); outline-offset: 3px; }
 .provider-choices .provider-button:disabled { opacity: .6; cursor: default; }
+.provider-choices .provider-button[aria-busy='true'] { opacity: 1; cursor: progress; box-shadow: inset 0 0 0 1px var(--provider-border); }
 :root[data-color-scheme='dark'] .provider-choices,
 [data-mui-color-scheme='dark'] .provider-choices {
   --provider-background: #131314;

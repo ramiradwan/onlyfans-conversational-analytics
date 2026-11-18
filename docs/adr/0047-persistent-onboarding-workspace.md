@@ -5,6 +5,7 @@
 - Decision authority: Product owner.
 - Amends: ADR 0045, Desktop port opening behavior, Pushed state's browser-port liveness inference, and Controls after pairing's popup ownership. Other pairing and authorization guarantees remain unchanged.
 - Amended: 2026-11-12 (proposed: hosted pages never message the extension)
+- Amended: 2026-11-16 (confirmation belongs to one live document)
 
 ## Decision
 
@@ -31,8 +32,19 @@ Returning after a reload, discard, or restart reconciles authoritative facts bef
 choosing the next unmet step. Browser storage does not establish authority.
 
 A bounded local presentation marker links the workspace journey, creator-scope UUID
-and disclosure digest to a domain-separated digest of the independently observed
-account (or unknown). It is not part of the shared wire record and grants no rights.
+and disclosure digest to a domain-separated digest of the last confirmed account
+(or unknown). Same-document navigation preserves the hook's confirmed account,
+profile labels, capture epoch and identity request order. The worker still fences
+URL/loading changes and restores confirmation only from the same document's hook,
+never from its own remembered account. Pairing and capture may then continue without
+another server identity response. Session-change evidence withdraws confirmation
+immediately. A non-identity API 401 resets it as unconfirmed. A conflicting creator
+confirmation or confirmed sign-out withdraws other tabs in the same browser session.
+A new document, bfcache restore or prerender activation starts unconfirmed.
+Confirmed sign-out, a different confirmed account or a new document rotates the
+scope and clears Full as before. For remaining unconfirmed states the marker can
+preserve presentation, but never feeds pairing or admits capture. The marker is not
+part of the shared wire record and grants no rights.
 Workspace entry, draft and native-launch requests wait for restored consent and current identity reconciliation.
 A matching marker preserves the draft across worker restarts. Missing, invalid or
 mismatched markers rotate the scope and clear only the creator-bound Full choice;

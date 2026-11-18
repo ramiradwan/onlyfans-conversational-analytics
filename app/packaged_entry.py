@@ -171,6 +171,8 @@ def run_brain() -> int:
             raise
         if stopped.is_set():
             return 1
+        from app.onboarding import timing
+        timing.record_to(state.root)
         try:
             admit_retained_schemas(state, should_cancel=status.cancelled, on_phase=status.maintenance_phase)
         except StartupRefused:

@@ -191,6 +191,22 @@ class RuntimeSetupOwner:
         return (value.probe_interval(operation) if kind == "setup"
             else value.ceremonies.authentication.probe_interval(operation["operation_id"]))
 
+    def confirmation_deadline(self, operation):
+        owner = self._probe_owner(operation)
+        if owner is None:
+            return None
+        kind, value = owner
+        return (value.confirmation_deadline(operation) if kind == "setup"
+            else value.ceremonies.authentication.confirmation_deadline(operation["operation_id"]))
+
+    def waiting_for_sign_in(self, operation):
+        owner = self._probe_owner(operation)
+        if owner is None or operation["action"] not in {"account.connect", "activation.review"}:
+            return False
+        kind, value = owner
+        return (value.waiting_for_sign_in(operation) if kind == "setup"
+            else value.ceremonies.authentication.waiting_for_sign_in(operation["operation_id"]))
+
     async def probe(self, operation):
         kind, value = self._probe_owner(operation)
         if kind == "setup":
@@ -209,8 +225,12 @@ class RuntimeSetupOwner:
         kind, value = self._probe_owner(operation)
         if kind == "setup":
             return await value.prefetch(operation)
-        await value.ceremonies.authentication.prefetch(operation["operation_id"],
+        return await value.ceremonies.authentication.prefetch(operation["operation_id"],
             authorize=lambda: value._proof_read_guard(operation))
+
+    def entry_served(self, operation_id):
+        if self.setup_owner is not None:
+            self.setup_owner.entry_served(operation_id)
 
     async def reconcile_hint(self, operation):
         selected = self._probe_owner(operation)

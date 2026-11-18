@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { identityNavigation } from '../test-fixtures/identity-navigation.mjs';
 import assert from 'node:assert/strict';
 import { createCompanionClient, PAIRING_PORT_NAME } from '../runtime/companion-client.mjs';
 import { fixturePrivateJwk, vector } from '../test-fixtures/pairing/vendored-vector.mjs';
@@ -147,7 +148,7 @@ test('worker wake subscriptions retain message and tab wakes plus the minute ala
 function event() { const listeners = []; return { listeners, addListener(fn) { listeners.push(fn); }, removeListener(fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } }; }
 function area() { const values = {}; return { values, async get(keys) { return Object.fromEntries(keys.filter((key) => Object.hasOwn(values, key)).map((key) => [key, values[key]])); }, async set(update) { Object.assign(values, structuredClone(update)); }, async remove(keys) { for (const key of keys) delete values[key]; } }; }
 
-function harness({ full = true, accountGate = null, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, scheduler = null, enforcePairing = false, channelCloseReason = null, surfaceFailures = 0 } = {}) {
+function harness({ detectedAccountId = null, full = true, accountGate = null, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, scheduler = null, enforcePairing = false, channelCloseReason = null, surfaceFailures = 0 } = {}) {
   const stats = { stores: 0, snow: 0, networks: 0, cancel: 0, forget: 0, proofValid: false, closedStores: 0 }, channels = [];
   const chrome = chromeApi ?? { runtime: { id: 'a'.repeat(32), getURL: (path) => `chrome-extension://${'a'.repeat(32)}/${path}`, onConnect: event(), onStartup: event(), onInstalled: event(), onMessage: event() }, storage: { local: area(), session: area() }, tabs: { onUpdated: event(), onCreated: event(), onRemoved: event() }, alarms: { onAlarm: event(), async create() {} } };
   let enabled = full, account = ACCOUNT, paired = true, pairingWait, remainingSurfaceFailures = surfaceFailures, accountReads = 0;
@@ -164,7 +165,7 @@ function harness({ full = true, accountGate = null, channelGate = null, unsealGa
   };
   const client = createCompanionClient({ chromeApi: chrome, allowsFull: () => enabled, detectedAccountId: async () => {
     if (accountGate && ++accountReads === 1) await accountGate.promise;
-    return account;
+    return detectedAccountId ? detectedAccountId() : account;
   },
     now, scheduler, random: () => 0.5,
     accountDatabaseName: async (id) => `encrypted-account-${id}`, storeFactory: async () => { stats.stores++; return pairingStore; },
@@ -228,6 +229,39 @@ function harness({ full = true, accountGate = null, channelGate = null, unsealGa
 const parameterRequest = { schema: 'signing-parameter-request/v1', engine: 'onlyfans-sha1-checksum/v1',
   parameter_schema: 'local-packaged-signing-rule/v1', source_revision: 'frontend-A',
   catalog_sequence: 0, keyset_sequence: 0, object_sha256: null };
+
+for (const order of ['hook-first', 'url-first']) {
+  test(`same-document navigation preserves pairing admission, continuation and runtime subscription (${order})`, async () => {
+    let nav;
+    const h = harness({ enforcePairing: true, detectedAccountId: () => nav.identity.currentAccountId() });
+    nav = identityNavigation(h.chrome);
+    h.chrome.storage.local.values = nav.local;
+    h.chrome.storage.session.values = nav.session;
+    await nav.confirm(ACCOUNT);
+    nav.identity.onAuthorityInvalidated(() => h.client.invalidate());
+    nav.refresh = () => nav.confirm(ACCOUNT);
+    const navigate = async () => {
+      if (order === 'hook-first') await nav.confirm(ACCOUNT);
+      nav.fence();
+      assert.equal(await nav.identity.currentAccountId(), ACCOUNT);
+    };
+    await navigate(); h.unpair();
+    const pairing = h.client.pair();
+    while ((await h.client.status()).state !== 'compare') await tick();
+    await navigate();
+    h.pairingResult();
+    assert.equal((await pairing).state, 'paired');
+    const binding = await h.client.adapter.loadBrainBinding();
+    await navigate();
+    assert.equal(h.channels[0].closed, false);
+    assert.equal((await h.client.adapter.loadBrainBinding()).creatorAccountId, binding.creatorAccountId);
+    assert.equal(h.stats.networks, 1);
+    assert.equal(h.client.diagnosticEvents.some(event => event.event === 'invalidate'), false);
+    await nav.confirm(null);
+    assert.equal(h.channels[0].closed, true, 'confirmed sign-out still closes the account-scoped runtime');
+    h.client.invalidate(); nav.identity.unregister();
+  });
+}
 const parameterContext = h => ({ creatorAccountId: ACCOUNT, installationId: vector.expected.identity.installation_id,
   agentInstallationId: h.chrome.storage.local.values.agent_installation_id,
   configAuthTicket: () => 'config-fixture', assertCurrent() {} });

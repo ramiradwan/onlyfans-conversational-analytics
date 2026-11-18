@@ -34,7 +34,7 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
       await consentController.initialize();
       for (;;) {
         const revision = identityRevision;
-        const observed = await identityBridge.currentAccountId();
+        const observed = await (identityBridge.presentedAccountId?.() ?? identityBridge.currentAccountId());
         if (observed !== null && (typeof observed !== 'string' || observed.length < 1 || observed.length > 200)) {
           throw Error('workspace_identity_unavailable');
         }
@@ -103,8 +103,10 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
       : reconcileAccount().then(scope).then(draft_scope => workspace.resumeExisting({ draft_scope, route: 'extension' }))).catch(() => undefined);
   });
   return Object.freeze({ workspace, open,
-    async browserTaskContext(journeyId, { adopt = false, canAdopt = () => false, authorize = async () => {} } = {}) {
-      await reconcileAccount();
+    async browserTaskContext(journeyId, { adopt = false, canAdopt = () => false, authorize = async () => {}, reconcile = true } = {}) {
+      // Without reconciliation this is a pure read. An identity change still reconciles through onAccountChange.
+      if (reconcile) await reconcileAccount();
+      else if (adopt) throw Error('task_changed');
       let record = await workspace.read();
       if (adopt) {
         await workspace.adoptBrowserTask({ journey_id: journeyId, draft_scope: await scope() }, canAdopt, authorize);

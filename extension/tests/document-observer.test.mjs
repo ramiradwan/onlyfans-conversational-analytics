@@ -35,6 +35,22 @@ test('attaches to an existing user document without navigation; reads cached sta
   assert.equal(f.observer.snapshot().tabs[0].status.mode, 'full');
   assert.equal(f.calls.some(([type]) => type === 'update'), false);
 });
+test('same-document status proof repairs navigation without complete and rejects another sender', async () => {
+  const f = fixture(); f.observer.start(); await f.observer.configure('full');
+  const sender = { id: 'fixture', frameId: 0, tab: { id: 7 }, url: 'https://onlyfans.com/my/profile',
+    documentId: 'document-7', documentLifecycle: 'active' };
+  f.api.tabs.onUpdated.emit(7, { url: sender.url }, { ...f.browserTabs.get(7), url: sender.url });
+  assert.equal(f.observer.snapshot().attached, false);
+  const status = { type: OBSERVER_STATE_TYPE,
+    status: { mode: 'full', active: true, forwarding: true, ws2_socket_open: true } };
+  for (const source of [{ ...sender, documentId: 'synthetic-other' }, { ...sender, frameId: 1 },
+    { ...sender, documentLifecycle: 'prerender' }]) assert.equal(f.observer.observe(status, source), false);
+  assert.equal(f.observer.observe(status, sender), true);
+  assert.equal(f.observer.snapshot().attached, true);
+  assert.equal(f.observer.observe(status, { ...sender, documentLifecycle: 'prerender' }), false);
+  assert.ok(f.calls.some(([kind, id, action]) => kind === 'message' && id === 7 && action === 'status'));
+  assert.equal(f.calls.some(([kind]) => ['create', 'update'].includes(kind)), false);
+});
 test('silent existing documents do not create a competing platform tab', async () => {
   const f = fixture({ silent: true });
   await Promise.all([f.observer.configure('full'), f.observer.configure('full')]);

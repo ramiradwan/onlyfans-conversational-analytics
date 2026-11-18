@@ -28,6 +28,12 @@ export function isPayload(value) {
 export function isPayloadProjection(value) {
   return isPayload(value) || payloadEnvelope(value) && value.task.state === 'completed' && value.ceremony === null;
 }
+// A sign-in task read before its ceremony exists. Its helper port may only prepare: the extension reads
+// and holds the owner in memory, writes nothing, and attaches once the ceremony arrives.
+export function isPreparingPayload(value) {
+  return payloadEnvelope(value) && value.task.purpose === 'browser.authentication'
+    && value.task.state === 'pending' && value.ceremony === null;
+}
 function payloadEnvelope(value) {
   return exact(value, ['profile', 'task', 'extension_id', 'ceremony', 'entry_source', 'participant', 'creator_account_id'])
     && value.profile === 'browser-task.v1' && isTask(value.task) && EXTENSION.test(value.extension_id)
@@ -86,6 +92,19 @@ export const END_CONTROL = 'browser.task.end';
 export function isBrowserTaskEnd(value) {
   return exact(value, ['type', 'id', 'action', 'task_id', 'admission_generation']) && value.type === 'session.control'
     && value.action === END_CONTROL && UUID.test(value.id) && UUID.test(value.task_id) && UUID.test(value.admission_generation);
+}
+// Brain to extension, paired route only, after this channel advertised it with
+// `agent.browser-task.waiting`. A waiting window carries no ceremony and no authority.
+export const WAITING_CONTROL = 'browser.task.waiting';
+export const WAITING_END_CONTROL = 'browser.task.waiting.end';
+export function isBrowserTaskWaiting(value) {
+  return exact(value, ['type', 'id', 'action', 'operation_id', 'expires_at']) && value.type === 'session.control'
+    && value.action === WAITING_CONTROL && UUID.test(value.id) && UUID.test(value.operation_id)
+    && Number.isSafeInteger(value.expires_at) && value.expires_at > 0;
+}
+export function isBrowserTaskWaitingEnd(value) {
+  return exact(value, ['type', 'id', 'action', 'operation_id']) && value.type === 'session.control'
+    && value.action === WAITING_END_CONTROL && UUID.test(value.id) && UUID.test(value.operation_id);
 }
 export function isPairingComparison(value, payload) {
   return payload.task.purpose === 'browser.pairing-confirmation'

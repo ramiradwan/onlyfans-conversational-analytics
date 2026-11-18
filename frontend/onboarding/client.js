@@ -5,7 +5,8 @@ import { parseOnboardingJson } from '../../shared/onboarding/json.mjs';
 
 // A helper tab reports why it ended. The desktop shows it where retry lives.
 const NOTICE_ERRORS = { extension_unavailable: 'extension_unavailable', profile_mismatch: 'profile_mismatch',
-  account_mismatch: 'account_mismatch', task_expired: 'operation_expired', unavailable: 'browser_unavailable' };
+  account_mismatch: 'account_mismatch', task_expired: 'operation_expired', unavailable: 'browser_unavailable',
+  needs_account: 'browser_needs_account', needs_consent: 'browser_needs_consent', needs_permission: 'browser_needs_permission' };
 
 async function refreshNativePresentation(generation) {
   const invoke = globalThis.__TAURI__?.core?.invoke;
@@ -107,7 +108,15 @@ export class DesktopSetupClient {
     try { void Promise.resolve(this.focusWindow()).catch(() => undefined); } catch { /* Presentation only. */ }
   }
 
+  markLaunch(operationId, phase) {
+    const timing = this.clickTiming;
+    if (!timing || timing.operationId !== operationId || timing.marked.has(phase)) return;
+    timing.marked.add(phase);
+    timing.observe(phase);
+  }
+
   browserTaskPrepared(task) {
+    this.markLaunch(task.operation_id, 'task-found');
     const intent = this.focusIntent;
     if (!intent || intent.operationId !== task.operation_id || intent.epoch !== this.launchEpoch) return;
     if (intent.journey !== null && intent.journey !== task.journey_id
@@ -249,7 +258,8 @@ export class DesktopSetupClient {
         this.connected = false;
         this.intent = null;
         this.launchOperation = null;
-        this.notify(['session_unavailable', 'authorization_unavailable'].includes(error.message) ? error.message : 'status_unavailable');
+        this.notify(error.message === 'stream_expired' ? null
+          : ['session_unavailable', 'authorization_unavailable'].includes(error.message) ? error.message : 'status_unavailable');
         if (!['session_unavailable', 'authorization_unavailable'].includes(error.message)) {
           this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
@@ -282,6 +292,8 @@ export class DesktopSetupClient {
     if (!this.connected || !this.value || (this.pending && !replacesCurrentAuthentication)) return;
     observe('click');
     const intent = command(this.value, action, this.uuid(), options);
+    // Later launch steps of this click are recorded once each.
+    this.clickTiming = { operationId: intent.operation_id, observe, marked: new Set() };
     this.operationError = null;
     this.launchEpoch++;
     this.focusIntent = null;
@@ -296,9 +308,8 @@ export class DesktopSetupClient {
       observe('command-send');
       await this.json('/api/v1/desktop/setup/commands', intent);
       if (epoch !== this.launchEpoch || !this.connected) return;
-      await this.receipt();
-      if (epoch !== this.launchEpoch || !this.connected) return;
-      if (this.launchOperation) await this.launchBrowser();
+      // The receipt read and the launch run together. The launch rechecks its operation.
+      await Promise.all([this.receipt(), this.launchOperation ? this.launchBrowser() : null]);
     } catch (error) {
       if (epoch !== this.launchEpoch || !this.connected) return;
       if (['setup_changed', 'action_unavailable', 'authority_unavailable', 'account_mismatch', 'operation_limit_reached'].includes(error.reason)) {
@@ -378,6 +389,7 @@ export class DesktopSetupClient {
     this.notify();
     try {
       const opened = await this.openBrowser(this, operationId, undefined, current);
+      if (opened) this.markLaunch(operationId, 'launch');
       if (opened && this.connected && this.focusIntent?.epoch === epoch && this.focusIntent.operationId === operationId) {
         this.focusIntent.opened = true;
         this.returnFocus();

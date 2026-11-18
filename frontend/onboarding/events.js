@@ -25,6 +25,7 @@ export async function setupEvents(request, headers, signal, receive, notices = n
         if (!line) {
           if (event === 'setup' && data) receive(data);
           else if (event === 'browser-notices' && data) notices?.(data);
+          else if (event === 'setup-end' && data === '{}') throw new Error('stream_expired');
           data = ''; event = '';
         } else if (line.startsWith('event:')) event = line.slice(6).trim();
         else if (line.startsWith('data:')) data += (data ? '\n' : '') + line.slice(5).replace(/^ /u, '');

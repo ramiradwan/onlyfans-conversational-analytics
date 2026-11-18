@@ -65,7 +65,12 @@ test('the built observer retains one original socket across reinjection and same
     platform.sendInitialMessageOnlyPeer();
     await expect.poll(count).toBe(index + 2);
   }
-  expect(await page.evaluate(() => new Set(fixtureCaptures.map(c => c.page_epoch)).size)).toBe(6);
+  // Same-document navigation retains the confirmed capture epoch (ADR 0047).
+  const confirmedEpoch = await page.evaluate(() => fixtureIdentities.at(-1).page_epoch);
+  expect(await page.evaluate(() => [...new Set(fixtureIdentities.map(i => i.page_epoch))]))
+    .toEqual([confirmedEpoch]);
+  expect(await page.evaluate(() => [...new Set(fixtureCaptures.map(c => c.page_epoch))]))
+    .toEqual([confirmedEpoch]);
   expect(platform.openSockets.size).toBe(1);
 
   const refusedIdentity = route => route.fulfill({ status: 401, contentType: 'application/json', body: '{}' });
@@ -88,6 +93,10 @@ test('the built observer retains one original socket across reinjection and same
   await page.evaluate(() => fixtureRead('/api2/v2/chats'));
   await expect.poll(count).toBe(7);
   expect(await page.evaluate(() => fixtureCaptures.filter(c => c.event_type === 'message.observed').length)).toBe(6);
+  // Sign-out evidence rotates the epoch, so later captures bind to the new confirmation.
+  const renewedEpoch = await page.evaluate(() => fixtureIdentities.at(-1).page_epoch);
+  expect(renewedEpoch).not.toBe(confirmedEpoch);
+  expect(await page.evaluate(() => fixtureCaptures.at(-1).page_epoch)).toBe(renewedEpoch);
 
   await page.evaluate(() => window.postMessage({ type: 'ofca.capture.control', version: 1, action: 'stop' }, location.origin));
   await expect.poll(() => page.evaluate(() => globalThis.__OFCA_PAGE_HOOK_CONTROLLER__ === undefined)).toBe(true);

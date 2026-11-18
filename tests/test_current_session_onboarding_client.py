@@ -51,7 +51,8 @@ def test_initial_production_proof_uses_only_the_exact_published_v2_domain_and_ro
             "expires_at": "2026-10-09T12:01:00.000Z"}).encode(), "application/json")
 
     key = SimpleNamespace(ensure_ready=lambda: SimpleNamespace(installation_key_id=key_id,
-        installation_key_jkt=thumbprint), sign_challenge=sign)
+        installation_key_jkt=thumbprint, public_key_jwk=json.dumps({**vector["public_key"], "kid": key_id})),
+        sign_challenge=sign)
     client = InitialHandoffClient(SimpleNamespace(request=request), key)
     envelope = client.envelope(vector["operation"].removeprefix("initial-handoff-"), vector["request"])
     assert envelope["request"]["profile"] == PROFILE
@@ -92,6 +93,22 @@ def test_only_exact_current_session_refusals_explain_required_action(reason, sta
     with pytest.raises(InitialHandoffRefused) as error:
         client._request(PATH_PREFIX + "complete", {}, expected=200)
     assert error.value.code == expected
+
+
+def test_handoff_exchanges_are_timed_with_closed_labels_only(caplog):
+    import logging
+    from app.onboarding import timing
+    caplog.set_level(logging.INFO, logger=timing.__name__)
+    ok = TransportResponse(200, b"{}", "application/json")
+    client = InitialHandoffClient(SimpleNamespace(request=lambda *a, **k: ok), object())
+    client._request(CHALLENGE_PATH, {"target": {"operation": "initial-handoff-prepare"}}, expected=200)
+    client._request(PATH_PREFIX + "prepare", {}, expected=200)
+    client._request(PATH_PREFIX + "unlisted", {}, expected=200)
+    assert [message.split(" status=")[0] for message in caplog.messages] == [
+        "event=sign_in_phase operation=handoff-prepare phase=challenge-send",
+        "event=sign_in_phase operation=handoff-prepare phase=challenge-receive",
+        "event=sign_in_phase operation=handoff-prepare phase=protected-send",
+        "event=sign_in_phase operation=handoff-prepare phase=protected-receive"]
 
 
 def test_unsigned_unstructured_http_401_does_not_become_an_authentication_fact():

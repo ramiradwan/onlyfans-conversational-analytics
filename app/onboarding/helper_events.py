@@ -13,16 +13,22 @@ from app.provisioning.events import events
 
 TERMINAL = frozenset({"completed", "cancelled", "expired"})
 NOTICES = frozenset({"extension_unavailable", "profile_mismatch", "account_mismatch",
-                     "task_changed", "task_expired", "unavailable"})
+                     "task_changed", "task_expired", "unavailable",
+                     "needs_account", "needs_consent", "needs_permission"})
 FOCUS_SECONDS = 2.0
+# How long a served sign-in entry may go without its popup opening or reporting.
+BACKSTOP_SECONDS = 15.0
 
 
 class HelperStreams:
-    """Which helper generations hold a stream now, and their pending focus requests."""
+    """Which helper generations hold a stream now, their pending focus requests, and their sign-in backstops."""
 
     def __init__(self):
         self._live: dict[tuple[str, str], dict] = {}
         self._notices: dict[str, tuple[str, str]] = {}
+        # task_id -> (generation, timer). A satisfied or fired backstop keeps its generation with no timer.
+        self._backstops: dict[str, tuple[str, asyncio.TimerHandle | None]] = {}
+        self._expiring: set[asyncio.Task] = set()
 
     def live(self, task_id, generation):
         return (task_id, generation) in self._live
@@ -30,7 +36,7 @@ class HelperStreams:
     def _open(self, task_id, generation):
         if (task_id, generation) in self._live or len(self._live) >= 16:
             return None
-        entry = {"focus": asyncio.Event(), "ack": None}
+        entry = {"focus": asyncio.Event(), "end": asyncio.Event(), "ack": None}
         self._live[(task_id, generation)] = entry
         return entry
 
@@ -82,12 +88,66 @@ class HelperStreams:
         if self._notices.pop(task_id, None) is not None:
             events.publish()
 
+    def arm(self, task_id, generation, current):
+        """Start one backstop for this sign-in generation, when its entry is first served.
+
+        `current` runs off the event loop and says whether the generation is still the task's live attempt.
+        """
+        held = self._backstops.get(task_id)
+        if held is not None and held[0] == generation:
+            return False
+        if held is not None and held[1] is not None:
+            held[1].cancel()
+        self._backstops.pop(task_id, None)
+        if len(self._backstops) >= 64:
+            _, oldest = self._backstops.pop(next(iter(self._backstops)))
+            if oldest is not None:
+                oldest.cancel()
+        handle = asyncio.get_running_loop().call_later(BACKSTOP_SECONDS, self._fire, task_id, generation, current)
+        self._backstops[task_id] = (generation, handle)
+        return True
+
+    def satisfy(self, task_id, generation):
+        """The popup opened or reported for this generation. A backstop that already fired stays as it was."""
+        held = self._backstops.get(task_id)
+        if held is None or held[0] != generation or held[1] is None:
+            return False
+        held[1].cancel()
+        self._backstops[task_id] = (generation, None)
+        return True
+
+    def _fire(self, task_id, generation, current):
+        held = self._backstops.get(task_id)
+        if held is None or held[0] != generation or held[1] is None:
+            return
+        self._backstops[task_id] = (generation, None)
+        task = asyncio.ensure_future(self._expire(task_id, generation, current))
+        self._expiring.add(task)
+        task.add_done_callback(self._expiring.discard)
+
+    async def _expire(self, task_id, generation, current):
+        try:
+            if not await asyncio.to_thread(current):
+                return
+        except Exception:
+            return
+        # A refusal this generation reported as task_changed is not shown, so it gives way to the backstop notice.
+        recorded = self._notices.get(task_id)
+        if recorded is not None and recorded[0] == generation and recorded[1] == "task_changed":
+            del self._notices[task_id]
+        self.notice(task_id, generation, "unavailable")
+        entry = self._live.get((task_id, generation))
+        if entry is not None:
+            entry["end"].set()
+
 
 class BrowserTaskEventResponse(StreamingResponse):
     """One stream per task generation. Frames say only that the task's state changed."""
 
-    def __init__(self, coordinator, session, task, streams):
+    def __init__(self, coordinator, session, task, streams, *, entry=None):
         self.coordinator, self.session, self.task, self.streams = coordinator, session, task, streams
+        # Whether the task's ceremony entry is open. Its change is framed like a state change.
+        self.entry_open = entry or (lambda task: False)
         super().__init__(self.frames(), media_type="text/event-stream", headers=HEADERS | {"X-Accel-Buffering": "no"})
         self.listener = self.entry = None
 
@@ -104,24 +164,32 @@ class BrowserTaskEventResponse(StreamingResponse):
             self.streams._close(self.task["task_id"], self.session.generation, self.entry)
 
     def _state(self):
-        with self.coordinator.store.database.read() as connection:
-            _, task = self.coordinator.admissions._require(connection, self.session.identifier,
-                role="browser_task", generation=self.session.generation)
-        state = task["state"]
-        if state not in TERMINAL and task["expires_at"] <= self.coordinator.admissions._now():
-            state = "expired"
-        return state, task["expires_at"]
+        with self.coordinator.store.database.shared_reads():
+            with self.coordinator.store.database.read() as connection:
+                _, task = self.coordinator.admissions._require(connection, self.session.identifier,
+                    role="browser_task", generation=self.session.generation)
+            state = task["state"]
+            if state not in TERMINAL and task["expires_at"] <= self.coordinator.admissions._now():
+                state = "expired"
+            entry = state not in TERMINAL and self.entry_open(dict(task))
+        return state, entry, task["expires_at"]
 
     async def frames(self):
-        signal, focus = self.listener[1], self.entry["focus"]
+        signal, focus, end = self.listener[1], self.entry["focus"], self.entry["end"]
         previous = None
         try:
             while not self.coordinator._closed:
+                if end.is_set():
+                    # The sign-in backstop fired. The helper stops and asks the extension to close it.
+                    yield "event: browser-task-end\ndata: " + json.dumps({"task_id": self.task["task_id"],
+                        "admission_generation": self.session.generation}, separators=(",", ":")) + "\n\n"
+                    return
                 # Clear before the authoritative read, so a commit during it wakes the next pass.
+                # The read runs off the event loop; this stream waits for it before its next frame.
                 signal.clear()
-                state, expires_at = self._state()
-                if state != previous:
-                    previous = state
+                state, entry, expires_at = await asyncio.to_thread(self._state)
+                if (state, entry) != previous:
+                    previous = (state, entry)
                     yield "event: browser-task\ndata: " + json.dumps({"task_id": self.task["task_id"],
                         "admission_generation": self.session.generation, "state": state},
                         separators=(",", ":")) + "\n\n"
@@ -135,7 +203,8 @@ class BrowserTaskEventResponse(StreamingResponse):
                 remaining = expires_at - self.coordinator.admissions._now()
                 if remaining <= 0:
                     continue
-                waiters = {asyncio.ensure_future(signal.wait()), asyncio.ensure_future(focus.wait())}
+                waiters = {asyncio.ensure_future(signal.wait()), asyncio.ensure_future(focus.wait()),
+                           asyncio.ensure_future(end.wait())}
                 try:
                     done, _ = await asyncio.wait(waiters, timeout=min(15, remaining),
                                                  return_when=asyncio.FIRST_COMPLETED)

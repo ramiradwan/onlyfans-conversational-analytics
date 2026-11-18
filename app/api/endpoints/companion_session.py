@@ -121,7 +121,7 @@ class SessionRPC:
         "history.check.begin", "agent.analysis.readiness", "agent.config.get",
         "agent.storage.unseal", "agent.storage.rotate", "agent.surface.report",
         "agent.browser-task.report", "agent.browser-task.capabilities",
-        "agent.signing-rule.resolve",
+        "agent.browser-task.waiting", "agent.signing-rule.resolve",
     })
 
     def __init__(self, authority, pin):
@@ -372,6 +372,13 @@ class BrowserSessionLink:
         await self.manager.advertise_browser_tasks(self.pin.creator_account_id, self.token, params)
         return {}
 
+    async def waiting(self, params):
+        await self.authorized()
+        if self.token is None:
+            raise CompanionRecordError()
+        self.manager.advertise_browser_task_waiting(self.pin.creator_account_id, self.token, params)
+        return {}
+
     async def close(self):
         if self.token is not None:
             token, self.token = self.token, None
@@ -428,6 +435,8 @@ async def _serve(channel, pin):
                         result = await browser.task_report(value["params"])
                     elif value["method"] == "agent.browser-task.capabilities":
                         result = await browser.capabilities(value["params"])
+                    elif value["method"] == "agent.browser-task.waiting":
+                        result = await browser.waiting(value["params"])
                     else:
                         result = await asyncio.to_thread(
                             rpc.call, value["method"], value["params"]

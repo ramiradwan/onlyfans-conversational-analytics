@@ -66,7 +66,8 @@ class ProofCase:
             return TransportResponse(200, json.dumps(value).encode(), "application/json")
 
         self.key = SimpleNamespace(ensure_ready=lambda: SimpleNamespace(
-            installation_key_id=self.key_id, installation_key_jkt=thumbprint), sign_challenge=sign)
+            installation_key_id=self.key_id, installation_key_jkt=thumbprint,
+            public_key_jwk=json.dumps({**self.vector["public_key"], "kid": self.key_id})), sign_challenge=sign)
         client_type = InitialHandoffClient if initial else HostedOnboardingContinuity
         self.client = client_type(SimpleNamespace(request=request), self.key,
                                   clock=lambda: INSTANT + timedelta(seconds=wall_offset),

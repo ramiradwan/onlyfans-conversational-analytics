@@ -129,6 +129,55 @@ async def test_duplicate_clicks_have_one_durable_operation_and_one_worker(setup)
 
 
 @pytest.mark.asyncio
+async def test_only_a_fresh_acceptance_is_announced_and_an_announcement_failure_changes_nothing(setup):
+    coordinator, owner, session, _ = setup
+    announced = []
+
+    def accepted(operation):
+        announced.append(operation["operation_id"])
+        raise RuntimeError("presentation unavailable")
+    coordinator.accepted = accepted
+    request = command(coordinator.read(session))
+    first = await coordinator.command(session, request)
+    # A duplicate reads the same operation's current receipt. Its worker may have advanced it meanwhile.
+    again = await coordinator.command(session, request)
+    assert again["operation_id"] == first["operation_id"] and again["state"] in {"accepted", "completed"}
+    await coordinator.drain()
+    assert announced == [request["operation_id"]]
+    assert coordinator.receipt(session, request["operation_id"])["state"] == "completed"
+    assert len(owner.calls) == 1
+
+@pytest.mark.asyncio
+async def test_a_command_is_accepted_off_the_event_loop_and_a_cancelled_request_still_starts_it(setup):
+    import threading
+    coordinator, owner, session, _ = setup
+    loop_thread, on_loop = threading.get_ident(), []
+    accept, entered, release = coordinator._accept, threading.Event(), threading.Event()
+
+    def held(*args, **kwargs):
+        on_loop.append(threading.get_ident() == loop_thread)
+        entered.set()
+        release.wait(5)
+        return accept(*args, **kwargs)
+
+    request = command(coordinator.read(session))
+    coordinator._accept = held
+    pending = asyncio.create_task(coordinator.command(session, request))
+    assert await asyncio.to_thread(entered.wait, 5)
+    # The HTTP request goes away while its accept is in flight.
+    pending.cancel()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await pending
+    while coordinator._accepting:
+        await asyncio.sleep(0.01)
+    await coordinator.drain()
+    assert on_loop == [False]
+    assert coordinator.receipt(session, request["operation_id"])["state"] == "completed"
+    assert len(owner.calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_lost_reply_recovers_receipt_without_repeating_mutation(setup):
     coordinator, owner, session, _ = setup
     request = command(coordinator.read(session))
@@ -620,6 +669,64 @@ async def test_healthy_wait_suppresses_probe_and_retry(setup, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("wake", ["healthy", "frame", "expiry", "failure"])
+async def test_idle_confirmation_wakes_only_on_frame_expiry_or_failed_wait(setup, monkeypatch, wake):
+    import time
+    monkeypatch.setattr("app.onboarding.coordinator.RECOVERY_INTERVAL_SECONDS", 0.03)
+    monkeypatch.setattr("app.onboarding.coordinator.WAIT_BACKOFF_CAP_SECONDS", 0.3)
+    coordinator, owner, _, clock = setup
+    changed = asyncio.Event()
+    script = (changed, OSError("stream lost")) if wake == "failure" else (changed, _hint(2), "hold")
+    hints = Hints((_hint(1), *script))
+    prefetches, probes = [], []
+
+    async def prefetch(operation):
+        prefetches.append(True)
+        return 0.01
+
+    owner.prefetch = prefetch
+
+    async def probe(operation):
+        probes.append(True)
+        raise OSError("wait unavailable")
+
+    await _waited_connect(setup, hints, probe=probe)
+    await _until(lambda: coordinator._held and not coordinator._workers)
+    # Measure from the held wait.
+    probes.clear()
+    started, initial = time.monotonic(), clock[0]
+    coordinator.store._clock = lambda: initial + timedelta(seconds=time.monotonic() - started)
+    expiry = initial.timestamp() + (0.25 if wake == "expiry" else 10)
+    owner.confirmation_deadline = lambda _: expiry if coordinator.admissions._now() < expiry else None
+    owner.probe_interval = lambda _: 0.01 if coordinator.admissions._now() < expiry else None
+    passes, original = [], coordinator._pass_facts
+
+    def counted():
+        passes.append(True)
+        return original()
+
+    coordinator._pass_facts = counted
+    try:
+        await asyncio.sleep(0.06)
+        before, reads, prefetched = len(passes), len(owner.calls), len(prefetches)
+        await asyncio.sleep(0.12)
+        assert len(passes) == before
+        assert len(owner.calls) == reads
+        assert len(prefetches) == prefetched
+        if wake == "healthy":
+            return
+        if wake in {"frame", "failure"}:
+            changed.set()
+        await _until(lambda: len(owner.calls) == reads + 1)
+        await _until(lambda: not coordinator._workers)
+        await asyncio.sleep(0.01)
+        assert len(owner.calls) == reads + 1
+        assert not probes
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
 async def test_lost_wait_falls_back_to_probe_then_reconnects(setup, monkeypatch):
     monkeypatch.setattr("app.onboarding.coordinator.WAIT_BACKOFF_CAP_SECONDS", 0.3)
     coordinator, owner, session, _ = setup
@@ -649,6 +756,36 @@ async def test_reconnect_honours_retry_after(setup):
     try:
         await _until(lambda: len(hints.opened) >= 2, timeout=2)
         assert hints.opened[1] - hints.opened[0] >= 0.29
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_refused_wait_reads_the_proof_once_per_run_of_failures(setup, monkeypatch):
+    from app.security.browser_ceremony_wait import CeremonyWaitUnavailable
+    monkeypatch.setattr("app.onboarding.coordinator.WAIT_BACKOFF_CAP_SECONDS", 0.02)
+    coordinator, owner, session, _ = setup
+    refused = CeremonyWaitUnavailable("refused")
+    second, framed, lost = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    hints = Hints((refused,), (second, refused), (framed, _hint(1), lost, OSError("stream lost")),
+                  (refused,), (refused,), ("hold",))
+    await _waited_connect(setup, hints)
+
+    def reads():
+        return [reconcile for _, reconcile in owner.calls].count(True)
+
+    try:
+        await _until(lambda: reads() == 1 and not coordinator._workers)
+        second.set()
+        await _until(lambda: len(hints.opened) >= 3)
+        await coordinator.drain()
+        assert reads() == 1
+        framed.set()
+        await _until(lambda: reads() == 2 and not coordinator._workers)
+        lost.set()
+        await _until(lambda: len(hints.opened) >= 6)
+        await coordinator.drain()
+        assert reads() == 3
     finally:
         await coordinator.stop()
 
@@ -783,11 +920,43 @@ def test_sign_in_phases_are_closed_delta_only_info_records(caplog):
     assert len(caplog.messages) == 1
 
 
+def test_sign_in_phases_append_to_a_bounded_local_file(tmp_path, monkeypatch):
+    import re
+    from app.onboarding import timing
+    monkeypatch.setattr(timing, "_sink", None)
+    timing.observe("key", "sign", "ok", 1)
+    timing.record_to(tmp_path / "absent")
+    timing.observe("key", "sign", "ok", 1)
+    assert not (tmp_path / "absent").exists()
+    timing.record_to(tmp_path)
+    timing.reset()
+    timing.mark("operation", "frame", clock=lambda: 1.0)
+    timing.completed("operation", clock=lambda: 1.5)
+    timing.close("operation", "helper", clock=lambda: 1.75)
+    directory = tmp_path / "diagnostics"
+    first = (directory / "sign-in-timing.log").read_text("ascii").splitlines()
+    stamp = r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z "
+    assert re.fullmatch(stamp + "sign_in_phase operation=helper phase=task-send status=ok elapsed_ms=250", first[0])
+    assert re.fullmatch(stamp + "sign_in_close_timing route=helper frame_to_completed_ms=500 completed_to_sent_ms=250",
+                        first[1])
+    for _ in range(3000):
+        timing.observe("authentication-read", "challenge-receive", "ok", 125.4)
+    names = sorted(path.name for path in directory.iterdir())
+    assert names == ["sign-in-timing.1.log", "sign-in-timing.log"]
+    for name in names:
+        size = (directory / name).stat().st_size
+        assert 0 < size <= timing.SINK_LIMIT_BYTES
+        last = (directory / name).read_text("ascii").splitlines()[-1]
+        assert re.fullmatch(stamp + "sign_in_phase operation=authentication-read phase=challenge-receive "
+                            "status=ok elapsed_ms=125", last)
+    timing.reset()
+
+
 @pytest.mark.asyncio
-async def test_wait_and_prefetch_open_while_dispatch_worker_is_active(setup):
+async def test_wait_opens_during_dispatch_but_prefetch_waits_for_its_first_frame(setup):
     from app.provisioning.events import events
     coordinator, owner, session, _ = setup
-    opened, prefetched, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    opened, prefetched, release, frame = asyncio.Event(), asyncio.Event(), asyncio.Event(), asyncio.Event()
     ready = []
 
     async def execute(operation, **kwargs):
@@ -798,9 +967,9 @@ async def test_wait_and_prefetch_open_while_dispatch_worker_is_active(setup):
 
     async def wait(operation):
         opened.set()
+        await frame.wait()
+        yield _hint(1)
         await release.wait()
-        if False:
-            yield None
 
     async def prefetch(operation):
         prefetched.set()
@@ -813,8 +982,148 @@ async def test_wait_and_prefetch_open_while_dispatch_worker_is_active(setup):
     try:
         await coordinator.command(session, command(coordinator.read(session)))
         await asyncio.wait_for(opened.wait(), 1)
+        await asyncio.sleep(0.05)
+        assert not prefetched.is_set()
+        frame.set()
         await asyncio.wait_for(prefetched.wait(), 1)
         assert coordinator._workers
     finally:
         release.set()
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_prefetched_challenge_is_renewed_while_the_sign_in_stays_open(setup):
+    coordinator, owner, session, _ = setup
+    open_task, renewals, release, delay = [True], [], asyncio.Event(), [0.02]
+
+    async def execute(operation, **kwargs):
+        await release.wait()
+        return OperationResult("waiting")
+
+    async def wait(operation):
+        yield _hint(1)
+        await release.wait()
+
+    async def prefetch(operation):
+        renewals.append(delay[0])
+        return delay[0]
+
+    owner.execute, owner.wait, owner.prefetch = execute, wait, prefetch
+    owner.automatic_recovery = lambda operation: True
+    owner.probe_interval = lambda operation: 2 if open_task[0] else None
+    owner.probe = lambda operation: None
+    coordinator.start()
+    try:
+        await coordinator.command(session, command(coordinator.read(session)))
+        for _ in range(100):
+            if len(renewals) >= 4:
+                break
+            await asyncio.sleep(0.01)
+        assert len(renewals) >= 4
+        delay[0] = 30
+        for _ in range(100):
+            if renewals[-1] == 30:
+                break
+            await asyncio.sleep(0.01)
+        operation_id = next(iter(coordinator._prefetches))
+        # A consumed challenge is replaced at once rather than at the next renewal.
+        before = len(renewals)
+        coordinator._prefetch({"operation_id": operation_id})
+        for _ in range(50):
+            if len(renewals) > before:
+                break
+            await asyncio.sleep(0.01)
+        assert len(renewals) > before
+        open_task[0] = False
+        renewed = len(renewals)
+        coordinator._prefetch({"operation_id": operation_id})
+        for _ in range(50):
+            if not coordinator._prefetches:
+                break
+            await asyncio.sleep(0.01)
+        assert not coordinator._prefetches and len(renewals) == renewed
+    finally:
+        release.set()
+        await coordinator.stop()
+
+@pytest.mark.asyncio
+async def test_a_later_frame_with_the_outcome_a_hinted_read_closed_on_reads_nothing(setup):
+    coordinator, owner, session, _ = setup
+    owner.result = OperationResult("waiting")
+    await coordinator.command(session, command(coordinator.read(session)))
+    await coordinator.drain()
+    operation = coordinator._pending()[0]
+    hints = []
+
+    async def reconcile_hint(value):
+        hints.append(value["operation_id"])
+        return True if len(hints) == 1 else None
+
+    owner.reconcile_hint = reconcile_hint
+    owner.calls.clear()
+    coordinator._reconcile_soon(operation, frame=(1, "active", "awaiting-confirmation"))
+    await coordinator.drain()
+    assert (len(hints), len(owner.calls)) == (1, 1)
+    # The ceremony retires on the same outcome. The closed task has nothing left to read.
+    coordinator._reconcile_soon(operation, frame=(2, "retired", "awaiting-confirmation"))
+    await coordinator.drain()
+    assert (len(hints), len(owner.calls)) == (1, 1)
+    # A new outcome is read in full.
+    coordinator._reconcile_soon(operation, frame=(3, "retired", "committed"))
+    await coordinator.drain()
+    assert (len(hints), len(owner.calls)) == (2, 2)
+    # A read without a frame is never skipped.
+    coordinator._reconcile_soon(operation)
+    await coordinator.drain()
+    assert (len(hints), len(owner.calls)) == (3, 3)
+    await coordinator.stop()
+
+@pytest.mark.asyncio
+async def test_a_watch_pass_reads_the_store_off_the_event_loop_and_keeps_a_wake_from_that_read(setup):
+    import threading
+    from app.provisioning.events import events
+    coordinator, owner, session, _ = setup
+    owner.result = OperationResult("waiting")
+    await coordinator.command(session, command(coordinator.read(session)))
+    await coordinator.drain()
+    database, loop_thread = coordinator.store.database, threading.get_ident()
+    connect, on_loop, observed = database.connect, [], []
+    state = {"commit": False, "done": False}
+
+    def counted():
+        if threading.get_ident() == loop_thread:
+            on_loop.append(1)
+        return connect()
+
+    def observe(operation):
+        with database.read() as connection:
+            connection.execute("SELECT 1").fetchone()
+        observed.append(threading.get_ident())
+        if state["commit"]:
+            # A commit lands while this pass reads. Its wake must reach the next pass.
+            state["commit"], state["done"] = False, True
+            events.publish()
+            return None
+        return OperationResult("completed") if state["done"] else None
+
+    owner.observe = observe
+    settled = asyncio.Event()
+    owner.settled = lambda operation, result: settled.set()
+    coordinator.start()
+    try:
+        async with asyncio.timeout(2):
+            while not observed:
+                await asyncio.sleep(0.005)
+        database.connect = counted
+        state["commit"] = True
+        events.publish()
+        async with asyncio.timeout(2):
+            await settled.wait()
+        database.connect = connect
+        assert loop_thread not in observed
+        # Only the settle's own write runs on the loop. Every pass read ran in a worker thread.
+        assert len(on_loop) <= 1
+    finally:
+        database.connect = connect
         await coordinator.stop()

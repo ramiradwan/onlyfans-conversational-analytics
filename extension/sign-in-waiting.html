@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in</title>
+<style>
+  :root { color-scheme: light dark; --bg: #ffffff; --fg: #1f2328; --muted: #d0d7de; --accent: #1f6feb; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0d1117; --fg: #e6edf3; --muted: #30363d; --accent: #4493f8; } }
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+    background: var(--bg); color: var(--fg); font: 15px/1.4 system-ui, sans-serif; }
+  .spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--muted); border-top-color: var(--accent);
+    animation: spin 0.9s linear infinite; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+</style>
+</head>
+<body>
+<div class="spinner" role="status"><span class="visually-hidden">Loading</span></div>
+</body>
+</html>

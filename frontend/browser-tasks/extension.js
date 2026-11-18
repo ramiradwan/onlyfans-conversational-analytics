@@ -2,9 +2,10 @@ import { PORT, exact, isObservation, isAuthentication, isPairingComparison, isSa
 
 /** Only the real Chrome helper imports runtime.connect. Discovery is not absence. */
 export const FOCUS_TIMEOUT_MS = 2000;
-export function connectExtension({ payload, receive, runtime = globalThis.chrome?.runtime, timeout = 5000 }) {
+/** With `prepare`, the port only reads ahead for a sign-in still being prepared. It is silent until `attach`. */
+export function connectExtension({ payload, receive, runtime = globalThis.chrome?.runtime, timeout = 5000, prepare = false }) {
   let port, timer, heartbeat, closed = false, last = null, finishing = false, finishResolve = null;
-  let focusResolve = null, focusTimer = null, refused = false;
+  let focusResolve = null, focusTimer = null, refused = false, preparing = prepare;
   const own = value => exact(value, ['type', 'task_id', 'admission_generation'])
     && value.task_id === payload.task.task_id && value.admission_generation === payload.task.admission_generation;
   const close = () => {
@@ -14,14 +15,15 @@ export function connectExtension({ payload, receive, runtime = globalThis.chrome
     clearTimeout(focusTimer); focusResolve?.(false); focusResolve = null;
     try { port?.disconnect(); } catch { /* disconnected */ }
   };
-  const unavailable = () => { if (closed) return; close(); if (!finishing) receive({ state: 'unavailable' }); };
-  timer = setTimeout(unavailable, timeout);
+  // A port lost while it only read ahead reports nothing. The helper attaches on a fresh port instead.
+  const unavailable = () => { if (closed) return; close(); if (!finishing && !preparing) receive({ state: 'unavailable' }); };
+  if (!preparing) timer = setTimeout(unavailable, timeout);
   try {
     if (!runtime?.connect) throw new Error('unavailable');
     port = runtime.connect(payload.extension_id, { name: PORT });
     port.onDisconnect.addListener(() => { void runtime.lastError; refused = false; unavailable(); });
     port.onMessage.addListener(value => {
-      if (closed) return;
+      if (closed || preparing) return;
       if (finishing) {
         if (!['finished', 'refused'].includes(value?.type)) return;
         const exactFinish = exact(value, ['type', 'task_id', 'admission_generation']) && value.type === 'finished'
@@ -73,14 +75,21 @@ export function connectExtension({ payload, receive, runtime = globalThis.chrome
       }, 20000);
       receive({ state: observation.state, observation });
     });
-    port.postMessage({ type: 'attach', payload });
+    port.postMessage({ type: preparing ? 'prepare' : 'attach', payload });
   } catch { queueMicrotask(unavailable); }
   function send(type) {
     if (closed || !last) return false;
     try { port.postMessage({ type, task_id: payload.task.task_id, admission_generation: payload.task.admission_generation }); return true; }
     catch { unavailable(); return false; }
   }
-  return { close() { if (!refused) close(); }, finish() {
+  return { attach(ready, handler) {
+    // The same port attaches the task once its ceremony exists. A lost port returns false.
+    if (!preparing || closed) return false;
+    try { port.postMessage({ type: 'attach', payload: ready }); } catch { close(); return false; }
+    payload = ready; receive = handler; preparing = false;
+    timer = setTimeout(unavailable, timeout);
+    return true;
+  }, close() { if (!refused) close(); }, finish() {
     if (closed || finishing || !last) return Promise.resolve(false);
     finishing = true; clearTimeout(timer); clearInterval(heartbeat);
     return new Promise(resolve => {
@@ -112,7 +121,20 @@ export function connectExtension({ payload, receive, runtime = globalThis.chrome
   } };
 }
 
-/** One fresh port after the first one died: attach, then a single finish or close. */
+/** Asks the extension for the local waiting window of a sign-in task still being prepared.
+ * The window lasts while this port is open or until the ceremony opens in it. It carries no ceremony. */
+export function openWaiting({ payload, runtime = globalThis.chrome?.runtime }) {
+  let port = null;
+  try {
+    if (!runtime?.connect) return { close() {} };
+    port = runtime.connect(payload.extension_id, { name: PORT });
+    port.onDisconnect.addListener(() => { void runtime.lastError; port = null; });
+    port.postMessage({ type: 'waiting', payload });
+  } catch { port = null; }
+  return { close() { const current = port; port = null; try { current?.disconnect(); } catch { /* disconnected */ } } };
+}
+
+/** One fresh port after the first one died: attach and finish, or only ask to end this helper. */
 export function reattachExtension({ payload, type, runtime = globalThis.chrome?.runtime, timeout = 5000 }) {
   if (!['finish', 'close'].includes(type)) return Promise.resolve(false);
   return new Promise(resolve => {
@@ -131,6 +153,7 @@ export function reattachExtension({ payload, type, runtime = globalThis.chrome?.
         if (type === 'finish' && exact(value, ['type', 'task_id', 'admission_generation']) && value.type === 'finished'
           && value.task_id === payload.task.task_id && value.admission_generation === payload.task.admission_generation) end(true);
       });
+      if (type === 'close') { port.postMessage({ type: 'end', payload }); return; }
       port.postMessage({ type: 'attach', payload });
       port.postMessage({ type, task_id: payload.task.task_id, admission_generation: payload.task.admission_generation });
     } catch { end(false); }

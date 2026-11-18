@@ -20,6 +20,9 @@ const errors = {
   extension_unavailable: 'The extension is not available in that Chrome profile. Install or turn it on, then choose Try again.',
   profile_mismatch: 'Chrome opened a different profile. Switch to the profile that has the extension, then choose Try again.',
   account_mismatch: 'The selected creator account does not match the browser account.',
+  browser_needs_account: 'Chrome does not recognise your creator account yet. Reload your OnlyFans tab, then choose Try again.',
+  browser_needs_consent: 'Browser access is not turned on in the extension. Turn it on, then choose Try again.',
+  browser_needs_permission: 'The extension cannot open OnlyFans. Allow its site access, then choose Try again.',
   operation_expired: 'This task expired.',
   activation_unavailable: 'Full analytics activation could not be prepared. Try again.',
 };
@@ -74,6 +77,14 @@ export function renderSetup(document, state) {
   const selectAction = signIn?.operation_id ? 'auth.select' : 'account.connect';
   const canSelect = !accepted && signIn?.actions.select && allowed.includes(selectAction);
   const choosingProvider = Boolean(signIn && (canSelect || choosingAccount));
+  // The clicked provider stays in place and busy until its sign-in is selected or fails.
+  const signInActions = ['account.connect', 'auth.select', 'auth.switch'];
+  // Brain reports no sign-in projection while the accepted command has not selected yet.
+  const opening = Boolean(state.provider && !state.error && task === 'account-connection'
+    && !['selected', 'admitted', 'reauthentication-required'].includes(signIn?.state)
+    && (signInActions.includes(state.acting) || state.pending && value?.pending_operations.some(item =>
+      item.operation_id === state.pending && signInActions.includes(item.action))));
+  const showingProviders = choosingProvider || opening;
   const controlsDisabled = !state.connected || needsAuthentication || Boolean(state.acting);
   const [title, description, journeyState] = tasks[task] || (state.error
     ? ['Setup unavailable', '', 'setup_unavailable'] : ['Loading setup', 'Reading local setup status…', 'setup_loading']);
@@ -81,7 +92,7 @@ export function renderSetup(document, state) {
     ? 'setup_unavailable' : journeyState);
   get('task-title').textContent = title;
   get('task-description').textContent = choosingAccount ? 'Choose how to sign in with another account.'
-    : choosingProvider ? 'Choose how to sign in. You will confirm the account connection here.'
+    : showingProviders ? 'Choose how to sign in. You will confirm the account connection here.'
       : decision ? 'Review the account and computer, then confirm the connection.' : description;
   get('task-description').hidden = !description;
   get('decision-details').hidden = !decision || choosingAccount;
@@ -114,30 +125,36 @@ export function renderSetup(document, state) {
     retired: 'Sign-in was cancelled.', unavailable: 'The sign-in request could not be confirmed.' }[signIn?.state];
   const progress = task === 'complete' ? state.continuing ? 'Opening dashboard…' : ''
     : state.acting === 'auth.cancel' ? 'Cancelling sign-in…'
-    : state.acting && ['auth.select', 'auth.switch', 'account.connect', 'browser.open'].includes(state.acting) ? 'Opening Chrome…'
+    : opening || state.acting && ['auth.select', 'auth.switch', 'account.connect', 'browser.open'].includes(state.acting) ? 'Opening Chrome…'
       : accepted ? 'Account connection accepted. Finishing setup…'
         : choosingProvider ? '' : signInMessage || (decisionStatus === 'awaiting-authentication' ? 'Finish signing in in Chrome.'
           : decisionStatus === 'unavailable' ? 'This sign-in request is unavailable.' : pending && !decision ? 'Waiting for the current action to finish.' : '');
   // The access section explains a lapse. Nothing progresses until access returns,
   // so the task line then names only errors unrelated to it.
-  setStatus(get('task-status'), (lapsed ? reason !== 'authority_unavailable' && errors[reason] : errors[reason] || progress) || '');
-  get('sign-in-options').hidden = !choosingProvider;
+  const unfinished = canSelect && signIn?.state === 'reauthentication-required' && !state.acting;
+  setStatus(get('task-status'), (lapsed ? reason !== 'authority_unavailable' && errors[reason]
+    : unfinished ? 'Sign-in did not finish.' : errors[reason] || progress) || '');
+  get('sign-in-options').hidden = !showingProviders;
   for (const button of get('sign-in-options').querySelectorAll('[data-provider]')) {
-    button.hidden = !signIn?.choices[button.dataset.provider];
-    button.disabled = controlsDisabled;
+    // Without a projection the opening choices keep the visibility they were clicked in.
+    if (signIn || !opening) button.hidden = !signIn?.choices[button.dataset.provider];
+    button.disabled = controlsDisabled || opening;
+    if (opening && button.dataset.provider === state.provider) button.setAttribute('aria-busy', 'true');
+    else button.removeAttribute('aria-busy');
     button.dataset.action = choosingAccount ? 'auth.switch' : selectAction;
   }
   const action = decision && allowed.includes('account.confirm') ? 'account.confirm'
     : allowed.find(item => actions[item] && (item !== 'browser.access' || task === 'browser-access')
       && (item !== 'account.connect' || signIn?.state === 'admitted'));
-  get('task-action').hidden = !action || choosingProvider || accepted;
+  get('task-action').hidden = !action || showingProviders || accepted;
   get('task-action').disabled = controlsDisabled || (decision ? Boolean(state.pending) : pending);
   get('task-action').textContent = value?.continuation_available ? 'Continue setup'
     : action === 'account.connect' && signIn?.state === 'admitted' ? 'Continue' : actions[action] || '';
   get('task-action').dataset.action = action || '';
-  get('browser-reopen').hidden = accepted || choosingProvider || Boolean(decision) || !state.connected
+  get('browser-reopen').hidden = accepted || showingProviders || Boolean(decision) || !state.connected
     || (signIn ? !signIn.actions.open_browser || !(signIn.state === 'admitted'
-      || ['chrome_unavailable', 'browser_unavailable', 'extension_unavailable', 'profile_mismatch'].includes(reason)) : !value?.pending_operations.some(item => ['browser.access', 'browser.pair'].includes(item.action))
+      || ['chrome_unavailable', 'browser_unavailable', 'extension_unavailable', 'profile_mismatch', 'browser_needs_account',
+        'browser_needs_consent', 'browser_needs_permission'].includes(reason)) : !value?.pending_operations.some(item => ['browser.access', 'browser.pair'].includes(item.action))
       || reason === 'authority_unavailable' || !['browser-access', 'finish-setup'].includes(task));
   get('browser-reopen').disabled = controlsDisabled;
   get('browser-reopen').textContent = signIn ? 'Try again' : 'Continue connecting';

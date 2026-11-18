@@ -8,11 +8,14 @@ import hashlib
 import json
 import math
 import re
+import ssl
 import struct
 from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
+from threading import Lock, Thread
 from time import monotonic, sleep
 from typing import Literal, Protocol
 
@@ -62,6 +65,8 @@ PRODUCTION_TRUST_SET = "production/grant-profile-v1/trust-set.json"
 
 _PROOF_DOMAIN = b"BRIDGE-CLEAN-INSTALLATION-PROOF-V1\x00"
 _MAX_RESPONSE_BYTES = 65_536
+# The hosted service's liveness path. A warm-up reads it only to open a connection.
+WARM_PATH = "/health/live"
 _EXPECTED_MEDIA_TYPE = "application/json"
 _MAX_REPLACEMENT_WAIT_SECONDS = 60.0
 _REPLACEMENT_WAIT_SLICE_SECONDS = 0.1
@@ -189,31 +194,81 @@ class InstallationProofAuthority(Protocol):
     def sign_challenge(self, challenge: bytes) -> InstallationProof: ...
 
 
+def _connection_timing():
+    """Record new TCP and TLS connection durations under closed timing labels."""
+    started = {}
+    stages = {"connection.connect_tcp": "connect", "connection.start_tls": "tls"}
+
+    def trace(name, info):
+        event, _, outcome = name.rpartition(".")
+        stage = stages.get(event)
+        if stage is None:
+            return
+        if outcome == "started":
+            started[stage] = monotonic()
+        elif stage in started:
+            from app.onboarding import timing
+            try:
+                timing.observe("transport", stage, "ok" if outcome == "complete" else "error",
+                               max(0.0, (monotonic() - started.pop(stage)) * 1000))
+            except ValueError:
+                pass
+    return trace
+
+
+def require_hosted_origin(base_url: str) -> str:
+    """Return the HTTPS origin URL that hosted requests may use, or refuse it."""
+    if not isinstance(base_url, str):
+        raise ValueError("Hosted base URL is invalid")
+    return _hosted_origin(base_url)
+
+
+@lru_cache(maxsize=8)
+def _hosted_origin(base_url: str) -> str:
+    try:
+        url = httpx.URL(base_url)
+    except Exception:
+        raise ValueError("Hosted base URL is invalid") from None
+    if (
+        url.scheme != "https"
+        or not url.host
+        or url.username
+        or url.password
+        or url.query
+        or url.fragment
+        or url.path not in {"", "/"}
+    ):
+        raise ValueError("Hosted base URL must be an HTTPS origin")
+    return str(url.copy_with(path="/"))
+
+
+@lru_cache(maxsize=1)
+def hosted_stream_tls_context() -> ssl.SSLContext:
+    """One verifying TLS context for hosted event streams. Building one loads the CA bundle."""
+    return httpx.create_ssl_context(trust_env=False)
+
+
 class HTTPXHostedTransport:
     """HTTPS transport for hosted JSON requests."""
 
-    def __init__(self, base_url: str, *, timeout_seconds: float = 10.0) -> None:
+    def __init__(self, base_url: str, *, timeout_seconds: float = 10.0,
+                 keepalive_seconds: float = 5.0) -> None:
         if isinstance(timeout_seconds, bool) or not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise ValueError("Hosted timeout must be finite and positive")
+        if (isinstance(keepalive_seconds, bool) or not math.isfinite(keepalive_seconds)
+                or not 0 < keepalive_seconds <= 120):
+            raise ValueError("Hosted keepalive must be finite and at most 120 seconds")
         self._timeout_seconds = timeout_seconds
-        try:
-            url = httpx.URL(base_url)
-        except Exception:
-            raise ValueError("Hosted base URL is invalid") from None
-        if (
-            url.scheme != "https"
-            or not url.host
-            or url.username
-            or url.password
-            or url.query
-            or url.fragment
-            or url.path not in {"", "/"}
-        ):
-            raise ValueError("Hosted base URL must be an HTTPS origin")
+        self._keepalive_seconds = keepalive_seconds
+        self._used_at = -math.inf
+        self._warming = False
+        self._warm_lock = Lock()
         self._client = httpx.Client(
-            base_url=str(url.copy_with(path="/")),
+            base_url=require_hosted_origin(base_url),
             follow_redirects=False,
             timeout=timeout_seconds,
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20,
+                                keepalive_expiry=keepalive_seconds),
             headers={"Accept": "application/json", "Accept-Encoding": "identity"},
         )
 
@@ -225,8 +280,10 @@ class HTTPXHostedTransport:
         json_body: Mapping[str, object],
     ) -> TransportResponse:
         deadline = monotonic() + self._timeout_seconds
+        self._used_at = monotonic()
         try:
-            with self._client.stream(method, path, json=json_body) as response:
+            with self._client.stream(method, path, json=json_body,
+                                     extensions={"trace": _connection_timing()}) as response:
                 if monotonic() >= deadline:
                     raise _TransportFailure("Hosted response exceeded deadline")
                 if response.headers.get("content-encoding", "identity").strip().lower() != "identity":
@@ -249,6 +306,36 @@ class HTTPXHostedTransport:
                 )
         except Exception:
             raise _TransportFailure("Hosted request failed") from None
+
+    def warm(self) -> bool:
+        """Open a pooled connection in the background unless one was used recently.
+
+        It sends one bodiless GET of the liveness path and ignores the answer, so it
+        carries no proof or credential and changes nothing at the hosted service.
+        """
+        with self._warm_lock:
+            if self._warming or monotonic() - self._used_at < self._keepalive_seconds * 0.75:
+                return False
+            self._warming = True
+        Thread(target=self._warm, name="hosted-transport-warm", daemon=True).start()
+        return True
+
+    def _warm(self) -> None:
+        try:
+            self._used_at = monotonic()
+            with self._client.stream("GET", WARM_PATH, headers={"Accept": "*/*"},
+                                     extensions={"trace": _connection_timing()}) as response:
+                size = 0
+                # Read the bounded answer so the connection returns to the pool.
+                for chunk in response.iter_raw():
+                    size += len(chunk)
+                    if size > _MAX_RESPONSE_BYTES:
+                        break
+        except Exception:
+            pass
+        finally:
+            with self._warm_lock:
+                self._warming = False
 
     def close(self) -> None:
         self._client.close()

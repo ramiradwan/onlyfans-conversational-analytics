@@ -118,6 +118,32 @@ async function readPlatform(page, pathname) {
   await page.evaluate(async (pathValue) => globalThis.fixtureRead(pathValue), pathname);
 }
 
+async function fixtureTabId(worker, documentToken) {
+  return worker.evaluate(async (token) => {
+    for (const tab of await chrome.tabs.query({ url: ['https://onlyfans.com/*'] })) {
+      if (!Number.isInteger(tab.id)) continue;
+      try {
+        const [result] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id }, world: 'MAIN', func: () => globalThis.fixtureDocumentToken ?? null,
+        });
+        if (result?.result === token) return tab.id;
+      } catch (_error) {
+        // Non-fixture tabs cannot match the token.
+      }
+    }
+    return null;
+  }, documentToken);
+}
+
+async function storedCreatorContexts(worker, tabId, accountId) {
+  return worker.evaluate(async ({ account, storageKey, tab }) => {
+    const stored = await chrome.storage.session.get([storageKey]);
+    return (stored[storageKey]?.contexts ?? [])
+      .filter((context) => context.tab_id === tab && context.observed_platform_id === account)
+      .map(({ tab_id, document_id, page_epoch }) => ({ tab_id, document_id, page_epoch }));
+  }, { account: accountId, storageKey: PROVISIONING_IDENTITY_STORAGE_KEY, tab: tabId });
+}
+
 async function waitForObservedCreatorIdentity(worker, documentToken, accountId) {
   await expect.poll(async () => worker.evaluate(async ({
     account,
@@ -271,29 +297,49 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       expect(state.outbox.pendingEntries).toBe(0);
     });
 
-    await test.step('SPA navigation fences identity without interrupting the authenticated connection', async () => {
+    await test.step('SPA navigation fences identity and restores it from the same document without interrupting the authenticated connection', async () => {
       const before = await readBrainSummary(context);
+      const identityReads = platform.httpReads.filter((pathValue) => pathValue === IDENTITY_PATH).length;
+      const platformTabId = await fixtureTabId(worker, platformDocumentToken);
+      const [confirmed, ...others] = await storedCreatorContexts(worker, platformTabId, SYNTHETIC.creatorId);
+      expect(confirmed).toBeDefined();
+      expect(others).toEqual([]);
       await platformPage.evaluate(() => {
         globalThis.fixtureIdentityResets = 0;
         window.addEventListener('message', (event) => {
           if (event.data?.type === 'ofca.provisioning.identity.reset') globalThis.fixtureIdentityResets += 1;
         });
       });
+      await worker.evaluate(({ storageKey, tabId }) => {
+        globalThis.fixtureTabIdentityHistory = [];
+        chrome.storage.onChanged.addListener((changes, area) => {
+          if (area !== 'session' || !(storageKey in changes)) return;
+          const entry = changes[storageKey].newValue?.contexts?.find((value) => value.tab_id === tabId);
+          globalThis.fixtureTabIdentityHistory.push(entry ? {
+            tab_id: entry.tab_id, document_id: entry.document_id, page_epoch: entry.page_epoch,
+            observed_platform_id: entry.observed_platform_id,
+          } : null);
+        });
+      }, { storageKey: PROVISIONING_IDENTITY_STORAGE_KEY, tabId: confirmed.tab_id });
+      // Same-document navigation retains the hook's confirmed creator and epoch
+      // (ADR 0047). The worker fences the tab, then restores it only from that
+      // document's hook proof, without a new platform identity read.
       for (let navigation = 0; navigation < 5; navigation += 1) {
+        await worker.evaluate(() => { globalThis.fixtureTabIdentityHistory.length = 0; });
         await platformPage.evaluate((index) => history.pushState(null, '', `/my/chats?recovery=${index}`), navigation);
-        await expect.poll(async () => ({
-          resets: await platformPage.evaluate(() => globalThis.fixtureIdentityResets),
-          unknown: await worker.evaluate(async (key) => {
-          const saved = await chrome.storage.session.get([key]);
-          const tab = (await chrome.tabs.query({ url: ['https://onlyfans.com/my/chats?recovery=*'] }))[0];
-          return saved[key]?.contexts?.filter((entry) => entry.tab_id === tab?.id)
-            .every((entry) => entry.observed_platform_id === null);
-          }, PROVISIONING_IDENTITY_STORAGE_KEY),
-        })).toEqual({ resets: navigation + 1, unknown: true });
-        await readPlatform(platformPage, IDENTITY_PATH);
-        await waitForObservedCreatorIdentity(worker, platformDocumentToken, SYNTHETIC.creatorId);
+        await expect.poll(() => worker.evaluate(() => {
+          const history = globalThis.fixtureTabIdentityHistory;
+          const fenced = history.findIndex((entry) => entry === null || entry.observed_platform_id === null);
+          return { fenced: fenced >= 0, restored: fenced >= 0 ? history.at(-1) : null };
+        }), { message: 'The worker did not fence and restore same-document identity.' }).toEqual({
+          fenced: true,
+          restored: { ...confirmed, observed_platform_id: SYNTHETIC.creatorId },
+        });
         expect((await readBrainSummary(context)).connectionToken).toBe(before.connectionToken);
       }
+      expect(await platformPage.evaluate(() => globalThis.fixtureIdentityResets)).toBe(0);
+      expect(platform.httpReads.filter((pathValue) => pathValue === IDENTITY_PATH)).toHaveLength(identityReads);
+      await waitForObservedCreatorIdentity(worker, platformDocumentToken, SYNTHETIC.creatorId);
     });
 
     await test.step('produce exactly one chat and four message observations as sequence 1-6', async () => {
@@ -838,7 +884,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
 
     await test.step('enforce the synthetic safety and no-reload boundary', async () => {
       expect(platform.httpReads.filter((pathValue) => pathValue === '/')).toHaveLength(1);
-      expect(platform.httpReads.filter((pathValue) => pathValue === IDENTITY_PATH)).toHaveLength(6);
+      expect(platform.httpReads.filter((pathValue) => pathValue === IDENTITY_PATH)).toHaveLength(1);
       expect(platform.httpReads.filter((pathValue) => pathValue === CHATS_PATH)).toHaveLength(1);
       expect(platform.httpReads.filter((pathValue) => pathValue === MESSAGES_PATH)).toHaveLength(1);
       expect(pageErrors).toEqual([]);
@@ -851,14 +897,27 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
     });
 
     await test.step('replay a fresh page backlog larger than the protected channel queue', async () => {
+      const platformTabId = await fixtureTabId(
+        worker, await platformPage.evaluate(() => globalThis.fixtureDocumentToken),
+      );
+      const [previousDocument] = await storedCreatorContexts(worker, platformTabId, SYNTHETIC.creatorId);
+      expect(previousDocument).toBeDefined();
       await platformPage.reload({ waitUntil: 'domcontentloaded' });
       await expect.poll(() => platformPage.evaluate(
         () => globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.mode,
       )).toBe('full');
+      // A new document starts unconfirmed and stays so past the worker's
+      // proof window until the platform answers a fresh identity read.
+      await expect.poll(() => storedCreatorContexts(worker, platformTabId, SYNTHETIC.creatorId)).toEqual([]);
+      await sleep(2_000);
+      expect(await storedCreatorContexts(worker, platformTabId, SYNTHETIC.creatorId)).toEqual([]);
       await readPlatform(platformPage, IDENTITY_PATH);
       await waitForObservedCreatorIdentity(
         worker, await platformPage.evaluate(() => globalThis.fixtureDocumentToken), SYNTHETIC.creatorId,
       );
+      const [currentDocument] = await storedCreatorContexts(worker, platformTabId, SYNTHETIC.creatorId);
+      expect(currentDocument.document_id).not.toBe(previousDocument.document_id);
+      expect(currentDocument.page_epoch).not.toBe(previousDocument.page_epoch);
       await platformPage.evaluate(() => globalThis.fixtureOpenSocket());
       await brain.stop();
       await waitForExtensionState(worker, (state) => !state.socketOpen && !state.sessionBound,
@@ -877,7 +936,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       expect(proof.canonicalMessageCount).toBe(25);
       expect(platform.httpReads.filter((pathValue) => pathValue === '/')).toHaveLength(1);
       expect(platform.httpReads.filter((pathValue) => pathValue === '/my/chats')).toHaveLength(1);
-      expect(platform.httpReads.filter((pathValue) => pathValue === IDENTITY_PATH)).toHaveLength(7);
+      expect(platform.httpReads.filter((pathValue) => pathValue === IDENTITY_PATH)).toHaveLength(2);
       expect(platform.httpReads.filter((pathValue) => pathValue === CHATS_PATH)).toHaveLength(1);
       expect(platform.httpReads.filter((pathValue) => pathValue === MESSAGES_PATH)).toHaveLength(1);
       expect(pageErrors).toEqual([]);

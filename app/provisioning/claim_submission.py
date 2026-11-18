@@ -63,9 +63,9 @@ ClaimSubmissionRefusal = Literal[
 ]
 
 
-def hosted_transport(hosted_origin: str) -> HostedTransport:
+def hosted_transport(hosted_origin: str, *, keepalive_seconds: float = 5.0) -> HostedTransport:
     """Open the outbound HTTPS transport for the pinned hosted origin."""
-    return HTTPXHostedTransport(hosted_origin)
+    return HTTPXHostedTransport(hosted_origin, keepalive_seconds=keepalive_seconds)
 
 
 def installation_proof_authority(
@@ -91,6 +91,9 @@ class _DeferredInstallationProofAuthority:
 
     def reopen_existing(self) -> InstallationKeyReference:
         return self._authority().reopen_existing()
+
+    def signing_reference(self) -> InstallationKeyReference:
+        return self._authority().signing_reference()
 
     def sign_challenge(self, challenge: bytes) -> InstallationProof:
         return self._authority().sign_challenge(challenge)

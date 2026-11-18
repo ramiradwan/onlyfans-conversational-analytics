@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import ssl
 from dataclasses import replace
 from pathlib import Path
 
@@ -136,6 +137,44 @@ async def test_malformed_wire_frames_are_refused(wire):
         _ = [hint async for hint in subject.hints({"request": GOOD["request"]})]
 
 
+async def test_each_wait_reuses_one_tls_context(monkeypatch):
+    seen = []
+    real = httpx.AsyncClient
+
+    class Recording(real):
+        def __init__(self, *args, **kwargs):
+            seen.append(kwargs.get("verify"))
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(wait.httpx, "AsyncClient", Recording)
+    transport = httpx.MockTransport(lambda request: httpx.Response(
+        200, content=b": keepalive\n\n", headers={"content-type": "text/event-stream"}))
+    subject, _ = client(stream_transport=transport)
+    for _ in range(2):
+        _ = [hint async for hint in subject.hints({"request": GOOD["request"]})]
+    assert len(seen) == 2 and isinstance(seen[0], ssl.SSLContext) and seen[0] is seen[1]
+
+
 def test_other_ceremony_is_only_an_ignored_hint():
     value = next(item["value"] for item in cases("schema") if item["case_id"] == "wait-event")
     assert wait.parse_hint(json.dumps(value), "0199b234-5678-7000-8000-000000000099") is None
+
+@pytest.mark.parametrize("status", [401, 410, 429, 503])
+async def test_a_refused_wait_records_its_http_status(status, caplog):
+    import logging
+    from app.security.browser_ceremony_wait import CeremonyWaitUnavailable
+    caplog.set_level(logging.INFO, logger="app.onboarding.timing")
+    transport = httpx.MockTransport(lambda request: httpx.Response(status, json={"reason": "x"}))
+    subject, _ = client(stream_transport=transport)
+    with pytest.raises(CeremonyWaitUnavailable):
+        _ = [hint async for hint in subject.hints({"request": GOOD["request"]})]
+    received = [message for message in caplog.messages if "phase=protected-receive" in message]
+    assert len(received) == 1 and received[0].startswith("event=sign_in_phase operation=wait phase=protected-receive status=error")
+    assert received[0].endswith(f" http={status}")
+
+
+def test_timing_refuses_a_status_that_is_not_an_http_code():
+    from app.onboarding import timing
+    for value in (99, 600, "401", 401.0, True):
+        with pytest.raises(ValueError):
+            timing.observe("wait", "protected-receive", "error", 1, http=value)

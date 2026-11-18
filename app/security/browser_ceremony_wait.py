@@ -12,9 +12,13 @@ import httpx
 
 from app.onboarding import timing
 from app.security.browser_ceremony import _P256_ORDER
-from app.security.hosted_grants import HostedGrantUnavailable, HostedTransport, HTTPXHostedTransport
+from app.security.hosted_grants import (
+    HostedGrantUnavailable, HostedTransport, hosted_stream_tls_context, require_hosted_origin,
+)
 from app.security.initial_handoff import _require_proof_budget, timestamp
-from app.security.installation_continuation import ExistingInstallationKey, _decode, _document, canonical_request
+from app.security.installation_continuation import (
+    ExistingInstallationKey, _decode, _document, canonical_request, signing_reference,
+)
 from app.security.installation_key import verify_installation_proof
 
 PROFILE = "urn:bridge-clean:browser-ceremony-wait:v1"
@@ -94,8 +98,7 @@ class BrowserCeremonyWaitClient:
     def __init__(self, transport: HostedTransport, key: ExistingInstallationKey, origin: str, *,
                  monotonic: Callable[[], float] = time.monotonic,
                  stream_transport: httpx.AsyncBaseTransport | None = None) -> None:
-        validation = HTTPXHostedTransport(origin)
-        validation.close()
+        require_hosted_origin(origin)
         self.transport, self.key, self.origin, self.monotonic = transport, key, origin, monotonic
         self.stream_transport = stream_transport
 
@@ -105,7 +108,7 @@ class BrowserCeremonyWaitClient:
             raise HostedGrantUnavailable("Invalid ceremony wait request")
         if before_send is not None:
             before_send()
-        key = self.key.reopen_existing()
+        key = signing_reference(self.key)
         binding = request["binding"]
         if (binding["installation_key_id"], binding["installation_key_jkt"]) != (
                 key.installation_key_id, key.installation_key_jkt):
@@ -151,15 +154,17 @@ class BrowserCeremonyWaitClient:
     async def hints(self, envelope: dict) -> AsyncIterator[Hint]:
         """Yield each hint for this ceremony until the server ends the stream."""
         ceremony_id = envelope["request"]["ceremony_id"]
-        async with httpx.AsyncClient(base_url=self.origin, follow_redirects=False, trust_env=False,
-                                     transport=self.stream_transport,
+        # The shared TLS context keeps CA loading out of the event loop at each wait.
+        async with timing.stream("wait"), httpx.AsyncClient(base_url=self.origin, follow_redirects=False, trust_env=False,
+                                     verify=hosted_stream_tls_context(), transport=self.stream_transport,
                                      timeout=httpx.Timeout(35.0, connect=10.0)) as client:
             timing.observe("wait", "protected-send", "ok", 0)
             started = self.monotonic()
             async with client.stream("POST", WAIT_PATH, json=envelope,
                                      headers={"Accept": "text/event-stream", "Accept-Encoding": "identity"}) as response:
-                timing.observe("wait", "protected-receive", "ok" if response.status_code == 200 else "error",
-                    max(0, (self.monotonic() - started) * 1000))
+                status = response.status_code
+                timing.observe("wait", "protected-receive", "ok" if status == 200 else "error",
+                    max(0, (self.monotonic() - started) * 1000), http=status if 100 <= status <= 599 else None)
                 if response.status_code in {429, 503}:
                     raise CeremonyWaitUnavailable("Ceremony wait is unavailable", retry_after=_retry_after(response))
                 if (response.status_code != 200
@@ -197,6 +202,7 @@ class BrowserCeremonyWaitClient:
                         elif line.startswith("data:"):
                             data.append(line[5:].lstrip())
                         elif line.startswith(":"):
+                            timing.observe("wait", "keepalive", "ok", 0)
                             size = 0 if not (event or data) else size
                         else:
                             raise HostedGrantUnavailable("Unknown ceremony wait field")

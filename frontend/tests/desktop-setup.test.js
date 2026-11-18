@@ -44,6 +44,75 @@ it('sends closed click deltas without delaying command dispatch', async () => {
   expect(calls.some(([url]) => url.endsWith('/commands'))).toBe(true);
 });
 
+it('records when its click finds the browser task and when Chrome was launched, once each', async () => {
+  const calls = [];
+  const subject = new DesktopSetupClient({ generation, storage: storage(), receive() {},
+    uuid: () => operationId, stream: () => () => {},
+    openBrowser: async (owner, selected) => {
+      owner.browserTaskPrepared({ operation_id: selected, journey_id: '33333333-3333-4333-8333-333333333333', expires_at: 2000000000 });
+      return true;
+    },
+    request: async (url, options) => {
+      calls.push([url, options?.body && JSON.parse(options.body)]);
+      if (url.endsWith('/timing')) return new Promise(() => {});
+      if (url.includes('/operations/')) return response(record);
+      return response(record, 202);
+    } });
+  subject.value = initial(); subject.session = session; subject.connected = true;
+  await subject.act('browser.access');
+  subject.remember(operationId);
+  await subject.launchBrowser(true, null);
+  const phases = calls.filter(([url]) => url.endsWith('/timing')).map(([, body]) => body.phase);
+  expect(phases).toEqual(['click', 'command-send', 'task-found', 'launch']);
+});
+
+it('launches the browser for an accepted click while its receipt is still being read', async () => {
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const openBrowser = vi.fn(async () => true);
+  const subject = new DesktopSetupClient({ generation, storage: storage(), receive() {},
+    uuid: () => operationId, stream: () => () => {}, openBrowser,
+    request: async (url) => {
+      if (url.endsWith('/timing')) return new Promise(() => {});
+      if (url.includes('/operations/')) { await held; return response(record); }
+      return response(record, 202);
+    } });
+  subject.value = initial(); subject.session = session; subject.connected = true;
+  const acting = subject.act('browser.access');
+  await vi.waitFor(() => expect(openBrowser).toHaveBeenCalledTimes(1));
+  release();
+  await acting;
+  expect(openBrowser.mock.calls[0][1]).toBe(operationId);
+});
+
+it('stops a launch still in progress when its receipt is refused', async () => {
+  let found;
+  const lookup = new Promise(resolve => { found = resolve; });
+  const invoke = vi.fn();
+  const receive = vi.fn();
+  const subject = new DesktopSetupClient({ generation, storage: storage(), receive,
+    uuid: () => operationId, stream: () => () => {},
+    openBrowser: async (owner, selected, _, current) => {
+      await lookup;
+      if (!current()) return false;
+      invoke(selected);
+      return true;
+    },
+    request: async (url) => {
+      if (url.endsWith('/timing')) return new Promise(() => {});
+      if (url.includes('/operations/')) return response({ ...record, state: 'refused', reason: 'operation_expired' });
+      if (url.endsWith('/session')) return new Promise(() => {});
+      return response(record, 202);
+    } });
+  subject.value = initial(); subject.session = session; subject.connected = true;
+  const acting = subject.act('browser.access');
+  await vi.waitFor(() => expect(subject.launchOperation).toBe(null));
+  found();
+  await acting;
+  expect(invoke).not.toHaveBeenCalled();
+  expect(subject.pending).toBe(null);
+});
+
 it('selects the saved setup theme before the entry module can paint', () => {
   const meta = { setAttribute: vi.fn() };
   const earlyDocument = { documentElement: { dataset: {} }, querySelector: () => meta };
@@ -531,6 +600,22 @@ describe('desktop setup presentation', () => {
     choices: { google: true, 'microsoft-personal': true, telegram: false, tiktok: false, default: true },
     actions: { select: true, cancel: false, open_browser: false, switch_account: false }, authentication_attempt: null });
 
+  it('offers one click sign-in choices and plain unfinished copy after the popup ends', () => {
+    mount();
+    const value = { ...initial(), next_task: 'account-connection', allowed_actions: ['auth.select'],
+      pending_operations: [{ ...record, action: 'auth.select', state: 'outcome_unknown', reason: 'operation_unconfirmed' }],
+      authentication: { ...signIn(), operation_id: operationId, browser_operation_id: operationId,
+        state: 'reauthentication-required' } };
+    renderSetup(document, { snapshot: value, connected: true, pending: operationId, provider: 'google' });
+    expect(document.getElementById('task-status').textContent).toBe('Sign-in did not finish.');
+    expect(document.getElementById('sign-in-options').hidden).toBe(false);
+    const button = document.querySelector('[data-provider="google"]');
+    expect(button.disabled).toBe(false);
+    expect(button.hasAttribute('aria-busy')).toBe(false);
+    expect(button.dataset.action).toBe('auth.select');
+    expect(document.getElementById('browser-reopen').hidden).toBe(true);
+  });
+
   it('renders only configured provider choices with the governed initial action', () => {
     mount();
     const value = { ...initial(), next_task: 'account-connection', allowed_actions: ['account.connect'],
@@ -569,6 +654,46 @@ describe('desktop setup presentation', () => {
     expect(document.getElementById('sign-in-switch').hidden).toBe(false);
     renderSetup(document, { snapshot: { ...value, decision_status: { operation_id: operationId, state: 'accepted' } }, connected: true });
     for (const id of ['browser-reopen', 'sign-in-switch', 'sign-in-options']) expect(document.getElementById(id).hidden).toBe(true);
+  });
+
+  it.each(['browser_needs_account', 'browser_needs_consent', 'browser_needs_permission'])(
+    'replaces the Chrome wait with the %s error and a Try again', error => {
+      mount();
+      const value = { ...initial(), next_task: 'account-connection', allowed_actions: ['auth.switch', 'auth.cancel'],
+        authentication: { ...signIn(), operation_id: operationId, browser_operation_id: operationId, state: 'selected',
+          actions: { select: false, cancel: true, open_browser: true, switch_account: true } } };
+      renderSetup(document, { snapshot: value, connected: true, error });
+      const status = document.getElementById('task-status').textContent;
+      expect(status).not.toBe('Finish signing in in Chrome.');
+      expect(status).toMatch(/then choose Try again\.$/);
+      expect(document.getElementById('browser-reopen').hidden).toBe(false);
+      expect(document.getElementById('browser-reopen').textContent).toBe('Try again');
+    });
+
+  it('keeps the clicked provider busy in place until its sign-in is selected', () => {
+    mount();
+    const choosing = { ...initial(), next_task: 'account-connection', allowed_actions: ['account.connect'], authentication: signIn() };
+    const busy = () => [...document.querySelectorAll('[data-provider]')].filter(button => button.getAttribute('aria-busy') === 'true')
+      .map(button => button.dataset.provider);
+    renderSetup(document, { snapshot: choosing, connected: true, acting: 'account.connect', provider: 'google' });
+    expect(busy()).toEqual(['google']);
+    expect(document.getElementById('task-status').textContent).toBe('Opening Chrome…');
+    // While the command is pending and nothing is selected yet, Brain reports no sign-in projection.
+    const accepted = { ...choosing, allowed_actions: [], pending_operations: [{ ...record, action: 'account.connect' }], authentication: null };
+    renderSetup(document, { snapshot: accepted, connected: true, pending: operationId, provider: 'google' });
+    expect(document.getElementById('sign-in-options').hidden).toBe(false);
+    expect(busy()).toEqual(['google']);
+    expect([...document.querySelectorAll('[data-provider]:not([hidden])')].every(button => button.disabled)).toBe(true);
+    expect(document.getElementById('task-status').textContent).toBe('Opening Chrome…');
+    for (const id of ['task-action', 'browser-reopen']) expect(document.getElementById(id).hidden).toBe(true);
+    const selected = { ...accepted, authentication: { ...signIn(), operation_id: operationId, browser_operation_id: operationId,
+      state: 'selected', actions: { select: false, cancel: true, open_browser: true, switch_account: false } } };
+    renderSetup(document, { snapshot: selected, connected: true, pending: operationId, provider: 'google' });
+    expect(document.getElementById('sign-in-options').hidden).toBe(true);
+    expect(busy()).toEqual([]);
+    expect(document.getElementById('task-status').textContent).toBe('Finish signing in in Chrome.');
+    renderSetup(document, { snapshot: accepted, connected: true, pending: operationId, provider: 'google', error: 'browser_unavailable' });
+    expect(busy()).toEqual([]);
   });
 
   it('requires the current authentication projection before offering account sign-in or browser retry', () => {
@@ -807,6 +932,35 @@ it('reads pushed frames across chunk boundaries and reports disconnection', asyn
   expect(receive).toHaveBeenCalledWith(JSON.stringify(initial()));
 });
 
+it('recognizes the planned setup stream end', async () => {
+  const stream = new ReadableStream({ start(controller) {
+    controller.enqueue(new TextEncoder().encode('event: setup-end\ndata: {}\n\n'));
+    controller.close();
+  } });
+  await expect(setupEvents(async () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } }),
+    {}, new AbortController().signal, vi.fn())).rejects.toThrow('stream_expired');
+});
+
+it('reconnects after a planned setup stream end without an interruption message', async () => {
+  vi.useFakeTimers();
+  const received = [], opened = vi.fn();
+  const subject = new DesktopSetupClient({ generation, storage: storage(), receive: value => received.push(value),
+    request: async () => response(session),
+    stream: async (_request, _headers, _signal, publish) => {
+      opened();
+      publish(JSON.stringify(initial()));
+      throw Error('stream_expired');
+    } });
+  try {
+    await subject.connect();
+    expect(received.every(value => value.error === null)).toBe(true);
+    expect(opened).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(opened).toHaveBeenCalledTimes(2);
+    expect(received.every(value => value.error === null)).toBe(true);
+  } finally { subject.stop(); vi.useRealTimers(); }
+});
+
 it('rejects dashboard and Chrome modules anywhere in the built setup graph', () => {
   const bundle = { 'setup.js': { type: 'chunk', isEntry: true, facadeModuleId: '/frontend/onboarding/index.html', fileName: 'setup.js', modules: {}, imports: ['shared.js'], dynamicImports: [] },
     'shared.js': { type: 'chunk', modules: { '/frontend/shared-setup/presentation.js': {} }, imports: [], dynamicImports: [] } };
@@ -849,6 +1003,10 @@ describe('helper notices in the desktop', () => {
     notices(JSON.stringify({ notices: [] }));
     expect(received.at(-1).error).toBe(null);
     expect(() => notices(JSON.stringify({ notices: [{ task_id: 'x', reason: 'profile_mismatch' }] }))).toThrow('invalid_snapshot');
+    for (const reason of ['needs_account', 'needs_consent', 'needs_permission']) {
+      notices(JSON.stringify({ notices: [{ task_id: crypto.randomUUID(), reason }] }));
+      expect(received.at(-1).error).toBe('browser_' + reason);
+    }
     client.stop();
   });
   it('reads browser notice events and ignores unknown events', async () => {

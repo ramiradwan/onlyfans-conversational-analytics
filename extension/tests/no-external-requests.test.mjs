@@ -65,7 +65,7 @@ test('the hosted origin reaches only the sign-in popup owner', async () => {
     const text = (await readFile(path.join(ROOT, file), 'utf8'));
     const uses = [...text.matchAll(/onboardingHostedOrigin/gu)].length;
     assert.equal(uses, 2, `${file} imports it once and passes it to browser auth once`);
-    assert.match(text, /createBrowserAuth\(\{ chromeApi: chrome, hostedOrigin: onboardingHostedOrigin, onRemoved: observePopupRemoval \}\)/u);
+    assert.match(text, /createBrowserAuth\(\{ chromeApi: chrome, hostedOrigin: onboardingHostedOrigin, onRemoved: observePopupRemoval, onLifecycle: observePopupLifecycle, onCreated: observePopupCreation, onStage: observeSignInStage \}\)/u);
   }
 });
 

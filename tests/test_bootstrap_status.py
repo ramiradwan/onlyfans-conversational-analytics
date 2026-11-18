@@ -184,7 +184,7 @@ with parent_lifetime(stopped.set),bootstrap_status(stopped) as status:
 
 
 @pytest.fixture
-def startup(monkeypatch):
+def startup(monkeypatch, tmp_path):
     import uvicorn
 
     reader, writer = os.pipe()
@@ -215,7 +215,9 @@ def startup(monkeypatch):
     monkeypatch.setattr(status, "bootstrap_status", observations)
     monkeypatch.setattr(process_lifetime, "parent_lifetime", lambda *a, **kw: nullcontext())
     monkeypatch.setattr(startup_maintenance, "acquire_runtime_ownership",
-                        lambda: SimpleNamespace(mode="configured"))
+                        lambda: SimpleNamespace(mode="configured", root=tmp_path))
+    from app.onboarding import timing
+    monkeypatch.setattr(timing, "_sink", None)
     monkeypatch.setattr(startup_maintenance, "admit_retained_schemas", lambda *a, **kw: None)
     monkeypatch.setattr(uvicorn, "Config", lambda application, **kw: application)
 

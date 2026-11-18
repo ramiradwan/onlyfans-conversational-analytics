@@ -14,6 +14,7 @@ try {
   let current = { snapshot: null, pending: null, connected: false, error: null };
   let choosingAccount = false;
   let acting = null;
+  let provider = null;
   let finished = false;
   const render = () => {
     const authentication = client?.session?.stage === 'runtime' ? enrollment.state : null;
@@ -21,7 +22,7 @@ try {
       && current.snapshot?.next_task === 'complete' && current.snapshot.local_ready === true
       && authentication?.checked === true && authentication.authenticated === true
       && !authentication.busy && !authentication.error;
-    renderSetup(document, { ...current, choosingAccount, acting, authentication, continuing });
+    renderSetup(document, { ...current, choosingAccount, acting, provider, authentication, continuing });
     if (continuing) {
       finished = true;
       location.replace('/');
@@ -31,6 +32,7 @@ try {
   client = new DesktopSetupClient({ generation: fields.get('presentation'), receive: state => {
     if (current.snapshot?.authentication?.authentication_attempt?.authentication_attempt_id
       !== state.snapshot?.authentication?.authentication_attempt?.authentication_attempt_id) choosingAccount = false;
+    if (!acting && (!state.pending || state.error)) provider = null;
     current = state; render();
     if (client.session?.stage === 'runtime' && state.connected && !enrollment.state.checked && !enrollment.state.busy) void enrollment.check();
   }, openBrowser: openBrowserTask });
@@ -43,7 +45,11 @@ try {
   };
   document.getElementById('task-action').addEventListener('click', event => { void act(event.currentTarget.dataset.action); });
   for (const button of document.querySelectorAll('#sign-in-options [data-provider]')) {
-    button.addEventListener('click', event => { void act(event.currentTarget.dataset.action, { provider: event.currentTarget.dataset.provider }); });
+    button.addEventListener('click', event => {
+      const { action, provider: selected } = event.currentTarget.dataset;
+      if (!acting) provider = selected;
+      void act(action, { provider: selected });
+    });
   }
   document.getElementById('sign-in-switch').addEventListener('click', () => {
     choosingAccount = true; render();

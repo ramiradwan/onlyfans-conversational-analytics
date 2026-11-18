@@ -331,3 +331,23 @@ async def test_stopped_owner_refuses_late_effect_without_touching_closed_transpo
     worker.resume(current_journey)
     assert worker._tasks == {}
     assert calls == [] and worker.accepted_work() == ()
+
+
+@pytest.mark.asyncio
+async def test_a_slow_return_to_the_waiting_owner_is_recorded(caplog):
+    import time
+    from app.provisioning.owner_effects import OwnerEffects
+    effects = OwnerEffects()
+
+    async def busy_loop():
+        await asyncio.sleep(0.01)
+        time.sleep(0.06)
+
+    with caplog.at_level("INFO", logger="app.onboarding.timing"):
+        blocker = asyncio.create_task(busy_loop())
+        assert await effects.run(lambda: time.sleep(0.02) or 1, journey_id=JOURNEY) == 1
+        await blocker
+        assert "operation=effect phase=resume" in caplog.text
+        caplog.clear()
+        assert await effects.run(lambda: 2, journey_id=JOURNEY) == 2
+        assert "phase=resume" not in caplog.text

@@ -130,8 +130,11 @@ def test_packaged_boot_constructs_application_only_after_pending_auth_maintenanc
         assert not (root / "upgrade-checkpoint").exists()
         raise Selected()
     monkeypatch.setattr(packaged_entry, "select_brain_application", select)
+    from app.onboarding import timing
+    monkeypatch.setattr(timing, "_sink", None)
     with pytest.raises(Selected):
         packaged_entry.run_brain()
+    assert timing._sink == root / "diagnostics" / "sign-in-timing.log"
 
 
 @pytest.mark.parametrize("packaged", [False, True])

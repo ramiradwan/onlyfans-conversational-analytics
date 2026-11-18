@@ -43,6 +43,7 @@ Hello fields remain closed. New features negotiate only through capabilities and
 | `agent.storage.unseal` | Validate the account-bound bootstrap and return the stable account storage key with this session's fresh ticket. |
 | `agent.storage.rotate` | Validate this session's reconnect and configuration credentials and reseal its bootstrap. |
 | `agent.browser-task.capabilities` | After Agent authentication, record the closed controls and task purposes this session accepts: exactly `controls` `["browser.task.end"]` and a sorted, known `task_purposes` list. Returns `{}`. |
+| `agent.browser-task.waiting` | After this session's `agent.browser-task.capabilities`, record that it accepts the closed waiting-window controls. Params are exactly `{}`. Returns `{}`. |
 | `agent.surface.report` | After Agent authentication, record the extension's closed browser state (`schema` `ofca-browser-surface/v1`, `capture`, `site_access`, `history_permission`, `legal_review_required`) for `agent.state`, and admit the session for controls. Returns `{}`. |
 
 ## Session controls
@@ -50,6 +51,8 @@ Hello fields remain closed. New features negotiate only through capabilities and
 Brain sends a control as a routine document with exactly `type` `session.control`, a canonical UUID `id`, and an `action` of `capture.pause`, `capture.resume`, or `companion.revoked` ([ADR 0045](adr/0045-desktop-led-extension-setup.md)). Agent refuses any other shape by closing the session, ignores a repeated `id`, and applies pause and resume through its consent controller. Brain sends controls only to sessions that have reported browser state, and `companion.revoked` only to sessions of the pin being revoked.
 
 Agent calls `agent.browser-task.capabilities` once per session, after its first browser state report. A session that called it also receives `browser.task.end` with only `task_id` and `admission_generation` when a task Brain dispatched to its pairing ends. The control is a notification and carries no outcome. Agent matches it to an active task or ignores it. Brain sends it to no other session, so an older extension never receives it.
+
+After a successful capabilities call, Agent calls `agent.browser-task.waiting`. An older Brain answers it as an unknown method and the session continues without the waiting controls. When Brain accepts a sign-in selection for an extension-flow account, it sends a session that called it `browser.task.waiting` with only `operation_id` and an integer `expires_at` at most 60 seconds ahead. The extension opens its sign-in popup on a local waiting page and later shows that operation's dispatched ceremony in the same window. Unless the operation's browser task was dispatched to the extension, Brain then sends `browser.task.waiting.end` with only `operation_id`, and the extension removes a window that is still waiting. Neither control carries a ceremony, a URL or an outcome, and Brain sends them to no other session.
 
 While consent is paused from Full, Agent keeps a control-only session. It runs `agent.challenge`, `agent.authenticate`, and `agent.surface.report`, and never `agent.storage.unseal` or `agent.hello`.
 

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { identityNavigation, tick } from '../test-fixtures/identity-navigation.mjs';
 import { createOnboardingWorkspace, WORKSPACE_RECORD_KEY, WORKSPACE_ACTIVITY_KEY, WORKSPACE_IDENTITY_KEY, WORKSPACE_STATE_KEY } from '../runtime/onboarding-workspace.mjs';
 
 const journey = 'b88c2d88-dbbf-4fdb-8743-9f92cbe46fed';
@@ -150,7 +151,7 @@ test('known creator marker preserves the draft after worker loss, while a newly 
   assert.equal(f.values[WORKSPACE_STATE_KEY].identity.scope_id, changed.draft_scope.scope_id);
 });
 
-for (const broken of ['missing', 'invalid', 'record-only', 'marker-only', 'other-journey', 'unknown-account']) {
+for (const broken of ['missing', 'invalid', 'record-only', 'marker-only', 'other-journey']) {
   test(`creator presentation binding fails closed for ${broken} without erasing general choices`, async () => {
     const f = await boundFixture(); const original = await f.workspace.read();
     if (broken === 'missing') delete f.values[WORKSPACE_STATE_KEY].identity;
@@ -158,15 +159,39 @@ for (const broken of ['missing', 'invalid', 'record-only', 'marker-only', 'other
     if (broken === 'record-only') f.values[WORKSPACE_STATE_KEY].record.draft_scope.scope_id = crypto.randomUUID();
     if (broken === 'marker-only') f.values[WORKSPACE_STATE_KEY].identity.scope_id = crypto.randomUUID();
     if (broken === 'other-journey') f.values[WORKSPACE_STATE_KEY].identity.journey_id = crypto.randomUUID();
-    if (broken !== 'unknown-account') {
-      await assert.rejects(f.workspace.reconcileIdentity(identityA), /workspace_storage_invalid/);
-      return;
-    }
-    const recovered = await f.workspace.reconcileIdentity({ account_digest: null });
-    assert.notEqual(recovered.draft_scope.scope_id, original.draft_scope.scope_id);
-    assert.deepEqual(recovered.draft, { ...checked, full_checked: false });
-    assert.deepEqual(Object.keys(recovered).sort(), ['draft', 'draft_scope', 'journey_id', 'route', 'version']);
+    await assert.rejects(f.workspace.reconcileIdentity(identityA), /workspace_storage_invalid/);
   });
+}
+
+test('confirmed sign-out rotates and clears Full', async () => {
+  const f = await boundFixture(), original = await f.workspace.read();
+  const recovered = await f.workspace.reconcileIdentity({ account_digest: null });
+  assert.notEqual(recovered.draft_scope.scope_id, original.draft_scope.scope_id);
+  assert.deepEqual(recovered.draft, { ...checked, full_checked: false });
+});
+
+for (const order of ['reset-first', 'url-first']) {
+  for (const next of ['synthetic-creator', 'synthetic-other', null]) {
+    test(`pending keeps scope and Full then reconciles ${next ?? 'sign-out'} (${order})`, async () => {
+      const h = identityNavigation(); await h.confirm(); await h.onboarding.open();
+      const before = await h.onboarding.workspace.read(), tab = h.tabs[0];
+      await h.onboarding.workspace.saveDraft({ id: h.chromeApi.runtime.id, frameId: 0,
+        tab, url: tab.url, documentId: tab.documentId }, { scope_id: before.draft_scope.scope_id, draft: checked });
+      const expected = await h.onboarding.workspace.read();
+      await h.navigate(order);
+      await h.onboarding.browserTaskContext(expected.journey_id);
+      assert.deepEqual(await h.onboarding.workspace.read(), expected);
+      await h.confirm(next); await tick();
+      await h.onboarding.browserTaskContext(expected.journey_id);
+      const after = await h.onboarding.workspace.read();
+      if (next === 'synthetic-creator') assert.deepEqual(after, expected);
+      else {
+        assert.notEqual(after.draft_scope.scope_id, expected.draft_scope.scope_id);
+        assert.deepEqual(after.draft, { ...checked, full_checked: false });
+      }
+      h.identity.unregister();
+    });
+  }
 }
 
 test('creator reconciliation serializes with draft saves and disclosure refresh', async () => {

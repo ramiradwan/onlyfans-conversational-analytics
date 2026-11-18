@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.persistence.auth import SQLiteAuthenticationStore, RevocationKey, RevocationScopeType
 from app.provisioning.events import OnboardingEvents
-from app.security.initial_handoff import InitialHandoffClient, PROOF_PROFILE, canonical
+from app.security.initial_handoff import InitialHandoffClient, InitialHandoffRefused, PROOF_PROFILE, canonical
 from app.security.hosted_grants import TransportResponse
 from app.security.hosted_grants import HostedGrantUnavailable
 from app.provisioning.initial_handoff import InitialInstallationEnrollment
@@ -114,10 +114,12 @@ def test_initial_key_client_uses_published_domain_and_body_proof():
     key_id = record["request"]["destination"]["installation_key"]["kid"]
     class Key:
         def ensure_ready(self):
-            return SimpleNamespace(installation_key_id=key_id, installation_key_jkt=thumbprint)
+            return SimpleNamespace(installation_key_id=key_id, installation_key_jkt=thumbprint,
+                                   public_key_jwk=json.dumps({**record["public_key"], "kid": key_id}))
         def sign_challenge(self, value):
             assert value.hex() == record["proof_bytes_hex"]
-            return SimpleNamespace(installation_key_id=key_id, algorithm="ES256", signature=b"s" * 64)
+            return SimpleNamespace(installation_key_id=key_id, algorithm="ES256",
+                                   signature=base64.urlsafe_b64decode(record["signature"] + "=="))
     class Transport:
         def request(self, method, path, *, json_body):
             assert method == "POST" and "?" not in path
@@ -130,6 +132,42 @@ def test_initial_key_client_uses_published_domain_and_body_proof():
     assert set(envelope) == {"request", "proof"}
     assert "claim_secret" not in json.dumps(envelope)
 
+    class WrongProof(Key):
+        def sign_challenge(self, value):
+            return SimpleNamespace(installation_key_id=key_id, algorithm="ES256", signature=b"s" * 64)
+    with pytest.raises(HostedGrantUnavailable, match="^Initial key proof unavailable$"):
+        InitialHandoffClient(Transport(), WrongProof(), clock=lambda: INSTANT).envelope("prepare", record["request"])
+
+
+def test_initial_key_proof_signs_once_with_an_active_key(tmp_path):
+    from app.persistence.auth import SQLiteAuthenticationStore
+    from app.security.installation_key import InstallationKeyAuthority
+    from test_installation_key import EmulatedPlatformProvider
+
+    class CountingProvider(EmulatedPlatformProvider):
+        signs = 0
+
+        def sign_digest(self, provider_key_name, digest):
+            self.signs += 1
+            return super().sign_digest(provider_key_name, digest)
+
+    record = json.loads((Path(__file__).parents[1] / "contracts/initial-installation-handoff-v2/proof-cases.json").read_text())[0]
+
+    class Transport:
+        def request(self, method, path, *, json_body):
+            value = {"profile": PROOF_PROFILE, "challenge": record["challenge"],
+                     "request_digest": hashlib.sha256(canonical(record["request"])).hexdigest(),
+                     "expires_at": (INSTANT + timedelta(seconds=60)).isoformat(timespec="milliseconds").replace("+00:00", "Z")}
+            return TransportResponse(200, json.dumps(value).encode(), "application/json")
+
+    provider = CountingProvider()
+    authority = InstallationKeyAuthority(SQLiteAuthenticationStore(tmp_path / "auth.sqlite3"), provider)
+    active = authority.ensure_ready()
+    provider.signs = 0
+    envelope = InitialHandoffClient(Transport(), authority, clock=lambda: INSTANT).envelope("prepare", record["request"])
+    assert envelope["proof"]["key_id"] == active.installation_key_id
+    assert provider.signs == 1
+
 
 class _HandoffFixture:
     def __init__(self, failures=0):
@@ -141,9 +179,10 @@ class _HandoffFixture:
             installation_key_id="ik1.AAECAwQFBgcICQoLDA0ODw", installation_key_jkt="A" * 43,
             public_key_jwk=json.dumps({"crv": "P-256", "kty": "EC", "x": "A" * 43, "y": "A" * 43})))
 
-    def prepare(self, request, *, before_send=None):
+    def prepare(self, request, *, before_send=None, key=None):
         if before_send is not None:
             before_send()
+        self.keys = [*getattr(self, "keys", []), key]
         self.preparations.append(json.loads(json.dumps(request)))
         if self.failures:
             self.failures -= 1
@@ -180,6 +219,65 @@ async def test_lost_prepare_response_retries_same_exact_operation_with_new_clien
     assert len(client.preparations) == 2 and client.preparations[0] == client.preparations[1]
     assert worker.journeys.get(journey)["state"] == "waiting"
     await worker.stop()
+
+
+@pytest.mark.asyncio
+async def test_prepare_persists_its_request_off_the_event_loop_and_signs_first_with_the_ensured_key(tmp_path):
+    import threading
+    store = _seeded_store(tmp_path / "auth.sqlite3", INSTANT)
+    client = _HandoffFixture(failures=1)
+    worker = _enrollment_worker(store, client)
+    journey = worker.journeys.open()["journey_id"]
+    database, loop_thread, on_loop = store.database, threading.get_ident(), []
+    transaction = database.transaction
+
+    def counted(*args, **kwargs):
+        if threading.get_ident() == loop_thread:
+            on_loop.append(1)
+        return transaction(*args, **kwargs)
+
+    database.transaction = counted
+    ensured = client.key.ensure_ready
+    keys = []
+    client.key = SimpleNamespace(ensure_ready=lambda: keys.append(ensured()) or keys[-1])
+    prepare = client.prepare
+
+    def durable_first(request, **kwargs):
+        # The exact request is durable before its send.
+        assert json.loads(worker.journeys.get(journey)["prepare_json"]) == request
+        return prepare(request, **kwargs)
+
+    client.prepare = durable_first
+    assert (await worker.prepare(journey))["state"] == "waiting"
+    database.transaction = transaction
+    # Only the first send carries the key ensure_ready returned. The retry reopens it.
+    assert client.keys == [keys[0], None]
+    assert on_loop == []
+    await worker.stop()
+
+
+def test_a_handoff_proof_with_a_key_replaced_after_ensure_fails_closed(tmp_path):
+    from app.security.installation_key import InstallationKeyAuthority, InstallationKeyPolicyError
+    from test_installation_key import EmulatedPlatformProvider
+
+    record = json.loads((Path(__file__).parents[1] / "contracts/initial-installation-handoff-v2/proof-cases.json").read_text())[0]
+
+    class Transport:
+        def request(self, method, path, *, json_body):
+            value = {"profile": PROOF_PROFILE, "challenge": record["challenge"],
+                     "request_digest": hashlib.sha256(canonical(record["request"])).hexdigest(),
+                     "expires_at": (INSTANT + timedelta(seconds=60)).isoformat(timespec="milliseconds").replace("+00:00", "Z")}
+            return TransportResponse(200, json.dumps(value).encode(), "application/json")
+
+    provider = EmulatedPlatformProvider()
+    authority = InstallationKeyAuthority(SQLiteAuthenticationStore(tmp_path / "auth.sqlite3"), provider)
+    ensured = authority.ensure_ready()
+    client = InitialHandoffClient(Transport(), authority, clock=lambda: INSTANT)
+    assert client.envelope("prepare", record["request"], key=ensured)["proof"]["key_id"] == ensured.installation_key_id
+    # The provider key behind the ensured reference is replaced before the exchange signs.
+    provider._keys[ensured.provider_key_name] = ec.generate_private_key(ec.SECP256R1())
+    with pytest.raises(InstallationKeyPolicyError):
+        client.envelope("prepare", record["request"], key=ensured)
 
 
 @pytest.mark.asyncio
@@ -723,3 +821,57 @@ async def test_hosted_sse_delivers_small_frames_before_eof_and_closes_on_cancell
             pending.cancel()
             await asyncio.gather(pending, return_exceptions=True)
         await stream.aclose()
+
+
+@pytest.mark.asyncio
+async def test_a_fresh_prepare_shares_its_loop_rechecks_and_still_sees_a_change_between_them(tmp_path):
+    store = _seeded_store(tmp_path / "auth.sqlite3", INSTANT)
+    client = _HandoffFixture()
+    worker = _enrollment_worker(store, client)
+    journey = worker.journeys.open()["journey_id"]
+    import threading
+    database, connect, opened, loop_thread = store.database, store.database.connect, [], threading.get_ident()
+
+    def counting():
+        opened.append(threading.get_ident() == loop_thread)
+        return connect()
+
+    database.connect = counting
+    assert (await worker.prepare(journey, resume=False))["state"] == "waiting"
+    # The loop's rechecks share one connection. The writes and the send recheck open theirs off the loop.
+    assert opened.count(True) == 1
+    await worker.stop()
+    # A journey that expires while the key is read is refused by the next shared recheck.
+    store = _seeded_store(tmp_path / "second.sqlite3", INSTANT)
+    client = _HandoffFixture()
+    worker = _enrollment_worker(store, client)
+    second = worker.journeys.open()["journey_id"]
+    ready = client.key.ensure_ready
+
+    def expire_then_ready():
+        with store.database.transaction() as connection:
+            connection.execute("UPDATE onboarding_journeys SET expires_at=? WHERE journey_id=?",
+                               ((INSTANT - timedelta(seconds=1)).isoformat(), second))
+        return ready()
+
+    client.key.ensure_ready = expire_then_ready
+    with pytest.raises(InitialHandoffRefused):
+        await worker.prepare(second, resume=False)
+    assert client.preparations == []
+    await worker.stop()
+
+
+@pytest.mark.asyncio
+async def test_prepare_leaves_the_wait_to_a_caller_that_resumes_it(tmp_path):
+    store = _seeded_store(tmp_path / "auth.sqlite3", INSTANT)
+    client = _HandoffFixture()
+    worker = _enrollment_worker(store, client)
+    resumed = []
+    worker.resume = resumed.append
+    journey = worker.journeys.open()["journey_id"]
+    assert (await worker.prepare(journey, resume=False))["state"] == "waiting"
+    assert (await worker.prepare(journey, resume=False))["state"] == "waiting"
+    assert resumed == []
+    assert (await worker.prepare(journey))["state"] == "waiting"
+    assert resumed == [journey] and len(client.preparations) == 1
+    await worker.stop()

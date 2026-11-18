@@ -874,6 +874,22 @@
       {
         "selector": "tests/test_webauthn_access_events.py::test_real_server_ends_an_open_access_stream_when_it_shuts_down",
         "reason": "Shutting down the real server must end an open access stream under the Windows event loop."
+      },
+      {
+        "selector": "tests/test_desktop_idle.py",
+        "reason": "Saved browser progress, key replacement and idle deadlines use the Windows encrypted authentication database."
+      },
+      {
+        "selector": "tests/test_desktop_lifetimes.py",
+        "reason": "Confirmation waits across presentation and source boundaries use the Windows encrypted authentication journal."
+      },
+      {
+        "selector": "tests/test_desktop_recovery.py",
+        "reason": "Idle classification and bounded recovery of durable commands use the Windows encrypted writer."
+      },
+      {
+        "selector": "tests/test_wait_diagnostics.py",
+        "reason": "Coordinator wait diagnostics observe durable command recovery through the Windows encrypted writer."
       }
     ],
     "analytics": [
@@ -1214,8 +1230,11 @@
     "tests/test_desktop_coordinator.py": 1,
     "tests/test_desktop_coordinator_routes.py": 1,
     "tests/test_desktop_decisions.py": 3,
+    "tests/test_desktop_idle.py": 2,
+    "tests/test_desktop_lifetimes.py": 2,
     "tests/test_desktop_packaging.py": 1,
     "tests/test_desktop_pairing.py": 1,
+    "tests/test_desktop_recovery.py": 2,
     "tests/test_desktop_release.py": 2,
     "tests/test_desktop_runtime_owner.py": 3,
     "tests/test_desktop_shutdown.py": 1,
@@ -1270,6 +1289,7 @@
     "tests/test_upgrade_checkpoint.py": 3,
     "tests/test_upgrade_corrective.py": 2,
     "tests/test_upgrade_lifecycle.py": 3,
+    "tests/test_wait_diagnostics.py": 2,
     "tests/test_webauthn_access_events.py": 3
   },
   "windows_platform_assignment_basis": {

@@ -171,3 +171,44 @@ async def test_terminal_journal_retention_does_not_delete_uncertain_ceremony(set
     coordinator._settle(operation, OperationResult("completed"))
     coordinator._accept(native, command(coordinator.read(native), "account.connect"))
     assert ceremonies.row(operation["operation_id"]) is None
+
+
+@pytest.mark.asyncio
+async def test_sign_in_proof_clients_share_one_long_lived_connection_pool(tmp_path):
+    from app.onboarding.composition import SIGN_IN_KEEPALIVE_SECONDS, build_desktop_setup
+    store = SQLiteAuthenticationStore(tmp_path / "auth.sqlite3")
+    core = build_desktop_setup(store=store, stage="setup", extension_id=None, hosted_origin="https://provider.example",
+        authentication_providers=("default",), finalize=lambda **kwargs: None, completion_ready=lambda: False)
+    ceremonies = core.ceremonies
+    shared = ceremonies.client.transport
+    assert all(client.transport is shared for client in (
+        ceremonies.decisions.client, ceremonies.authentication.client, ceremonies.authentication.waits))
+    assert shared._client._transport._pool._keepalive_expiry == SIGN_IN_KEEPALIVE_SECONDS == 60
+    await core.close()
+    assert shared._client.is_closed
+
+
+@pytest.mark.asyncio
+async def test_shared_proof_transport_closes_only_after_every_owner_drains(setup):
+    import asyncio
+    import threading
+    from app.onboarding.authentication import DesktopAuthentication
+    _, ceremonies, client, _, _, _ = setup
+    closed, entered, release = [], threading.Event(), threading.Event()
+    shared = SimpleNamespace(close=lambda: closed.append(True))
+    client.transport = shared
+    ceremonies.authentication = DesktopAuthentication(ceremonies.store, ceremonies, SimpleNamespace(transport=shared))
+
+    def blocking():
+        entered.set()
+        release.wait(5)
+
+    effect = asyncio.create_task(ceremonies._effects.run(blocking))
+    await asyncio.to_thread(entered.wait, 5)
+    stopping = asyncio.create_task(ceremonies.stop())
+    await asyncio.sleep(0.05)
+    assert not closed
+    release.set()
+    await asyncio.wait_for(stopping, 5)
+    await effect
+    assert closed

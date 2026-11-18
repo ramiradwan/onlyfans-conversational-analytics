@@ -17,7 +17,7 @@ from referencing import Registry, Resource
 
 from app.core.resource_paths import resource_path
 from app.persistence.auth import InstallationKeyReference
-from app.security.hosted_grants import HTTPXHostedTransport, HostedGrantUnavailable, HostedTransport
+from app.security.hosted_grants import HostedGrantUnavailable, HostedTransport, require_hosted_origin
 from app.security.initial_handoff import _require_proof_budget, timestamp
 from app.security.installation_key import InstallationProof, verify_installation_proof
 from contracts.loader import verify_snapshot_integrity
@@ -48,6 +48,12 @@ class InstallationContinuationRefused(ValueError):
 class ExistingInstallationKey(Protocol):
     def reopen_existing(self) -> InstallationKeyReference: ...
     def sign_challenge(self, challenge: bytes) -> InstallationProof: ...
+
+
+def signing_reference(key: ExistingInstallationKey) -> InstallationKeyReference:
+    """The active key for a proof that is verified against its public key before it is sent."""
+    verify = getattr(key, "signing_reference", None)
+    return key.reopen_existing() if verify is None else verify()
 
 
 def _normalized(value: object, depth: int = 0) -> object:
@@ -173,7 +179,7 @@ class InstallationContinuationClient:
         self.contract.validate("proof-challenge-request", target)
         if before_send is not None:
             before_send()
-        key = self.key.reopen_existing()
+        key = signing_reference(self.key)
         if request["scope"]["installation_key_id"] != key.installation_key_id:
             raise HostedGrantUnavailable("Continuation key changed")
         started = self.monotonic()
@@ -304,8 +310,7 @@ async def continuation_frames(chunks: AsyncIterator[bytes], *, continuation_id: 
 
 class InstallationContinuationStream:
     def __init__(self, origin: str, *, client_factory=httpx.AsyncClient) -> None:
-        validation = HTTPXHostedTransport(origin)
-        validation.close()
+        require_hosted_origin(origin)
         self.origin, self.client_factory = origin, client_factory
 
     async def events(self, envelope: dict, *, expires_at: str | None = None) -> AsyncIterator[dict]:

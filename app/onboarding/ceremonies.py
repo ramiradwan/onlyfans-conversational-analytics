@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import nullcontext
 
 from app.onboarding import timing
 from app.onboarding.contract import canonical
+from app.onboarding.held_reads import HeldReads
 from app.persistence.onboarding import require_journey
 from app.provisioning.events import events
 from app.provisioning.owner_effects import OwnerEffects
@@ -25,10 +27,23 @@ class BrowserCeremonies:
             store, self, authentication_client, providers=authentication_providers, waits=wait_client)
         self._lock = asyncio.Lock()
         self._effects = OwnerEffects()
+        self._held = HeldReads()
 
-    def row(self, operation_id):
+    def hold_read(self, operation_id, *, authorize, connection=None):
+        """Start fetching this ceremony's next read challenge, so a following read sends at once."""
+        if not hasattr(self.client, "prefetch_read"):
+            return False
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
+            row = self.row(operation_id, connection=connection)
+            if row is None or row["ceremony_id"] is None:
+                return False
+            journey = self._journey(operation_id, connection=connection)
+        return self._held.hold(operation_id, lambda: self._effects.run(self.client.prefetch_read, self.request(row),
+            before_send=authorize, journey_id=journey, protected=False))
+
+    def row(self, operation_id, *, connection=None):
         require_journey(operation_id)
-        with self.store.database.read() as connection:
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
             row = connection.execute("SELECT * FROM desktop_browser_ceremonies WHERE operation_id=?", (operation_id,)).fetchone()
         return None if row is None else dict(row)
 
@@ -48,7 +63,7 @@ class BrowserCeremonies:
             if row is not None:
                 if row["binding_json"] != encoded:
                     raise HostedGrantUnavailable("Browser ceremony selection changed")
-                return dict(row), False
+                return dict(row), False, None
             operation = connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?", (operation_id,)).fetchone()
             expected = {"account.connect": "connect-account", "activation.review": "activate-complimentary"}
             if (operation is None or operation["state"] not in {"accepted", "waiting", "outcome_unknown"}
@@ -62,18 +77,21 @@ class BrowserCeremonies:
                 "target": {"operation": "browser-ceremony-prepare", "request": request}})
             connection.execute("INSERT INTO desktop_browser_ceremonies (operation_id,hosted_operation_id,binding_json) VALUES (?,?,?)",
                                (operation_id, hosted_operation, encoded))
-            return dict(connection.execute("SELECT * FROM desktop_browser_ceremonies WHERE operation_id=?", (operation_id,)).fetchone()), True
+            return (dict(connection.execute("SELECT * FROM desktop_browser_ceremonies WHERE operation_id=?", (operation_id,)).fetchone()),
+                    True, operation["journey_id"])
 
     async def prepare(self, operation_id, binding, *, authorize):
         async with self._lock:
-            row, fresh = self._reserve(operation_id, binding, authorize)
+            # Store transactions run off the event loop, each awaited before the step that depends on it.
+            row, fresh, journey = await asyncio.to_thread(self._reserve, operation_id, binding, authorize)
             if not fresh:
                 return await self._read(row, authorize=authorize)
             # The exact request is durable before the single prepare send. A
             # restart or lost response can only read this operation.
             result = await self._effects.run(self.client.prepare, self.request(row, known=False),
-                before_send=authorize, journey_id=self._journey(operation_id))
-            self._bind(row, result, preparing=True)
+                before_send=authorize, journey_id=journey)
+            with timing.phase("ceremony-prepare", "persist"):
+                await asyncio.to_thread(self._bind, row, result, preparing=True)
             return result
 
     async def reconcile(self, operation_id, *, authorize):
@@ -84,9 +102,11 @@ class BrowserCeremonies:
             return await self._read(row, authorize=authorize)
 
     async def _read(self, row, *, authorize):
+        ticket = await self._held.take(row["operation_id"])
+        options = {} if ticket is None else {"prefetched": ticket}
         with timing.phase("ceremony-read", "read-end"):
             result = await self._effects.run(self.client.read, self.request(row), expires_at=row["provider_expires_at"],
-                before_send=authorize, journey_id=self._journey(row["operation_id"]), protected=False)
+                before_send=authorize, journey_id=self._journey(row["operation_id"]), protected=False, **options)
         if result["status"] == "found":
             self._bind(row, result)
         return result
@@ -107,8 +127,8 @@ class BrowserCeremonies:
                 self._bind(row, result)
             return result
 
-    def _journey(self, operation_id):
-        with self.store.database.read() as connection:
+    def _journey(self, operation_id, *, connection=None):
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
             row = connection.execute("SELECT journey_id FROM desktop_setup_operations WHERE operation_id=?", (operation_id,)).fetchone()
         if row is None:
             raise HostedGrantUnavailable("Browser ceremony owner is unavailable")
@@ -138,32 +158,39 @@ class BrowserCeremonies:
 
     def browser_entry(self, operation_id):
         """Read only nonauthorizing launch coordinates for the exact task."""
-        if self.authentication is not None and not self.authentication.can_open(operation_id):
-            return None
-        row = self.task_row(operation_id)
-        if (row is None or row["entry_reference"] is None or row["presentation_state"] != "active"
-                or timestamp(row["provider_expires_at"]) <= self.store._now()):
-            return None
-        binding = json.loads(row["binding_json"])
+        # Each helper payload read asks for this, so it opens the store once.
+        with self.store.database.read() as connection:
+            if self.authentication is not None and not self.authentication.can_open(operation_id, connection=connection):
+                return None
+            row = self.task_row(operation_id, connection=connection)
+            if (row is None or row["entry_reference"] is None or row["presentation_state"] != "active"
+                    or timestamp(row["provider_expires_at"]) <= self.store._now()):
+                return None
+            binding = json.loads(row["binding_json"])
+            recovery = (binding["purpose"] == "activate-complimentary" and self.authentication is not None
+                        and self.authentication.preparation_recovery(operation_id, connection=connection))
         result = {"entry_url": browser_entry_url(self.hosted_origin, row["entry_reference"]),
             "ceremony_id": row["ceremony_id"], "attempt_id": binding["attempt_id"],
             "completion": expected_completion(binding), "expires_at": row["provider_expires_at"]}
-        if (binding["purpose"] == "activate-complimentary" and self.authentication is not None
-                and self.authentication.preparation_recovery(operation_id)):
+        if recovery:
             result["preparation_recovery"] = True
         return result
 
-    def task_row(self, operation_id):
-        parent = operation_id if self.authentication is None else self.authentication.parent_operation(operation_id)
-        return self.row(parent)
+    def task_row(self, operation_id, *, connection=None):
+        parent = (operation_id if self.authentication is None
+                  else self.authentication.parent_operation(operation_id, connection=connection))
+        return self.row(parent, connection=connection)
 
     async def stop(self):
-        if self.authentication is not None:
-            await self.authentication.stop()
-        if self.decisions is not None:
-            await self.decisions.stop()
-        self._effects.close_admission()
-        await self._effects.drain()
+        # The proof clients can share one transport; drain all of them before any close.
+        owners = tuple(owner for owner in (self.authentication, self.decisions) if owner is not None)
+        self._held.close()
+        for effects in (*(owner._effects for owner in owners), self._effects):
+            effects.close_admission()
+        for effects in (*(owner._effects for owner in owners), self._effects):
+            await effects.drain()
+        for owner in owners:
+            await owner.stop()
         close = getattr(self.client.transport, "close", None)
         if close is not None:
             close()

@@ -58,6 +58,27 @@ async def test_fresh_journey_prepares_once_and_starts_its_wait(expiry_case):
     assert count(store, "onboarding_uncertain_receipts") == 0
 
 
+def test_client_loads_its_contract_before_any_proof_exchange():
+    from app.security import initial_handoff
+    initial_handoff._validators.cache_clear()
+    InitialHandoffClient(SimpleNamespace(), SimpleNamespace())
+    assert initial_handoff._validators.cache_info().currsize == 1
+
+
+@pytest.mark.asyncio
+async def test_fresh_preparation_records_its_request_persistence(expiry_case, caplog):
+    import logging
+    from app.onboarding import timing
+    caplog.set_level(logging.INFO, logger=timing.__name__)
+    _, _, _, worker, _, _ = expiry_case
+    journey = worker.journeys.open()["journey_id"]
+
+    await worker.prepare(journey)
+
+    assert sum("operation=handoff-prepare phase=persist status=ok" in message
+               for message in caplog.messages) == 1
+
+
 @pytest.mark.asyncio
 async def test_existing_expired_journey_returns_typed_refusal_before_key_or_hosted_call(expiry_case):
     clock, _, client, worker, resumed, key_reads = expiry_case
@@ -210,21 +231,35 @@ async def test_expired_uncertain_preparation_reuses_exact_request_and_bounds_exp
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("boundary", ["internal-key", "signing"])
-async def test_production_prepare_rechecks_expiry_after_internal_key_and_signing(expiry_case, monkeypatch, boundary):
+@pytest.mark.parametrize("boundary", ["key", "signing"])
+async def test_production_prepare_rechecks_expiry_after_its_key_read_and_signing(expiry_case, monkeypatch, boundary):
     clock, _, fixture, worker, resumed, _ = expiry_case
     journey = worker.journeys.open()["journey_id"]
+    import base64
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+
     read_key = fixture.key.ensure_ready
     key_reads, requests = [], []
+    key_id = "ik1.AAECAwQFBgcICQoLDA0ODw"
+    private = ec.generate_private_key(ec.SECP256R1())
+    numbers = private.public_key().public_numbers()
+    encoded = lambda value: base64.urlsafe_b64encode(value.to_bytes(32, "big")).rstrip(b"=").decode()
+    jwk = json.dumps({"crv": "P-256", "kid": key_id, "kty": "EC", "x": encoded(numbers.x), "y": encoded(numbers.y)})
     def ensure_ready():
         key_reads.append(True)
-        if boundary == "internal-key" and len(key_reads) == 2:
+        # The first send signs with the key this read proved, so it is the only key read.
+        if boundary == "key":
             clock[0] += timedelta(minutes=31)
-        return read_key()
+        current = read_key()
+        return SimpleNamespace(installation_key_id=key_id, installation_key_jkt=current.installation_key_jkt, public_key_jwk=jwk)
     def sign_challenge(message):
         if boundary == "signing":
             clock[0] += timedelta(minutes=31)
-        return SimpleNamespace(installation_key_id="ik1.AAECAwQFBgcICQoLDA0ODw", algorithm="ES256", signature=b"s" * 64)
+        r, s = decode_dss_signature(private.sign(message, ec.ECDSA(hashes.SHA256())))
+        return SimpleNamespace(installation_key_id=key_id, algorithm="ES256",
+                               signature=r.to_bytes(32, "big") + s.to_bytes(32, "big"))
     def transport_request(method, path, *, json_body):
         requests.append(path)
         assert path == CHALLENGE_PATH
@@ -238,8 +273,8 @@ async def test_production_prepare_rechecks_expiry_after_internal_key_and_signing
     with pytest.raises(InitialHandoffRefused) as refused:
         await worker.prepare(journey)
     assert refused.value.code == "journey_expired"
-    assert len(key_reads) == 2
-    assert requests == ([] if boundary == "internal-key" else [CHALLENGE_PATH])
+    assert len(key_reads) == 1
+    assert requests == ([] if boundary == "key" else [CHALLENGE_PATH])
     assert resumed == []
 
 

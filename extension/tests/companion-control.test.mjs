@@ -14,7 +14,7 @@ const SURFACE = { schema: 'ofca-browser-surface/v2', capture: 'paused', site_acc
 function event() { const listeners = []; return { listeners, addListener(fn) { listeners.push(fn); }, removeListener(fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } }; }
 function area() { const values = {}; return { values, async get(keys) { return Object.fromEntries(keys.filter((k) => Object.hasOwn(values, k)).map((k) => [k, values[k]])); }, async set(update) { Object.assign(values, structuredClone(update)); }, async remove(keys) { for (const k of keys) delete values[k]; } }; }
 
-function harness({ mode = 'paused', onBrowserTask = null, beforeRpc = null } = {}) {
+function harness({ mode = 'paused', onBrowserTask = null, beforeRpc = null, onBrowserTaskEnd = null, onBrowserTaskWaiting = null, advertised = true } = {}) {
   let consent = mode, paired = true, time = 1_800_000_000_000;
   const timers = new Set();
   const scheduler = {
@@ -34,7 +34,7 @@ function harness({ mode = 'paused', onBrowserTask = null, beforeRpc = null } = {
     allowsFull: () => consent === 'full',
     allowsControl: () => consent === 'paused',
     onControl: async (action) => { controls.push(action); },
-    onBrowserTask,
+    onBrowserTask, onBrowserTaskEnd, onBrowserTaskWaiting,
     detectedAccountId: async () => ACCOUNT,
     accountDatabaseName: async (id) => `encrypted-account-${id}`,
     storeFactory: async () => pairingStore,
@@ -49,6 +49,8 @@ function harness({ mode = 'paused', onBrowserTask = null, beforeRpc = null } = {
         onMessage() { return () => {}; },
         onControl(fn) { controlListeners.push(fn); return () => {}; },
         control(value) { for (const fn of controlListeners) fn(value); },
+        async advertiseBrowserTasks(purposes) { rpcCalls.push({ method: 'agent.browser-task.capabilities', params: purposes }); return advertised; },
+        async advertiseBrowserTaskWaiting() { rpcCalls.push({ method: 'agent.browser-task.waiting', params: {} }); return true; },
         async rpc(method, params) {
           rpcCalls.push({ method, params });
           if (beforeRpc) await beforeRpc(method, params, channel);
@@ -368,4 +370,24 @@ test('the reporter reacts to companion session changes and coalesces Full-family
   await tick();
   assert.equal(reads, 1);
   assert.equal(reported.length, 1);
+});
+
+test('waiting is advertised only after the end control and reaches its handler only while control is allowed', async () => {
+  for (const advertised of [true, false]) {
+    const waits = [];
+    const h = harness({ advertised, onBrowserTaskEnd: async () => {}, onBrowserTaskWaiting: async (kind, value) => { waits.push([kind, value]); } });
+    h.client.reportSurface(SURFACE);
+    await h.client.ensureControl(); await tick(); await tick();
+    const channel = h.channels[0], operation = crypto.randomUUID();
+    assert.deepEqual(channel.rpcCalls.filter(call => call.method.startsWith('agent.browser-task')).map(call => call.method),
+      advertised ? ['agent.browser-task.capabilities', 'agent.browser-task.waiting'] : ['agent.browser-task.capabilities']);
+    channel.control({ id: crypto.randomUUID(), action: 'browser.task.waiting', waiting: { operation_id: operation, expires_at: 1900000000 } });
+    channel.control({ id: crypto.randomUUID(), action: 'browser.task.waiting.end', waiting: { operation_id: operation } });
+    await tick();
+    assert.deepEqual(waits, [['open', { operation_id: operation, expires_at: 1900000000 }], ['end', { operation_id: operation }]]);
+    h.setMode('off'); await h.client.ensureControl();
+    channel.control({ id: crypto.randomUUID(), action: 'browser.task.waiting', waiting: { operation_id: operation, expires_at: 1900000000 } });
+    await tick();
+    assert.equal(waits.length, 2);
+  }
 });

@@ -7,8 +7,11 @@ import json
 import math
 import re
 import time
+from contextlib import nullcontext
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
+from threading import Lock
 from typing import AsyncIterator, Callable, Mapping
 
 import httpx
@@ -16,11 +19,13 @@ from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
 
 from app.core.resource_paths import resource_path
+from app.onboarding import timing
+from app.security.installation_key import InstallationKeyReference, InstallationKeyUnavailable, verify_installation_proof
 from contracts.loader import verify_snapshot_integrity
 
 from app.security.hosted_grants import (
     HostedGrantUnavailable, HostedTransport, InstallationProofAuthority,
-    HTTPXHostedTransport, _response_object,
+    _response_object, hosted_stream_tls_context, require_hosted_origin,
 )
 
 PROFILE = "urn:bridge-clean:initial-installation-handoff:v2"
@@ -102,6 +107,29 @@ def _require_proof_budget(started: float, current: float) -> None:
         raise HostedGrantUnavailable("Proof construction budget exhausted")
 
 
+# A held challenge is used well inside the proof budget, leaving time to sign and send.
+HELD_CHALLENGE_SECONDS = 40
+
+
+@dataclass
+class HeldChallenge:
+    """A single-use read challenge for one exact canonical request, fetched before it is needed."""
+    request: bytes
+    challenge: dict
+    started: float
+    used: bool = False
+    lock: Lock = field(default_factory=Lock)
+
+    def take(self, request: bytes, now: float, wall: datetime) -> bool:
+        """Spend this challenge. True only when it is unused, for this request and still fresh."""
+        with self.lock:
+            fresh = (not self.used and self.request == request
+                     and 0 <= now - self.started < HELD_CHALLENGE_SECONDS
+                     and timestamp(self.challenge["expires_at"]) > wall)
+            self.used = True
+        return fresh
+
+
 def _object(raw: str) -> dict:
     def unique(pairs):
         result = {}
@@ -178,19 +206,33 @@ class InitialHandoffClient:
     def __init__(self, transport: HostedTransport, key: InstallationProofAuthority,
                  *, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
                  monotonic: Callable[[], float] = time.monotonic) -> None:
+        # Contract validation loads at construction, as in the other proof clients, not inside a proof exchange.
+        _validators()
         self.transport = transport
         self.key = key
         self.clock = clock
         self.monotonic = monotonic
 
-    def envelope(self, operation: str, request: dict, *, before_send: Callable[[], None] | None = None) -> dict:
+    def _signing_key(self):
+        """The active key, checked by the proof verified below; a key that is not active yet is prepared."""
+        verify = getattr(self.key, "signing_reference", None)
+        if verify is not None:
+            try:
+                return verify()
+            except InstallationKeyUnavailable:
+                pass
+        return self.key.ensure_ready()
+
+    def envelope(self, operation: str, request: dict, *, before_send: Callable[[], None] | None = None,
+                 key: InstallationKeyReference | None = None) -> dict:
+        """`key` is a reference its caller proved usable in this same exchange. The proof below still checks it."""
         if operation not in {"prepare", "wait", "complete", "receipt"}:
             raise ValueError("Invalid handoff operation")
         purpose = "initial-handoff-" + operation
         challenge_request = {"profile": PROOF_PROFILE,
             "target": {"operation": purpose, "request": request}}
         validate_contract("proof-challenge-request", challenge_request)
-        key = self.key.ensure_ready()
+        key = self._signing_key() if key is None else key
         started = self.monotonic()
         challenge = self._request(CHALLENGE_PATH, challenge_request, expected=200, before_send=before_send)
         _require_proof_budget(started, self.monotonic())
@@ -204,13 +246,15 @@ class InitialHandoffClient:
         message = _DOMAIN + b"".join(len(piece).to_bytes(4, "big") + piece for piece in pieces)
         proof = self.key.sign_challenge(message)
         _require_proof_budget(started, self.monotonic())
-        if proof.installation_key_id != key.installation_key_id or proof.algorithm != "ES256" or len(proof.signature) != 64:
+        if (proof.installation_key_id != key.installation_key_id or proof.algorithm != "ES256"
+                or len(proof.signature) != 64 or not verify_installation_proof(key.public_key_jwk, message, proof)):
             raise HostedGrantUnavailable("Initial key proof unavailable")
         return {"request": request, "proof": {"challenge": challenge["challenge"], "key_id": key.installation_key_id,
                 "signature": base64.urlsafe_b64encode(proof.signature).rstrip(b"=").decode()}}
 
-    def prepare(self, request: dict, *, before_send: Callable[[], None] | None = None) -> dict:
-        envelope = self.envelope("prepare", request, before_send=before_send)
+    def prepare(self, request: dict, *, before_send: Callable[[], None] | None = None,
+                key: InstallationKeyReference | None = None) -> dict:
+        envelope = self.envelope("prepare", request, before_send=before_send, key=key)
         result = self._request(PATH_PREFIX + "prepare", envelope, expected=201, before_send=before_send)
         if (set(result) != {"profile", "reference", "operation_id", "expires_at"}
                 or result["profile"] != PROFILE or result["operation_id"] != request["operation_id"]):
@@ -245,7 +289,13 @@ class InitialHandoffClient:
         if before_send is not None:
             before_send()
         try:
-            response = self.transport.request("POST", path, json_body=body)
+            challenge = path == CHALLENGE_PATH
+            verb = (body["target"]["operation"].removeprefix("initial-handoff-") if challenge
+                    else path.removeprefix(PATH_PREFIX))
+            measured = (timing.exchange("handoff-" + verb, "challenge" if challenge else "protected")
+                        if "handoff-" + verb in timing.OPERATIONS else nullcontext())
+            with measured:
+                response = self.transport.request("POST", path, json_body=body)
         except Exception:
             raise HostedGrantUnavailable("Initial handoff result unavailable") from None
         if response.status_code != expected:
@@ -271,8 +321,7 @@ class OnboardingStreamAdmissionRefused(HostedGrantUnavailable):
 class InitialHandoffStream:
     """Bounded POST SSE transport. Each connection receives a fresh body proof."""
     def __init__(self, origin: str, *, continuity: bool = False) -> None:
-        validation = HTTPXHostedTransport(origin)
-        validation.close()
+        require_hosted_origin(origin)
         self.origin = origin
         self.continuity = continuity
 
@@ -280,10 +329,17 @@ class InitialHandoffStream:
         path = "/v1/onboarding/streams" if self.continuity else PATH_PREFIX + "wait"
         event_name = "onboarding" if self.continuity else "initial-handoff"
         maximum = 16384 if self.continuity else 8192
-        async with httpx.AsyncClient(base_url=self.origin, follow_redirects=False, trust_env=False,
+        operation = "source" if self.continuity else "handoff-wait"
+        async with timing.stream(operation), httpx.AsyncClient(base_url=self.origin, follow_redirects=False, trust_env=False,
+                                     verify=hosted_stream_tls_context(),
                                      timeout=httpx.Timeout(35.0, connect=10.0)) as client:
+            timing.observe(operation, "protected-send", "ok", 0)
+            started = time.monotonic()
             async with client.stream("POST", path, json=envelope,
                                      headers={"Accept": "text/event-stream", "Accept-Encoding": "identity"}) as response:
+                timing.observe(operation, "protected-receive", "ok" if response.status_code == 200 else "error",
+                    max(0, (time.monotonic() - started) * 1000),
+                    http=response.status_code if 100 <= response.status_code <= 599 else None)
                 if self.continuity and response.status_code == 403:
                     raise OnboardingStreamAdmissionRefused("Onboarding stream admission refused")
                 if (response.status_code != 200 or response.headers.get("content-type", "").split(";")[0] != "text/event-stream"
@@ -331,7 +387,9 @@ class InitialHandoffStream:
                             if event_id is not None:
                                 raise HostedGrantUnavailable("Duplicate onboarding cursor")
                             event_id = line[3:].strip()
-                        elif not line.startswith(":"):
+                        elif line.startswith(":"):
+                            timing.observe(operation, "keepalive", "ok", 0)
+                        else:
                             raise HostedGrantUnavailable("Unknown onboarding stream field")
                 if pending or data or event or event_id is not None:
                     raise HostedGrantUnavailable("Incomplete onboarding stream frame")

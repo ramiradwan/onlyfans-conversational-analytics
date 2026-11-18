@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { payload, observation, id } from '../../extension/test-fixtures/browser-task.mjs';
 import { connectExtension, reattachExtension } from '../browser-tasks/extension.js';
-import { BrowserTaskClient, STREAM_POLL_MS } from '../browser-tasks/client.js';
+import { BrowserTaskClient, CLOSE_RETRY_MS, STREAM_POLL_MS } from '../browser-tasks/client.js';
 import { readBrowserTaskEvents } from '../browser-tasks/events.js';
 
 const event = () => { const listeners = []; return { listeners, addListener: fn => listeners.push(fn), emit: value => listeners.forEach(fn => fn(value)) }; };
@@ -17,12 +17,14 @@ const authenticationPayload = () => {
 };
 
 // A controllable helper stream: open it, push frames, or drop it.
-function stream() {
+// With `initial`, it frames the current state on connect, as Brain's stream does.
+function stream({ initial = false } = {}) {
   const state = { opened: 0, frame: null, drop: null };
   const events = vi.fn(({ open, frame, signal }) => new Promise((resolve, reject) => {
     state.opened++; state.frame = frame; state.drop = () => reject(Error('lost'));
     signal.addEventListener('abort', () => resolve(), { once: true });
     open();
+    if (initial) queueMicrotask(() => frame({ type: 'task', task_id: id(1), admission_generation: id(4), state: 'pending' }));
   }));
   return { state, events };
 }
@@ -68,6 +70,107 @@ describe('helper stream', () => {
       expect(h.received.at(-1).state).toBe('task_completed');
       expect(h.finish).toHaveBeenCalledOnce();
     } finally { h.client.stop(); }
+  });
+
+  it('reads its payload while its session read is still pending', async () => {
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    const h = helper({ respond: path => path.endsWith('/session')
+      ? held.then(() => ({ ok: true, status: 200, text: async () => JSON.stringify(session()) })) : null });
+    try {
+      const started = h.client.start();
+      await vi.waitFor(() => expect(h.request.mock.calls.map(([path]) => path.split('/').at(-1))).toEqual(['session', 'payload']));
+      release(); await started;
+      expect(h.client.payload).toEqual(h.value);
+    } finally { h.client.stop(); }
+  });
+
+  it('records when a desktop-opened sign-in helper read its payload and asked for its waiting window', async () => {
+    const signIn = authenticationPayload();
+    const preparing = { ...signIn, ceremony: null, task: { ...signIn.task, state: 'pending' } };
+    let reads = 0;
+    const posts = [];
+    const request = vi.fn(async (path, options = {}) => {
+      if (options.method === 'POST') posts.push([path.split('/').at(-1), JSON.parse(options.body)]);
+      const body = path.endsWith('/session') ? session() : path.endsWith('/payload') ? (++reads === 1 ? preparing : signIn) : {};
+      return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+    });
+    const client = new BrowserTaskClient({ generation: id(4), request, nativeLaunch: true, wait: () => ({ close() {} }),
+      receive() {}, events: stream({ initial: true }).events, connect: () => ({ close() {}, finish: async () => true, end: () => true }) });
+    try {
+      await client.start();
+      const marks = posts.filter(([path, body]) => path === 'timing' && !body.marks).map(([, body]) => body);
+      expect(marks.map(value => value.phase)).toEqual(['session-get', 'payload-get', 'payload', 'waiting']);
+      // A first read's mark is its own round trip, never longer than the time from navigation start.
+      expect(marks[0].elapsed_ms).toBeLessThanOrEqual(marks[2].elapsed_ms);
+      expect(marks[1].elapsed_ms).toBeLessThanOrEqual(marks[2].elapsed_ms);
+      for (const value of marks) expect(Object.keys(value).sort()).toEqual(['elapsed_ms', 'operation', 'phase', 'status']);
+    } finally { client.stop(); }
+  });
+
+  it('waits for its stream while its sign-in is prepared and reads once when a frame arrives', async () => {
+    vi.useFakeTimers();
+    const signIn = authenticationPayload();
+    const preparing = { ...signIn, ceremony: null, task: { ...signIn.task, state: 'pending' } };
+    let ready = false;
+    const s = stream();
+    const h = helper({ events: s.events, value: signIn,
+      respond: path => path.endsWith('/payload') && !ready
+        ? { ok: true, status: 200, text: async () => JSON.stringify(preparing) } : null });
+    try {
+      const started = h.client.start();
+      await vi.waitFor(() => expect(s.state.opened).toBe(1));
+      const before = h.reads();
+      await vi.advanceTimersByTimeAsync(STREAM_POLL_MS - 1000);
+      expect(h.reads()).toBe(before);
+      ready = true;
+      s.state.frame(frame('pending'));
+      await started;
+      expect(h.reads()).toBe(before + 1);
+      expect(h.client.payload).toEqual(signIn);
+      expect(s.state.opened).toBe(1);
+    } finally { h.client.stop(); vi.useRealTimers(); }
+  });
+
+  it('keeps a frame that arrives during a preparing read for the next wait', async () => {
+    const signIn = authenticationPayload();
+    const preparing = { ...signIn, ceremony: null, task: { ...signIn.task, state: 'pending' } };
+    const s = stream();
+    let reads = 0, release;
+    const held = new Promise(resolve => { release = resolve; });
+    const h = helper({ events: s.events, value: signIn, respond: path => {
+      if (!path.endsWith('/payload')) return null;
+      reads++;
+      const body = reads <= 2 ? preparing : signIn;
+      return (reads === 2 ? held : Promise.resolve()).then(() => ({ ok: true, status: 200, text: async () => JSON.stringify(body) }));
+    } });
+    try {
+      const started = h.client.start();
+      await vi.waitFor(() => expect(s.state.opened).toBe(1));
+      s.state.frame(frame('pending'));
+      await vi.waitFor(() => expect(reads).toBe(2));
+      s.state.frame(frame('pending'));
+      release();
+      await started;
+      expect(reads).toBe(3);
+      expect(h.client.payload).toEqual(signIn);
+    } finally { h.client.stop(); }
+  });
+
+  it('reads on its short timer while a preparing stream is down', async () => {
+    vi.useFakeTimers();
+    const signIn = authenticationPayload();
+    const preparing = { ...signIn, ceremony: null, task: { ...signIn.task, state: 'pending' } };
+    const events = vi.fn(async () => { throw Error('stream_unavailable'); });
+    const h = helper({ events, value: signIn,
+      respond: path => path.endsWith('/payload') ? { ok: true, status: 200, text: async () => JSON.stringify(preparing) } : null });
+    try {
+      void h.client.start();
+      await vi.advanceTimersByTimeAsync(0);
+      const before = h.reads();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(h.reads() - before).toBeGreaterThanOrEqual(5);
+    } finally { h.client.stop(); vi.useRealTimers(); }
   });
 
   it('ignores a frame for another task', async () => {
@@ -117,6 +220,30 @@ describe('helper stream', () => {
       expect(h.posts.filter(([path]) => path === 'focused')).toHaveLength(1);
     } finally { h.client.stop(); }
   });
+
+  it('tells Brain once that its sign-in popup opened', async () => {
+    const h = helper();
+    try {
+      await h.client.start();
+      h.publish({ state: 'auth_idle' });
+      expect(h.posts.filter(([path]) => path === 'opened')).toEqual([]);
+      h.publish({ state: 'auth_opening' });
+      h.publish({ state: 'auth_opening' });
+      expect(h.posts.filter(([path]) => path === 'opened')).toEqual([['opened', {}]]);
+    } finally { h.client.stop(); }
+  });
+
+  it('stops and asks to be closed when Brain ends its sign-in', async () => {
+    const s = stream(), h = helper({ events: s.events });
+    try {
+      await h.client.start();
+      s.state.frame({ type: 'end', task_id: id(1), admission_generation: id(4) });
+      await h.client.ending;
+      expect(h.received.at(-1).state).toBe('task_changed');
+      expect(h.posts.filter(([path]) => path === 'ended')).toEqual([['ended', { reason: 'task_changed' }]]);
+      expect(h.end).toHaveBeenCalledOnce();
+    } finally { h.client.stop(); }
+  });
 });
 
 describe('helper ending', () => {
@@ -133,6 +260,21 @@ describe('helper ending', () => {
       expect(order).toEqual(['ended', 'close']);
     } finally { h.client.stop(); }
   });
+
+  it.each([['needs-account', 'needs_account'], ['needs-consent', 'needs_consent'], ['needs-permission', 'needs_permission']])(
+    'reports a sign-in the extension cannot open (%s) to Brain once, then closes', async (state, reason) => {
+      const order = [];
+      const h = helper({ respond: path => { if (path.endsWith('/ended')) order.push('ended'); return null; },
+        link: { end: vi.fn(() => { order.push('close'); return true; }) } });
+      try {
+        await h.client.start();
+        h.publish({ state, observation: observation() }); await settle(h);
+        h.publish({ state, observation: observation() }); await settle(h);
+        expect(h.received.at(-1).state).toBe('auth_access_required');
+        expect(h.posts).toEqual([['ended', { reason }]]);
+        expect(order).toEqual(['ended', 'close']);
+      } finally { h.client.stop(); }
+    });
 
   it('keeps an extension error shown when Brain did not record it', async () => {
     const h = helper({ respond: path => path.endsWith('/ended') ? { ok: false, status: 503, text: async () => '{}' } : null });
@@ -174,6 +316,48 @@ describe('helper ending', () => {
       h.publish({ state: 'account_mismatch' }); await settle(h);
       expect(h.posts.filter(([path]) => path === 'ended')).toHaveLength(1);
       expect(h.reattach).toHaveBeenCalledExactlyOnceWith({ payload: h.value, type: 'close' });
+    } finally { h.client.stop(); }
+  });
+
+  it('closes a helper whose sign-in task was withdrawn while it was still being prepared', async () => {
+    const signIn = authenticationPayload();
+    const preparing = { ...signIn, ceremony: null, task: { ...signIn.task, state: 'pending' } };
+    let reads = 0;
+    const h = helper({ events: stream({ initial: true }).events,
+      respond: path => path.endsWith('/payload') ? { ok: true, status: 200, text: async () => JSON.stringify(
+      ++reads === 1 ? preparing : { ...preparing, task: { ...preparing.task, state: 'cancelled' } }) } : null });
+    try {
+      await h.client.start(); await h.client.ending;
+      expect(h.received.at(-1).state).toBe('task_changed');
+      expect(h.reattach).toHaveBeenCalledExactlyOnceWith({ payload: preparing, type: 'close' });
+    } finally { h.client.stop(); }
+  });
+
+  it('keeps asking a reloading extension to close an ended helper, a bounded number of times', async () => {
+    vi.useFakeTimers();
+    const h = helper({ link: { end: vi.fn(() => false) } });
+    h.reattach.mockResolvedValue(false);
+    try {
+      await h.client.start();
+      h.publish({ state: 'ready', observation: observation() });
+      h.publish({ state: 'unavailable' });
+      await vi.advanceTimersByTimeAsync(0); await h.client.serial;
+      await vi.advanceTimersByTimeAsync(CLOSE_RETRY_MS * 5);
+      expect(h.posts.filter(([path]) => path === 'ended')).toEqual([['ended', { reason: 'unavailable' }]]);
+      expect(h.reattach).toHaveBeenCalledTimes(3);
+      expect(h.reattach.mock.calls.every(([value]) => value.type === 'close')).toBe(true);
+    } finally { h.client.stop(); vi.useRealTimers(); }
+  });
+
+  it('closes a sign-in helper through a fresh port when its closed popup cannot finish it', async () => {
+    const h = helper({ link: { finish: vi.fn(async () => false) },
+      respond: path => path.endsWith('/closed') ? { ok: true, status: 200, text: async () => '{"state":"checking"}' } : null });
+    try {
+      await h.client.start();
+      h.publish({ state: 'auth_closed' });
+      await vi.waitFor(() => expect(h.reattach).toHaveBeenCalledOnce());
+      expect(h.reattach).toHaveBeenCalledWith({ payload: h.value, type: 'close' });
+      expect(h.received.at(-1).state).toBe('auth_closed');
     } finally { h.client.stop(); }
   });
 
@@ -231,13 +415,20 @@ describe('helper port', () => {
     } finally { vi.useRealTimers(); }
   });
 
-  it('sends one attach and one close on a fresh port', async () => {
+  it('asks a fresh port only to end its helper, without attaching', async () => {
     const value = payload(), p = port();
     const done = reattachExtension({ payload: value, type: 'close', runtime: { connect: () => p }, timeout: 10 });
-    expect(p.postMessage.mock.calls.map(([message]) => message.type)).toEqual(['attach', 'close']);
+    expect(p.postMessage.mock.calls).toEqual([[{ type: 'end', payload: value }]]);
     expect(await done).toBe(false);
     expect(p.disconnect).toHaveBeenCalledOnce();
     expect(await reattachExtension({ payload: value, type: 'open', runtime: { connect: () => p } })).toBe(false);
+  });
+
+  it('sends one attach and one finish on a fresh port', async () => {
+    const value = payload(), p = port();
+    const done = reattachExtension({ payload: value, type: 'finish', runtime: { connect: () => p }, timeout: 10 });
+    expect(p.postMessage.mock.calls.map(([message]) => message.type)).toEqual(['attach', 'finish']);
+    expect(await done).toBe(false);
   });
 });
 
@@ -248,11 +439,14 @@ describe('helper stream reader', () => {
   it('reads only exact frames for this generation', async () => {
     const frames = [];
     const text = 'event: browser-task\ndata: ' + JSON.stringify({ task_id: id(1), admission_generation: id(4), state: 'completed' })
-      + '\n\n: keepalive\n\nevent: browser-task-focus\ndata: ' + JSON.stringify({ task_id: id(1), admission_generation: id(4) }) + '\n\n';
+      + '\n\n: keepalive\n\nevent: browser-task-focus\ndata: ' + JSON.stringify({ task_id: id(1), admission_generation: id(4) })
+      + '\n\nevent: browser-task-end\ndata: ' + JSON.stringify({ task_id: id(1), admission_generation: id(4) }) + '\n\n';
     const request = vi.fn(async () => response(text));
     await readBrowserTaskEvents({ request, generation: id(4), frame: value => frames.push(value) });
     expect(request.mock.calls[0][1].headers['X-Desktop-Generation']).toBe(id(4));
-    expect(frames.map(value => value.type)).toEqual(['task', 'focus']);
+    expect(frames.map(value => value.type)).toEqual(['task', 'focus', 'end']);
+    await expect(readBrowserTaskEvents({ request: async () => response('event: browser-task-end\ndata: '
+      + JSON.stringify({ task_id: id(1), admission_generation: id(5) }) + '\n\n'), generation: id(4), frame: () => {} })).rejects.toThrow('stream_invalid');
     for (const bad of [{ task_id: id(1), admission_generation: id(5), state: 'completed' },
       { task_id: id(1), admission_generation: id(4), state: 'done' },
       { task_id: id(1), admission_generation: id(4), state: 'completed', outcome: 'admitted' }]) {

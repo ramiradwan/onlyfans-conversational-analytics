@@ -45,7 +45,14 @@ export class DocumentObserverCoordinator {
       if (!prior && !ownedUrl(tab?.url ?? change.url)) return;
       if (change.url && !ownedUrl(change.url)) { this.tabs.delete(id); this.changed(); return; }
       const next = { ...prior, ...tab, id };
-      if (change.status === 'loading' || change.url) { next.status = null; next.document_id = null; }
+      if (change.status === 'loading' || change.url) {
+        next.pending_document_id = prior?.document_id ?? prior?.pending_document_id ?? null;
+        next.status = null; next.document_id = null;
+        if (next.pending_document_id && this.mode && !this.paused) {
+          void this.bounded(this.chrome.tabs.sendMessage(id, { type: PAGE_CONTROL_MESSAGE_TYPE,
+            version: PAGE_CONTROL_VERSION, action: 'status' }, { documentId: next.pending_document_id })).catch(() => undefined);
+        }
+      }
       this.tabs.set(id, next);
       if (this.helper?.tab_id === id && change.url && change.url !== this.helper.initial_url) {
         this.helper.touched = true; void this.persistHelper();
@@ -237,7 +244,11 @@ export class DocumentObserverCoordinator {
     if (message?.type !== OBSERVER_STATE_TYPE || Object.keys(message).length !== 2 || !validStatus(message.status)
       || sender?.id !== this.chrome.runtime.id || sender.frameId !== 0 || !ownedUrl(sender.url)) return false;
     const tab = this.tabs.get(sender.tab?.id);
-    if (!tab?.document_id || sender.documentId !== tab.document_id || message.status.mode !== this.mode) return false;
+    if (!tab?.document_id && sender.documentLifecycle !== 'active') return false;
+    if (sender.documentLifecycle !== undefined && sender.documentLifecycle !== 'active') return false;
+    if (!tab || sender.documentId !== (tab.document_id ?? tab.pending_document_id)
+      || !sender.documentId || message.status.mode !== this.mode || this.paused) return false;
+    tab.document_id = sender.documentId; tab.pending_document_id = null;
     tab.status = structuredClone(message.status); this.changed();
     // A closed page socket is a status, not a reason to open another platform
     // tab. The existing document and the bounded signer own their recovery.

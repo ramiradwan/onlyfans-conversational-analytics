@@ -11,6 +11,12 @@ import { normalizeSignerMessage } from '../transport/signer-normalization.mjs';
 import { mapPlatformObservation } from '../transport/capture-ingestion.mjs';
 import { mapPlatformObservation as mapReadOnlyPlatformObservation } from '../transport/read-only-capture-ingestion.mjs';
 import { InMemoryIngestionStorage } from './in-memory-ingestion-storage.mjs';
+import { identityNavigation } from '../test-fixtures/identity-navigation.mjs';
+import { payload } from '../test-fixtures/browser-task.mjs';
+import { assertCaptureContext } from '../runtime/capture-context.mjs';
+import { DocumentObserverCoordinator } from '../runtime/document-observer.mjs';
+import { statusPresentation } from '../ui/presentation.mjs';
+import { browserSurface } from '../runtime/browser-surface.mjs';
 
 const bundle = (await build({ entryPoints: [fileURLToPath(new URL('../page-hook.js', import.meta.url))],
   bundle: true, format: 'iife', platform: 'browser', target: ['chrome132'], write: false,
@@ -19,7 +25,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 const chat = { id: 'chat-a', withUser: { id: 'fan-a', name: 'Synthetic' }, updatedAt: '2030-01-01T00:00:00Z' };
 const message = { id: 'message-a', text: 'Synthetic', fromUser: { id: 'fan-a' },
   chatUserId: 'fan-a', chat_id: 'chat-a', createdAt: '2030-01-01T00:00:00Z' };
-function harness(mode = 'full', confirmed = true) {
+function harness(mode = 'full', confirmed = true, prerendering = false) {
   const posts = [];
   const listeners = new Map();
   let next = () => Promise.resolve(new Response('{}'));
@@ -42,12 +48,17 @@ function harness(mode = 'full', confirmed = true) {
       this.listeners.delete('loadend'); callback?.();
     }
   }
-  const window = { location: { origin: 'https://onlyfans.com', href: 'https://onlyfans.com/my/chats' },
-    WebSocket: Socket, fetch: (...args) => next(...args),
+  const documentListeners = new Map();
+  const document = { prerendering, addEventListener(name, fn) { documentListeners.set(name, fn); },
+    removeEventListener(name) { documentListeners.delete(name); } };
+  let requests = 0;
+  const window = { document, location: { origin: 'https://onlyfans.com', href: 'https://onlyfans.com/my/chats' },
+    WebSocket: Socket, fetch: (...args) => { requests++; return next(...args); },
     postMessage: (value) => posts.push(structuredClone(value)),
     addEventListener(name, listener) { listeners.set(name, listener); },
     removeEventListener(name) { listeners.delete(name); },
-    history: { pushState(_state, _title, path) { window.location.href = new URL(path, window.location.href).href; } },
+    history: Object.fromEntries(['pushState', 'replaceState'].map(name => [name,
+      (_state, _title, path) => { window.location.href = new URL(path, window.location.href).href; }])),
   };
   const context = vm.createContext({ window, XMLHttpRequest: Xhr, URL, crypto,
     TextEncoder, TextDecoder, AbortController, setTimeout, clearTimeout, console,
@@ -62,6 +73,9 @@ function harness(mode = 'full', confirmed = true) {
     await window.fetch(path); await flush();
   }
   return { window, posts, respond, Xhr, setFetch: (impl) => { next = impl; },
+    event(name, value = {}) { listeners.get(name)?.(value); },
+    activate() { document.prerendering = false; documentListeners.get('prerenderingchange')?.(); },
+    requests: () => requests,
     reinstall() { context.__OFCA_CAPTURE_MODE__ = mode; vm.runInContext(bundle, context); },
     control(action) { listeners.get('message')?.({ source: window, origin: window.location.origin,
       data: { type: 'ofca.capture.control', version: 1, action } }); },
@@ -223,8 +237,12 @@ test('identity refresh reports only the current document observation and stops w
   h.window.history.pushState(null, '', '/my/chats/chat/chat-b');
   const afterNavigation = h.posts.length;
   h.control('refresh_identity');
-  assert.equal(h.posts.at(-1).type, 'ofca.provisioning.identity.reset');
-  assert.equal(h.posts.length, afterNavigation);
+  assert.deepEqual(h.posts.at(-1), observed);
+  assert.equal(h.posts.length, afterNavigation + 1);
+  assert.equal(h.posts.at(-1).page_epoch, observed.page_epoch);
+  h.control('pause');
+  h.control('refresh_identity');
+  assert.equal(h.posts.length, afterNavigation + 1);
   h.control('stop');
   const count = h.posts.length;
   h.control('refresh_identity');
@@ -274,7 +292,7 @@ test('a response begun under account A cannot become a capture under account B',
   assert.equal(h.captures()[0].observation.creator_platform_user_id, 'creator-b');
 });
 
-test('failed identity responses and navigation clear ownership until a fresh identity is observed', async () => {
+test('failed identity responses clear ownership but same-document navigation retains confirmation', async () => {
   const h = harness();
   await h.respond('/api2/v2/users/me', { id: 'creator-a' });
   await h.respond('/api2/v2/users/me', { id: 'creator-a' }, 401);
@@ -283,7 +301,7 @@ test('failed identity responses and navigation clear ownership until a fresh ide
   await h.respond('/api2/v2/users/me', { id: 'creator-a' });
   h.window.history.pushState(null, '', '/my/profile');
   await h.respond('/api2/v2/chats', { list: [chat] });
-  assert.equal(h.captures().length, 0);
+  assert.equal(h.captures().length, 1);
 });
 
 test('XHR send and socket creation retain their original ownership across account switches', async () => {
@@ -299,7 +317,7 @@ test('XHR send and socket creation retain their original ownership across accoun
   assert.equal(h.captures()[0].observation.creator_platform_user_id, 'creator-b');
 });
 
-test('the original socket resumes after navigation revalidates the same creator', async () => {
+test('the original socket continues across navigation under the same confirmed creator', async () => {
   const h = harness();
   await h.respond('/api2/v2/users/me', { id: 'creator-a' });
   const socket = new h.window.WebSocket('wss://ws2.onlyfans.com/ws');
@@ -307,16 +325,16 @@ test('the original socket resumes after navigation revalidates the same creator'
   const firstEpoch = h.captures()[0].observation.page_epoch;
   h.window.history.pushState(null, '', '/my/chats/chat/chat-b');
   socket.emit({ type: 'new_message', data: { ...message, id: 'unknown-owner' } });
-  assert.equal(h.captures().length, 1, 'unknown navigation state must remain fenced');
+  assert.equal(h.captures().length, 2, 'same-document navigation retains confirmed ownership');
   await h.respond('/api2/v2/users/me', { id: 'creator-a' });
   socket.emit({ type: 'new_message', data: { ...message, id: 'after-navigation' } });
-  assert.equal(h.captures().length, 2);
-  assert.notEqual(h.captures()[1].observation.page_epoch, firstEpoch);
+  assert.equal(h.captures().length, 3);
+  assert.equal(h.captures()[1].observation.page_epoch, firstEpoch);
   assert.equal(h.captures()[1].observation.creator_platform_user_id, 'creator-a');
   await h.respond('/api2/v2/users/me', {}, 401);
   await h.respond('/api2/v2/users/me', { id: 'creator-a' });
   socket.emit({ type: 'new_message', data: { ...message, id: 'retired-session' } });
-  assert.equal(h.captures().length, 2, 'sign-out permanently retires the old socket authority');
+  assert.equal(h.captures().length, 3, 'sign-out permanently retires the old socket authority');
 });
 
 test('repeated same-mode injection preserves the original socket and creates no duplicate observers', async () => {
@@ -411,3 +429,207 @@ test('Full page socket lifecycle publishes readiness changes', () => {
   socket.close();
   assert.equal(h.posts.at(-1).status.ws2_socket_open, false);
 });
+
+for (const navigation of ['pushState', 'replaceState', 'hashchange', 'popstate']) {
+  test(`I1 I4 I6: ${navigation} retains labels, epoch, HTTP ownership and socket authority passively`, async () => {
+    const h = harness();
+    await h.respond('/api2/v2/users/me', { id: 'synthetic-creator', name: 'Synthetic', username: 'synthetic' });
+    const identity = h.posts.at(-1);
+    const socket = new h.window.WebSocket('wss://ws2.onlyfans.com/ws');
+    let release;
+    h.setFetch(() => new Promise(resolve => { release = resolve; }));
+    const pending = h.window.fetch('/api2/v2/chats');
+    const xhr = new h.Xhr(); xhr.open('GET', '/api2/v2/chats'); xhr.send();
+    const requests = h.requests();
+    if (navigation.endsWith('State')) h.window.history[navigation](null, '', '/my/profile');
+    else h.event(navigation);
+    h.control('refresh_identity');
+    assert.deepEqual(h.posts.at(-1), identity);
+    h.control('status');
+    assert.equal(h.posts.at(-1).status.forwarding, true);
+    assert.equal(h.requests(), requests, 'navigation and refresh start no request');
+    release(new Response(JSON.stringify({ list: [chat] })));
+    xhr.complete({ list: [chat] });
+    await pending; await flush();
+    socket.emit({ type: 'new_message', data: message });
+    assert.equal(h.captures().length, 3);
+    assert.ok(h.captures().every(post => post.observation.creator_platform_user_id === 'synthetic-creator'
+      && post.observation.page_epoch === identity.page_epoch));
+  });
+}
+
+for (const transport of ['fetch', 'xhr']) {
+  for (const outcome of ['same', 'different', 'invalid', '401', '403', '503', 'malformed', 'network']) {
+    test(`I2: ${transport} identity ${outcome} spanning navigation applies immediately`, async () => {
+      const h = harness(); await h.respond('/api2/v2/users/me', { id: 'synthetic-first' });
+      const socket = new h.window.WebSocket('wss://ws2.onlyfans.com/ws');
+      let release, reject, pending, xhr;
+      if (transport === 'fetch') {
+        h.setFetch(() => new Promise((done, fail) => { release = done; reject = fail; }));
+        pending = h.window.fetch('/api2/v2/init');
+      } else { xhr = new h.Xhr(); xhr.open('GET', '/api2/v2/init'); xhr.send(); }
+      h.window.history.pushState(null, '', '/my/profile');
+      const body = outcome === 'invalid' ? {} : { user: { id: outcome === 'same' ? 'synthetic-first' : 'synthetic-next' } };
+      const status = /^\d+$/.test(outcome) ? Number(outcome) : 200;
+      if (transport === 'fetch') {
+        if (outcome === 'network') reject(new Error('synthetic failure'));
+        else release(new Response(outcome === 'malformed' ? '{' : JSON.stringify(body), { status }));
+        if (outcome === 'network') await assert.rejects(pending);
+        else await pending;
+        await flush();
+      } else if (outcome === 'malformed') {
+        xhr.status = 200; xhr.responseText = '{'; xhr.listeners.get('loadend')();
+      } else xhr.complete(body, outcome === 'network' ? 0 : status);
+      const latest = h.posts.filter(post => post.type.startsWith('ofca.provisioning.identity.')).at(-1);
+      if (['same', 'different'].includes(outcome)) {
+        assert.equal(latest.authenticated_profile.creator_account_id, body.user.id);
+      } else if (['401', '403'].includes(outcome)) assert.equal(latest.authenticated_profile, null);
+      else assert.equal(latest.type, 'ofca.provisioning.identity.reset');
+      await h.respond('/api2/v2/chats', { list: [chat] });
+      socket.emit({ type: 'new_message', data: message });
+      assert.equal(h.captures().length, outcome === 'same' ? 2 : outcome === 'different' ? 1 : 0);
+    });
+  }
+  test(`I1 I2: latest-issued ${transport} identity wins across navigation in both completion orders`, async () => {
+    for (const newestFirst of [true, false]) for (const staleRefusal of [true, false]) {
+      const h = harness(); await h.respond('/api2/v2/users/me', { id: 'synthetic-initial' });
+      const pending = [];
+      const issue = () => {
+        if (transport === 'xhr') {
+          const xhr = new h.Xhr(); xhr.open('GET', '/api2/v2/users/me'); xhr.send();
+          return body => xhr.complete(body, body ? 200 : 401);
+        }
+        let release; h.setFetch(() => new Promise(resolve => { release = resolve; }));
+        pending.push(h.window.fetch('/api2/v2/users/me'));
+        return body => release(new Response(JSON.stringify(body), { status: body ? 200 : 401 }));
+      };
+      const older = issue(); h.event('popstate'); const newer = issue(); h.event('hashchange');
+      if (newestFirst) { newer({ id: 'synthetic-latest' }); await flush(); older(staleRefusal ? null : { id: 'synthetic-stale' }); }
+      else {
+        older(staleRefusal ? null : { id: 'synthetic-stale' }); await flush(); h.control('refresh_identity');
+        assert.equal(h.posts.at(-1).authenticated_profile.creator_account_id, 'synthetic-initial');
+        newer({ id: 'synthetic-latest' });
+      }
+      await Promise.all(pending); await flush(); h.control('refresh_identity');
+      assert.equal(h.posts.at(-1).authenticated_profile.creator_account_id, 'synthetic-latest');
+    }
+  });
+  for (const mode of ['identity', 'full', 'preview']) {
+    test(`I2: passive ${transport} API refusal fences ${mode} without treating ordinary 403 as sign-out`, async () => {
+      const h = harness(mode); await h.respond('/api2/v2/users/me', { id: 'synthetic-creator' });
+      const response = async (path, status) => {
+        if (transport === 'fetch') await h.respond(path, {}, status);
+        else { const xhr = new h.Xhr(); xhr.open('GET', path); xhr.send(); xhr.complete({}, status); }
+      };
+      for (const path of ['/api2/v2/chats', '/api2/v2/chats/synthetic/messages', '/api2/v2/subscriptions']) {
+        await response(path, 403);
+        h.control('refresh_identity');
+        if (mode !== 'preview') assert.equal(h.posts.at(-1).authenticated_profile.creator_account_id, 'synthetic-creator');
+        const before = h.posts.length;
+        await response(path, 401);
+        if (mode !== 'preview') assert.equal(h.posts.filter(post => post.type.startsWith('ofca.provisioning.identity.')).at(-1).type, 'ofca.provisioning.identity.reset');
+        await h.respond('/api2/v2/chats', { list: [chat] });
+        assert.equal(h.captures().length, 0);
+        await h.respond('/api2/v2/users/me', { id: 'synthetic-creator' });
+        assert.ok(h.posts.length >= before);
+      }
+      await response('https://example.test/api2/v2/chats', 401);
+      await response('/static/resource', 401);
+      h.control('refresh_identity');
+      if (mode !== 'preview') assert.equal(h.posts.at(-1).authenticated_profile.creator_account_id, 'synthetic-creator');
+    });
+  }
+}
+
+for (const lifecycle of ['new-document', 'bfcache', 'prerender', 'withdraw_identity', 'reset_identity']) {
+  test(`I3 I5 I7: ${lifecycle} starts unconfirmed and cannot reuse earlier responses or sockets`, async () => {
+    let h = harness('full', true, lifecycle === 'prerender');
+    await h.respond('/api2/v2/users/me', { id: 'synthetic-creator' });
+    const oldSocket = new h.window.WebSocket('wss://ws2.onlyfans.com/ws');
+    let release; h.setFetch(() => new Promise(resolve => { release = resolve; }));
+    const pending = h.window.fetch('/api2/v2/users/me');
+    if (lifecycle === 'new-document') { h.control('stop'); h = harness(); }
+    else if (lifecycle === 'bfcache') h.event('pageshow', { persisted: true });
+    else if (lifecycle === 'prerender') h.activate();
+    else { h.control(lifecycle); h.control('resume'); }
+    release(new Response(JSON.stringify({ id: 'synthetic-creator' })));
+    await pending; await flush();
+    await h.respond('/api2/v2/chats', { list: [chat] });
+    oldSocket.emit({ type: 'new_message', data: message });
+    assert.equal(h.captures().length, 0);
+    await h.respond('/api2/v2/users/me', { id: 'synthetic-creator' });
+    oldSocket.emit({ type: 'new_message', data: message });
+    assert.equal(h.captures().length, 0, 'a retired socket never regains authority');
+    new h.window.WebSocket('wss://ws2.onlyfans.com/ws').emit({ type: 'new_message', data: message });
+    assert.equal(h.captures().length, 1);
+  });
+}
+
+test('ordinary pageshow preserves live confirmation and passive resets cancel pending identity reads', async () => {
+  const h = harness(); await h.respond('/api2/v2/users/me', { id: 'synthetic-creator' });
+  const identity = h.posts.at(-1); h.event('pageshow', { persisted: false }); h.control('refresh_identity');
+  assert.deepEqual(h.posts.at(-1), identity);
+  let release; h.setFetch(() => new Promise(resolve => { release = resolve; }));
+  const pending = h.window.fetch('/api2/v2/users/me');
+  await h.respond('/api2/v2/subscriptions', {}, 401);
+  release(new Response(JSON.stringify({ id: 'synthetic-creator' })));
+  await pending; await flush(); h.control('refresh_identity');
+  assert.equal(h.posts.at(-1).type, 'ofca.provisioning.identity.reset');
+});
+
+for (const order of ['hook-first', 'url-first']) {
+  test(`measured profile to feed to Messages continues capture, observer, popup and access projections (${order})`, async () => {
+    const page = harness(), nav = identityNavigation();
+    const observer = new DocumentObserverCoordinator({ chromeApi: nav.chromeApi });
+    observer.start(); observer.mode = 'full';
+    observer.tabs.set(17, { id: 17, document_id: nav.sender.documentId, url: nav.sender.url });
+    let delivered = 0;
+    const relay = async () => {
+      while (delivered < page.posts.length) {
+        const post = page.posts[delivered++];
+        if (post.type.startsWith('ofca.provisioning.identity.')) await nav.dispatch(post);
+        if (post.type === 'ofca.capture.control.status') observer.observe({ type: 'ofca.observer.state', status: post.status }, nav.sender);
+      }
+    };
+    nav.refresh = async () => {
+      const action = nav.refreshes.at(-1)[1].action;
+      await flush(); page.control(action); await relay();
+    };
+    await page.respond('/api2/v2/users/me', { id: 'synthetic-creator' }); await relay();
+    const owner = await nav.owner.attach(payload());
+    const first = await nav.owner.read(owner);
+    const socket = new page.window.WebSocket('wss://ws2.onlyfans.com/ws'); socket.open(); await relay();
+    const requests = page.requests();
+    for (const path of ['/my/profile', '/', '/my/chats']) {
+      if (order === 'hook-first') { page.window.history.pushState(null, '', path); await relay(); }
+      nav.chromeApi.tabs.onUpdated.emit(17, { url: new URL(path, page.window.location.origin).href }, {
+        id: 17, url: new URL(path, page.window.location.origin).href,
+      });
+      if (order === 'url-first') page.window.history.pushState(null, '', path);
+      const current = await nav.owner.read(owner);
+      assert.equal(current.state, 'ready'); assert.equal(current.creator_account_id, first.creator_account_id);
+      await flush(); await relay();
+      assert.equal(observer.snapshot().attached, true);
+      const before = page.captures().length;
+      await page.respond('/api2/v2/chats', { list: [chat] }); socket.emit({ type: 'new_message', data: message });
+      assert.equal(page.captures().length, before + 2);
+      for (const post of page.captures().slice(before)) {
+        await nav.identity.withCaptureContext(nav.sender, (context, assertCurrent) => {
+          assertCurrent();
+          assert.equal(assertCaptureContext({ sender: nav.sender, extensionId: nav.chromeApi.runtime.id, context,
+            configuration: { creator_account_id: 'synthetic-account', history_acquisition: {
+              authorized_platform_creator_id: 'synthetic-creator' } }, boundCreatorAccountId: 'synthetic-account',
+            observation: post.observation, consent: nav.consent, delivery: { consent_epoch: nav.consent.consent_epoch } }), 'synthetic-creator');
+        });
+      }
+      const status = { consent: nav.consent, phase: 'full', onlyfans_permission: true,
+        observer: { attachment: observer.snapshot().attached ? 'ready' : 'hook_not_armed' },
+        delivery: { transport_state: 'authenticated' } };
+      assert.equal(statusPresentation({ status, pairing: { state: 'paired' }, desktopRuntimeReachable: true,
+        analysisReadiness: { commercial_authority: 'active', analysis_admission: 'admitted' } }).label, 'Ready');
+      assert.equal(browserSurface({ consent: status, legal: {} }).capture, 'active');
+    }
+    assert.equal(page.requests(), requests + 3, 'only the page test sends the three capture requests');
+    nav.identity.unregister();
+  });
+}
