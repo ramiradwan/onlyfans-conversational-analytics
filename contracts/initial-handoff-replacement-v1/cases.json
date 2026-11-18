@@ -1,0 +1,449 @@
+{
+  "proof_cases": [
+    {
+      "case_id": "exact-initial-replacement",
+      "proof": {
+        "challenge": "LkinNw706p9BPUzQQ5hL6qAkKYzyQDs4jd9oC9_u8mM",
+        "key_id": "ik1.SXbC4VvbNYA8gNtKHYQWxw",
+        "signature": "lqv9aUV5QnUnjXhamXr4NWK5ApNb_TuTQleWSIo3_uo39TzFBHVmdE_kmvW5kex43PVZG3esbEi6sdLEwaffbA"
+      },
+      "proof_hex": "4252494447452d434c45414e2d494e495449414c2d48414e444f46462d5245504c4143454d454e542d50524f4f462d563100000000202e48a7370ef4ea9f413d4cd043984beaa024298cf2403b388ddf680bdfeef26300000004504f5354000000332f76312f6f6e626f617264696e672f696e697469616c2d68616e646f66662d7265706c6163656d656e74733a7265706c6163650000002016c3333fb46d82267936ddce67c9f62049b78f9b127c74ec6f6f9235bcc91c2300000017696e697469616c2d68616e646f66662d7265706c616365000000204976c2e15bdb35803c80db4a1d8416c73db93ea03e83464bda9a8223ee398e4f0000004575726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d68616e646f66662d7265706c6163656d656e74",
+      "public_key": {
+        "crv": "P-256",
+        "kty": "EC",
+        "x": "hPM9c-mfp4I3uAr_cEIujZkr1RefXvdfe-1xgJWHH9g",
+        "y": "pDOVyBQMjWQFOlFzksyhKlFU1SvErL4EJQ8c500bML4"
+      },
+      "request": {
+        "destination": {
+          "device": {
+            "display_name": "Studio",
+            "platform": "windows",
+            "product_version": "1.0.0"
+          },
+          "installation_id": "installation.test",
+          "installation_key": {
+            "alg": "ES256",
+            "jwk": {
+              "crv": "P-256",
+              "kty": "EC",
+              "x": "hPM9c-mfp4I3uAr_cEIujZkr1RefXvdfe-1xgJWHH9g",
+              "y": "pDOVyBQMjWQFOlFzksyhKlFU1SvErL4EJQ8c500bML4"
+            },
+            "kid": "ik1.SXbC4VvbNYA8gNtKHYQWxw"
+          }
+        },
+        "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+        "predecessor_prepare_digest": "f868441567e922a2ae83425d90de5e3016bcb5ee3fda5ad55f1501f38eb3d5b7",
+        "profile": "urn:bridge-clean:initial-handoff-replacement:v1",
+        "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002"
+      }
+    }
+  ],
+  "proof_mutations": [
+    "predecessor_operation_id",
+    "predecessor_prepare_digest",
+    "successor_operation_id",
+    "installation",
+    "device",
+    "key_id",
+    "purpose",
+    "path",
+    "domain",
+    "audience",
+    "key"
+  ],
+  "schema_cases": [
+    {
+      "case_id": "replace",
+      "schema": "schemas/initial-handoff-replacement/v1/replace-request.schema.json",
+      "valid": true,
+      "value": {
+        "proof": {
+          "challenge": "LkinNw706p9BPUzQQ5hL6qAkKYzyQDs4jd9oC9_u8mM",
+          "key_id": "ik1.SXbC4VvbNYA8gNtKHYQWxw",
+          "signature": "lqv9aUV5QnUnjXhamXr4NWK5ApNb_TuTQleWSIo3_uo39TzFBHVmdE_kmvW5kex43PVZG3esbEi6sdLEwaffbA"
+        },
+        "request": {
+          "destination": {
+            "device": {
+              "display_name": "Studio",
+              "platform": "windows",
+              "product_version": "1.0.0"
+            },
+            "installation_id": "installation.test",
+            "installation_key": {
+              "alg": "ES256",
+              "jwk": {
+                "crv": "P-256",
+                "kty": "EC",
+                "x": "hPM9c-mfp4I3uAr_cEIujZkr1RefXvdfe-1xgJWHH9g",
+                "y": "pDOVyBQMjWQFOlFzksyhKlFU1SvErL4EJQ8c500bML4"
+              },
+              "kid": "ik1.SXbC4VvbNYA8gNtKHYQWxw"
+            }
+          },
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+          "predecessor_prepare_digest": "f868441567e922a2ae83425d90de5e3016bcb5ee3fda5ad55f1501f38eb3d5b7",
+          "profile": "urn:bridge-clean:initial-handoff-replacement:v1",
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002"
+        }
+      }
+    },
+    {
+      "case_id": "challenge",
+      "schema": "schemas/initial-handoff-replacement/v1/proof-challenge-request.schema.json",
+      "valid": true,
+      "value": {
+        "profile": "urn:bridge-clean:initial-handoff-replacement-proof:v1",
+        "target": {
+          "operation": "initial-handoff-replace",
+          "request": {
+            "destination": {
+              "device": {
+                "display_name": "Studio",
+                "platform": "windows",
+                "product_version": "1.0.0"
+              },
+              "installation_id": "installation.test",
+              "installation_key": {
+                "alg": "ES256",
+                "jwk": {
+                  "crv": "P-256",
+                  "kty": "EC",
+                  "x": "hPM9c-mfp4I3uAr_cEIujZkr1RefXvdfe-1xgJWHH9g",
+                  "y": "pDOVyBQMjWQFOlFzksyhKlFU1SvErL4EJQ8c500bML4"
+                },
+                "kid": "ik1.SXbC4VvbNYA8gNtKHYQWxw"
+              }
+            },
+            "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+            "predecessor_prepare_digest": "f868441567e922a2ae83425d90de5e3016bcb5ee3fda5ad55f1501f38eb3d5b7",
+            "profile": "urn:bridge-clean:initial-handoff-replacement:v1",
+            "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002"
+          }
+        }
+      }
+    },
+    {
+      "case_id": "challenge-response",
+      "schema": "schemas/initial-handoff-replacement/v1/proof-challenge-response.schema.json",
+      "valid": true,
+      "value": {
+        "challenge": "LkinNw706p9BPUzQQ5hL6qAkKYzyQDs4jd9oC9_u8mM",
+        "expires_at": "2025-08-07T00:01:00.000Z",
+        "profile": "urn:bridge-clean:initial-handoff-replacement-proof:v1",
+        "request_digest": "16c3333fb46d82267936ddce67c9f62049b78f9b127c74ec6f6f9235bcc91c23"
+      }
+    },
+    {
+      "case_id": "prepared",
+      "schema": "schemas/initial-handoff-replacement/v1/replace-response.schema.json",
+      "valid": true,
+      "value": {
+        "expected_customer_id": "customer.test",
+        "intended_creator_id": "creator.test",
+        "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+        "profile": "urn:bridge-clean:initial-handoff-replacement:v1",
+        "status": "prepared",
+        "successor": {
+          "expires_at": "2025-08-07T00:10:00.000Z",
+          "operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "meICNUo7wf9_Z6gZ-R2ikL3rXlEjBXZaIqBN2C39mSU"
+        },
+        "successor_prepare_digest": "5f0986c60bcff894d5dd5733945d289d4705edc020b503986accfa9b629bfd50"
+      }
+    },
+    {
+      "case_id": "accepted",
+      "schema": "schemas/initial-handoff-replacement/v1/replace-response.schema.json",
+      "valid": true,
+      "value": {
+        "accepted_operation_id": "0198a1b2-c3d4-7300-8000-000000000003",
+        "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+        "profile": "urn:bridge-clean:initial-handoff-replacement:v1",
+        "status": "accepted"
+      }
+    },
+    {
+      "case_id": "committed",
+      "schema": "schemas/initial-handoff-replacement/v1/replace-response.schema.json",
+      "valid": true,
+      "value": {
+        "completion_operation_id": "0198a1b2-c3d4-7300-8000-000000000004",
+        "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+        "profile": "urn:bridge-clean:initial-handoff-replacement:v1",
+        "status": "committed"
+      }
+    },
+    {
+      "case_id": "conflict",
+      "schema": "schemas/initial-handoff-replacement/v1/error.schema.json",
+      "valid": true,
+      "value": {
+        "profile": "urn:bridge-clean:initial-handoff-replacement:v1",
+        "reason": "operation_conflict"
+      }
+    },
+    {
+      "case_id": "no-caller-creator_id",
+      "schema": "schemas/initial-handoff-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "LkinNw706p9BPUzQQ5hL6qAkKYzyQDs4jd9oC9_u8mM",
+          "key_id": "ik1.SXbC4VvbNYA8gNtKHYQWxw",
+          "signature": "lqv9aUV5QnUnjXhamXr4NWK5ApNb_TuTQleWSIo3_uo39TzFBHVmdE_kmvW5kex43PVZG3esbEi6sdLEwaffbA"
+        },
+        "request": {
+          "creator_id": "forbidden",
+          "destination": {
+            "device": {
+              "display_name": "Studio",
+              "platform": "windows",
+              "product_version": "1.0.0"
+            },
+            "installation_id": "installation.test",
+            "installation_key": {
+              "alg": "ES256",
+              "jwk": {
+                "crv": "P-256",
+                "kty": "EC",
+                "x": "hPM9c-mfp4I3uAr_cEIujZkr1RefXvdfe-1xgJWHH9g",
+                "y": "pDOVyBQMjWQFOlFzksyhKlFU1SvErL4EJQ8c500bML4"
+              },
+              "kid": "ik1.SXbC4VvbNYA8gNtKHYQWxw"
+            }
+          },
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+          "predecessor_prepare_digest": "f868441567e922a2ae83425d90de5e3016bcb5ee3fda5ad55f1501f38eb3d5b7",
+          "profile": "urn:bridge-clean:initial-handoff-replacement:v1",
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002"
+        }
+      }
+    },
+    {
+      "case_id": "no-caller-organization_id",
+      "schema": "schemas/initial-handoff-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "LkinNw706p9BPUzQQ5hL6qAkKYzyQDs4jd9oC9_u8mM",
+          "key_id": "ik1.SXbC4VvbNYA8gNtKHYQWxw",
+          "signature": "lqv9aUV5QnUnjXhamXr4NWK5ApNb_TuTQleWSIo3_uo39TzFBHVmdE_kmvW5kex43PVZG3esbEi6sdLEwaffbA"
+        },
+        "request": {
+          "destination": {
+            "device": {
+              "display_name": "Studio",
+              "platform": "windows",
+              "product_version": "1.0.0"
+            },
+            "installation_id": "installation.test",
+            "installation_key": {
+              "alg": "ES256",
+              "jwk": {
+                "crv": "P-256",
+                "kty": "EC",
+                "x": "hPM9c-mfp4I3uAr_cEIujZkr1RefXvdfe-1xgJWHH9g",
+                "y": "pDOVyBQMjWQFOlFzksyhKlFU1SvErL4EJQ8c500bML4"
+              },
+              "kid": "ik1.SXbC4VvbNYA8gNtKHYQWxw"
+            }
+          },
+          "organization_id": "forbidden",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+          "predecessor_prepare_digest": "f868441567e922a2ae83425d90de5e3016bcb5ee3fda5ad55f1501f38eb3d5b7",
+          "profile": "urn:bridge-clean:initial-handoff-replacement:v1",
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002"
+        }
+      }
+    },
+    {
+      "case_id": "no-caller-expected_customer_id",
+      "schema": "schemas/initial-handoff-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "LkinNw706p9BPUzQQ5hL6qAkKYzyQDs4jd9oC9_u8mM",
+          "key_id": "ik1.SXbC4VvbNYA8gNtKHYQWxw",
+          "signature": "lqv9aUV5QnUnjXhamXr4NWK5ApNb_TuTQleWSIo3_uo39TzFBHVmdE_kmvW5kex43PVZG3esbEi6sdLEwaffbA"
+        },
+        "request": {
+          "destination": {
+            "device": {
+              "display_name": "Studio",
+              "platform": "windows",
+              "product_version": "1.0.0"
+            },
+            "installation_id": "installation.test",
+            "installation_key": {
+              "alg": "ES256",
+              "jwk": {
+                "crv": "P-256",
+                "kty": "EC",
+                "x": "hPM9c-mfp4I3uAr_cEIujZkr1RefXvdfe-1xgJWHH9g",
+                "y": "pDOVyBQMjWQFOlFzksyhKlFU1SvErL4EJQ8c500bML4"
+              },
+              "kid": "ik1.SXbC4VvbNYA8gNtKHYQWxw"
+            }
+          },
+          "expected_customer_id": "forbidden",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+          "predecessor_prepare_digest": "f868441567e922a2ae83425d90de5e3016bcb5ee3fda5ad55f1501f38eb3d5b7",
+          "profile": "urn:bridge-clean:initial-handoff-replacement:v1",
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002"
+        }
+      }
+    },
+    {
+      "case_id": "no-caller-activation_operation_id",
+      "schema": "schemas/initial-handoff-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "LkinNw706p9BPUzQQ5hL6qAkKYzyQDs4jd9oC9_u8mM",
+          "key_id": "ik1.SXbC4VvbNYA8gNtKHYQWxw",
+          "signature": "lqv9aUV5QnUnjXhamXr4NWK5ApNb_TuTQleWSIo3_uo39TzFBHVmdE_kmvW5kex43PVZG3esbEi6sdLEwaffbA"
+        },
+        "request": {
+          "activation_operation_id": "forbidden",
+          "destination": {
+            "device": {
+              "display_name": "Studio",
+              "platform": "windows",
+              "product_version": "1.0.0"
+            },
+            "installation_id": "installation.test",
+            "installation_key": {
+              "alg": "ES256",
+              "jwk": {
+                "crv": "P-256",
+                "kty": "EC",
+                "x": "hPM9c-mfp4I3uAr_cEIujZkr1RefXvdfe-1xgJWHH9g",
+                "y": "pDOVyBQMjWQFOlFzksyhKlFU1SvErL4EJQ8c500bML4"
+              },
+              "kid": "ik1.SXbC4VvbNYA8gNtKHYQWxw"
+            }
+          },
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+          "predecessor_prepare_digest": "f868441567e922a2ae83425d90de5e3016bcb5ee3fda5ad55f1501f38eb3d5b7",
+          "profile": "urn:bridge-clean:initial-handoff-replacement:v1",
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002"
+        }
+      }
+    },
+    {
+      "case_id": "missing-predecessor_prepare_digest",
+      "schema": "schemas/initial-handoff-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "LkinNw706p9BPUzQQ5hL6qAkKYzyQDs4jd9oC9_u8mM",
+          "key_id": "ik1.SXbC4VvbNYA8gNtKHYQWxw",
+          "signature": "lqv9aUV5QnUnjXhamXr4NWK5ApNb_TuTQleWSIo3_uo39TzFBHVmdE_kmvW5kex43PVZG3esbEi6sdLEwaffbA"
+        },
+        "request": {
+          "destination": {
+            "device": {
+              "display_name": "Studio",
+              "platform": "windows",
+              "product_version": "1.0.0"
+            },
+            "installation_id": "installation.test",
+            "installation_key": {
+              "alg": "ES256",
+              "jwk": {
+                "crv": "P-256",
+                "kty": "EC",
+                "x": "hPM9c-mfp4I3uAr_cEIujZkr1RefXvdfe-1xgJWHH9g",
+                "y": "pDOVyBQMjWQFOlFzksyhKlFU1SvErL4EJQ8c500bML4"
+              },
+              "kid": "ik1.SXbC4VvbNYA8gNtKHYQWxw"
+            }
+          },
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+          "profile": "urn:bridge-clean:initial-handoff-replacement:v1",
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002"
+        }
+      }
+    },
+    {
+      "case_id": "missing-successor_operation_id",
+      "schema": "schemas/initial-handoff-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "LkinNw706p9BPUzQQ5hL6qAkKYzyQDs4jd9oC9_u8mM",
+          "key_id": "ik1.SXbC4VvbNYA8gNtKHYQWxw",
+          "signature": "lqv9aUV5QnUnjXhamXr4NWK5ApNb_TuTQleWSIo3_uo39TzFBHVmdE_kmvW5kex43PVZG3esbEi6sdLEwaffbA"
+        },
+        "request": {
+          "destination": {
+            "device": {
+              "display_name": "Studio",
+              "platform": "windows",
+              "product_version": "1.0.0"
+            },
+            "installation_id": "installation.test",
+            "installation_key": {
+              "alg": "ES256",
+              "jwk": {
+                "crv": "P-256",
+                "kty": "EC",
+                "x": "hPM9c-mfp4I3uAr_cEIujZkr1RefXvdfe-1xgJWHH9g",
+                "y": "pDOVyBQMjWQFOlFzksyhKlFU1SvErL4EJQ8c500bML4"
+              },
+              "kid": "ik1.SXbC4VvbNYA8gNtKHYQWxw"
+            }
+          },
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+          "predecessor_prepare_digest": "f868441567e922a2ae83425d90de5e3016bcb5ee3fda5ad55f1501f38eb3d5b7",
+          "profile": "urn:bridge-clean:initial-handoff-replacement:v1"
+        }
+      }
+    },
+    {
+      "case_id": "committed-no-new-source",
+      "schema": "schemas/initial-handoff-replacement/v1/replace-response.schema.json",
+      "valid": false,
+      "value": {
+        "completion_operation_id": "0198a1b2-c3d4-7300-8000-000000000004",
+        "expected_customer_id": "customer.test",
+        "intended_creator_id": "creator.test",
+        "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+        "profile": "urn:bridge-clean:initial-handoff-replacement:v1",
+        "status": "committed",
+        "successor": {
+          "expires_at": "2025-08-07T00:10:00.000Z",
+          "operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "meICNUo7wf9_Z6gZ-R2ikL3rXlEjBXZaIqBN2C39mSU"
+        },
+        "successor_prepare_digest": "5f0986c60bcff894d5dd5733945d289d4705edc020b503986accfa9b629bfd50"
+      }
+    },
+    {
+      "case_id": "no-grant",
+      "schema": "schemas/initial-handoff-replacement/v1/replace-response.schema.json",
+      "valid": false,
+      "value": {
+        "expected_customer_id": "customer.test",
+        "grant": "forbidden",
+        "intended_creator_id": "creator.test",
+        "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+        "profile": "urn:bridge-clean:initial-handoff-replacement:v1",
+        "status": "prepared",
+        "successor": {
+          "expires_at": "2025-08-07T00:10:00.000Z",
+          "operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "meICNUo7wf9_Z6gZ-R2ikL3rXlEjBXZaIqBN2C39mSU"
+        },
+        "successor_prepare_digest": "5f0986c60bcff894d5dd5733945d289d4705edc020b503986accfa9b629bfd50"
+      }
+    }
+  ],
+  "test_only": true
+}

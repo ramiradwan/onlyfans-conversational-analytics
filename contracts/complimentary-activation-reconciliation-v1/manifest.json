@@ -1,0 +1,13 @@
+{
+  "files": [
+    {
+      "path": "cases.json",
+      "sha256": "04d4fa648b4fc6e88c2ddf2de32588ad85da9810e90af8119d389e88364605e3",
+      "size": 16354
+    }
+  ],
+  "generator": "tools/generate_activation_reconciliation_vectors.py",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "profile": "urn:bridge-clean:complimentary-activation-reconciliation-vectors:v1",
+  "test_only": true
+}

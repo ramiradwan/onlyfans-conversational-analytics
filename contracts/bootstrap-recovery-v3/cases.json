@@ -1,0 +1,113 @@
+{
+  "cases": [
+    {
+      "case_id": "initial-delivery",
+      "current_membership": true,
+      "enrolled_at": 1789200000,
+      "expected_http_status": 200,
+      "expected_result": "recovered",
+      "installation_revoked": false,
+      "latest_exact_grant_withdrawn": false,
+      "now": 1789200000
+    },
+    {
+      "case_id": "before-fixed-boundary",
+      "current_membership": true,
+      "enrolled_at": 1789200000,
+      "expected_http_status": 200,
+      "expected_result": "recovered",
+      "installation_revoked": false,
+      "latest_exact_grant_withdrawn": false,
+      "now": 1792396799
+    },
+    {
+      "case_id": "exact-fixed-boundary",
+      "current_membership": true,
+      "enrolled_at": 1789200000,
+      "expected_http_status": 403,
+      "expected_result": "bootstrap_authentication_required",
+      "installation_revoked": false,
+      "latest_exact_grant_withdrawn": false,
+      "now": 1792396800
+    },
+    {
+      "case_id": "after-fixed-boundary",
+      "current_membership": true,
+      "enrolled_at": 1789200000,
+      "expected_http_status": 403,
+      "expected_result": "bootstrap_authentication_required",
+      "installation_revoked": false,
+      "latest_exact_grant_withdrawn": false,
+      "now": 1792396801
+    },
+    {
+      "case_id": "installation-revoked",
+      "current_membership": true,
+      "enrolled_at": 1789200000,
+      "expected_http_status": 403,
+      "expected_result": "bootstrap_authority_withdrawn",
+      "installation_revoked": true,
+      "latest_exact_grant_withdrawn": false,
+      "now": 1789200001
+    },
+    {
+      "case_id": "grant-withdrawn",
+      "current_membership": true,
+      "enrolled_at": 1789200000,
+      "expected_http_status": 403,
+      "expected_result": "bootstrap_authority_withdrawn",
+      "installation_revoked": false,
+      "latest_exact_grant_withdrawn": true,
+      "now": 1789200001
+    },
+    {
+      "case_id": "membership-removed",
+      "current_membership": false,
+      "enrolled_at": 1789200000,
+      "expected_http_status": 403,
+      "expected_result": "bootstrap_authority_withdrawn",
+      "installation_revoked": false,
+      "latest_exact_grant_withdrawn": false,
+      "now": 1789200001
+    },
+    {
+      "case_id": "withdrawal-before-expiry-refusal",
+      "current_membership": true,
+      "enrolled_at": 1789200000,
+      "expected_http_status": 403,
+      "expected_result": "bootstrap_authority_withdrawn",
+      "installation_revoked": false,
+      "latest_exact_grant_withdrawn": true,
+      "now": 1792396800
+    }
+  ],
+  "path": "/v1/installations/0198a1b2-c3d4-7300-8000-000000000001/bootstrap:recover",
+  "profile": "urn:bridge-clean:bootstrap-recovery:v3",
+  "proof_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d50524f4f462d56310000000020b531e1b279d84f328e67aaac2ed874b02034dbcc72e8a5ea13b2f54b519d103300000004504f5354000000482f76312f696e7374616c6c6174696f6e732f30313938613162322d633364342d373330302d383030302d3030303030303030303030312f626f6f7473747261703a7265636f766572000000202c239bf0c0f8d33e645fa09ac0660b5925a5a11c65265dd46a5c6cb64035333400000012626f6f7473747261702d7265636f766572790000002430313938613162322d633364342d373330302d383030302d303030303030303030303031000000000000001a696b312e6736625345673736714c46354d6d455a456942715a510000003975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a70726f766973696f6e696e672d7632",
+  "public_key": {
+    "crv": "P-256",
+    "kty": "EC",
+    "x": "5w2HBh7U0fO4VqaUHwRYhZdCJozHf7evuagMSSs6Hi0",
+    "y": "N3OKSis6RFD7LYtL89PuuxYuKFUz873uCf0LVPa0Tqg"
+  },
+  "request": {
+    "proof": {
+      "challenge": "tTHhsnnYTzKOZ6qsLth0sCA028xy6KXqE7L1S1GdEDM",
+      "key_id": "ik1.g6bSEg76qLF5MmEZEiBqZQ",
+      "signature": "aPA9Wzsr7K0gKeZPpBp0rF1JnzPeID8nC-jNOcc1RyhP-TnoJMjAN_BVgXrV2fHyPx3idb6sAEVZKxK2A-9VuA"
+    },
+    "request": {
+      "claim_id": "0198a1b2-c3d4-7300-8000-000000000011",
+      "installation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+      "installation_key_id": "ik1.g6bSEg76qLF5MmEZEiBqZQ",
+      "onboarding_transaction_id": "onboarding.001",
+      "organization_id": "org.acme",
+      "profile": "urn:bridge-clean:bootstrap-recovery:v3",
+      "recovery_request_id": "0198a1b2-c3d4-7300-8000-000000000021",
+      "supported_profiles": [
+        "urn:bridge-clean:grant-profile:v1"
+      ]
+    }
+  },
+  "test_only": true
+}

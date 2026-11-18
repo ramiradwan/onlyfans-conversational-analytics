@@ -1,0 +1,475 @@
+{
+  "proof_cases": [
+    {
+      "case_id": "authority-recovery-prepare",
+      "operation": "authority-recovery-prepare",
+      "proof": {
+        "challenge": "5uD3DyuU8VUsviQqJnayYwuSW6FC7x4WHzm_KgUVWTM",
+        "key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+        "signature": "HoXqHifS4J4VDUsLsJOersnoeIHGvXMQ6caxsMlXDhkHe7MTR2fYjAkRWcIagRVaC8nqDCbYhuqZfJ059u43ow"
+      },
+      "proof_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d415554484f524954592d5245434f564552592d50524f4f462d56310000000020e6e0f70f2b94f1552cbe242a2676b2630b925ba142ef1e161f39bf2a0515593300000004504f53540000003e2f76312f696e7374616c6c6174696f6e732f696e7374616c6c6174696f6e2e746573742f617574686f726974792d7265636f766572793a7072657061726500000020f543674e27d966f0bfd93d329749719b82242b1c37b89992dece661223987cfa0000001a617574686f726974792d7265636f766572792d70726570617265000000206d6d5306f266c4f799a2456a94f691bd94cc141eb32d5b49f5838f3098309a6d0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d617574686f726974792d7265636f76657279",
+      "public_key": {
+        "crv": "P-256",
+        "kty": "EC",
+        "x": "TwshX8FEwuUBfDqBROwx5C1RYdWWtM8gWcthhmhxjXo",
+        "y": "N_k3K7r3-5FelrTyIJJA033HSjuk8FZQvHQDlGdkvyE"
+      },
+      "request": {
+        "profile": "urn:bridge-clean:installation-authority-recovery:v1",
+        "recovery_id": "0198a1b2-c3d4-7300-8000-000000000003",
+        "scope": {
+          "enrollment_transaction_id": "onboarding.test",
+          "evidence": {
+            "creator_scope": {
+              "approval_id": "0198a1b2-c3d4-7300-8000-000000000004",
+              "approval_revision": 1,
+              "binding_jti": "0198a1b2-c3d4-7300-8000-000000000005",
+              "creator_account_id": "creator.test",
+              "kind": "approved"
+            },
+            "installation_jti": "0198a1b2-c3d4-7300-8000-000000000001",
+            "kind": "previous-grants",
+            "membership_jti": "0198a1b2-c3d4-7300-8000-000000000002"
+          },
+          "installation_id": "installation.test",
+          "installation_key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+          "installation_key_jkt": "bW1TBvJmxPeZokVqlPaRvZTMFB6zLVtJ9YOPMJgwmm0",
+          "organization_id": "org.acme"
+        }
+      },
+      "scope_digest": "f9c8cc70fa043dfaf788d3ae1f909633e6c9006addeea14bc388d6445335eef7"
+    },
+    {
+      "case_id": "authority-recovery-deliver",
+      "operation": "authority-recovery-deliver",
+      "proof": {
+        "challenge": "5uD3DyuU8VUsviQqJnayYwuSW6FC7x4WHzm_KgUVWTM",
+        "key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+        "signature": "tr8qgkzlfKLmjLWTerVAUKYBGhtgOx9FbdpYmhUnBO1fIkDsh38GK3Cdy-CPx3KkscfbPS1S47oUj0iu0RIRLw"
+      },
+      "proof_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d415554484f524954592d5245434f564552592d50524f4f462d56310000000020e6e0f70f2b94f1552cbe242a2676b2630b925ba142ef1e161f39bf2a0515593300000004504f53540000003e2f76312f696e7374616c6c6174696f6e732f696e7374616c6c6174696f6e2e746573742f617574686f726974792d7265636f766572793a64656c6976657200000020f543674e27d966f0bfd93d329749719b82242b1c37b89992dece661223987cfa0000001a617574686f726974792d7265636f766572792d64656c69766572000000206d6d5306f266c4f799a2456a94f691bd94cc141eb32d5b49f5838f3098309a6d0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d617574686f726974792d7265636f76657279",
+      "public_key": {
+        "crv": "P-256",
+        "kty": "EC",
+        "x": "TwshX8FEwuUBfDqBROwx5C1RYdWWtM8gWcthhmhxjXo",
+        "y": "N_k3K7r3-5FelrTyIJJA033HSjuk8FZQvHQDlGdkvyE"
+      },
+      "request": {
+        "profile": "urn:bridge-clean:installation-authority-recovery:v1",
+        "recovery_id": "0198a1b2-c3d4-7300-8000-000000000003",
+        "scope": {
+          "enrollment_transaction_id": "onboarding.test",
+          "evidence": {
+            "creator_scope": {
+              "approval_id": "0198a1b2-c3d4-7300-8000-000000000004",
+              "approval_revision": 1,
+              "binding_jti": "0198a1b2-c3d4-7300-8000-000000000005",
+              "creator_account_id": "creator.test",
+              "kind": "approved"
+            },
+            "installation_jti": "0198a1b2-c3d4-7300-8000-000000000001",
+            "kind": "previous-grants",
+            "membership_jti": "0198a1b2-c3d4-7300-8000-000000000002"
+          },
+          "installation_id": "installation.test",
+          "installation_key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+          "installation_key_jkt": "bW1TBvJmxPeZokVqlPaRvZTMFB6zLVtJ9YOPMJgwmm0",
+          "organization_id": "org.acme"
+        }
+      },
+      "scope_digest": "f9c8cc70fa043dfaf788d3ae1f909633e6c9006addeea14bc388d6445335eef7"
+    }
+  ],
+  "proof_mutations": [
+    "purpose",
+    "path",
+    "organization",
+    "recovery-id",
+    "creator",
+    "key",
+    "audience",
+    "domain"
+  ],
+  "schema_cases": [
+    {
+      "case_id": "previous-without-creator",
+      "schema": "schemas/installation-authority-recovery/v1/prepare-request.schema.json",
+      "valid": true,
+      "value": {
+        "proof": {
+          "challenge": "5uD3DyuU8VUsviQqJnayYwuSW6FC7x4WHzm_KgUVWTM",
+          "key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+          "signature": "2wfmiCx-hjxWPUMMdo-xV-crmmgU1e95O8Ry9diOZbUyw89G7ciFmU6M3LCOGz3gFwdXYbCDfUykol1Yue_LQw"
+        },
+        "request": {
+          "profile": "urn:bridge-clean:installation-authority-recovery:v1",
+          "recovery_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "scope": {
+            "enrollment_transaction_id": "onboarding.test",
+            "evidence": {
+              "creator_scope": {
+                "kind": "none"
+              },
+              "installation_jti": "0198a1b2-c3d4-7300-8000-000000000001",
+              "kind": "previous-grants",
+              "membership_jti": "0198a1b2-c3d4-7300-8000-000000000002"
+            },
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+            "installation_key_jkt": "bW1TBvJmxPeZokVqlPaRvZTMFB6zLVtJ9YOPMJgwmm0",
+            "organization_id": "org.acme"
+          }
+        }
+      }
+    },
+    {
+      "case_id": "previous-with-creator",
+      "schema": "schemas/installation-authority-recovery/v1/prepare-request.schema.json",
+      "valid": true,
+      "value": {
+        "proof": {
+          "challenge": "5uD3DyuU8VUsviQqJnayYwuSW6FC7x4WHzm_KgUVWTM",
+          "key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+          "signature": "HoXqHifS4J4VDUsLsJOersnoeIHGvXMQ6caxsMlXDhkHe7MTR2fYjAkRWcIagRVaC8nqDCbYhuqZfJ059u43ow"
+        },
+        "request": {
+          "profile": "urn:bridge-clean:installation-authority-recovery:v1",
+          "recovery_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "scope": {
+            "enrollment_transaction_id": "onboarding.test",
+            "evidence": {
+              "creator_scope": {
+                "approval_id": "0198a1b2-c3d4-7300-8000-000000000004",
+                "approval_revision": 1,
+                "binding_jti": "0198a1b2-c3d4-7300-8000-000000000005",
+                "creator_account_id": "creator.test",
+                "kind": "approved"
+              },
+              "installation_jti": "0198a1b2-c3d4-7300-8000-000000000001",
+              "kind": "previous-grants",
+              "membership_jti": "0198a1b2-c3d4-7300-8000-000000000002"
+            },
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+            "installation_key_jkt": "bW1TBvJmxPeZokVqlPaRvZTMFB6zLVtJ9YOPMJgwmm0",
+            "organization_id": "org.acme"
+          }
+        }
+      }
+    },
+    {
+      "case_id": "lost-enrollment",
+      "schema": "schemas/installation-authority-recovery/v1/prepare-request.schema.json",
+      "valid": true,
+      "value": {
+        "proof": {
+          "challenge": "5uD3DyuU8VUsviQqJnayYwuSW6FC7x4WHzm_KgUVWTM",
+          "key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+          "signature": "lkeQNvdmtefP0I245Dx-zyKMrlnpGUQrfZC-DIvCabgvnHI6Zfd0b5dWFVY4klsDhc9XewIzFrUTPmCtAwBvMg"
+        },
+        "request": {
+          "profile": "urn:bridge-clean:installation-authority-recovery:v1",
+          "recovery_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "scope": {
+            "enrollment_transaction_id": "onboarding.test",
+            "evidence": {
+              "claim_id": "0198a1b2-c3d4-7300-8000-000000000006",
+              "creator_scope": {
+                "kind": "none"
+              },
+              "kind": "lost-enrollment"
+            },
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+            "installation_key_jkt": "bW1TBvJmxPeZokVqlPaRvZTMFB6zLVtJ9YOPMJgwmm0",
+            "organization_id": "org.acme"
+          }
+        }
+      }
+    },
+    {
+      "case_id": "deliver-with-exact-scope",
+      "schema": "schemas/installation-authority-recovery/v1/deliver-request.schema.json",
+      "valid": true,
+      "value": {
+        "proof": {
+          "challenge": "5uD3DyuU8VUsviQqJnayYwuSW6FC7x4WHzm_KgUVWTM",
+          "key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+          "signature": "tr8qgkzlfKLmjLWTerVAUKYBGhtgOx9FbdpYmhUnBO1fIkDsh38GK3Cdy-CPx3KkscfbPS1S47oUj0iu0RIRLw"
+        },
+        "request": {
+          "profile": "urn:bridge-clean:installation-authority-recovery:v1",
+          "recovery_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "scope": {
+            "enrollment_transaction_id": "onboarding.test",
+            "evidence": {
+              "creator_scope": {
+                "approval_id": "0198a1b2-c3d4-7300-8000-000000000004",
+                "approval_revision": 1,
+                "binding_jti": "0198a1b2-c3d4-7300-8000-000000000005",
+                "creator_account_id": "creator.test",
+                "kind": "approved"
+              },
+              "installation_jti": "0198a1b2-c3d4-7300-8000-000000000001",
+              "kind": "previous-grants",
+              "membership_jti": "0198a1b2-c3d4-7300-8000-000000000002"
+            },
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+            "installation_key_jkt": "bW1TBvJmxPeZokVqlPaRvZTMFB6zLVtJ9YOPMJgwmm0",
+            "organization_id": "org.acme"
+          }
+        }
+      }
+    },
+    {
+      "case_id": "caller-actor",
+      "schema": "schemas/installation-authority-recovery/v1/prepare-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "5uD3DyuU8VUsviQqJnayYwuSW6FC7x4WHzm_KgUVWTM",
+          "key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+          "signature": "HoXqHifS4J4VDUsLsJOersnoeIHGvXMQ6caxsMlXDhkHe7MTR2fYjAkRWcIagRVaC8nqDCbYhuqZfJ059u43ow"
+        },
+        "request": {
+          "profile": "urn:bridge-clean:installation-authority-recovery:v1",
+          "recovery_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "scope": {
+            "enrollment_transaction_id": "onboarding.test",
+            "evidence": {
+              "creator_scope": {
+                "approval_id": "0198a1b2-c3d4-7300-8000-000000000004",
+                "approval_revision": 1,
+                "binding_jti": "0198a1b2-c3d4-7300-8000-000000000005",
+                "creator_account_id": "creator.test",
+                "kind": "approved"
+              },
+              "installation_jti": "0198a1b2-c3d4-7300-8000-000000000001",
+              "kind": "previous-grants",
+              "membership_jti": "0198a1b2-c3d4-7300-8000-000000000002"
+            },
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+            "installation_key_jkt": "bW1TBvJmxPeZokVqlPaRvZTMFB6zLVtJ9YOPMJgwmm0",
+            "organization_id": "org.acme",
+            "subject": "caller"
+          }
+        }
+      }
+    },
+    {
+      "case_id": "no-membership-jti",
+      "schema": "schemas/installation-authority-recovery/v1/prepare-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "5uD3DyuU8VUsviQqJnayYwuSW6FC7x4WHzm_KgUVWTM",
+          "key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+          "signature": "HoXqHifS4J4VDUsLsJOersnoeIHGvXMQ6caxsMlXDhkHe7MTR2fYjAkRWcIagRVaC8nqDCbYhuqZfJ059u43ow"
+        },
+        "request": {
+          "profile": "urn:bridge-clean:installation-authority-recovery:v1",
+          "recovery_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "scope": {
+            "enrollment_transaction_id": "onboarding.test",
+            "evidence": {
+              "creator_scope": {
+                "approval_id": "0198a1b2-c3d4-7300-8000-000000000004",
+                "approval_revision": 1,
+                "binding_jti": "0198a1b2-c3d4-7300-8000-000000000005",
+                "creator_account_id": "creator.test",
+                "kind": "approved"
+              },
+              "installation_jti": "0198a1b2-c3d4-7300-8000-000000000001",
+              "kind": "previous-grants"
+            },
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+            "installation_key_jkt": "bW1TBvJmxPeZokVqlPaRvZTMFB6zLVtJ9YOPMJgwmm0",
+            "organization_id": "org.acme"
+          }
+        }
+      }
+    },
+    {
+      "case_id": "mixed-claim-and-grants",
+      "schema": "schemas/installation-authority-recovery/v1/prepare-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "5uD3DyuU8VUsviQqJnayYwuSW6FC7x4WHzm_KgUVWTM",
+          "key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+          "signature": "HoXqHifS4J4VDUsLsJOersnoeIHGvXMQ6caxsMlXDhkHe7MTR2fYjAkRWcIagRVaC8nqDCbYhuqZfJ059u43ow"
+        },
+        "request": {
+          "profile": "urn:bridge-clean:installation-authority-recovery:v1",
+          "recovery_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "scope": {
+            "enrollment_transaction_id": "onboarding.test",
+            "evidence": {
+              "claim_id": "0198a1b2-c3d4-7300-8000-000000000006",
+              "creator_scope": {
+                "approval_id": "0198a1b2-c3d4-7300-8000-000000000004",
+                "approval_revision": 1,
+                "binding_jti": "0198a1b2-c3d4-7300-8000-000000000005",
+                "creator_account_id": "creator.test",
+                "kind": "approved"
+              },
+              "installation_jti": "0198a1b2-c3d4-7300-8000-000000000001",
+              "kind": "previous-grants",
+              "membership_jti": "0198a1b2-c3d4-7300-8000-000000000002"
+            },
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+            "installation_key_jkt": "bW1TBvJmxPeZokVqlPaRvZTMFB6zLVtJ9YOPMJgwmm0",
+            "organization_id": "org.acme"
+          }
+        }
+      }
+    },
+    {
+      "case_id": "wrong-approval-revision",
+      "schema": "schemas/installation-authority-recovery/v1/prepare-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "5uD3DyuU8VUsviQqJnayYwuSW6FC7x4WHzm_KgUVWTM",
+          "key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+          "signature": "HoXqHifS4J4VDUsLsJOersnoeIHGvXMQ6caxsMlXDhkHe7MTR2fYjAkRWcIagRVaC8nqDCbYhuqZfJ059u43ow"
+        },
+        "request": {
+          "profile": "urn:bridge-clean:installation-authority-recovery:v1",
+          "recovery_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "scope": {
+            "enrollment_transaction_id": "onboarding.test",
+            "evidence": {
+              "creator_scope": {
+                "approval_id": "0198a1b2-c3d4-7300-8000-000000000004",
+                "approval_revision": 2,
+                "binding_jti": "0198a1b2-c3d4-7300-8000-000000000005",
+                "creator_account_id": "creator.test",
+                "kind": "approved"
+              },
+              "installation_jti": "0198a1b2-c3d4-7300-8000-000000000001",
+              "kind": "previous-grants",
+              "membership_jti": "0198a1b2-c3d4-7300-8000-000000000002"
+            },
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+            "installation_key_jkt": "bW1TBvJmxPeZokVqlPaRvZTMFB6zLVtJ9YOPMJgwmm0",
+            "organization_id": "org.acme"
+          }
+        }
+      }
+    },
+    {
+      "case_id": "return-url",
+      "schema": "schemas/installation-authority-recovery/v1/prepare-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "5uD3DyuU8VUsviQqJnayYwuSW6FC7x4WHzm_KgUVWTM",
+          "key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+          "signature": "HoXqHifS4J4VDUsLsJOersnoeIHGvXMQ6caxsMlXDhkHe7MTR2fYjAkRWcIagRVaC8nqDCbYhuqZfJ059u43ow"
+        },
+        "request": {
+          "profile": "urn:bridge-clean:installation-authority-recovery:v1",
+          "recovery_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "return_uri": "https://example.invalid",
+          "scope": {
+            "enrollment_transaction_id": "onboarding.test",
+            "evidence": {
+              "creator_scope": {
+                "approval_id": "0198a1b2-c3d4-7300-8000-000000000004",
+                "approval_revision": 1,
+                "binding_jti": "0198a1b2-c3d4-7300-8000-000000000005",
+                "creator_account_id": "creator.test",
+                "kind": "approved"
+              },
+              "installation_jti": "0198a1b2-c3d4-7300-8000-000000000001",
+              "kind": "previous-grants",
+              "membership_jti": "0198a1b2-c3d4-7300-8000-000000000002"
+            },
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+            "installation_key_jkt": "bW1TBvJmxPeZokVqlPaRvZTMFB6zLVtJ9YOPMJgwmm0",
+            "organization_id": "org.acme"
+          }
+        }
+      }
+    },
+    {
+      "case_id": "commercial-authority",
+      "schema": "schemas/installation-authority-recovery/v1/prepare-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "5uD3DyuU8VUsviQqJnayYwuSW6FC7x4WHzm_KgUVWTM",
+          "key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+          "signature": "HoXqHifS4J4VDUsLsJOersnoeIHGvXMQ6caxsMlXDhkHe7MTR2fYjAkRWcIagRVaC8nqDCbYhuqZfJ059u43ow"
+        },
+        "request": {
+          "profile": "urn:bridge-clean:installation-authority-recovery:v1",
+          "recovery_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "scope": {
+            "enrollment_transaction_id": "onboarding.test",
+            "evidence": {
+              "creator_scope": {
+                "approval_id": "0198a1b2-c3d4-7300-8000-000000000004",
+                "approval_revision": 1,
+                "binding_jti": "0198a1b2-c3d4-7300-8000-000000000005",
+                "creator_account_id": "creator.test",
+                "kind": "approved"
+              },
+              "installation_jti": "0198a1b2-c3d4-7300-8000-000000000001",
+              "kind": "previous-grants",
+              "license_jti": "0198a1b2-c3d4-7300-8000-000000000007",
+              "membership_jti": "0198a1b2-c3d4-7300-8000-000000000002"
+            },
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+            "installation_key_jkt": "bW1TBvJmxPeZokVqlPaRvZTMFB6zLVtJ9YOPMJgwmm0",
+            "organization_id": "org.acme"
+          }
+        }
+      }
+    },
+    {
+      "case_id": "lost-enrollment-cannot-claim-binding",
+      "schema": "schemas/installation-authority-recovery/v1/prepare-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "5uD3DyuU8VUsviQqJnayYwuSW6FC7x4WHzm_KgUVWTM",
+          "key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+          "signature": "lkeQNvdmtefP0I245Dx-zyKMrlnpGUQrfZC-DIvCabgvnHI6Zfd0b5dWFVY4klsDhc9XewIzFrUTPmCtAwBvMg"
+        },
+        "request": {
+          "profile": "urn:bridge-clean:installation-authority-recovery:v1",
+          "recovery_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "scope": {
+            "enrollment_transaction_id": "onboarding.test",
+            "evidence": {
+              "claim_id": "0198a1b2-c3d4-7300-8000-000000000006",
+              "creator_scope": {
+                "approval_id": "0198a1b2-c3d4-7300-8000-000000000004",
+                "approval_revision": 1,
+                "binding_jti": "0198a1b2-c3d4-7300-8000-000000000005",
+                "creator_account_id": "creator.test",
+                "kind": "approved"
+              },
+              "kind": "lost-enrollment"
+            },
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.bW1TBvJmxPeZokVqlPaRvQ",
+            "installation_key_jkt": "bW1TBvJmxPeZokVqlPaRvZTMFB6zLVtJ9YOPMJgwmm0",
+            "organization_id": "org.acme"
+          }
+        }
+      }
+    }
+  ],
+  "test_only": true
+}

@@ -1,0 +1,42 @@
+{
+  "profile": "urn:bridge-clean:initial-handoff-replacement:v1",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "proof_profile": "urn:bridge-clean:initial-handoff-replacement-proof:v1",
+  "request_max_bytes": 8192,
+  "response_max_bytes": 16384,
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "predecessor_profile": "urn:bridge-clean:initial-installation-handoff:v2",
+  "exact_predecessor": "Provider retained original prepare commitment; recompute SHA-256(RFC8785(v2 original prepare with predecessor operation and supplied original destination)); equality to retained digest and request digest; exact key proof",
+  "admission": "expired exact predecessor with complete retained history and established creator intent, no accepted or committed operation, no registered or revoked installation; one distinct successor atomically",
+  "identity": "preserve creator intent, established association, opaque expected customer and original organization; new source admits fresh authenticated exact customer and current membership before any consent; no prior session reused",
+  "starter_policy": "preserve predecessor source admission policy, no new offer or authority",
+  "replacement": "one explicit fresh successor UUID; fresh-proof exact retry returns original still-eligible successor; competing successor conflicts",
+  "deadline": "new fixed 600-second v2 source; no renewal or resurrection of predecessor; never extend root evidence retention",
+  "results": {
+    "prepared": "nonauthorizing original v2 prepare response and derived successor digest and intent only",
+    "accepted": "original accepted operation UUID only, no successor; reconcile original owner",
+    "committed": "original complete operation UUID only, existing v2 receipt and authenticated grant recovery retain authority; no new enrollment or grants"
+  },
+  "unresolved": "unknown/incomplete/absent evidence cannot establish rollback",
+  "legacy_prepare": "preserve exact live retry and independently unbound expired prepare behavior; no ordinary prepare bypass of retained creator-intent lineage",
+  "retention": "minimum original prepare digest and source operation identity, creator/association and opaque actor commitment, organization, decision and successor identities; no expired locator, proof body, session or credential; original root creation plus at most 90 days; no replacement once evidence deleted",
+  "messages": {
+    "definitions": "schemas/initial-handoff-replacement/v1/definitions.schema.json",
+    "replace-request": "schemas/initial-handoff-replacement/v1/replace-request.schema.json",
+    "replace-response": "schemas/initial-handoff-replacement/v1/replace-response.schema.json",
+    "error": "schemas/initial-handoff-replacement/v1/error.schema.json"
+  },
+  "refusal_status": {
+    "invalid": 400,
+    "proof_invalid": 401,
+    "authorization_denied": 403,
+    "operation_conflict": 409,
+    "not_ready": 409,
+    "already_enrolled": 409,
+    "expired": 410,
+    "rate_limited": 429,
+    "temporarily_unavailable": 503
+  },
+  "response_cache_control": "no-store"
+}

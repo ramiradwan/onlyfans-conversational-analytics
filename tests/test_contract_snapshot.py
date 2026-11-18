@@ -123,8 +123,8 @@ def test_consumer_pin_names_exact_published_contract_authority() -> None:
     assert pin["source_tree"] == APPROVED_SOURCE_TREE
     assert pin["source_contract_manifest_path"] == SOURCE_MANIFEST_TARGET
     assert pin["source_contract_manifest_sha256"] == APPROVED_SOURCE_MANIFEST_SHA256
-    assert pin["aggregate_bundle_sha256"] == "d1ccf95e17cc3c27cf0312f7409fc17aaa347d65e6775105380fd86b99a8af1a"
-    assert pin["contract_manifest_sha256"] == "ba2cf309dc8b169dd4c6758f1f3603cd87124da623621217ed8e6a79c2c68cc6"
+    assert pin["aggregate_bundle_sha256"] == "807e30c61bf9135fa184c6c76b7f8eb24d0f27877db4550ba63b41b53246c6b6"
+    assert pin["contract_manifest_sha256"] == "6b504f6ae2939519ef004cdc4f557a7451f6aaa84dc7344b19a7c0e6af5a3d06"
     assert {record["export"]: record["sha256"] for record in pin["conformance_manifests"]} == {
         "text-analysis-license-reissue-v2": "b8d059dcdfedebad1da79eb649970b4cb28abd474b80eb3b731cf586032d0e80",
         "text-analysis-license-reissue-response-conformance-v1": "caefdad92b2ef29058b2bb9876b28df16756280658e5010ca9725af55a1b08c5",
@@ -147,6 +147,13 @@ def test_consumer_pin_names_exact_published_contract_authority() -> None:
         "capability-license-v1": "c87d4ea9e70a856ab21888ddc048ebada5837713f97e30599af4c66536a2d5d1",
         "installation-claim-package-v1": "5bb58f5f2f3938a69d6381efeb38b0e4d6417aece0482ff337dafb8edb08483d",
         "bootstrap-recovery-v2": "f4205383eee5d5fcf7b6a394fdad3e3cab1a5ccb02ea63dece068a6f02e04596",
+        "bootstrap-recovery-v3": "aa8c7ab50a57f0e5eb721322c0b1baba55eb9a8e54df103481edefd58e953f24",
+        "browser-ceremony-replacement-v1": "9f9d0bc18895a965dbcda99d20282204f3b7a214803867b4c3b36148c05d0d44",
+        "initial-handoff-replacement-v1": "04f890c86ce37533e2301d629b2250a2ee7b5d7e958090b041906124a228476f",
+        "registered-continuation-replacement-v1": "11fd0dd5e99f953d605196d9bed8a9e7d261fd8ace7c9d32da67b8015e5d65d2",
+        "installation-authority-recovery-v1": "aadc99a745320dd9bcbb076592cefee4670a505cb01c8f80538b07f2e0a74358",
+        "complimentary-activation-reconciliation-v1": "0abfffbf6b66ebb349083a54d9a8ec95f60b9ab9406820606477df08d6e17d7a",
+        "complimentary-activation-review-replacement-v1": "c9d8c0eaab9ec0113ff1456a9745cbb63834ac091e735716bcc9898d52a520f7",
         "capability-license-hosted-api-v1": "b128955756b737ebfb58896d5fdd0b23430070817da9ab06bb970010aa125f0c",
     }
 

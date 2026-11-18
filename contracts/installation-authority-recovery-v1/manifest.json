@@ -1,0 +1,13 @@
+{
+  "files": [
+    {
+      "path": "cases.json",
+      "sha256": "8ef181ef5c0ddadbd552bbb7ff5cde93fa6d082d6ef6dad24d75a49322f3f439",
+      "size": 21043
+    }
+  ],
+  "generator": "tools/generate_installation_authority_recovery_vectors.py",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "profile": "urn:bridge-clean:installation-authority-recovery-vectors:v1",
+  "test_only": true
+}

@@ -1,0 +1,34 @@
+{
+  "profile": "urn:bridge-clean:complimentary-activation-reconciliation-proof:v1",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "domain": "BRIDGE-CLEAN-COMPLIMENTARY-ACTIVATION-RECONCILIATION-PROOF-V1\u0000",
+  "algorithm": "ES256",
+  "signature_encoding": "ieee-p1363-low-s",
+  "audience": "urn:bridge-clean:commercial-control-plane:complimentary-activation-reconciliation",
+  "canonical_request": "RFC8785(request)",
+  "request_digest": "SHA-256",
+  "field_encoding": "uint32be-length-prefixed",
+  "fields": [
+    "challenge-raw32",
+    "method-utf8",
+    "path-utf8",
+    "request-digest-raw32",
+    "purpose-utf8",
+    "RFC7638-key-thumbprint-raw32",
+    "audience-utf8"
+  ],
+  "challenge_ttl_seconds": 60,
+  "challenge_single_use": true,
+  "challenge_disclosure": "uniform-nonauthorizing",
+  "key_resolution": "exact current registered key and retained original source/activation admission",
+  "purposes": {
+    "complimentary-activation-reconcile": {
+      "method": "POST",
+      "path": "/v1/onboarding/complimentary-activation-reconciliations:read"
+    }
+  },
+  "messages": {
+    "proof-challenge-request": "schemas/complimentary-activation-reconciliation/v1/proof-challenge-request.schema.json",
+    "proof-challenge-response": "schemas/complimentary-activation-reconciliation/v1/proof-challenge-response.schema.json"
+  }
+}

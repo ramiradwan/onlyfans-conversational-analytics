@@ -1,0 +1,362 @@
+{
+  "proof_cases": [
+    {
+      "case_id": "exact-replacement",
+      "predecessor_binding": {
+        "attempt_id": "FrKjy3u-cU4jgO-h61S2lSUAiHE7l5tdPncl_Roac-Y",
+        "completion": {
+          "mode": "system-browser"
+        },
+        "installation_id": "installation.test",
+        "installation_key_id": "ik1.ydNB6OxU2lbN0miLGvvYaw",
+        "installation_key_jkt": "ydNB6OxU2lbN0miLGvvYa0vwitkPO3n6yUPeso7OB-Y",
+        "intended_creator_id": "creator.test",
+        "purpose": "connect-account",
+        "source": {
+          "kind": "initial",
+          "operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "YBF_HdBRIzD8h70oKtzAHeItaWmz-wEK62H-tzkbl_w",
+          "request_digest": "99a13a2fb32c2a5f833d6991ac37c89bd3b25706d8ced0958607d0e9234be21f"
+        },
+        "source_expires_at": "2025-08-07T00:10:00.000Z"
+      },
+      "proof": {
+        "challenge": "_B5GCnULK_z1lNXUeY_j4JFmGScLlEKlfeTcNdYFfQg",
+        "signature": "t0kvEC3lHpqzLoiZ1amoomGvKJHZ2JBs_pz-ywPTluEPC5I-agRNbivLUB3n7t8X9maCgMAA1yCxQV1A1OFGTA"
+      },
+      "proof_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d5245504c4143454d454e542d50524f4f462d56310000000020fc1e460a750b2bfcf594d5d4798fe3e0916619270b9442a57de4dc35d6057d0800000004504f5354000000342f76312f6f6e626f617264696e672f62726f777365722d636572656d6f6e792d7265706c6163656d656e74733a7265706c616365000000206fae02abada346d7848488f0033c001c6f69e30a844797cf575fd8ac4c99e6d60000001862726f777365722d636572656d6f6e792d7265706c61636500000020c9d341e8ec54da56cdd2688b1afbd86b4bf08ad90f3b79fac943deb28ece07e60000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a62726f777365722d636572656d6f6e792d7265706c6163656d656e74",
+      "public_key": {
+        "crv": "P-256",
+        "kty": "EC",
+        "x": "k6wBccInWb3ZTposoiz7WG1h8DGF26M3Cpv0lyH43kQ",
+        "y": "1ognl7ZsUcOOjfoFShskt9Gdf-OJwa5qGs_aVD3aMVk"
+      },
+      "request": {
+        "predecessor_binding_digest": "0be65bb4b73d7c6d30ebcab12c8d1062bbd5e101a233fa6e8e2d39fd270dbf77",
+        "predecessor_ceremony_id": "0198a1b2-c3d4-7300-8000-000000000003",
+        "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+        "predecessor_revision": 1,
+        "profile": "urn:bridge-clean:browser-ceremony-replacement:v1",
+        "successor_attempt_id": "KZ5n4OoHYlVIziUbL3zzENpMf5xHnJKMGW9WxZfSMxg",
+        "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000004"
+      }
+    }
+  ],
+  "proof_mutations": [
+    "predecessor_operation_id",
+    "predecessor_ceremony_id",
+    "predecessor_binding_digest",
+    "predecessor_revision",
+    "successor_operation_id",
+    "successor_attempt_id",
+    "purpose",
+    "path",
+    "domain",
+    "audience",
+    "key"
+  ],
+  "schema_cases": [
+    {
+      "case_id": "replace",
+      "schema": "schemas/browser-ceremony-replacement/v1/replace-request.schema.json",
+      "valid": true,
+      "value": {
+        "proof": {
+          "challenge": "_B5GCnULK_z1lNXUeY_j4JFmGScLlEKlfeTcNdYFfQg",
+          "signature": "t0kvEC3lHpqzLoiZ1amoomGvKJHZ2JBs_pz-ywPTluEPC5I-agRNbivLUB3n7t8X9maCgMAA1yCxQV1A1OFGTA"
+        },
+        "request": {
+          "predecessor_binding_digest": "0be65bb4b73d7c6d30ebcab12c8d1062bbd5e101a233fa6e8e2d39fd270dbf77",
+          "predecessor_ceremony_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+          "predecessor_revision": 1,
+          "profile": "urn:bridge-clean:browser-ceremony-replacement:v1",
+          "successor_attempt_id": "KZ5n4OoHYlVIziUbL3zzENpMf5xHnJKMGW9WxZfSMxg",
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000004"
+        }
+      }
+    },
+    {
+      "case_id": "challenge",
+      "schema": "schemas/browser-ceremony-replacement/v1/proof-challenge-request.schema.json",
+      "valid": true,
+      "value": {
+        "profile": "urn:bridge-clean:browser-ceremony-replacement-proof:v1",
+        "target": {
+          "operation": "browser-ceremony-replace",
+          "request": {
+            "predecessor_binding_digest": "0be65bb4b73d7c6d30ebcab12c8d1062bbd5e101a233fa6e8e2d39fd270dbf77",
+            "predecessor_ceremony_id": "0198a1b2-c3d4-7300-8000-000000000003",
+            "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+            "predecessor_revision": 1,
+            "profile": "urn:bridge-clean:browser-ceremony-replacement:v1",
+            "successor_attempt_id": "KZ5n4OoHYlVIziUbL3zzENpMf5xHnJKMGW9WxZfSMxg",
+            "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000004"
+          }
+        }
+      }
+    },
+    {
+      "case_id": "challenge-response",
+      "schema": "schemas/browser-ceremony-replacement/v1/proof-challenge-response.schema.json",
+      "valid": true,
+      "value": {
+        "challenge": "_B5GCnULK_z1lNXUeY_j4JFmGScLlEKlfeTcNdYFfQg",
+        "expires_at": "2025-08-07T00:01:00.000Z",
+        "profile": "urn:bridge-clean:browser-ceremony-replacement-proof:v1",
+        "request_digest": "6fae02abada346d7848488f0033c001c6f69e30a844797cf575fd8ac4c99e6d6"
+      }
+    },
+    {
+      "case_id": "successor",
+      "schema": "schemas/browser-ceremony-replacement/v1/replace-response.schema.json",
+      "valid": true,
+      "value": {
+        "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+        "profile": "urn:bridge-clean:browser-ceremony-replacement:v1",
+        "successor": {
+          "binding_digest": "4ffafd21a9a3aa7ecbceb5ed2cd19cde4bb5168a98373fb522f2d6fd7c48afe7",
+          "ceremony_id": "0198a1b2-c3d4-7300-8000-000000000005",
+          "completion": {
+            "mode": "system-browser"
+          },
+          "entry_reference": "XtK1FRlx_9Pd25tp-ewfiY3Gnj284hpxjekXYO2TVCY",
+          "expires_at": "2025-08-07T00:10:00.000Z",
+          "operation_id": "0198a1b2-c3d4-7300-8000-000000000004",
+          "profile": "urn:bridge-clean:browser-ceremony:v1"
+        },
+        "successor_binding": {
+          "attempt_id": "KZ5n4OoHYlVIziUbL3zzENpMf5xHnJKMGW9WxZfSMxg",
+          "completion": {
+            "mode": "system-browser"
+          },
+          "installation_id": "installation.test",
+          "installation_key_id": "ik1.ydNB6OxU2lbN0miLGvvYaw",
+          "installation_key_jkt": "ydNB6OxU2lbN0miLGvvYa0vwitkPO3n6yUPeso7OB-Y",
+          "intended_creator_id": "creator.test",
+          "purpose": "connect-account",
+          "source": {
+            "kind": "initial",
+            "operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+            "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+            "reference": "YBF_HdBRIzD8h70oKtzAHeItaWmz-wEK62H-tzkbl_w",
+            "request_digest": "99a13a2fb32c2a5f833d6991ac37c89bd3b25706d8ced0958607d0e9234be21f"
+          },
+          "source_expires_at": "2025-08-07T00:10:00.000Z"
+        }
+      }
+    },
+    {
+      "case_id": "conflict",
+      "schema": "schemas/browser-ceremony-replacement/v1/error.schema.json",
+      "valid": true,
+      "value": {
+        "profile": "urn:bridge-clean:browser-ceremony-replacement:v1",
+        "reason": "operation_conflict"
+      }
+    },
+    {
+      "case_id": "no-caller-binding",
+      "schema": "schemas/browser-ceremony-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "_B5GCnULK_z1lNXUeY_j4JFmGScLlEKlfeTcNdYFfQg",
+          "signature": "t0kvEC3lHpqzLoiZ1amoomGvKJHZ2JBs_pz-ywPTluEPC5I-agRNbivLUB3n7t8X9maCgMAA1yCxQV1A1OFGTA"
+        },
+        "request": {
+          "binding": {
+            "attempt_id": "FrKjy3u-cU4jgO-h61S2lSUAiHE7l5tdPncl_Roac-Y",
+            "completion": {
+              "mode": "system-browser"
+            },
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.ydNB6OxU2lbN0miLGvvYaw",
+            "installation_key_jkt": "ydNB6OxU2lbN0miLGvvYa0vwitkPO3n6yUPeso7OB-Y",
+            "intended_creator_id": "creator.test",
+            "purpose": "connect-account",
+            "source": {
+              "kind": "initial",
+              "operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+              "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+              "reference": "YBF_HdBRIzD8h70oKtzAHeItaWmz-wEK62H-tzkbl_w",
+              "request_digest": "99a13a2fb32c2a5f833d6991ac37c89bd3b25706d8ced0958607d0e9234be21f"
+            },
+            "source_expires_at": "2025-08-07T00:10:00.000Z"
+          },
+          "predecessor_binding_digest": "0be65bb4b73d7c6d30ebcab12c8d1062bbd5e101a233fa6e8e2d39fd270dbf77",
+          "predecessor_ceremony_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+          "predecessor_revision": 1,
+          "profile": "urn:bridge-clean:browser-ceremony-replacement:v1",
+          "successor_attempt_id": "KZ5n4OoHYlVIziUbL3zzENpMf5xHnJKMGW9WxZfSMxg",
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000004"
+        }
+      }
+    },
+    {
+      "case_id": "no-caller-organization_id",
+      "schema": "schemas/browser-ceremony-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "_B5GCnULK_z1lNXUeY_j4JFmGScLlEKlfeTcNdYFfQg",
+          "signature": "t0kvEC3lHpqzLoiZ1amoomGvKJHZ2JBs_pz-ywPTluEPC5I-agRNbivLUB3n7t8X9maCgMAA1yCxQV1A1OFGTA"
+        },
+        "request": {
+          "organization_id": "other",
+          "predecessor_binding_digest": "0be65bb4b73d7c6d30ebcab12c8d1062bbd5e101a233fa6e8e2d39fd270dbf77",
+          "predecessor_ceremony_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+          "predecessor_revision": 1,
+          "profile": "urn:bridge-clean:browser-ceremony-replacement:v1",
+          "successor_attempt_id": "KZ5n4OoHYlVIziUbL3zzENpMf5xHnJKMGW9WxZfSMxg",
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000004"
+        }
+      }
+    },
+    {
+      "case_id": "no-caller-completion",
+      "schema": "schemas/browser-ceremony-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "_B5GCnULK_z1lNXUeY_j4JFmGScLlEKlfeTcNdYFfQg",
+          "signature": "t0kvEC3lHpqzLoiZ1amoomGvKJHZ2JBs_pz-ywPTluEPC5I-agRNbivLUB3n7t8X9maCgMAA1yCxQV1A1OFGTA"
+        },
+        "request": {
+          "completion": {
+            "mode": "system-browser"
+          },
+          "predecessor_binding_digest": "0be65bb4b73d7c6d30ebcab12c8d1062bbd5e101a233fa6e8e2d39fd270dbf77",
+          "predecessor_ceremony_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+          "predecessor_revision": 1,
+          "profile": "urn:bridge-clean:browser-ceremony-replacement:v1",
+          "successor_attempt_id": "KZ5n4OoHYlVIziUbL3zzENpMf5xHnJKMGW9WxZfSMxg",
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000004"
+        }
+      }
+    },
+    {
+      "case_id": "no-caller-actor",
+      "schema": "schemas/browser-ceremony-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "_B5GCnULK_z1lNXUeY_j4JFmGScLlEKlfeTcNdYFfQg",
+          "signature": "t0kvEC3lHpqzLoiZ1amoomGvKJHZ2JBs_pz-ywPTluEPC5I-agRNbivLUB3n7t8X9maCgMAA1yCxQV1A1OFGTA"
+        },
+        "request": {
+          "actor": "other",
+          "predecessor_binding_digest": "0be65bb4b73d7c6d30ebcab12c8d1062bbd5e101a233fa6e8e2d39fd270dbf77",
+          "predecessor_ceremony_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+          "predecessor_revision": 1,
+          "profile": "urn:bridge-clean:browser-ceremony-replacement:v1",
+          "successor_attempt_id": "KZ5n4OoHYlVIziUbL3zzENpMf5xHnJKMGW9WxZfSMxg",
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000004"
+        }
+      }
+    },
+    {
+      "case_id": "missing-predecessor_revision",
+      "schema": "schemas/browser-ceremony-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "_B5GCnULK_z1lNXUeY_j4JFmGScLlEKlfeTcNdYFfQg",
+          "signature": "t0kvEC3lHpqzLoiZ1amoomGvKJHZ2JBs_pz-ywPTluEPC5I-agRNbivLUB3n7t8X9maCgMAA1yCxQV1A1OFGTA"
+        },
+        "request": {
+          "predecessor_binding_digest": "0be65bb4b73d7c6d30ebcab12c8d1062bbd5e101a233fa6e8e2d39fd270dbf77",
+          "predecessor_ceremony_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+          "profile": "urn:bridge-clean:browser-ceremony-replacement:v1",
+          "successor_attempt_id": "KZ5n4OoHYlVIziUbL3zzENpMf5xHnJKMGW9WxZfSMxg",
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000004"
+        }
+      }
+    },
+    {
+      "case_id": "missing-predecessor_binding_digest",
+      "schema": "schemas/browser-ceremony-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "_B5GCnULK_z1lNXUeY_j4JFmGScLlEKlfeTcNdYFfQg",
+          "signature": "t0kvEC3lHpqzLoiZ1amoomGvKJHZ2JBs_pz-ywPTluEPC5I-agRNbivLUB3n7t8X9maCgMAA1yCxQV1A1OFGTA"
+        },
+        "request": {
+          "predecessor_ceremony_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+          "predecessor_revision": 1,
+          "profile": "urn:bridge-clean:browser-ceremony-replacement:v1",
+          "successor_attempt_id": "KZ5n4OoHYlVIziUbL3zzENpMf5xHnJKMGW9WxZfSMxg",
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000004"
+        }
+      }
+    },
+    {
+      "case_id": "missing-successor_attempt_id",
+      "schema": "schemas/browser-ceremony-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "_B5GCnULK_z1lNXUeY_j4JFmGScLlEKlfeTcNdYFfQg",
+          "signature": "t0kvEC3lHpqzLoiZ1amoomGvKJHZ2JBs_pz-ywPTluEPC5I-agRNbivLUB3n7t8X9maCgMAA1yCxQV1A1OFGTA"
+        },
+        "request": {
+          "predecessor_binding_digest": "0be65bb4b73d7c6d30ebcab12c8d1062bbd5e101a233fa6e8e2d39fd270dbf77",
+          "predecessor_ceremony_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+          "predecessor_revision": 1,
+          "profile": "urn:bridge-clean:browser-ceremony-replacement:v1",
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000004"
+        }
+      }
+    },
+    {
+      "case_id": "no-grant",
+      "schema": "schemas/browser-ceremony-replacement/v1/replace-response.schema.json",
+      "valid": false,
+      "value": {
+        "grant": "forbidden",
+        "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+        "profile": "urn:bridge-clean:browser-ceremony-replacement:v1",
+        "successor": {
+          "binding_digest": "4ffafd21a9a3aa7ecbceb5ed2cd19cde4bb5168a98373fb522f2d6fd7c48afe7",
+          "ceremony_id": "0198a1b2-c3d4-7300-8000-000000000005",
+          "completion": {
+            "mode": "system-browser"
+          },
+          "entry_reference": "XtK1FRlx_9Pd25tp-ewfiY3Gnj284hpxjekXYO2TVCY",
+          "expires_at": "2025-08-07T00:10:00.000Z",
+          "operation_id": "0198a1b2-c3d4-7300-8000-000000000004",
+          "profile": "urn:bridge-clean:browser-ceremony:v1"
+        },
+        "successor_binding": {
+          "attempt_id": "KZ5n4OoHYlVIziUbL3zzENpMf5xHnJKMGW9WxZfSMxg",
+          "completion": {
+            "mode": "system-browser"
+          },
+          "installation_id": "installation.test",
+          "installation_key_id": "ik1.ydNB6OxU2lbN0miLGvvYaw",
+          "installation_key_jkt": "ydNB6OxU2lbN0miLGvvYa0vwitkPO3n6yUPeso7OB-Y",
+          "intended_creator_id": "creator.test",
+          "purpose": "connect-account",
+          "source": {
+            "kind": "initial",
+            "operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+            "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+            "reference": "YBF_HdBRIzD8h70oKtzAHeItaWmz-wEK62H-tzkbl_w",
+            "request_digest": "99a13a2fb32c2a5f833d6991ac37c89bd3b25706d8ced0958607d0e9234be21f"
+          },
+          "source_expires_at": "2025-08-07T00:10:00.000Z"
+        }
+      }
+    }
+  ],
+  "test_only": true
+}

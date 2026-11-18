@@ -1,0 +1,345 @@
+{
+  "proof_cases": [
+    {
+      "case_id": "exact-registered-replacement",
+      "proof": {
+        "challenge": "-1tGARDTOeU8hViOErUq5afmYkaUzm8v-N2D1bo756E",
+        "signature": "Ky26EnWYthIwdo8UgCuUig6rc_awL01fsYpu7HCPUkoMhIyzbsh-d-Ar8kNhKRSRojmyiZxv149enmokddBmKQ"
+      },
+      "proof_hex": "4252494447452d434c45414e2d524547495354455245442d434f4e54494e554154494f4e2d5245504c4143454d454e542d50524f4f462d56310000000020fb5b460110d339e53c85588e12b52ae5a7e6624694ce6f2ff8dd83d5ba3be7a100000004504f53540000003b2f76312f6f6e626f617264696e672f726567697374657265642d636f6e74696e756174696f6e2d7265706c6163656d656e74733a7265706c616365000000209246d67f572eca2bb424a5980390ec1967920cbf47f19fb467bab45f435b29210000001f726567697374657265642d636f6e74696e756174696f6e2d7265706c61636500000020d033235267d214f0dfca1edb25bc2acd217b6fd8c8b6b783621e5ea874d4001a0000004d75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a726567697374657265642d636f6e74696e756174696f6e2d7265706c6163656d656e74",
+      "public_key": {
+        "crv": "P-256",
+        "kty": "EC",
+        "x": "YNNzkIctXybIXtgsgZSCaiYYEXVJ5UwiCUz7J59YIvY",
+        "y": "0PXCDYBA_TClxtw-nHAo4j9IFRxQ7ERU2DOf1efrKrE"
+      },
+      "request": {
+        "predecessor_continuation_id": "0198a1b2-c3d4-7300-8000-000000000003",
+        "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+        "predecessor_prepare_digest": "f00c804b34d4830a9bb8ecfd9a07d3b0350e50cf32be0050879f59000b4243dc",
+        "profile": "urn:bridge-clean:registered-continuation-replacement:v1",
+        "scope": {
+          "association_request_id": "0198a1b2-c3d4-7300-8000-000000000005",
+          "creator_account_id": "creator.test",
+          "installation_id": "installation.test",
+          "installation_key_id": "ik1.0DMjUmfSFPDfyh7bJbwqzQ",
+          "organization_id": "org.test",
+          "source_onboarding_transaction_id": "transaction.test"
+        },
+        "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002"
+      }
+    }
+  ],
+  "proof_mutations": [
+    "predecessor_operation_id",
+    "predecessor_continuation_id",
+    "predecessor_prepare_digest",
+    "successor_operation_id",
+    "installation",
+    "creator",
+    "key_id",
+    "purpose",
+    "path",
+    "domain",
+    "audience",
+    "key"
+  ],
+  "schema_cases": [
+    {
+      "case_id": "replace",
+      "schema": "schemas/registered-continuation-replacement/v1/replace-request.schema.json",
+      "valid": true,
+      "value": {
+        "proof": {
+          "challenge": "-1tGARDTOeU8hViOErUq5afmYkaUzm8v-N2D1bo756E",
+          "signature": "Ky26EnWYthIwdo8UgCuUig6rc_awL01fsYpu7HCPUkoMhIyzbsh-d-Ar8kNhKRSRojmyiZxv149enmokddBmKQ"
+        },
+        "request": {
+          "predecessor_continuation_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+          "predecessor_prepare_digest": "f00c804b34d4830a9bb8ecfd9a07d3b0350e50cf32be0050879f59000b4243dc",
+          "profile": "urn:bridge-clean:registered-continuation-replacement:v1",
+          "scope": {
+            "association_request_id": "0198a1b2-c3d4-7300-8000-000000000005",
+            "creator_account_id": "creator.test",
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.0DMjUmfSFPDfyh7bJbwqzQ",
+            "organization_id": "org.test",
+            "source_onboarding_transaction_id": "transaction.test"
+          },
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002"
+        }
+      }
+    },
+    {
+      "case_id": "challenge",
+      "schema": "schemas/registered-continuation-replacement/v1/proof-challenge-request.schema.json",
+      "valid": true,
+      "value": {
+        "profile": "urn:bridge-clean:registered-continuation-replacement-proof:v1",
+        "target": {
+          "operation": "registered-continuation-replace",
+          "request": {
+            "predecessor_continuation_id": "0198a1b2-c3d4-7300-8000-000000000003",
+            "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+            "predecessor_prepare_digest": "f00c804b34d4830a9bb8ecfd9a07d3b0350e50cf32be0050879f59000b4243dc",
+            "profile": "urn:bridge-clean:registered-continuation-replacement:v1",
+            "scope": {
+              "association_request_id": "0198a1b2-c3d4-7300-8000-000000000005",
+              "creator_account_id": "creator.test",
+              "installation_id": "installation.test",
+              "installation_key_id": "ik1.0DMjUmfSFPDfyh7bJbwqzQ",
+              "organization_id": "org.test",
+              "source_onboarding_transaction_id": "transaction.test"
+            },
+            "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002"
+          }
+        }
+      }
+    },
+    {
+      "case_id": "challenge-response",
+      "schema": "schemas/registered-continuation-replacement/v1/proof-challenge-response.schema.json",
+      "valid": true,
+      "value": {
+        "challenge": "-1tGARDTOeU8hViOErUq5afmYkaUzm8v-N2D1bo756E",
+        "expires_at": "2025-08-07T00:01:00.000Z",
+        "profile": "urn:bridge-clean:registered-continuation-replacement-proof:v1",
+        "request_digest": "9246d67f572eca2bb424a5980390ec1967920cbf47f19fb467bab45f435b2921"
+      }
+    },
+    {
+      "case_id": "prepared",
+      "schema": "schemas/registered-continuation-replacement/v1/replace-response.schema.json",
+      "valid": true,
+      "value": {
+        "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+        "profile": "urn:bridge-clean:registered-continuation-replacement:v1",
+        "status": "prepared",
+        "successor": {
+          "continuation_id": "0198a1b2-c3d4-7300-8000-000000000004",
+          "expires_at": "2025-08-07T00:30:00.000Z",
+          "operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+          "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+          "reference": "meICNUo7wf9_Z6gZ-R2ikL3rXlEjBXZaIqBN2C39mSU"
+        },
+        "successor_prepare_digest": "b104f143be350ea9b890641146f4eeeaebdca1c127493ace41901707a87f92de"
+      }
+    },
+    {
+      "case_id": "commercial",
+      "schema": "schemas/registered-continuation-replacement/v1/error.schema.json",
+      "valid": true,
+      "value": {
+        "profile": "urn:bridge-clean:registered-continuation-replacement:v1",
+        "reason": "commercial_reconciliation_required"
+      }
+    },
+    {
+      "case_id": "conflict",
+      "schema": "schemas/registered-continuation-replacement/v1/error.schema.json",
+      "valid": true,
+      "value": {
+        "profile": "urn:bridge-clean:registered-continuation-replacement:v1",
+        "reason": "operation_conflict"
+      }
+    },
+    {
+      "case_id": "no-caller-creator_id",
+      "schema": "schemas/registered-continuation-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "-1tGARDTOeU8hViOErUq5afmYkaUzm8v-N2D1bo756E",
+          "signature": "Ky26EnWYthIwdo8UgCuUig6rc_awL01fsYpu7HCPUkoMhIyzbsh-d-Ar8kNhKRSRojmyiZxv149enmokddBmKQ"
+        },
+        "request": {
+          "creator_id": "forbidden",
+          "predecessor_continuation_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+          "predecessor_prepare_digest": "f00c804b34d4830a9bb8ecfd9a07d3b0350e50cf32be0050879f59000b4243dc",
+          "profile": "urn:bridge-clean:registered-continuation-replacement:v1",
+          "scope": {
+            "association_request_id": "0198a1b2-c3d4-7300-8000-000000000005",
+            "creator_account_id": "creator.test",
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.0DMjUmfSFPDfyh7bJbwqzQ",
+            "organization_id": "org.test",
+            "source_onboarding_transaction_id": "transaction.test"
+          },
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002"
+        }
+      }
+    },
+    {
+      "case_id": "no-caller-organization_id",
+      "schema": "schemas/registered-continuation-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "-1tGARDTOeU8hViOErUq5afmYkaUzm8v-N2D1bo756E",
+          "signature": "Ky26EnWYthIwdo8UgCuUig6rc_awL01fsYpu7HCPUkoMhIyzbsh-d-Ar8kNhKRSRojmyiZxv149enmokddBmKQ"
+        },
+        "request": {
+          "organization_id": "forbidden",
+          "predecessor_continuation_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+          "predecessor_prepare_digest": "f00c804b34d4830a9bb8ecfd9a07d3b0350e50cf32be0050879f59000b4243dc",
+          "profile": "urn:bridge-clean:registered-continuation-replacement:v1",
+          "scope": {
+            "association_request_id": "0198a1b2-c3d4-7300-8000-000000000005",
+            "creator_account_id": "creator.test",
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.0DMjUmfSFPDfyh7bJbwqzQ",
+            "organization_id": "org.test",
+            "source_onboarding_transaction_id": "transaction.test"
+          },
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002"
+        }
+      }
+    },
+    {
+      "case_id": "no-caller-expected_customer_id",
+      "schema": "schemas/registered-continuation-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "-1tGARDTOeU8hViOErUq5afmYkaUzm8v-N2D1bo756E",
+          "signature": "Ky26EnWYthIwdo8UgCuUig6rc_awL01fsYpu7HCPUkoMhIyzbsh-d-Ar8kNhKRSRojmyiZxv149enmokddBmKQ"
+        },
+        "request": {
+          "expected_customer_id": "forbidden",
+          "predecessor_continuation_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+          "predecessor_prepare_digest": "f00c804b34d4830a9bb8ecfd9a07d3b0350e50cf32be0050879f59000b4243dc",
+          "profile": "urn:bridge-clean:registered-continuation-replacement:v1",
+          "scope": {
+            "association_request_id": "0198a1b2-c3d4-7300-8000-000000000005",
+            "creator_account_id": "creator.test",
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.0DMjUmfSFPDfyh7bJbwqzQ",
+            "organization_id": "org.test",
+            "source_onboarding_transaction_id": "transaction.test"
+          },
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002"
+        }
+      }
+    },
+    {
+      "case_id": "no-caller-activation_operation_id",
+      "schema": "schemas/registered-continuation-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "-1tGARDTOeU8hViOErUq5afmYkaUzm8v-N2D1bo756E",
+          "signature": "Ky26EnWYthIwdo8UgCuUig6rc_awL01fsYpu7HCPUkoMhIyzbsh-d-Ar8kNhKRSRojmyiZxv149enmokddBmKQ"
+        },
+        "request": {
+          "activation_operation_id": "forbidden",
+          "predecessor_continuation_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+          "predecessor_prepare_digest": "f00c804b34d4830a9bb8ecfd9a07d3b0350e50cf32be0050879f59000b4243dc",
+          "profile": "urn:bridge-clean:registered-continuation-replacement:v1",
+          "scope": {
+            "association_request_id": "0198a1b2-c3d4-7300-8000-000000000005",
+            "creator_account_id": "creator.test",
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.0DMjUmfSFPDfyh7bJbwqzQ",
+            "organization_id": "org.test",
+            "source_onboarding_transaction_id": "transaction.test"
+          },
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002"
+        }
+      }
+    },
+    {
+      "case_id": "missing-predecessor_prepare_digest",
+      "schema": "schemas/registered-continuation-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "-1tGARDTOeU8hViOErUq5afmYkaUzm8v-N2D1bo756E",
+          "signature": "Ky26EnWYthIwdo8UgCuUig6rc_awL01fsYpu7HCPUkoMhIyzbsh-d-Ar8kNhKRSRojmyiZxv149enmokddBmKQ"
+        },
+        "request": {
+          "predecessor_continuation_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+          "profile": "urn:bridge-clean:registered-continuation-replacement:v1",
+          "scope": {
+            "association_request_id": "0198a1b2-c3d4-7300-8000-000000000005",
+            "creator_account_id": "creator.test",
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.0DMjUmfSFPDfyh7bJbwqzQ",
+            "organization_id": "org.test",
+            "source_onboarding_transaction_id": "transaction.test"
+          },
+          "successor_operation_id": "0198a1b2-c3d4-7300-8000-000000000002"
+        }
+      }
+    },
+    {
+      "case_id": "missing-successor_operation_id",
+      "schema": "schemas/registered-continuation-replacement/v1/replace-request.schema.json",
+      "valid": false,
+      "value": {
+        "proof": {
+          "challenge": "-1tGARDTOeU8hViOErUq5afmYkaUzm8v-N2D1bo756E",
+          "signature": "Ky26EnWYthIwdo8UgCuUig6rc_awL01fsYpu7HCPUkoMhIyzbsh-d-Ar8kNhKRSRojmyiZxv149enmokddBmKQ"
+        },
+        "request": {
+          "predecessor_continuation_id": "0198a1b2-c3d4-7300-8000-000000000003",
+          "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+          "predecessor_prepare_digest": "f00c804b34d4830a9bb8ecfd9a07d3b0350e50cf32be0050879f59000b4243dc",
+          "profile": "urn:bridge-clean:registered-continuation-replacement:v1",
+          "scope": {
+            "association_request_id": "0198a1b2-c3d4-7300-8000-000000000005",
+            "creator_account_id": "creator.test",
+            "installation_id": "installation.test",
+            "installation_key_id": "ik1.0DMjUmfSFPDfyh7bJbwqzQ",
+            "organization_id": "org.test",
+            "source_onboarding_transaction_id": "transaction.test"
+          }
+        }
+      }
+    },
+    {
+      "case_id": "committed-no-new-source",
+      "schema": "schemas/registered-continuation-replacement/v1/replace-response.schema.json",
+      "valid": false,
+      "value": {
+        "completion_operation_id": "0198a1b2-c3d4-7300-8000-000000000004",
+        "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+        "profile": "urn:bridge-clean:registered-continuation-replacement:v1",
+        "status": "committed",
+        "successor": {
+          "continuation_id": "0198a1b2-c3d4-7300-8000-000000000004",
+          "expires_at": "2025-08-07T00:30:00.000Z",
+          "operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+          "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+          "reference": "meICNUo7wf9_Z6gZ-R2ikL3rXlEjBXZaIqBN2C39mSU"
+        },
+        "successor_prepare_digest": "b104f143be350ea9b890641146f4eeeaebdca1c127493ace41901707a87f92de"
+      }
+    },
+    {
+      "case_id": "no-grant",
+      "schema": "schemas/registered-continuation-replacement/v1/replace-response.schema.json",
+      "valid": false,
+      "value": {
+        "grant": "forbidden",
+        "predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001",
+        "profile": "urn:bridge-clean:registered-continuation-replacement:v1",
+        "status": "prepared",
+        "successor": {
+          "continuation_id": "0198a1b2-c3d4-7300-8000-000000000004",
+          "expires_at": "2025-08-07T00:30:00.000Z",
+          "operation_id": "0198a1b2-c3d4-7300-8000-000000000002",
+          "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+          "reference": "meICNUo7wf9_Z6gZ-R2ikL3rXlEjBXZaIqBN2C39mSU"
+        },
+        "successor_prepare_digest": "b104f143be350ea9b890641146f4eeeaebdca1c127493ace41901707a87f92de"
+      }
+    }
+  ],
+  "test_only": true
+}

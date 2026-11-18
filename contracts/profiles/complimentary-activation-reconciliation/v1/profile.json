@@ -1,0 +1,33 @@
+{
+  "profile": "urn:bridge-clean:complimentary-activation-reconciliation:v1",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "proof_profile": "urn:bridge-clean:complimentary-activation-reconciliation-proof:v1",
+  "request_max_bytes": 8192,
+  "response_max_bytes": 16384,
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "source_profile": "urn:bridge-clean:installation-setup-continuation:v2",
+  "exact_admission": "retained original registered source operation, continuation ID, canonical original prepare digest and saved scope; exact original admitted activation operation; fresh registered-key proof; current membership and original creator approval; no caller-selected actor",
+  "read_semantics": {
+    "committed": "exact original commercial result and matching durable delivery basis; no bearer, offer or new authority; use existing capability-license-delivery-recovery:v1 for delivery",
+    "expired-uncommitted": "source deadline passed and complete original admission history proves no original commit under the commercial owner fence; original operation cannot now commit; no replacement or new offer permission",
+    "unresolved": "source remains live or retained evidence cannot establish a terminal outcome; no mutation permission"
+  },
+  "committed_delivery": "ADR0034 unchanged; independent existing delivery read/recover remains authoritative and does not require this read or fresh browser authentication",
+  "retention": "bounded by original registered source evidence; no credentials or new retained offer; missing historical source/admission is not proof of noncommit",
+  "noncreating": true,
+  "response_cache_control": "no-store",
+  "messages": {
+    "definitions": "schemas/complimentary-activation-reconciliation/v1/definitions.schema.json",
+    "read-request": "schemas/complimentary-activation-reconciliation/v1/read-request.schema.json",
+    "read-response": "schemas/complimentary-activation-reconciliation/v1/read-response.schema.json",
+    "error": "schemas/complimentary-activation-reconciliation/v1/error.schema.json"
+  },
+  "refusal_status": {
+    "invalid": 400,
+    "proof_invalid": 401,
+    "authorization_denied": 403,
+    "rate_limited": 429,
+    "temporarily_unavailable": 503
+  }
+}

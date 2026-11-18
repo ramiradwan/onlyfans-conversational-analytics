@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/installation-authority-recovery/v1/deliver-request.schema.json",
+  "title": "Installation authority recovery v1 deliver-request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request",
+    "proof"
+  ],
+  "properties": {
+    "request": {
+      "$ref": "definitions.schema.json#/$defs/request"
+    },
+    "proof": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/proof"
+    }
+  }
+}

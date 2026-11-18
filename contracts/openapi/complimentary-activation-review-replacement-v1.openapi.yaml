@@ -1,0 +1,217 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Complimentary activation review replacement",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/v1/onboarding/complimentary-activation-review-replacement-proof-challenges": {
+      "post": {
+        "operationId": "issueComplimentaryActivationReviewReplacementProofChallengeV1",
+        "summary": "Issue a nonauthorizing exact review replacement proof challenge",
+        "x-contract-profile": "urn:bridge-clean:complimentary-activation-review-replacement-proof:v1",
+        "x-max-request-bytes": 8192,
+        "x-max-response-bytes": 16384,
+        "x-authentication": "fresh exact registered installation-key proof; no browser customer credential",
+        "x-idempotency": "Single-use proof; exact successor retry; original committed result refuses creation",
+        "x-rate-limit": "bounded ingress and source owner capacity",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/complimentary-activation-review-replacement/v1/proof-challenge-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact closed result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation-review-replacement/v1/proof-challenge-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation-review-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation-review-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation-review-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation-review-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation-review-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation-review-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/onboarding/complimentary-activation-review-replacements:replace": {
+      "post": {
+        "operationId": "replaceComplimentaryActivationReviewV1",
+        "summary": "Replace an expired uncommitted review with an exact same-terms review source",
+        "x-contract-profile": "urn:bridge-clean:complimentary-activation-review-replacement:v1",
+        "x-max-request-bytes": 8192,
+        "x-max-response-bytes": 16384,
+        "x-authentication": "fresh exact registered installation-key proof; no browser customer credential",
+        "x-idempotency": "Single-use proof; exact successor retry; original committed result refuses creation",
+        "x-rate-limit": "bounded ingress and source owner capacity",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/complimentary-activation-review-replacement/v1/replace-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact closed result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation-review-replacement/v1/replace-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation-review-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation-review-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation-review-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation-review-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation-review-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation-review-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation-review-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation-review-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

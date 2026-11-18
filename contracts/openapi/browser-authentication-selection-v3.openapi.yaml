@@ -1,0 +1,417 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Protected recovery browser authentication selection",
+    "version": "3.0.0"
+  },
+  "paths": {
+    "/v3/onboarding/browser-authentication-selection-proof-challenges": {
+      "post": {
+        "operationId": "issueBrowserAuthenticationSelectionProofChallengeV3",
+        "x-contract-profile": "urn:bridge-clean:browser-authentication-selection-proof:v3",
+        "x-max-request-bytes": 8192,
+        "x-max-response-bytes": 16384,
+        "x-authentication": "Uniform nonauthorizing challenge.",
+        "x-idempotency": "No authority renewal; exact child/predecessor/choice operation preserves original meaning and deadline.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/browser-authentication-selection/v3/proof-challenge-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact closed authentication selection projection; no customer credentials or commercial result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/proof-challenge-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v3/onboarding/browser-authentication-selections:read": {
+      "post": {
+        "operationId": "readBrowserAuthenticationSelectionV3",
+        "x-contract-profile": "urn:bridge-clean:browser-authentication-selection:v3",
+        "x-max-request-bytes": 8192,
+        "x-max-response-bytes": 16384,
+        "x-authentication": "Exact domain-separated installation-key proof; customer admission remains independently verified in Provider browser flow.",
+        "x-idempotency": "No authority renewal; exact child/predecessor/choice operation preserves original meaning and deadline.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/browser-authentication-selection/v3/read-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact closed authentication selection projection; no customer credentials or commercial result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/read-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v3/onboarding/browser-authentication-selections:select": {
+      "post": {
+        "operationId": "selectBrowserAuthenticationSelectionV3",
+        "x-contract-profile": "urn:bridge-clean:browser-authentication-selection:v3",
+        "x-max-request-bytes": 8192,
+        "x-max-response-bytes": 16384,
+        "x-authentication": "Exact domain-separated installation-key proof; customer admission remains independently verified in Provider browser flow.",
+        "x-idempotency": "No authority renewal; exact child/predecessor/choice operation preserves original meaning and deadline.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/browser-authentication-selection/v3/select-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact closed authentication selection projection; no customer credentials or commercial result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/select-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v3/onboarding/browser-authentication-selections:cancel": {
+      "post": {
+        "operationId": "cancelBrowserAuthenticationSelectionV3",
+        "x-contract-profile": "urn:bridge-clean:browser-authentication-selection:v3",
+        "x-max-request-bytes": 8192,
+        "x-max-response-bytes": 16384,
+        "x-authentication": "Exact domain-separated installation-key proof; customer admission remains independently verified in Provider browser flow.",
+        "x-idempotency": "No authority renewal; exact child/predecessor/choice operation preserves original meaning and deadline.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/browser-authentication-selection/v3/cancel-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact closed authentication selection projection; no customer credentials or commercial result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/cancel-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal without unknown-source existence disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-authentication-selection/v3/error.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

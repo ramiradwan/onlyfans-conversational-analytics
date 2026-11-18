@@ -23,7 +23,7 @@ HOSTED_API_VECTORS = (
     / "capability-license-hosted-api-v1"
     / "provisioning-quote-exchange.json"
 )
-IMPORTED_SNAPSHOT_COMMIT = "5e76aedc2e2c0bccdba657adbed3ddb9c91ad6ad"
+IMPORTED_SNAPSHOT_COMMIT = "41061fc8c7e2148ecfda86531564a64e2f41bdef"
 HOSTED_ISSUE_CASE = "claim-v2-issue-positive"
 
 

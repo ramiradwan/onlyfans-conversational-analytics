@@ -1,0 +1,13 @@
+{
+  "files": [
+    {
+      "path": "cases.json",
+      "sha256": "7c696c38b9e09b8f98858ae61dc5808b0af9f283269eb883e0931cf305ca60e9",
+      "size": 16650
+    }
+  ],
+  "generator": "tools/generate_ceremony_replacement_vectors.py",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "profile": "urn:bridge-clean:browser-ceremony-replacement-vectors:v1",
+  "test_only": true
+}

@@ -1,0 +1,13 @@
+{
+  "files": [
+    {
+      "path": "cases.json",
+      "sha256": "d6c3b8dd43dc1a2d841cabfd6925cfc7d115f1421271c39756f7a56761004a0a",
+      "size": 16079
+    }
+  ],
+  "generator": "tools/generate_registered_continuation_replacement_vectors.py",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "profile": "urn:bridge-clean:registered-continuation-replacement-vectors:v1",
+  "test_only": true
+}

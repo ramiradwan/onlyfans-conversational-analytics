@@ -1,0 +1,237 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Browser ceremony replacement",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/v1/onboarding/browser-ceremony-replacement-proof-challenges": {
+      "post": {
+        "operationId": "issueBrowserCeremonyReplacementProofChallengeV1",
+        "summary": "Issue a nonauthorizing replacement proof challenge",
+        "x-contract-profile": "urn:bridge-clean:browser-ceremony-replacement-proof:v1",
+        "x-max-request-bytes": 8192,
+        "x-max-response-bytes": 16384,
+        "x-authentication": "fresh exact predecessor installation-key proof; challenge alone conveys no authority",
+        "x-idempotency": "single-use proof; exact successor retry only while eligible",
+        "x-rate-limit": "bounded ingress and owner capacity",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/browser-ceremony-replacement/v1/proof-challenge-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact closed response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/proof-challenge-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/onboarding/browser-ceremony-replacements:replace": {
+      "post": {
+        "operationId": "replaceBrowserCeremonyV1",
+        "summary": "Replace an inactive browser presentation for its original live source",
+        "x-contract-profile": "urn:bridge-clean:browser-ceremony-replacement:v1",
+        "x-max-request-bytes": 8192,
+        "x-max-response-bytes": 16384,
+        "x-authentication": "fresh exact predecessor installation-key proof; challenge alone conveys no authority",
+        "x-idempotency": "single-use proof; exact successor retry only while eligible",
+        "x-rate-limit": "bounded ingress and owner capacity",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/browser-ceremony-replacement/v1/replace-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact closed response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/replace-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/browser-ceremony-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

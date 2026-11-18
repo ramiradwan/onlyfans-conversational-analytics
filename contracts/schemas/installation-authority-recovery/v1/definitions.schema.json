@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/installation-authority-recovery/v1/definitions.schema.json",
+  "title": "Installation authority recovery v1 definitions",
+  "$defs": {
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "organization_id",
+        "installation_id",
+        "installation_key_id",
+        "installation_key_jkt",
+        "enrollment_transaction_id",
+        "evidence"
+      ],
+      "properties": {
+        "organization_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_key_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"
+        },
+        "installation_key_jkt": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "enrollment_transaction_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "evidence": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "installation_jti",
+                "membership_jti",
+                "creator_scope"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "previous-grants"
+                },
+                "installation_jti": {
+                  "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+                },
+                "membership_jti": {
+                  "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+                },
+                "creator_scope": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "kind"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "const": "none"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "kind",
+                        "creator_account_id",
+                        "approval_id",
+                        "approval_revision",
+                        "binding_jti"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "const": "approved"
+                        },
+                        "creator_account_id": {
+                          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+                        },
+                        "approval_id": {
+                          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+                        },
+                        "approval_revision": {
+                          "const": 1
+                        },
+                        "binding_jti": {
+                          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "claim_id",
+                "creator_scope"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "lost-enrollment"
+                },
+                "claim_id": {
+                  "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+                },
+                "creator_scope": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "none"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "recovery_id",
+        "scope"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:installation-authority-recovery:v1"
+        },
+        "recovery_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "scope": {
+          "$ref": "definitions.schema.json#/$defs/scope"
+        }
+      }
+    }
+  }
+}

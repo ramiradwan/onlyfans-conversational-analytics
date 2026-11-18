@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/initial-handoff-replacement/v1/replace-response.schema.json",
+  "title": "Initial handoff replacement replace-response v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "predecessor_operation_id",
+        "status",
+        "successor",
+        "successor_prepare_digest",
+        "intended_creator_id"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:initial-handoff-replacement:v1"
+        },
+        "predecessor_operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "status": {
+          "const": "prepared"
+        },
+        "successor": {
+          "$ref": "../../initial-handoff/v2/prepare-response.schema.json"
+        },
+        "successor_prepare_digest": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "intended_creator_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "expected_customer_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "predecessor_operation_id",
+        "status",
+        "accepted_operation_id"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:initial-handoff-replacement:v1"
+        },
+        "predecessor_operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "status": {
+          "const": "accepted"
+        },
+        "accepted_operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "predecessor_operation_id",
+        "status",
+        "completion_operation_id"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:initial-handoff-replacement:v1"
+        },
+        "predecessor_operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "status": {
+          "const": "committed"
+        },
+        "completion_operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        }
+      }
+    }
+  ]
+}

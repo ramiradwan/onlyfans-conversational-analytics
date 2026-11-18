@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/initial-handoff-replacement/v1/error.schema.json",
+  "title": "Initial handoff replacement error v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "reason"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:initial-handoff-replacement:v1"
+    },
+    "reason": {
+      "enum": [
+        "invalid",
+        "proof_invalid",
+        "authorization_denied",
+        "operation_conflict",
+        "not_ready",
+        "already_enrolled",
+        "expired",
+        "rate_limited",
+        "temporarily_unavailable"
+      ]
+    }
+  }
+}

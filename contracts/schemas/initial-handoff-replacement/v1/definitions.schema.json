@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/initial-handoff-replacement/v1/definitions.schema.json",
+  "title": "Initial handoff replacement definitions v1",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "predecessor_operation_id",
+        "predecessor_prepare_digest",
+        "destination",
+        "successor_operation_id"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:initial-handoff-replacement:v1"
+        },
+        "predecessor_operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "predecessor_prepare_digest": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "destination": {
+          "$ref": "../../initial-handoff/v2/definitions.schema.json#/$defs/destination"
+        },
+        "successor_operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        }
+      }
+    }
+  }
+}

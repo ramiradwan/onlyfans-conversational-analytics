@@ -14,9 +14,9 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS_ROOT = REPOSITORY_ROOT / "contracts"
 APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-APPROVED_SOURCE_COMMIT = "5e76aedc2e2c0bccdba657adbed3ddb9c91ad6ad"
-APPROVED_SOURCE_TREE = "a5381514946ac4de5c11d8942193ace6769e547f"
-APPROVED_SOURCE_MANIFEST_SHA256 = "696f490f5967f8e278bc69d8ea00d79758de82b4a8f7f7e1a61bca221bf06914"
+APPROVED_SOURCE_COMMIT = "41061fc8c7e2148ecfda86531564a64e2f41bdef"
+APPROVED_SOURCE_TREE = "60620971820793872120a5abc16bfbae6f468982"
+APPROVED_SOURCE_MANIFEST_SHA256 = "605c147e2e1cd2b7aa866261aaad135008b1b16ae6bd1bb9cbfca17fb8df2b76"
 SOURCE_MANIFEST = "contract-manifest.json"
 SOURCE_MANIFEST_EXPORT = "source-contract-manifest"
 SOURCE_MANIFEST_TARGET = f"{SOURCE_MANIFEST_EXPORT}/contract-manifest.json"
@@ -25,8 +25,8 @@ PUBLISHED_ROOTS = ("catalog", "openapi", "profiles", "schemas")
 # Only these additive inventories may replace reviewed previous bytes during
 # this pin migration. All released schemas, profiles and fixtures remain immutable.
 APPROVED_PREVIOUS_INVENTORIES = {
-    "catalog/contracts.yaml": "d5b439a0af1117c8ab917d0fbb4e16620edd2545b66943f990c6a25fef306290",
-    "contract-manifest.json": "8b3188126978fcc5d0ab3d234297e4fdea4177ab8312ecaaf0a66d267f62d22f"
+    "catalog/contracts.yaml": "092c3d0a777e7567ba830b971f1b614e776e8c9d0be3ebe2de9daee9d45bde37",
+    "contract-manifest.json": "696f490f5967f8e278bc69d8ea00d79758de82b4a8f7f7e1a61bca221bf06914"
 }
 
 EXPORT_SET = [
@@ -66,6 +66,13 @@ EXPORT_SET = [
     "text-analysis-license-reissue-v1",
     "text-analysis-license-reissue-v2",
     "text-analysis-license-reissue-response-conformance-v1",
+    "bootstrap-recovery-v3",
+    "browser-ceremony-replacement-v1",
+    "initial-handoff-replacement-v1",
+    "registered-continuation-replacement-v1",
+    "installation-authority-recovery-v1",
+    "complimentary-activation-reconciliation-v1",
+    "complimentary-activation-review-replacement-v1",
 ]
 
 EXPORT_SOURCES = {
@@ -99,6 +106,13 @@ EXPORT_SOURCES = {
     "text-analysis-license-reissue-v1": "test-vectors/text-analysis-license-reissue-v1",
     "text-analysis-license-reissue-v2": "test-vectors/text-analysis-license-reissue-v2",
     "text-analysis-license-reissue-response-conformance-v1": "test-vectors/text-analysis-license-reissue-response-conformance-v1",
+    "bootstrap-recovery-v3": "test-vectors/bootstrap-recovery-v3",
+    "browser-ceremony-replacement-v1": "test-vectors/browser-ceremony-replacement-v1",
+    "initial-handoff-replacement-v1": "test-vectors/initial-handoff-replacement-v1",
+    "registered-continuation-replacement-v1": "test-vectors/registered-continuation-replacement-v1",
+    "installation-authority-recovery-v1": "test-vectors/installation-authority-recovery-v1",
+    "complimentary-activation-reconciliation-v1": "test-vectors/complimentary-activation-reconciliation-v1",
+    "complimentary-activation-review-replacement-v1": "test-vectors/complimentary-activation-review-replacement-v1",
 }
 
 APPROVED_EXPORT_DIGESTS = {
@@ -132,6 +146,13 @@ APPROVED_EXPORT_DIGESTS = {
     "text-analysis-license-reissue-v1": "4734e2f6c892c9c9a398c813c74e58925bc728898360b8a10164cc87a521d63c",
     "text-analysis-license-reissue-v2": "4f69867018ab43db8fcf6e846b82539767fc7a82ffdcb99289f6641aa78ae44e",
     "text-analysis-license-reissue-response-conformance-v1": "32cfe1225a02dfcac8c6da4d42884ee9eab5dcf88341a37eecf6130ab0c20610",
+    "bootstrap-recovery-v3": "6e12d65589d52b135782eee699cd2d1ec794a251c9fd99177d64447d4bc6fafc",
+    "browser-ceremony-replacement-v1": "14bef60328e46b1fa0949fc7fe17f6e1fd34f1b719a6ec89eb7cd66d2dc11ea6",
+    "initial-handoff-replacement-v1": "9cb3590671eacb756747324989cae4cb148c408e3fcc599f211652c555dda9d9",
+    "registered-continuation-replacement-v1": "d29791369b31b898edec4a5b3c8910d7f14c0e79a5b1132634134e326e7f067d",
+    "installation-authority-recovery-v1": "2cb151018433bd7c292c8081cdf815feb1a81435098fed13f52300bc341a5f0e",
+    "complimentary-activation-reconciliation-v1": "783cea80232541e989864a7fe2d743f8b2e16522f266ea303b9ed560025f14a7",
+    "complimentary-activation-review-replacement-v1": "ed6d321500444a0e83b6b19f2b7260b823b4302276ba156a60072b756e3702d8",
 }
 
 EXPECTED_PROGRESS_VECTOR_FILES = frozenset(
@@ -158,19 +179,26 @@ EXPECTED_PAIRING_VECTOR_FILES = frozenset(
         "vector.json",
     }
 )
-EXPECTED_FILE_COUNT = 1232
-EXPECTED_PUBLISHED_FILE_COUNT = 399
+EXPECTED_FILE_COUNT = 1338
+EXPECTED_PUBLISHED_FILE_COUNT = 491
 EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
+    "urn:bridge-clean:bootstrap-recovery:v3",
     "urn:bridge-clean:browser-authentication-selection-proof:v1",
     "urn:bridge-clean:browser-authentication-selection-proof:v2",
+    "urn:bridge-clean:browser-authentication-selection-proof:v3",
     "urn:bridge-clean:browser-authentication-selection:v1",
     "urn:bridge-clean:browser-authentication-selection:v2",
+    "urn:bridge-clean:browser-authentication-selection:v3",
     "urn:bridge-clean:browser-ceremony-proof:v1",
+    "urn:bridge-clean:browser-ceremony-proof:v2",
+    "urn:bridge-clean:browser-ceremony-replacement-proof:v1",
+    "urn:bridge-clean:browser-ceremony-replacement:v1",
     "urn:bridge-clean:browser-ceremony-wait-proof:v1",
     "urn:bridge-clean:browser-ceremony-wait:v1",
     "urn:bridge-clean:browser-ceremony:v1",
+    "urn:bridge-clean:browser-ceremony:v2",
     "urn:bridge-clean:capability-license-activation-package:v1",
     "urn:bridge-clean:capability-license-activation-proof:v1",
     "urn:bridge-clean:capability-license-activation:v1",
@@ -193,6 +221,10 @@ EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:capability-purchase-session-proof:v1",
     "urn:bridge-clean:capability-purchase-session:v1",
     "urn:bridge-clean:companion-pairing:v1",
+    "urn:bridge-clean:complimentary-activation-reconciliation-proof:v1",
+    "urn:bridge-clean:complimentary-activation-reconciliation:v1",
+    "urn:bridge-clean:complimentary-activation-review-replacement-proof:v1",
+    "urn:bridge-clean:complimentary-activation-review-replacement:v1",
     "urn:bridge-clean:complimentary-onboarding-activation:v1",
     "urn:bridge-clean:complimentary-onboarding-activation:v2",
     "urn:bridge-clean:creator-association:v1",
@@ -200,10 +232,14 @@ EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:desktop-decision:v1",
     "urn:bridge-clean:grant-profile:v1",
     "urn:bridge-clean:hosted-onboarding:v1",
+    "urn:bridge-clean:initial-handoff-replacement-proof:v1",
+    "urn:bridge-clean:initial-handoff-replacement:v1",
     "urn:bridge-clean:initial-installation-handoff-proof:v1",
     "urn:bridge-clean:initial-installation-handoff-proof:v2",
     "urn:bridge-clean:initial-installation-handoff:v1",
     "urn:bridge-clean:initial-installation-handoff:v2",
+    "urn:bridge-clean:installation-authority-recovery-proof:v1",
+    "urn:bridge-clean:installation-authority-recovery:v1",
     "urn:bridge-clean:installation-claim-package:v1",
     "urn:bridge-clean:installation-claim-package:v2",
     "urn:bridge-clean:installation-claim:v1",
@@ -217,6 +253,8 @@ EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:onboarding-proof:v1",
     "urn:bridge-clean:onboarding-transfer:v1",
     "urn:bridge-clean:provisioning-proof:v1",
+    "urn:bridge-clean:registered-continuation-replacement-proof:v1",
+    "urn:bridge-clean:registered-continuation-replacement:v1",
     "urn:bridge-clean:release-descriptor:v1",
     "urn:bridge-clean:text-analysis-authority-delivery-proof:v1",
     "urn:bridge-clean:text-analysis-authority-delivery:v1",
@@ -282,6 +320,13 @@ CONFORMANCE_MANIFESTS = {
     "text-analysis-license-reissue-v1": "text-analysis-license-reissue-v1/manifest.json",
     "text-analysis-license-reissue-v2": "text-analysis-license-reissue-v2/manifest.json",
     "text-analysis-license-reissue-response-conformance-v1": "text-analysis-license-reissue-response-conformance-v1/manifest.json",
+    "bootstrap-recovery-v3": "bootstrap-recovery-v3/manifest.json",
+    "browser-ceremony-replacement-v1": "browser-ceremony-replacement-v1/manifest.json",
+    "initial-handoff-replacement-v1": "initial-handoff-replacement-v1/manifest.json",
+    "registered-continuation-replacement-v1": "registered-continuation-replacement-v1/manifest.json",
+    "installation-authority-recovery-v1": "installation-authority-recovery-v1/manifest.json",
+    "complimentary-activation-reconciliation-v1": "complimentary-activation-reconciliation-v1/manifest.json",
+    "complimentary-activation-review-replacement-v1": "complimentary-activation-review-replacement-v1/manifest.json",
 }
 PAIRING_PROFILE_RECORD = "companion-pairing-profile/profile.json"
 QUALIFICATION_POLICIES = {

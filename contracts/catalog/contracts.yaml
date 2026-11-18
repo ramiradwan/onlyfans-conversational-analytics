@@ -220,6 +220,60 @@ contracts:
     openapi_operations:
       - recoverBootstrapV2
     governing_adr: docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md
+  - id: bootstrap-recovery-v3
+    owner: provisioning
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Recover committed enrollment within the fixed key-only delivery window without restoring withdrawn authority.
+    profile: urn:bridge-clean:bootstrap-recovery:v3
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 16384
+    max_response_bytes: 49152
+    schema_paths:
+      - schemas/provisioning/v3/bootstrap-recovery-request.schema.json
+      - schemas/provisioning/v3/bootstrap-recovery-response.schema.json
+      - schemas/provisioning/v3/bootstrap-recovery-refusal.schema.json
+    openapi_operations:
+      - recoverBootstrapV3
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
+  - id: installation-authority-recovery-v1
+    owner: provisioning
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Admit and reconcile exact enrolled installation authority without a key-only restoration path.
+    profile: urn:bridge-clean:installation-authority-recovery:v1
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 8192
+    max_response_bytes: 65536
+    schema_paths:
+      - schemas/installation-authority-recovery/v1/definitions.schema.json
+      - schemas/installation-authority-recovery/v1/prepare-request.schema.json
+      - schemas/installation-authority-recovery/v1/prepare-response.schema.json
+      - schemas/installation-authority-recovery/v1/deliver-request.schema.json
+      - schemas/installation-authority-recovery/v1/deliver-response.schema.json
+      - schemas/installation-authority-recovery/v1/error.schema.json
+    openapi_operations:
+      - prepareInstallationAuthorityRecovery
+      - deliverInstallationAuthorityRecovery
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
+  - id: installation-authority-recovery-proof-v1
+    owner: provisioning
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Admit and reconcile exact enrolled installation authority without a key-only restoration path.
+    profile: urn:bridge-clean:installation-authority-recovery-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 8192
+    schema_paths:
+      - schemas/installation-authority-recovery/v1/proof-challenge-request.schema.json
+      - schemas/installation-authority-recovery/v1/proof-challenge-response.schema.json
+    openapi_operations:
+      - issueInstallationAuthorityRecoveryProofChallenge
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
   - id: capability-license-exchange-quote-v1
     owner: commercial-ledger
     producer: commercial-control-plane
@@ -1440,3 +1494,263 @@ contracts:
     openapi_operations:
     - issueBrowserCeremonyWaitProofChallenge
     governing_adr: docs/adr/0029-operation-bound-browser-ceremonies.md
+  - id: browser-ceremony-v2
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Present exact protected installation authority recovery without credential
+      or grant delivery.
+    profile: urn:bridge-clean:browser-ceremony:v2
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/browser-ceremony/v2/definitions.schema.json
+    - schemas/browser-ceremony/v2/prepare-request.schema.json
+    - schemas/browser-ceremony/v2/prepare-response.schema.json
+    - schemas/browser-ceremony/v2/read-request.schema.json
+    - schemas/browser-ceremony/v2/read-response.schema.json
+    - schemas/browser-ceremony/v2/recover-request.schema.json
+    - schemas/browser-ceremony/v2/recover-response.schema.json
+    - schemas/browser-ceremony/v2/cancel-request.schema.json
+    - schemas/browser-ceremony/v2/cancel-response.schema.json
+    - schemas/browser-ceremony/v2/snapshot.schema.json
+    - schemas/browser-ceremony/v2/notification.schema.json
+    - schemas/browser-ceremony/v2/error.schema.json
+    openapi_operations:
+    - prepareBrowserCeremonyV2
+    - readBrowserCeremonyV2
+    - recoverBrowserCeremonyV2
+    - cancelBrowserCeremonyV2
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
+  - id: browser-ceremony-proof-v2
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Prove an exact protected recovery browser operation with a distinct proof
+      domain.
+    profile: urn:bridge-clean:browser-ceremony-proof:v2
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/browser-ceremony/v2/proof-challenge-request.schema.json
+    - schemas/browser-ceremony/v2/proof-challenge-response.schema.json
+    openapi_operations:
+    - issueBrowserCeremonyProofChallengeV2
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
+  - id: browser-authentication-selection-v3
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Present exact protected installation authority recovery without credential
+      or grant delivery.
+    profile: urn:bridge-clean:browser-authentication-selection:v3
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/browser-authentication-selection/v3/definitions.schema.json
+    - schemas/browser-authentication-selection/v3/projection.schema.json
+    - schemas/browser-authentication-selection/v3/read-request.schema.json
+    - schemas/browser-authentication-selection/v3/read-response.schema.json
+    - schemas/browser-authentication-selection/v3/select-request.schema.json
+    - schemas/browser-authentication-selection/v3/select-response.schema.json
+    - schemas/browser-authentication-selection/v3/cancel-request.schema.json
+    - schemas/browser-authentication-selection/v3/cancel-response.schema.json
+    - schemas/browser-authentication-selection/v3/error.schema.json
+    openapi_operations:
+    - readBrowserAuthenticationSelectionV3
+    - selectBrowserAuthenticationSelectionV3
+    - cancelBrowserAuthenticationSelectionV3
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
+  - id: browser-authentication-selection-proof-v3
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Prove an exact protected recovery browser operation with a distinct proof
+      domain.
+    profile: urn:bridge-clean:browser-authentication-selection-proof:v3
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/browser-authentication-selection/v3/proof-challenge-request.schema.json
+    - schemas/browser-authentication-selection/v3/proof-challenge-response.schema.json
+    openapi_operations:
+    - issueBrowserAuthenticationSelectionProofChallengeV3
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
+  - id: browser-ceremony-replacement-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Replace an exact inactive ordinary browser ceremony without changing its original source.
+    profile: urn:bridge-clean:browser-ceremony-replacement:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/browser-ceremony-replacement/v1/definitions.schema.json
+    - schemas/browser-ceremony-replacement/v1/replace-request.schema.json
+    - schemas/browser-ceremony-replacement/v1/replace-response.schema.json
+    - schemas/browser-ceremony-replacement/v1/error.schema.json
+    openapi_operations:
+    - replaceBrowserCeremonyV1
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
+  - id: browser-ceremony-replacement-proof-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Prove exact predecessor and successor correlation in a separate domain.
+    profile: urn:bridge-clean:browser-ceremony-replacement-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/browser-ceremony-replacement/v1/proof-challenge-request.schema.json
+    - schemas/browser-ceremony-replacement/v1/proof-challenge-response.schema.json
+    openapi_operations:
+    - issueBrowserCeremonyReplacementProofChallengeV1
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
+  - id: initial-handoff-replacement-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Replace an exact expired unaccepted initial setup source without changing installation or established intent.
+    profile: urn:bridge-clean:initial-handoff-replacement:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/initial-handoff-replacement/v1/definitions.schema.json
+    - schemas/initial-handoff-replacement/v1/replace-request.schema.json
+    - schemas/initial-handoff-replacement/v1/replace-response.schema.json
+    - schemas/initial-handoff-replacement/v1/error.schema.json
+    openapi_operations:
+    - replaceInitialHandoffV1
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
+  - id: initial-handoff-replacement-proof-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Prove an exact initial source replacement in a distinct proof domain.
+    profile: urn:bridge-clean:initial-handoff-replacement-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/initial-handoff-replacement/v1/proof-challenge-request.schema.json
+    - schemas/initial-handoff-replacement/v1/proof-challenge-response.schema.json
+    openapi_operations:
+    - issueInitialHandoffReplacementProofChallengeV1
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
+  - id: registered-continuation-replacement-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Replace an exact expired unaccepted registered setup source without changing installation or established intent.
+    profile: urn:bridge-clean:registered-continuation-replacement:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/registered-continuation-replacement/v1/definitions.schema.json
+    - schemas/registered-continuation-replacement/v1/replace-request.schema.json
+    - schemas/registered-continuation-replacement/v1/replace-response.schema.json
+    - schemas/registered-continuation-replacement/v1/error.schema.json
+    openapi_operations:
+    - replaceRegisteredContinuationV1
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
+  - id: registered-continuation-replacement-proof-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Prove an exact registered source replacement in a distinct proof domain.
+    profile: urn:bridge-clean:registered-continuation-replacement-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/registered-continuation-replacement/v1/proof-challenge-request.schema.json
+    - schemas/registered-continuation-replacement/v1/proof-challenge-response.schema.json
+    openapi_operations:
+    - issueRegisteredContinuationReplacementProofChallengeV1
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
+  - id: complimentary-activation-reconciliation-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Reconcile exact original complimentary activation without repeating acceptance or delivery.
+    profile: urn:bridge-clean:complimentary-activation-reconciliation:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/complimentary-activation-reconciliation/v1/definitions.schema.json
+    - schemas/complimentary-activation-reconciliation/v1/read-request.schema.json
+    - schemas/complimentary-activation-reconciliation/v1/read-response.schema.json
+    - schemas/complimentary-activation-reconciliation/v1/error.schema.json
+    openapi_operations:
+    - readComplimentaryActivationReconciliationV1
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
+  - id: complimentary-activation-reconciliation-proof-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Prove original activation reconciliation in a distinct proof domain.
+    profile: urn:bridge-clean:complimentary-activation-reconciliation-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/complimentary-activation-reconciliation/v1/proof-challenge-request.schema.json
+    - schemas/complimentary-activation-reconciliation/v1/proof-challenge-response.schema.json
+    openapi_operations:
+    - issueComplimentaryActivationReconciliationProofChallengeV1
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
+  - id: complimentary-activation-review-replacement-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Replace an exact expired uncommitted activation review with a successor source constrained to the same terms.
+    profile: urn:bridge-clean:complimentary-activation-review-replacement:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/complimentary-activation-review-replacement/v1/definitions.schema.json
+    - schemas/complimentary-activation-review-replacement/v1/replace-request.schema.json
+    - schemas/complimentary-activation-review-replacement/v1/replace-response.schema.json
+    - schemas/complimentary-activation-review-replacement/v1/error.schema.json
+    openapi_operations:
+    - replaceComplimentaryActivationReviewV1
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
+  - id: complimentary-activation-review-replacement-proof-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Prove exact original review replacement in a distinct proof domain.
+    profile: urn:bridge-clean:complimentary-activation-review-replacement-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/complimentary-activation-review-replacement/v1/proof-challenge-request.schema.json
+    - schemas/complimentary-activation-review-replacement/v1/proof-challenge-response.schema.json
+    openapi_operations:
+    - issueComplimentaryActivationReviewReplacementProofChallengeV1
+    governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md

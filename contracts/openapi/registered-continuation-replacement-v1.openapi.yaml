@@ -1,0 +1,237 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Registered continuation replacement",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/v1/onboarding/registered-continuation-replacement-proof-challenges": {
+      "post": {
+        "operationId": "issueRegisteredContinuationReplacementProofChallengeV1",
+        "summary": "Issue nonauthorizing source replacement challenge",
+        "x-contract-profile": "urn:bridge-clean:registered-continuation-replacement-proof:v1",
+        "x-max-request-bytes": 8192,
+        "x-max-response-bytes": 16384,
+        "x-authentication": "fresh exact predecessor installation-key proof; no browser customer credential",
+        "x-idempotency": "single-use proof; exact successor retry only while eligible; commercial reconciliation takes priority",
+        "x-rate-limit": "bounded ingress and source owner capacity",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/registered-continuation-replacement/v1/proof-challenge-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact closed result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/proof-challenge-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/onboarding/registered-continuation-replacements:replace": {
+      "post": {
+        "operationId": "replaceRegisteredContinuationV1",
+        "summary": "Replace an exact expired registered setup source or reconcile accepted work",
+        "x-contract-profile": "urn:bridge-clean:registered-continuation-replacement:v1",
+        "x-max-request-bytes": 8192,
+        "x-max-response-bytes": 16384,
+        "x-authentication": "fresh exact predecessor installation-key proof; no browser customer credential",
+        "x-idempotency": "single-use proof; exact successor retry only while eligible; commercial reconciliation takes priority",
+        "x-rate-limit": "bounded ingress and source owner capacity",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/registered-continuation-replacement/v1/replace-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact closed result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/replace-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/registered-continuation-replacement/v1/error.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

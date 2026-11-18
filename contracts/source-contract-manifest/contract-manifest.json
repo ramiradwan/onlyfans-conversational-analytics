@@ -12,8 +12,8 @@
     },
     {
       "path": "catalog/contracts.yaml",
-      "sha256": "092c3d0a777e7567ba830b971f1b614e776e8c9d0be3ebe2de9daee9d45bde37",
-      "size": 71857
+      "sha256": "888d5f6f4ebd14587d621e62ddc14c2dd2a4357608a4475efd9022a61ec4df8f",
+      "size": 87447
     },
     {
       "path": "catalog/deferred-setup-preparation-policy-v1.json",
@@ -51,6 +51,11 @@
       "size": 2887
     },
     {
+      "path": "openapi/bootstrap-recovery-v3.openapi.yaml",
+      "sha256": "d266aa362ac32f7dd61a0cbdc2378fbd9d7e63024d66b8003c5a27a19ffab910",
+      "size": 3268
+    },
+    {
       "path": "openapi/browser-authentication-selection-v1.openapi.yaml",
       "sha256": "82d0afffa6826cf2974d962a33f9abcb3bc91296a587f432530b2a367f54bce2",
       "size": 14709
@@ -61,9 +66,24 @@
       "size": 14719
     },
     {
+      "path": "openapi/browser-authentication-selection-v3.openapi.yaml",
+      "sha256": "13ac4e91c563a33ff97acc8b63dd0f69e2c5b127c160fe2e2a7cb879f0d8488c",
+      "size": 15267
+    },
+    {
+      "path": "openapi/browser-ceremony-replacement-v1.openapi.yaml",
+      "sha256": "edcb49d86ab79bc5ee2ee0dd5c81ec44692d1a3e3d546be6a5badc575487d4d6",
+      "size": 7607
+    },
+    {
       "path": "openapi/browser-ceremony-v1.openapi.yaml",
       "sha256": "8a5e92861ea626c9cbe8c6f2735a18b9e6bd024b790c8a63bdcb4e91bf62c75e",
       "size": 15845
+    },
+    {
+      "path": "openapi/browser-ceremony-v2.openapi.yaml",
+      "sha256": "bacb65cf64aadcfe0d09fd29a7d1c037a8c3d0d708b8eaaec474e55941537d37",
+      "size": 20670
     },
     {
       "path": "openapi/browser-ceremony-wait-v1.openapi.yaml",
@@ -101,6 +121,16 @@
       "size": 12319
     },
     {
+      "path": "openapi/complimentary-activation-reconciliation-v1.openapi.yaml",
+      "sha256": "35d40dee140e7ebe901883aaab48ff6e134691683680c9caaf84e0d80ad53271",
+      "size": 6664
+    },
+    {
+      "path": "openapi/complimentary-activation-review-replacement-v1.openapi.yaml",
+      "sha256": "2b1cea58d0c2972d66537e52df963d9cbea02a1cfb75ee60d3d4dd286621fa89",
+      "size": 7438
+    },
+    {
       "path": "openapi/complimentary-onboarding-activation-v1.openapi.yaml",
       "sha256": "a3c96196426971ff91ff61be477eae5db03f59130d2fff357353af021aab2b5f",
       "size": 11910
@@ -116,6 +146,11 @@
       "size": 9115
     },
     {
+      "path": "openapi/initial-handoff-replacement-v1.openapi.yaml",
+      "sha256": "353697dea927a1a4ed1f3019abc08f77aa89f079471190d06e66e863e3afce54",
+      "size": 7688
+    },
+    {
       "path": "openapi/initial-installation-handoff-v1.openapi.yaml",
       "sha256": "3bca314d4d61091be34a74e04f27112cbf733bfd0f7da113adb353ec29d2d4f8",
       "size": 9759
@@ -124,6 +159,11 @@
       "path": "openapi/initial-installation-handoff-v2.openapi.yaml",
       "sha256": "f24b3df0b81edb824144cdff1d1141ade7529968684528c9a3645ad177779aac",
       "size": 9787
+    },
+    {
+      "path": "openapi/installation-authority-recovery-v1.openapi.yaml",
+      "sha256": "298e9e6815576df0f288c9dcab25dcfe84525dbd011970892d34594ab451fa4a",
+      "size": 10481
     },
     {
       "path": "openapi/installation-setup-continuation-v1.openapi.yaml",
@@ -161,6 +201,11 @@
       "size": 3638
     },
     {
+      "path": "openapi/registered-continuation-replacement-v1.openapi.yaml",
+      "sha256": "cce25e072839029d624974ea76e6426066bc1ea67f917fcf066db7496c5e83d8",
+      "size": 7883
+    },
+    {
       "path": "openapi/text-analysis-authority-delivery-v1.openapi.yaml",
       "sha256": "9fc11d107333305a2f2a26b58a670c101a289fdfa6d4b36e6fcd0a6d445a33df",
       "size": 5121
@@ -176,6 +221,11 @@
       "size": 10769
     },
     {
+      "path": "profiles/bootstrap-recovery/v3/profile.json",
+      "sha256": "e57186222ab6614287b9deda8a71a022ff04e3c8e21a2584dcc4752c67859ed1",
+      "size": 1527
+    },
+    {
       "path": "profiles/browser-authentication-selection-proof/v1/profile.json",
       "sha256": "84b5c2417bbb3f7af61156f8d582e323acf3f5c45b9e342f1e152cd1d41fffcf",
       "size": 1925
@@ -184,6 +234,11 @@
       "path": "profiles/browser-authentication-selection-proof/v2/profile.json",
       "sha256": "38bb24d420682d6011325842a5fff54db138576ebbf56dae958fed0b078919ba",
       "size": 1913
+    },
+    {
+      "path": "profiles/browser-authentication-selection-proof/v3/profile.json",
+      "sha256": "f2b52aba8a9dc19c5f269efc6beaeb06a78ccc338f5a996ab2854f20f9606ac7",
+      "size": 1667
     },
     {
       "path": "profiles/browser-authentication-selection/v1/profile.json",
@@ -196,9 +251,29 @@
       "size": 5176
     },
     {
+      "path": "profiles/browser-authentication-selection/v3/profile.json",
+      "sha256": "424216db76709b5fea94fa2f6776caf8115dc9190ccca518fb2f0af3b29dd88f",
+      "size": 4583
+    },
+    {
       "path": "profiles/browser-ceremony-proof/v1/profile.json",
       "sha256": "b62d4150decd9cb5d345eca410c7b0ab31e1e5e07e6bd97c8cf20304e024abd7",
       "size": 1761
+    },
+    {
+      "path": "profiles/browser-ceremony-proof/v2/profile.json",
+      "sha256": "5b693f4d2f91e19963966aa3450f6f53f4c6f57ab7f8406422bc75ae789dd293",
+      "size": 1663
+    },
+    {
+      "path": "profiles/browser-ceremony-replacement-proof/v1/profile.json",
+      "sha256": "612d1a005180e076b57a425e93e9dba6f610675e4ea8e151daf721c22e9276c1",
+      "size": 1304
+    },
+    {
+      "path": "profiles/browser-ceremony-replacement/v1/profile.json",
+      "sha256": "cf8962df30fae71058dcef2df3f1ffe3bcc52d685d08621d6dcb375f5e86e9fc",
+      "size": 2323
     },
     {
       "path": "profiles/browser-ceremony-wait-proof/v1/profile.json",
@@ -214,6 +289,11 @@
       "path": "profiles/browser-ceremony/v1/profile.json",
       "sha256": "e63209dc30396b289284e171f0289b65308c871b9564a4cebe14d69099ee8180",
       "size": 4991
+    },
+    {
+      "path": "profiles/browser-ceremony/v2/profile.json",
+      "sha256": "98094b83a6d04f8f37efa92706e071ab7ff40c320a7cfd47c968045682239b49",
+      "size": 4919
     },
     {
       "path": "profiles/capability-license-activation-package/v1/profile.json",
@@ -296,6 +376,26 @@
       "size": 5654
     },
     {
+      "path": "profiles/complimentary-activation-reconciliation-proof/v1/profile.json",
+      "sha256": "db64107aa47d6e10bcbb899c65c214cb7b58c8029678a8b93c81fe30ccd3d23d",
+      "size": 1367
+    },
+    {
+      "path": "profiles/complimentary-activation-reconciliation/v1/profile.json",
+      "sha256": "aa897ad63ec7e5a5fbf95f4644cbd3519955aeee8d580662d88ca4041ba351b8",
+      "size": 2279
+    },
+    {
+      "path": "profiles/complimentary-activation-review-replacement-proof/v1/profile.json",
+      "sha256": "6c85d7cd8ff598c6b792f28a61734d0600e0ded8708dd3ece2a17d185902eeb6",
+      "size": 1399
+    },
+    {
+      "path": "profiles/complimentary-activation-review-replacement/v1/profile.json",
+      "sha256": "2faa34e482e28063d9176ae5217bec7231c69113cea8c32ced1f73bdd3ebb116",
+      "size": 2888
+    },
+    {
       "path": "profiles/complimentary-onboarding-activation/v1/profile.json",
       "sha256": "b6d27ee6a1c8fa7566f55c98a1ed7651bd020c0bb1732ca5756c211c5a3dc0a3",
       "size": 2553
@@ -321,6 +421,16 @@
       "size": 1873
     },
     {
+      "path": "profiles/initial-handoff-replacement-proof/v1/profile.json",
+      "sha256": "11da9a849b761d34625ee51389e667e4e5f0768e81ab0933aa40ef231d951132",
+      "size": 1368
+    },
+    {
+      "path": "profiles/initial-handoff-replacement/v1/profile.json",
+      "sha256": "1e1bb6e867f73d75eb80851feb5f70b90bc9012fb2e420e3015ee1cc0d4f9943",
+      "size": 3122
+    },
+    {
       "path": "profiles/initial-installation-handoff-proof-v2/profile.json",
       "sha256": "5d7c38b806373b148cd2853f0a0ef3c8b887847a981cb55f04b99e8cc327bc41",
       "size": 1759
@@ -339,6 +449,16 @@
       "path": "profiles/initial-installation-handoff/v1/profile.json",
       "sha256": "092f63079eb9cfdfa92a5434549a189356cbd781498deb45eef3be2719bd4ddd",
       "size": 2679
+    },
+    {
+      "path": "profiles/installation-authority-recovery-proof/v1/profile.json",
+      "sha256": "e639335a0adb393e1090c7b069e2824f7dfedc597219ba238c53bea15445c3d3",
+      "size": 1407
+    },
+    {
+      "path": "profiles/installation-authority-recovery/v1/profile.json",
+      "sha256": "3887f2ff857fa3b588964c0f93c2a46af95697037a1fa7dd3997993ba0e95440",
+      "size": 3030
     },
     {
       "path": "profiles/installation-claim-package/v2/profile.json",
@@ -419,6 +539,16 @@
       "path": "profiles/onboarding-transfer/v1/profile.json",
       "sha256": "a498b87d85e18a734f45f2f7fdac7a2b2bdca3e35a15d4daddfd1728286add50",
       "size": 2472
+    },
+    {
+      "path": "profiles/registered-continuation-replacement-proof/v1/profile.json",
+      "sha256": "33d22e9da92720bd7d49ccceed6070b28908682305c672be2b8c84991d924f93",
+      "size": 1325
+    },
+    {
+      "path": "profiles/registered-continuation-replacement/v1/profile.json",
+      "sha256": "2b16742732508614a92e73ac449ec025811aec39ab4b7e6cab685e361b055969",
+      "size": 2728
     },
     {
       "path": "profiles/text-analysis-authority-delivery-proof/v1/profile.json",
@@ -611,6 +741,91 @@
       "size": 530
     },
     {
+      "path": "schemas/browser-authentication-selection/v3/cancel-request.schema.json",
+      "sha256": "3b1c25258e89d81a57af679657f59394c09d0244d96bcd91a23bf3ffdf0089a9",
+      "size": 534
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v3/cancel-response.schema.json",
+      "sha256": "7223cc7ca5e44cba5f54f23a8b8dbf0ad666e82d1d5942a00370b0c4d5e3faa6",
+      "size": 506
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v3/definitions.schema.json",
+      "sha256": "e1395f507cc7cd5a4a0038c7a07a25d42b231fa58d6c7411590fa1ed4fa0166a",
+      "size": 3677
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v3/error.schema.json",
+      "sha256": "953c5a631bb5f2aeffe85e2ee2f8a4bc65aeea19d5e4875a85e599f965efc15e",
+      "size": 822
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v3/projection.schema.json",
+      "sha256": "12d0997c30173dcfcad20631a95e86353e296bb19091ccd63c2131691dfdaef0",
+      "size": 6765
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v3/proof-challenge-request.schema.json",
+      "sha256": "64b74ea15f1fdeed5b3e249571e8a8fb86537ccd5d5ff5216ac90a7ae95ad529",
+      "size": 1787
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v3/proof-challenge-response.schema.json",
+      "sha256": "7e2d99661deea939b0a8a3298a25256f33563ef236df8c632013168eddc4ef97",
+      "size": 843
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v3/read-request.schema.json",
+      "sha256": "6decd82adf4119588ddbca9d93eac81a0c0399879a4dc308c5d33fdda5e3bcc7",
+      "size": 528
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v3/read-response.schema.json",
+      "sha256": "c415485736b1f73c984923fae3e5a43281017c7fe9f4aeb45c8e97234610ad5d",
+      "size": 285
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v3/select-request.schema.json",
+      "sha256": "c904b1092f61a46f67913b2132647c46b23c50393a90ce7c2a9a7135035370fd",
+      "size": 534
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v3/select-response.schema.json",
+      "sha256": "aeda9f984d3abcb4a4ab753515881931696f4bd211e59d8ca67602fd82e20ba3",
+      "size": 530
+    },
+    {
+      "path": "schemas/browser-ceremony-replacement/v1/definitions.schema.json",
+      "sha256": "72364bcd3dab5badd67741fdd3c9e9441aed0eb4fa41b1d46e3501431ad27993",
+      "size": 1478
+    },
+    {
+      "path": "schemas/browser-ceremony-replacement/v1/error.schema.json",
+      "sha256": "f748e87ea960fab9a72b93e137d559d08e1fd02c86d200f7e67d258f045b33da",
+      "size": 690
+    },
+    {
+      "path": "schemas/browser-ceremony-replacement/v1/proof-challenge-request.schema.json",
+      "sha256": "0750e975e7262030bf46553d62711b9e239e33c798297ae998647ac7503fac91",
+      "size": 833
+    },
+    {
+      "path": "schemas/browser-ceremony-replacement/v1/proof-challenge-response.schema.json",
+      "sha256": "d51d860033eb4c5b510b66d805fbc996037d407da9ab3154e1ec055b820b20d5",
+      "size": 831
+    },
+    {
+      "path": "schemas/browser-ceremony-replacement/v1/replace-request.schema.json",
+      "sha256": "fc6aa24aca1a86914d431ecda2fe88be2c3160a192b4821915888118d8fca4af",
+      "size": 548
+    },
+    {
+      "path": "schemas/browser-ceremony-replacement/v1/replace-response.schema.json",
+      "sha256": "5f8f6709b473c1df7b1a20ab2c40d0e0fb2e976936da4f24cf7d09b1f5397b1c",
+      "size": 844
+    },
+    {
       "path": "schemas/browser-ceremony-wait/v1/definitions.schema.json",
       "sha256": "019ea0cec3a726b4c8af08c3edfd2f1bdd2583516e8f0a2a6caf23e40cead691",
       "size": 1005
@@ -709,6 +924,76 @@
       "path": "schemas/browser-ceremony/v1/snapshot.schema.json",
       "sha256": "c24ef2c21b3f43a33f3f4ebefef9eac5e4712444fd8c03352f0b6437ce04c4dd",
       "size": 6828
+    },
+    {
+      "path": "schemas/browser-ceremony/v2/cancel-request.schema.json",
+      "sha256": "14a1873ef6e78b520463e1fd955ed7e0e331566bc4d55387fc04a5c173799862",
+      "size": 502
+    },
+    {
+      "path": "schemas/browser-ceremony/v2/cancel-response.schema.json",
+      "sha256": "5a88ac5925205e598e29658037a947400535ae9f5c2eb6721bfdd35d142267a8",
+      "size": 1547
+    },
+    {
+      "path": "schemas/browser-ceremony/v2/definitions.schema.json",
+      "sha256": "abb1ec55f635d68ff598da6adda14ba2ccad130a452c9baa79cec89761768c6d",
+      "size": 7416
+    },
+    {
+      "path": "schemas/browser-ceremony/v2/error.schema.json",
+      "sha256": "8f3843b1ad0f85c67b811cf4e58ca532758d48d0f928fe2e6509fb88ec38d259",
+      "size": 654
+    },
+    {
+      "path": "schemas/browser-ceremony/v2/notification.schema.json",
+      "sha256": "8ffe432863df802a8fe498835a2bd7be7ab76287bdf9f9e91724c5a56a1659aa",
+      "size": 680
+    },
+    {
+      "path": "schemas/browser-ceremony/v2/prepare-request.schema.json",
+      "sha256": "5d319ab0fe63c3390bbcd130910ba3609dc58d6bf648b28aea372fb8d30e9880",
+      "size": 505
+    },
+    {
+      "path": "schemas/browser-ceremony/v2/prepare-response.schema.json",
+      "sha256": "900d114da06f4c28fa26309524da89a7031e41f28edd8f8cc32692fe52446c1e",
+      "size": 1129
+    },
+    {
+      "path": "schemas/browser-ceremony/v2/proof-challenge-request.schema.json",
+      "sha256": "dcb3051f7ceb08b6172da4594565f1aaf8c03995214d29a6e78d8956224b27e4",
+      "size": 2136
+    },
+    {
+      "path": "schemas/browser-ceremony/v2/proof-challenge-response.schema.json",
+      "sha256": "7f1eacaf1e711117833d3f4d262c21ed816e45904800097274f5ffc4d22265f8",
+      "size": 795
+    },
+    {
+      "path": "schemas/browser-ceremony/v2/read-request.schema.json",
+      "sha256": "a21697a241a9214a42ff32150597cacb5aa65b36e68256332cb1e6c11551f6b8",
+      "size": 496
+    },
+    {
+      "path": "schemas/browser-ceremony/v2/read-response.schema.json",
+      "sha256": "48f34b71a4696a1ef61a952420d201dea23c00c4b3e348209ac353f481184664",
+      "size": 3512
+    },
+    {
+      "path": "schemas/browser-ceremony/v2/recover-request.schema.json",
+      "sha256": "1ec5adffd58d09de93956b2bca937ee215018d2062c145e6632797e6a97b55ea",
+      "size": 505
+    },
+    {
+      "path": "schemas/browser-ceremony/v2/recover-response.schema.json",
+      "sha256": "be81760930815d44ec0640d6667ed7442133916c693bf5f5e93b6a5bac1118d9",
+      "size": 3518
+    },
+    {
+      "path": "schemas/browser-ceremony/v2/snapshot.schema.json",
+      "sha256": "233b793e23b22f1a14945a28c6e113739a58815351f029c96b36a05d8a7942ac",
+      "size": 1334
     },
     {
       "path": "schemas/commercial/v1/capability-license-activation-package.schema.json",
@@ -1041,6 +1326,66 @@
       "size": 786
     },
     {
+      "path": "schemas/complimentary-activation-reconciliation/v1/definitions.schema.json",
+      "sha256": "cee78756983316e84ad140059d1e722ff0bfdd37dce69ab1d42677a8b59a28e7",
+      "size": 1306
+    },
+    {
+      "path": "schemas/complimentary-activation-reconciliation/v1/error.schema.json",
+      "sha256": "4997f61a709f6507c3a90130eb37a1e16b3f9d4c3835fbd40ce86b193f1868e3",
+      "size": 653
+    },
+    {
+      "path": "schemas/complimentary-activation-reconciliation/v1/proof-challenge-request.schema.json",
+      "sha256": "e1b22834fdab5036c0d6eda81d8f4d7aa4d3ceff0acacbd6066820a8362a0d47",
+      "size": 876
+    },
+    {
+      "path": "schemas/complimentary-activation-reconciliation/v1/proof-challenge-response.schema.json",
+      "sha256": "cb1113b142304e6994c73dfc6478bc58a1a4260fd06ebf1494b8f55f8103ba85",
+      "size": 864
+    },
+    {
+      "path": "schemas/complimentary-activation-reconciliation/v1/read-request.schema.json",
+      "sha256": "20752c6b705d3c2dfb19e26a17e53adce8889a576a7918d85d12900f39059c2e",
+      "size": 573
+    },
+    {
+      "path": "schemas/complimentary-activation-reconciliation/v1/read-response.schema.json",
+      "sha256": "16acdd49f539f1ebff32c01968ee16e68dceb76f5480c54326176eb4de3c8780",
+      "size": 882
+    },
+    {
+      "path": "schemas/complimentary-activation-review-replacement/v1/definitions.schema.json",
+      "sha256": "610d823db3b97871face906112310b0c991e413074b5da095e7a1cf4f0c2c27a",
+      "size": 1664
+    },
+    {
+      "path": "schemas/complimentary-activation-review-replacement/v1/error.schema.json",
+      "sha256": "a1fa5e0a718b47d69e0f86e684d5a5c73a851c4ef09d56ccc2443c3567582ac0",
+      "size": 795
+    },
+    {
+      "path": "schemas/complimentary-activation-review-replacement/v1/proof-challenge-request.schema.json",
+      "sha256": "a6cff6b2fa50f16d7ada417bcb5602ff5afcba55b2f6e49a3d57bfd99da824a0",
+      "size": 893
+    },
+    {
+      "path": "schemas/complimentary-activation-review-replacement/v1/proof-challenge-response.schema.json",
+      "sha256": "10c1c1af98b8cfa25c53bdadc93baaede9c0f65ac099efb4f82c2867532f427d",
+      "size": 876
+    },
+    {
+      "path": "schemas/complimentary-activation-review-replacement/v1/replace-request.schema.json",
+      "sha256": "898a75ccac04f4280b521762a84f22d320ef0886762cffdbdd3faf26fa9bc2dc",
+      "size": 587
+    },
+    {
+      "path": "schemas/complimentary-activation-review-replacement/v1/replace-response.schema.json",
+      "sha256": "d5c372fd42700e2fbb0bb96f9d5fe38df96813e5389cc068bbc11676f2be14c8",
+      "size": 1259
+    },
+    {
       "path": "schemas/complimentary-activation/v1/committed.schema.json",
       "sha256": "607f7263bedf1981e479655e40330ea9ec4a1684e8c3724a8de5a82ff9c40ba5",
       "size": 806
@@ -1174,6 +1519,36 @@
       "path": "schemas/desktop-decision/v1/submit-response.schema.json",
       "sha256": "da5b4eefb26a11fe206099f16c87c12aff356e756e239b1f69a3702494a18232",
       "size": 832
+    },
+    {
+      "path": "schemas/initial-handoff-replacement/v1/definitions.schema.json",
+      "sha256": "49dbd807302837ff6270a941dcedc191a1d2e081af4ea9e6900c5d78f9ff136d",
+      "size": 1141
+    },
+    {
+      "path": "schemas/initial-handoff-replacement/v1/error.schema.json",
+      "sha256": "b4e1e67ca3717b33c8440db9903ca67f06d6da2e5f4c249f1be7147dc7020e12",
+      "size": 715
+    },
+    {
+      "path": "schemas/initial-handoff-replacement/v1/proof-challenge-request.schema.json",
+      "sha256": "55461a0d011f4b0749255dfec1c98a7ce50bd89e6c7b1991422b3846a2c27dc5",
+      "size": 829
+    },
+    {
+      "path": "schemas/initial-handoff-replacement/v1/proof-challenge-response.schema.json",
+      "sha256": "a6861ca3f7df7d39e251c1c367b6a7571d09985239ab14638269b2170b054e25",
+      "size": 828
+    },
+    {
+      "path": "schemas/initial-handoff-replacement/v1/replace-request.schema.json",
+      "sha256": "e5faf17fa427bcc172752c39155e34b91a1e5884f654cb5b4275130219918969",
+      "size": 536
+    },
+    {
+      "path": "schemas/initial-handoff-replacement/v1/replace-response.schema.json",
+      "sha256": "ac5d088ce543377104330876e78f9a47d5032598784880362422f97b055ff77f",
+      "size": 2611
     },
     {
       "path": "schemas/initial-handoff/v1/authorize-request.schema.json",
@@ -1314,6 +1689,46 @@
       "path": "schemas/initial-handoff/v2/wait-request.schema.json",
       "sha256": "ad0029857c6475ba8c8b320ba474814d3cb5af5187dd19b0158039ecb3a1bf16",
       "size": 972
+    },
+    {
+      "path": "schemas/installation-authority-recovery/v1/definitions.schema.json",
+      "sha256": "5509289025a3c2565de3a4a1504572c493f5ab360b6f7da98f594a7d62a31e2e",
+      "size": 4978
+    },
+    {
+      "path": "schemas/installation-authority-recovery/v1/deliver-request.schema.json",
+      "sha256": "bf89604329edc532b577f76ed5c86ecece183f81208e3aa2a61ca0e995a8a8ad",
+      "size": 544
+    },
+    {
+      "path": "schemas/installation-authority-recovery/v1/deliver-response.schema.json",
+      "sha256": "ea163dc86acc5928fa98a82d772a0a315d83be4276e7d85e20d13f8204045b9b",
+      "size": 5829
+    },
+    {
+      "path": "schemas/installation-authority-recovery/v1/error.schema.json",
+      "sha256": "6980aa60d4abf4254289c05bc2611a04073046ff7ac6a59b83d31204684cb6b8",
+      "size": 874
+    },
+    {
+      "path": "schemas/installation-authority-recovery/v1/prepare-request.schema.json",
+      "sha256": "bc032660435adfd1574dfcb0d3c5674ab4d6e173413a227a0d347103e65c10cd",
+      "size": 544
+    },
+    {
+      "path": "schemas/installation-authority-recovery/v1/prepare-response.schema.json",
+      "sha256": "276eb1d1545c2fb4d048ad83010bf00df390b6a0c294a14d3ce147e7b682a06e",
+      "size": 1901
+    },
+    {
+      "path": "schemas/installation-authority-recovery/v1/proof-challenge-request.schema.json",
+      "sha256": "4f7abcbe48bcb688419fd99f05f537c4a38a47b2fb29edb067fe5ca609ae9fc8",
+      "size": 911
+    },
+    {
+      "path": "schemas/installation-authority-recovery/v1/proof-challenge-response.schema.json",
+      "sha256": "a82c073e048b3e1beabf6f082e07f4a455b710d92745aafa2213a42d8fe95c15",
+      "size": 840
     },
     {
       "path": "schemas/installation-continuation/v1/binding-request.schema.json",
@@ -1811,6 +2226,51 @@
       "size": 1535
     },
     {
+      "path": "schemas/provisioning/v3/bootstrap-recovery-refusal.schema.json",
+      "sha256": "e0f855fc469f47eb6ce81f12b3c2059219d37ad279e071b39fcf684eb6969fce",
+      "size": 771
+    },
+    {
+      "path": "schemas/provisioning/v3/bootstrap-recovery-request.schema.json",
+      "sha256": "ef1082944f46f13f5b99e7ed82a187246187d875de738aa7f11882e511d8dcf4",
+      "size": 1951
+    },
+    {
+      "path": "schemas/provisioning/v3/bootstrap-recovery-response.schema.json",
+      "sha256": "94340cdfaac0e2f122f750f47d1849267a68d9fba5aa75118bcdeebb18cc25a2",
+      "size": 2612
+    },
+    {
+      "path": "schemas/registered-continuation-replacement/v1/definitions.schema.json",
+      "sha256": "e9817b5e8e735c94133a0892651816e48e4e6c446897ac1f47504edc65214804",
+      "size": 1322
+    },
+    {
+      "path": "schemas/registered-continuation-replacement/v1/error.schema.json",
+      "sha256": "f5c3e71187ef2ba716d6c5215fada08cbb82d2d6bdd35f3147cb408bb0cb8ca1",
+      "size": 757
+    },
+    {
+      "path": "schemas/registered-continuation-replacement/v1/proof-challenge-request.schema.json",
+      "sha256": "db997cc8c6d477be739bdcdba6637f5ef1a5c8eb6cf516f71958afa215e939a5",
+      "size": 861
+    },
+    {
+      "path": "schemas/registered-continuation-replacement/v1/proof-challenge-response.schema.json",
+      "sha256": "d96834da7e4eca968cfba465b73b002e82e9577735d63be45049a51d61452fda",
+      "size": 852
+    },
+    {
+      "path": "schemas/registered-continuation-replacement/v1/replace-request.schema.json",
+      "sha256": "c417f7a81772466c8eb9416bb0e9f240cb26023c758e7aedba8e50d00b483af2",
+      "size": 571
+    },
+    {
+      "path": "schemas/registered-continuation-replacement/v1/replace-response.schema.json",
+      "sha256": "2b83656e71a539f96d4010d0aded2c339965d58cbc5e80c7d968a8e69a99d5de",
+      "size": 943
+    },
+    {
       "path": "schemas/releases/v1/release-descriptor.schema.json",
       "sha256": "648744189191d6fedd2ddcbe8420bea3a712545737c20f43342f0e9108fa33c5",
       "size": 2520
@@ -2000,14 +2460,21 @@
   "profiles": [
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
+    "urn:bridge-clean:bootstrap-recovery:v3",
     "urn:bridge-clean:browser-authentication-selection-proof:v1",
     "urn:bridge-clean:browser-authentication-selection-proof:v2",
+    "urn:bridge-clean:browser-authentication-selection-proof:v3",
     "urn:bridge-clean:browser-authentication-selection:v1",
     "urn:bridge-clean:browser-authentication-selection:v2",
+    "urn:bridge-clean:browser-authentication-selection:v3",
     "urn:bridge-clean:browser-ceremony-proof:v1",
+    "urn:bridge-clean:browser-ceremony-proof:v2",
+    "urn:bridge-clean:browser-ceremony-replacement-proof:v1",
+    "urn:bridge-clean:browser-ceremony-replacement:v1",
     "urn:bridge-clean:browser-ceremony-wait-proof:v1",
     "urn:bridge-clean:browser-ceremony-wait:v1",
     "urn:bridge-clean:browser-ceremony:v1",
+    "urn:bridge-clean:browser-ceremony:v2",
     "urn:bridge-clean:capability-license-activation-package:v1",
     "urn:bridge-clean:capability-license-activation-proof:v1",
     "urn:bridge-clean:capability-license-activation:v1",
@@ -2030,6 +2497,10 @@
     "urn:bridge-clean:capability-purchase-session-proof:v1",
     "urn:bridge-clean:capability-purchase-session:v1",
     "urn:bridge-clean:companion-pairing:v1",
+    "urn:bridge-clean:complimentary-activation-reconciliation-proof:v1",
+    "urn:bridge-clean:complimentary-activation-reconciliation:v1",
+    "urn:bridge-clean:complimentary-activation-review-replacement-proof:v1",
+    "urn:bridge-clean:complimentary-activation-review-replacement:v1",
     "urn:bridge-clean:complimentary-onboarding-activation:v1",
     "urn:bridge-clean:complimentary-onboarding-activation:v2",
     "urn:bridge-clean:creator-association:v1",
@@ -2037,10 +2508,14 @@
     "urn:bridge-clean:desktop-decision:v1",
     "urn:bridge-clean:grant-profile:v1",
     "urn:bridge-clean:hosted-onboarding:v1",
+    "urn:bridge-clean:initial-handoff-replacement-proof:v1",
+    "urn:bridge-clean:initial-handoff-replacement:v1",
     "urn:bridge-clean:initial-installation-handoff-proof:v1",
     "urn:bridge-clean:initial-installation-handoff-proof:v2",
     "urn:bridge-clean:initial-installation-handoff:v1",
     "urn:bridge-clean:initial-installation-handoff:v2",
+    "urn:bridge-clean:installation-authority-recovery-proof:v1",
+    "urn:bridge-clean:installation-authority-recovery:v1",
     "urn:bridge-clean:installation-claim-package:v1",
     "urn:bridge-clean:installation-claim-package:v2",
     "urn:bridge-clean:installation-claim:v1",
@@ -2054,6 +2529,8 @@
     "urn:bridge-clean:onboarding-proof:v1",
     "urn:bridge-clean:onboarding-transfer:v1",
     "urn:bridge-clean:provisioning-proof:v1",
+    "urn:bridge-clean:registered-continuation-replacement-proof:v1",
+    "urn:bridge-clean:registered-continuation-replacement:v1",
     "urn:bridge-clean:release-descriptor:v1",
     "urn:bridge-clean:text-analysis-authority-delivery-proof:v1",
     "urn:bridge-clean:text-analysis-authority-delivery:v1",
