@@ -16,6 +16,29 @@ const CLOSE_ATTEMPTS = 3;
 const INITIAL_READ_TIMEOUT_MS = 3000;
 const INITIAL_READ_DELAYS = [1000, 2000, 4000];
 
+// Read failures are not decisions about the underlying authentication attempt.
+// Browser-task routes use 401/409 for an unavailable or replaced admission,
+// 400 for invalid requests, and 503 for a temporarily unavailable owner.
+class BrowserTaskReadError extends Error {
+  constructor(code, status = null) {
+    super(['task_changed', 'task_expired', 'invalid_response'].includes(code) ? code : 'service_unavailable');
+    this.code = code;
+    this.status = status;
+  }
+}
+function requestFailure(status) {
+  if (status === 401 || status === 409) return new BrowserTaskReadError('task_changed', status);
+  if (status === 400) return new BrowserTaskReadError('invalid_response', status);
+  if (status >= 400 && status < 500) return new BrowserTaskReadError('request_refused', status);
+  if (status >= 500 && status < 600) return new BrowserTaskReadError('owner_unavailable', status);
+  return new BrowserTaskReadError('invalid_response', status);
+}
+function temporaryReadFailure(error) {
+  return error instanceof BrowserTaskReadError
+    ? ['read_timeout', 'owner_unavailable'].includes(error.code)
+    : error instanceof TypeError;
+}
+
 function waitForInitialRead(delay, signal) {
   return new Promise(resolve => {
     const finish = () => { clearTimeout(timer); signal.removeEventListener('abort', finish); resolve(); };
@@ -95,47 +118,53 @@ export class BrowserTaskClient {
       headers: { 'X-Desktop-Generation': this.generation,
         ...(body === undefined ? {} : { 'Content-Type': 'application/json', 'X-Desktop-CSRF': this.session.csrf_token }) },
       ...(body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) }) });
-    if (!response.ok) {
-      const error = new Error([401, 409].includes(response.status) ? 'task_changed' : 'service_unavailable');
-      error.status = response.status;
-      throw error;
-    }
+    if (!response.ok) throw requestFailure(response.status);
     const text = await response.text();
     try { return parseOnboardingJson(text); }
-    catch (error) {
+    catch {
       // An invalid response is never a transient connection failure.
-      throw Error('invalid_response', { cause: error });
+      throw new BrowserTaskReadError('invalid_response');
     }
   }
-  async initialRead(path, signal) {
-    // Only bootstrap GETs can be retried here. No extension port or ceremony
-    // has started yet; the validated session and payload still fence attachment.
+  async initialRead(path, signal, {
+    deadline = Infinity, deadlineCode = 'preparation_unavailable',
+    onRetry = () => this.receive({ state: 'status_reconnecting' }),
+  } = {}) {
+    // Read-only session/payload recovery. Preparation uses the same budget
+    // without restarting the admitted task, port or authentication ceremony.
+    const check = () => {
+      if (signal.aborted) throw new BrowserTaskReadError('cancelled');
+      if (deadline <= this.now()) throw new BrowserTaskReadError(deadlineCode);
+    };
     for (let attempt = 0; ; attempt++) {
-      if (signal.aborted) throw Error('service_unavailable');
+      check();
       const controller = new AbortController();
       let timeout, cancel;
       try {
         const cancellation = new Promise((_, reject) => {
           cancel = () => {
             controller.abort();
-            reject(Error('service_unavailable'));
+            reject(new BrowserTaskReadError('cancelled'));
           };
           signal.addEventListener('abort', cancel, { once: true });
+          const remaining = deadline - this.now();
           timeout = setTimeout(() => {
-            reject(new TypeError('read timeout'));
+            reject(new BrowserTaskReadError(remaining <= INITIAL_READ_TIMEOUT_MS ? deadlineCode : 'read_timeout'));
             controller.abort();
-          }, INITIAL_READ_TIMEOUT_MS);
+          }, Math.min(INITIAL_READ_TIMEOUT_MS, remaining));
         });
-        return await Promise.race([this.json(path, undefined, controller.signal), cancellation]);
+        const value = await Promise.race([this.json(path, undefined, controller.signal), cancellation]);
+        check();
+        return value;
       } catch (error) {
-        if (signal.aborted || !(error instanceof TypeError || error?.status >= 500)
-          || attempt >= INITIAL_READ_DELAYS.length) throw error;
-        this.receive({ state: 'status_reconnecting' });
+        check();
+        if (!temporaryReadFailure(error) || attempt >= INITIAL_READ_DELAYS.length) throw error;
+        onRetry();
       } finally {
         clearTimeout(timeout);
         signal.removeEventListener('abort', cancel);
       }
-      await waitForInitialRead(INITIAL_READ_DELAYS[attempt], signal);
+      await waitForInitialRead(Math.min(INITIAL_READ_DELAYS[attempt], deadline - this.now()), signal);
     }
   }
   async start() {
@@ -197,7 +226,7 @@ export class BrowserTaskClient {
       this.loaded('session-get', took.session);
       this.loaded('payload-get', took.payload);
       this.loaded('payload');
-      const payload = await this.prepared(run, first);
+      const payload = await this.prepared(run, first, controller.signal);
       if (run !== this.run || payload === null) return;
       if (!isPayloadProjection(payload) || payload.task.admission_generation !== this.generation || payload.task.task_id !== session.task_id
         || payload.task.journey_id !== session.journey_id) throw new Error('task_changed');
@@ -385,38 +414,54 @@ export class BrowserTaskClient {
       // A stream opened during preparation stays this generation's only stream.
       if (!this.stream) this.listen(run);
     } catch (error) {
-      if (run === this.run) { this.stop(); this.receive({ state: ['task_changed', 'task_expired'].includes(error.message) ? error.message : 'service_unavailable', payload: this.payload }); }
+      if (run === this.run) {
+        const payload = this.payload ?? this.declared;
+        this.stop();
+        this.receive({ state: ['task_changed', 'task_expired'].includes(error.message) ? error.message : 'service_unavailable', payload });
+      }
     } finally {
       if (this.initialReadController === controller) this.initialReadController = null;
     }
   }
   /** Waits while Brain prepares the ceremony of an already admitted sign-in task.
    * A sign-in that opens itself shows the extension's waiting window meanwhile. The extension only reads ahead. */
-  async prepared(run, first) {
+  async prepared(run, first, signal) {
     let current = first;
     const started = this.now();
-    const own = isPreparingPayload(first) && first.task.admission_generation === this.generation
-      && first.task.task_id === this.session.task_id && first.task.journey_id === this.session.journey_id;
-    if (own) this.declared = first;
-    if (this.automatic && own) { this.waiting = this.wait({ payload: first }); this.loaded('waiting'); }
+    if (!isPreparingPayload(first)) return first;
+    if (first.task.admission_generation !== this.generation || first.task.task_id !== this.session.task_id
+      || first.task.journey_id !== this.session.journey_id) throw new BrowserTaskReadError('task_changed');
+    const expires = first.task.expires_at * 1000;
+    const deadline = Math.min(expires, started + PREPARING_LIMIT_MS);
+    const deadlineCode = expires <= started + PREPARING_LIMIT_MS ? 'task_expired' : 'preparation_unavailable';
+    this.declared = first;
+    if (deadline <= this.now()) throw new BrowserTaskReadError(deadlineCode);
+    if (this.automatic) { this.waiting = this.wait({ payload: first }); this.loaded('waiting'); }
     // The extension reads ahead on the port this helper attaches with once the ceremony exists.
-    if (own) this.preparedLink = this.connect({ payload: first, prepare: true, receive: () => {} });
+    this.preparedLink = this.connect({ payload: first, prepare: true, receive: () => {} });
     while (isPreparingPayload(current)) {
-      if (current.task.admission_generation !== this.generation || current.task.task_id !== this.session.task_id
-        || current.task.journey_id !== this.session.journey_id
-        || first !== current && ['task_id', 'journey_id', 'operation_id', 'purpose', 'scope_digest', 'source_revision', 'expires_at']
-          .some(key => current.task[key] !== first.task[key])) throw new Error('task_changed');
-      if (current.task.expires_at * 1000 <= this.now()) throw new Error('task_expired');
-      if (this.now() - started >= PREPARING_LIMIT_MS) throw new Error('service_unavailable');
+      if (deadline <= this.now()) throw new BrowserTaskReadError(deadlineCode);
       // The task's stream says when its payload changed. The timer reads only while that stream is down.
       if (!this.stream) this.listen(run);
-      await this.preparingWake(this.streaming ? STREAM_POLL_MS : PREPARING_POLL_MS);
-      if (run !== this.run) return null;
-      const next = await this.json('payload');
-      if (run !== this.run) return null;
-      if (!isPreparingPayload(next)) this.stage('payload-ready');
-      if (isPayloadProjection(next) && ['task_id', 'journey_id', 'operation_id', 'purpose', 'scope_digest', 'source_revision', 'expires_at']
-        .some(key => next.task[key] !== first.task[key])) throw new Error('task_changed');
+      await this.preparingWake(Math.min(this.streaming ? STREAM_POLL_MS : PREPARING_POLL_MS, deadline - this.now()));
+      if (run !== this.run || signal.aborted) return null;
+      let reconnecting = false;
+      const next = await this.initialRead('payload', signal, {
+        deadline, deadlineCode,
+        onRetry: () => { reconnecting = true; this.receive({ state: 'status_reconnecting', payload: first }); },
+      });
+      if (run !== this.run || signal.aborted) return null;
+      if (!isPreparingPayload(next) && !isPayloadProjection(next)) {
+        throw new BrowserTaskReadError('task_changed');
+      }
+      if (['task_id', 'admission_generation', 'journey_id', 'operation_id', 'purpose', 'scope_digest', 'source_revision', 'expires_at']
+        .some(key => next.task[key] !== first.task[key])
+        || ['cancelled', 'expired'].includes(next.task.state)) throw new BrowserTaskReadError('task_changed');
+      if (isPreparingPayload(next)) {
+        if (reconnecting) this.receive({ state: 'loading', payload: first });
+      } else {
+        this.stage('payload-ready');
+      }
       current = next;
     }
     return current;
@@ -506,7 +551,7 @@ export class BrowserTaskClient {
         const payload = this.payload;
         this.stop(); this.receive({ state: error.message, payload }); return;
       }
-      if (error.message === 'invalid_response' || error.status >= 400 && error.status < 500) {
+      if (!temporaryReadFailure(error)) {
         const payload = this.payload;
         this.stop(); this.receive({ state: 'service_unavailable', payload }); return;
       }
@@ -616,6 +661,9 @@ export class BrowserTaskClient {
     this.releaseWaiting();
     this.preparedLink?.close(); this.preparedLink = null;
     this.nativeLaunch = false; this.automatic = false; this.run++; this.link?.close(); this.link = null;
+    // A preparing helper can be stopped by its stream while waiting for its
+    // next read. Resolve that wait so the retired start() can finish.
+    this.wakePreparing?.();
     clearTimeout(this.expiry); clearTimeout(this.pollTimer); clearTimeout(this.streamTimer);
     this.initialReadController?.abort(); this.initialReadController = null;
     this.stream?.abort(); this.stream = null; this.streaming = false;

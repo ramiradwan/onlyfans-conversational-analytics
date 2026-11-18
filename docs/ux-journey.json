@@ -2966,6 +2966,31 @@
           "kind": "unit",
           "file": "frontend/tests/browser-tasks.test.js",
           "name": "does not report disconnection after the helper closes during the fresh admission read"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-task-push.test.js",
+          "name": "recovers a temporary preparation read without reopening the port or repeating sign-in"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-task-push.test.js",
+          "name": "retires a stalled preparation read before accepting a later valid payload"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-task-push.test.js",
+          "name": "expires a preparation task while its payload request is stalled"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-task-push.test.js",
+          "name": "finishes the retired start when the desktop ends a waiting preparation"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-task-push.test.js",
+          "name": "stops after the existing bounded preparation read recovery budget"
         }
       ]
     },

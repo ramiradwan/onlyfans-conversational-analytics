@@ -515,3 +515,141 @@ describe('helper page', () => {
     expect(readFileSync('browser-tasks/view.js', 'utf8')).not.toContain('#system-browser');
   });
 });
+
+describe('preparing sign-in read recovery', () => {
+  function preparingHelper(respond, expiresIn = 30_000) {
+    const ready = authenticationPayload();
+    ready.task.expires_at = (Date.now() + expiresIn) / 1000;
+    const preparing = { ...ready, ceremony: null, task: { ...ready.task, state: 'pending' } };
+    const attach = vi.fn(() => true), authenticate = vi.fn(() => true);
+    const events = stream({ initial: true });
+    let reads = 0;
+    const h = helper({ value: ready, events: events.events, link: { attach, authenticate },
+      respond: (path, options) => {
+        if (!path.endsWith('/payload')) return null;
+        return ++reads === 1 ? reply(preparing) : respond(reads, options, ready, preparing);
+      } });
+    const connect = vi.spyOn(h.client, 'connect');
+    return { ...h, ready, preparing, attach, authenticate, connect, events };
+  }
+  function reply(value) {
+    return { ok: true, status: 200, text: async () => JSON.stringify(value) };
+  }
+
+  it('recovers a temporary preparation read without reopening the port or repeating sign-in', async () => {
+    vi.useFakeTimers();
+    const h = preparingHelper((read, _, ready, preparing) =>
+      read === 2 ? { ok: false, status: 503 } : reply(read === 3 ? preparing : ready));
+    try {
+      const started = h.client.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.reads()).toBe(2);
+      expect(h.received.at(-1)).toMatchObject({ state: 'status_reconnecting', payload: h.preparing });
+      expect(h.connect).toHaveBeenCalledOnce();
+      expect(h.attach).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(h.reads()).toBe(3);
+      expect(h.received.at(-1)).toMatchObject({ state: 'loading', payload: h.preparing });
+      h.events.state.frame(frame('pending'));
+      await started;
+      expect(h.attach).toHaveBeenCalledExactlyOnceWith(h.ready, expect.any(Function));
+      expect(h.connect).toHaveBeenCalledOnce();
+      expect(h.authenticate).not.toHaveBeenCalled();
+      expect(h.posts).toEqual([]);
+    } finally { h.client.stop(); vi.useRealTimers(); }
+  });
+
+  it('retires a stalled preparation read before accepting a later valid payload', async () => {
+    vi.useFakeTimers();
+    let release, stalledSignal;
+    const h = preparingHelper((read, options, ready) => {
+      if (read !== 2) return reply(ready);
+      stalledSignal = options.signal;
+      return new Promise(resolve => { release = resolve; });
+    });
+    try {
+      const started = h.client.start();
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(stalledSignal.aborted).toBe(true);
+      expect(h.received.at(-1).state).toBe('status_reconnecting');
+      await vi.advanceTimersByTimeAsync(1000);
+      await started;
+      expect(h.attach).toHaveBeenCalledOnce();
+      release(reply({ ...h.ready, task: { ...h.ready.task, operation_id: id(99) } }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.client.payload).toEqual(h.ready);
+      expect(h.connect).toHaveBeenCalledOnce();
+      expect(h.authenticate).not.toHaveBeenCalled();
+      expect(h.posts).toEqual([]);
+    } finally { h.client.stop(); vi.useRealTimers(); }
+  });
+
+  it.each([400, 401, 403, 409, 422])('does not repeat a definite preparation refusal (%s)', async status => {
+    vi.useFakeTimers();
+    const h = preparingHelper(() => ({ ok: false, status }));
+    try {
+      const started = h.client.start();
+      await vi.advanceTimersByTimeAsync(0);
+      await started;
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(h.reads()).toBe(2);
+      expect(h.attach).not.toHaveBeenCalled();
+      expect(h.connect).toHaveBeenCalledOnce();
+      expect(h.received.at(-1).state).toBe([401, 409].includes(status) ? 'task_changed' : 'service_unavailable');
+      expect(h.received.some(value => value.state === 'status_reconnecting')).toBe(false);
+    } finally { h.client.stop(); vi.useRealTimers(); }
+  });
+
+  it('expires a preparation task while its payload request is stalled', async () => {
+    vi.useFakeTimers();
+    let stalledSignal;
+    const h = preparingHelper((_, options) => {
+      stalledSignal = options.signal;
+      return new Promise(() => {});
+    }, 2000);
+    try {
+      const started = h.client.start();
+      await vi.advanceTimersByTimeAsync(2000);
+      await started;
+      expect(stalledSignal.aborted).toBe(true);
+      expect(h.reads()).toBe(2);
+      expect(h.attach).not.toHaveBeenCalled();
+      expect(h.connect).toHaveBeenCalledOnce();
+      expect(h.received.at(-1)).toMatchObject({ state: 'task_expired', payload: h.preparing });
+    } finally { h.client.stop(); vi.useRealTimers(); }
+  });
+
+  it('finishes the retired start when the desktop ends a waiting preparation', async () => {
+    vi.useFakeTimers();
+    const h = preparingHelper((_, __, ___, preparing) => reply(preparing));
+    try {
+      const started = h.client.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.reads()).toBe(2);
+      h.events.state.frame({ type: 'end', task_id: id(1), admission_generation: id(4) });
+      await started;
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(h.reads()).toBe(2);
+      expect(h.attach).not.toHaveBeenCalled();
+      expect(h.connect).toHaveBeenCalledOnce();
+      expect(h.received.at(-1).state).toBe('task_changed');
+    } finally { h.client.stop(); vi.useRealTimers(); }
+  });
+
+  it('stops after the existing bounded preparation read recovery budget', async () => {
+    vi.useFakeTimers();
+    const h = preparingHelper(() => ({ ok: false, status: 503 }));
+    try {
+      const started = h.client.start();
+      await vi.advanceTimersByTimeAsync(8000);
+      await started;
+      expect(h.reads()).toBe(5);
+      expect(h.connect).toHaveBeenCalledOnce();
+      expect(h.attach).not.toHaveBeenCalled();
+      expect(h.received.at(-1)).toMatchObject({ state: 'service_unavailable', payload: h.preparing });
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(h.reads()).toBe(5);
+      expect(h.posts).toEqual([]);
+    } finally { h.client.stop(); vi.useRealTimers(); }
+  });
+});

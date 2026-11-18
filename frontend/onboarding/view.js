@@ -10,7 +10,7 @@ const tasks = {
 const actions = { 'browser.access': 'Set up browser access', 'account.connect': 'Sign in', 'account.confirm': 'Connect account', 'browser.pair': 'Connect extension' };
 const errors = {
   status_unavailable: 'The setup connection was interrupted. Reconnecting…',
-  session_unavailable: 'The desktop session could not be restored. Try again.',
+  session_unavailable: 'Dipsy couldn’t restore your session.',
   authorization_unavailable: 'Access to setup status was refused. Sign in again.',
   operation_unconfirmed: 'The action’s outcome is not confirmed.',
   operation_refused: 'The action was refused.',
@@ -25,7 +25,7 @@ const errors = {
   browser_needs_consent: 'Browser access is not turned on in the extension. Turn it on in Chrome.',
   browser_needs_permission: 'The extension cannot open OnlyFans. Allow its site access in Chrome.',
   operation_expired: 'This task expired.',
-  activation_unavailable: 'Full analytics activation could not be prepared. Try again.',
+  activation_unavailable: 'Dipsy couldn’t prepare your activation.',
 };
 const passkeyErrors = {
   passkey_status_unavailable: 'Dipsy can’t check access on this computer right now.',
