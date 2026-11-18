@@ -22,6 +22,7 @@ from app.security.browser_ceremony import BrowserCeremonyClient
 from app.security.browser_ceremony_replacement import BrowserCeremonyReplacementClient
 from app.security.browser_ceremony_wait import BrowserCeremonyWaitClient
 from app.security.desktop_decision import DesktopDecisionClient
+from app.security.source_replacement import SourceReplacementClient, INITIAL, REGISTERED
 
 SIGN_IN_KEEPALIVE_SECONDS = 60.0
 
@@ -66,6 +67,7 @@ def build_desktop_setup(*, store, stage, extension_id, hosted_origin, authentica
     tasks = BrowserTasks(admissions, extension_id=extension_id or None)
     key = installation_proof_authority(store)
     ceremonies = initial = registered = None
+    source_replacement_clients = {}
     if hosted_origin:
         # One pool keeps a sign-in's proof exchanges on an open connection.
         proofs = hosted_transport(hosted_origin, keepalive_seconds=SIGN_IN_KEEPALIVE_SECONDS)
@@ -80,9 +82,14 @@ def build_desktop_setup(*, store, stage, extension_id, hosted_origin, authentica
         # The first sign-in exchange is the initial handoff, so it shares the proof pool.
         initial = InitialInstallationEnrollment(store, hosted_origin=hosted_origin, transport=proofs)
         registered = RegisteredInstallationContinuation(store, hosted_origin=hosted_origin)
+        source_replacement_clients = {
+            "initial-enrollment": SourceReplacementClient(INITIAL, proofs, key, clock=store._now),
+            "registered-continuation": SourceReplacementClient(REGISTERED, registered.client.transport, key, clock=store._now),
+        }
     recovery = ProvisioningSetupOwner(store, browser_tasks=tasks, ceremonies=ceremonies,
         initial=initial, registered=registered, key=key, finalize=finalize,
-        completion_ready=completion_ready, completed=completed)
+        completion_ready=completion_ready, completed=completed,
+        source_replacement_clients=source_replacement_clients)
     if initial is not None:
         initial.authorize_scope = recovery.authorize_initial_scope
     owner = recovery if adapt_owner is None else adapt_owner(recovery)

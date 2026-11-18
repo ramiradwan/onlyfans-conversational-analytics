@@ -709,6 +709,34 @@ describe('desktop setup presentation', () => {
     client.stop();
   });
 
+  it('continues an expired source without opening Chrome, then admits a provider choice', async () => {
+    mount();
+    const parent = generation;
+    const value = { ...initial(), journey_id: parent, next_task: 'account-connection',
+      continuation_available: true, allowed_actions: ['account.connect'], authentication: null };
+    renderSetup(document, { snapshot: value, connected: true });
+    expect(document.getElementById('task-action').textContent).toBe('Continue setup');
+    expect(document.getElementById('task-action').hidden).toBe(false);
+    expect(document.getElementById('sign-in-options').hidden).toBe(true);
+    const request = vi.fn(async () => response({ ...record, action: 'account.connect', state: 'accepted' }));
+    const openBrowser = vi.fn(async () => true);
+    const client = new DesktopSetupClient({ generation, request, openBrowser, storage: storage(), uuid: () => operationId, receive: vi.fn() });
+    client.value = value; client.session = session; client.connected = true;
+    await client.act('account.connect');
+    expect(openBrowser).not.toHaveBeenCalled();
+    const sent = JSON.parse(request.mock.calls.find(([url]) => url.endsWith('/commands'))[1].body);
+    expect(sent.provider).toBeUndefined();
+    const selection = { ...value, continuation_available: false, allowed_actions: ['auth.select'],
+      pending_operations: [{ ...record, operation_id: parent, action: 'account.connect', state: 'waiting' }],
+      authentication: { ...signIn(), operation_id: parent, state: 'selection-required' } };
+    renderSetup(document, { snapshot: selection, connected: true, pending: parent });
+    expect(document.getElementById('sign-in-options').hidden).toBe(false);
+    client.value = selection; client.remember(parent);
+    await client.act('auth.select', { provider: 'google' });
+    expect(openBrowser).toHaveBeenCalledTimes(1);
+    client.stop();
+  });
+
   it('keeps interrupted ceremony recovery passive even after desktop restart', () => {
     mount();
     const value = { ...initial(), next_task: 'account-connection', allowed_actions: [],

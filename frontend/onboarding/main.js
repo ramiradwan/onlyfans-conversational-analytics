@@ -81,7 +81,9 @@ try {
       || !current.snapshot?.allowed_actions.includes(button.dataset.action)) return;
     const replacing = button.dataset.replaceCeremony === 'true';
     if (replacing && current.snapshot?.authentication?.state !== 'replacement-required') return;
-    if (replacing) replacingCeremony = true;
+    const continuingSource = button.dataset.action === 'account.connect' && current.snapshot?.continuation_available
+      && !current.snapshot?.authentication;
+    if (replacing || continuingSource) replacingCeremony = true;
     void act(button.dataset.action, replacing ? { replace_ceremony: true } : {}).finally(() => { replacingCeremony = false; render(); });
   });
   for (const button of document.querySelectorAll('#sign-in-options [data-provider]')) {

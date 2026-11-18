@@ -87,7 +87,9 @@ export function renderSetup(document, state) {
   const canReplace = !accepted && signIn?.state === 'replacement-required' && signIn.actions.select
     && allowed.includes('auth.select') && (!state.pending || state.pending === signIn.operation_id);
   const canSelect = signIn?.state !== 'replacement-required' && !accepted && signIn?.actions.select && allowed.includes(selectAction)
-    && (!state.pending || signIn.state === 'reauthentication-required' && state.pending === signIn.browser_operation_id);
+    && (!state.pending || signIn.state === 'selection-required' && state.pending === signIn.operation_id && !state.provider
+      || signIn.state === 'reauthentication-required' && state.pending === signIn.browser_operation_id);
+  const sourceContinuation = Boolean(value?.continuation_available && !signIn && allowed.includes('account.connect'));
   const choosingProvider = Boolean(signIn && (canSelect || choosingAccount));
   // The clicked provider stays in place and busy until its sign-in is selected or fails.
   const signInActions = ['account.connect', 'auth.select', 'auth.switch'];
@@ -159,7 +161,8 @@ export function renderSetup(document, state) {
   const finalizing = task === 'finish-setup' && (allowed.includes('setup.finalize')
     || value.pending_operations.some(item => item.action === 'setup.finalize'));
   const replacing = task === 'account-connection' && (state.replacingCeremony || signIn?.state === 'replacement-pending');
-  const replacementUnknown = value?.pending_operations.some(item => item.action === 'auth.select' && item.state === 'outcome_unknown');
+  const replacementUnknown = value?.pending_operations.some(item => ['auth.select', 'account.connect'].includes(item.action)
+    && item.state === 'outcome_unknown');
   const progress = task === 'complete' ? state.continuing ? 'Opening dashboard…' : ''
     : replacing ? (replacementUnknown ? 'Checking sign-in\u2026' : 'Preparing sign-in\u2026')
     : state.acting === 'auth.cancel' ? 'Cancelling sign-in…'
@@ -190,7 +193,7 @@ export function renderSetup(document, state) {
   }
   const action = canReplace ? 'auth.select' : decision && allowed.includes('account.confirm') ? 'account.confirm'
     : allowed.find(item => actions[item] && (item !== 'browser.access' || task === 'browser-access')
-      && (item !== 'account.connect' || signIn?.state === 'admitted'));
+      && (item !== 'account.connect' || signIn?.state === 'admitted' || sourceContinuation));
   const taskAction = get('task-action');
   taskAction.hidden = reasonClass === 'invariant_failed' || reason === 'chrome_unavailable' || !action || showingProviders || accepted || !localAccessReady
     || action === 'browser.pair' && (!pairingAvailable || pending);

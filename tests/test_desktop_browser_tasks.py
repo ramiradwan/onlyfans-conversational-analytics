@@ -345,6 +345,25 @@ async def initial_ceremony_case(setup, *, active_wait=False):
     initial.bind_effect_gate(coordinator.owner._effect_gate, initial._current_journey)
     coordinator.owner.initial = initial
     coordinator.owner.registered = SimpleNamespace()
+    class ReplacementClient:
+        def __init__(self):
+            self.calls = []
+            self.mode = "prepared"
+        def replace(self, request, *, before_send, intended_creator_id):
+            import hashlib
+            from app.security.source_replacement import original_prepare
+            from app.security.installation_continuation import canonical_request
+            before_send()
+            self.calls.append(request)
+            if self.mode == "lost":
+                raise HostedGrantUnavailable("Unavailable")
+            prepare = original_prepare("initial-handoff", request, successor=True)
+            return {"profile": request["profile"], "predecessor_operation_id": request["predecessor_operation_id"],
+                "status": "prepared", "successor_prepare_digest": hashlib.sha256(canonical_request(prepare)).hexdigest(),
+                "successor": {"profile": prepare["profile"], "operation_id": prepare["operation_id"],
+                    "reference": "A" * 43, "expires_at": (clock[0] + timedelta(minutes=10)).isoformat(timespec="milliseconds").replace("+00:00", "Z")},
+                "intended_creator_id": intended_creator_id}
+    coordinator.owner.source_replacements.clients["initial-enrollment"] = ReplacementClient()
     coordinator.owner.key = SimpleNamespace(reopen_existing=fixture.key.ensure_ready)
     coordinator.owner.store.installation_key_reference = lambda **_: fixture.key.ensure_ready()
     if not active_wait:
@@ -391,12 +410,18 @@ async def test_exact_initial_terminal_read_allows_explicit_same_desktop_continua
         native = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(replacing_generation=native.generation), role="desktop")
     view = coordinator.owner.read(operation["journey_id"])
     recovery = view.scope["source_recovery"]
+    if elapsed == 0:
+        assert recovery is None
+        return
     assert recovery is not None and recovery["creator_account_id"] == scope["creator_account_id"]
+    assert recovery["replacement"]["operation_id"] == before.operation_id
     with coordinator.store.database.transaction() as connection:
         admitted = coordinator.owner.admit(connection, operation["journey_id"], action="account.connect", scope=view.scope)
+        root = connection.execute("SELECT source_journey_id FROM desktop_setup_journeys WHERE journey_id=?", (operation["journey_id"],)).fetchone()
+        assert root["source_journey_id"] == scope["source_journey_id"]
     assert admitted.journey_id == operation["journey_id"]
-    successor = initial.journeys.require_current(admitted.scope["source_journey_id"])
-    assert successor["journey_id"] != scope["source_journey_id"] and successor["state"] == "new"
+    assert admitted.scope["source_journey_id"] != scope["source_journey_id"]
+    assert admitted.scope["installation_id"] == before.installation_id
     retained = coordinator.owner.sources.resolve(scope["source_journey_id"])
     assert retained.state == "expired" and retained.operation_id == before.operation_id
     assert retained.expires_at == before.expires_at
@@ -754,3 +779,67 @@ async def test_closed_ceremony_recovery_refusal_is_not_rollback_or_permission_to
     coordinator._settle(parent, OperationResult("completed"))
     assert (await owner.execute(child, reconcile=True)).state == "refused"
     assert len(ceremonies.replacement_client.calls) == 1
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("lost", [False, True])
+async def test_prepared_source_replacement_adopts_only_verified_successor(setup, lost, monkeypatch):
+    coordinator, initial, _, old, scope, clock, native = await initial_ceremony_case(setup)
+    clock[0] += timedelta(minutes=11)
+    terminal = await coordinator.owner.execute(old, reconcile=True)
+    coordinator._settle(old, terminal)
+    # The recovery owner owns preparation and pointer adoption; isolate the
+    # subsequent ordinary ceremony (covered by the ceremony suite).
+    connected = []
+    async def connect(operation, *, reconcile):
+        from app.onboarding.coordinator import OperationResult
+        accepted = json.loads(operation["owner_scope_json"])
+        current = initial.journeys.require_current(accepted["source_journey_id"])
+        assert current["state"] == "waiting"
+        assert current["installation_id"] == accepted["installation_id"]
+        connected.append(current["journey_id"])
+        return OperationResult("waiting")
+    monkeypatch.setattr(coordinator.owner, "_connect", connect)
+    ready = coordinator.read(native)
+    assert ready["continuation_available"]
+    operation, _ = coordinator._accept(native, command(ready, "account.connect"))
+    replacement = coordinator.owner.source_replacements.clients["initial-enrollment"]
+    if lost:
+        replacement.mode = "lost"
+        outcome = await coordinator.owner.execute(operation, reconcile=False)
+        assert outcome.state == "outcome_unknown"
+        assert coordinator.owner._source(operation["journey_id"]) == scope["source_journey_id"]
+        assert coordinator.read(native)["authentication"]["state"] == "replacement-pending"
+        replacement.mode = "prepared"
+    outcome = await coordinator.owner.execute(operation, reconcile=lost)
+    assert outcome.state == "waiting"
+    accepted = json.loads(operation["owner_scope_json"])
+    assert coordinator.owner._source(operation["journey_id"]) == accepted["source_journey_id"]
+    assert connected == [accepted["source_journey_id"]]
+    assert len(initial.client.preparations) == 1
+    assert len(replacement.calls) == (2 if lost else 1)
+    assert all(call == replacement.calls[0] for call in replacement.calls)
+
+@pytest.mark.asyncio
+async def test_verified_initial_source_replacement_prepares_new_ceremony_without_fresh_handoff(setup):
+    coordinator, initial, client, old, scope, clock, native = await initial_ceremony_case(setup)
+    clock[0] += timedelta(minutes=11)
+    terminal = await coordinator.owner.execute(old, reconcile=True)
+    coordinator._settle(old, terminal)
+    operation, _ = coordinator._accept(native, command(coordinator.read(native), "account.connect"))
+    # The hosted fixture normally uses a constant ceremony ID. A different
+    # source gets a distinct ceremony ID, independently of the source ID.
+    original_prepare = client.prepare
+    def prepare(request, **kwargs):
+        result = original_prepare(request, **kwargs)
+        return {**result, "ceremony_id": "0198a1b2-c3d4-7300-8000-000000000099"}
+    client.prepare = prepare
+    client.mode = "active"
+    client.state = "active"
+    result = await coordinator.owner.execute(operation, reconcile=False)
+    assert result.state == "waiting"
+    assert len(initial.client.preparations) == 1
+    assert len([call for call in client.calls if call[0] == "prepare"]) == 2
+    selected = json.loads(operation["owner_scope_json"])
+    assert coordinator.owner._source(operation["journey_id"]) == selected["source_journey_id"]
+    ceremony = coordinator.owner.ceremonies.row(operation["operation_id"])
+    assert json.loads(ceremony["binding_json"])["source"]["operation_id"] == selected["successor_operation_id"]

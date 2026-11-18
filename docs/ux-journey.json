@@ -2498,6 +2498,26 @@
         {
           "kind": "unit",
           "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_prepared_source_replacement_adopts_only_verified_successor"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_verified_initial_source_replacement_prepares_new_ceremony_without_fresh_handoff"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_source_replacement_reservations.py",
+          "name": "test_owner_adapter_resumes_exact_prepared_source"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "continues an expired source without opening Chrome, then admits a provider choice"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
           "name": "test_unconfirmed_initial_read_never_settles_or_replaces_original_source"
         },
         {
@@ -2523,7 +2543,7 @@
         {
           "kind": "unit",
           "file": "tests/test_registered_continuation_context.py",
-          "name": "test_provider_terminal_source_can_continue_before_local_presentation_expiry"
+          "name": "test_prepared_terminal_source_cannot_enter_ordinary_fresh_recovery"
         },
         {
           "kind": "unit",

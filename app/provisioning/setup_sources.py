@@ -171,7 +171,114 @@ class SetupSourceLifecycle:
             provenance, binding, preparation, row.get("handoff_reference"), row.get("handoff_expires_at"), terminal_read)
 
     def recovery_proposal(self, connection, source, *, work=(), initial_creator=None):
+        if initial_creator is not None:
+            from app.persistence.source_preparations import SourcePreparations
+            if SourcePreparations(self.store).classify(source, connection=connection) != "never-prepared":
+                raise OnboardingJourneyUnavailable("workspace_changed")
         value = (SavedWorkspaceStore(self.continuations).inspect_initial(connection, source, initial_creator, work=work)
             if initial_creator is not None else self.continuations.desktop_recovery_proposal(connection, journey_id=source, work=work))
         return SourceRecoveryProposal(value["source_journey_id"], value["classification_generation"],
             value["creator_account_id"], value["association_request_id"], value.get("initial", False))
+
+
+class PreparedSourceRecovery:
+    """Exact source recovery under the existing provisioning selection owners.
+
+    The caller must journal the explicit customer action and provide its live
+    scope/authority guard and atomic desktop-source adoption callback. This
+    adapter never opens Chrome, accepts an account, or grants authority.
+    """
+    def __init__(self, sources, clients):
+        from app.persistence.source_replacement_reservations import SourceReplacementReservations
+        self.sources, self.store, self.clients = sources, sources.store, clients
+        self.reservations = SourceReplacementReservations(self.store)
+
+    def proposal(self, connection, source, creator, *, work=()):
+        prior = self.sources.resolve(source, connection=connection)
+        if prior is None or prior.journey_id != source or prior.state != "expired":
+            raise OnboardingJourneyUnavailable("workspace_changed")
+        if prior.kind not in self.clients:
+            raise OnboardingJourneyUnavailable("workspace_changed")
+        if prior.kind == "initial-enrollment":
+            base = SavedWorkspaceStore(self.sources.continuations).inspect_initial(connection, source, creator, work=work)
+        else:
+            base = self.sources.continuations._desktop_terminal_proposal(connection, journey_id=source, work=work)
+        if base["creator_account_id"] != creator:
+            raise OnboardingJourneyUnavailable("workspace_changed")
+        coordinates = self.reservations.describe(connection, journey_id=source, creator_account_id=creator,
+            authorize=lambda **_: None)
+        return {**base, "replacement": coordinates}
+
+    @staticmethod
+    def _arguments(proposal, authorize):
+        coords = proposal["replacement"]
+        return {"operation_id": coords["operation_id"], "expected_digest": coords["expected_digest"],
+                "creator_account_id": proposal["creator_account_id"], "authorize": authorize}
+
+    def reserve(self, connection, proposal, *, authorize, work=()):
+        def guard(*, connection):
+            authorize(connection=connection)
+            if self.proposal(connection, proposal["source_journey_id"], proposal["creator_account_id"], work=work) != proposal:
+                raise OnboardingJourneyUnavailable("workspace_changed")
+        return self.reservations.reserve(connection, **self._arguments(proposal, guard))
+
+    def execute(self, proposal, *, successor_journey_id, authorize, adopt, reconcile, work=lambda: ()):
+        from app.security.hosted_grants import HostedGrantUnavailable
+        from app.security.source_replacement import SourceReplacementRefused
+        coords = proposal["replacement"]
+        original = coords["operation_id"]
+
+        def guard(*, connection):
+            authorize(connection=connection)
+            current = self.proposal(connection, proposal["source_journey_id"], proposal["creator_account_id"], work=work())
+            # Presentation cleanup may change the classification generation
+            # after the explicit command was journaled. The exact original
+            # source, selection and every eligibility check must still agree.
+            if ({name: value for name, value in current.items() if name != "classification_generation"}
+                    != {name: value for name, value in proposal.items() if name != "classification_generation"}):
+                raise OnboardingJourneyUnavailable("workspace_changed")
+
+        arguments = self._arguments(proposal, guard)
+        with self.store.database.transaction() as connection:
+            authorize(connection=connection)
+            reservation = connection.execute("SELECT * FROM onboarding_source_replacement_reservations "
+                "WHERE predecessor_operation_id=?", (original,)).fetchone()
+            if reservation is None or reservation["creator_account_id"] != proposal["creator_account_id"]:
+                raise OnboardingJourneyUnavailable("workspace_changed")
+            existing = self.reservations.outcome(connection, original)
+            if existing is not None:
+                if existing["status"] == "prepared" and existing["successor_journey_id"] != successor_journey_id:
+                    raise OnboardingJourneyUnavailable("workspace_changed")
+                return existing
+            if reconcile:
+                # A reserved but unsent request is not restarted implicitly.
+                if reservation["state"] != "send-claimed":
+                    return None
+                request = self.reservations.claim_reconciliation(connection, **arguments)
+            else:
+                request = self.reservations.claim_send(connection, **arguments)
+        if request is None:
+            return None
+
+        def before_send():
+            with self.store.database.read() as connection:
+                if self.reservations.require_claimed(connection, **arguments) != request:
+                    raise OnboardingJourneyUnavailable("workspace_changed")
+
+        client = self.clients[coords["kind"]]
+        try:
+            result = client.replace(request, before_send=before_send,
+                intended_creator_id=proposal["creator_account_id"])
+        except SourceReplacementRefused as refusal:
+            if refusal.reason != "commercial_reconciliation_required":
+                return None
+            with self.store.database.transaction() as connection:
+                return self.reservations.record_commercial_refusal(connection, **arguments, refusal=refusal)
+        except HostedGrantUnavailable:
+            return None
+        with self.store.database.transaction() as connection:
+            outcome = self.reservations.record_result(connection, **arguments,
+                successor_journey_id=successor_journey_id, result=result)
+            if outcome["status"] == "prepared":
+                adopt(connection=connection, successor_journey_id=successor_journey_id)
+            return outcome

@@ -55,8 +55,8 @@ class SourcePreparations:
             (evidence["journey_id"], row["journey_id"], row["operation_id"], row["installation_id"],
             now.isoformat())).fetchone() is not None
 
-    def retain(self, connection, row, request):
-        """Within the owner's transaction before the first prepare send."""
+    def retain(self, connection, row, request, *, predecessor_operation_id=None):
+        """Within the owner's transaction before send, or verified adoption."""
         raw = self._validate(row, request)
         if len(raw) > 8192:
             raise OnboardingJourneyUnavailable("journey_unavailable")
@@ -87,12 +87,28 @@ class SourcePreparations:
             created = min(created, datetime.fromisoformat(recovery[0]["retired_at"]) - timedelta(minutes=30))
         if created.tzinfo is None or not created <= now < created + RETENTION:
             raise OnboardingJourneyUnavailable("journey_unavailable")
+        retain_until = (created + RETENTION).timestamp()
+        if predecessor_operation_id is not None:
+            parent = self.get(predecessor_operation_id, connection=connection)
+            reservation = connection.execute("SELECT * FROM onboarding_source_replacement_reservations "
+                "WHERE predecessor_operation_id=? AND successor_operation_id=? AND state='send-claimed'",
+                (predecessor_operation_id, row["operation_id"])).fetchone()
+            if parent is None or reservation is None or parent["kind"] != row["kind"] \
+                    or parent["installation_id"] != row["installation_id"]:
+                raise OnboardingJourneyUnavailable("journey_unavailable")
+            from app.security.source_replacement import original_prepare
+            retained_request = json.loads(reservation["request_json"])
+            kind = "initial-handoff" if row["kind"] == INITIAL else "registered-continuation"
+            if raw != canonical_request(original_prepare(kind, retained_request, successor=True)):
+                raise OnboardingJourneyUnavailable("journey_unavailable")
+            created = datetime.fromtimestamp(parent["created_at"], tz=created.tzinfo)
+            retain_until = parent["retain_until"]
         self.cleanup(connection, now)
         if connection.execute("SELECT count(*) FROM onboarding_source_preparations").fetchone()[0] >= 128:
             raise OnboardingJourneyUnavailable("journey_unavailable")
         connection.execute("INSERT INTO onboarding_source_preparations VALUES (?,?,?,?,?,?,?,?)",
             (row["operation_id"], origin, row["kind"], row["installation_id"], raw.decode(), digest,
-            created.timestamp(), (created + RETENTION).timestamp()))
+            created.timestamp(), retain_until))
         return dict(connection.execute("SELECT * FROM onboarding_source_preparations WHERE operation_id=?",
             (row["operation_id"],)).fetchone())
 
