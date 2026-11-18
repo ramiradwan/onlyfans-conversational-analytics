@@ -493,14 +493,47 @@ def preparation_service(e):
     return launcher
 
 
+def record_interruptions(persistence, monkeypatch):
+    """Keep the exception the acquisition handler is storing as interrupted."""
+    import sys
+    import traceback
+    interruptions, write = [], persistence.operation
+
+    def operation(value):
+        error = sys.exc_info()[1]
+        if isinstance(value, dict) and value.get('state') == 'interrupted' and error is not None:
+            interruptions.append(''.join(traceback.format_exception(error)))
+        return write(value)
+    monkeypatch.setattr(persistence, 'operation', operation)
+    return interruptions
+
+
+def test_interruption_record_keeps_the_handled_exception(tmp_path, monkeypatch):
+    e = Environment(tmp_path, 'split')
+    interruptions = record_interruptions(e.persistence, monkeypatch)
+    try:
+        def fail(*args, **kwargs):
+            raise RuntimeError('preparation failed for the record')
+        monkeypatch.setattr(e.service, '_prepare', fail)
+        op = e.acquire()
+        assert e.service._operation(op)['state'] == 'interrupted'
+        assert len(interruptions) == 1 and 'RuntimeError: preparation failed for the record' in interruptions[0]
+    finally:
+        assert e.service.close()
+        cleanup(e.fixture)
+
+
 def test_preparation_only_frozen_setup_prepares_without_analysis_or_selection(tmp_path, monkeypatch):
     import sys
     e = Environment(tmp_path, 'split')
     launcher = preparation_service(e)
+    interruptions = record_interruptions(e.persistence, monkeypatch)
     monkeypatch.setattr(sys, 'frozen', True, raising=False)
     try:
         op = e.acquire()
-        assert e.service._operation(op)['state'] == 'complete' and e.service.ready(e.profile)
+        state = e.service._operation(op)['state']
+        assert state == 'complete', f'acquisition ended {state}; ' + ('\n'.join(interruptions) or 'no exception was recorded')
+        assert e.service.ready(e.profile)
         assert launcher.owners and all('analyze' not in owner.operations for owner in launcher.owners)
         assert launcher.owners[0].operations.count('prepare') == 2
         assert launcher.owners[0].operations.count('unload') == 2
