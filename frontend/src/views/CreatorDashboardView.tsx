@@ -378,7 +378,7 @@ export default function CreatorDashboardView({
     && readiness.projection.status === 'current');
   const historyEligible = historyScope !== null && !collectionReview && state.conversations.length === 0
     && !visibleMetrics.some(metric => typeof metric?.value === 'number' && metric.value > 0)
-    && setupIncomplete(state.coverage);
+    && state.coverage.status !== 'complete';
   const historyPrompt = historyEligible && state.creatorAccountId
     ? <MessageHistoryControls key={historyScope} reviewCreatorId={state.creatorAccountId} store={historyStore}
       api={historyApi} browserApi={browserApi} desktopApi={onboardingApi} continuation /> : null;
@@ -389,7 +389,7 @@ export default function CreatorDashboardView({
     && fullAnalyticsReady === true && state.connection === 'connected' && state.readModelState === 'realtime'
     && visibleMetrics.length === metrics.length && visibleMetrics.every(metric => metric?.value === 0);
   const completeEmpty = state.coverage.status === 'complete' && metrics.every(metric => metric?.basis === 'complete');
-  const waitingForMessages = emptySnapshot && !completeEmpty && setupIncomplete(state.coverage)
+  const waitingForMessages = emptySnapshot && !completeEmpty && state.coverage.status !== 'complete'
     && historyScope !== null;
   const emptyOnboarding = emptySnapshot && (completeEmpty || waitingForMessages);
   if (emptyOnboarding) return (

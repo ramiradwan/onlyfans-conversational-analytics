@@ -289,9 +289,9 @@ describe('CreatorDashboardView', () => {
     expect(source.api.begin).not.toHaveBeenCalled();
   });
 
-  function historyReviewFixture(creator = ACCOUNT_ID, saved: Partial<HistorySettings> = {}, permission: BrowserSurfacePayload['history_permission'] = 'missing') {
+  function historyReviewFixture(creator = ACCOUNT_ID, saved: Partial<HistorySettings> = {}, permission: BrowserSurfacePayload['history_permission'] = 'missing', phase: HistoricalCoverage['phase'] = 'not_started') {
     const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]),
-      coverage: { ...COMPLETE_COVERAGE, status: 'partial', phase: 'not_started', complete_as_of: null } }), conversations: [] });
+      coverage: { ...COMPLETE_COVERAGE, status: 'partial', phase, complete_as_of: null } }), conversations: [] });
     const browser: BrowserSurfacePayload = { capture: 'active', site_access: 'granted',
       history_permission: permission, legal_review_required: false, reported_at: AS_OF };
     store.setAgent({ ...store.getState().agent!, browser, required_history_settings_revision: 1, applied_history_settings_revision: 1 });
@@ -327,7 +327,7 @@ describe('CreatorDashboardView', () => {
     await waitFor(() => expect(browserApi.open).toHaveBeenCalledExactlyOnceWith('history', expect.any(AbortSignal)));
     await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, history_permission: 'granted' } }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add older conversations' })).toBeNull());
-    expect(screen.getByRole('heading', { name: 'Adding messages' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Starting message history' })).toBeTruthy();
     expect(api.update).toHaveBeenCalledOnce();
   });
 
@@ -367,7 +367,7 @@ describe('CreatorDashboardView', () => {
       desired_state: 'running', accept_consent: false, consent_policy_version: null,
     }), expect.any(AbortSignal));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add older conversations' })).toBeNull());
-    expect(screen.getByRole('heading', { name: 'Adding messages' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Starting message history' })).toBeTruthy();
     expect(browserApi.open).not.toHaveBeenCalled();
   });
 
@@ -379,6 +379,26 @@ describe('CreatorDashboardView', () => {
     expect(await screen.findByRole('heading', { name: 'Starting message history' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
     expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(api.update).not.toHaveBeenCalled();
+  });
+
+  it('keeps the history continuation visible during acquisition and does not offer consent again', async () => {
+    const { api } = historyReviewFixture(ACCOUNT_ID, {
+      consent_revision: 'consent-1', authorized_platform_creator_id: 'platform-creator-1',
+      desired_state: 'running', effective_state: 'running',
+    }, 'granted', 'backfilling');
+    expect(await screen.findByRole('heading', { name: 'Adding messages' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
+    expect(api.update).not.toHaveBeenCalled();
+  });
+
+  it('offers an explicit resume when coverage is already paused', async () => {
+    const { api } = historyReviewFixture(ACCOUNT_ID, {
+      consent_revision: 'consent-1', authorized_platform_creator_id: 'platform-creator-1',
+      desired_state: 'paused', effective_state: 'paused',
+    }, 'granted', 'paused');
+    expect(await screen.findByRole('heading', { name: 'Message history is paused' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Review message history' })).toBeTruthy();
     expect(api.update).not.toHaveBeenCalled();
   });
 

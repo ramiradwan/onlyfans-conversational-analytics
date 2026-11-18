@@ -597,19 +597,25 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   const ready = reviewAvailable && reviewScope !== null && settings !== null && !loading;
   const offer = ready && (!hasConsent || paused) && !dismissed && settings.desired_state !== 'revoked';
   const quiet = ready && (!hasConsent || paused) && !offer;
-  const title = !ready || quiet ? 'Waiting for messages'
-    : offer ? paused ? 'Message history is paused' : 'See your first conversations'
-      : pendingChange !== null ? 'Checking message history'
-        : permissionNeeded ? 'Allow Chrome access'
-          : settings?.desired_state === 'running' && settings.effective_state !== 'running' ? 'Starting message history'
-            : settings?.desired_state === 'running' ? 'Adding messages' : 'Waiting for messages';
-  const detail = offer ? paused ? 'Resume adding older messages when you’re ready.'
-    : 'Dipsy can use new messages as they arrive. Add older conversations to see results sooner.'
-    : permissionNeeded && ready ? 'Allow Chrome to read older messages for this app.'
-      : pendingChange !== null && ready ? "Your change hasn't been confirmed."
-        : ready && settings?.desired_state === 'running' && settings.effective_state !== 'running'
-          ? 'Checking your browser connection.'
-          : 'Results will appear as messages become available.';
+  const acquisitionTitle = presentation?.label === 'Adding messages' ? 'Adding messages'
+    : presentation?.label === 'Starting' || presentation?.label === 'Waiting' && transport.coverage.phase === 'not_started'
+      ? 'Starting message history'
+      : presentation?.label === 'Waiting' ? 'Waiting for message history'
+        : presentation?.label === 'Update needed' ? 'Update needed'
+          : presentation?.label === 'Needs attention' || presentation?.label === 'Incomplete' ? 'Message history needs attention'
+            : 'Waiting for messages';
+  const title = !ready ? 'Waiting for messages'
+    : pendingChange !== null ? 'Checking message history'
+      : quiet ? 'Waiting for messages'
+        : offer ? paused ? 'Message history is paused' : 'See your first conversations'
+          : permissionNeeded ? 'Allow Chrome access' : acquisitionTitle;
+  const detail = pendingChange !== null && ready ? "Your change hasn't been confirmed."
+    : offer ? paused ? 'Resume adding older messages when you’re ready.'
+      : 'Dipsy can use new messages as they arrive. Add older conversations to see results sooner.'
+      : permissionNeeded && ready ? 'Allow Chrome to read older messages for this app.'
+        : ready && acquisitionTitle === 'Starting message history' && hasConsent ? 'Checking your browser connection.'
+          : ready && hasConsent && !quiet && acquisitionTitle !== 'Adding messages' ? presentation?.detail ?? null
+            : 'Results will appear as messages become available.';
   const dismiss = () => {
     if (!reviewScope) return;
     rememberDismissal(api, reviewScope);
@@ -630,7 +636,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
         {ready && permissionNeeded && !dialogOpen && <Button variant="outlined"
           disabled={controlsDisabled || openingPermission} onClick={() => void allowBrowserHistory()}
           sx={{ alignSelf: 'flex-start' }}>Allow Chrome access</Button>}
-        {error && !dialogOpen && <StatusLine id="history-continuation-feedback" text={error} tone="error" />}
+        {error && error !== detail && !dialogOpen && <StatusLine id="history-continuation-feedback" text={error} tone="error" />}
       </Panel>
       <Dialog open={dialogOpen} onClose={() => setOpenReview(null)} aria-labelledby="history-review-title" fullWidth maxWidth="sm">
         <DialogTitle id="history-review-title">Add older conversations</DialogTitle>

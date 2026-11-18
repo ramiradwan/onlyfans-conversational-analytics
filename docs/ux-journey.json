@@ -1803,6 +1803,16 @@
           "kind": "unit",
           "file": "frontend/tests/CreatorDashboardView.test.tsx",
           "name": "shows existing authorized history as starting or adding without offering consent again"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "keeps the history continuation visible during acquisition and does not offer consent again"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "offers an explicit resume when coverage is already paused"
         }
       ]
     },
