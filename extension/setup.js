@@ -119,6 +119,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 const initialWorkspace = readWorkspace();
 
+// This is not the draft value: automatic helper navigation is never an
+// explicit request for a commercial offer.
+async function recordFullChoice(requested) {
+  if (!workspaceRecord) return;
+  await send({ type: WORKSPACE_MESSAGE_TYPE, action: 'full_presentation_intent',
+    scope_id: workspaceRecord.draft_scope.scope_id, requested });
+}
 function setFullReview(value) {
   fullReviewRequested = value;
   fullReviewPersistence.write(workspaceRecord, value);
@@ -289,10 +296,12 @@ function focusTask() {
   }
   return false;
 }
-function runJourneyAction(action) {
+async function runJourneyAction(action) {
   if (action === 'review_full' || action === 'choose_mode') {
     dismissed = false;
     revokedChoice = action === 'choose_mode' && client.model.status.consent.mode === 'revoked';
+    if (action === 'review_full') await recordFullChoice(true);
+    else await recordFullChoice(false);
     setFullReview(action === 'review_full'); render(client.model); return;
   }
   if (action === 'open_desktop') return desktopLaunch.launch(client.model);
@@ -307,6 +316,8 @@ function runJourneyAction(action) {
   }
 }
 async function enableMode(mode) {
+  if (mode === 'preview') await recordFullChoice(false);
+  else if (!browserTask) await recordFullChoice(true);
   await chooseMode(mode);
   setupChoice = null; choicePersistence.write(workspaceRecord, null);
   setFullReview(false); dismissed = false;
@@ -336,23 +347,27 @@ element('activate-software').addEventListener('click', () => {
     }
   });
 });
-for (const mode of ['preview', 'full']) page.bind(`start-${mode}`, () => {
+for (const mode of ['preview', 'full']) page.bind(`start-${mode}`, async () => {
+  await recordFullChoice(mode === 'full');
   setupChoice = { mode, stage: 'review' }; choicePersistence.write(workspaceRecord, setupChoice);
   setFullReview(mode === 'full'); render(client.model);
 });
-page.bind('start-back', () => {
+page.bind('start-back', async () => {
+  await recordFullChoice(false);
   setupChoice = null; choicePersistence.write(workspaceRecord, null); setFullReview(false); render(client.model);
 });
 page.bind('open-desktop', () => desktopLaunch.launch());
 page.bind('download-desktop', () => runJourneyAction('install_desktop'));
-page.bind('desktop-back', () => {
+page.bind('desktop-back', async () => {
+  await recordFullChoice(false);
   setupChoice = null; choicePersistence.write(workspaceRecord, null); setFullReview(false); render(client.model);
 });
 page.bind('enable-preview', () => enableMode('preview'));
 page.bind('enable-full', () => enableMode('full'));
-page.bind('review-full', () => { setFullReview(true); render(client.model); });
-page.bind('not-now-preview', () => { dismissed = true; revokedChoice = false; render(client.model); });
+page.bind('review-full', async () => { await recordFullChoice(true); setFullReview(true); render(client.model); });
+page.bind('not-now-preview', async () => { await recordFullChoice(false); dismissed = true; revokedChoice = false; render(client.model); });
 page.bind('full-secondary', async () => {
+  await recordFullChoice(false);
   if (browserTask) await send({ type: WORKSPACE_MESSAGE_TYPE, action: 'dismiss_browser_task' });
   browserTask = null; clearTimeout(browserTaskExpiry);
   setupChoice = null; choicePersistence.write(workspaceRecord, null);

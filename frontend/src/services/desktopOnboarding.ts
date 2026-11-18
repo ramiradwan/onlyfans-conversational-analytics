@@ -1,6 +1,6 @@
 import { openBrowserTask } from '../../onboarding/browser-task.js';
 import { DesktopSetupClient, type DesktopState } from '../../onboarding/client.js';
-import type { BrowserSurfacePayload } from '../protocol';
+import type { BrowserSurfacePayload, FullPresentationIntent } from '../protocol';
 
 /** Display only: current native/account-scoped readiness never admits a command. */
 export function selectAnalysisReadiness(value: DesktopState, creatorAccountId?: string | null) {
@@ -37,6 +37,22 @@ export function selectCollectionContinuation(desktop: DesktopState, creatorAccou
   const canResume = available && paused;
   return { current, reviewNeeded, paused, reviewOperation, localReviewPending, canReview, canResume,
     actionable: Boolean(canReview || canResume || reviewOperation || localReviewPending) };
+}
+
+// The companion report is authenticated to its account. The native owner
+// still decides whether the exact current journey may present a review.
+export function selectFullPresentationIntent(desktop: DesktopState, creatorAccountId: string | null | undefined,
+  browser: BrowserSurfacePayload | null): FullPresentationIntent | undefined {
+  const snapshot = desktop.snapshot;
+  const intent = browser?.full_intent;
+  if (!creatorAccountId || !intent || browser?.legal_review_required || browser?.capture === 'off'
+    || !desktop.connected || !snapshot?.local_ready || snapshot.journey_id !== intent.journey_id
+    || snapshot.analysis_readiness.availability !== 'current'
+    || snapshot.analysis_readiness.creator_account_id !== creatorAccountId
+    || snapshot.analysis_readiness.value?.commercial_authority !== 'required'
+    || !(snapshot.allowed_actions.includes('activation.review')
+      || snapshot.decision?.action === 'activate-complimentary' && snapshot.allowed_actions.includes('activation.confirm'))) return undefined;
+  return intent;
 }
 
 export type DesktopAction = 'activation.review' | 'activation.confirm' | 'browser.pair' | 'browser.access' | 'auth.select' | 'auth.cancel' | 'auth.switch';

@@ -43,7 +43,7 @@ export function createCompanionClient({
   chromeApi = globalThis.chrome, allowsFull, detectedAccountId,
   // Paused Full keeps a control-only session so the desktop app can resume it.
   allowsControl = () => false, onControl = async () => {}, onBrowserTask = null, onBrowserTaskEnd = null,
-  onBrowserTaskWaiting = null,
+  onBrowserTaskWaiting = null, readFullPresentationIntent = null,
   accountDatabaseName,
   storeFactory = openPairingStore, loadSnow = loadPackagedSnow,
   channelFactory = openCompanionChannel, wireFactory = openLoopbackSocket,
@@ -290,6 +290,46 @@ export function createCompanionClient({
     const channel = controlChannel();
     return channel !== null && lastSurface !== null && reportedSurfaceChannel === channel;
   }
+  // Presentation travels separately from the identifier-free status report.
+  // Old local runtimes can reject the optional method without losing controls.
+  let intentPublishing = false, nextIntentChannel = null;
+  const sentIntents = new WeakMap();
+  const unsupportedIntent = new WeakSet();
+  function sendIntent(channel) {
+    if (!readFullPresentationIntent || !channel || unsupportedIntent.has(channel)) return;
+    nextIntentChannel = channel;
+    if (intentPublishing) return;
+    intentPublishing = true;
+    void (async () => {
+      while (nextIntentChannel !== null) {
+        const next = nextIntentChannel;
+        nextIntentChannel = null;
+        await publishIntent(next);
+      }
+    })().catch(() => undefined).finally(() => {
+      intentPublishing = false;
+      if (nextIntentChannel !== null) sendIntent(nextIntentChannel);
+    });
+  }
+  async function publishIntent(channel) {
+      if (channel !== controlChannel() || reportedSurfaceChannel !== channel || unsupportedIntent.has(channel)) return;
+      let intent = null;
+      try {
+        if (!lastSurface?.legal_review_required)
+          intent = await readFullPresentationIntent(channel.identity.creator_account_id);
+      } catch { /* An unavailable scope is not intent. */ }
+      if (channel !== controlChannel() || reportedSurfaceChannel !== channel) return;
+      // A changed legal report supersedes any choice read before it.
+      if (lastSurface?.legal_review_required) intent = null;
+      const encoded = JSON.stringify(intent);
+      if ((sentIntents.get(channel) ?? 'null') === encoded) return;
+      try {
+        await channel.rpc('agent.presentation.intent', { full_intent: intent });
+        sentIntents.set(channel, encoded);
+      } catch (error) {
+        if (error?.code === 'unknown_method') unsupportedIntent.add(channel);
+      }
+  }
   async function sendSurface() {
     const channel = controlChannel();
     if (channel === null || lastSurface === null) return false;
@@ -307,6 +347,7 @@ export function createCompanionClient({
         const wasReady = controlReady();
         reportedSurfaceChannel = channel;
         if (!wasReady) notifySurfaces();
+        sendIntent(channel);
       }
       return true;
     } catch {
@@ -329,7 +370,7 @@ export function createCompanionClient({
       reportedSurfaceChannel = null;
       if (wasReady) notifySurfaces();
     }
-    if (!changed && channel !== null && reportedSurfaceChannel === channel) return;
+    if (!changed && channel !== null && reportedSurfaceChannel === channel) { sendIntent(channel); return; }
     void sendSurface();
   }
   let control = null, controlOpening = null, controlRetryTimer = null;

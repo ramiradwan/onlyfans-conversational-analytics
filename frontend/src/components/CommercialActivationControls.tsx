@@ -13,6 +13,7 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 
 import { ProviderSignInButtons, type SignInProvider } from './ProviderSignInButtons';
 import { Panel, SectionHeader, useRevealHold, type SectionStatus } from './ui';
+import type { FullPresentationIntent } from '../protocol';
 import { StatusLine } from './ui/ReservedRegion';
 import {
   capabilityLicenseApi,
@@ -22,6 +23,25 @@ import {
 } from '../services/capabilityLicenseApi';
 import { desktopOnboardingApi, selectAnalysisReadiness, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import { componentTokens } from '../theme';
+
+const dismissedOfferScopes = new Set<string>();
+const DISMISSED_OFFER_KEY = 'full-analytics-review-dismissals-v1';
+function dismissedIntent(scope: string) {
+  if (dismissedOfferScopes.has(scope)) return true;
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(DISMISSED_OFFER_KEY) ?? '[]');
+    return Array.isArray(saved) && saved.includes(scope);
+  } catch { return false; }
+}
+function dismissIntent(scope: string) {
+  dismissedOfferScopes.add(scope);
+  if (dismissedOfferScopes.size > 64) dismissedOfferScopes.delete(dismissedOfferScopes.values().next().value!);
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(DISMISSED_OFFER_KEY) ?? '[]');
+    const scopes = Array.isArray(saved) ? saved.filter((value): value is string => typeof value === 'string' && value !== scope) : [];
+    localStorage.setItem(DISMISSED_OFFER_KEY, JSON.stringify([...scopes, scope].slice(-64)));
+  } catch { /* The current presentation still remembers dismissal. */ }
+}
 
 function safeMessage(error: unknown): string {
   return error instanceof CapabilityLicenseApiError ? error.message : "Activation couldn't be checked.";
@@ -33,11 +53,13 @@ export function CommercialActivationControls({
   onboarding = desktopOnboardingApi,
   embedded = false,
   creatorAccountId,
+  presentationIntent,
 }: {
   api?: CapabilityLicenseApi;
   onboarding?: DesktopOnboardingApi;
   embedded?: boolean;
   creatorAccountId?: string | null;
+  presentationIntent?: FullPresentationIntent;
 }) {
   const [entryError, setEntryError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
@@ -110,6 +132,28 @@ export function CommercialActivationControls({
   const canOpen = currentAuthority && !pendingActivation && !unresolvedCommand && !codeInProgress && allowed.includes('activation.review');
   // Code recovery may continue an accepted activation, not compete with an
   // outstanding confirmation or an unacknowledged desktop command.
+  // Intent can display an already-admitted review. It cannot prepare a
+  // ceremony, open Chrome or execute activation in an effect.
+  const intentScope = currentAuthority && snapshot?.local_ready && presentationIntent?.journey_id === snapshot.journey_id
+    ? JSON.stringify([ownerCreator, snapshot.journey_id, presentationIntent.disclosure_bundle_id]) : null;
+  const promotedIntent = useRef<string | null>(null);
+  useEffect(() => {
+    if (promotedIntent.current && promotedIntent.current !== intentScope) {
+      promotedIntent.current = null;
+      setOpenReviewScope(null);
+      return;
+    }
+    if (intentScope && reviewScope && decision && canConfirm && !codeOpen && !offerOpen
+      && !opening && !dismissedIntent(intentScope) && currentPresentation()) {
+      promotedIntent.current = intentScope;
+      setOpenReviewScope(reviewScope);
+    }
+  }, [intentScope, reviewScope, decision, canConfirm, codeOpen, offerOpen, opening]);
+  const dismissOffer = () => {
+    if (intentScope) dismissIntent(intentScope);
+    promotedIntent.current = null;
+    setOfferOpen(false);
+  };
   const canRedeem = currentAuthority && !unresolvedCommand && (!pendingActivation || accepted || decision !== null)
     && (!unconfirmedOffer || unconfirmedOffer !== offerIdentity);
   useRevealHold(checking);
@@ -161,7 +205,10 @@ export function CommercialActivationControls({
     setOpening(true);
     setOfferOpen(true);
     setOpeningAction(action);
-    if (action === 'activation.confirm') setUnconfirmedOffer(offerIdentity);
+    if (action === 'activation.confirm') {
+      if (intentScope) dismissIntent(intentScope);
+      setUnconfirmedOffer(offerIdentity);
+    }
     setEntryError(null);
     try {
       if (provider) await onboarding.begin(action, { provider });
@@ -306,7 +353,7 @@ export function CommercialActivationControls({
         onSelect={provider => void openSetup(choosingAccount ? 'auth.switch' : 'auth.select', provider)} /></Box>}
       {offer && !fullReady && <>
         <Button onClick={() => { if (currentPresentation()) setOfferOpen(true); }} disabled={!currentAuthority} aria-haspopup="dialog" variant="outlined">Review activation offer</Button>
-        <Dialog open={offerOpen && sameCreator} onClose={() => setOfferOpen(false)} aria-labelledby="activation-offer-title" fullWidth maxWidth="sm"
+        <Dialog open={offerOpen && sameCreator} onClose={dismissOffer} aria-labelledby="activation-offer-title" fullWidth maxWidth="sm"
           slotProps={{ backdrop: { sx: theme => ({ ...theme.effects.glassmorphism(theme) }) } }}>
         <DialogTitle id="activation-offer-title">{choosingAccount ? 'Sign in to Full analytics with another account' : offer.description}</DialogTitle>
         <DialogContent>{choosingAccount ? <Stack spacing={2}>
@@ -336,9 +383,9 @@ export function CommercialActivationControls({
         {canSwitch && <Button ref={switchElement} onClick={() => setChoosingAccount(true)} disabled={!desktop.connected || opening || codeBusy || codePending}
           sx={{ justifyContent: 'flex-start', minHeight: componentTokens.staticUi.controlHeight, mx: -1, textAlign: 'start', '&, &:hover': { textDecoration: 'underline' } }}>Sign in to Full analytics with another account</Button>}
         {canRedeem && !codeInProgress && <Button onClick={() => {
-          if (currentPresentation()) { setOfferOpen(false); setCodeOpen(true); }
+          if (currentPresentation()) { dismissOffer(); setCodeOpen(true); }
         }} disabled={opening} sx={{ justifyContent: 'flex-start', alignSelf: 'flex-start' }}>Other activation options</Button>}
-        </Stack>}</DialogContent><DialogActions><Button onClick={() => setOfferOpen(false)}>Not now</Button>
+        </Stack>}</DialogContent><DialogActions><Button onClick={dismissOffer}>Not now</Button>
         {!choosingAccount && <Button onClick={() => void openSetup('activation.confirm')} disabled={!canConfirm || opening || codeBusy || codePending}
           aria-describedby="activation-offer-feedback" variant="contained" sx={{ alignSelf: 'flex-start' }}>Activate for free</Button>}
         </DialogActions></Dialog></>}

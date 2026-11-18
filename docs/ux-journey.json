@@ -2089,6 +2089,21 @@
           "kind": "unit",
           "file": "frontend/tests/CommercialActivationControls.test.tsx",
           "name": "does not promote a separate activation code while a current commercial offer is available"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "presents a current explicit Full intent only as review, never activation, and remembers dismissal"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "does not prepare an activation or open a new ceremony solely from an unprepared Full intent"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktopOnboarding.test.ts",
+          "name": "admits presentation intent only from the current account, journey and legal state"
         }
       ]
     },

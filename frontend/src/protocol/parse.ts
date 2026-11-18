@@ -331,7 +331,11 @@ const messagePayloadValidators: Record<string, Validator> = {
       history_permission: literal('granted', 'missing'),
       legal_review_required: boolean,
       reported_at: isoDateTime,
-    }, { history_error_code: nullable(literal('identity_required', 'unsupported_revision', 'history_unavailable', 'history_dependency_wait', 'software_update_required')) })),
+    }, { history_error_code: nullable(literal('identity_required', 'unsupported_revision', 'history_unavailable', 'history_dependency_wait', 'software_update_required')),
+      full_intent: object({ request_id: uuid, journey_id: uuid, disclosure_bundle_id: (value, path) => {
+        if (typeof value !== 'string' || !/^[a-f0-9]{64}$/u.test(value))
+          throw new ProtocolValidationError(path, 'expected disclosure bundle id');
+      } }) })),
   }),
   'system.state': object({
     creator_account_id: nonEmptyString,

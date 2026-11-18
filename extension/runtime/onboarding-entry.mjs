@@ -51,7 +51,7 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
     return operation;
   }
   identityBridge.onAccountChange?.(() => { identityRevision++; void reconcileAccount().catch(() => undefined); });
-  async function open({ section = '' } = {}) {
+  async function open({ section = '', requestedFull = false } = {}) {
     await reconcileAccount();
     const draft_scope = await scope();
     let record = await workspace.read();
@@ -62,6 +62,7 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
     const result = await workspace.open({ journey_id: record?.journey_id ?? crypto.randomUUID(),
       route: 'extension', explicit: true, draft_scope });
     await reconcileAccount();
+    if (requestedFull && section === 'full') await workspace.requestFullPresentationIntent(await workspace.read());
     if (['full', 'desktop'].includes(section)) await chromeApi.storage.session.set({
       [FULL_REVIEW_INTENT_KEY]: fullReviewIntent(result.journey_id, (await workspace.read()).draft_scope),
     });
@@ -86,6 +87,9 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
         return { adopted: desktopAdopted(saved[BROWSER_TASK_ADOPTION_KEY], admitted.record, saved[BROWSER_TASK_INSTANCE_KEY]) };
       }
       if (exact(message, ['type', 'action']) && message.action === 'prepare_launch') return workspace.prepareNativeLaunch(sender);
+      if (exact(message, ['type', 'action', 'scope_id', 'requested']) && message.action === 'full_presentation_intent') {
+        return workspace.setFullPresentationIntent(sender, { scope_id: message.scope_id, requested: message.requested });
+      }
       if (exact(message, ['type', 'action', 'scope_id', 'draft']) && message.action === 'draft') {
         return workspace.saveDraft(sender, { scope_id: message.scope_id, draft: message.draft });
       }
@@ -103,6 +107,11 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
       : reconcileAccount().then(scope).then(draft_scope => workspace.resumeExisting({ draft_scope, route: 'extension' }))).catch(() => undefined);
   });
   return Object.freeze({ workspace, open,
+    async fullPresentationIntent(account) {
+      // Refresh release scope without inspecting the OnlyFans page.
+      await scope();
+      return workspace.fullPresentationIntent(account);
+    },
     async browserTaskContext(journeyId, { adopt = false, canAdopt = () => false, authorize = async () => {}, reconcile = true } = {}) {
       // Without reconciliation this is a pure read. An identity change still reconciles through onAccountChange.
       if (reconcile) await reconcileAccount();

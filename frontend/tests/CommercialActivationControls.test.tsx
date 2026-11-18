@@ -635,3 +635,36 @@ it('does not promote a separate activation code while a current commercial offer
   expect(api.redeem).not.toHaveBeenCalled();
   expect(fixture.api.begin).not.toHaveBeenCalled();
 });
+
+it('presents a current explicit Full intent only as review, never activation, and remembers dismissal', async () => {
+  const fixture = withDecision();
+  const api = makeApi();
+  const snapshot = fixture.api.getState().snapshot!;
+  const intent = { journey_id: snapshot.journey_id, request_id: '77777777-7777-4777-8777-777777777777',
+    disclosure_bundle_id: 'b'.repeat(64) };
+  const draw = () => render(<ThemeProvider theme={theme}><CommercialActivationControls api={api} onboarding={fixture.api}
+    creatorAccountId="creator-account" presentationIntent={intent} /></ThemeProvider>);
+  const view = draw();
+  expect(await screen.findByRole('dialog', { name: 'Full conversation analytics' })).toBeTruthy();
+  expect(fixture.api.begin).not.toHaveBeenCalled();
+  expect(api.redeem).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  view.unmount();
+  draw();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Review activation offer' })).toBeTruthy();
+  expect(fixture.api.begin).not.toHaveBeenCalled();
+});
+
+it('does not prepare an activation or open a new ceremony solely from an unprepared Full intent', async () => {
+  const fixture = desktopFixture();
+  const intent = { journey_id: fixture.api.getState().snapshot!.journey_id, request_id: '77777777-7777-4777-8777-777777777777',
+    disclosure_bundle_id: 'c'.repeat(64) };
+  render(<ThemeProvider theme={theme}><CommercialActivationControls api={makeApi()} onboarding={fixture.api}
+    creatorAccountId="creator-account" presentationIntent={intent} /></ThemeProvider>);
+  expect(await screen.findByRole('button', { name: 'Set up Full analytics' })).toBeTruthy();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(fixture.api.begin).not.toHaveBeenCalled();
+  expect(fixture.api.openBrowser).not.toHaveBeenCalled();
+});

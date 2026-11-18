@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import re
 from contextlib import suppress
 from uuid import UUID
 
@@ -119,7 +120,7 @@ class SessionRPC:
     METHODS = frozenset({
         "agent.challenge", "agent.authenticate", "capture.state.report",
         "history.check.begin", "agent.analysis.readiness", "agent.config.get",
-        "agent.storage.unseal", "agent.storage.rotate", "agent.surface.report",
+        "agent.storage.unseal", "agent.storage.rotate", "agent.surface.report", "agent.presentation.intent",
         "agent.browser-task.report", "agent.browser-task.capabilities",
         "agent.browser-task.waiting", "agent.signing-rule.resolve",
     })
@@ -324,6 +325,26 @@ def browser_surface(params) -> dict:
     return {key: params[key] for key in _SURFACE_FIELDS if key != "schema"}
 
 
+def full_presentation_intent(params) -> dict | None:
+    """Only a presentation request, no account, consent or authorization input."""
+    _exact(params, ("full_intent",))
+    intent = params["full_intent"]
+    if intent is None:
+        return None
+    _exact(intent, ("request_id", "journey_id", "disclosure_bundle_id"))
+    try:
+        for key in ("request_id", "journey_id"):
+            value = intent[key]
+            if not isinstance(value, str) or str(UUID(value, version=4)) != value:
+                raise CompanionRecordError()
+        if not isinstance(intent["disclosure_bundle_id"], str) or not re.fullmatch(
+                r"[a-f0-9]{64}", intent["disclosure_bundle_id"]):
+            raise CompanionRecordError()
+    except (TypeError, ValueError):
+        raise CompanionRecordError() from None
+    return dict(intent)
+
+
 class BrowserSessionLink:
     """Admit an authenticated session for browser status reports and controls."""
 
@@ -357,6 +378,14 @@ class BrowserSessionLink:
             or identity.creator_account_id != self.pin.creator_account_id
         ):
             raise CompanionRecordError()
+
+    async def presentation_intent(self, params):
+        await self.authorized()
+        if self.token is None:
+            raise CompanionRecordError()
+        await self.manager.record_browser_intent(
+            self.pin.creator_account_id, self.token, full_presentation_intent(params))
+        return {}
 
     async def task_report(self, params):
         await self.authorized()
@@ -429,6 +458,8 @@ async def _serve(channel, pin):
                 async with asyncio.timeout(10):
                     if value["method"] == "agent.surface.report":
                         result = await browser.report(value["params"])
+                    elif value["method"] == "agent.presentation.intent":
+                        result = await browser.presentation_intent(value["params"])
                     elif value["method"] == "agent.signing-rule.resolve":
                         result = await rpc.resolve_signing_parameters(value["params"])
                     elif value["method"] == "agent.browser-task.report":

@@ -120,3 +120,17 @@ describe('Bridge protocol v2', () => {
     expect(isBrainToBridgeMessage(delta)).toBe(true);
   });
 });
+
+it('accepts only the bounded raw disclosure bundle and scoped Full presentation intent', () => {
+  const message = fixture('agent.state');
+  const intent = { request_id: '77777777-7777-4777-8777-777777777777',
+    journey_id: '11111111-1111-4111-8111-111111111111', disclosure_bundle_id: 'a'.repeat(64) };
+  message.payload.browser = { capture: 'active', site_access: 'granted', history_permission: 'missing',
+    legal_review_required: false, reported_at: '2026-11-18T00:00:00Z', full_intent: intent };
+  expect(isBrainToBridgeMessage(message)).toBe(true);
+  expect(parseBrainToBridgeMessage(message)).toMatchObject({ payload: { browser: { full_intent: intent } } });
+  message.payload.browser.full_intent = { ...intent, disclosure_bundle_id: 'sha256:' + intent.disclosure_bundle_id };
+  expect(isBrainToBridgeMessage(message)).toBe(false);
+  message.payload.browser.full_intent = { ...intent, creator_account_id: 'other' };
+  expect(isBrainToBridgeMessage(message)).toBe(false);
+});

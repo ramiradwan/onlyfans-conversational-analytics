@@ -23,7 +23,7 @@ import {
   capabilityLicenseApi,
   type CapabilityLicenseApi,
 } from '../services/capabilityLicenseApi';
-import { desktopOnboardingApi, selectAnalysisReadiness, selectCollectionContinuation, type DesktopOnboardingApi } from '../services/desktopOnboarding';
+import { desktopOnboardingApi, selectAnalysisReadiness, selectCollectionContinuation, selectFullPresentationIntent, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import type { HistorySettingsApi } from '../services/historySettingsApi';
 import {
   bridgeTransportStore,
@@ -373,6 +373,7 @@ export default function CreatorDashboardView({
     ? <BrowserExtensionControls key={state.creatorAccountId} browser={browser} api={browserApi}
       onboarding={onboardingApi} connection={connection} canManage={canManageHistorySync}
       continuationCreatorId={state.creatorAccountId} /> : null;
+  const fullIntent = canManageHistorySync ? selectFullPresentationIntent(desktop, state.creatorAccountId, browser) : undefined;
   const activationAdmitted = analysis.availability === 'current' && desktop.snapshot?.local_ready
     && desktop.snapshot.allowed_actions.includes('activation.review');
   const showCommercial = fullAnalyticsReady !== true && (connection === 'connected' || activationAdmitted || activationInProgress);
@@ -411,7 +412,7 @@ export default function CreatorDashboardView({
       sx={{ alignSelf: 'flex-start' }}>Full analytics</Button>}
   </Stack> : historyPrompt ?? (showSetup
     ? showCommercial
-      ? <CommercialActivationControls api={activationApi} onboarding={onboardingApi} creatorAccountId={state.creatorAccountId} />
+      ? <CommercialActivationControls api={activationApi} onboarding={onboardingApi} creatorAccountId={state.creatorAccountId} presentationIntent={fullIntent} />
       : <SetupPrompt extensionConnected={false} fullAnalyticsReady={fullAnalyticsReady === true} title="Finish setup" compact />
     : emptyOnboarding ? <OnboardingEmptyActivity waitingForMessages={waitingForMessages} />
       : hasSnapshot && fullAnalyticsReady === true ? connectionSummary : null);

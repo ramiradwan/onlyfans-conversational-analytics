@@ -135,6 +135,7 @@ class BrowserSession:
     pairing_id: str
     send: Callable[[dict[str, Any]], Awaitable[None]]
     surface: dict[str, Any] | None = None
+    full_intent: dict[str, Any] | None = None
     tasks: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Set only by this session's own advertisement; an older extension never advertises.
     end_control: bool = False
@@ -1430,13 +1431,26 @@ class InMemoryTransportManager:
             return
         previous = self.browser_surface(account_id)
         session.surface = {**surface, "reported_at": utc_now().isoformat()}
+        if surface["legal_review_required"] or surface["capture"] == "off":
+            session.full_intent = None
         # Keep the newest report last so it is the account's current state.
         sessions = self._browser_sessions[account_id]
         sessions[token] = sessions.pop(token)
         current = self.browser_surface(account_id)
         if previous is None or current is None or any(
             previous[key] != current[key] for key in surface
-        ):
+        ) or previous.get("full_intent") != current.get("full_intent"):
+            await self.broadcast_agent_state(account_id)
+
+    async def record_browser_intent(self, account_id: str, token: int, intent: dict[str, Any] | None) -> None:
+        session = self._browser_sessions.get(account_id, {}).get(token)
+        if session is None or session.surface is None:
+            return
+        before = self.browser_surface(account_id)
+        session.full_intent = (dict(intent) if intent is not None
+            and not session.surface["legal_review_required"] and session.surface["capture"] != "off" else None)
+        after = self.browser_surface(account_id)
+        if before != after:
             await self.broadcast_agent_state(account_id)
 
     async def unregister_browser_session(self, account_id: str, token: int) -> None:
@@ -1456,7 +1470,8 @@ class InMemoryTransportManager:
         """Return the newest report from an open session, or `None` if none is open."""
         for session in reversed(self._browser_sessions.get(account_id, {}).values()):
             if session.surface is not None:
-                return dict(session.surface)
+                return {**session.surface, **({"full_intent": dict(session.full_intent)}
+                    if session.full_intent is not None else {})}
         return None
 
     async def send_browser_control(

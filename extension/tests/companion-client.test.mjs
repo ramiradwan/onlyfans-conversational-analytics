@@ -148,7 +148,7 @@ test('worker wake subscriptions retain message and tab wakes plus the minute ala
 function event() { const listeners = []; return { listeners, addListener(fn) { listeners.push(fn); }, removeListener(fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } }; }
 function area() { const values = {}; return { values, async get(keys) { return Object.fromEntries(keys.filter((key) => Object.hasOwn(values, key)).map((key) => [key, values[key]])); }, async set(update) { Object.assign(values, structuredClone(update)); }, async remove(keys) { for (const key of keys) delete values[key]; } }; }
 
-function harness({ detectedAccountId = null, full = true, accountGate = null, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, scheduler = null, enforcePairing = false, channelCloseReason = null, surfaceFailures = 0 } = {}) {
+function harness({ detectedAccountId = null, full = true, accountGate = null, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, scheduler = null, enforcePairing = false, channelCloseReason = null, surfaceFailures = 0, readFullPresentationIntent = null, intentUnsupported = false } = {}) {
   const stats = { stores: 0, snow: 0, networks: 0, cancel: 0, forget: 0, proofValid: false, closedStores: 0 }, channels = [];
   const chrome = chromeApi ?? { runtime: { id: 'a'.repeat(32), getURL: (path) => `chrome-extension://${'a'.repeat(32)}/${path}`, onConnect: event(), onStartup: event(), onInstalled: event(), onMessage: event() }, storage: { local: area(), session: area() }, tabs: { onUpdated: event(), onCreated: event(), onRemoved: event() }, alarms: { onAlarm: event(), async create() {} } };
   let enabled = full, account = ACCOUNT, paired = true, pairingWait, remainingSurfaceFailures = surfaceFailures, accountReads = 0;
@@ -167,7 +167,7 @@ function harness({ detectedAccountId = null, full = true, accountGate = null, ch
     if (accountGate && ++accountReads === 1) await accountGate.promise;
     return detectedAccountId ? detectedAccountId() : account;
   },
-    now, scheduler, random: () => 0.5,
+    now, scheduler, random: () => 0.5, readFullPresentationIntent,
     accountDatabaseName: async (id) => `encrypted-account-${id}`, storeFactory: async () => { stats.stores++; return pairingStore; },
     loadSnow: async () => { stats.snow++; return { SnowSession: class {}, generateStaticKeypair() { return new Uint8Array(64); } }; },
     loadTrust: async () => ({}),
@@ -212,6 +212,10 @@ function harness({ detectedAccountId = null, full = true, accountGate = null, ch
           if (method === 'agent.config.get') return { status: 304, etag: 'config-1', document: null };
           if (method === 'agent.surface.report') {
             if (remainingSurfaceFailures > 0) { remainingSurfaceFailures -= 1; throw new Error('surface_refused'); }
+            return {};
+          }
+          if (method === 'agent.presentation.intent') {
+            if (intentUnsupported) throw Object.assign(new Error('unknown_method'), { code: 'unknown_method' });
             return {};
           }
           throw new Error('test_method_missing');
@@ -792,5 +796,37 @@ test('credential rotation diagnostics retain a failure across later success and 
     assert.equal(h.client.credentialRotation.failure.cause, 'other');
     assert.equal(h.client.credentialRotation.failure.errorName, 'other');
     assert.doesNotMatch(JSON.stringify(h.client.credentialRotation), /private_/);
+  } finally { h.client.invalidate(); }
+});
+
+test('Full intent travels separately on the current authenticated channel and clears on dismissal', async () => {
+  let current = { journey_id: crypto.randomUUID(), request_id: crypto.randomUUID(), disclosure_bundle_id: 'a'.repeat(64) };
+  const h = harness({ readFullPresentationIntent: async account => { assert.equal(account, ACCOUNT); return current; } });
+  const surface = { schema: 'ofca-browser-surface/v2', capture: 'active', site_access: 'granted',
+    history_permission: 'missing', legal_review_required: false, history_error_code: null };
+  try {
+    h.client.reportSurface(surface);
+    await h.client.adapter.loadBrainBinding();
+    await tick();
+    const calls = h.channels[0].rpcCalls;
+    assert.deepEqual(calls.filter(call => call.method === 'agent.surface.report').map(call => call.params), [surface]);
+    assert.deepEqual(calls.filter(call => call.method === 'agent.presentation.intent').map(call => call.params), [{ full_intent: current }]);
+    h.client.reportSurface({ ...surface }); await tick();
+    assert.equal(calls.filter(call => call.method === 'agent.presentation.intent').length, 1);
+    current = null; h.client.reportSurface({ ...surface }); await tick();
+    assert.deepEqual(calls.at(-1), { method: 'agent.presentation.intent', params: { full_intent: null } });
+  } finally { h.client.invalidate(); }
+});
+
+test('an older local runtime can decline presentation intent without disabling existing controls', async () => {
+  const h = harness({ readFullPresentationIntent: async () => ({ journey_id: crypto.randomUUID(),
+    request_id: crypto.randomUUID(), disclosure_bundle_id: 'a'.repeat(64) }), intentUnsupported: true });
+  const surface = { schema: 'ofca-browser-surface/v2', capture: 'active', site_access: 'granted',
+    history_permission: 'missing', legal_review_required: false, history_error_code: null };
+  try {
+    h.client.reportSurface(surface); await h.client.adapter.loadBrainBinding(); await tick();
+    assert.equal(h.client.controlReady(), true);
+    h.client.reportSurface({ ...surface }); await tick();
+    assert.equal(h.channels[0].rpcCalls.filter(call => call.method === 'agent.presentation.intent').length, 1);
   } finally { h.client.invalidate(); }
 });

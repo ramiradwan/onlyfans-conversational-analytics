@@ -315,3 +315,31 @@ async def test_repeated_delivery_fences_the_old_waiter_and_disconnect_clears_the
     await session.close()
     assert await asyncio.gather(*pending) == ["unconfirmed"] * 8
     assert transport_manager.browser_task_target(ACCOUNT) is None
+
+def test_full_presentation_intent_is_account_bound_and_cleared_with_the_reporting_session():
+    async def exercise():
+        first, second = link(Channel()), link(Channel(), pairing_id=b"q" * 32)
+        intent = {"request_id": str(uuid4()), "journey_id": str(uuid4()), "disclosure_bundle_id": "a" * 64}
+        with pytest.raises(CompanionRecordError):
+            await first.presentation_intent({"full_intent": intent})
+        await first.report(REPORT)
+        await first.presentation_intent({"full_intent": intent})
+        assert transport_manager.browser_surface(ACCOUNT)["full_intent"] == intent
+        assert transport_manager.browser_surface("other") is None
+        payload = transport_manager.agent_state_payload(ACCOUNT)
+        assert BRAIN_TO_BRIDGE_ADAPTER.validate_json(json.dumps({
+            "type": "agent.state", "protocol_version": "2", "message_id": str(uuid4()), "payload": payload,
+        })) is not None
+        with pytest.raises(CompanionRecordError):
+            await first.presentation_intent({"full_intent": {**intent, "creator_account_id": "other"}})
+        await second.report(REPORT)
+        assert "full_intent" not in transport_manager.browser_surface(ACCOUNT)
+        await second.close()
+        assert transport_manager.browser_surface(ACCOUNT)["full_intent"] == intent
+        await first.report({**REPORT, "legal_review_required": True})
+        assert "full_intent" not in transport_manager.browser_surface(ACCOUNT)
+        await first.presentation_intent({"full_intent": intent})
+        assert "full_intent" not in transport_manager.browser_surface(ACCOUNT)
+        await first.close()
+        assert transport_manager.browser_surface(ACCOUNT) is None
+    asyncio.run(exercise())
