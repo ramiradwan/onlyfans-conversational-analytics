@@ -1170,3 +1170,19 @@ describe('helper notices in the desktop', () => {
     expect(shown).toEqual(['{"notices":[]}']);
   });
 });
+
+it('names only the current deliberate desktop action while the owner receipt is outstanding', async () => {
+  const states = [];
+  const subject = new DesktopSetupClient({ generation, storage: storage(), receive: value => states.push(value),
+    uuid: () => operationId, stream: () => () => {}, request: async url => {
+      if (url.endsWith('/timing')) return response({});
+      throw new TypeError('lost response');
+    } });
+  subject.value = initial(); subject.session = session; subject.connected = true;
+  await subject.act('browser.access');
+  expect(states.at(-1)).toMatchObject({ pending: operationId, pendingAction: 'browser.access', error: 'operation_unconfirmed' });
+  subject.remember(null);
+  subject.notify();
+  expect(states.at(-1)).not.toHaveProperty('pendingAction');
+  subject.stop();
+});

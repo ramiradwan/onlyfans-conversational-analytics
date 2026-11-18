@@ -1,5 +1,5 @@
 import { ThemeProvider } from '@mui/material/styles';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CommercialActivationControls } from '../src/components/CommercialActivationControls';
@@ -617,4 +617,21 @@ it('never carries an uncertain code into a different creator account', async () 
   fireEvent.click(screen.getByRole('button', { name: 'Use an activation code' }));
   expect(screen.getByLabelText('Activation code')).toHaveProperty('value', '');
   expect(api.redeem).toHaveBeenCalledOnce();
+});
+
+it('does not promote a separate activation code while a current commercial offer is available', async () => {
+  const fixture = withDecision();
+  const api = makeApi();
+  mount(api, fixture.api);
+  expect(await screen.findByRole('button', { name: 'Review activation offer' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Use an activation code' })).toBeNull();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Review activation offer' }));
+  const dialog = screen.getByRole('dialog');
+  expect(within(dialog).queryByLabelText('Activation code')).toBeNull();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Other activation options' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(screen.getByLabelText('Activation code')).toBeTruthy();
+  expect(api.redeem).not.toHaveBeenCalled();
+  expect(fixture.api.begin).not.toHaveBeenCalled();
 });

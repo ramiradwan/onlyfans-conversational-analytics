@@ -43,6 +43,7 @@ export interface DesktopSnapshot {
 export interface DesktopState {
   snapshot: DesktopSnapshot | null;
   pending: string | null;
+  pendingAction?: string;
   connected: boolean;
   error: string | null;
   deliberate?: boolean;

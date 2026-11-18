@@ -13,7 +13,7 @@ import {
   type BrowserDestination,
 } from '../services/browserControlApi';
 import { captureOperation } from '../services/captureOperation';
-import { desktopOnboardingApi, type DesktopOnboardingApi } from '../services/desktopOnboarding';
+import { desktopOnboardingApi, selectCollectionContinuation, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import type { ExtensionConnection } from '../utils/statusCopy';
 import { StatusLine } from './ui/ReservedRegion';
 
@@ -41,14 +41,12 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   const desktop = useSyncExternalStore(onboarding.subscribe, onboarding.getState, onboarding.getState);
   const continuation = continuationCreatorId !== undefined;
   const snapshot = desktop.snapshot;
-  const currentAuthority = desktop.connected && snapshot?.analysis_readiness.availability === 'current'
-    && snapshot.analysis_readiness.creator_account_id === continuationCreatorId;
-  const reviewOperation = snapshot?.pending_operations.find(value => value.action === 'browser.access');
-  const canReview = canManage && currentAuthority && !reviewOperation && !desktop.pending
-    && !desktop.browserLaunchPending && snapshot?.allowed_actions.includes('browser.access');
+  const { current: currentAuthority, reviewNeeded, paused: continuationPaused, reviewOperation, localReviewPending, canReview, canResume } =
+    selectCollectionContinuation(desktop, continuationCreatorId, browser, canManage);
   const currentPresentation = () => {
     const current = onboarding.getState();
-    return current.connected && current.snapshot === snapshot;
+    return current.connected && current.snapshot === snapshot && current.pending === desktop.pending
+      && current.browserLaunchPending === desktop.browserLaunchPending;
   };
   const reviewInFlight = useRef(false);
   const [openingReview, setOpeningReview] = useState(false);
@@ -67,8 +65,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   const setCapture = async (action: CaptureAction) => {
     if (!canManage || browser === null || capture.getState() !== null
       || (action === 'resume' && browser.legal_review_required)) return;
-    if (continuation && (!currentAuthority || !currentPresentation() || action !== 'resume'
-      || browser.site_access !== 'granted' || browser.capture !== 'paused')) return;
+    if (continuation && (!canResume || !currentPresentation() || action !== 'resume')) return;
     setNotice(null);
     await capture.submit(action, browser);
   };
@@ -113,26 +110,26 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   const emptyAction = <Box aria-hidden sx={{ height: 40 }} />;
   if (continuation) {
     if (browser === null || !currentAuthority) return null;
-    const reviewNeeded = browser.legal_review_required || browser.site_access !== 'granted' || browser.capture === 'off';
-    const paused = browser.capture === 'paused' && !reviewNeeded;
-    if (!reviewNeeded && !paused) return null;
+    if (!reviewNeeded && !continuationPaused) return null;
     const title = browser.legal_review_required ? 'Allow message collection'
       : browser.site_access !== 'granted' ? 'Allow OnlyFans access'
         : browser.capture === 'off' ? 'Message collection is off' : 'Message collection is paused';
     const description = browser.legal_review_required ? 'Review how Dipsy uses your messages in Chrome.'
       : browser.site_access !== 'granted' ? 'Chrome needs your permission before Dipsy can collect messages.'
         : browser.capture === 'off' ? 'Review collection options in Chrome.' : 'New messages are not being collected.';
-    const waiting = openingReview || desktop.browserLaunchPending || Boolean(reviewOperation);
+    const waiting = openingReview || desktop.browserLaunchPending || Boolean(reviewOperation) || localReviewPending;
     const progress = openingReview || desktop.browserLaunchPending ? 'Opening Chrome…'
-      : reviewOperation?.state === 'outcome_unknown' ? 'The browser review has not been confirmed.'
-        : reviewOperation ? 'Complete the review in Chrome.' : null;
+      : reviewOperation?.state === 'outcome_unknown' || localReviewPending && desktop.error === 'operation_unconfirmed'
+        ? 'The browser review has not been confirmed.'
+        : reviewOperation ? 'Complete the review in Chrome.'
+          : localReviewPending ? 'Preparing browser review.' : null;
     return <Panel component="section" emphasis="dominant" aria-labelledby="collection-review-title"
       data-journey-state="desktop.message_collection_review">
       <Typography component="h2" id="collection-review-title" variant="h5">{title}</Typography>
       <Typography variant="body2" sx={{ color: 'text.secondary' }}>{description}</Typography>
       {reviewNeeded && canReview && !waiting && <Button onClick={() => void open('setup')}
         variant="contained" sx={{ alignSelf: 'flex-start' }}>Review in Chrome</Button>}
-      {paused && canManage && !waiting && <Button onClick={() => void setCapture('resume')}
+      {continuationPaused && canResume && !waiting && <Button onClick={() => void setCapture('resume')}
         disabled={captureBlocked} variant="contained" sx={{ alignSelf: 'flex-start' }}>
         {pending?.status === 'waiting' && pending.action === 'resume' ? 'Resuming…' : 'Resume collecting'}</Button>}
       {(progress || feedbackText) && <StatusLine id="collection-review-feedback" essential

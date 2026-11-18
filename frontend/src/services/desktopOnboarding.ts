@@ -1,5 +1,6 @@
 import { openBrowserTask } from '../../onboarding/browser-task.js';
 import { DesktopSetupClient, type DesktopState } from '../../onboarding/client.js';
+import type { BrowserSurfacePayload } from '../protocol';
 
 /** Display only: current native/account-scoped readiness never admits a command. */
 export function selectAnalysisReadiness(value: DesktopState, creatorAccountId?: string | null) {
@@ -11,6 +12,32 @@ export function selectAnalysisReadiness(value: DesktopState, creatorAccountId?: 
   return { value: readiness.value, availability: readiness.availability, checking: false };
 }
 
+
+/**
+ * Select the existing capture owner, independently of commercial authority.
+ * The paired extension reports current capture facts; the desktop snapshot
+ * admits review. Neither a reported mode nor a UI choice grants consent.
+ */
+export function selectCollectionContinuation(desktop: DesktopState, creatorAccountId: string | null | undefined,
+  browser: BrowserSurfacePayload | null, canManage: boolean) {
+  const snapshot = desktop.snapshot;
+  const current = Boolean(canManage && creatorAccountId && browser && desktop.connected && snapshot?.local_ready
+    && snapshot.analysis_readiness.availability === 'current'
+    && snapshot.analysis_readiness.creator_account_id === creatorAccountId);
+  const reviewOperation = current ? snapshot?.pending_operations.find(operation => operation.action === 'browser.access') : undefined;
+  // Never replace a different admitted operation with a new browser command.
+  const localReviewPending = current && Boolean(desktop.pending && desktop.pendingAction === 'browser.access');
+  const otherOperation = Boolean(snapshot?.pending_operations.some(operation => operation.action !== 'browser.access'));
+  const available = current && !desktop.pending && !desktop.browserLaunchPending && !otherOperation && !reviewOperation;
+  const reviewNeeded = Boolean(browser && (browser.legal_review_required || browser.site_access !== 'granted' || browser.capture === 'off'));
+  const paused = browser?.capture === 'paused' && !reviewNeeded;
+  const canReview = available && reviewNeeded && snapshot?.allowed_actions.includes('browser.access') === true;
+  // Resume already has a separate creator-only, authenticated capture endpoint.
+  // The extension, not this selector, checks the consent and legal state again.
+  const canResume = available && paused;
+  return { current, reviewNeeded, paused, reviewOperation, localReviewPending, canReview, canResume,
+    actionable: Boolean(canReview || canResume || reviewOperation || localReviewPending) };
+}
 
 export type DesktopAction = 'activation.review' | 'activation.confirm' | 'browser.pair' | 'browser.access' | 'auth.select' | 'auth.cancel' | 'auth.switch';
 export type AuthenticationProvider = 'google' | 'microsoft-personal' | 'telegram' | 'tiktok' | 'default';

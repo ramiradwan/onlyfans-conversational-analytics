@@ -289,6 +289,94 @@ describe('CreatorDashboardView', () => {
     expect(source.api.begin).not.toHaveBeenCalled();
   });
 
+  it('offers admitted browser review before commercial activation without treating collection as activation', async () => {
+    const store = readyStore();
+    const browser: BrowserSurfacePayload = { capture: 'off', site_access: 'needs_approval',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF };
+    store.setAgent({ ...store.getState().agent!, browser });
+    const source = readinessSource(false);
+    source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['browser.access', 'activation.review'] } });
+    const api: BrowserControlApi = { setCapture: vi.fn(async () => 'delivered'), open: vi.fn(async () => 'delivered') };
+    mountDashboard(store, source, api);
+    expect(screen.getByRole('heading', { name: 'Allow OnlyFans access' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Full analytics' }).getAttribute('href')).toBe('/settings#full-analytics');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(source.api.begin).not.toHaveBeenCalled();
+    expectStat('Messages', '19');
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Review in Chrome' })));
+    expect(source.api.begin).toHaveBeenCalledExactlyOnceWith('browser.access');
+    expect(api.setCapture).not.toHaveBeenCalled();
+    expect(api.open).not.toHaveBeenCalled();
+    const operationId = '22222222-2222-4222-8222-222222222222';
+    await act(async () => source.publish({ pending: operationId, pendingAction: 'browser.access', error: 'operation_unconfirmed' }));
+    expect(screen.getByRole('heading', { name: 'Allow OnlyFans access' })).toBeTruthy();
+    expect(screen.getByText('The browser review has not been confirmed.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Review in Chrome' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Full analytics' })).toBeNull();
+    await act(async () => source.publish({ pending: null, pendingAction: undefined, error: null }));
+    await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, capture: 'active', site_access: 'granted' } }));
+    expect(screen.queryByRole('heading', { name: 'Allow OnlyFans access' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Full analytics' })).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(source.api.begin).toHaveBeenCalledOnce();
+  });
+
+  it('does not force browser review before activation if the owner has not admitted it', () => {
+    const store = readyStore();
+    store.setAgent({ ...store.getState().agent!, browser: { capture: 'off', site_access: 'needs_approval',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
+    const source = readinessSource(false);
+    source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['activation.review'] } });
+    mountDashboard(store, source);
+    expect(screen.queryByRole('button', { name: 'Review in Chrome' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Set up Full analytics' })).toBeTruthy();
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
+  it('can resume previously authorized collection before commercial activation', async () => {
+    const store = readyStore();
+    store.setAgent({ ...store.getState().agent!, browser: { capture: 'paused', site_access: 'granted',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
+    const source = readinessSource(false);
+    const api: BrowserControlApi = { setCapture: vi.fn(async () => 'delivered'), open: vi.fn(async () => 'delivered') };
+    mountDashboard(store, source, api);
+    expect(screen.getByRole('heading', { name: 'Message collection is paused' })).toBeTruthy();
+    expect(api.setCapture).not.toHaveBeenCalled();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Resume collecting' })));
+    expect(api.setCapture).toHaveBeenCalledExactlyOnceWith('resume', expect.any(AbortSignal));
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
+  it('retains the admitted commercial operation instead of opening a competing capture review', async () => {
+    const store = readyStore();
+    store.setAgent({ ...store.getState().agent!, browser: { capture: 'off', site_access: 'needs_approval',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
+    const source = readinessSource(false);
+    source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['browser.access'],
+      pending_operations: [{ operation_id: '22222222-2222-4222-8222-222222222222',
+        action: 'activation.review', state: 'outcome_unknown', reason: 'operation_unconfirmed' }] } });
+    mountDashboard(store, source);
+    expect(screen.queryByRole('button', { name: 'Review in Chrome' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Full analytics' })).toBeTruthy();
+    expect(screen.getByText('Activation has not been confirmed.')).toBeTruthy();
+    expect(source.api.begin).not.toHaveBeenCalled();
+    await act(async () => source.publish({ snapshot: { ...source.api.getState().snapshot!, pending_operations: [],
+      allowed_actions: ['browser.access'] } }));
+    expect(screen.getByRole('button', { name: 'Review in Chrome' })).toBeTruthy();
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
+  it('keeps a currently admissible commercial review available independently of the extension connection', () => {
+    const store = readyStore();
+    store.setAgent({ ...store.getState().agent!, status: 'disconnected' });
+    const source = readinessSource(false);
+    source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['activation.review'] } });
+    mountDashboard(store, source);
+    expect(screen.getByRole('button', { name: 'Set up Full analytics' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Finish setup' })).toBeNull();
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
   function historyReviewFixture(creator = ACCOUNT_ID, saved: Partial<HistorySettings> = {}, permission: BrowserSurfacePayload['history_permission'] = 'missing', phase: HistoricalCoverage['phase'] = 'not_started') {
     const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]),
       coverage: { ...COMPLETE_COVERAGE, status: 'partial', phase, complete_as_of: null } }), conversations: [] });

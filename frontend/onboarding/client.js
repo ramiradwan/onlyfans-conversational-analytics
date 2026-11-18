@@ -48,6 +48,7 @@ export class DesktopSetupClient {
   notify(error = null, deliberate = false) {
     this.receive({ snapshot: this.value, pending: this.pending, connected: this.connected,
       error: error || this.operationError?.reason || this.browserNotice || null, deliberate,
+      ...(this.intent?.operationId === this.pending ? { pendingAction: this.intent.action } : {}),
       browserLaunchPending: Boolean(this.launchOperation) });
   }
 

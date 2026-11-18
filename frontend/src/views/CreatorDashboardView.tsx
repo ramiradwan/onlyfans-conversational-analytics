@@ -6,6 +6,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useId, useState, useSyncExternalStore } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 
 import { BrowserExtensionControls } from '../components/BrowserExtensionControls';
 import { CommercialActivationControls } from '../components/CommercialActivationControls';
@@ -22,7 +23,7 @@ import {
   capabilityLicenseApi,
   type CapabilityLicenseApi,
 } from '../services/capabilityLicenseApi';
-import { desktopOnboardingApi, selectAnalysisReadiness, type DesktopOnboardingApi } from '../services/desktopOnboarding';
+import { desktopOnboardingApi, selectAnalysisReadiness, selectCollectionContinuation, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import type { HistorySettingsApi } from '../services/historySettingsApi';
 import {
   bridgeTransportStore,
@@ -358,13 +359,23 @@ export default function CreatorDashboardView({
   const connection = extensionConnection(agent);
   const browser = connection === 'connected' && state.connection === 'connected'
     && agent?.creator_account_id === state.creatorAccountId ? agent?.browser ?? null : null;
-  // Collection is a separate decision. Only promote it when the current account
-  // has Full analytics and the extension actually reported an unmet prerequisite.
-  const collectionReview = fullAnalyticsReady === true && canManageHistorySync && state.creatorAccountId && browser
-    && (browser.capture !== 'active' || browser.legal_review_required || browser.site_access !== 'granted')
+  // The current browser owner can admit collection before commercial activation.
+  // A reported off state is not Full intent or consent; review remains explicit.
+  const collection = selectCollectionContinuation(desktop, state.creatorAccountId, browser, canManageHistorySync);
+  const activationInProgress = analysis.availability === 'current' && Boolean(
+    desktop.pending && (desktop.pendingAction?.startsWith('activation.') || desktop.pendingAction?.startsWith('auth.'))
+    || desktop.snapshot?.pending_operations.some(operation => operation.action.startsWith('activation.')
+      || operation.action.startsWith('auth.'))
+      || desktop.snapshot?.decision?.action === 'activate-complimentary' && analysis.value?.commercial_authority !== 'active'
+      || desktop.snapshot?.decision_status?.state === 'accepted' && analysis.value?.commercial_authority !== 'active');
+  const collectionReview = collection.current && !activationInProgress && state.creatorAccountId && browser
+    && (collection.reviewNeeded || collection.paused) && (collection.actionable || fullAnalyticsReady === true)
     ? <BrowserExtensionControls key={state.creatorAccountId} browser={browser} api={browserApi}
       onboarding={onboardingApi} connection={connection} canManage={canManageHistorySync}
       continuationCreatorId={state.creatorAccountId} /> : null;
+  const activationAdmitted = analysis.availability === 'current' && desktop.snapshot?.local_ready
+    && desktop.snapshot.allowed_actions.includes('activation.review');
+  const showCommercial = fullAnalyticsReady !== true && (connection === 'connected' || activationAdmitted || activationInProgress);
   const showSetup = !collectionReview && hasSnapshot && fullAnalyticsReady !== undefined
     && (connection !== 'connected' || fullAnalyticsReady !== true);
 
@@ -414,7 +425,11 @@ export default function CreatorDashboardView({
               : fullAnalyticsReady === undefined ? 'Checking setup…' : null} />
           </Box>
         </Box>
-        {collectionReview}
+        {collectionReview && <Stack spacing={0.5}>
+          {collectionReview}
+          {activationAdmitted && fullAnalyticsReady !== true && !desktop.pending && !collection.reviewOperation && <Button component={RouterLink} to="/settings#full-analytics"
+            sx={{ alignSelf: 'flex-start' }}>Full analytics</Button>}
+        </Stack>}
         {historyPrompt}
         {/* The overview stacks its counts until md, so the stacked reservation holds until then. */}
         <ReservedRegion id="dashboard-overview" size={{ xs: 450, md: 300 }}>
@@ -430,7 +445,7 @@ export default function CreatorDashboardView({
         </ReservedRegion>
         {showSetup && <ReservedRegion id="dashboard-setup" size={{ xs: 720, sm: 600 }} regionRole="scroll">
           <Box data-region-content>
-            {connection === 'connected'
+            {showCommercial
               ? <CommercialActivationControls api={activationApi} onboarding={onboardingApi} creatorAccountId={state.creatorAccountId} />
               : <SetupPrompt extensionConnected={false} fullAnalyticsReady={fullAnalyticsReady === true} title="Finish setup" />}
           </Box>
