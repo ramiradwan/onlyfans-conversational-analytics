@@ -183,6 +183,8 @@ class OnboardingJourneyStore:
         return dict(row)
 
     def _cleanup(self,connection,now) -> None:
+        from app.persistence.source_preparations import SourcePreparations
+        SourcePreparations.cleanup(connection, now)
         moment=now.isoformat()
         for retained in connection.execute("SELECT * FROM onboarding_presentation_retirements WHERE expires_at<=?",
                 (now.timestamp(),)).fetchall():
@@ -260,7 +262,8 @@ class OnboardingJourneyStore:
             + ",".join("?" for _ in preserved) + ")", (now.timestamp(), *preserved))
         connection.execute("DELETE FROM onboarding_native_selection_receipts WHERE expires_at<=?", (now.timestamp(),))
 
-    def update(self, journey_id: str, *, state: str, require_current: bool = False, **changes) -> dict:
+    def update(self, journey_id: str, *, state: str, require_current: bool = False,
+               retain_prepare: bool = False, retain_result: bool = False, **changes) -> dict:
         allowed = {"operation_id", "handoff_reference", "handoff_expires_at", "scope_json", "prepare_json", "reason"}
         if not set(changes) <= allowed:
             raise ValueError("Invalid journey update")
@@ -283,6 +286,21 @@ class OnboardingJourneyStore:
             values = [state, *changes.values(), require_journey(journey_id)]
             connection.execute("UPDATE onboarding_journeys SET " + ", ".join(name + " = ?" for name in names)
                                + ", revision = revision + 1 WHERE journey_id = ?", values)
+            if retain_prepare:
+                from app.persistence.source_preparations import SourcePreparations
+                prepared = connection.execute("SELECT * FROM onboarding_journeys WHERE journey_id=?",
+                    (journey_id,)).fetchone()
+                if prepared is None or state != "preparing" or not require_current:
+                    raise OnboardingJourneyUnavailable("journey_unavailable")
+                SourcePreparations(self.authentication).retain(connection, prepared, json.loads(prepared["prepare_json"]))
+            if retain_result:
+                from app.persistence.source_preparations import SourcePreparations
+                prepared = connection.execute("SELECT * FROM onboarding_journeys WHERE journey_id=?",
+                    (journey_id,)).fetchone()
+                if prepared is None or state != "waiting" or not require_current:
+                    raise OnboardingJourneyUnavailable("journey_unavailable")
+                SourcePreparations(self.authentication).record_prepared(connection, prepared,
+                    expires_at=prepared["handoff_expires_at"])
             if state == "completed":
                 completed = connection.execute("SELECT * FROM onboarding_journeys WHERE journey_id=?", (journey_id,)).fetchone()
                 if completed is not None:

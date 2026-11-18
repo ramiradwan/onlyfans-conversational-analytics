@@ -116,6 +116,14 @@ def test_unknown_prepare_survives_store_restart_and_fresh_admission_without_new_
     _, original = selected(owner)
     first = owner.contexts.begin_prepare(original.journey_id)
     assert first["state"] == "prepare-unknown"
+    from app.persistence.source_preparations import SourcePreparations
+    from app.persistence.installation_continuation import CONTINUATION_PROFILE
+    with owner.store.database.read() as connection:
+        evidence = SourcePreparations(owner.store).get(first["operation_id"], connection=connection)
+        assert json.loads(evidence["prepare_json"]) == {"profile": CONTINUATION_PROFILE,
+            "operation_id": first["operation_id"], "scope": first["scope"]}
+        assert connection.execute("SELECT 1 FROM onboarding_source_prepared_receipts WHERE operation_id=?",
+            (first["operation_id"],)).fetchone() is None
     reopened = SQLiteAuthenticationStore(owner.store.database.path, clock=lambda: owner.clock[0])
     contexts = InstallationContinuationStore(reopened)
     assert contexts.begin_prepare(original.journey_id) is None

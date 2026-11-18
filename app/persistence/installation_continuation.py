@@ -763,6 +763,9 @@ class InstallationContinuationStore:
             row = self.require_current(journey_id, connection=connection)
             if row["state"] != "new":
                 return None
+            from app.persistence.source_preparations import SourcePreparations
+            SourcePreparations(self.authentication).retain(connection, row, {
+                "profile": CONTINUATION_PROFILE, "operation_id": row["operation_id"], "scope": row["scope"]})
             connection.execute(
                 "UPDATE onboarding_journeys SET state='prepare-unknown',revision=revision+1 WHERE journey_id=?",
                 (journey_id,),
@@ -809,6 +812,9 @@ class InstallationContinuationStore:
                 # new action. Read reconciliation returns the retained state.
                 return row
             _require_transition(row["state"], state)
+            from app.persistence.source_preparations import SourcePreparations
+            SourcePreparations(self.authentication).record_prepared(connection, row,
+                expires_at=expires_at, continuation_id=continuation_id)
             connection.execute(
                 "UPDATE installation_continuation_contexts SET continuation_id=?,provider_expires_at=?,"
                 "reference=COALESCE(reference,?),epoch=COALESCE(epoch,?),provider_revision=COALESCE(?,provider_revision),"

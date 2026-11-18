@@ -55,6 +55,16 @@ async def test_fresh_journey_prepares_once_and_starts_its_wait(expiry_case):
     assert len(client.preparations) == len(key_reads) == 1
     assert resumed == [journey]
     assert worker.journeys.get(journey)["state"] == "waiting"
+    from app.persistence.source_preparations import SourcePreparations
+    from app.security.installation_continuation import canonical_request
+    with store.database.read() as connection:
+        row = worker.journeys.get(journey)
+        evidence = SourcePreparations(store).get(row["operation_id"], connection=connection)
+        assert evidence["prepare_json"] == canonical_request(json.loads(row["prepare_json"])).decode()
+        receipt = connection.execute("SELECT * FROM onboarding_source_prepared_receipts WHERE operation_id=?",
+            (row["operation_id"],)).fetchone()
+        assert receipt is not None and receipt["continuation_id"] is None
+        assert "reference" not in evidence["prepare_json"]
     assert count(store, "onboarding_uncertain_receipts") == 0
 
 

@@ -116,7 +116,7 @@ class InitialInstallationEnrollment:
             if row["prepare_json"] is not None:
                 request = json.loads(row["prepare_json"])
             self._current_update(journey_id, state="preparing", operation_id=operation,
-                prepare_json=json.dumps(request, separators=(",", ":")))
+                prepare_json=json.dumps(request, separators=(",", ":")), retain_prepare=True)
             return request
         # The request is durable before it is sent. The write runs off the event loop.
         with timing.phase("handoff-prepare", "persist"):
@@ -142,7 +142,7 @@ class InitialInstallationEnrollment:
             raise
         row = await asyncio.to_thread(self._current_update, journey_id, state="waiting",
                                       handoff_reference=prepared["reference"], handoff_expires_at=prepared["expires_at"],
-                                      reason=None)
+                                      reason=None, retain_result=True)
         events.publish()
         if resume:
             self.resume(journey_id)

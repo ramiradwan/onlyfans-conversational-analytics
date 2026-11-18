@@ -56,6 +56,8 @@ SECURITY_TABLES = (
     'desktop_setup_journeys','desktop_setup_operations','first_enrollment_contexts',
     'installation_continuation_contexts','onboarding_journeys','onboarding_native_selection_receipts',
     'onboarding_presentation_retirements','onboarding_presentation_sessions','onboarding_progress_outbox',
+    'onboarding_source_preparations',
+    'onboarding_source_prepared_receipts','onboarding_source_replacement_reservations',
     'onboarding_transfer_intents','onboarding_transfer_proofs','onboarding_transfer_relays',
     'onboarding_uncertain_receipts','onboarding_workspace_recovery','provisioning_browser_sessions',
     'provisioning_candidates','provisioning_claim_submissions','runtime_activation_workspace_receipts',
