@@ -145,7 +145,8 @@
         "0044_onboarding_source_replacement_outcomes.sql": "f84c374b393ab5b4668735744f78fdcc396e19b05448bb0eac79b2796d69d88a",
         "0045_desktop_activation_reconciliation.sql": "2bcecc1d48a0ba329c404fd1acb1bbfdc048c5501d6691808729fcf1af917348",
         "0046_initial_replacement_recovery.sql": "f9098709b1adadf8c025f1dd89ed0a8b6c8be16d4fb8dc206a47ea545753ab86",
-        "0047_activation_review_replacements.sql": "9e9ec45d5c07b6e2592427110b2c6fee8d8eb2c210fef128814fa22f51f2e19e"
+        "0047_activation_review_replacements.sql": "9e9ec45d5c07b6e2592427110b2c6fee8d8eb2c210fef128814fa22f51f2e19e",
+        "0048_installation_authority_recoveries.sql": "5241f95d78ee638e1aa03c6176cea27b0e29cb04758201f2cd091fedd6992d83"
       }
     },
     {

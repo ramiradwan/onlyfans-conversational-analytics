@@ -384,6 +384,7 @@
         "app/persistence/initial_replacement_recovery.py",
         "app/persistence/activation_reconciliation.py",
         "app/persistence/activation_review_replacement.py",
+        "app/persistence/installation_authority_recovery.py",
         "app/persistence/saved_workspace.py",
         "app/persistence/companion_pairing.py",
         "app/persistence/private_files.py",
