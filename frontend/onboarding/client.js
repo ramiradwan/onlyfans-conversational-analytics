@@ -289,7 +289,9 @@ export class DesktopSetupClient {
     };
     const authentication = this.value?.authentication;
     const replacesCurrentAuthentication = this.value?.allowed_actions.includes(action)
-      && (action === 'auth.select' && options.replace_ceremony === true
+      && (options.recover_authority === true && this.value.authority_recovery === 'sign-in-required'
+          && ['auth.select', 'auth.cancel'].includes(action) && authentication?.operation_id === this.pending
+        || action === 'auth.select' && options.replace_ceremony === true
         && authentication?.state === 'replacement-required' && authentication.operation_id === this.pending
         || ['auth.cancel', 'auth.switch'].includes(action)
         && [authentication?.operation_id, authentication?.browser_operation_id].includes(this.pending)

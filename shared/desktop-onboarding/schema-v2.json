@@ -156,8 +156,11 @@
       "allOf": [
         {
           "if": {"required": ["recover_authority"]},
-          "then": {"properties": {"action": {"const": "account.connect"}},
-            "not": {"anyOf": [{"required": ["provider"]}, {"required": ["replace_ceremony"]}]}}
+          "then": {"oneOf": [
+            {"properties": {"action": {"const": "account.connect"}}, "not": {"required": ["provider"]}},
+            {"properties": {"action": {"const": "auth.select"}, "provider": {"const": "default"}}, "required": ["provider"]},
+            {"properties": {"action": {"const": "auth.cancel"}}, "not": {"required": ["provider"]}}
+          ], "not": {"required": ["replace_ceremony"]}}
         },
         {
           "if": {

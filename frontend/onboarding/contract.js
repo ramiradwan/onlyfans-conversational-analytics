@@ -16,9 +16,13 @@ export function command(value, action, operationId, options = {}) {
   if (options.provider !== undefined) result.provider = options.provider;
   if (options.replace_ceremony !== undefined) result.replace_ceremony = options.replace_ceremony;
   if (options.recover_authority !== undefined) result.recover_authority = options.recover_authority;
-  if (value.authority_recovery !== undefined
-    ? value.authority_recovery !== 'available' || result.recover_authority !== true || action !== 'account.connect'
-    : result.recover_authority !== undefined) throw new Error('action_unavailable');
+  if (value.authority_recovery !== undefined) {
+    const recoveryParent = value.authority_recovery === 'available' && action === 'account.connect';
+    const recoveryChild = value.authority_recovery === 'sign-in-required'
+      && (action === 'auth.select' && value.authentication?.actions.select && result.provider === 'default'
+        || action === 'auth.cancel' && value.authentication?.actions.cancel);
+    if (result.recover_authority !== true || !(recoveryParent || recoveryChild)) throw new Error('action_unavailable');
+  } else if (result.recover_authority !== undefined) throw new Error('action_unavailable');
   if (result.replace_ceremony && value.authentication?.state !== 'replacement-required') throw new Error('action_unavailable');
   if (!validateDocument(result) || !value.allowed_actions.includes(action)) throw new Error('action_unavailable');
   return result;

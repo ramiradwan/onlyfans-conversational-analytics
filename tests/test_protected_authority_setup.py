@@ -66,8 +66,19 @@ def build(case, *, store=None, state=None, stage="setup", enabled=True):
         def execute(self,verb,request,*,before_send,expires_at):
             before_send()
             state["calls"].append(("auth",verb,copy.deepcopy(request)))
-            assert verb=="read"
-            return auth_response(request,"selection-required")
+            if verb=="select":
+                state["child"]=request["authentication_attempt_id"]
+                state["auth_state"]="selected"
+                if state.pop("lose_select",False):
+                    raise HostedGrantUnavailable("Lost selection")
+            elif verb=="cancel":
+                assert request["authentication_attempt_id"]==state["child"]
+                state["auth_state"]="admitted" if state.get("commit_on_cancel") else "retired"
+                if state.pop("lose_cancel",False):
+                    raise HostedGrantUnavailable("Lost cancellation")
+            elif verb=="read" and state.pop("lose_auth_read",False):
+                raise HostedGrantUnavailable("Lost authentication read")
+            return auth_response(request,state.get("auth_state","selection-required"),child=state.get("child"))
     class Verifier:
         def _verified_reference(self,*args,**kwargs):
             return state["verifier"]._verified_reference(*args,**kwargs)
@@ -128,6 +139,7 @@ async def test_exact_desktop_admission_requires_explicit_recovery_and_read_is_pu
     assert coordinator.read(session)["authority_recovery"]=="sign-in-required"
     assert [item[:2] for item in state["calls"]]==[("authority","prepare"),("ceremony","prepare"),("auth","read")]
     assert not owner.automatic_recovery(operation)
+    assert coordinator.read(session)["allowed_actions"]==["auth.select"]
     assert not base.calls
     with case.store.database.read() as c:
         assert c.execute("SELECT count(*) FROM protected_recovery_authentication_children").fetchone()[0]==0
@@ -322,3 +334,260 @@ async def test_enabled_composition_is_explicit_and_disabled_boot_retains_fence(i
     assert normal.coordinator.read(session)["authority_recovery"]=="blocked"
     assert not normal.coordinator.read(session)["allowed_actions"]
     await normal.close()
+
+async def prepared_parent(case, *, stage="setup"):
+    coordinator,owner,base,state=build(case,stage=stage)
+    session=connect(coordinator)
+    receipt=await coordinator.command(session,recovery_command(coordinator,session))
+    await coordinator.drain()
+    parent=saved(coordinator,receipt["operation_id"])
+    assert parent["state"]=="waiting"
+    return coordinator,owner,base,state,session,parent
+
+
+def child_command(coordinator,session,action="auth.select"):
+    snapshot=coordinator.read(session)
+    assert snapshot["authority_recovery"]=="sign-in-required"
+    assert action in snapshot["allowed_actions"]
+    return command(snapshot,action)|{"recover_authority":True}|({"provider":"default"} if action=="auth.select" else {})
+
+
+def child_intent(operation):
+    return json.loads(operation["owner_scope_json"])["protected_recovery_child"]
+
+
+def auth_calls(state,verb):
+    return [request for family,method,request in state["calls"] if family=="auth" and method==verb]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage",["setup","runtime"])
+async def test_child_commands_are_explicit_exact_and_never_dispatch(installed,stage):
+    case=installed
+    coordinator,owner,base,state,session,parent=await prepared_parent(case,stage=stage)
+    snapshot=coordinator.read(session)
+    auth=snapshot["authentication"]
+    assert auth["operation_id"]==parent["operation_id"] and auth["browser_operation_id"] is None
+    assert auth["choices"]["default"] and sum(auth["choices"].values())==1
+    assert auth["actions"]=={"select":True,"cancel":False,"open_browser":False,"switch_account":False}
+    request=child_command(coordinator,session)
+    with pytest.raises(CommandRefused):
+        await coordinator.command(session,{k:v for k,v in request.items() if k!="recover_authority"})
+    with pytest.raises(ValueError):
+        await coordinator.command(session,{**request,"provider":"google"})
+    with pytest.raises(ValueError):
+        await coordinator.command(session,{**request,"action":"auth.switch"})
+    operation,fresh=coordinator._accept(session,request)
+    assert fresh
+    plan=child_intent(operation)
+    assert plan["parent_operation_id"]==parent["operation_id"]
+    assert plan["recovery_id"]==rid(parent) and plan["request"]["expected_previous_attempt_id"] is None
+    assert not auth_calls(state,"select") and not base.admissions
+    from app.onboarding.admission import AdmissionRefused
+    for protected in (parent,operation):
+        with pytest.raises(AdmissionRefused,match="task_scope_invalid"):
+            coordinator.admissions.prepare_accepted_task(protected["operation_id"],purpose="browser.authentication",
+                deadline=protected["expires_at"])
+        with pytest.raises(AdmissionRefused,match="task_scope_invalid"):
+            coordinator.admissions.prepare_task(session.identifier,generation=session.generation,
+                journey_id=protected["journey_id"],operation_id=protected["operation_id"],purpose="browser.authentication",
+                scope_digest=protected["scope_digest"],source_revision=protected["source_revision"],deadline=protected["expires_at"])
+    assert coordinator._accept(session,request)[1] is False
+    assert coordinator.read(session)["authority_recovery"]=="checking"
+    assert not coordinator.read(session)["allowed_actions"]
+    assert not owner.automatic_recovery(parent)
+    assert (await owner.execute(parent,reconcile=True)).state=="waiting"
+    result=await owner.execute(operation,reconcile=False)
+    assert result.state=="completed"
+    coordinator._settle(operation,result)
+    assert auth_calls(state,"select")==[plan["request"]]
+    assert auth_calls(state,"read")[-1]["authentication_attempt_id"] is None
+    selected=coordinator.read(session)
+    assert selected["authentication"]["state"]=="selected"
+    assert selected["authentication"]["authentication_attempt"]["authentication_attempt_id"]==plan["request"]["authentication_attempt_id"]
+    assert selected["allowed_actions"]==["auth.cancel"]
+    assert not selected["authentication"]["actions"]["open_browser"]
+    cancel=child_command(coordinator,session,"auth.cancel")
+    receipt=await coordinator.command(session,cancel)
+    await coordinator.drain()
+    cancelled=saved(coordinator,receipt["operation_id"])
+    assert cancelled["state"]=="completed"
+    assert auth_calls(state,"cancel")==[child_intent(cancelled)["request"]]
+    retired=coordinator.read(session)
+    assert retired["authentication"]["state"]=="retired"
+    assert retired["allowed_actions"]==["auth.select"]
+    with pytest.raises(CommandRefused):
+        await coordinator.command(session,{**request,"operation_id":cancel["operation_id"]})
+    next_request=child_command(coordinator,session)
+    receipt=await coordinator.command(session,next_request)
+    await coordinator.drain()
+    successor=saved(coordinator,receipt["operation_id"])
+    assert successor["state"]=="completed"
+    next_plan=child_intent(successor)["request"]
+    assert next_plan["expected_previous_attempt_id"]==plan["request"]["authentication_attempt_id"]
+    assert next_plan["authentication_attempt_id"]!=plan["request"]["authentication_attempt_id"]
+    assert len(auth_calls(state,"select"))==2 and len(auth_calls(state,"cancel"))==1
+    with case.store.database.read() as c:
+        assert c.execute("SELECT count(*) FROM desktop_browser_tasks").fetchone()[0]==0
+        assert c.execute("SELECT count(*) FROM protected_recovery_authentication_children").fetchone()[0]==2
+        assert c.execute("SELECT count(*) FROM verified_grant_references").fetchone()[0]==len(case.grants)
+    await coordinator.stop()
+    await owner.stop()
+
+
+@pytest.mark.asyncio
+async def test_restart_before_send_does_not_select_and_fresh_click_can_continue(installed):
+    case=installed
+    coordinator,owner,_,state,session,parent=await prepared_parent(case)
+    request=child_command(coordinator,session)
+    operation,_=coordinator._accept(session,request)
+    assert not auth_calls(state,"select")
+    await coordinator.stop()
+    await owner.stop()
+    reopened=SQLiteAuthenticationStore(case.path,clock=lambda:case.clock[0])
+    coordinator,owner,base,state=build(case,store=reopened,state=state)
+    session=connect(coordinator)
+    coordinator.start()
+    await coordinator.drain()
+    assert coordinator.receipt(session,operation["operation_id"])["state"]=="refused"
+    assert not auth_calls(state,"select") and not base.calls
+    assert coordinator.read(session)["allowed_actions"]==["auth.select"]
+    again=child_command(coordinator,session)
+    receipt=await coordinator.command(session,again)
+    await coordinator.drain()
+    op=saved(coordinator,receipt["operation_id"])
+    assert op["state"]=="completed"
+    assert len(auth_calls(state,"select"))==1
+    assert child_intent(op)["request"]["authentication_attempt_id"]!=child_intent(operation)["request"]["authentication_attempt_id"]
+    await coordinator.stop()
+    await owner.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("verb",["select","cancel"])
+async def test_lost_mutation_restarts_exact_read_then_current_without_resend(installed,verb):
+    case=installed
+    coordinator,owner,_,state,session,parent=await prepared_parent(case)
+    if verb=="cancel":
+        receipt=await coordinator.command(session,child_command(coordinator,session))
+        await coordinator.drain()
+        assert coordinator.receipt(session,receipt["operation_id"])["state"]=="completed"
+    state["lose_"+verb]=True
+    request=child_command(coordinator,session,"auth."+verb)
+    receipt=await coordinator.command(session,request)
+    await coordinator.drain()
+    op=saved(coordinator,receipt["operation_id"])
+    assert op["state"]=="outcome_unknown"
+    original=child_intent(op)["request"]
+    assert auth_calls(state,verb)==[original]
+    assert not coordinator.read(session)["allowed_actions"]
+    await coordinator.stop()
+    await owner.stop()
+    case.clock[0]+=timedelta(seconds=16)
+    reopened=SQLiteAuthenticationStore(case.path,clock=lambda:case.clock[0])
+    coordinator,owner,base,state=build(case,store=reopened,state=state)
+    session=connect(coordinator)
+    coordinator.start()
+    await coordinator.drain()
+    assert coordinator.receipt(session,op["operation_id"])["state"]=="completed"
+    assert auth_calls(state,verb)==[original]
+    reads=auth_calls(state,"read")
+    assert reads[-2]["authentication_attempt_id"]==original["authentication_attempt_id"]
+    assert reads[-1]["authentication_attempt_id"] is None
+    assert coordinator.read(session)["allowed_actions"]==(["auth.cancel"] if verb=="select" else ["auth.select"])
+    assert not base.calls
+    await coordinator.stop()
+    await owner.stop()
+
+
+@pytest.mark.asyncio
+async def test_cancel_that_observes_commit_is_refused_and_parent_adopts_original_grants(installed):
+    case=installed
+    coordinator,owner,_,state,session,parent=await prepared_parent(case)
+    receipt=await coordinator.command(session,child_command(coordinator,session))
+    await coordinator.drain()
+    assert coordinator.receipt(session,receipt["operation_id"])["state"]=="completed"
+    with case.store.database.read() as c:
+        hosted=json.loads(owner.recovery.row(c,rid(parent))["request_json"])
+    case.clock[0]+=timedelta(seconds=16)
+    state["verifier"],state["result"]=signed_delivery(case,hosted)
+    state["commit_on_cancel"]=True
+    cancelled=await coordinator.command(session,child_command(coordinator,session,"auth.cancel"))
+    await coordinator.drain()
+    assert coordinator.receipt(session,cancelled["operation_id"])["state"]=="refused"
+    assert coordinator.receipt(session,parent["operation_id"])["state"]=="completed"
+    assert [request for family,verb,request in state["calls"] if family=="authority" and verb=="deliver"]==[hosted]
+    assert "authority_recovery" not in coordinator.read(session)
+    await coordinator.stop()
+    await owner.stop()
+
+
+@pytest.mark.asyncio
+async def test_changed_local_authority_blocks_admitted_child_before_send(installed):
+    case=installed
+    coordinator,owner,_,state,session,parent=await prepared_parent(case)
+    operation,_=coordinator._accept(session,child_command(coordinator,session))
+    with case.store.database.transaction() as c:
+        case.store._revoke_in_transaction(c,RevocationKey(RevocationScopeType.INSTALLATION,case.scope["installation_id"]),reason="test")
+    assert (await owner.execute(operation,reconcile=False)).state=="outcome_unknown"
+    assert not auth_calls(state,"select")
+    assert coordinator.read(session)["authority_recovery"]=="blocked"
+    assert not owner.automatic_recovery(operation)
+    await coordinator.stop()
+    await owner.stop()
+
+def test_http_native_admission_is_required_for_protected_child_commands(installed):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.onboarding.routes import desktop_router
+    from app.onboarding.runtime import RuntimeActor
+    from app.onboarding.admission_routes import ORIGIN, CSRF
+    from test_desktop_browser_routes import headers
+
+    case=installed
+    coordinator,owner,_,state=build(case,stage="runtime")
+    session=connect(coordinator)
+    def no_operator_session():
+        pytest.fail("Protected recovery incorrectly requested local operator authority")
+    app=FastAPI()
+    app.include_router(desktop_router(coordinator,actor=lambda *_:RuntimeActor(no_operator_session)))
+    with TestClient(app,base_url=ORIGIN) as client:
+        path="/api/v1/desktop/setup/commands"
+        parent=recovery_command(coordinator,session)
+        assert client.post(path,json=parent,headers=headers(session)).status_code==202
+        client.portal.call(coordinator.drain)
+        select=child_command(coordinator,session)
+        missing_csrf={key:value for key,value in headers(session).items() if key!=CSRF}
+        assert client.post(path,json=select,headers=missing_csrf).status_code==403
+        assert client.post(path,json=select,headers={**headers(session),"Origin":"https://foreign.invalid"}).status_code==403
+        assert client.post(path,json=select,headers={**headers(session),"Cookie":"unrelated=1"}).status_code==401
+        unmarked={key:value for key,value in select.items() if key!="recover_authority"}
+        assert client.post(path,json=unmarked,headers=headers(session)).status_code==409
+        assert not auth_calls(state,"select")
+        admitted=client.post(path,json=select,headers=headers(session))
+        assert admitted.status_code==202
+        client.portal.call(coordinator.drain)
+        assert coordinator.receipt(session,select["operation_id"])["state"]=="completed"
+        assert len(auth_calls(state,"select"))==1
+        assert client.post(path,json=select,headers=headers(session)).status_code==202
+        client.portal.call(coordinator.drain)
+        assert len(auth_calls(state,"select"))==1
+        client.portal.call(coordinator.stop)
+        client.portal.call(owner.stop)
+
+@pytest.mark.asyncio
+async def test_expired_child_send_claim_cannot_send_but_retained_reads_stay_possible(installed):
+    case=installed
+    coordinator,owner,_,state,session,parent=await prepared_parent(case)
+    operation,_=coordinator._accept(session,child_command(coordinator,session))
+    # Simulate the command expiring while a worker waits before its first send.
+    # An expired desktop command cannot be treated as a fresh click.
+    from datetime import datetime,timezone
+    case.clock[0]=datetime.fromtimestamp(operation["expires_at"],tz=timezone.utc)
+    with case.store.database.read() as c:
+        with pytest.raises(HostedGrantUnavailable):
+            owner._authorize_child(operation,connection=c,mutation=True)
+        owner._authorize_child(operation,connection=c)
+    assert not auth_calls(state,"select")
+    await coordinator.stop()
+    await owner.stop()

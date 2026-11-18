@@ -207,6 +207,13 @@ class ScopedAdmissions:
             self._capacity(connection)
             if parent["journey_id"] != journey_id:
                 raise AdmissionRefused("task_scope_changed")
+            # Protected authentication requires its own explicit dispatch
+            # admission. An ordinary helper task cannot consume its receipt.
+            operation = connection.execute("SELECT owner_scope_json FROM desktop_setup_operations WHERE operation_id=?",
+                (operation_id,)).fetchone()
+            if operation is not None and {"protected_recovery_intent", "protected_recovery_child"}.intersection(
+                    json.loads(operation["owner_scope_json"])):
+                raise AdmissionRefused("task_scope_invalid")
             # An operation is immutable. Lost replies use exact read/reissue, never a new task.
             if connection.execute("SELECT 1 FROM desktop_browser_tasks WHERE operation_id=?", (operation_id,)).fetchone():
                 raise AdmissionRefused("task_already_exists")
@@ -267,6 +274,8 @@ class ScopedAdmissions:
             if (operation is None or purpose not in allowed.get(operation["action"], set())
                     or operation["state"] not in {"accepted", "waiting", "outcome_unknown"}
                     or json.loads(operation["owner_scope_json"]).get("ceremony_replacement") is not None):
+                raise AdmissionRefused("task_scope_invalid")
+            if {"protected_recovery_intent", "protected_recovery_child"}.intersection(json.loads(operation["owner_scope_json"])):
                 raise AdmissionRefused("task_scope_invalid")
             existing = connection.execute("SELECT * FROM desktop_browser_tasks WHERE operation_id=?", (operation_id,)).fetchone()
             if existing is not None:

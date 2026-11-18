@@ -179,28 +179,45 @@ class ProtectedBrowserRecoveries:
             raise HostedGrantUnavailable("Protected authentication selection changed")
         return row, binding, child, projection
 
-    def claim_select(self, connection, recovery_id, *, authorize):
+    def plan_authentication(self, connection, recovery_id, verb, *, authorize, attempt_id=None):
+        """Plan a closed mutation without claiming it; used at desktop admission."""
         row, binding, child, projection = self._projection(connection, recovery_id, authorize=authorize)
-        if not projection["actions"]["select"] or (child is None and projection["state"]!="selection-required") or (
-                child is not None and (child["state"]!="retired" or projection["state"]!="retired" or child["sequence"]>=32)):
-            raise HostedGrantUnavailable("Protected authentication selection is unavailable")
-        attempt_id = _new_uuid7(self.store._now())
-        request = authentication_request("select", ceremony_request(row["operation_id"], binding, ceremony_id=row["ceremony_id"]),
-            attempt_id=attempt_id, previous_id=None if child is None else child["attempt_id"])
+        ceremony = ceremony_request(row["operation_id"], binding, ceremony_id=row["ceremony_id"])
+        if verb == "select":
+            if not projection["actions"]["select"] or (child is None and projection["state"]!="selection-required") or (
+                    child is not None and (child["state"]!="retired" or projection["state"]!="retired" or child["sequence"]>=32)):
+                raise HostedGrantUnavailable("Protected authentication selection is unavailable")
+            return authentication_request("select", ceremony,
+                attempt_id=attempt_id or _new_uuid7(self.store._now()), previous_id=None if child is None else child["attempt_id"])
+        if verb == "cancel":
+            if child is None or child["state"]!="selected" or not projection["actions"]["cancel"]:
+                raise HostedGrantUnavailable("Protected authentication cancellation is unavailable")
+            if attempt_id is not None and attempt_id != child["attempt_id"]:
+                raise HostedGrantUnavailable("Protected authentication child changed")
+            return authentication_request("cancel", ceremony, attempt_id=child["attempt_id"])
+        raise ValueError("Unsupported protected authentication command")
+
+    def claim_select(self, connection, recovery_id, *, authorize, expected=None):
+        request = self.plan_authentication(connection, recovery_id, "select", authorize=authorize,
+            attempt_id=None if expected is None else expected["authentication_attempt_id"])
+        if expected is not None and request != expected:
+            raise HostedGrantUnavailable("Protected authentication selection changed")
+        child = self.child(connection, recovery_id)
         connection.execute("INSERT INTO protected_recovery_authentication_children "
             "(attempt_id,recovery_id,previous_attempt_id,sequence,request_json,state) VALUES (?,?,?,?,?,'select-claimed')",
-            (attempt_id, recovery_id, request["expected_previous_attempt_id"], 1 if child is None else child["sequence"]+1, _encoded(request)))
+            (request["authentication_attempt_id"], recovery_id, request["expected_previous_attempt_id"],
+                1 if child is None else child["sequence"]+1, _encoded(request)))
         connection.execute("UPDATE protected_recovery_ceremonies SET projection_json=NULL WHERE recovery_id=?", (recovery_id,))
         authorize(connection=connection)
         return request
 
-    def claim_child_cancel(self, connection, recovery_id, *, authorize):
-        row, binding, child, projection = self._projection(connection, recovery_id, authorize=authorize)
-        if child is None or child["state"]!="selected" or not projection["actions"]["cancel"]:
-            raise HostedGrantUnavailable("Protected authentication cancellation is unavailable")
-        request = authentication_request("cancel", ceremony_request(row["operation_id"], binding, ceremony_id=row["ceremony_id"]),
-            attempt_id=child["attempt_id"])
-        connection.execute("UPDATE protected_recovery_authentication_children SET state='cancel-claimed' WHERE attempt_id=?", (child["attempt_id"],))
+    def claim_child_cancel(self, connection, recovery_id, *, authorize, expected=None):
+        request = self.plan_authentication(connection, recovery_id, "cancel", authorize=authorize,
+            attempt_id=None if expected is None else expected["authentication_attempt_id"])
+        if expected is not None and request != expected:
+            raise HostedGrantUnavailable("Protected authentication cancellation changed")
+        connection.execute("UPDATE protected_recovery_authentication_children SET state='cancel-claimed' WHERE attempt_id=?",
+            (request["authentication_attempt_id"],))
         connection.execute("UPDATE protected_recovery_ceremonies SET projection_json=NULL WHERE recovery_id=?", (recovery_id,))
         authorize(connection=connection)
         return request

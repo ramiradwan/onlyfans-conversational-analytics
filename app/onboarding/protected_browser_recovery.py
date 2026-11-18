@@ -111,6 +111,21 @@ class ProtectedBrowserRecoveryEffects:
     async def cancel_child(self, recovery_id, *, journey_id, authorize):
         return await self._run(self._cancel_child, recovery_id, journey_id=journey_id, protected=True, authorize=authorize)
 
+    def _send_admitted_authentication(self, recovery_id, verb, request, *, authorize):
+        # The desktop receipt already names this exact request. A durable
+        # journal claim is committed before the first and only mutation send.
+        with self._lock:
+            with self.store.database.transaction() as connection:
+                claim = self.journal.claim_select if verb == "select" else self.journal.claim_child_cancel
+                if verb not in {"select", "cancel"}:
+                    raise ValueError("Unsupported protected authentication command")
+                claim(connection, recovery_id, authorize=authorize, expected=request)
+            return self._authentication(recovery_id, verb, request, authorize=authorize)
+
+    async def send_admitted_authentication(self, recovery_id, verb, request, *, journey_id, authorize):
+        return await self._run(self._send_admitted_authentication, recovery_id, verb, request,
+            journey_id=journey_id, protected=True, authorize=authorize)
+
     def _dispatch(self, recovery_id, *, authorize, dispatch):
         if not callable(dispatch):
             raise HostedGrantUnavailable("Protected browser task owner unavailable")

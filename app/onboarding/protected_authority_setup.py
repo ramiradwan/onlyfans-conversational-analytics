@@ -44,7 +44,12 @@ class ProtectedAuthoritySetupOwner:
 
     @staticmethod
     def handles(operation):
-        return "protected_recovery_intent" in json.loads(operation["owner_scope_json"])
+        scope=json.loads(operation["owner_scope_json"])
+        return "protected_recovery_intent" in scope or "protected_recovery_child" in scope
+
+    @staticmethod
+    def _child_intent(operation):
+        return json.loads(operation["owner_scope_json"]).get("protected_recovery_child")
 
     def _admissions(self, connection):
         return connection.execute(
@@ -54,10 +59,11 @@ class ProtectedAuthoritySetupOwner:
             "LEFT JOIN desktop_setup_operations o ON o.operation_id=a.operation_id "
             "ORDER BY a.created_at DESC,a.operation_id").fetchall()
 
-    def _no_competing_work(self, connection, *, operation_id=None):
+    def _no_competing_work(self, connection, *, operation_id=None, child_operation_id=None):
         if connection.execute("SELECT 1 FROM desktop_setup_operations WHERE state IN "
-                "('accepted','waiting','outcome_unknown') AND (? IS NULL OR operation_id<>?)",
-                (operation_id,operation_id)).fetchone():
+                "('accepted','waiting','outcome_unknown') AND (? IS NULL OR operation_id<>?) "
+                "AND (? IS NULL OR operation_id<>?)",
+                (operation_id,operation_id,child_operation_id,child_operation_id)).fetchone():
             raise HostedGrantUnavailable("Competing desktop setup operation")
         if connection.execute("SELECT 1 FROM onboarding_transfer_intents WHERE expires_at>? AND phase<>'continue-ready'",
                 (self.store._now().timestamp(),)).fetchone():
@@ -89,6 +95,9 @@ class ProtectedAuthoritySetupOwner:
             except (HostedGrantUnavailable,ValueError):
                 return {"state":"blocked"}
             ceremony = self.browser.journal.row(connection,row["recovery_id"])
+            if self._pending_child(connection,row["operation_id"]):
+                return {"state":"checking" if row["read_attempts"]<MAX_READS
+                    and self.store._now().timestamp()<source["created_at"]+1860 else "blocked"}
             if source["state"]=="committed" or ceremony is not None and ceremony["committed_seen"]:
                 return {"state":"checking" if source["delivery_attempts"]<3 else "blocked"}
             if source["state"] in {"reserved","prepare-claimed"} and (source["prepare_attempts"]>=2
@@ -106,7 +115,25 @@ class ProtectedAuthoritySetupOwner:
                         or self.store._now() >= timestamp(ceremony["expires_at"])):
                     return {"state":"checking" if ceremony["committed_seen"] else "blocked"}
                 if ceremony["projection_json"] is not None:
-                    return {"state":"sign-in-required"}
+                    child = self.browser.journal.child(connection,row["recovery_id"])
+                    projection = json.loads(ceremony["projection_json"])
+                    actual = projection["authentication_attempt"]
+                    # The current read, not an old child receipt, admits the next
+                    # explicit gesture. Never project an ordinary browser launch.
+                    if ((child is None and actual is None and projection["state"]=="selection-required")
+                            or (child is not None and actual is not None
+                                and actual["authentication_attempt_id"]==child["attempt_id"]
+                                and child["state"]==projection["state"] and child["state"] in {"selected","retired"})):
+                        return {"state":"sign-in-required","authentication":{
+                            "operation_id":row["operation_id"],"browser_operation_id":None,
+                            "state":projection["state"],
+                            "choices":{name: name=="default" and allowed for name,allowed in projection["choices"].items()},
+                            "actions":{"select":bool(projection["actions"]["select"] and
+                                (child is None or child["sequence"]<32)),
+                                "cancel":bool(projection["actions"]["cancel"]),
+                                "open_browser":False,"switch_account":False},
+                            "authentication_attempt":actual}}
+                    return {"state":"checking"}
                 if row["read_attempts"]>=MAX_READS:
                     return {"state":"blocked"}
             return {"state":"preparing"}
@@ -129,13 +156,17 @@ class ProtectedAuthoritySetupOwner:
         # presentation is only allowed to initiate the specific protected task.
         facts = dict.fromkeys(FACTS,"unknown")
         facts["installation"]="missing"
-        actions = frozenset({"account.connect"} if view["state"]=="available" else ())
+        authentication=view.get("authentication")
+        actions = frozenset({"account.connect"} if view["state"]=="available" else
+            {"auth."+verb for verb in ("select","cancel") if authentication is not None and authentication["actions"][verb]})
         return DomainView(facts,{"protected_recovery":view},reason="authority_unavailable" if view["state"]=="blocked" else "none",
             permitted_actions=actions)
 
     def admit(self, connection, journey_id, *, action, scope, actor=None):
         if "protected_recovery" not in scope:
             return self.base.admit(connection,journey_id,action=action,scope=scope,actor=actor)
+        if action in {"auth.select","auth.cancel"}:
+            return self._admit_child(connection,journey_id,action=action,scope=scope)
         command_id=scope.get("protected_recovery_command_id")
         offer=scope["protected_recovery"]
         if (not self.enabled or action!="account.connect" or offer.get("state")!="available"
@@ -167,6 +198,164 @@ class ProtectedAuthoritySetupOwner:
             "recovery_id":request["recovery_id"],"scope_digest":offer["scope_digest"],
             "operation_id":command_id,"journey_id":journey_id}})
 
+    def _pending_child(self,connection,parent_id):
+        return connection.execute("SELECT 1 FROM desktop_setup_operations WHERE state IN "
+            "('accepted','waiting','outcome_unknown') AND json_extract(owner_scope_json,"
+            "'$.protected_recovery_child.parent_operation_id')=?", (parent_id,)).fetchone() is not None
+
+    def _admit_child(self,connection,journey_id,*,action,scope):
+        offer=scope["protected_recovery"]
+        authentication=offer.get("authentication")
+        command_id=scope.get("protected_recovery_command_id")
+        verb=action.removeprefix("auth.")
+        if (not self.enabled or command_id is None or journey_id is None or authentication is None
+                or offer.get("state")!="sign-in-required" or not authentication["actions"][verb]
+                or self._view(connection,journey_id)!=offer):
+            raise CommandRefused("authority_unavailable")
+        require_journey(command_id)
+        parent_id=authentication["operation_id"]
+        parent=connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=? AND journey_id=?",
+            (parent_id,journey_id)).fetchone()
+        if parent is None:
+            raise CommandRefused("authority_unavailable")
+        parent=dict(parent)
+        try:
+            binding,_=self._saved(connection,parent)
+            self._authorize(parent,connection=connection)
+            request=self.browser.journal.plan_authentication(connection,binding["recovery_id"],verb,
+                authorize=lambda **kw:self._authorize(parent,**kw))
+        except (HostedGrantUnavailable,ValueError):
+            raise CommandRefused("authority_unavailable") from None
+        return AcceptedContext(journey_id,{"protected_recovery_child":{
+            "parent_operation_id":parent_id,"recovery_id":binding["recovery_id"],"verb":verb,
+            "operation_id":command_id,"request":request}})
+
+    def _saved_child(self, connection, operation, *, require_pending=True):
+        intent=self._child_intent(operation)
+        if (not isinstance(intent,dict) or set(intent)!={"parent_operation_id","recovery_id","verb","operation_id","request"}
+                or intent["verb"] not in {"select","cancel"} or operation["action"]!="auth."+intent["verb"]
+                or operation["operation_id"]!=intent["operation_id"]):
+            raise HostedGrantUnavailable("Protected authentication command changed")
+        row=connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?",(operation["operation_id"],)).fetchone()
+        parent=connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=? AND journey_id=?",
+            (intent["parent_operation_id"],operation["journey_id"])).fetchone()
+        if (row is None or parent is None or row["owner_scope_json"]!=operation["owner_scope_json"]
+                or row["journey_id"]!=operation["journey_id"] or row["action"]!=operation["action"]
+                or require_pending and row["state"] not in PENDING):
+            raise HostedGrantUnavailable("Protected authentication command unavailable")
+        parent=dict(parent)
+        binding,source=self._saved(connection,parent,require_pending=require_pending)
+        if binding["recovery_id"]!=intent["recovery_id"]:
+            raise HostedGrantUnavailable("Protected authentication recovery changed")
+        return intent,parent,binding,source
+
+    def _authorize_child(self, operation, *, connection, mutation=False, require_claimed=False):
+        if not self.enabled:
+            raise HostedGrantUnavailable("Protected recovery is disabled")
+        intent,parent,binding,_=self._saved_child(connection,operation)
+        self._no_competing_work(connection,operation_id=parent["operation_id"],child_operation_id=operation["operation_id"])
+        if mutation and self.store._now().timestamp()>=operation["expires_at"]:
+            raise HostedGrantUnavailable("Protected authentication command expired")
+        if require_claimed and not self._was_claimed(intent,self.browser.journal.child(connection,binding["recovery_id"])):
+            raise HostedGrantUnavailable("Protected authentication attempt changed")
+
+    def _child_state(self, connection, operation, *, require_pending=True):
+        intent,parent,binding,source=self._saved_child(connection,operation,require_pending=require_pending)
+        ceremony=self.browser.journal.row(connection,binding["recovery_id"])
+        child=self.browser.journal.child(connection,binding["recovery_id"])
+        return intent,parent,binding,source,ceremony,child
+
+    @staticmethod
+    def _was_claimed(intent,child):
+        if child is None or child["attempt_id"]!=intent["request"]["authentication_attempt_id"]:
+            return False
+        if intent["verb"]=="select":
+            return json.loads(child["request_json"])==intent["request"]
+        return child["state"] in {"cancel-claimed","retired","admitted"}
+
+    def _require_unclaimed(self,connection,intent,*,authorize):
+        # An unrelated current child is not proof that this command never sent.
+        # Require the same original actionable projection and exact plan.
+        if intent["verb"]=="select" and connection.execute(
+                "SELECT 1 FROM protected_recovery_authentication_children WHERE attempt_id=?",
+                (intent["request"]["authentication_attempt_id"],)).fetchone():
+            raise HostedGrantUnavailable("Protected authentication attempt changed")
+        expected=self.browser.journal.plan_authentication(connection,intent["recovery_id"],intent["verb"],
+            authorize=authorize,attempt_id=intent["request"]["authentication_attempt_id"])
+        if expected!=intent["request"]:
+            raise HostedGrantUnavailable("Protected authentication plan changed")
+
+    def _observe_child(self,operation):
+        if not self.enabled:
+            return None
+        try:
+            with self.store.database.read() as connection:
+                intent,_,_,source,ceremony,child=self._child_state(connection,operation,require_pending=False)
+                if source["state"]=="refused":
+                    return OperationResult("refused","authority_unavailable")
+                if source["state"]!="admitted":
+                    self.recovery.exact(connection,json.loads(source["request_json"]),authorize=lambda **_: None)
+                if not self._was_claimed(intent,child):
+                    return None
+                state=child["state"]
+                if state=="admitted":
+                    return OperationResult("completed") if intent["verb"]=="select" else OperationResult("refused","operation_refused")
+                # A mutation reply or exact read alone does not establish the
+                # currently actionable child. A matching current read must exist.
+                if ceremony is None or ceremony["projection_json"] is None:
+                    return None
+                projection=json.loads(ceremony["projection_json"])
+                actual=projection["authentication_attempt"]
+                if actual is None or actual["authentication_attempt_id"]!=child["attempt_id"] or projection["state"]!=state:
+                    return None
+                if state=="retired":
+                    return OperationResult("completed") if intent["verb"]=="cancel" else OperationResult("refused","operation_refused")
+                if state=="selected" and intent["verb"]=="select":
+                    return OperationResult("completed")
+        except (HostedGrantUnavailable,ValueError):
+            return None
+        return None
+
+    async def _execute_child(self,operation,*,reconcile):
+        outcome=self._observe_child(operation)
+        if outcome is not None:
+            return outcome
+        if not self.enabled:
+            return OperationResult("outcome_unknown","authority_unavailable")
+        journey=operation["journey_id"]
+        authorize=lambda **kw:self._authorize_child(operation,require_claimed=True,**kw)
+        try:
+            def read():
+                with self.store.database.read() as connection:
+                    self._authorize_child(operation,connection=connection)
+                    current=self._child_state(connection,operation)
+                    if not self._was_claimed(current[0],current[-1]):
+                        self._require_unclaimed(connection,current[0],authorize=lambda **kw:self._authorize_child(operation,**kw))
+                    return current
+            intent,parent,binding,source,ceremony,child=await asyncio.to_thread(read)
+            rid=binding["recovery_id"]
+            if not self._was_claimed(intent,child):
+                # A restart before the atomic journal claim proves the mutation
+                # never began. Do not manufacture a new gesture on restart.
+                if reconcile or self.store._now().timestamp()>=operation["expires_at"]:
+                    return OperationResult("refused","operation_expired" if self.store._now().timestamp()>=operation["expires_at"]
+                        else "operation_unconfirmed")
+                await self.browser.send_admitted_authentication(rid,intent["verb"],intent["request"],
+                    journey_id=journey,authorize=lambda **kw:self._authorize_child(operation,mutation=True,**kw))
+            else:
+                if self.store._now().timestamp()>=source["created_at"]+1860:
+                    return OperationResult("outcome_unknown","operation_unconfirmed")
+                if not await asyncio.to_thread(self._claim_read,parent,child_operation=operation):
+                    return OperationResult("outcome_unknown","operation_unconfirmed")
+                await self.browser.observe_authentication(rid,journey_id=journey,authorize=authorize,exact_child=True)
+            outcome=self._observe_child(operation)
+            if outcome is not None:
+                return outcome
+            await self.browser.observe_authentication(rid,journey_id=journey,authorize=authorize)
+            return self._observe_child(operation) or OperationResult("outcome_unknown","operation_unconfirmed")
+        except (HostedGrantUnavailable,ValueError):
+            return OperationResult("outcome_unknown","operation_unconfirmed")
+
     def _saved(self, connection, operation, *, require_pending=True):
         intent=json.loads(operation["owner_scope_json"]).get("protected_recovery_intent")
         if (not isinstance(intent,dict) or set(intent)!={"recovery_id","scope_digest","operation_id","journey_id"}
@@ -196,6 +385,8 @@ class ProtectedAuthoritySetupOwner:
     def observe(self, operation):
         if not self.handles(operation):
             return self.base.observe(operation)
+        if self._child_intent(operation) is not None:
+            return self._observe_child(operation)
         try:
             with self.store.database.read() as connection:
                 _,source=self._saved(connection,operation,require_pending=False)
@@ -232,9 +423,14 @@ class ProtectedAuthoritySetupOwner:
             self.recovery.adopt_delivery(request,attempt,result,verifier=self.verifier,authorize=authorize)
         return True
 
-    def _claim_read(self, operation):
+    def _claim_read(self, operation, *, child_operation=None):
+        def authorize(connection):
+            if child_operation is None:
+                self._authorize(operation,connection=connection)
+            else:
+                self._authorize_child(child_operation,connection=connection)
         with self.store.database.transaction() as connection:
-            self._authorize(operation,connection=connection)
+            authorize(connection)
             binding,_=self._saved(connection,operation)
             now=self.store._now().timestamp()
             attempts=binding["read_attempts"]
@@ -242,7 +438,7 @@ class ProtectedAuthoritySetupOwner:
                 return False
             connection.execute("UPDATE protected_recovery_desktop_admissions SET read_attempts=?,next_read_at=? WHERE recovery_id=?",
                 (attempts+1,now+READ_DELAYS[min(attempts,2)],binding["recovery_id"]))
-            self._authorize(operation,connection=connection)
+            authorize(connection)
             return True
 
     def _state(self, operation):
@@ -256,6 +452,8 @@ class ProtectedAuthoritySetupOwner:
     async def execute(self, operation, *, reconcile, actor=None):
         if not self.handles(operation):
             return await self.base.execute(operation,reconcile=reconcile,actor=actor)
+        if self._child_intent(operation) is not None:
+            return await self._execute_child(operation,reconcile=reconcile)
         outcome=self.observe(operation)
         if outcome is not None:
             return outcome
@@ -264,6 +462,9 @@ class ProtectedAuthoritySetupOwner:
         journey=operation["journey_id"]
         authorize=lambda **kw:self._authorize(operation,**kw)
         try:
+            with self.store.database.read() as connection:
+                if self._pending_child(connection,operation["operation_id"]):
+                    return OperationResult("waiting")
             _,source,request,ceremony,child=await asyncio.to_thread(self._state,operation)
             if source["state"] in {"reserved","prepare-claimed"}:
                 await self._effects.run(self._authority_exchange,operation,"prepare",journey_id=journey)
@@ -303,6 +504,21 @@ class ProtectedAuthoritySetupOwner:
             return getattr(self.base,"automatic_recovery",lambda _:False)(operation)
         if not self.enabled:
             return False
+        if self._child_intent(operation) is not None:
+            try:
+                with self.store.database.read() as connection:
+                    self._authorize_child(operation,connection=connection)
+                    intent,_,binding,source,ceremony,child=self._child_state(connection,operation)
+                    if source["state"]!="prepared" or ceremony is None:
+                        return False
+                    self.recovery.exact(connection,json.loads(source["request_json"]),
+                        authorize=lambda **kw:self._authorize_child(operation,**kw))
+                    if not self._was_claimed(intent,child):
+                        self._require_unclaimed(connection,intent,authorize=lambda **kw:self._authorize_child(operation,**kw))
+                        return True
+                    return binding["read_attempts"]<MAX_READS and self.store._now().timestamp()<source["created_at"]+1860
+            except (HostedGrantUnavailable,ValueError):
+                return False
         try:
             binding,source,request,ceremony,child=self._state(operation)
             with self.store.database.read() as connection:

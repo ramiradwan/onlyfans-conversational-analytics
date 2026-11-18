@@ -242,9 +242,13 @@ class DesktopOnboardingCoordinator:
             # A recovery presentation has an independent owner. Neither
             # ordinary enrollment nor activation may interpret it as their own.
             task = "account-connection"
-            decision = authentication = None
+            decision = None
+            authentication = protected_recovery.get("authentication")
             local_ready = False
             actions = ["account.connect"] if protected_recovery["state"] == "available" else []
+            if authentication is not None:
+                actions.extend(action for action, key in (("auth.select","select"), ("auth.cancel","cancel"))
+                    if authentication["actions"][key])
         review_replacement = view.scope.get("activation_replacement")
         actions = [name for name in actions if all(item["action"] != name or (
             name == "activation.review" and review_replacement is not None
@@ -312,8 +316,14 @@ class DesktopOnboardingCoordinator:
         authentication = snapshot["authentication"]
         protected_recovery = scope.get("protected_recovery")
         if protected_recovery is not None:
-            if (action != "account.connect" or protected_recovery["state"] != "available"
-                    or command.get("recover_authority") is not True or "provider" in command):
+            if command.get("recover_authority") is not True or "replace_ceremony" in command:
+                raise CommandRefused("action_unavailable")
+            if action == "account.connect":
+                if protected_recovery["state"] != "available" or "provider" in command:
+                    raise CommandRefused("action_unavailable")
+            elif (action not in {"auth.select", "auth.cancel"} or authentication is None
+                    or not authentication["actions"][action.removeprefix("auth.")]
+                    or (command.get("provider") != "default" if action == "auth.select" else "provider" in command)):
                 raise CommandRefused("action_unavailable")
             scope["protected_recovery_command_id"] = command["operation_id"]
         elif "recover_authority" in command:
@@ -329,7 +339,7 @@ class DesktopOnboardingCoordinator:
                     or authentication["operation_id"] != replacement["parent_operation_id"]):
                 raise CommandRefused("action_unavailable")
             scope["ceremony_replacement"] = replacement
-        elif action.startswith("auth.") or action == "account.connect" and "provider" in command:
+        elif protected_recovery is None and (action.startswith("auth.") or action == "account.connect" and "provider" in command):
             if authentication is not None and authentication["state"] == "replacement-required":
                 raise CommandRefused("action_unavailable")
             from app.persistence.auth import _new_uuid7
@@ -587,7 +597,8 @@ class DesktopOnboardingCoordinator:
         if self._closed or operation["action"] not in {"auth.select", "auth.cancel", "auth.switch"}:
             return None
         selected = json.loads(operation["owner_scope_json"])
-        intent = selected.get("authentication_intent") or selected.get("ceremony_replacement")
+        intent = (selected.get("authentication_intent") or selected.get("ceremony_replacement")
+            or selected.get("protected_recovery_child"))
         if not isinstance(intent, dict):
             return None
         parent_id = intent.get("parent_operation_id")

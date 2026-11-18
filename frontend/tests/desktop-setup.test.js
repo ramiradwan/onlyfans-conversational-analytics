@@ -1337,3 +1337,64 @@ it('requires the explicit protected recovery discriminator and never opens an or
   await expect(subject.launchBrowser(true, operationId)).rejects.toThrow('browser_unavailable');
   expect(openBrowser).not.toHaveBeenCalled();
 });
+
+it('admits protected child commands only with the explicit marker and never launches the ordinary browser', async () => {
+  const calls = [];
+  const parent = { ...record, action: 'account.connect', state: 'waiting' };
+  const child = { ...record, operation_id: '33333333-3333-4333-8333-333333333333', action: 'auth.select', state: 'accepted' };
+  const openBrowser = vi.fn();
+  const subject = new DesktopSetupClient({ generation, storage: storage(), receive() {},
+    uuid: () => child.operation_id, stream: () => () => {}, openBrowser,
+    request: async (url, options) => {
+      calls.push([url, options?.body && JSON.parse(options.body)]);
+      return response(child, url.endsWith('/commands') ? 202 : 200);
+    } });
+  subject.value = { ...initial(), next_task: 'account-connection', authority_recovery: 'sign-in-required',
+    pending_operations: [parent], allowed_actions: ['auth.select'],
+    authentication: { operation_id: parent.operation_id, browser_operation_id: null, state: 'selection-required',
+      choices: { default: true, google: false, 'microsoft-personal': false, telegram: false, tiktok: false },
+      actions: { select: true, cancel: false, open_browser: false, switch_account: false }, authentication_attempt: null } };
+  subject.session = session;
+  subject.connected = true;
+  subject.remember(parent.operation_id);
+  await expect(subject.act('auth.select', { provider: 'default' })).rejects.toThrow('action_unavailable');
+  await expect(subject.act('auth.select', { provider: 'google', recover_authority: true })).rejects.toThrow('action_unavailable');
+  await subject.act('auth.select', { provider: 'default', recover_authority: true });
+  const commands = calls.filter(([url]) => url.endsWith('/commands'));
+  expect(commands).toHaveLength(1);
+  expect(commands[0][1]).toMatchObject({ action: 'auth.select', provider: 'default', recover_authority: true });
+  expect(openBrowser).not.toHaveBeenCalled();
+  subject.value = { ...subject.value, pending_operations: [parent, child], authority_recovery: 'checking', allowed_actions: [] };
+  await expect(subject.launchBrowser(true, child.operation_id)).rejects.toThrow('browser_unavailable');
+  expect(openBrowser).not.toHaveBeenCalled();
+});
+
+it('allows an explicit protected successor or cancellation while its exact parent remains pending', async () => {
+  for (const [state, action, options] of [
+    ['retired', 'auth.select', { provider: 'default', recover_authority: true }],
+    ['selected', 'auth.cancel', { recover_authority: true }],
+  ]) {
+    const calls = [];
+    const parent = { ...record, action: 'account.connect', state: 'waiting' };
+    const child = { ...record, operation_id: '33333333-3333-4333-8333-333333333333', action, state: 'accepted' };
+    const openBrowser = vi.fn();
+    const subject = new DesktopSetupClient({ generation, storage: storage(), receive() {},
+      uuid: () => child.operation_id, stream: () => () => {}, openBrowser,
+      request: async (url, options) => {
+        calls.push([url, options?.body && JSON.parse(options.body)]);
+        return response(child, url.endsWith('/commands') ? 202 : 200);
+      } });
+    subject.value = { ...initial(), next_task: 'account-connection', authority_recovery: 'sign-in-required',
+      pending_operations: [parent], allowed_actions: [action],
+      authentication: { operation_id: parent.operation_id, browser_operation_id: null, state,
+        choices: { default: true, google: false, 'microsoft-personal': false, telegram: false, tiktok: false },
+        actions: { select: state === 'retired', cancel: state === 'selected', open_browser: false, switch_account: false },
+        authentication_attempt: { authentication_attempt_id: '0198a1b2-c3d4-7300-8000-000000000063', provider: 'default', mode: 'sign-in' } } };
+    subject.session = session;
+    subject.connected = true;
+    subject.remember(parent.operation_id);
+    await subject.act(action, options);
+    expect(calls.filter(([url]) => url.endsWith('/commands'))[0][1]).toMatchObject({ action, recover_authority: true });
+    expect(openBrowser).not.toHaveBeenCalled();
+  }
+});
