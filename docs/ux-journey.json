@@ -2443,6 +2443,26 @@
         {
           "kind": "unit",
           "file": "frontend/tests/desktop-setup.test.js",
+          "name": "offers explicit ceremony recovery without launching Chrome or choosing a provider"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "keeps interrupted ceremony recovery passive even after desktop restart"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_expired_ceremony_recovery_requires_explicit_scoped_action_and_does_not_launch"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_explicit_ceremony_recovery_reconciles_or_refuses_without_resending"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
           "name": "renders the three local setup tasks and optional activation from one projection"
         },
         {

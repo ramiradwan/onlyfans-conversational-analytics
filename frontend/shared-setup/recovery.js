@@ -85,6 +85,8 @@ export const operationRecovery = Object.freeze({
 export const authenticationRecovery = Object.freeze({
   'selection-required': 'authentication_required',
   'reauthentication-required': 'authentication_required',
+  'replacement-required': 'authentication_required',
+  'replacement-pending': 'operation_pending',
   selected: 'operation_pending',
   admitted: null,
   retired: 'cancelled',

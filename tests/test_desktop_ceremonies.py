@@ -311,10 +311,10 @@ async def test_replacement_reservation_cannot_select_new_successor_after_predece
 
 
 class ReplacementClient:
-    def __init__(self, ordinary):
+    def __init__(self, ordinary, *, clock=lambda: NOW):
         from app.security.browser_ceremony_replacement import BrowserCeremonyReplacementClient
-        self.ordinary = ordinary
-        self.validator = BrowserCeremonyReplacementClient(ordinary.validator, clock=lambda: NOW)
+        self.ordinary, self.clock = ordinary, clock
+        self.validator = BrowserCeremonyReplacementClient(ordinary.validator, clock=clock)
         self.calls = []
         self.lost = False
         self.refused = False
@@ -334,7 +334,7 @@ class ReplacementClient:
             raise BrowserCeremonyRefused("not_ready")
         binding = {**predecessor, "attempt_id": request["successor_attempt_id"]}
         successor = {"profile": PROFILE, "operation_id": request["successor_operation_id"],
-            "ceremony_id": _new_uuid7(NOW), "binding_digest": binding_digest(binding),
+            "ceremony_id": _new_uuid7(self.clock()), "binding_digest": binding_digest(binding),
             "expires_at": binding["source_expires_at"], "entry_reference": binding["source"]["reference"],
             "completion": expected_completion(binding)}
         self.ordinary.successors[request["successor_operation_id"]] = copy.deepcopy(successor)

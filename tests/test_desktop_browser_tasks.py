@@ -594,3 +594,163 @@ async def test_a_setup_snapshot_read_opens_the_store_once(setup, monkeypatch):
     monkeypatch.setattr(database, "connect", counted)
     assert coordinator.read(native) == expected
     assert len(opened) == 1
+
+async def replacement_case(setup):
+    from app.onboarding.authentication import DesktopAuthentication
+    from test_desktop_authentication import AuthenticationClient
+    from test_desktop_ceremonies import ReplacementClient
+    from test_onboarding_enrollment_runtime import _HandoffFixture
+    # Production retains the browser observation under the installation key.
+    # Establish the same key before observing browser access in this fixture.
+    setup[0].store.installation_key_reference = lambda **_: _HandoffFixture().key.ensure_ready()
+    coordinator, initial, client, parent, scope, clock, native = await initial_ceremony_case(setup)
+    owner = coordinator.owner
+    ceremonies = owner.ceremonies
+    client.mode, client.state, client.revision = "live", "retired", 2
+    await ceremonies.reconcile(parent["operation_id"], authorize=lambda: owner._read_guard(parent))
+    authentication = DesktopAuthentication(coordinator.store, ceremonies, AuthenticationClient())
+    ceremonies.authentication = authentication
+    ceremonies.replacement_client = ReplacementClient(client, clock=lambda: clock[0])
+    return coordinator, initial, ceremonies, parent, scope, clock, native
+
+
+@pytest.mark.asyncio
+async def test_expired_ceremony_recovery_requires_explicit_scoped_action_and_does_not_launch(setup):
+    from app.onboarding.coordinator import CommandRefused
+    from app.onboarding.contract import validate
+    coordinator, initial, ceremonies, parent, scope, clock, native = await replacement_case(setup)
+    owner = coordinator.owner
+    original = ceremonies.row(parent["operation_id"])
+    source = owner.sources.resolve(scope["source_journey_id"])
+    before = len(ceremonies.client.calls)
+    snapshot = coordinator.read(native)
+    assert snapshot["authentication"]["state"] == "replacement-required"
+    assert snapshot["allowed_actions"] == ["auth.select"]
+    assert snapshot["authentication"]["actions"] == dict(select=True, cancel=False, open_browser=False, switch_account=False)
+    assert not any(snapshot["authentication"]["choices"].values())
+    assert coordinator.read(native) == snapshot
+    assert len(ceremonies.client.calls) == before
+    with pytest.raises(CommandRefused):
+        coordinator._accept(native, {**command(snapshot, "auth.select"), "provider": "google"})
+    with pytest.raises(ValueError):
+        validate({**command(snapshot, "auth.select"), "provider": "google", "replace_ceremony": True}, kind="command")
+    with pytest.raises(ValueError):
+        validate({**command(snapshot, "auth.switch"), "replace_ceremony": True}, kind="command")
+    clicked = {**command(snapshot, "auth.select"), "replace_ceremony": True}
+    child, fresh = coordinator._accept(native, clicked)
+    assert fresh
+    assert coordinator._accept(native, clicked) == (child, False)
+    with pytest.raises(CommandRefused):
+        coordinator._accept(native, {**clicked, "operation_id": str(uuid4())})
+    pending = coordinator.read(native)
+    assert pending["authentication"]["state"] == "replacement-pending"
+    assert "auth.select" not in pending["allowed_actions"]
+    with pytest.raises(AdmissionRefused):
+        coordinator.admissions.prepare_accepted_task(child["operation_id"], purpose="browser.authentication",
+            deadline=child["expires_at"])
+    coordinator._start(child, reconcile=False, actor=None)
+    await coordinator.drain()
+    assert coordinator.receipt(native, child["operation_id"])["state"] == "completed"
+    successor = ceremonies.row(parent["operation_id"])
+    assert successor["ceremony_id"] != original["ceremony_id"]
+    assert successor["provider_expires_at"] == original["provider_expires_at"]
+    assert owner.sources.resolve(scope["source_journey_id"]) == source
+    assert len(ceremonies.replacement_client.calls) == 1
+    assert ceremonies.authentication.client.calls
+    assert all(verb == "read" for verb, _ in ceremonies.authentication.client.calls)
+    with coordinator.store.database.read() as connection:
+        assert connection.execute("SELECT 1 FROM desktop_browser_tasks WHERE operation_id=?", (child["operation_id"],)).fetchone() is None
+    assert (await owner.execute(child, reconcile=True)).state == "completed"
+    assert len(ceremonies.replacement_client.calls) == 1
+    # The coordinator automatically refreshed the original parent. No extra read command.
+    current = coordinator.read(native)
+    assert current["authentication"]["state"] == "selection-required"
+    assert "auth.select" in current["allowed_actions"]
+    assert current["authentication"]["operation_id"] == parent["operation_id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["before-reservation", "lost-response", "changed-predecessor", "changed-account"])
+async def test_explicit_ceremony_recovery_reconciles_or_refuses_without_resending(setup, fault):
+    from app.onboarding.coordinator import CommandRefused, OperationResult
+    coordinator, initial, ceremonies, parent, scope, clock, native = await replacement_case(setup)
+    owner = coordinator.owner
+    snapshot = coordinator.read(native)
+    assert snapshot["authentication"]["state"] == "replacement-required"
+    clicked = {**command(snapshot, "auth.select"), "replace_ceremony": True}
+    if fault == "changed-predecessor":
+        ceremonies.client.revision += 1
+        await ceremonies.reconcile(parent["operation_id"], authorize=lambda: owner._read_guard(parent))
+        with pytest.raises(CommandRefused):
+            coordinator._accept(native, clicked)
+        assert ceremonies.replacement_client.calls == []
+        return
+    child, fresh = coordinator._accept(native, clicked)
+    assert fresh
+    if fault == "before-reservation":
+        assert (await owner.execute(child, reconcile=True)).state == "refused"
+        assert ceremonies.replacement_client.calls == []
+        return
+    if fault == "changed-account":
+        selected = owner.read
+        def changed(*args, **kwargs):
+            from app.onboarding.coordinator import DomainView
+            view = selected(*args, **kwargs)
+            return DomainView(view.facts, {**view.scope, "creator_account_id": "different-account"}, view.reason)
+        owner.read = changed
+        assert (await owner.execute(child, reconcile=False)).state == "refused"
+        assert ceremonies.replacement_client.calls == []
+        return
+    ceremonies.replacement_client.lost = True
+    with pytest.raises(OSError):
+        await owner.execute(child, reconcile=False)
+    coordinator._settle(child, OperationResult("outcome_unknown", "operation_unconfirmed"))
+    assert coordinator.read(native)["authentication"]["state"] == "replacement-pending"
+    replacement = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(replacing_generation=native.generation),
+        role="desktop")
+    assert coordinator.read(replacement)["authentication"]["state"] == "replacement-pending"
+    result = await owner.execute(child, reconcile=True)
+    assert result.state == "completed"
+    coordinator._settle(child, result)
+    assert len(ceremonies.replacement_client.calls) == 1
+    assert ceremonies.authentication.client.calls == []
+    assert coordinator.receipt(replacement, child["operation_id"])["state"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_expired_local_presentation_does_not_shorten_live_ceremony_recovery_source(setup):
+    coordinator, _, native, clock = setup
+    clock[0] += timedelta(seconds=1720)
+    coordinator, _, ceremonies, parent, scope, clock, native = await replacement_case(setup)
+    source = coordinator.owner.sources.resolve(scope["source_journey_id"])
+    clock[0] += timedelta(seconds=81)
+    assert parent["expires_at"] < clock[0].timestamp() < source.expires_at.timestamp()
+    replacement = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(replacing_generation=native.generation),
+        role="desktop")
+    snapshot = coordinator.read(replacement)
+    assert snapshot["authentication"]["state"] == "replacement-required"
+    clicked = {**command(snapshot, "auth.select"), "replace_ceremony": True}
+    child, _ = coordinator._accept(replacement, clicked)
+    assert (await coordinator.owner.execute(child, reconcile=False)).state == "completed"
+    assert len(ceremonies.replacement_client.calls) == 1
+    assert coordinator.owner.sources.resolve(scope["source_journey_id"]) == source
+
+
+@pytest.mark.asyncio
+async def test_closed_ceremony_recovery_refusal_is_not_rollback_or_permission_to_resend(setup):
+    from app.onboarding.coordinator import OperationResult
+    coordinator, _, ceremonies, parent, _, _, native = await replacement_case(setup)
+    owner = coordinator.owner
+    child, _ = coordinator._accept(native, {**command(coordinator.read(native), "auth.select"), "replace_ceremony": True})
+    ceremonies.replacement_client.refused = True
+    result = await owner.execute(child, reconcile=False)
+    assert result == OperationResult("outcome_unknown", "operation_unconfirmed")
+    coordinator._settle(child, result)
+    assert (await owner.execute(child, reconcile=True)) == result
+    assert coordinator.read(native)["authentication"]["state"] == "replacement-pending"
+    assert "auth.select" not in coordinator.read(native)["allowed_actions"]
+    assert len(ceremonies.replacement_client.calls) == 1
+    # An independently verified original account outcome wins over replacement.
+    coordinator._settle(parent, OperationResult("completed"))
+    assert (await owner.execute(child, reconcile=True)).state == "refused"
+    assert len(ceremonies.replacement_client.calls) == 1

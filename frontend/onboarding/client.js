@@ -289,7 +289,9 @@ export class DesktopSetupClient {
     };
     const authentication = this.value?.authentication;
     const replacesCurrentAuthentication = this.value?.allowed_actions.includes(action)
-      && (['auth.cancel', 'auth.switch'].includes(action)
+      && (action === 'auth.select' && options.replace_ceremony === true
+        && authentication?.state === 'replacement-required' && authentication.operation_id === this.pending
+        || ['auth.cancel', 'auth.switch'].includes(action)
         && [authentication?.operation_id, authentication?.browser_operation_id].includes(this.pending)
         || action === 'auth.select' && authentication?.state === 'reauthentication-required'
         && authentication.actions.select && authentication.browser_operation_id === this.pending);
@@ -305,8 +307,8 @@ export class DesktopSetupClient {
     this.intent = { task: this.value.next_task, action, operationId: intent.operation_id, confirmed: false,
       initialAuthentication: action === 'account.connect' && intent.provider !== undefined };
     this.remember(intent.operation_id);
-    if (this.openBrowser && ['browser.access', 'account.connect', 'browser.pair', 'auth.select', 'auth.switch'].includes(action)) this.launchOperation = intent.operation_id;
-    if (action === 'auth.cancel') this.launchOperation = null;
+    if (this.openBrowser && !intent.replace_ceremony && ['browser.access', 'account.connect', 'browser.pair', 'auth.select', 'auth.switch'].includes(action)) this.launchOperation = intent.operation_id;
+    if (action === 'auth.cancel' || intent.replace_ceremony) this.launchOperation = null;
     this.notify();
     try {
       observe('command-send');

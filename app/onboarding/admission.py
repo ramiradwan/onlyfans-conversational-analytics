@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import math
+import json
 import re
 import secrets
 from dataclasses import dataclass
@@ -264,7 +265,8 @@ class ScopedAdmissions:
         with self.authentication.database.transaction() as connection:
             operation = connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?", (operation_id,)).fetchone()
             if (operation is None or purpose not in allowed.get(operation["action"], set())
-                    or operation["state"] not in {"accepted", "waiting", "outcome_unknown"}):
+                    or operation["state"] not in {"accepted", "waiting", "outcome_unknown"}
+                    or json.loads(operation["owner_scope_json"]).get("ceremony_replacement") is not None):
                 raise AdmissionRefused("task_scope_invalid")
             existing = connection.execute("SELECT * FROM desktop_browser_tasks WHERE operation_id=?", (operation_id,)).fetchone()
             if existing is not None:

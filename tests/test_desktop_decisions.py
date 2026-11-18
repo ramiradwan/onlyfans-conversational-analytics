@@ -300,6 +300,11 @@ async def test_replacement_requires_reconciliation_of_pending_decision_and_fence
         await ceremonies.replace(local_id, predecessor, authorize=authorized)
     assert ceremonies.replacement_client.calls == []
     coordinator._settle(old_operation, OperationResult("refused", "operation_unconfirmed"))
+    # A live confirmation remains actionable even if the old local command ended.
+    with pytest.raises(HostedGrantUnavailable):
+        await ceremonies.replace(local_id, predecessor, authorize=authorized)
+    client.state = "unavailable"
+    await decisions.refresh(local_id, authorize=authorized)
     await ceremonies.replace(local_id, predecessor, authorize=authorized)
     assert decisions.presentation(parent["journey_id"], "account.connect") is None
     before = copy.deepcopy(client.calls)

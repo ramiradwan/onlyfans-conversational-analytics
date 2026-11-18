@@ -286,6 +286,13 @@ class DesktopAuthentication:
             parent = self.parent_operation(operation_id, connection=connection)
             if self.ceremonies.replacement_pending(parent, connection=connection) or self._closures(connection, parent):
                 return False
+            ceremony = self.ceremonies.row(parent, connection=connection)
+            if (ceremony is not None and self.ceremonies.replacement_client is not None
+                    and ceremony["presentation_state"] == "active" and ceremony["provider_expires_at"] is not None
+                    and timestamp(ceremony["provider_expires_at"]) <= self.store._now()):
+                # Expiry of a local clock is only a trigger for an exact read,
+                # never proof that the Provider has admitted replacement.
+                return False
             row = connection.execute("SELECT projection_json FROM desktop_decision_projections WHERE operation_id=?",
                 (parent,)).fetchone()
             decision = None if row is None else json.loads(row[0])

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
+from contextlib import nullcontext
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -177,6 +178,25 @@ class ProvisioningSetupOwner:
                 self.ceremonies.decisions.status(journey_id, "account.connect", connection=connection),
             "desktop_authentication": None if self.ceremonies is None or self.ceremonies.authentication is None else
                 self.ceremonies.authentication.presentation(journey_id, "account.connect", connection=connection)}
+        if (reason == "none" and self.ceremonies is not None and journey is not None
+                and facts["account"] != "verified"):
+            with (self.store.database.read() if connection is None else nullcontext(connection)) as current:
+                offer = self.ceremonies.replacement_offer(journey_id, connection=current)
+                if offer is not None:
+                    parent = current.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?",
+                        (offer["parent_operation_id"],)).fetchone()
+                    try:
+                        self._guard(dict(parent), connection=current)
+                        original = json.loads(parent["owner_scope_json"])
+                        binding = json.loads(self.ceremonies.row(parent["operation_id"], connection=current)["binding_json"])
+                        if (all(original.get(name) == scope.get(name) for name in (
+                                "source_journey_id", "installation_id", "creator_account_id"))
+                                and scope["key"] is not None and all(binding[name] == scope["key"][name] for name in (
+                                    "installation_key_id", "installation_key_jkt"))
+                                and binding["intended_creator_id"] == scope["creator_account_id"]):
+                            scope["ceremony_replacement"] = offer
+                    except (HostedGrantUnavailable, OnboardingJourneyUnavailable, ValueError):
+                        pass
         return DomainView(facts, scope, reason)
 
     def admit(self, connection, journey_id, *, action, scope, actor=None):
@@ -497,6 +517,17 @@ class ProvisioningSetupOwner:
                 previous_journey_id=original, authorize=lambda: authorize(connection))
         return recovered["journey_id"]
 
+    def _replacement_command_guard(self, operation, *, connection=None):
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as current:
+            self._guard(operation, connection=current)
+            selected = json.loads(operation["owner_scope_json"])
+            view = self.read(operation["journey_id"], connection=current)
+            if (view.reason != "none" or view.facts["account"] == "verified"
+                    or any(view.scope.get(name) != selected.get(name) for name in (
+                        "source_journey_id", "installation_id", "creator_account_id", "association_request_id",
+                        "key", "policy_revision"))):
+                raise HostedGrantUnavailable("Replacement selection changed")
+
     async def execute(self, operation, *, reconcile, actor=None):
         stale = False
         recovered = None
@@ -537,6 +568,13 @@ class ProvisioningSetupOwner:
                 self.initial.resume(recovered)
                 return self.observe(operation) or OperationResult("outcome_unknown", "operation_unconfirmed")
             return await self._connect(operation, reconcile=reconcile)
+        if operation["action"] == "auth.select" and json.loads(operation["owner_scope_json"]).get("ceremony_replacement") is not None:
+            if self.ceremonies is None:
+                return OperationResult("refused", "authority_unavailable")
+            parent = json.loads(operation["owner_scope_json"])["ceremony_replacement"]["parent_operation_id"]
+            return await self.ceremonies.execute_replacement(operation, reconcile=reconcile,
+                authorize=lambda connection=None: self._replacement_command_guard(operation, connection=connection),
+                read_guard=lambda connection=None: self._read_guard({"operation_id": parent}, connection=connection))
         if operation["action"].startswith("auth.") and self.ceremonies is not None and self.ceremonies.authentication is not None:
             intent = json.loads(operation["owner_scope_json"])["authentication_intent"]
             parent = intent["parent_operation_id"]

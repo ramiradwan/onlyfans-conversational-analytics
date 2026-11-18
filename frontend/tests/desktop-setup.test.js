@@ -679,6 +679,50 @@ describe('desktop setup presentation', () => {
     client.stop();
   });
 
+
+  it('offers explicit ceremony recovery without launching Chrome or choosing a provider', async () => {
+    mount();
+    const parent = generation;
+    const value = { ...initial(), journey_id: parent, next_task: 'account-connection',
+      allowed_actions: ['auth.select'], pending_operations: [{ ...record, operation_id: parent, action: 'account.connect', state: 'waiting' }],
+      authentication: { ...signIn(), operation_id: parent, state: 'replacement-required',
+        choices: { google: false, 'microsoft-personal': false, telegram: false, tiktok: false, default: false } } };
+    renderSetup(document, { snapshot: value, connected: true, pending: parent });
+    const button = document.getElementById('task-action');
+    expect(button.hidden).toBe(false);
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toBe('Sign in again');
+    expect(button.dataset.replaceCeremony).toBe('true');
+    expect(document.getElementById('sign-in-options').hidden).toBe(true);
+    expect(document.getElementById('browser-reopen').hidden).toBe(true);
+    const request = vi.fn(async url => response(url.endsWith('/commands')
+      ? { ...record, action: 'auth.select' }
+      : { ...record, action: 'auth.select', state: 'completed' }));
+    const openBrowser = vi.fn();
+    const client = new DesktopSetupClient({ generation, request, openBrowser, storage: storage(), uuid: () => operationId, receive: vi.fn() });
+    client.value = value; client.session = session; client.connected = true; client.remember(parent);
+    await client.act('auth.select', { replace_ceremony: true });
+    expect(openBrowser).not.toHaveBeenCalled();
+    const sent = JSON.parse(request.mock.calls.find(([url]) => url.endsWith('/commands'))[1].body);
+    expect(sent.replace_ceremony).toBe(true);
+    expect(sent.provider).toBeUndefined();
+    client.stop();
+  });
+
+  it('keeps interrupted ceremony recovery passive even after desktop restart', () => {
+    mount();
+    const value = { ...initial(), next_task: 'account-connection', allowed_actions: [],
+      pending_operations: [{ ...record, action: 'auth.select', state: 'outcome_unknown', reason: 'operation_unconfirmed' }],
+      authentication: { ...signIn(), operation_id: generation, state: 'replacement-pending',
+        actions: { select: false, cancel: false, open_browser: false, switch_account: false },
+        choices: { google: false, 'microsoft-personal': false, telegram: false, tiktok: false, default: false } } };
+    renderSetup(document, { snapshot: value, connected: true });
+    expect(document.getElementById('task-status').textContent).toBe('Checking sign-in\u2026');
+    expect(document.getElementById('task-action').hidden).toBe(true);
+    expect(document.getElementById('sign-in-options').hidden).toBe(true);
+    expect(document.getElementById('browser-reopen').hidden).toBe(true);
+  });
+
   it('does not suggest opening an unavailable browser and reserves the warning line', () => {
     mount();
     renderSetup(document, { snapshot: { ...initial(), pending_operations: [record], allowed_actions: [] },

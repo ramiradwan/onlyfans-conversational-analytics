@@ -188,6 +188,24 @@ class DesktopOnboardingCoordinator:
                 reason = refusal["reason"]
         selected_decision = view.scope.get("desktop_decision")
         authentication = view.scope.get("desktop_authentication")
+        replacement = view.scope.get("ceremony_replacement")
+        if replacement is not None and task == "account-connection":
+            authentication = {"operation_id": replacement["parent_operation_id"], "browser_operation_id": None,
+                "state": "replacement-required", "choices": dict.fromkeys(
+                    ("google", "microsoft-personal", "telegram", "tiktok", "default"), False),
+                "actions": {"select": True, "cancel": False, "open_browser": False, "switch_account": False},
+                "authentication_attempt": None}
+            selected_decision = None
+        replacement_pending = next((json.loads(row["owner_scope_json"]).get("ceremony_replacement")
+            for row in operation_rows if row["action"] == "auth.select"
+            and json.loads(row["owner_scope_json"]).get("ceremony_replacement") is not None), None)
+        if replacement_pending is not None and task == "account-connection":
+            authentication = {"operation_id": replacement_pending["parent_operation_id"], "browser_operation_id": None,
+                "state": "replacement-pending", "choices": dict.fromkeys(
+                    ("google", "microsoft-personal", "telegram", "tiktok", "default"), False),
+                "actions": {"select": False, "cancel": False, "open_browser": False, "switch_account": False},
+                "authentication_attempt": None}
+            selected_decision = None
         if authentication is not None and (authentication["state"] in {
                 "selection-required", "reauthentication-required", "selected", "expired", "unavailable"}
                 or authentication["actions"]["open_browser"] or any(
@@ -280,7 +298,16 @@ class DesktopOnboardingCoordinator:
         scope = dict(view.scope)
         action = command["action"]
         authentication = snapshot["authentication"]
-        if action.startswith("auth.") or action == "account.connect" and "provider" in command:
+        replacement = scope.pop("ceremony_replacement", None)
+        if command.get("replace_ceremony") is True:
+            if (action != "auth.select" or replacement is None or authentication is None
+                    or authentication["state"] != "replacement-required"
+                    or authentication["operation_id"] != replacement["parent_operation_id"]):
+                raise CommandRefused("action_unavailable")
+            scope["ceremony_replacement"] = replacement
+        elif action.startswith("auth.") or action == "account.connect" and "provider" in command:
+            if authentication is not None and authentication["state"] == "replacement-required":
+                raise CommandRefused("action_unavailable")
             from app.persistence.auth import _new_uuid7
             provider = command.get("provider")
             if authentication is None or provider is not None and not authentication["choices"].get(provider, False):
@@ -308,7 +335,11 @@ class DesktopOnboardingCoordinator:
         connection.execute("DELETE FROM desktop_setup_operations WHERE state IN ('completed','refused') AND expires_at<=? "
             "AND NOT (action='setup.finalize' AND state='refused') AND NOT EXISTS (SELECT 1 "
             "FROM desktop_browser_ceremony_replacements r WHERE r.parent_operation_id=desktop_setup_operations.operation_id "
-            "AND julianday(r.source_expires_at)>julianday(?, 'unixepoch'))", (now, now))
+            "AND julianday(r.source_expires_at)>julianday(?, 'unixepoch')) "
+            "AND NOT EXISTS (SELECT 1 FROM desktop_setup_operations child "
+            "WHERE child.state IN ('accepted','waiting','outcome_unknown') "
+            "AND json_extract(child.owner_scope_json,'$.ceremony_replacement.parent_operation_id')=desktop_setup_operations.operation_id)",
+            (now, now))
         if connection.execute("SELECT count(*) FROM desktop_setup_operations").fetchone()[0] >= 128:
             raise CommandRefused("operation_limit_reached")
         connection.execute("INSERT OR IGNORE INTO desktop_setup_journeys (journey_id,revision,created_at) VALUES (?,0,?)", (journey, now))
@@ -530,7 +561,7 @@ class DesktopOnboardingCoordinator:
         if self._closed or operation["action"] not in {"auth.select", "auth.cancel", "auth.switch"}:
             return None
         selected = json.loads(operation["owner_scope_json"])
-        intent = selected.get("authentication_intent")
+        intent = selected.get("authentication_intent") or selected.get("ceremony_replacement")
         if not isinstance(intent, dict):
             return None
         parent_id = intent.get("parent_operation_id")

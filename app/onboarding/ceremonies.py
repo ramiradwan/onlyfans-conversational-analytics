@@ -12,7 +12,7 @@ from app.onboarding.held_reads import HeldReads
 from app.persistence.onboarding import require_journey
 from app.provisioning.events import events
 from app.provisioning.owner_effects import OwnerEffects
-from app.security.browser_ceremony import PROFILE, PROOF_PROFILE, binding_digest, browser_entry_url, expected_completion
+from app.security.browser_ceremony import PROFILE, PROOF_PROFILE, BrowserCeremonyRefused, binding_digest, browser_entry_url, expected_completion
 from app.security.browser_ceremony_replacement import PROFILE as REPLACEMENT_PROFILE, PROOF_PROFILE as REPLACEMENT_PROOF_PROFILE
 from app.security.browser_ceremony_replacement import _contract as replacement_contract
 from app.security.hosted_grants import HostedGrantUnavailable
@@ -134,7 +134,64 @@ class BrowserCeremonies:
                 (operation_id, predecessor_operation_id)).fetchone()
         return None if row is None else json.loads(row["request_json"])
 
-    def reserve_replacement(self, operation_id, predecessor, *, authorize):
+    def replacement_offer(self, journey_id, *, connection):
+        """Local display evidence only: one retained, inactive account ceremony."""
+        if self.replacement_client is None or self.authentication is None or journey_id is None:
+            return None
+        rows = connection.execute("SELECT * FROM desktop_setup_operations WHERE journey_id=? "
+            "AND action='account.connect' AND state IN ('accepted','waiting','outcome_unknown')",
+            (journey_id,)).fetchall()
+        if len(rows) != 1:
+            return None
+        parent = dict(rows[0])
+        try:
+            predecessor = self._eligible_predecessor(parent["operation_id"], connection=connection,
+                allow_expired_parent=True)
+        except HostedGrantUnavailable:
+            return None
+        if self.replacement_reservation(parent["operation_id"], predecessor["predecessor_operation_id"],
+                connection=connection) is not None:
+            return None
+        # Do not compete with another accepted child, including one whose
+        # authentication outcome is still being reconciled.
+        if connection.execute("SELECT 1 FROM desktop_setup_operations WHERE journey_id=? AND "
+                "action IN ('auth.select','auth.switch','auth.cancel') AND state IN "
+                "('accepted','waiting','outcome_unknown')", (journey_id,)).fetchone() is not None:
+            return None
+        return {"parent_operation_id": parent["operation_id"], "predecessor": predecessor}
+
+    def _eligible_predecessor(self, operation_id, *, connection, allow_expired_parent=False):
+        row = self.row(operation_id, connection=connection)
+        operation = connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?",
+            (operation_id,)).fetchone()
+        now = self.store._now()
+        if (row is None or operation is None
+                or operation["state"] not in {"accepted", "waiting", "outcome_unknown"}
+                or operation["action"] not in {"account.connect", "activation.review"}
+                or (not allow_expired_parent and operation["expires_at"] <= now.timestamp())
+                or row["presentation_state"] not in {"retired", "expired"}
+                or row["domain_status"] not in {"pending", "awaiting-authentication", "awaiting-confirmation"}
+                or row["ceremony_id"] is None or row["provider_revision"] is None):
+            raise HostedGrantUnavailable("Browser ceremony replacement is unavailable")
+        pending = connection.execute("SELECT 1 FROM desktop_setup_operations WHERE operation_id<>? "
+            "AND state IN ('accepted','waiting','outcome_unknown') "
+            "AND json_extract(owner_scope_json,'$.desktop_decision.operation_id')=? LIMIT 1",
+            (operation_id, operation_id)).fetchone()
+        decision = connection.execute("SELECT projection_json FROM desktop_decision_projections WHERE operation_id=?",
+            (operation_id,)).fetchone()
+        projection = None if decision is None else json.loads(decision[0])
+        if (pending is not None or projection is not None and (projection["state"] == "accepted"
+                or projection["state"] == "confirmation-required" and timestamp(projection["decision"]["expires_at"]) > now)):
+            raise HostedGrantUnavailable("Browser ceremony decision must be reconciled")
+        binding = json.loads(row["binding_json"])
+        if timestamp(binding["source_expires_at"]) <= now:
+            raise HostedGrantUnavailable("Browser ceremony replacement source expired")
+        return {"predecessor_operation_id": row["hosted_operation_id"],
+            "predecessor_ceremony_id": row["ceremony_id"],
+            "predecessor_binding_digest": binding_digest(binding),
+            "predecessor_revision": row["provider_revision"]}
+
+    def reserve_replacement(self, operation_id, predecessor, *, authorize, allow_expired_parent=False):
         """Reserve an exact ordinary successor; Provider still decides admission.
 
         The caller must be an explicitly admitted current owner command. This
@@ -145,34 +202,11 @@ class BrowserCeremonies:
         require_journey(operation_id)
         with self.store.database.transaction() as connection:
             authorize(connection=connection)
+            expected = self._eligible_predecessor(operation_id, connection=connection,
+                allow_expired_parent=allow_expired_parent)
             row = self.row(operation_id, connection=connection)
-            operation = connection.execute(
-                "SELECT * FROM desktop_setup_operations WHERE operation_id=?", (operation_id,)).fetchone()
-            now = self.store._now()
-            if (row is None or operation is None
-                    or operation["state"] not in {"accepted", "waiting", "outcome_unknown"}
-                    or operation["action"] not in {"account.connect", "activation.review"}
-                    or operation["expires_at"] <= now.timestamp()
-                    or row["presentation_state"] not in {"retired", "expired"}
-                    or row["domain_status"] not in {"pending", "awaiting-authentication", "awaiting-confirmation"}
-                    or row["ceremony_id"] is None or row["provider_revision"] is None):
-                raise HostedGrantUnavailable("Browser ceremony replacement is unavailable")
-            # A locally unresolved explicit confirmation is not proof of rollback.
-            pending = connection.execute("SELECT 1 FROM desktop_setup_operations WHERE operation_id<>? "
-                "AND state IN ('accepted','waiting','outcome_unknown') "
-                "AND json_extract(owner_scope_json,'$.desktop_decision.operation_id')=? LIMIT 1",
-                (operation_id, operation_id)).fetchone()
-            decision = connection.execute("SELECT projection_json FROM desktop_decision_projections WHERE operation_id=?",
-                (operation_id,)).fetchone()
-            if pending is not None or (decision is not None and json.loads(decision[0])["state"] == "accepted"):
-                raise HostedGrantUnavailable("Browser ceremony decision must be reconciled")
             binding = json.loads(row["binding_json"])
-            if timestamp(binding["source_expires_at"]) <= now:
-                raise HostedGrantUnavailable("Browser ceremony replacement source expired")
-            expected = {"predecessor_operation_id": row["hosted_operation_id"],
-                "predecessor_ceremony_id": row["ceremony_id"],
-                "predecessor_binding_digest": binding_digest(binding),
-                "predecessor_revision": row["provider_revision"]}
+            now = self.store._now()
             if predecessor != expected:
                 raise HostedGrantUnavailable("Browser ceremony replacement predecessor changed")
             saved = self.replacement_reservation(operation_id, row["hosted_operation_id"], connection=connection)
@@ -196,7 +230,7 @@ class BrowserCeremonies:
     def _replacement_binding(row, request):
         return {**json.loads(row["binding_json"]), "attempt_id": request["successor_attempt_id"]}
 
-    def _replacement_current(self, operation_id, request, *, connection=None, for_send=False):
+    def _replacement_current(self, operation_id, request, *, connection=None, for_send=False, allow_expired_parent=False):
         """Only the original retained predecessor may send or adopt its reserved successor."""
         with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
             row = self.row(operation_id, connection=connection)
@@ -205,14 +239,14 @@ class BrowserCeremonies:
                 (operation_id,)).fetchone()
             if (row is None or saved != request or parent is None
                     or parent["state"] not in {"accepted", "waiting", "outcome_unknown"}
-                    or (for_send and parent["expires_at"] <= self.store._now().timestamp())
+                    or (for_send and not allow_expired_parent and parent["expires_at"] <= self.store._now().timestamp())
                     or row["hosted_operation_id"] != request["predecessor_operation_id"]
                     or row["ceremony_id"] != request["predecessor_ceremony_id"]
                     or binding_digest(json.loads(row["binding_json"])) != request["predecessor_binding_digest"]):
                 raise HostedGrantUnavailable("Browser ceremony replacement lineage changed")
         return row
 
-    async def replace(self, operation_id, predecessor, *, authorize):
+    async def replace(self, operation_id, predecessor, *, authorize, allow_expired_parent=False):
         """An explicit owner command may send this exact reserved request once per invocation.
 
         Reconciliation is separate and read-only. There is no automatic resend,
@@ -221,11 +255,18 @@ class BrowserCeremonies:
         if self.replacement_client is None:
             raise HostedGrantUnavailable("Browser ceremony replacement is unavailable")
         async with self._lock:
-            request = await asyncio.to_thread(self.reserve_replacement, operation_id, predecessor, authorize=authorize)
+            request = await asyncio.to_thread(self.reserve_replacement, operation_id, predecessor, authorize=authorize,
+                allow_expired_parent=allow_expired_parent)
             row = self._replacement_current(operation_id, request)
             def guard():
                 authorize()
-                current = self._replacement_current(operation_id, request, for_send=True)
+                current = self._replacement_current(operation_id, request, for_send=True,
+                    allow_expired_parent=allow_expired_parent)
+                with self.store.database.read() as connection:
+                    expected = self._eligible_predecessor(operation_id, connection=connection,
+                        allow_expired_parent=allow_expired_parent)
+                    if expected != predecessor:
+                        raise HostedGrantUnavailable("Browser ceremony predecessor changed")
                 if (current["provider_revision"] != request["predecessor_revision"]
                         or current["presentation_state"] not in {"retired", "expired"}
                         or current["domain_status"] not in {"pending", "awaiting-authentication", "awaiting-confirmation"}
@@ -237,6 +278,77 @@ class BrowserCeremonies:
             await asyncio.to_thread(self._adopt_replacement, operation_id, request, result["successor"],
                 preparing=True, authorize=authorize)
             return result
+
+    def _replacement_receipt(self, operation):
+        intent = json.loads(operation["owner_scope_json"])["ceremony_replacement"]
+        parent = intent["parent_operation_id"]
+        predecessor = intent["predecessor"]
+        with self.store.database.read() as connection:
+            saved = self.replacement_reservation(parent, predecessor["predecessor_operation_id"], connection=connection)
+            if saved is None:
+                return None, False
+            if any(saved.get(name) != value for name, value in predecessor.items()):
+                raise HostedGrantUnavailable("Replacement receipt changed")
+            adopted = connection.execute("SELECT 1 FROM desktop_browser_ceremony_successors "
+                "WHERE hosted_operation_id=?", (saved["successor_operation_id"],)).fetchone() is not None
+        return saved, adopted
+
+    def _replacement_domain_settled(self, parent):
+        with self.store.database.read() as connection:
+            row = self.row(parent, connection=connection)
+            operation = connection.execute("SELECT state FROM desktop_setup_operations WHERE operation_id=?",
+                (parent,)).fetchone()
+            return (row is not None and row["domain_status"] in {"committed", "ready", "revoked"}
+                or operation is not None and operation["state"] == "completed")
+
+    async def execute_replacement(self, operation, *, authorize, read_guard, reconcile):
+        """One explicit child command; after acceptance, never replay the mutation."""
+        from app.onboarding.coordinator import OperationResult
+        intent = json.loads(operation["owner_scope_json"])["ceremony_replacement"]
+        parent, predecessor = intent["parent_operation_id"], intent["predecessor"]
+        def guard(connection=None):
+            with (self.store.database.read() if connection is None else nullcontext(connection)) as current:
+                authorize(connection=current)
+                child = current.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?",
+                    (operation["operation_id"],)).fetchone()
+                original = current.execute("SELECT journey_id,action FROM desktop_setup_operations WHERE operation_id=?",
+                    (parent,)).fetchone()
+                if (child is None or child["state"] != "accepted" or child["action"] != "auth.select"
+                        or child["owner_scope_json"] != operation["owner_scope_json"]
+                        or child["expires_at"] <= self.store._now().timestamp() or original is None
+                        or original["journey_id"] != child["journey_id"] or original["action"] != "account.connect"):
+                    raise HostedGrantUnavailable("Replacement command changed")
+        saved, adopted = await asyncio.to_thread(self._replacement_receipt, operation)
+        if adopted:
+            return OperationResult("completed")
+        if await asyncio.to_thread(self._replacement_domain_settled, parent):
+            return OperationResult("refused", "operation_refused")
+        if not reconcile and saved is None:
+            try:
+                await self.replace(parent, predecessor, authorize=guard, allow_expired_parent=True)
+            except (HostedGrantUnavailable, BrowserCeremonyRefused):
+                # A failed check before a durable reservation cannot have sent.
+                # Even a closed refusal after reservation may race the original
+                # operation or an earlier committed successor; read, don't replay.
+                saved, adopted = await asyncio.to_thread(self._replacement_receipt, operation)
+                if not saved:
+                    return OperationResult("refused", "operation_refused")
+                if adopted:
+                    return OperationResult("completed")
+                return OperationResult("outcome_unknown", "operation_unconfirmed")
+            return OperationResult("completed")
+        if saved is None:
+            # Restart before reservation: no send was possible. A fresh explicit
+            # action can be admitted if the owner still offers it.
+            return OperationResult("refused", "operation_unconfirmed")
+        await self.reconcile(parent, authorize=lambda: read_guard(),
+            adopt_authorize=read_guard)
+        _, adopted = await asyncio.to_thread(self._replacement_receipt, operation)
+        if adopted:
+            return OperationResult("completed")
+        if await asyncio.to_thread(self._replacement_domain_settled, parent):
+            return OperationResult("refused", "operation_refused")
+        return OperationResult("outcome_unknown", "operation_unconfirmed")
 
     def replacement_pending(self, operation_id, *, connection=None):
         with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
