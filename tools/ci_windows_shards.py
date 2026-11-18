@@ -85,9 +85,52 @@ def selected_nodeids(collected: Iterable[dict[str, Any]], manifest: dict[str, An
 
 
 def read_inventory(path: Path, *, execution: bool = False) -> dict[str, Any]:
-    """Accept full raw scope only, even when a producer did not flag narrowing."""
+    """Accept full raw scope only, even when a producer did not flag narrowing.
+
+    For timings, a directory holding both exhaustive shard execution reports
+    is joined into one full-scope report.
+    """
+    if execution and path.is_dir():
+        return combine_shard_reports(sorted(path.rglob("report.json")))
     raw = path.read_bytes()
     report = json.loads(raw, object_pairs_hook=_unique_pairs)
+    _check_scope(report, execution=execution)
+    report["_report_sha256"] = hashlib.sha256(raw).hexdigest()
+    return report
+
+
+SHARD_LANES = ("windows-full-regression-1", "windows-full-regression-2")
+
+
+def combine_shard_reports(paths: Iterable[Path]) -> dict[str, Any]:
+    """Join both successful exhaustive shard executions of one run."""
+    shards = {}
+    for path in paths:
+        raw = path.read_bytes()
+        report = json.loads(raw, object_pairs_hook=_unique_pairs)
+        if isinstance(report, dict) and report.get("lane") in SHARD_LANES:
+            if report["lane"] in shards:
+                raise WindowsShardError(f"Duplicate Windows timing report for {report['lane']}")
+            shards[report["lane"]] = (report, hashlib.sha256(raw).hexdigest())
+    if set(shards) != set(SHARD_LANES):
+        raise WindowsShardError("Timings require both full Windows shard execution reports")
+    first, second = (shards[lane][0] for lane in SHARD_LANES)
+    if any(first.get(key) != second.get(key) for key in ("source_commit", "workflow_run_id", "run_attempt", "collected")):
+        raise WindowsShardError("Full Windows shard reports come from different runs or collections")
+    selected = list(first.get("selected", [])) + list(second.get("selected", []))
+    nodes = [row["nodeid"] for row in first.get("collected", [])]
+    combined = dict(first, lane="windows-full-regression", selected=selected,
+                    deselected=[node for node in nodes if node not in set(selected)],
+                    reports=list(first.get("reports", [])) + list(second.get("reports", [])),
+                    exit_code=0 if first.get("exit_code") == second.get("exit_code") == 0 else 1,
+                    complete=first.get("complete") is True and second.get("complete") is True)
+    _check_scope(combined, execution=True)
+    combined["_report_sha256"] = shards[SHARD_LANES[0]][1]
+    combined["_execution_reports"] = [{"lane": lane, "report_sha256": shards[lane][1]} for lane in SHARD_LANES]
+    return combined
+
+
+def _check_scope(report: Any, *, execution: bool) -> None:
     if (not isinstance(report, dict) or report.get("schema") != "ci-test-report/v1" or report.get("complete") is not True
             or type(report.get("exit_code")) is not int or report["exit_code"] != 0
             or type(report.get("collect_only")) is not bool or report.get("partial") is not False
@@ -109,8 +152,6 @@ def read_inventory(path: Path, *, execution: bool = False) -> dict[str, Any]:
     deselected = report.get("deselected", [])
     if len(deselected) != len(set(deselected)) or set(deselected) != {row["nodeid"] for row in rows} - expected:
         raise WindowsShardError("Inventory deselection must match only the frozen legacy exclusions")
-    report["_report_sha256"] = hashlib.sha256(raw).hexdigest()
-    return report
 
 
 def file_timings(report: dict[str, Any]) -> dict[str, float]:
@@ -177,7 +218,8 @@ def updated_manifest(manifest: dict[str, Any] | None, inventory: dict[str, Any],
         assignments[path] = shard
         loads[shard] += weight(path)
     source = (dict({key: timing_report[key] for key in ("source_commit", "workflow_run_id", "run_attempt")},
-                   report_sha256=timing_report["_report_sha256"])
+                   report_sha256=timing_report["_report_sha256"],
+                   **({"execution_reports": timing_report["_execution_reports"]} if "_execution_reports" in timing_report else {}))
               if timing_report is not None else basis.get("source"))
     return dict(schema_version=1, files=dict(sorted(assignments.items())), assignment_basis=dict(
         status="measured" if set(timings) == files else "measured_with_unmeasured_additions" if timings else "unmeasured",

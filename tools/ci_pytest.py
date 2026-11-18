@@ -1,6 +1,7 @@
 """Opt-in pytest selection and execution evidence for local and hosted CI runs."""
 from __future__ import annotations
 
+import ast
 import json
 import os
 import platform
@@ -25,6 +26,16 @@ def pytest_addoption(parser):
     group.addoption("--ci-output-dir", default=os.environ.get("CI_REPORT_DIR"))
     group.addoption("--ci-manifest", default=None)
     group.addoption("--ci-validate", action="store_true", default=False)
+    group.addoption("--ci-phase", choices=("parallel", "serial"), default=None,
+                    help="Run only selected tests without (parallel) or with (serial) the serial marker")
+
+
+def is_worker(config):
+    return hasattr(config, "workerinput")
+
+
+def is_distributed(config):
+    return config.pluginmanager.hasplugin("dsession")
 
 
 def pytest_configure(config):
@@ -47,6 +58,9 @@ class Evidence:
         self.deselected = []
         self.reports = []
         self.collection_errors = []
+        self.deferred = []
+        self.worker_collections = {}
+        self.worker_failures = []
         self.progress_stream = None
         self.progress_sequence = 0
 
@@ -67,7 +81,9 @@ class Evidence:
         try:
             output = self.output_directory()
             output.mkdir(parents=True, exist_ok=True)
-            self.progress_stream = (output / "progress.jsonl").open("w", encoding="utf-8")
+            name = (f"progress-{self.config.workerinput['workerid']}.jsonl" if is_worker(self.config)
+                    else "progress.jsonl")
+            self.progress_stream = (output / name).open("w", encoding="utf-8")
             self.progress("session_start", source_commit=os.environ.get("PRODUCT_SHA", ""),
                           workflow_run_id=os.environ.get("GITHUB_RUN_ID", ""),
                           run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT", ""),
@@ -105,7 +121,24 @@ class Evidence:
         from tools.ci_windows_shards import LEGACY_WINDOWS_EXPRESSION
         return bool(self.config.option.keyword or (marker and marker != LEGACY_WINDOWS_EXPRESSION))
 
+    def collection_view(self):
+        return {"collected": self.collected, "selected": self.selected,
+                "deselected": list(dict.fromkeys(self.deselected)), "deferred": self.deferred}
+
+    def adopt_worker_collection(self):
+        """Use the identical collection every worker reported; otherwise the evidence is incomplete."""
+        views = list(self.worker_collections.values())
+        expected = self.config.getoption("numprocesses", None)
+        if (not views or self.worker_failures or any(view != views[0] for view in views)
+                or isinstance(expected, int) and len(views) != expected):
+            return False
+        self.collected, self.selected, self.deselected, self.deferred = (
+            views[0][key] for key in ("collected", "selected", "deselected", "deferred"))
+        return True
+
     def payload(self, exit_code):
+        complete = self.adopt_worker_collection() if is_distributed(self.config) else True
+        phase = self.config.getoption("ci_phase")
         return {
             "schema": "ci-test-report/v1",
             "source_commit": os.environ.get("PRODUCT_SHA", ""),
@@ -129,7 +162,8 @@ class Evidence:
             "collect_only": bool(self.config.option.collectonly),
             "partial": self.selection_is_partial(),
             "selection": {"keyword": self.config.option.keyword or "", "marker": self.config.option.markexpr or "", "targets": list(self.config.args)},
-            "complete": True,
+            "complete": complete,
+            **({"phase": {"name": phase, "deferred": self.deferred}} if phase else {}),
         }
 
 
@@ -182,12 +216,44 @@ def pytest_collection_modifyitems(session, config, items):
         if deselected:
             config.hook.pytest_deselected(items=deselected)
     yield
+    phase = config.getoption("ci_phase")
+    if phase:
+        # The other phase owns these tests; they remain selected for the lane.
+        serial = phase == "serial"
+        evidence.deferred = [item.nodeid for item in items if (item.get_closest_marker("serial") is not None) != serial]
+        items[:] = [item for item in items if (item.get_closest_marker("serial") is not None) == serial]
     evidence.selected = [item.nodeid for item in items]
+    if is_worker(config):
+        config.workeroutput["ci_collection"] = evidence.collection_view()
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_testnodedown(node, error):
+    evidence = node.config._ci_evidence
+    view = getattr(node, "workeroutput", {}).get("ci_collection")
+    if error is not None or view is None:
+        evidence.worker_failures.append(node.gateway.id)
+    else:
+        evidence.worker_collections[node.gateway.id] = view
 
 
 def pytest_deselected(items):
     if items:
         items[0].config._ci_evidence.deselected.extend(item.nodeid for item in items)
+
+
+def _context_kwargs(report, distributed):
+    kwargs = dict(report.context.kwargs)
+    if distributed:
+        # Deserializing a worker's subtest context applies saferepr a second time.
+        for key, value in kwargs.items():
+            try:
+                inner = ast.literal_eval(value)
+            except (ValueError, SyntaxError):
+                continue
+            if isinstance(inner, str):
+                kwargs[key] = inner
+    return kwargs
 
 
 class ReportCollector:
@@ -246,7 +312,7 @@ class ReportCollector:
                 "index": index,
                 "msg": report.context.msg,
                 # Pytest already converts each context value to a safe repr.
-                "kwargs": dict(report.context.kwargs),
+                "kwargs": _context_kwargs(report, is_distributed(self.evidence.config)),
             }
         self.evidence.reports.append(phase)
         self.evidence.progress("phase_report", **{key: value for key, value in phase.items() if key != "detail"})
@@ -322,8 +388,14 @@ def pytest_sessionfinish(session, exitstatus):
     evidence = session.config._ci_evidence
     evidence.progress("session_finish", exit_code=int(exitstatus))
     evidence.close_progress()
-    payload = evidence.payload(exitstatus)
+    if is_worker(session.config):
+        return  # The controller records the merged worker evidence.
     output = evidence.output_directory()
+    write_report(output, evidence.payload(exitstatus), getattr(session.config.option, "xmlpath", None))
+
+
+def write_report(output, payload, junit=None):
+    """Write the report, durations, JUnit copy and summary for one lane execution."""
     output.mkdir(parents=True, exist_ok=True)
     temporary = output / "report.json.tmp"
     temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -332,7 +404,6 @@ def pytest_sessionfinish(session, exitstatus):
     (output / "durations.txt").write_text("\n".join(
         f"{item['duration']:.6f}s {item['when']} {item['nodeid']}" for item in slowest
     ) + "\n", encoding="utf-8")
-    junit = getattr(session.config.option, "xmlpath", None)
     if junit and Path(junit).is_file() and Path(junit).resolve() != (output / "junit.xml").resolve():
         shutil.copyfile(junit, output / "junit.xml")
     try:

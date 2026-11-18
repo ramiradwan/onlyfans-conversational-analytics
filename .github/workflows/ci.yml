@@ -221,6 +221,7 @@ jobs:
         env:
           CI_TEST_LANE: backend-fast
           CI_REPORT_DIR: artifacts/ci-tests/backend-fast
+          CI_PYTEST_WORKERS: '4'
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/backend-fast/junit.xml
         run: python tools/test_backend.py --lane backend-fast
       - name: Run Brain Tier A general state machine
@@ -362,6 +363,7 @@ jobs:
         env:
           CI_TEST_LANE: analytics-integration-${{ matrix.shard }}
           CI_REPORT_DIR: artifacts/ci-tests/analytics-integration-${{ matrix.shard }}
+          CI_PYTEST_WORKERS: '4'
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/analytics-integration-${{
             matrix.shard }}/junit.xml
         run: python tools/test_backend.py --lane analytics-integration --shard ${{ matrix.shard }}
@@ -522,6 +524,7 @@ jobs:
         env:
           CI_TEST_LANE: windows-platform-contract-${{ matrix.shard }}
           CI_REPORT_DIR: artifacts/ci-tests/windows-platform-contract-${{ matrix.shard }}
+          CI_PYTEST_WORKERS: '4'
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-platform-contract-${{ matrix.shard }}/junit.xml
             -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: python tools/test_backend.py --lane windows-platform-contract --shard ${{ matrix.shard }}
@@ -717,6 +720,7 @@ jobs:
         env:
           CI_TEST_LANE: analytics-windows-contract
           CI_REPORT_DIR: artifacts/ci-tests/analytics-windows-contract
+          CI_PYTEST_WORKERS: '4'
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/analytics-windows-contract/junit.xml
             -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: python tools/test_backend.py --lane analytics-windows-contract
@@ -810,6 +814,7 @@ jobs:
         env:
           CI_TEST_LANE: windows-full-regression-${{ matrix.shard }}
           CI_REPORT_DIR: artifacts/ci-tests/windows-full-regression-${{ matrix.shard }}
+          CI_PYTEST_WORKERS: '4'
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-full-regression-${{ matrix.shard }}/junit.xml
             -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: python tools/test_backend.py --lane windows-full-regression --shard ${{ matrix.shard }}

@@ -39,7 +39,9 @@ Add `--baseline-junit C:\test-work\serial\junit.xml` to compare outcomes by node
 
 Windows contract execution requires Windows and the fixed SQLCipher runtime. A Linux collection that skips a Windows-native test does not reproduce that test. Required hosted and packaged-runtime evidence still comes from their respective workflows.
 
-CI runs the Windows platform contract in three groups, with one pytest worker per runner. Whole files stay together; group 1 also runs the reference collection, production boot, persistence profiles and CPython 3.13 socket-loop checks. The existing Required CI check verifies all three groups. Linux integration keeps four shards and exhaustive Windows keeps two, balanced separately from their recorded execution times.
+CI runs the Windows platform contract in three groups. Whole files stay together; group 1 also runs the reference collection, production boot, persistence profiles and CPython 3.13 socket-loop checks. The existing Required CI check verifies all three groups. Linux integration keeps four shards and exhaustive Windows keeps two, balanced separately from their recorded execution times. To rebalance exhaustive Windows, pass a raw unsharded Windows collection as `--inventory` and a directory with both shard reports from one run as `--timings` to `update-windows-manifest --rebalance`.
+
+The fast, integration, Windows platform, Windows analytics and exhaustive Windows lanes run with four pytest-xdist workers, set by `CI_PYTEST_WORKERS` or `--workers`. Each worker receives the same per-process isolation as the local parallel runner. Selected `serial` tests then run in one process after the workers exit. The runner merges both phases into one `report.json` and `junit.xml` with the lane's complete collection, so Required CI validates the same evidence as a single-process run. Stateful profiles, explicit selectors and scale qualification run in one process.
 
 Backend and browser CI jobs use `npm run build:assets --prefix frontend` to generate and compile the same frontend assets without repeating lint and typecheck. The mandatory web job and the normal `npm run build` command retain both checks.
 

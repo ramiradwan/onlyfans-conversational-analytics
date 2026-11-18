@@ -5,6 +5,7 @@ import argparse
 import collections
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -52,14 +53,21 @@ def merge_junit(paths, output, wall_seconds):
 
 
 def worker_environment(directory, index, port_base, port_width):
+    environment = os.environ.copy()
+    for name in ("PYTEST_ADDOPTS", "CI_REPORT_DIR", "CI_TEST_LANE", "HYPOTHESIS_PROFILE"):
+        environment.pop(name, None)
+    return phase_environment(environment, directory, index, port_base, port_width)
+
+
+def phase_environment(base, directory, index, port_base, port_width):
+    """Give one pytest process a private temporary directory and TCP port range."""
     start = port_base + index * port_width
     end = start + port_width - 1
     if start < 1024 or port_width < 1 or end > 65535 or start <= 17871 <= end:
         raise ValueError("Invalid worker port range")
     directory.mkdir(parents=True, exist_ok=True)
-    environment = os.environ.copy()
-    for name in ("PYTEST_ADDOPTS", "CI_REPORT_DIR", "CI_TEST_LANE", "GITHUB_STEP_SUMMARY", "HYPOTHESIS_PROFILE",
-                 "PYTEST_XDIST_WORKER", "PYTEST_XDIST_WORKER_COUNT", "PYTEST_XDIST_TESTRUNUID"):
+    environment = dict(base)
+    for name in ("GITHUB_STEP_SUMMARY", "PYTEST_XDIST_WORKER", "PYTEST_XDIST_WORKER_COUNT", "PYTEST_XDIST_TESTRUNUID"):
         environment.pop(name, None)
     environment.update(TEMP=str(directory.resolve()), TMP=str(directory.resolve()),
                        TMPDIR=str(directory.resolve()), PYTHONDONTWRITEBYTECODE="1",
@@ -79,11 +87,6 @@ def configure_worker_environment():
         environment["CI_REPORT_DIR"] = str(directory)
         os.environ.update(environment)
         tempfile.tempdir = None
-
-
-@pytest.hookimpl(optionalhook=True)
-def pytest_xdist_node_collection_finished(node, ids):
-    node.config._ci_evidence.selected = list(ids)
 
 
 def port_factory():
@@ -154,6 +157,88 @@ def run_phase(command, root, directory, environment):
     if code not in (0, 1, 5):
         raise ValueError(f"Pytest did not complete: {directory} (exit {code})")
     return code
+
+
+PHASE_IDENTITY = ("schema", "source_commit", "workflow_run_id", "run_attempt", "job_id", "lane", "platform", "python",
+                  "python_implementation", "pytest", "profile", "selection_profile", "collected", "deselected",
+                  "collect_only", "partial", "selection")
+
+
+def lane_phase_command(command, directory, phase, workers):
+    """Direct one CI lane command's evidence to a phase directory and add its scheduler."""
+    result = list(command)
+    # Attached values keep existing phase directories out of pytest's rootdir inference.
+    for option, value in (("--ci-output-dir", directory), ("--junitxml", directory / "junit.xml")):
+        position = result.index(option)
+        result[position:position + 2] = [f"{option}={value}"]
+    position = result.index(f"--ci-output-dir={directory}")
+    options = ["-p", "xdist", "-p", "tools.test_backend_parallel", "--ci-phase", phase,
+               "-n", str(workers) if phase == "parallel" else "0", "--dist=load", "--maxschedchunk=1",
+               "--max-worker-restart=0", f"--basetemp={directory / 'bt'}"]
+    return result[:position] + options + result[position:]
+
+
+def merge_lane_reports(reports, workers):
+    """Combine the parallel and serial phase reports into one lane report."""
+    if [report.get("phase", {}).get("name") for report in reports] not in (["parallel"], ["parallel", "serial"]):
+        raise ValueError("Lane evidence requires a parallel phase optionally followed by a serial phase")
+    first = reports[0]
+    if any(report[key] != first[key] for report in reports[1:] for key in PHASE_IDENTITY):
+        raise ValueError("Phase reports differ in identity or collection")
+    selected = [node for report in reports for node in report["selected"]]
+    if len(selected) != len(set(selected)):
+        raise ValueError("A test was selected by more than one phase")
+    serial = reports[1]["selected"] if len(reports) > 1 else []
+    if (collections.Counter(first["phase"]["deferred"]) != collections.Counter(serial)
+            or len(reports) > 1 and collections.Counter(reports[1]["phase"]["deferred"]) != collections.Counter(first["selected"])):
+        raise ValueError("Phase selections do not partition the lane selection")
+    codes = [0 if report["exit_code"] == 5 and not report["selected"] else report["exit_code"] for report in reports]
+    merged = {key: value for key, value in first.items() if key != "phase"}
+    merged.update(
+        selected=selected, reports=[phase for report in reports for phase in report["reports"]],
+        collection_errors=[error for report in reports for error in report["collection_errors"]],
+        exit_code=next((code for code in codes if code), 0 if selected else first["exit_code"]),
+        wall_seconds=round(sum(report["wall_seconds"] for report in reports), 6),
+        complete=all(report["complete"] is True for report in reports),
+        execution={"workers": workers, "phases": [
+            {"name": report["phase"]["name"], "selected": len(report["selected"]),
+             "wall_seconds": report["wall_seconds"], "exit_code": report["exit_code"]} for report in reports]})
+    return merged
+
+
+def run_lane(command, environment, output, *, workers, work_root, run, port_base=20000, port_width=512):
+    """Run a CI lane on workers, then its serial tests in one process, and write one lane report."""
+    from tools import ci_pytest
+
+    work_root.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix="l", dir=work_root)).resolve()
+    reports = []
+    for phase in ("parallel", "serial"):
+        if reports and not reports[0]["phase"]["deferred"]:
+            break
+        directory = work / phase
+        index = workers if phase == "serial" else workers + 1
+        phase_env = phase_environment(environment, directory / "temp", index, port_base, port_width)
+        phase_env.update(LOCAL_BACKEND_WORK_ROOT=str(directory), LOCAL_BACKEND_PORT_BASE=str(port_base),
+                         LOCAL_BACKEND_PORT_WIDTH=str(port_width))
+        code = run(lane_phase_command(command, directory, phase, workers), phase_env)
+        if not (directory / "report.json").is_file():
+            raise ValueError(f"The {phase} phase wrote no report (exit {code})")
+        report = json.loads((directory / "report.json").read_text(encoding="utf-8"))
+        if report["exit_code"] != code or report.get("phase", {}).get("name") != phase:
+            raise ValueError(f"The {phase} phase report differs from its process")
+        reports.append(report)
+    merged = merge_lane_reports(reports, workers)
+    output.mkdir(parents=True, exist_ok=True)
+    junits = [work / report["phase"]["name"] / "junit.xml" for report in reports]
+    if all(path.is_file() for path in junits):
+        merge_junit(junits, output / "junit.xml", merged["wall_seconds"])
+    for journal in sorted(work.glob("*/progress*.jsonl")):
+        shutil.copyfile(journal, output / f"{journal.stem}-{journal.parent.name}.jsonl")
+    ci_pytest.write_report(output, merged)
+    if not merged["complete"]:
+        print("Worker evidence is incomplete; see the phase journals", file=sys.stderr, flush=True)
+    return merged["exit_code"] or (0 if merged["complete"] else 1)
 
 
 def main(argv=None, *, root=ROOT):

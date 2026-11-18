@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -298,3 +299,179 @@ def test_socket_loop_test_module_imports_without_application_dependencies(tmp_pa
     assert result.returncode == report["exit_code"] == 0, result.stdout + result.stderr
     assert report["selected"] == ["test_sample.py::test_import"]
     assert [phase["outcome"] for phase in report["reports"]] == ["passed"] * 3
+
+
+LANE_SOURCE = '''import os, time
+from pathlib import Path
+import pytest
+pytestmark = pytest.mark.ci_tier("fast")
+@pytest.mark.parametrize("case", range(3))
+def test_parallel(case, unused_tcp_port):
+    assert int(os.environ["LOCAL_BACKEND_PORT_START"]) <= unused_tcp_port <= int(os.environ["LOCAL_BACKEND_PORT_END"])
+    active = Path(ACTIVE) / (str(os.getpid()) + "-" + str(case))
+    active.touch()
+    time.sleep(0.3)
+    active.unlink()
+def test_skipped():
+    pytest.skip("unavailable here")
+@pytest.mark.xfail(reason="known gap", strict=True)
+def test_expected_failure():
+    assert False
+def test_children(subtests):
+    for index in range(2):
+        with subtests.test("child", value=index, label="same"):
+            pass
+@pytest.mark.omitted
+def test_deselected():
+    pass
+@pytest.mark.serial
+def test_serial_runs_alone():
+    assert not list(Path(ACTIVE).iterdir())
+'''
+
+
+def lane_command(tmp_path, output):
+    return [sys.executable, "-m", "pytest", "-p", "tools.ci_pytest", "--override-ini=addopts=",
+            "--ci-output-dir", str(output), "--junitxml", str(output / "junit.xml"), "-m", "not omitted"]
+
+
+def run_lane_suite(tmp_path, source=LANE_SOURCE, workers=2):
+    """Run the fixture suite once serially and once through the CI lane runner."""
+    from tools import test_backend_parallel as parallel
+
+    active = tmp_path / "active"
+    active.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pytest.ini").write_text(
+        "[pytest]\nmarkers =\n omitted: selection fixture\n ci_tier(name): explicit CI owner\n"
+        " serial: exclusive\n", encoding="utf-8")
+    for name in ("test_a.py", "test_b.py"):
+        (project / name).write_text(source.replace("ACTIVE", repr(str(active))), encoding="utf-8")
+    env = dict(os.environ, PYTEST_ADDOPTS="", CI_TEST_LANE="lane-fixture", PRODUCT_SHA="a" * 40,
+               GITHUB_RUN_ID="123", GITHUB_RUN_ATTEMPT="2", GITHUB_JOB="backend-fast",
+               PYTHONPATH=os.pathsep.join(filter(None, [str(ROOT), os.environ.get("PYTHONPATH")])))
+    env.pop("GITHUB_STEP_SUMMARY", None)
+    baseline_env = dict(env, LOCAL_BACKEND_PORT_START="31000", LOCAL_BACKEND_PORT_END="31063")
+    baseline = subprocess.run([*lane_command(tmp_path, tmp_path / "serial"), "-p", "tools.test_backend_parallel"],
+                              cwd=project, env=baseline_env, capture_output=True, text=True, timeout=120)
+    serial = json.loads((tmp_path / "serial/report.json").read_text(encoding="utf-8"))
+    assert baseline.returncode == serial["exit_code"], baseline.stdout + baseline.stderr
+
+    def run(command, environment):
+        return subprocess.run(command, cwd=project, env=environment, capture_output=True, timeout=120).returncode
+
+    output = tmp_path / "lane"
+    code = parallel.run_lane(lane_command(tmp_path, output), env, output, workers=workers,
+                             work_root=tmp_path / "phases", run=run, port_base=30000, port_width=64)
+    merged = json.loads((output / "report.json").read_text(encoding="utf-8"))
+    return code, serial, merged, output
+
+
+def phase_signature(report):
+    return sorted((phase["nodeid"], phase["when"], phase["outcome"], phase["skip_reason"], phase["wasxfail"],
+                   json.dumps(phase.get("subtest"), sort_keys=True)) for phase in report["reports"])
+
+
+def test_parallel_lane_report_equals_serial_execution_evidence(tmp_path):
+    pytest.importorskip("xdist")
+    from tools import ci_gate
+
+    code, serial, merged, output = run_lane_suite(tmp_path)
+    assert code == merged["exit_code"] == serial["exit_code"] == 0
+    assert merged["complete"] is True and "phase" not in merged
+    for key in ("collected", "deselected", "collection_errors", "partial", "selection", "lane"):
+        assert merged[key] == serial[key], key
+    assert sorted(merged["selected"]) == sorted(serial["selected"])
+    assert len(merged["selected"]) == 14 and len(merged["deselected"]) == 2
+    assert phase_signature(merged) == phase_signature(serial)
+    assert [(phase["name"], phase["selected"]) for phase in merged["execution"]["phases"]] == [
+        ("parallel", 12), ("serial", 2)]
+    assert merged["reports"][-1]["nodeid"].endswith("test_serial_runs_alone")
+    spec = ci_gate.ReportSpec("backend-fast", merged["platform"],
+                              python=f"{sys.version_info.major}.{sys.version_info.minor}")
+    assert ci_gate.validate_report(merged, spec) == ci_gate.validate_report(serial, spec)
+    # The gate reads every JSON file in a lane artifact as a lane report.
+    assert sorted(path.name for path in output.rglob("*.json")) == ["report.json"]
+    assert len(list(output.glob("progress-gw*-parallel.jsonl"))) == 2
+    assert "# Backend: lane-fixture" in (output / "summary.md").read_text(encoding="utf-8")
+    from tools import test_backend_parallel as parallel
+    assert parallel.junit_outcomes(output / "junit.xml") == parallel.junit_outcomes(tmp_path / "serial/junit.xml")
+
+
+def test_parallel_lane_without_serial_tests_runs_one_phase_and_keeps_failures(tmp_path):
+    pytest.importorskip("xdist")
+    source = LANE_SOURCE.replace(
+        "@pytest.mark.serial\ndef test_serial_runs_alone():\n    assert not list(Path(ACTIVE).iterdir())\n", "").replace(
+        "def test_skipped():\n    pytest.skip(\"unavailable here\")", "def test_skipped():\n    assert False")
+    code, serial, merged, _ = run_lane_suite(tmp_path, source)
+    assert code == merged["exit_code"] == serial["exit_code"] == 1
+    assert [phase["name"] for phase in merged["execution"]["phases"]] == ["parallel"]
+    assert phase_signature(merged) == phase_signature(serial)
+
+
+def test_lane_phase_command_keeps_rootdir_inputs_and_trailing_pytest_arguments(tmp_path):
+    from tools import test_backend_parallel as parallel
+
+    command = ["python", "-m", "pytest", "--ci-output-dir", "out", "--junitxml", "out/junit.xml", "-k", "name"]
+    directory = tmp_path / "parallel"
+    result = parallel.lane_phase_command(command, directory, "parallel", 4)
+    assert str(directory) not in result and "out" not in result
+    assert f"--ci-output-dir={directory}" in result and f"--junitxml={directory / 'junit.xml'}" in result
+    assert result[result.index("-n") + 1] == "4" and result[result.index("--ci-phase") + 1] == "parallel"
+    assert result[-2:] == ["-k", "name"]
+    serial = parallel.lane_phase_command(command, directory, "serial", 4)
+    assert serial[serial.index("-n") + 1] == "0" and serial[serial.index("--ci-phase") + 1] == "serial"
+
+
+def phase_report(name, selected, deferred, **changes):
+    report = {"schema": "ci-test-report/v1", "lane": "lane", "collected": [{"nodeid": node} for node in ("a", "b", "c")],
+              "deselected": ["c"], "selected": selected, "reports": [{"nodeid": node} for node in selected],
+              "collection_errors": [], "exit_code": 0, "wall_seconds": 2.0, "complete": True,
+              "phase": {"name": name, "deferred": deferred}}
+    for key in ("source_commit", "workflow_run_id", "run_attempt", "job_id", "platform", "python",
+                "python_implementation", "pytest", "profile", "selection_profile", "collect_only", "partial", "selection"):
+        report[key] = ""
+    report.update(changes)
+    return report
+
+
+def test_lane_merge_requires_an_exact_partition_of_the_lane_selection():
+    from tools import test_backend_parallel as parallel
+
+    merged = parallel.merge_lane_reports([phase_report("parallel", ["a"], ["b"]), phase_report("serial", ["b"], ["a"])], 4)
+    assert merged["selected"] == ["a", "b"] and merged["wall_seconds"] == 4.0 and merged["execution"]["workers"] == 4
+    for reports, message in (
+        ([phase_report("parallel", ["a"], ["b"])], "partition"),
+        ([phase_report("parallel", ["a"], ["b"]), phase_report("serial", ["a", "b"], ["a"])], "more than one phase"),
+        ([phase_report("parallel", ["a"], ["b"]), phase_report("serial", [], ["a"])], "partition"),
+        ([phase_report("parallel", ["a"], ["b"]), phase_report("serial", ["b"], ["a"], deselected=[])], "identity or collection"),
+        ([phase_report("serial", ["b"], ["a"])], "parallel phase"),
+        ([phase_report("parallel", ["a"], [], phase=None)], "parallel phase"),
+    ):
+        if reports[0]["phase"] is None:
+            del reports[0]["phase"]
+        with pytest.raises(ValueError, match=message):
+            parallel.merge_lane_reports(reports, 4)
+    failed = parallel.merge_lane_reports([phase_report("parallel", ["a"], ["b"], exit_code=1),
+                                          phase_report("serial", ["b"], ["a"], complete=False)], 4)
+    assert failed["exit_code"] == 1 and failed["complete"] is False
+    empty = parallel.merge_lane_reports([phase_report("parallel", [], ["b"], exit_code=5),
+                                         phase_report("serial", ["b"], [])], 4)
+    assert empty["exit_code"] == 0
+
+
+def test_distributed_controller_requires_identical_worker_collections():
+    from tools import ci_pytest
+
+    options = {"numprocesses": 2, "ci_windows_shard": None, "ci_lane": None, "ci_shard": None, "ci_phase": "parallel"}
+    config = SimpleNamespace(getoption=lambda name, default=None: options.get(name, default))
+    view = {"collected": [{"nodeid": "a"}], "selected": ["a"], "deselected": [], "deferred": []}
+    evidence = ci_pytest.Evidence(config)
+    evidence.worker_collections = {"gw0": view, "gw1": dict(view)}
+    assert evidence.adopt_worker_collection() is True and evidence.selected == ["a"]
+    for collections, failures in (({"gw0": view, "gw1": dict(view, selected=[])}, []),
+                                  ({"gw0": view}, []), ({"gw0": view, "gw1": view}, ["gw2"]), ({}, [])):
+        evidence = ci_pytest.Evidence(config)
+        evidence.worker_collections, evidence.worker_failures = collections, failures
+        assert evidence.adopt_worker_collection() is False

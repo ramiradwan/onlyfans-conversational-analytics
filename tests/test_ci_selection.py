@@ -436,6 +436,26 @@ def test_serial():
     assert len(list(tmp_path.glob("worker-*"))) == 2
 
 
+def test_lane_worker_count_comes_from_option_or_ci_environment(monkeypatch):
+    def count(*argv):
+        return runner.worker_count(runner.parser().parse_args(list(argv)))
+
+    monkeypatch.delenv("CI_PYTEST_WORKERS", raising=False)
+    assert count("windows-full-regression", "--shard", "1") == 0
+    monkeypatch.setenv("CI_PYTEST_WORKERS", "4")
+    assert count("windows-full-regression", "--shard", "1") == 4
+    assert count("fast", "--workers", "2") == 2
+    assert count("fast", "--workers", "0") == 0
+    # One process keeps generated-state profiles, scale timing and listings unchanged.
+    assert count("stateful", "--profile", "tier_a_general") == count("scale") == count("list", "fast") == 0
+    with pytest.raises(selection.SelectionError, match="stateful and scale"):
+        count("scale", "--workers", "2")
+    for value in ("-1", "many"):
+        monkeypatch.setenv("CI_PYTEST_WORKERS", value)
+        with pytest.raises(selection.SelectionError, match="non-negative"):
+            count("fast")
+
+
 def test_local_parallel_rejects_incomplete_worker_evidence():
     from tools import test_backend_parallel as parallel
 

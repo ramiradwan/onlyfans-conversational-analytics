@@ -211,6 +211,22 @@ def test_every_backend_invocation_retains_distinct_failure_evidence() -> None:
     _assert_backend_execution_evidence(_workflow_document())
 
 
+def test_only_the_default_lane_runners_use_parallel_workers() -> None:
+    jobs = _workflow_document()["jobs"]
+    parallel = {}
+    for name in BACKEND_JOBS:
+        for step in jobs[name]["steps"]:
+            environment = step.get("env", {})
+            if "CI_PYTEST_WORKERS" in environment:
+                parallel[environment["CI_TEST_LANE"]] = (environment["CI_PYTEST_WORKERS"], step["run"])
+    assert {lane: workers for lane, (workers, _) in parallel.items()} == {
+        "backend-fast": "4", "analytics-integration-${{ matrix.shard }}": "4",
+        "windows-platform-contract-${{ matrix.shard }}": "4", "analytics-windows-contract": "4",
+        "windows-full-regression-${{ matrix.shard }}": "4"}
+    # Stateful profiles, explicit selectors and scale qualification stay in one process.
+    assert all(command.startswith("python tools/test_backend.py --lane ") for _, command in parallel.values())
+
+
 @pytest.mark.parametrize("command", [
     "python tools/test_backend.py --lane fast",
     "python tools/test_backend.py validate-windows-manifest "

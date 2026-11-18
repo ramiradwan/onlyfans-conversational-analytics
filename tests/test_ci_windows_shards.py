@@ -105,6 +105,44 @@ def test_update_preserves_owners_and_marks_new_unmeasured_files(tmp_path):
         windows.updated_manifest(after, enlarged, rebalance=True)
 
 
+def shard_reports(tmp_path, change=None):
+    full = inventory()
+    reports = {}
+    for shard, owned in ((1, "test_one.py"), (2, "test_two.py")):
+        selected = [node for node in full["selected"] if node.startswith(owned)]
+        reports[shard] = dict(full, lane=f"windows-full-regression-{shard}", selected=selected,
+                              deselected=[r["nodeid"] for r in full["collected"] if r["nodeid"] not in selected],
+                              reports=[phase for phase in full["reports"] if phase["nodeid"] in selected])
+    if change == "missing": reports.pop(2)
+    elif change == "overlap": reports[2]["selected"] = full["selected"]
+    elif change == "other_run": reports[2]["workflow_run_id"] = "2"
+    elif change == "failed": reports[2]["exit_code"] = 1
+    elif change == "incomplete": reports[1]["complete"] = False
+    for shard, report in reports.items():
+        (tmp_path/f"shard-{shard}").mkdir()
+        write_json(tmp_path/f"shard-{shard}/report.json", report)
+    return full
+
+
+def test_timing_import_joins_both_exhaustive_shard_reports(tmp_path):
+    full = shard_reports(tmp_path)
+    combined = windows.read_inventory(tmp_path, execution=True)
+    assert sorted(combined["selected"]) == full["selected"] and combined["deselected"] == full["deselected"]
+    assert windows.file_timings(combined) == windows.file_timings(full)
+    updated = windows.updated_manifest(None, full, timing_report=combined, rebalance=True)
+    source = updated["assignment_basis"]["source"]
+    assert [entry["lane"] for entry in source["execution_reports"]] == list(windows.SHARD_LANES)
+    assert source["report_sha256"] == source["execution_reports"][0]["report_sha256"]
+    assert source["report_sha256"] == hashlib.sha256((tmp_path/"shard-1/report.json").read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("change", ["missing", "overlap", "other_run", "failed", "incomplete"])
+def test_timing_import_refuses_partial_or_mismatched_shard_reports(tmp_path, change):
+    shard_reports(tmp_path, change)
+    with pytest.raises(windows.WindowsShardError):
+        windows.read_inventory(tmp_path, execution=True)
+
+
 @pytest.mark.parametrize("change", ["failed", "collect_only", "keyword", "target", "selection", "deselection", "complete_type", "exit_type"])
 def test_timing_import_refuses_incomplete_or_narrowed_evidence(tmp_path, change):
     report = inventory()
