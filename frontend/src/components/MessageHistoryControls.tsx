@@ -26,6 +26,7 @@ import type { HistorySettings } from '../protocol';
 import { browserControlApi, type BrowserControlApi } from '../services/browserControlApi';
 import { desktopOnboardingApi, selectAnalysisReadiness, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import { focusDesktopWindow } from '../services/desktopWindow';
+import { historyRecoveryJournal, type HistoryChange, type HistoryBaseline, type HistoryRecoveryJournal } from '../services/historyRecovery';
 import {
   historySettingsApi as defaultHistorySettingsApi,
   historyFailure,
@@ -54,6 +55,7 @@ export interface MessageHistoryControlsProps {
   store?: BridgeTransportStore;
   reviewCreatorId?: string;
   continuation?: boolean;
+  recoveryJournal?: HistoryRecoveryJournal;
 }
 
 interface PermissionReturn {
@@ -62,12 +64,6 @@ interface PermissionReturn {
   generation: string;
   expires: number;
   delivered: boolean;
-}
-
-interface HistoryChange {
-  before: HistorySettings;
-  desired: 'running' | 'paused' | 'revoked';
-  acceptConsent: boolean;
 }
 
 const CHANGE_UNCONFIRMED = "Your change hasn't been confirmed.";
@@ -93,14 +89,14 @@ function sameEffect(change: HistoryChange, next: HistorySettings): boolean {
     && next.authorized_platform_creator_id === before.authorized_platform_creator_id;
 }
 
-function settingsIdentity(value: HistorySettings | null): string | null {
+function settingsIdentity(value: HistoryBaseline | null): string | null {
   return value === null ? null : JSON.stringify([value.creator_account_id, value.settings_revision,
     value.consent_policy_version, value.consent_revision, value.authorized_platform_creator_id]);
 }
 
 /** Shared history consent, permission, progress and management controls. */
 export function MessageHistoryControls({ api = defaultHistorySettingsApi, browserApi = browserControlApi,
-  desktopApi = desktopOnboardingApi, store = bridgeTransportStore, reviewCreatorId, continuation = false }: MessageHistoryControlsProps) {
+  desktopApi = desktopOnboardingApi, store = bridgeTransportStore, reviewCreatorId, continuation = false, recoveryJournal }: MessageHistoryControlsProps) {
   const { canManageHistorySync } = usePermissions();
   const transport = useSyncExternalStore(
     store.subscribe,
@@ -120,12 +116,25 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   const identity = settingsIdentity(settings);
   const consentAccepted = identity !== null && consentSelection === identity;
   const confirmRevoke = identity !== null && revokeSelection === identity;
-  const [pendingChange, setPendingChange] = useState<HistoryChange | null>(null);
+  const [localPendingChange, setPendingChange] = useState<HistoryChange | null>(null);
   const [refusedIdentity, setRefusedIdentity] = useState<string | null>(null);
   const [recoveryWake, setRecoveryWake] = useState(0);
   const [openReview, setOpenReview] = useState<string | null>(null);
   const [dismissedReview, setDismissedReview] = useState<string | null>(null);
   const desktop = useSyncExternalStore(desktopApi.subscribe, desktopApi.getState, desktopApi.getState);
+  const journal = recoveryJournal ?? historyRecoveryJournal(api, defaultHistorySettingsApi);
+  const savedChange = useSyncExternalStore(journal.subscribe, journal.getState, journal.getState);
+  const currentOwnerScope = (owner = desktopApi.getState(), creator = store.getState().creatorAccountId) =>
+    owner.connected && owner.snapshot?.local_ready
+      && owner.snapshot.analysis_readiness?.availability === 'current'
+      && owner.snapshot.analysis_readiness.creator_account_id === accountId
+      && creator === accountId ? owner.snapshot.journey_id : null;
+  const ownerScope = currentOwnerScope(desktop, transport.creatorAccountId);
+  const savedForAccount = savedChange !== null && savedChange.before.creator_account_id === accountId;
+  const savedForScope = savedForAccount && ownerScope !== null && savedChange.journeyId === ownerScope
+    && settings !== null && savedChange.before.consent_policy_version === settings.consent_policy_version;
+  const pendingChange = savedForScope ? savedChange : localPendingChange;
+  const pendingScopeCheck = savedForAccount && !savedForScope && ownerScope === null;
   const [permissionReturn, setPermissionReturn] = useState<PermissionReturn | null>(null);
   const consumedPermissionReturn = useRef<PermissionReturn | null>(null);
   const permissionRequest = useRef<AbortController | null>(null);
@@ -158,12 +167,14 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
     return () => { mutation.current?.abort(); mutation.current = null; };
   }, [review, reviewCreatorId, reviewJourney, transport.creatorAccountId]);
 
-  const currentAccount = (value: HistorySettings) => {
+  const currentAccount = (value: HistoryBaseline) => {
     const current = store.getState().creatorAccountId;
     const owner = desktopApi.getState().snapshot;
     return current !== null && current === value.creator_account_id && current === accountId
-      && (!review || owner?.journey_id === reviewJourney && owner?.analysis_readiness.creator_account_id === value.creator_account_id);
+      && (!review || owner?.journey_id === reviewJourney && owner?.analysis_readiness?.creator_account_id === value.creator_account_id);
   };
+  const currentChange = (change: HistoryChange) => currentAccount(change.before)
+    && (!('journeyId' in change) || currentOwnerScope() === change.journeyId);
   const acceptSnapshot = (next: HistorySettings) => {
     if ((accountId !== null && next.creator_account_id !== accountId)
       || store.getState().creatorAccountId !== transport.creatorAccountId
@@ -179,7 +190,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   const reconcileChange = async (change: HistoryChange, signal: AbortSignal, refused = false) => {
     try {
       const next = await api.get(signal);
-      if (signal.aborted || !currentAccount(change.before) || !currentAccount(next)
+      if (signal.aborted || !currentChange(change) || !currentAccount(next)
         || next.settings_revision < change.before.settings_revision
         || (!refused && next.settings_revision === change.before.settings_revision
           && next.consent_policy_version === change.before.consent_policy_version)) return false;
@@ -193,6 +204,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
       } else {
         setError('Message history settings changed.');
       }
+      journal.clear(change);
       setPendingChange(null);
       return true;
     } catch (cause) {
@@ -201,6 +213,28 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
       return false;
     }
   };
+
+  useEffect(() => {
+    if (!savedChange || !ownerScope || !settings || busy || mutation.current || !currentAccount(settings)) return;
+    // Never resurrect an old account, journey or disclosure decision.
+    if (!savedForScope) {
+      journal.clear(savedChange);
+      return;
+    }
+    if (settings.settings_revision <= savedChange.before.settings_revision) {
+      if (journal.restoredBaseline(savedChange, settings) && journal.clear(savedChange)) {
+        // Current settings are authoritative, but the previous outcome is not.
+        // A new explicit change still uses the same owner revision guard.
+        setError("Your previous change wasn't confirmed. These are your current settings.");
+      } else setError(CHANGE_UNCONFIRMED);
+      return;
+    }
+    if (sameEffect(savedChange, settings)) {
+      setError(null);
+      if (savedChange.desired === 'revoked') store.clearMessageCache();
+    } else setError('Message history settings changed.');
+    journal.clear(savedChange);
+  }, [journal, savedChange, savedForScope, ownerScope, settings, busy]);
 
   useEffect(() => {
     if (pendingChange === null) return;
@@ -330,7 +364,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
 
   const allowBrowserHistory = async (value = settings) => {
     const current = store.getState();
-    if (permissionRequest.current || pendingChange || !canManageHistorySync || !value
+    if (permissionRequest.current || pendingChange || pendingScopeCheck || !canManageHistorySync || !value
       || !currentAccount(value) || !reviewCurrent() || latest.current !== value || !value.consent_revision
       || value.desired_state !== 'running' || current.connection !== 'connected'
       || current.agent?.creator_account_id !== value.creator_account_id
@@ -365,13 +399,24 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   };
 
   const submitChange = async (desired: HistoryChange['desired'], acceptConsent = false) => {
-    if (!settings || loading || busy || pendingChange || mutation.current || !canManageHistorySync
+    if (!settings || loading || busy || pendingChange || pendingScopeCheck || mutation.current || !canManageHistorySync
       || refusedIdentity === identity || !currentAccount(settings) || latest.current !== settings || !reviewCurrent()) return;
     const hasReceipt = settings.consent_revision !== null && settings.desired_state !== 'revoked';
     if (desired === 'revoked' ? review || !confirmRevoke || !hasReceipt
       : acceptConsent ? !consentAccepted || hasReceipt || desired !== 'running'
         : !hasReceipt || desired === settings.desired_state || review && (desired !== 'running' || settings.desired_state !== 'paused')) return;
-    const change: HistoryChange = { before: settings, desired, acceptConsent };
+    const requested: HistoryChange = { before: settings, desired, acceptConsent };
+    // Record the intent before dispatch, even if the renderer is closed while
+    // the request is still outstanding. This marker cannot authorize anything.
+    if (ownerScope && currentOwnerScope() !== ownerScope) return;
+    const saved = ownerScope ? journal.claim(ownerScope, requested) : null;
+    if (ownerScope && !saved && (journal.getState() || desired === 'running')) {
+      setError(journal.getState() ? CHANGE_UNCONFIRMED : 'Dipsy could not save the request. No change was sent.');
+      return;
+    }
+    // A local presentation-storage failure must not prevent a creator from
+    // pausing or revoking history under the existing revision guard.
+    const change = saved ?? requested;
     const controller = new AbortController();
     mutation.current = controller;
     setBusy(true);
@@ -389,31 +434,33 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
           request_interval_ms: settings.request_interval_ms,
           retry_limit: settings.retry_limit,
         }, controller.signal);
-      if (controller.signal.aborted || !currentAccount(settings)) return;
+      if (controller.signal.aborted || !currentChange(change)) return;
       if (!currentAccount(next) || next.settings_revision <= settings.settings_revision || !acceptSnapshot(next)) {
         throw new Error('unconfirmed_history_change');
       }
+      journal.clear(change);
       if (sameEffect(change, next)) {
         if (desired === 'revoked') store.clearMessageCache();
         // Preserve the existing Settings gesture, but never open Chrome
         // after a read-only reconciliation of a competing or lost write.
-        if (!review && desired === 'running') await allowBrowserHistory(next);
+        if (!review && desired === 'running' && currentChange(change)) await allowBrowserHistory(next);
       } else {
         setError('Message history settings changed.');
       }
     } catch (cause) {
-      if (controller.signal.aborted || !currentAccount(settings)) return;
+      if (controller.signal.aborted || !currentChange(change)) return;
       const disposition = historyFailure(cause);
       const refused = recoveryClass(historyRequestRecovery, disposition) === 'authorization_refused';
       let reconciled = false;
       try { reconciled = await reconcileChange(change, controller.signal, refused); }
       catch { /* A rejected read is not evidence about the write. */ }
-      if (!reconciled && !controller.signal.aborted && currentAccount(settings)) {
+      if (!reconciled && !controller.signal.aborted && currentChange(change)) {
         if (refused) {
+          journal.clear(change);
           setRefusedIdentity(settingsIdentity(settings));
           setError("Dipsy couldn't change message history settings.");
         } else {
-          setPendingChange(change);
+          if (!saved) setPendingChange(change);
           setError(CHANGE_UNCONFIRMED);
         }
       }
@@ -428,7 +475,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
 
   const update = (desired: 'running' | 'paused', acceptConsent = false) => submitChange(desired, acceptConsent);
   const revoke = () => submitChange('revoked');
-  const controlsDisabled = loading || busy || pendingChange !== null || accountId === null
+  const controlsDisabled = loading || busy || pendingChange !== null || pendingScopeCheck || accountId === null
     || transport.creatorAccountId !== accountId || refusedIdentity === identity && identity !== null;
 
   const hasConsent = settings !== null
@@ -596,8 +643,8 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
 
   if (!continuation) return controls;
   const ready = reviewAvailable && reviewScope !== null && settings !== null && !loading;
-  const offer = ready && (!hasConsent || paused) && !dismissed && settings.desired_state !== 'revoked';
-  const quiet = ready && (!hasConsent || paused) && !offer;
+  const offer = ready && pendingChange === null && !pendingScopeCheck && (!hasConsent || paused) && !dismissed && settings.desired_state !== 'revoked';
+  const quiet = ready && pendingChange === null && !pendingScopeCheck && (!hasConsent || paused) && !offer;
   const acquisitionTitle = presentation?.label === 'Adding messages' ? 'Adding messages'
     : presentation?.label === 'Starting' || presentation?.label === 'Waiting' && transport.coverage.phase === 'not_started'
       ? 'Starting message history'
@@ -607,11 +654,11 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
           : presentation?.label === 'Needs attention' || presentation?.label === 'Incomplete' ? 'Message history needs attention'
             : 'Waiting for messages';
   const title = !ready ? 'Waiting for messages'
-    : pendingChange !== null ? 'Checking message history'
+    : pendingChange !== null || pendingScopeCheck ? 'Checking message history'
       : quiet ? 'Waiting for messages'
         : offer ? paused ? 'Message history is paused' : 'See your first conversations'
           : permissionNeeded ? 'Allow Chrome access' : acquisitionTitle;
-  const detail = pendingChange !== null && ready ? "Your change hasn't been confirmed."
+  const detail = (pendingChange !== null || pendingScopeCheck) && ready ? "Your change hasn't been confirmed."
     : offer ? paused ? 'Resume adding older messages when you’re ready.'
       : 'Dipsy can use new messages as they arrive. Add older conversations to see results sooner.'
       : permissionNeeded && ready ? 'Allow Chrome to read older messages for this app.'

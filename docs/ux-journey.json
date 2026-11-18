@@ -1818,6 +1818,26 @@
           "kind": "unit",
           "file": "frontend/tests/recoveryClassification.test.ts",
           "name": "covers the current capture, history and protocol reason unions"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "reads current history after restart without replaying an interrupted consent request or opening Chrome"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "does not repeat accepted consent when the first owner read after restart confirms it"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "settles a committed revocation from the initial owner read after restart"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "does not send a consent request if its recovery record cannot be saved"
         }
       ]
     },
