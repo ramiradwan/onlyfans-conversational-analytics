@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 env:
   PRODUCT_SHA: ${{ github.sha }}
-  CI_POLICY_VERSION: sharded-v7-pr-cutover
+  CI_POLICY_VERSION: sharded-v8-pr-cutover
 jobs:
   plan:
     runs-on: ubuntu-latest

@@ -525,7 +525,7 @@ def test_windows_platform_groups_are_independent_and_auxiliary_work_runs_once() 
 
 
 def _assert_windows_pr_cutover(workflow: dict[str, Any]) -> None:
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v7-pr-cutover"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v8-pr-cutover"
     triggers = workflow["on"]
     assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}, "Product CI must not schedule duplicate exhaustive runs"
     assert triggers["push"] == {"branches": ["main"]}

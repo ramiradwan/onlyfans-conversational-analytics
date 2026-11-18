@@ -18,11 +18,13 @@ from typing import Any
 
 try:
     from tools.ci_selection import load_manifest as load_backend_manifest
+    from tools.ci_windows_shards import SHARD_LANES as WINDOWS_FULL_LANES
     from tools.ci_windows_shards import load_manifest as load_windows_full_manifest
     from tools.ci_windows_shards import validate_inventory as validate_windows_full_inventory
     from tools.engineering_attestation import ContractError, GitHubApi, latest_ci_jobs, load_json_strict
 except ModuleNotFoundError:  # Direct `python tools/ci_gate.py` invocation.
     from ci_selection import load_manifest as load_backend_manifest
+    from ci_windows_shards import SHARD_LANES as WINDOWS_FULL_LANES
     from ci_windows_shards import load_manifest as load_windows_full_manifest
     from ci_windows_shards import validate_inventory as validate_windows_full_inventory
     from engineering_attestation import ContractError, GitHubApi, latest_ci_jobs, load_json_strict
@@ -80,7 +82,7 @@ SPECS = {
                                   selectors=PYTHON313_LOOP_SELECTORS, python="3.13", implementation="CPython"),
     "analytics-windows-contract": ReportSpec("analytics-windows-contract", "Windows"),
     "analytics-scale-qualification": ReportSpec("analytics-scale-qualification", "Windows"),
-    **{f"windows-full-regression-{n}": ReportSpec(f"windows-full-regression-{n}", "Windows") for n in (1, 2)},
+    **{lane: ReportSpec(lane, "Windows") for lane in WINDOWS_FULL_LANES},
     "legacy-linux-reference": ReportSpec("backend-fast", "Linux", reference=True),
     "legacy-windows-reference": ReportSpec("windows-platform-contract-1", "Windows", reference=True),
     "backend-fast-brain-general": ReportSpec("backend-fast", "Linux", "tier_a_general", "tier_a_general", ("tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral",)),
@@ -111,7 +113,6 @@ ACTUAL_JOBS = {spec.job for spec in SPECS.values()} | {
 NEEDED_JOBS = {spec.logical_job for spec in SPECS.values()} | {
     "web-build-and-test", "desktop-native-contracts", "fixed-sqlcipher-wheel", "windows-browser-e2e", "windows-full-regression"
 }
-WINDOWS_FULL_LANES = ("windows-full-regression-1", "windows-full-regression-2")
 WINDOWS_PLATFORM_LANES = tuple(f"windows-platform-contract-{n}" for n in (1, 2, 3))
 LEGACY_EXCLUDED = {"slow", "stateful_tier_a", "stateful_tier_b", "stateful_agent_tier_a"}
 SCALE_LANE = "analytics-scale-qualification"
@@ -481,7 +482,7 @@ def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push"
     }
     inventories = {system: inventory(report) for system, report in references.items()}
     # PRs omit exhaustive execution, but their independent Windows collection
-    # must still prove that a subsequent main push can select both shards.
+    # must still prove that a subsequent main push can select every shard.
     try:
         partition = load_windows_full_manifest(Path(__file__).resolve().parents[1])
         validate_windows_full_inventory(inventories["Windows"].values(), partition, complete=True)

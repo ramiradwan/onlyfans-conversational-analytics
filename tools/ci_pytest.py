@@ -20,7 +20,7 @@ def pytest_addoption(parser):
     group = parser.getgroup("backend-ci")
     group.addoption("--ci-lane", default=None)
     group.addoption("--ci-shard", type=int, default=None)
-    group.addoption("--ci-windows-shard", type=int, choices=(1, 2), default=None)
+    group.addoption("--ci-windows-shard", type=int, choices=(1, 2, 3), default=None)
     group.addoption("--ci-windows-manifest", default=None)
     group.addoption("--ci-profile", default=None)
     group.addoption("--ci-output-dir", default=os.environ.get("CI_REPORT_DIR"))

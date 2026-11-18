@@ -14,6 +14,8 @@ from typing import Any, Iterable
 
 LEGACY_EXCLUDED = frozenset({"slow", "stateful_tier_a", "stateful_tier_b", "stateful_agent_tier_a"})
 LEGACY_WINDOWS_EXPRESSION = "not slow and not stateful_tier_a and not stateful_tier_b and not stateful_agent_tier_a"
+SHARDS = (1, 2, 3)
+SHARD_LANES = tuple(f"windows-full-regression-{shard}" for shard in SHARDS)
 
 
 class WindowsShardError(ValueError):
@@ -37,15 +39,15 @@ def load_manifest(rootpath: str | Path, path: str | Path | None = None) -> dict[
     if not isinstance(document, dict) or type(document.get("schema_version")) is not int or document["schema_version"] != 1:
         raise WindowsShardError("Unsupported full Windows shard manifest schema")
     files = document.get("files")
-    if not isinstance(files, dict) or not files or any(type(value) is not int or value not in (1, 2) for value in files.values()):
-        raise WindowsShardError("Every full Windows test file must belong to shard 1 or 2")
+    if not isinstance(files, dict) or not files or any(type(value) is not int or value not in SHARDS for value in files.values()):
+        raise WindowsShardError("Every full Windows test file must belong to shard 1, 2 or 3")
     for name in files:
         path = PurePosixPath(name)
         if (not isinstance(name, str) or "\\" in name or ":" in name or path.is_absolute()
                 or ".." in path.parts or str(path) != name or path.suffix != ".py"):
             raise WindowsShardError(f"Invalid full Windows test file path: {name!r}")
-    if set(files.values()) != {1, 2}:
-        raise WindowsShardError("Both full Windows shards must have test files")
+    if set(files.values()) != set(SHARDS):
+        raise WindowsShardError("Every full Windows shard must have test files")
     return document
 
 
@@ -77,8 +79,8 @@ def validate_inventory(collected: Iterable[dict[str, Any]], manifest: dict[str, 
 
 
 def selected_nodeids(collected: Iterable[dict[str, Any]], manifest: dict[str, Any], shard: int, *, complete: bool = True) -> set[str]:
-    if type(shard) is not int or shard not in (1, 2):
-        raise WindowsShardError("Full Windows shard must be 1 or 2")
+    if type(shard) is not int or shard not in SHARDS:
+        raise WindowsShardError("Full Windows shard must be 1, 2 or 3")
     rows = list(collected)
     validate_inventory(rows, manifest, complete=complete)
     return {nodeid for nodeid in legacy_nodeids(rows) if manifest["files"][node_path(nodeid)] == shard}
@@ -87,8 +89,8 @@ def selected_nodeids(collected: Iterable[dict[str, Any]], manifest: dict[str, An
 def read_inventory(path: Path, *, execution: bool = False) -> dict[str, Any]:
     """Accept full raw scope only, even when a producer did not flag narrowing.
 
-    For timings, a directory holding both exhaustive shard execution reports
-    is joined into one full-scope report.
+    For timings, a directory holding every exhaustive shard execution report
+    of one run is joined into one full-scope report.
     """
     if execution and path.is_dir():
         return combine_shard_reports(sorted(path.rglob("report.json")))
@@ -99,11 +101,12 @@ def read_inventory(path: Path, *, execution: bool = False) -> dict[str, Any]:
     return report
 
 
-SHARD_LANES = ("windows-full-regression-1", "windows-full-regression-2")
-
-
 def combine_shard_reports(paths: Iterable[Path]) -> dict[str, Any]:
-    """Join both successful exhaustive shard executions of one run."""
+    """Join every successful exhaustive shard execution of one run.
+
+    Evidence from a run with fewer shards remains usable when its reports
+    together select the full scope exactly once.
+    """
     shards = {}
     for path in paths:
         raw = path.read_bytes()
@@ -112,21 +115,24 @@ def combine_shard_reports(paths: Iterable[Path]) -> dict[str, Any]:
             if report["lane"] in shards:
                 raise WindowsShardError(f"Duplicate Windows timing report for {report['lane']}")
             shards[report["lane"]] = (report, hashlib.sha256(raw).hexdigest())
-    if set(shards) != set(SHARD_LANES):
-        raise WindowsShardError("Timings require both full Windows shard execution reports")
-    first, second = (shards[lane][0] for lane in SHARD_LANES)
-    if any(first.get(key) != second.get(key) for key in ("source_commit", "workflow_run_id", "run_attempt", "collected")):
+    lanes = [lane for lane in SHARD_LANES if lane in shards]
+    if not lanes:
+        raise WindowsShardError("Timings require every full Windows shard execution report of one run")
+    reports = [shards[lane][0] for lane in lanes]
+    first = reports[0]
+    if any(first.get(key) != report.get(key) for report in reports[1:]
+           for key in ("source_commit", "workflow_run_id", "run_attempt", "collected")):
         raise WindowsShardError("Full Windows shard reports come from different runs or collections")
-    selected = list(first.get("selected", [])) + list(second.get("selected", []))
+    selected = [node for report in reports for node in report.get("selected", [])]
     nodes = [row["nodeid"] for row in first.get("collected", [])]
     combined = dict(first, lane="windows-full-regression", selected=selected,
                     deselected=[node for node in nodes if node not in set(selected)],
-                    reports=list(first.get("reports", [])) + list(second.get("reports", [])),
-                    exit_code=0 if first.get("exit_code") == second.get("exit_code") == 0 else 1,
-                    complete=first.get("complete") is True and second.get("complete") is True)
+                    reports=[phase for report in reports for phase in report.get("reports", [])],
+                    exit_code=0 if all(report.get("exit_code") == 0 for report in reports) else 1,
+                    complete=all(report.get("complete") is True for report in reports))
     _check_scope(combined, execution=True)
-    combined["_report_sha256"] = shards[SHARD_LANES[0]][1]
-    combined["_execution_reports"] = [{"lane": lane, "report_sha256": shards[lane][1]} for lane in SHARD_LANES]
+    combined["_report_sha256"] = shards[lanes[0]][1]
+    combined["_execution_reports"] = [{"lane": lane, "report_sha256": shards[lane][1]} for lane in lanes]
     return combined
 
 
@@ -154,7 +160,9 @@ def _check_scope(report: Any, *, execution: bool) -> None:
         raise WindowsShardError("Inventory deselection must match only the frozen legacy exclusions")
 
 
-def file_timings(report: dict[str, Any]) -> dict[str, float]:
+def file_timings(report: dict[str, Any], *, only: Iterable[str] | None = None) -> dict[str, float]:
+    """Sum measured phase seconds per file, optionally of the given node IDs only."""
+    only = None if only is None else set(only)
     expected = legacy_nodeids(report["collected"])
     phases: dict[str, dict[str, Any]] = {}
     children: dict[str, list[int]] = {}
@@ -180,7 +188,8 @@ def file_timings(report: dict[str, Any]) -> dict[str, float]:
         if when in by_phase or phase["outcome"] not in ("passed", "skipped"):
             raise WindowsShardError("Duplicate or unsuccessful phase in Windows timing evidence")
         by_phase[when] = phase
-        totals[node_path(nodeid)] += duration
+        if only is None or nodeid in only:
+            totals[node_path(nodeid)] += duration
     for nodeid in expected:
         observed = phases.get(nodeid, {})
         if set(observed) not in ({"setup", "call", "teardown"}, {"setup", "teardown"}):
@@ -197,22 +206,55 @@ def file_timings(report: dict[str, Any]) -> dict[str, float]:
     return totals
 
 
+def phase_model(workers: Any, contention: Any) -> dict[str, Any]:
+    """Expected job seconds: parallel tests share workers at a measured slowdown."""
+    if (type(workers) is not int or workers < 1 or type(contention) not in (int, float)
+            or not math.isfinite(contention) or contention < 1):
+        raise WindowsShardError("Phase model needs workers >= 1 and contention >= 1")
+    return {"workers": workers, "contention": contention}
+
+
 def updated_manifest(manifest: dict[str, Any] | None, inventory: dict[str, Any], *,
-                     timing_report: dict[str, Any] | None = None, rebalance: bool = False) -> dict[str, Any]:
-    """Preserve reviewed owners; explicitly identify newly unmeasured files."""
+                     timing_report: dict[str, Any] | None = None, rebalance: bool = False,
+                     model: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Preserve reviewed owners; explicitly identify newly unmeasured files.
+
+    With a phase model, each file weighs its serial-marked test seconds plus
+    its other test seconds times contention divided by workers. Serial tests
+    are those the current inventory marks serial.
+    """
     files = {node_path(nodeid) for nodeid in legacy_nodeids(inventory["collected"])}
     prior = manifest or {"files": {}, "assignment_basis": {}}
     basis = prior.get("assignment_basis", {})
-    timings = file_timings(timing_report) if timing_report is not None else basis.get("timing_seconds", {})
+    if model is None and timing_report is None:
+        model = basis.get("phase_model")
+    if model is not None:
+        model = phase_model(model.get("workers"), model.get("contention"))
+    serial_nodes = {row["nodeid"] for row in inventory["collected"] if "serial" in row["markers"]}
+    if timing_report is not None:
+        timings = file_timings(timing_report)
+        serial = file_timings(timing_report, only=serial_nodes) if model else {}
+    else:
+        timings, serial = basis.get("timing_seconds", {}), basis.get("serial_seconds", {}) if model else {}
     timings = {path: seconds for path, seconds in timings.items() if path in files}
-    if any(type(value) not in (int, float) or value < 0 or not math.isfinite(value) for value in timings.values()):
+    serial = {path: seconds for path, seconds in serial.items() if path in timings and seconds}
+    if any(type(value) not in (int, float) or value < 0 or not math.isfinite(value)
+           for value in (*timings.values(), *serial.values())):
         raise WindowsShardError("Timing values must be finite non-negative seconds")
+    if any(seconds > timings[path] for path, seconds in serial.items()):
+        raise WindowsShardError("Serial seconds cannot exceed a file's measured seconds")
     if rebalance and set(timings) != files:
         raise WindowsShardError("Rebalancing requires measured Windows timing seconds for every current file")
     assignments = {} if rebalance else {path: owner for path, owner in prior["files"].items() if path in files}
-    fallback = statistics.median(timings.values()) if timings else 1.0
-    weight = lambda path: timings.get(path, fallback)
-    loads = {shard: sum(weight(path) for path, owner in assignments.items() if owner == shard) for shard in (1, 2)}
+    def expected(path: str) -> float:
+        seconds, serial_seconds = timings[path], serial.get(path, 0.0)
+        if model is None:
+            return seconds
+        return (seconds - serial_seconds) * model["contention"] / model["workers"] + serial_seconds
+    measured = {path: expected(path) for path in timings}
+    fallback = statistics.median(measured.values()) if measured else 1.0
+    weight = lambda path: measured.get(path, fallback)
+    loads = {shard: sum(weight(path) for path, owner in assignments.items() if owner == shard) for shard in SHARDS}
     for path in sorted(files - assignments.keys(), key=lambda name: (-weight(name), name)):
         shard = min(loads, key=lambda owner: (loads[owner], owner))
         assignments[path] = shard
@@ -221,7 +263,13 @@ def updated_manifest(manifest: dict[str, Any] | None, inventory: dict[str, Any],
                    report_sha256=timing_report["_report_sha256"],
                    **({"execution_reports": timing_report["_execution_reports"]} if "_execution_reports" in timing_report else {}))
               if timing_report is not None else basis.get("source"))
+    phase_fields = {} if model is None else dict(
+        phase_model=model, serial_seconds=dict(sorted(serial.items())),
+        expected_shard_seconds={str(shard): round(load, 1) for shard, load in sorted(loads.items())})
     return dict(schema_version=1, files=dict(sorted(assignments.items())), assignment_basis=dict(
         status="measured" if set(timings) == files else "measured_with_unmeasured_additions" if timings else "unmeasured",
-        method="file-duration longest-first allocation; existing owners retained unless --rebalance",
-        source=source, timing_seconds=dict(sorted(timings.items())), unmeasured_files=sorted(files - timings.keys())))
+        method=("expected job seconds (serial tests plus other tests times contention per worker)"
+                if model else "file-duration")
+               + " longest-first allocation; existing owners retained unless --rebalance",
+        source=source, timing_seconds=dict(sorted(timings.items())), **phase_fields,
+        unmeasured_files=sorted(files - timings.keys())))

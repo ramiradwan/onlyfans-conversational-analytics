@@ -29,7 +29,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   PRODUCT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-  CI_POLICY_VERSION: sharded-v7-pr-cutover
+  CI_POLICY_VERSION: sharded-v8-pr-cutover
   BROWSER_QUALIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_qualification }}
   BROWSER_SERIAL_CONTROL: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_serial_control }}
 jobs:
@@ -765,11 +765,12 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 3
       matrix:
         shard:
           - 1
           - 2
+          - 3
     env:
       CI_PYTEST_LIVE_PROGRESS: '1'
     steps:

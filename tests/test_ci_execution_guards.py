@@ -122,7 +122,7 @@ def _assert_full_windows_shards_are_blocking(workflow: dict[str, Any]) -> None:
     job = workflow["jobs"]["windows-full-shards"]
     assert job["name"] == "windows-full-regression-${{ matrix.shard }}"
     assert job["runs-on"] == "windows-latest"
-    assert job["strategy"] == {"fail-fast": False, "max-parallel": 2, "matrix": {"shard": [1, 2]}}
+    assert job["strategy"] == {"fail-fast": False, "max-parallel": 3, "matrix": {"shard": [1, 2, 3]}}
     assert job["timeout-minutes"] == 90
     execution = next(step for step in job["steps"] if step.get("name") == "Test complete Windows backend regression shard")
     assert execution["run"] == "python tools/test_backend.py --lane windows-full-regression --shard ${{ matrix.shard }}"
@@ -132,7 +132,8 @@ def _assert_full_windows_shards_are_blocking(workflow: dict[str, Any]) -> None:
     assert upload["with"]["name"] == "ci-tests-windows-full-regression-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}"
 
 
-@pytest.mark.parametrize("mutation", ["omit-shard", "overlap-shard", "ignore-failure", "omit-aggregate", "hide-shards", "allow-cancelled"])
+@pytest.mark.parametrize("mutation", ["omit-shard", "two-shards", "serialize-shards", "overlap-shard", "ignore-failure",
+                                      "omit-aggregate", "hide-shards", "allow-cancelled"])
 def test_full_windows_split_cannot_drop_or_hide_a_required_shard(mutation: str) -> None:
     workflow = _workflow_document()
     _assert_full_windows_shards_are_blocking(workflow)
@@ -140,6 +141,10 @@ def test_full_windows_split_cannot_drop_or_hide_a_required_shard(mutation: str) 
     jobs = broken["jobs"]
     if mutation == "omit-shard":
         jobs["windows-full-shards"]["strategy"]["matrix"]["shard"] = [1]
+    elif mutation == "two-shards":
+        jobs["windows-full-shards"]["strategy"].update({"max-parallel": 2, "matrix": {"shard": [1, 2]}})
+    elif mutation == "serialize-shards":
+        jobs["windows-full-shards"]["strategy"]["max-parallel"] = 2
     elif mutation == "overlap-shard":
         jobs["windows-full-shards"]["strategy"]["matrix"]["shard"] = [1, 1]
     elif mutation == "ignore-failure":
@@ -261,7 +266,7 @@ def test_gate_keeps_attempt_artifacts_separate_and_compatibility_checks_block() 
 
 def test_main_and_manual_qualification_are_explicit_without_duplicate_schedule_or_path_filters() -> None:
     workflow = _workflow_document()
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v7-pr-cutover"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v8-pr-cutover"
     events = workflow["on"]
     assert set(events) == {"push", "pull_request", "workflow_dispatch"}
     dispatch = events["workflow_dispatch"]

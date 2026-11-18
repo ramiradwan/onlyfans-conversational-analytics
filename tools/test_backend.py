@@ -65,6 +65,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--workers", type=int, default=None,
                         help="pytest-xdist workers for a non-stateful lane, then one serial process (default: CI_PYTEST_WORKERS or 0)")
     result.add_argument("--work-dir", type=Path, help="Parent directory for per-phase temporary files and reports")
+    result.add_argument("--contention", type=float, default=None,
+                        help="update-windows-manifest: measured parallel slowdown; weighs non-serial tests by it over --workers")
     result.add_argument("--dist", default=None,
                         help="pytest-xdist scheduler for the parallel phase: load or worksteal (default: CI_PYTEST_DIST or load)")
     return result
@@ -164,14 +166,14 @@ def build_command(args: argparse.Namespace, extra: list[str], manifest: dict[str
         raise SelectionError("--shard is only valid for integration, windows-platform or windows-full-regression")
     if lane == "windows-platform" and args.shard not in (None, 1, 2, 3):
         raise SelectionError("Windows platform contract has exactly three shards: --shard 1, 2 or 3")
-    if lane == "legacy-windows" and args.shard not in (None, 1, 2):
-        raise SelectionError("Full Windows regression has exactly two shards: --shard 1 or 2")
+    if lane == "legacy-windows" and args.shard not in (None, *windows_shards.SHARDS):
+        raise SelectionError("Full Windows regression has exactly three shards: --shard 1, 2 or 3")
     if args.profile is not None and lane != "stateful":
         raise SelectionError("--profile is only valid for stateful")
     if args.validate and (not listing or (lane != "all" and not (lane == "legacy-windows" and args.shard)) or extra):
         raise SelectionError("Use list all --validate or list windows-full-regression --shard N --validate without pytest selection arguments")
-    if args.rebalance or args.timings or args.inventory:
-        raise SelectionError("--rebalance, --timings and --inventory belong to manifest update commands")
+    if args.rebalance or args.timings or args.inventory or args.contention is not None:
+        raise SelectionError("--rebalance, --timings, --inventory and --contention belong to manifest update commands")
     environment = os.environ.copy()
     environment.pop("HYPOTHESIS_PROFILE", None)
     if lane == "stateful":
@@ -352,15 +354,19 @@ def main(argv: list[str] | None = None) -> int:
             partition = windows_shards.load_manifest(ROOT, args.windows_manifest)
             windows_shards.validate_inventory(inventory["collected"], partition, complete=True)
             print(f"Validated full Windows inventory: {len(partition['files'])} files, "
-                  f"{len(inventory['selected'])} default tests, two exhaustive shards")
+                  f"{len(inventory['selected'])} default tests, {len(windows_shards.SHARDS)} exhaustive shards")
             return 0
         if args.command == "update-windows-manifest":
-            if extra or args.lane or args.list_lane or args.shard or args.profile or args.validate or args.list_only or not args.inventory:
-                raise SelectionError("update-windows-manifest requires --inventory <raw-unsharded-report.json>; optional --timings, --rebalance, --windows-manifest and --dry-run")
+            if (extra or args.lane or args.list_lane or args.shard or args.profile or args.validate or args.list_only
+                    or not args.inventory or (args.workers is None) != (args.contention is None)):
+                raise SelectionError("update-windows-manifest requires --inventory <raw-unsharded-report.json>; optional --timings, --rebalance, "
+                                     "--workers with --contention, --windows-manifest and --dry-run")
             previous = windows_shards.load_manifest(ROOT, args.windows_manifest) if args.windows_manifest.exists() else None
             inventory = windows_shards.read_inventory(args.inventory)
             timings = windows_shards.read_inventory(args.timings, execution=True) if args.timings else None
-            updated = windows_shards.updated_manifest(previous, inventory, timing_report=timings, rebalance=args.rebalance)
+            model = None if args.workers is None else windows_shards.phase_model(args.workers, args.contention)
+            updated = windows_shards.updated_manifest(previous, inventory, timing_report=timings,
+                                                      rebalance=args.rebalance, model=model)
             content = json.dumps(updated, indent=2) + "\n"
             if args.dry_run:
                 import difflib
