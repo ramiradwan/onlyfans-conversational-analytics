@@ -270,7 +270,9 @@ class DesktopOnboardingCoordinator:
             "continuation_available": view.scope.get("source_recovery") is not None,
             "creator_label": creator_label(view.scope.get("browser"), view.scope.get("creator_account_id")),
             "authentication": authentication, "analysis_readiness": view.analysis_readiness.projection(),
-            **({"authority_recovery": protected_recovery["state"]} if protected_recovery is not None else {})}, kind="snapshot")
+            **({"authority_recovery": protected_recovery["state"]} if protected_recovery is not None else {}),
+            **({"authority_recovery_browser": protected_recovery["browser_phase"]}
+                if protected_recovery is not None and "browser_phase" in protected_recovery else {})}, kind="snapshot")
 
     @staticmethod
     def _public(row):

@@ -5,6 +5,7 @@ import { DesktopSetupClient } from './client.js';
 import { renderSetup } from './view.js';
 import { openBrowserTask, openSetupCode } from './browser-task.js';
 import { DesktopEnrollment } from './enrollment.js';
+import { authorityRecoveryView, authorityRecoveryOptions } from '../shared-setup/authority-recovery.js';
 
 applyTheme(document);
 const fields = new URLSearchParams(location.hash.slice(1));
@@ -65,8 +66,12 @@ try {
     if (current.snapshot?.authentication?.authentication_attempt?.authentication_attempt_id
       !== state.snapshot?.authentication?.authentication_attempt?.authentication_attempt_id) choosingAccount = false;
     if (!acting && (!state.pending || state.error)) provider = null;
-    current = state; render();
-    if (client.session?.stage === 'runtime' && state.connected && !enrollment.state.checked && !enrollment.state.busy) void enrollment.check();
+    const restored = current.snapshot?.authority_recovery && state.connected && !state.snapshot?.authority_recovery;
+    current = state;
+    if (restored && client.session?.stage === 'runtime') { void enrollment.check(); render(); return; }
+    render();
+    if (client.session?.stage === 'runtime' && state.connected && !state.snapshot?.authority_recovery
+      && !enrollment.state.checked && !enrollment.state.busy) void enrollment.check();
   }, openBrowser: openBrowserTask });
   const act = async (action, options) => {
     if (acting) return;
@@ -75,10 +80,27 @@ try {
     catch { client.notify('operation_unconfirmed'); }
     finally { acting = null; render(); }
   };
+  const protectedAct = async action => {
+    const view = authorityRecoveryView(current, acting);
+    if (finished || !view || view.disabled || (action !== view.action && !(action === 'auth.cancel' && view.cancel))) return;
+    acting = action; render();
+    try {
+      if (action === 'browser.open') await client.launchProtectedBrowser();
+      else await client.act(action, authorityRecoveryOptions(action));
+    } catch (error) {
+      // A failed response cannot justify another launch. Reattach to the
+      // existing owner; the current projection determines available actions.
+      if (!finished && error?.message !== 'chrome_unavailable' && client.connected) {
+        void client.connect(); client.notify();
+      }
+    } finally { acting = null; render(); }
+  };
+  document.getElementById('protected-cancel').addEventListener('click', () => { void protectedAct('auth.cancel'); });
   document.getElementById('task-action').addEventListener('click', event => {
     const button = event.currentTarget;
-    if (finished || button.hidden || button.disabled || !button.dataset.action || !current.connected
-      || !current.snapshot?.allowed_actions.includes(button.dataset.action)) return;
+    if (finished || button.hidden || button.disabled || !button.dataset.action || !current.connected) return;
+    if (button.dataset.protectedRecovery === 'true') { void protectedAct(button.dataset.action); return; }
+    if (current.snapshot?.authority_recovery || !current.snapshot?.allowed_actions.includes(button.dataset.action)) return;
     const replacing = button.dataset.replaceCeremony === 'true';
     if (replacing && current.snapshot?.authentication?.state !== 'replacement-required') return;
     const continuingSource = button.dataset.action === 'account.connect' && current.snapshot?.continuation_available

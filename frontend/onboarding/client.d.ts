@@ -38,7 +38,8 @@ export interface DesktopSnapshot {
   decision_status?: { operation_id: string; state: 'awaiting-authentication' | 'confirmation-required' | 'accepted' | 'unavailable' } | null;
   authentication?: DesktopAuthentication | null;
   continuation_available?: boolean;
-  authority_recovery?: 'available' | 'preparing' | 'sign-in-required' | 'checking' | 'blocked';
+  authority_recovery?: 'available' | 'preparing' | 'sign-in-required' | 'checking' | 'restoring' | 'blocked';
+  authority_recovery_browser?: 'ready' | 'launch-claimed' | 'handed-off' | 'unconfirmed';
   creator_label?: { creator_id: string; display_name: string | null; username: string | null } | null;
 }
 export interface DesktopState {
@@ -63,5 +64,6 @@ export class DesktopSetupClient {
   act(action: string, options?: { provider?: SignInProvider; replace_ceremony?: true; recover_authority?: true }): Promise<void>;
   reconcile(selectedOperation?: string): Promise<void>;
   launchBrowser(explicit?: boolean, selectedOperation?: string): Promise<void>;
+  launchProtectedBrowser(): Promise<void>;
   stop(): void;
 }

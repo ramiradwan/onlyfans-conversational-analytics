@@ -6,6 +6,8 @@ import { mockFeedbackOverflow } from './feedbackGeometry';
 import { LoginOutcomeError, EnrollmentOutcomeError, WebAuthnStatusError, type PushedAccess, type WebAuthnApi } from '../shared-setup/webauthn';
 import { theme } from '../src/theme';
 import { WebAuthnAccessView } from '../src/views/WebAuthnAccessView';
+import type { DesktopSnapshot, DesktopState } from '../onboarding/client';
+import type { AuthorityRecoveryApi } from '../src/services/desktopOnboarding';
 
 /** A promise the test settles, so the in-flight state is observable. */
 function deferred() {
@@ -506,4 +508,76 @@ it('disables sign-in while a pushed access change is being verified', async () =
   fireEvent.click(view.signIn());
   expect(login).not.toHaveBeenCalled();
   await act(async () => { answer({ enrolled: true, authenticated: false }); });
+});
+
+it('renders protected native recovery instead of passkey access and returns only after a fresh access read', async () => {
+  const operation = '22222222-2222-4222-8222-222222222222';
+  const generation = '11111111-1111-4111-8111-111111111111';
+  const attempt = '0198a1b2-c3d4-7300-8000-000000000063';
+  const auth = { operation_id: operation, browser_operation_id: null, state: 'selection-required' as const,
+    choices: { default: true, google: false, 'microsoft-personal': false, telegram: false, tiktok: false },
+    actions: { select: true, cancel: false, open_browser: false, switch_account: false }, authentication_attempt: null };
+  const initial: DesktopSnapshot = { journey_id: operation, generation, revision: 0, facts: {}, local_ready: false, full_ready: false,
+    analysis_readiness: { availability: 'unauthorized', creator_account_id: null, value: null }, next_task: 'account-connection',
+    authority_recovery: 'available', allowed_actions: ['account.connect'], pending_operations: [] };
+  let desktop: DesktopState = { snapshot: initial, connected: true, pending: null, error: null };
+  const listeners = new Set<() => void>();
+  const recoveryApi: AuthorityRecoveryApi = { getState: () => desktop,
+    subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }, act: vi.fn(async () => {}) };
+  const show = (snapshot: DesktopSnapshot, connected = true) => act(() => {
+    desktop = { ...desktop, connected, snapshot }; for (const listener of listeners) listener();
+  });
+  const onAuthenticated = vi.fn();
+  const api = { state: vi.fn(async () => ({ enrolled: true, authenticated: false })), enroll: vi.fn(), login: vi.fn() };
+  render(<ThemeProvider theme={theme}><WebAuthnAccessView api={api} recoveryApi={recoveryApi} onAuthenticated={onAuthenticated} /></ThemeProvider>);
+  expect(await screen.findByRole('heading', { name: 'Restore access on this computer' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
+  expect(recoveryApi.act).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Restore access' }));
+  await waitFor(() => expect(recoveryApi.act).toHaveBeenCalledWith('account.connect'));
+  show({ ...initial, authority_recovery: 'preparing', allowed_actions: [] });
+  expect(screen.queryByRole('button', { name: 'Restore access' })).toBeNull();
+  show({ ...initial, authority_recovery: 'sign-in-required', authentication: auth, allowed_actions: ['auth.select'] });
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in', exact: true }));
+  await waitFor(() => expect(recoveryApi.act).toHaveBeenCalledWith('auth.select'));
+  const selected: DesktopSnapshot = { ...initial, authority_recovery: 'sign-in-required', authority_recovery_browser: 'ready',
+    allowed_actions: ['auth.cancel'], authentication: { ...auth, state: 'selected',
+      authentication_attempt: { authentication_attempt_id: attempt, provider: 'default', mode: 'sign-in' },
+      actions: { select: false, cancel: true, open_browser: true, switch_account: false } } };
+  show(selected);
+  fireEvent.click(screen.getByRole('button', { name: 'Open Chrome' }));
+  await waitFor(() => expect(recoveryApi.act).toHaveBeenCalledWith('browser.open'));
+  show({ ...selected, authority_recovery_browser: 'launch-claimed' });
+  expect(screen.queryByRole('button', { name: 'Open Chrome' })).toBeNull();
+  show({ ...selected, authority_recovery_browser: 'handed-off' });
+  expect(screen.getByText('Waiting for sign-in\u2026')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel sign-in' }));
+  await waitFor(() => expect(recoveryApi.act).toHaveBeenCalledWith('auth.cancel'));
+  show({ ...initial, authority_recovery: 'sign-in-required', authentication: { ...auth, state: 'retired' }, allowed_actions: ['auth.select'] });
+  expect(screen.getByRole('button', { name: 'Sign in again' })).toBeTruthy();
+  show({ ...initial, authority_recovery: 'restoring', allowed_actions: [] });
+  expect(screen.getByText('Sign-in complete. Restoring access\u2026')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
+  expect(onAuthenticated).not.toHaveBeenCalled();
+  const before = api.state.mock.calls.length;
+  const restored = { ...initial, authority_recovery: undefined, local_ready: true, allowed_actions: [] };
+  show(restored);
+  await waitFor(() => expect(api.state.mock.calls.length).toBeGreaterThan(before));
+  expect(await screen.findByRole('button', { name: 'Sign in with passkey' })).toBeTruthy();
+  expect(onAuthenticated).not.toHaveBeenCalled();
+  expect(api.enroll).not.toHaveBeenCalled();
+  expect(api.login).not.toHaveBeenCalled();
+});
+
+it('keeps a disconnected protected recovery passive and does not return to ordinary passkey setup', async () => {
+  const snapshot: DesktopSnapshot = { journey_id: null, generation: '11111111-1111-4111-8111-111111111111',
+    revision: 1, facts: {}, local_ready: false, full_ready: false, analysis_readiness: { availability: 'unauthorized', creator_account_id: null, value: null },
+    next_task: 'account-connection', authority_recovery: 'blocked', allowed_actions: [] , pending_operations: [] };
+  const desktop: DesktopState = { snapshot, pending: null, connected: true, error: null };
+  const recoveryApi: AuthorityRecoveryApi = { getState: () => desktop, subscribe: () => () => {}, act: vi.fn(async () => {}) };
+  render(<ThemeProvider theme={theme}><WebAuthnAccessView recoveryApi={recoveryApi} api={{ enroll: vi.fn(), login: vi.fn() }} /></ThemeProvider>);
+  expect(await screen.findByRole('heading', { name: 'Access could not be restored' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Restore access' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
+  expect(recoveryApi.act).not.toHaveBeenCalled();
 });

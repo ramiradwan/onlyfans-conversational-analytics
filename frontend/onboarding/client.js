@@ -1,5 +1,6 @@
 import { command, operation, snapshot, UUID } from './contract.js';
 import { setupEvents } from './events.js';
+import { openProtectedBrowser } from './browser-task.js';
 import { exact } from '../../shared/browser-tasks/wire.mjs';
 import { parseOnboardingJson } from '../../shared/onboarding/json.mjs';
 
@@ -26,6 +27,8 @@ export class DesktopSetupClient {
     this.launchOperation = null;
     this.launchEpoch = 0;
     this.launching = false;
+    this.protectedOpening = false;
+    this.protectedLaunchError = null;
     this.launchRequested = false;
     this.focusIntent = null;
     this.value = null;
@@ -47,9 +50,9 @@ export class DesktopSetupClient {
 
   notify(error = null, deliberate = false) {
     this.receive({ snapshot: this.value, pending: this.pending, connected: this.connected,
-      error: error || this.operationError?.reason || this.browserNotice || null, deliberate,
+      error: error || this.protectedLaunchError || this.operationError?.reason || this.browserNotice || null, deliberate,
       ...(this.intent?.operationId === this.pending ? { pendingAction: this.intent.action } : {}),
-      browserLaunchPending: Boolean(this.launchOperation) });
+      browserLaunchPending: Boolean(this.launchOperation || this.protectedOpening) });
   }
 
   retireAuthenticationError() {
@@ -226,6 +229,8 @@ export class DesktopSetupClient {
         if (this.value && value.revision < this.value.revision) throw new Error('invalid_snapshot');
         const deliberate = this.intent?.confirmed === true && this.intent.task !== value.next_task;
         if (deliberate) this.intent = null;
+        if (this.value?.authentication?.authentication_attempt?.authentication_attempt_id !== value.authentication?.authentication_attempt?.authentication_attempt_id
+          || value.authority_recovery_browser !== 'ready') this.protectedLaunchError = null;
         this.value = value;
         this.retireAuthenticationError();
         const preparingSelection = this.intent?.initialAuthentication === true
@@ -281,6 +286,33 @@ export class DesktopSetupClient {
     } catch { /* A replacement presentation recovers accepted work from Brain. */ }
   }
 
+  async launchProtectedBrowser() {
+    if (this.protectedOpening) return;
+    const snapshot = this.value, epoch = this.launchEpoch;
+    if (!this.connected || snapshot?.authority_recovery_browser !== 'ready' || !snapshot.authentication?.actions.open_browser) throw Error('browser_unavailable');
+    this.protectedOpening = true;
+    this.protectedLaunchError = null;
+    this.notify();
+    try {
+      // Do not spend the one-use launch claim on a missing browser.
+      const invoke = globalThis.__TAURI__?.core?.invoke;
+      if (!invoke || await invoke('desktop_chrome_available') !== true) {
+        this.protectedLaunchError = 'chrome_unavailable';
+        throw Error('chrome_unavailable');
+      }
+      if (!this.connected || this.launchEpoch !== epoch || this.value !== snapshot) throw Error('browser_unavailable');
+      if (!await openProtectedBrowser(this)) throw Error('browser_unavailable');
+    } finally {
+      this.protectedOpening = false;
+      if (this.connected && this.launchEpoch === epoch && !this.protectedLaunchError && this.value === snapshot) {
+        // A stale snapshot must not reoffer the spent launch before its
+        // authoritative update. Reattach for read-only status, never resend.
+        void this.connect();
+      }
+      this.notify();
+    }
+  }
+
   async act(action, options = {}) {
     const clicked = performance.now();
     const observe = phase => {
@@ -303,12 +335,13 @@ export class DesktopSetupClient {
       && this.value.pending_operations.some(item => item.action === action)
       && this.value.pending_operations.some(item => item.operation_id === this.pending
         && ['activation.review', 'activation.confirm', 'auth.select', 'auth.switch', 'auth.cancel'].includes(item.action));
-    if (!this.connected || !this.value || (this.pending && !replacesCurrentAuthentication && !replacesReview)) return;
+    if (!this.connected || !this.value || this.protectedOpening || (this.pending && !replacesCurrentAuthentication && !replacesReview)) return;
     observe('click');
     const intent = command(this.value, action, this.uuid(), options);
     // Later launch steps of this click are recorded once each.
     this.clickTiming = { operationId: intent.operation_id, observe, marked: new Set() };
     this.operationError = null;
+    this.protectedLaunchError = null;
     this.launchEpoch++;
     this.focusIntent = null;
     const epoch = this.launchEpoch;

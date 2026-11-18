@@ -1,5 +1,6 @@
 import { openBrowserTask } from '../../onboarding/browser-task.js';
 import { DesktopSetupClient, type DesktopState } from '../../onboarding/client.js';
+import { authorityRecoveryOptions, authorityRecoveryView, type RecoveryAction } from '../../shared-setup/authority-recovery.js';
 import type { BrowserSurfacePayload, FullPresentationIntent } from '../protocol';
 
 /** Display only: current native/account-scoped readiness never admits a command. */
@@ -136,3 +137,28 @@ export async function reconcileDesktopOnboarding(action: DesktopAction) {
 
 export const desktopOnboardingApi: DesktopOnboardingApi = { getState: desktopOnboardingState,
   subscribe: subscribeDesktopOnboarding, begin: beginDesktopAction, openBrowser: openDesktopBrowser, reconcile: reconcileDesktopOnboarding };
+
+/** The native access gate never requires an expired local operator session. */
+export interface AuthorityRecoveryApi {
+  getState(): DesktopState;
+  subscribe(listener: () => void): () => void;
+  act(action: RecoveryAction): Promise<void>;
+}
+export const authorityRecoveryApi: AuthorityRecoveryApi = {
+  getState: desktopOnboardingState,
+  subscribe: subscribeDesktopOnboarding,
+  async act(action) {
+    const current = client;
+    const view = authorityRecoveryView(state);
+    if (!current || !view || view.disabled || (action !== view.action && !(action === 'auth.cancel' && view.cancel))) throw Error('action_unavailable');
+    try {
+      if (action === 'browser.open') await current.launchProtectedBrowser();
+      else await current.act(action, authorityRecoveryOptions(action));
+    } catch (error) {
+      if (client === current && !(error instanceof Error && error.message === 'chrome_unavailable') && current.session) {
+        void current.connect();
+      }
+      throw error;
+    }
+  },
+};

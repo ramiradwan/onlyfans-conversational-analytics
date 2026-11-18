@@ -597,6 +597,7 @@ def launch_request(coordinator,session):
     snapshot=coordinator.read(session)
     auth=snapshot["authentication"]
     assert snapshot["authority_recovery"]=="sign-in-required" and auth["actions"]["open_browser"]
+    assert snapshot["authority_recovery_browser"]=="ready"
     return {"parent_operation_id":auth["operation_id"],
         "attempt_id":auth["authentication_attempt"]["authentication_attempt_id"],
         "expected":{key:snapshot[key] for key in ("generation","revision","scope_digest")}}
@@ -646,6 +647,7 @@ async def test_one_use_protected_native_entry_and_original_signed_delivery(insta
             reissue(session.identifier,generation=session.generation,task_id=task["task_id"])
     assert not coordinator.read(session)["authentication"]["actions"]["open_browser"]
     assert coordinator.read(session)["allowed_actions"]==["auth.cancel"]
+    assert coordinator.read(session)["authority_recovery_browser"]=="launch-claimed"
     # A parent worker cannot clear the projection while the local entry awaits consumption.
     case.clock[0]+=timedelta(seconds=16)
     assert not owner.automatic_recovery(parent)
@@ -654,6 +656,7 @@ async def test_one_use_protected_native_entry_and_original_signed_delivery(insta
     assert len(state["calls"])==before
     assert tasks.consume_protected(code,resolve=owner.resolve_browser_launch)==expected
     assert tasks.consume_protected(code,resolve=owner.resolve_browser_launch) is None
+    assert coordinator.read(session)["authority_recovery_browser"]=="handed-off"
     with pytest.raises(AdmissionRefused):
         coordinator.admissions.consume(code,role="browser_task")
     with case.store.database.read() as c:
@@ -822,6 +825,9 @@ async def test_consumed_entry_restart_observes_original_commit_and_lost_delivery
     coordinator.start()
     await coordinator.drain()
     assert coordinator.receipt(session,parent["operation_id"])["state"]=="outcome_unknown"
+    restoring=coordinator.read(session)
+    assert restoring["authority_recovery"]=="restoring" and restoring["allowed_actions"]==[]
+    assert "authority_recovery_browser" not in restoring
     await coordinator.stop()
     await owner.stop()
     case.clock[0]+=timedelta(seconds=16)

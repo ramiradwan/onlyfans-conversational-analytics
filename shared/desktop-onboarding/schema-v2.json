@@ -265,7 +265,10 @@
           "pattern": "^[0-9a-f]{64}$"
         },
         "authority_recovery": {
-          "enum": ["available", "preparing", "sign-in-required", "checking", "blocked"]
+          "enum": ["available", "preparing", "sign-in-required", "checking", "restoring", "blocked"]
+        },
+        "authority_recovery_browser": {
+          "enum": ["ready", "launch-claimed", "handed-off", "unconfirmed"]
         },
         "next_task": {
           "enum": [

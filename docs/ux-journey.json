@@ -17,6 +17,7 @@
       "implementation": [
         "frontend/src/views/WebAuthnAccessView.tsx",
         "frontend/src/components/OnboardingPasskeyTask.tsx",
+        "frontend/src/components/AuthorityRecoveryTask.tsx",
         "frontend/src/components/SetupPrompt.tsx",
         "frontend/src/components/CompanionPairingControls.tsx",
         "frontend/src/components/MessageHistoryControls.tsx",
@@ -1456,6 +1457,10 @@
         {
           "to": "desktop.setup_prompt",
           "by": "system"
+        },
+        {
+          "to": "desktop.authority_recovery",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2462,6 +2467,10 @@
           "to": "browser.loading",
           "by": "user",
           "action": "browser-reopen"
+        },
+        {
+          "to": "desktop.setup_authority_recovery",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -4222,6 +4231,48 @@
           "kind": "unit",
           "file": "frontend/tests/desktop-setup.test.js",
           "name": "names only the current deliberate desktop action while the owner receipt is outstanding"
+        }
+      ]
+    },
+    {
+      "id": "desktop.setup_authority_recovery",
+      "surface": "desktop.setup",
+      "anchor": {
+        "file": "frontend/onboarding/view.js",
+        "text": "'setup_authority_recovery'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_account_connection",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "renders the protected recovery sequence as one task and never exposes ordinary setup controls"
+        }
+      ]
+    },
+    {
+      "id": "desktop.authority_recovery",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/AuthorityRecoveryTask.tsx",
+        "text": "data-journey-state=\"desktop.authority_recovery\""
+      },
+      "transitions": [
+        {
+          "to": "desktop.passkey_sign_in",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "renders protected native recovery instead of passkey access and returns only after a fresh access read"
         }
       ]
     }

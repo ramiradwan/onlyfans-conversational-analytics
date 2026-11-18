@@ -99,7 +99,7 @@ class ProtectedAuthoritySetupOwner:
                 return {"state":"checking" if row["read_attempts"]<MAX_READS
                     and self.store._now().timestamp()<source["created_at"]+1860 else "blocked"}
             if source["state"]=="committed" or ceremony is not None and ceremony["committed_seen"]:
-                return {"state":"checking" if source["delivery_attempts"]<3 else "blocked"}
+                return {"state":"restoring" if source["delivery_attempts"]<3 else "blocked"}
             if source["state"] in {"reserved","prepare-claimed"} and (source["prepare_attempts"]>=2
                     or self.store._now().timestamp()>=source["created_at"]+1800):
                 return {"state":"blocked"}
@@ -125,7 +125,20 @@ class ProtectedAuthoritySetupOwner:
                             or (child is not None and actual is not None
                                 and actual["authentication_attempt_id"]==child["attempt_id"]
                                 and child["state"]==projection["state"] and child["state"] in {"selected","retired"})):
-                        return {"state":"sign-in-required","authentication":{
+                        browser_phase=None
+                        if child is not None and child["state"]=="selected":
+                            if not child["open_claimed"]:
+                                browser_phase="ready"
+                            elif self._entry_pending(connection,child):
+                                browser_phase="launch-claimed"
+                            elif row["read_attempts"]>=MAX_READS or self.store._now().timestamp()>=source["created_at"]+1860:
+                                browser_phase="unconfirmed"
+                            else:
+                                spent=connection.execute("SELECT 1 FROM protected_recovery_browser_dispatches d "
+                                    "JOIN desktop_browser_tasks t ON t.task_id=d.task_id "
+                                    "WHERE d.attempt_id=? AND t.state='completed'",(child["attempt_id"],)).fetchone()
+                                browser_phase="handed-off" if spent is not None else "unconfirmed"
+                        return {"state":"sign-in-required",**({"browser_phase":browser_phase} if browser_phase else {}),"authentication":{
                             "operation_id":row["operation_id"],"browser_operation_id":None,
                             "state":projection["state"],
                             "choices":{name: name=="default" and allowed for name,allowed in projection["choices"].items()},
@@ -139,6 +152,9 @@ class ProtectedAuthoritySetupOwner:
                     return {"state":"checking"}
                 if row["read_attempts"]>=MAX_READS:
                     return {"state":"blocked"}
+                child=self.browser.journal.child(connection,row["recovery_id"])
+                if child is not None and child["open_claimed"]:
+                    return {"state":"checking"}
             return {"state":"preparing"}
         offer = self._offer(connection)
         if offer is not None:

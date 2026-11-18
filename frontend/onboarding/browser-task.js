@@ -78,7 +78,8 @@ export async function openProtectedBrowser(client, invoke = code =>
   if (!client.connected || current?.generation !== snapshot.generation
     || current.journey_id !== snapshot.journey_id || current.authority_recovery !== 'sign-in-required'
     || current.authentication?.state !== 'selected' || current.authentication?.operation_id !== auth.operation_id
-    || current.authentication?.authentication_attempt?.authentication_attempt_id !== attempt) return false;
+    || current.authentication?.authentication_attempt?.authentication_attempt_id !== attempt
+    || !['ready', 'launch-claimed', undefined].includes(current.authority_recovery_browser)) return false;
   await invoke(value.entry_code);
   return true;
 }

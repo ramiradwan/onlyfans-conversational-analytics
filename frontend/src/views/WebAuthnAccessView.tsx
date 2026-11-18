@@ -1,10 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
+import type { DesktopState } from '../../onboarding/client.js';
+import { authorityRecoveryView, type RecoveryAction } from '../../shared-setup/authority-recovery.js';
 import {
   AccessFollower, EnrollmentOutcomeError, lapsedAccess, LoginOutcomeError, PASSKEY_STATUS_RETRY_DELAYS, WebAuthnStatusError, webauthnApi,
   type AccessState, type PushedAccess, type WebAuthnApi,
 } from '../../shared-setup/webauthn';
+import { AuthorityRecoveryTask } from '../components/AuthorityRecoveryTask';
 import { OnboardingPasskeyTask } from '../components/OnboardingPasskeyTask';
+import type { AuthorityRecoveryApi } from '../services/desktopOnboarding';
+
+const noDesktop: DesktopState = { snapshot: null, pending: null, connected: false, error: null };
+const noSubscribe = () => () => {};
+const noState = () => noDesktop;
 
 
 function failureMessage(enroll: boolean): string {
@@ -18,12 +26,21 @@ function failureMessage(enroll: boolean): string {
 interface WebAuthnAccessViewProps {
   api?: WebAuthnApi;
   onAuthenticated?: () => void;
+  recoveryApi?: AuthorityRecoveryApi;
 }
 
 export function WebAuthnAccessView({
   api = webauthnApi,
   onAuthenticated = () => window.location.reload(),
+  recoveryApi,
 }: WebAuthnAccessViewProps) {
+  const desktop = useSyncExternalStore(recoveryApi?.subscribe ?? noSubscribe, recoveryApi?.getState ?? noState);
+  const [recoveryActing, setRecoveryActing] = useState<RecoveryAction | null>(null);
+  const recoveryAction = useRef<RecoveryAction | null>(null);
+  const protectedView = authorityRecoveryView(desktop, recoveryActing);
+  const hadProtected = useRef(false);
+  const protectedRef = useRef(Boolean(protectedView));
+  protectedRef.current = Boolean(protectedView);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [enrolled, setEnrolled] = useState<boolean | null>(null);
@@ -90,7 +107,7 @@ export function WebAuthnAccessView({
         recovery.current = false;
       } else if (shownEnrolled.current === null) setError(null);
       setEnrolled(state.enrolled); setAccess(null);
-      if (state.authenticated) {
+      if (state.authenticated && !protectedRef.current) {
         completed.current = true;
         finish('available');
         authenticated.current();
@@ -141,8 +158,28 @@ export function WebAuthnAccessView({
     statusRetries.current = 0;
   }, [api]);
 
+  useEffect(() => {
+    if (protectedView) { hadProtected.current = true; return; }
+    if (hadProtected.current && desktop.connected && desktop.snapshot) {
+      hadProtected.current = false;
+      quiet.current = false;
+      setChecking(true);
+      setCheckAttempt(value => value + 1);
+    }
+  }, [protectedView, desktop.connected, desktop.snapshot]);
+
+  const performRecovery = async (action: RecoveryAction) => {
+    const current = authorityRecoveryView(desktop, recoveryAction.current);
+    if (!recoveryApi || !current || current.disabled || (current.action !== action && !(action === 'auth.cancel' && current.cancel))) return;
+    recoveryAction.current = action;
+    setRecoveryActing(action);
+    try { await recoveryApi.act(action); }
+    catch { /* The existing coordinator stream owns unknown outcomes. */ }
+    finally { recoveryAction.current = null; setRecoveryActing(null); }
+  };
+
   const authenticate = async (enroll: boolean) => {
-    if (busy || checking || reading.current || recovery.current || completed.current || access || ceremony.current || api.state && enrolled === null) return;
+    if (protectedView || busy || checking || reading.current || recovery.current || completed.current || access || ceremony.current || api.state && enrolled === null) return;
     const controller = new AbortController();
     ceremony.current = controller;
     // A change pushed during the ceremony is read once it ends.
@@ -153,7 +190,7 @@ export function WebAuthnAccessView({
     try {
       if (enroll) await api.enroll(controller.signal);
       else await api.login(controller.signal);
-      if (!controller.signal.aborted) { signedIn = true; completed.current = true; authenticated.current(); }
+      if (!controller.signal.aborted && !protectedRef.current) { signedIn = true; completed.current = true; authenticated.current(); }
     } catch (cause) {
       if (controller.signal.aborted) return;
       const unknown = (cause instanceof EnrollmentOutcomeError && cause.enrolled === null)
@@ -182,7 +219,11 @@ export function WebAuthnAccessView({
     }
   };
 
-  const checkingStatus = checking || recoveringStatus;
+  if (protectedView) return <AuthorityRecoveryTask view={protectedView} act={action => void performRecovery(action)} />;
+  // Do not flash a stale "expired" message after original restoration or
+  // while the admitted native owner is still establishing whether it can help.
+  const checkingStatus = checking || recoveringStatus || Boolean(hadProtected.current && desktop.connected && desktop.snapshot)
+    || Boolean(recoveryApi && access === 'expired' && !desktop.connected && !desktop.error);
   return <OnboardingPasskeyTask statusUnavailable={Boolean(api.state) && enrolled === null && !checkingStatus && access === null}
     busy={busy} checking={checkingStatus} readingStatus={readingStatus} enrolled={enrolled}
     error={error} access={access} authenticate={authenticate} />;
