@@ -59,6 +59,7 @@ SECURITY_TABLES = (
     'onboarding_presentation_retirements','onboarding_presentation_sessions','onboarding_progress_outbox',
     'onboarding_source_preparations',
     'onboarding_source_prepared_receipts','onboarding_source_replacement_reservations',
+    'onboarding_initial_replacement_identities','onboarding_initial_replacement_recoveries',
     'onboarding_source_replacement_outcomes',
     'onboarding_source_replacement_reconciliations',
     'onboarding_transfer_intents','onboarding_transfer_proofs','onboarding_transfer_relays',

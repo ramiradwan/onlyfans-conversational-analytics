@@ -331,6 +331,17 @@ class ProvisioningSetupOwner:
         elif operation["action"] == "setup.finalize" and self._finalized(scope):
             return OperationResult("completed")
         elif operation["action"] == "account.connect":
+            replacement = scope.get("source_replacement")
+            if replacement is not None and replacement["replacement"]["kind"] == "initial-enrollment":
+                original = replacement["replacement"]["operation_id"]
+                with self.store.database.read() as connection:
+                    outcome = self.source_replacements.reservations.outcome(connection, original)
+                    if outcome is not None and outcome["status"] in {"accepted", "committed"}:
+                        recovered = connection.execute("SELECT completed FROM onboarding_initial_replacement_recoveries "
+                            "WHERE predecessor_operation_id=? AND desktop_operation_id=?", (original, operation["operation_id"])).fetchone()
+                        if recovered is None or not recovered["completed"]:
+                            return None
+                        scope = {**scope, "source_journey_id": replacement["source_journey_id"]}
             source = self.sources.resolve(scope["source_journey_id"])
             if source is not None and source.installation_id == scope["installation_id"]:
                 if source.state in {"expired", "revoked"}:
@@ -404,6 +415,10 @@ class ProvisioningSetupOwner:
                         "(SELECT 1 FROM onboarding_source_replacement_reconciliations WHERE predecessor_operation_id=?)",
                         (original, original)).fetchone() is not None
                 if outcome["status"] != "prepared":
+                    if (replacement["replacement"]["kind"] == "initial-enrollment"
+                            and outcome["status"] in {"accepted", "committed"}):
+                        return self.initial.original_recovery_due(operation,
+                            authorize=lambda *, connection: self._original_initial_guard(operation, connection=connection))
                     return False
         source = self.sources.resolve(selected["source_journey_id"])
         if source is None or source.state in {"expired", "revoked", "reauthentication-required"}:
@@ -635,6 +650,29 @@ class ProvisioningSetupOwner:
         if outcome is not None and outcome["status"] == "prepared" and outcome["successor_journey_id"] != expected_source:
             raise OnboardingJourneyUnavailable("workspace_changed")
 
+    def _original_initial_guard(self, operation, *, connection):
+        """Retained original receipt admission does not revive the expired command."""
+        selected = json.loads(operation["owner_scope_json"])
+        proposal = selected["source_replacement"]
+        coords = proposal["replacement"]
+        saved = connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?",
+            (operation["operation_id"],)).fetchone()
+        root = connection.execute("SELECT source_journey_id FROM desktop_setup_journeys WHERE journey_id=?",
+            (operation["journey_id"],)).fetchone()
+        browser = self.browser_tasks.progress(operation["journey_id"])
+        if (saved is None or saved["action"] != "account.connect" or saved["journey_id"] != operation["journey_id"]
+                or saved["state"] not in {"accepted", "waiting", "outcome_unknown"}
+                or saved["owner_scope_json"] != operation["owner_scope_json"]
+                or root is None or root["source_journey_id"] != proposal["source_journey_id"]
+                or coords["kind"] != "initial-enrollment" or selected["journey_kind"] != coords["kind"]
+                or selected["installation_id"] != coords["installation_id"]
+                or selected["creator_account_id"] != proposal["creator_account_id"]
+                or selected["association_request_id"] != proposal["association_request_id"]
+                or browser is not None and browser["creator_account_id"] not in {None, selected["creator_account_id"]}
+                or connection.execute("SELECT 1 FROM onboarding_journeys WHERE operation_id=?",
+                    (selected["successor_operation_id"],)).fetchone()):
+            raise OnboardingJourneyUnavailable("workspace_changed")
+
     def _execute_source_replacement(self, operation, *, reconcile):
         selected = json.loads(operation["owner_scope_json"])
         proposal = selected["source_replacement"]
@@ -658,9 +696,14 @@ class ProvisioningSetupOwner:
             if observed is not None:
                 return observed
             selected = json.loads(operation["owner_scope_json"])
-            original = selected["source_replacement"]["replacement"]["operation_id"]
-            outcome = await self._source_replacement_effects.run(self._execute_source_replacement, operation,
-                reconcile=reconcile, journey_id=selected["source_replacement"]["source_journey_id"])
+            proposal = selected["source_replacement"]
+            original = proposal["replacement"]["operation_id"]
+            with self.store.database.read() as connection:
+                outcome = self.source_replacements.reservations.outcome(connection, original)
+            if not (outcome is not None and proposal["replacement"]["kind"] == "initial-enrollment"
+                    and outcome["status"] in {"accepted", "committed"}):
+                outcome = await self._source_replacement_effects.run(self._execute_source_replacement, operation,
+                    reconcile=reconcile, journey_id=proposal["source_journey_id"])
             if outcome is None and reconcile:
                 with self.store.database.read() as connection:
                     reservation = connection.execute("SELECT state FROM onboarding_source_replacement_reservations "
@@ -668,6 +711,12 @@ class ProvisioningSetupOwner:
                     if reservation is not None and reservation["state"] == "reserved":
                         # No send claim was made. A new explicit click can reuse the same reservation.
                         return OperationResult("refused", "operation_expired")
+            if (outcome is not None and outcome["status"] in {"accepted", "committed"}
+                    and proposal["replacement"]["kind"] == "initial-enrollment" and self.initial is not None):
+                recovered = await self.initial.reconcile_original_replacement(operation,
+                    authorize=lambda *, connection: self._original_initial_guard(operation, connection=connection))
+                return self.observe(operation) or OperationResult("waiting" if recovered is not None else "outcome_unknown",
+                    "none" if recovered is not None else "operation_unconfirmed")
             if outcome is not None and outcome["status"] == "commercial-reconciliation-required" and self.commercial_reconciliation is not None:
                 await self.commercial_reconciliation(selected["source_replacement"])
                 return self.observe(operation) or OperationResult("outcome_unknown", "operation_unconfirmed")
@@ -910,7 +959,12 @@ class ProvisioningSetupOwner:
             source = {"kind": "initial", "profile": preparation.profile, "operation_id": journey.operation_id,
                 "request_digest": preparation.request_digest, "reference": journey.handoff_reference}
             expiry = journey.handoff_expires_at
-            organization = {}
+            with self.store.database.read() as connection:
+                identity = self.source_replacements.reservations.initial_identity(connection, journey.operation_id)
+            if identity is not None and identity["intended_creator_id"] != selected["creator_account_id"]:
+                raise HostedGrantUnavailable("Replacement creator changed")
+            organization = ({"expected_customer_id": identity["expected_customer_id"]}
+                if identity is not None and identity["expected_customer_id"] is not None else {})
         else:
             row = self.contexts.require_current(journey.journey_id)
             request = self.registered._request(row)

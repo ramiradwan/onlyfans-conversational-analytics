@@ -320,3 +320,39 @@ def test_second_exact_reconciliation_is_not_admitted(retained):
         with pytest.raises(OnboardingJourneyUnavailable):
             reservations.claim_send(connection, **arguments(saved))
         assert connection.execute("SELECT count(*) FROM onboarding_source_replacement_reservations").fetchone()[0] == 1
+
+@pytest.mark.parametrize("new_customer", [None, "customer-different", "customer-original"])
+def test_initial_replacement_identity_is_retained_and_cannot_change(retained, new_customer):
+    store, path, clock, journey, _, saved, _ = retained
+    if journey["kind"] != "initial-enrollment":
+        pytest.skip("Initial handoff only")
+    reservations, replacement = claimed(retained)
+    identity = str(uuid4())
+    result = prepared_result(replacement, clock) | {"expected_customer_id": "customer-original"}
+    with store.database.transaction() as connection:
+        reservations.record_result(connection, **arguments(saved), successor_journey_id=identity, result=result)
+    reopened = SQLiteAuthenticationStore(path, clock=lambda: clock[0])
+    owner = SourceReplacementReservations(reopened)
+    successor_id = result["successor"]["operation_id"]
+    with reopened.database.transaction() as connection:
+        recorded = owner.initial_identity(connection, successor_id)
+        assert recorded["expected_customer_id"] == "customer-original"
+        assert recorded["intended_creator_id"] == "creator.test"
+        assert recorded["predecessor_operation_id"] == saved["operation_id"]
+        successor = owner.preparations.get(successor_id, connection=connection)
+    clock[0] += timedelta(minutes=6)
+    with reopened.database.transaction() as connection:
+        connection.execute("UPDATE onboarding_journeys SET state='expired' WHERE journey_id=?", (identity,))
+        owner.reserve(connection, **arguments(successor))
+        second = owner.claim_send(connection, **arguments(successor))
+        response = prepared_result(second, clock)
+        if new_customer is not None:
+            response["expected_customer_id"] = new_customer
+        if new_customer != "customer-original":
+            with pytest.raises(OnboardingJourneyUnavailable):
+                owner.record_result(connection, **arguments(successor), successor_journey_id=str(uuid4()), result=response)
+            assert owner.outcome(connection, successor_id) is None
+        else:
+            outcome = owner.record_result(connection, **arguments(successor), successor_journey_id=str(uuid4()), result=response)
+            assert outcome["status"] == "prepared"
+            assert owner.initial_identity(connection, response["successor"]["operation_id"])["expected_customer_id"] == new_customer

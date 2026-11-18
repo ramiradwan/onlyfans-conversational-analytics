@@ -302,3 +302,35 @@ def test_bounded_bootstrap_v3_accepts_verified_grants_before_fixed_deadline(monk
     assert result.recovered_at == recovered
     assert tuple(store.recorded) == verified
     assert transport.calls == 2
+
+@pytest.mark.parametrize("mismatch", [False, True])
+def test_original_bootstrap_v3_binds_receipt_time_and_delegates_verified_adoption(monkeypatch, mismatch):
+    from app.security.hosted_grants import BOOTSTRAP_RECOVERY_PROFILE_V3
+    case = json.loads((VECTORS / "bootstrap-recovery-v2-positive.json").read_text("utf-8"))[0]
+    response = {**case["response"], "profile": BOOTSTRAP_RECOVERY_PROFILE_V3}
+    enrolled = datetime(2026, 9, 13, 7, 51, tzinfo=timezone.utc)
+    key = _key()
+    store = FakeStore(_submission(consumed=False, enrolled_at=None))
+    proof = FakeProofAuthority(key)
+    proof.reopen_existing = lambda: key
+    proof.ensure_ready = lambda: pytest.fail("Must use original existing key")
+    client = HostedGrantClient(VectorTransport(key, _response(200, response)), proof, store, trust_set={"keys": []})
+    verified = _fake_references()
+    calls = []
+    def verify(*args, **kwargs):
+        assert not mismatch
+        return verified
+    monkeypatch.setattr(client, "_verify_bundle", verify)
+    def adopt(refs, **times):
+        calls.append((refs, times))
+    kwargs = dict(claim_id=store.submission.claim_id, recovery_request_id=response["recovery_request_id"],
+        existing_key=key, before_send=lambda: None, expected_enrolled_at=enrolled + timedelta(seconds=int(mismatch)),
+        adopt_verified=adopt)
+    if mismatch:
+        with pytest.raises(HostedGrantUnavailable, match="enrollment time changed"):
+            client.recover_bootstrap_v3(**kwargs)
+        assert not calls
+    else:
+        result = client.recover_bootstrap_v3(**kwargs)
+        assert calls == [(verified, {"enrolled_at": enrolled, "recovered_at": result.recovered_at})]
+    assert not store.recorded

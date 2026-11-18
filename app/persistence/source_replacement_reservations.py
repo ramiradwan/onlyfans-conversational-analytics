@@ -136,6 +136,25 @@ class SourceReplacementReservations:
     def require_claimed(self, connection, *, operation_id, expected_digest, creator_account_id, authorize):
         return self._claimed(connection, operation_id, expected_digest, creator_account_id, authorize)[4]
 
+    @staticmethod
+    def initial_identity(connection, operation_id):
+        identity = connection.execute("SELECT * FROM onboarding_initial_replacement_identities "
+            "WHERE successor_operation_id=?", (operation_id,)).fetchone()
+        predecessor = connection.execute("SELECT r.predecessor_operation_id,r.creator_account_id "
+            "FROM onboarding_source_replacement_reservations r JOIN onboarding_source_replacement_outcomes o "
+            "ON r.predecessor_operation_id=o.predecessor_operation_id WHERE r.successor_operation_id=? "
+            "AND o.status='prepared'", (operation_id,)).fetchone()
+        if predecessor is None:
+            if identity is not None:
+                raise OnboardingJourneyUnavailable("journey_unavailable")
+            return None
+        # Older adopted successors without a retained identity cannot safely
+        # reconstruct whether the Provider required the opaque customer.
+        if (identity is None or identity["predecessor_operation_id"] != predecessor["predecessor_operation_id"]
+                or identity["intended_creator_id"] != predecessor["creator_account_id"]):
+            raise OnboardingJourneyUnavailable("journey_unavailable")
+        return dict(identity)
+
     def outcome(self, connection, operation_id):
         row = connection.execute("SELECT * FROM onboarding_source_replacement_outcomes "
             "WHERE predecessor_operation_id=?", (operation_id,)).fetchone()
@@ -199,6 +218,12 @@ class SourceReplacementReservations:
         if connection.execute("SELECT count(*) FROM onboarding_journeys").fetchone()[0] >= 128:
             raise OnboardingJourneyUnavailable("journey_unavailable")
         prepared = original_prepare(kind, request, successor=True)
+        if kind == INITIAL_PROFILE:
+            previous_identity = self.initial_identity(connection, operation_id)
+            if previous_identity is not None and (previous_identity["intended_creator_id"] != creator_account_id
+                    or previous_identity["expected_customer_id"] is not None
+                    and previous_identity["expected_customer_id"] != result.get("expected_customer_id")):
+                raise OnboardingJourneyUnavailable("journey_unavailable")
         if kind == REGISTERED_PROFILE:
             from app.persistence.installation_continuation import InstallationContinuationStore, _scope, _generation, _json
             contexts = InstallationContinuationStore(self.authentication)
@@ -229,6 +254,9 @@ class SourceReplacementReservations:
                     _generation(target), _json(_scope(target)), successor["continuation_id"], successor["reference"],
                     successor["expires_at"]))
             contexts.selection.require_current(connection, target)
+        if kind == INITIAL_PROFILE:
+            connection.execute("INSERT INTO onboarding_initial_replacement_identities VALUES (?,?,?,?)",
+                (successor["operation_id"], operation_id, creator_account_id, result.get("expected_customer_id")))
         connection.execute("INSERT INTO onboarding_source_replacement_outcomes VALUES (?,'prepared',?,NULL)",
             (operation_id, successor_journey_id))
         return self.outcome(connection, operation_id)

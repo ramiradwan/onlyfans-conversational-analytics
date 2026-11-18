@@ -2522,6 +2522,31 @@
         },
         {
           "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_initial_replacement_recovers_only_original_enrollment"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_initial_replacement_does_not_invent_authority"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_initial_accepted_receipt_read_budget_survives_owner_restart"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_original_bootstrap_adoption_is_atomic_and_retries_retained_receipt"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_source_replacement_reservations.py",
+          "name": "test_initial_replacement_identity_is_retained_and_cannot_change"
+        },
+        {
+          "kind": "unit",
           "file": "tests/test_source_replacement_reservations.py",
           "name": "test_owner_adapter_resumes_exact_prepared_source"
         },
