@@ -82,6 +82,12 @@ class RuntimeSetupOwner:
                 actions.add("activation.review")
                 actions.add("activation.confirm")
                 actions.update(("auth.select", "auth.cancel", "auth.switch"))
+        if self.activation is not None and getattr(self.activation, "reconciliation_pending", lambda *_, **__: False)(
+                journey_id, connection=connection):
+            # The expired original remains pending. Do not admit new review or
+            # confirmation or display its obsolete decision/authentication controls.
+            actions.difference_update(("activation.review", "activation.confirm", "auth.select", "auth.cancel", "auth.switch"))
+            scope.update(desktop_decision=None, desktop_decision_status=None, desktop_authentication=None)
         return DomainView(facts, scope, reason="authority_unavailable" if local is None else "none",
             permitted_actions=frozenset(actions), analysis_readiness=creator_readiness(policy, identity, readiness))
 
@@ -167,8 +173,11 @@ class RuntimeSetupOwner:
         if operation["action"].startswith("auth."):
             return True
         if self.activation is not None and operation["action"] in {"activation.review", "activation.confirm"}:
-            return (operation["action"] == "activation.confirm"
-                or self.activation.ceremonies.row(operation["operation_id"]) is not None)
+            if operation["action"] == "activation.confirm":
+                return True
+            recover = getattr(self.activation, "automatic_recovery", None)
+            return (self.activation.ceremonies.row(operation["operation_id"]) is not None if recover is None
+                else recover(operation))
         return (self.setup_owner is not None and operation["action"] in {"account.connect", "account.confirm"}
                 and self.setup_owner.automatic_recovery(operation))
 
@@ -180,6 +189,8 @@ class RuntimeSetupOwner:
             return "setup", self.setup_owner
         if ((action.startswith("auth.") or action == "activation.review") and self.activation is not None
                 and self.activation.ceremonies.authentication is not None):
+            if action == "activation.review" and getattr(self.activation, "reconciliation_pending", lambda *_: False)(operation["journey_id"]):
+                return None
             return "activation", self.activation
         return None
 

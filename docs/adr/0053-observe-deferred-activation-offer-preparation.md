@@ -32,3 +32,11 @@ Qualification must cover unavailable-before-offer, restart, delayed original pre
 - [Native account and activation decisions](0051-native-account-and-activation-decisions.md)
 - [Recover accepted activation delivery](0052-recover-accepted-activation-delivery.md)
 - [Pinned contract exports](../../contracts/README.md)
+
+## Expired original activation reconciliation
+
+The published [original activation reconciliation contract](../../contracts/profiles/complimentary-activation-reconciliation/v1/profile.json) is a noncreating read. Brain reconstructs its request only from the immutable admitted activation source, retained canonical registered prepare, verified continuation ID and deadline, current installed account and original delivery reservation at the same configured Provider origin. It rechecks the same coordinates and existing installation key before the challenge, signature, protected read and local result persistence.
+
+After the source expires, an original committed result resumes ADR0052's delivery owner with the exact existing activation operation. Existing admitted delivery recovery takes precedence and does not depend on the original source remaining available. A verified expired-uncommitted result is retained as evidence, not permission to prepare or confirm a new review. A closed refusal or unknown outcome never establishes noncommit. The original desktop operation remains pending; stale activation decisions and authentication controls are suppressed. A registered source replacement refusal can delegate only when an exact single original admitted activation is locally identifiable.
+
+The read journal persists only original IDs, canonical request digest, attempt count, retry deadline and closed terminal observation. It admits at most three reads with durable 15/30/60-second deadlines; a closed refusal stops active reads. No new activation, approval, offer, proof envelope or redemption token is stored by this read owner. Missing or revoked source/account evidence fails closed. Terminal noncommit remains blocked until the separately approved same-terms review replacement action is integrated.

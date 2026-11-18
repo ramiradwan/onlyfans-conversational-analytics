@@ -40,6 +40,7 @@ class ProvisioningSetupOwner:
         self.contexts = InstallationContinuationStore(store)
         self.sources = SetupSourceLifecycle(store, self.journeys, self.contexts)
         self.source_replacements = PreparedSourceRecovery(self.sources, source_replacement_clients or {})
+        self.commercial_reconciliation = None
         self.progress = scoped_durable_provisioning_progress(lambda: store)
         self._effects = OwnerEffects()
         self._source_replacement_effects = OwnerEffects()
@@ -667,6 +668,9 @@ class ProvisioningSetupOwner:
                     if reservation is not None and reservation["state"] == "reserved":
                         # No send claim was made. A new explicit click can reuse the same reservation.
                         return OperationResult("refused", "operation_expired")
+            if outcome is not None and outcome["status"] == "commercial-reconciliation-required" and self.commercial_reconciliation is not None:
+                await self.commercial_reconciliation(selected["source_replacement"])
+                return self.observe(operation) or OperationResult("outcome_unknown", "operation_unconfirmed")
             if outcome is None or outcome["status"] != "prepared":
                 # Original accepted/committed or commercial results retain
                 # priority and require their respective owners; never enroll again.

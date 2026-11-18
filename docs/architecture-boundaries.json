@@ -381,6 +381,7 @@
         "app/persistence/installation_continuation.py",
         "app/persistence/source_preparations.py",
         "app/persistence/source_replacement_reservations.py",
+        "app/persistence/activation_reconciliation.py",
         "app/persistence/saved_workspace.py",
         "app/persistence/companion_pairing.py",
         "app/persistence/private_files.py",

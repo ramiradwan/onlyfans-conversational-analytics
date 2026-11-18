@@ -157,8 +157,14 @@ def pending_activation(setup):
             return {"state": "admitted", "actions": {"open_browser": state["open_browser"]}}
         return {"state": state["decision"]}
 
+    async def reconcile(operation_id, *, authorize, adopt_authorize):
+        result = await read("ceremony", operation_id, authorize)
+        with owner.store.database.transaction() as connection:
+            adopt_authorize(connection=connection)
+        return result
+
     activation.ceremonies = SimpleNamespace(row=lambda _: row,
-        reconcile=lambda operation_id, *, authorize: read("ceremony", operation_id, authorize), prepare=protected,
+        reconcile=reconcile, prepare=protected,
         authentication=SimpleNamespace(refresh=lambda operation_id, *, authorize: read("authentication", operation_id, authorize),
             execute=protected),
         decisions=SimpleNamespace(refresh=lambda operation_id, *, authorize: read("decision", operation_id, authorize),

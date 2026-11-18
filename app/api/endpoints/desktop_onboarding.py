@@ -14,6 +14,7 @@ from app.persistence.auth import SQLiteAuthenticationStore
 from app.provisioning.completion import durable_completion_reader, durable_finalize_action
 from app.provisioning.installation_continuation import RegisteredInstallationContinuation
 from app.security.capability_license_redemption import durable_capability_license_opaque_redemption
+from app.security.activation_reconciliation import ActivationReconciliationClient
 from app.security.companion_pairing import CompanionPairingService
 
 
@@ -30,10 +31,13 @@ def configure_desktop_setup(application, *, launcher_token, grant_refresh=lambda
     def runtime_owner(recovery):
         activation = None
         if origin:
+            registered = RegisteredInstallationContinuation(store, hosted_origin=origin, retain_current_binding=True)
             activation = DesktopActivation(store, key=recovery.key,
-                registered=RegisteredInstallationContinuation(store, hosted_origin=origin, retain_current_binding=True),
-                ceremonies=recovery.ceremonies, browser_tasks=recovery.browser_tasks,
-                redemption=durable_capability_license_opaque_redemption(lambda: store, hosted_origin=origin))
+                registered=registered, ceremonies=recovery.ceremonies, browser_tasks=recovery.browser_tasks,
+                redemption=durable_capability_license_opaque_redemption(lambda: store, hosted_origin=origin),
+                reconciliation_client=ActivationReconciliationClient(registered.client.transport, recovery.key),
+                reconciliation_origin=origin)
+            recovery.commercial_reconciliation = activation.reconcile_registered_source
         pairing = DesktopPairing(store, browser_tasks=recovery.browser_tasks,
             service=CompanionPairingService(store, recovery.key))
         return RuntimeSetupOwner(store, browser_tasks=recovery.browser_tasks,

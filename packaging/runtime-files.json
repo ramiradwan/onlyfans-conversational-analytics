@@ -142,7 +142,8 @@
         "0041_desktop_browser_ceremony_successors.sql": "112a8ff6b68138aead83eb2b8ee973d4dbb3403f4a990f9a67663ad37f84b340",
         "0042_onboarding_source_preparations.sql": "6eea7e924b81b233cc5feeaf67390e5360e24dd10869784191c0f05ab4d9d3dd",
         "0043_onboarding_source_replacement_reservations.sql": "f953a37a404b0b555ec8b71295343e64710d0c6311d340e2efe7c64b17a50c6a",
-        "0044_onboarding_source_replacement_outcomes.sql": "f84c374b393ab5b4668735744f78fdcc396e19b05448bb0eac79b2796d69d88a"
+        "0044_onboarding_source_replacement_outcomes.sql": "f84c374b393ab5b4668735744f78fdcc396e19b05448bb0eac79b2796d69d88a",
+        "0045_desktop_activation_reconciliation.sql": "2bcecc1d48a0ba329c404fd1acb1bbfdc048c5501d6691808729fcf1af917348"
       }
     },
     {
