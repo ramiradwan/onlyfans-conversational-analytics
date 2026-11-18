@@ -25,10 +25,24 @@ const historySettings = object({
   updated_at: isoDateTime,
 });
 
+// HTTP 412 is the pre-write revision guard; 409 can be returned after
+// publication of a saved change. Never infer a mutation outcome from text.
+export type HistoryFailure = 'transport' | 'conflict' | 'refused' | 'unknown';
+
+export function historyFailure(cause: unknown): HistoryFailure {
+  if (cause instanceof TypeError) return 'transport';
+  if (!(cause instanceof HistorySettingsApiError)) return 'unknown';
+  if (cause.notSent || [400, 401, 403, 422, 428].includes(cause.status ?? 0)) return 'refused';
+  if (cause.status === 412) return 'conflict';
+  if ([408, 503].includes(cause.status ?? 0)) return 'transport';
+  return 'unknown';
+}
+
 export class HistorySettingsApiError extends Error {
   constructor(
     message: string,
     readonly status: number | null = null,
+    readonly notSent = false,
   ) {
     super(message);
     this.name = 'HistorySettingsApiError';
@@ -61,7 +75,7 @@ async function parseResponse(response: Response): Promise<HistorySettings> {
     const conflict = response.status === 409 || response.status === 412;
     throw new HistorySettingsApiError(
       conflict
-        ? 'History settings changed in another session. Refresh and try again.'
+        ? 'Message history settings changed.'
         : `History settings request failed (${response.status}).`,
       response.status,
     );
@@ -87,7 +101,7 @@ export function createHistorySettingsApi(
 
   const mutationHeaders = async (revision: number): Promise<Record<string, string>> => {
     const csrf = await getCsrfToken();
-    if (!csrf) throw new HistorySettingsApiError('A CSRF token is required to change settings.');
+    if (!csrf) throw new HistorySettingsApiError('The settings request was not sent.', null, true);
     return {
       Accept: 'application/json',
       'Content-Type': 'application/json',

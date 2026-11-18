@@ -17,7 +17,8 @@ export interface BrowserControlApi {
 }
 
 export class BrowserControlApiError extends Error {
-  constructor(readonly code: 'csrf' | 'request' | 'response' | 'timeout' | 'cancelled') {
+  constructor(readonly code: 'csrf' | 'request' | 'response' | 'timeout' | 'cancelled',
+    readonly outcome: 'unknown' | 'refused' | 'not_sent' = code === 'csrf' ? 'not_sent' : 'unknown') {
     super('The browser extension request could not be completed.');
     this.name = 'BrowserControlApiError';
   }
@@ -54,7 +55,11 @@ export function createBrowserControlApi({
         const body = await response.json().catch(() => null) as unknown;
         if (response.status === 202 && deliveredSchema.safeParse(body).success) return 'delivered';
         if (response.status === 409 && unreachableSchema.safeParse(body).success) return 'unreachable';
-        throw new BrowserControlApiError(response.ok ? 'response' : 'request');
+        // These responses precede dispatch in the existing capture/open route.
+        const refused = [400, 401, 403].includes(response.status) && body !== null
+          && typeof body === 'object' && 'detail' in body
+          && ['pairing_account_refused', 'pairing_message_invalid'].includes(String(body.detail));
+        throw new BrowserControlApiError(response.ok ? 'response' : 'request', refused ? 'refused' : 'unknown');
       } catch (error) {
         if (timedOut) throw new BrowserControlApiError('timeout');
         if (signal?.aborted) throw new BrowserControlApiError('cancelled');

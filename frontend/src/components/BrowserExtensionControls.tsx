@@ -1,25 +1,22 @@
 import PauseCircleOutlinedIcon from '@mui/icons-material/PauseCircleOutlined';
 import PlayCircleOutlinedIcon from '@mui/icons-material/PlayCircleOutlined';
 import { Box, Button, Stack, Typography } from '@mui/material';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { Panel, SettingRow } from './ui';
 
 import type { BrowserSurfacePayload } from '../protocol';
 import {
-  BrowserControlApiError,
   type BrowserControlApi,
   type CaptureAction,
   type BrowserDestination,
 } from '../services/browserControlApi';
+import { captureOperation } from '../services/captureOperation';
 import { desktopOnboardingApi, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import type { ExtensionConnection } from '../utils/statusCopy';
 import { StatusLine } from './ui/ReservedRegion';
 
-// How long to wait for the extension's pushed state before reporting no response.
-const RESPONSE_DEADLINE_MS = 10_000;
-
-type Notice = 'unreachable' | 'failed' | 'no_response' | null;
+type Notice = 'unreachable' | 'failed' | null;
 
 /**
  * Bridge owns day-to-day extension controls while an extension session is open
@@ -27,7 +24,7 @@ type Notice = 'unreachable' | 'failed' | 'no_response' | null;
  * changes it locally. Permission prompts open the extension's own page, because
  * the browser requires the click there.
  */
-export function BrowserExtensionControls({ api, browser, canManage, connection, onboarding = desktopOnboardingApi, onFeedback, continuationCreatorId }: {
+export function BrowserExtensionControls({ api, browser, canManage, connection, onboarding = desktopOnboardingApi, onFeedback, continuationCreatorId, creatorAccountId }: {
   api: BrowserControlApi;
   browser: BrowserSurfacePayload | null;
   canManage: boolean;
@@ -38,6 +35,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   onFeedback?: (text: string | null) => void;
   /** A dashboard continuation, scoped to the current authenticated creator. */
   continuationCreatorId?: string;
+  creatorAccountId?: string;
 }) {
   const desktop = useSyncExternalStore(onboarding.subscribe, onboarding.getState, onboarding.getState);
   const continuation = continuationCreatorId !== undefined;
@@ -53,53 +51,25 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   };
   const reviewInFlight = useRef(false);
   const [openingReview, setOpeningReview] = useState(false);
-  const [pending, setPending] = useState<CaptureAction | null>(null);
+  const capture = useMemo(() => captureOperation(api, continuationCreatorId ?? creatorAccountId),
+    [api, continuationCreatorId, creatorAccountId]);
+  const pending = useSyncExternalStore(capture.subscribe, capture.getState, capture.getState);
+  const captureBlocked = pending !== null;
   const [notice, setNotice] = useState<Notice>(null);
   const operation = useRef<AbortController | null>(null);
   const controlAvailable = browser !== null;
 
   useEffect(() => () => operation.current?.abort(), []);
 
-  // The pushed state settles a pending request; nothing is inferred from delivery.
-  useEffect(() => {
-    if (pending === null || browser === null) return;
-    if ((pending === 'pause' && browser.capture === 'paused')
-      || (pending === 'resume' && browser.capture === 'active')) {
-      setPending(null);
-      setNotice(null);
-    }
-  }, [browser, pending]);
-
-  useEffect(() => {
-    if (pending === null) return;
-    const timer = setTimeout(() => {
-      setPending(null);
-      setNotice('no_response');
-    }, RESPONSE_DEADLINE_MS);
-    return () => clearTimeout(timer);
-  }, [pending]);
+  useEffect(() => { capture.observe(browser); }, [capture, browser]);
 
   const setCapture = async (action: CaptureAction) => {
-    if (!canManage || browser === null || pending !== null || (action === 'resume' && browser.legal_review_required)) return;
+    if (!canManage || browser === null || capture.getState() !== null
+      || (action === 'resume' && browser.legal_review_required)) return;
     if (continuation && (!currentAuthority || !currentPresentation() || action !== 'resume'
       || browser.site_access !== 'granted' || browser.capture !== 'paused')) return;
-    operation.current?.abort();
-    const controller = new AbortController();
-    operation.current = controller;
     setNotice(null);
-    setPending(action);
-    try {
-      const delivery = await api.setCapture(action, controller.signal);
-      if (controller.signal.aborted) return;
-      if (delivery === 'unreachable') {
-        setPending(null);
-        setNotice('unreachable');
-      }
-    } catch (error) {
-      if (controller.signal.aborted || (error instanceof BrowserControlApiError && error.code === 'cancelled')) return;
-      setPending(null);
-      setNotice('failed');
-    }
+    await capture.submit(action, browser);
   };
 
   const open = async (destination: BrowserDestination) => {
@@ -127,9 +97,11 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
     <Button onClick={() => void open(step)} size="small" variant="outlined">{label}</Button>
   ) : undefined);
 
-  const feedbackText = browser === null || notice === null ? null : notice === 'unreachable' ? 'The browser extension is not connected right now.'
-            : notice === 'no_response' ? continuation ? "The browser extension didn't confirm the change." : "The browser extension didn't confirm the change. Try again."
-              : 'The change was not confirmed.';
+  const feedbackText = browser === null ? null
+    : pending?.status === 'unknown' ? "Your change hasn't been confirmed."
+      : pending?.status === 'refused' ? "Dipsy couldn't change message collection."
+        : pending?.status === 'unreachable' || notice === 'unreachable' ? 'The browser extension is not connected right now.'
+          : notice === 'failed' ? 'The change was not confirmed.' : null;
   useEffect(() => { onFeedback?.(feedbackText); }, [feedbackText, onFeedback]);
   useEffect(() => () => onFeedback?.(null), [onFeedback]);
   const feedback = onFeedback ? null : <StatusLine id="browser-feedback" tone="error" text={feedbackText} />;
@@ -159,8 +131,8 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
       {reviewNeeded && canReview && !waiting && <Button onClick={() => void open('setup')}
         variant="contained" sx={{ alignSelf: 'flex-start' }}>Review in Chrome</Button>}
       {paused && canManage && !waiting && <Button onClick={() => void setCapture('resume')}
-        disabled={pending !== null} variant="contained" sx={{ alignSelf: 'flex-start' }}>
-        {pending === 'resume' ? 'Resuming…' : 'Resume collecting'}</Button>}
+        disabled={captureBlocked} variant="contained" sx={{ alignSelf: 'flex-start' }}>
+        {pending?.status === 'waiting' && pending.action === 'resume' ? 'Resuming…' : 'Resume collecting'}</Button>}
       {(progress || feedbackText) && <StatusLine id="collection-review-feedback" essential
         text={feedbackText ?? progress} tone={feedbackText ? 'error' : 'secondary'} />}
     </Panel>;
@@ -180,13 +152,13 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
 
   const captureButton = canManage && captureAction !== null && !resumeNeedsReview ? (
     <Button
-      disabled={pending !== null}
+      disabled={captureBlocked}
       onClick={() => void setCapture(captureAction)}
       size="small"
       startIcon={captureAction === 'pause' ? <PauseCircleOutlinedIcon /> : <PlayCircleOutlinedIcon />}
       variant="outlined"
     >
-      {pending === 'pause' ? 'Pausing…' : pending === 'resume' ? 'Resuming…'
+      {pending?.status === 'waiting' && pending.action === 'pause' ? 'Pausing…' : pending?.status === 'waiting' && pending.action === 'resume' ? 'Resuming…'
         : captureAction === 'pause' ? 'Pause collecting' : 'Resume collecting'}
     </Button>
   ) : resumeNeedsReview ? openInExtension('setup', 'Review terms') : undefined;

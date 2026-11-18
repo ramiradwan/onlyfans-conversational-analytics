@@ -1681,6 +1681,21 @@
           "kind": "unit",
           "file": "frontend/tests/BrowserExtensionControls.test.tsx",
           "name": "retains the compact facts rows while the connection is missing without offering stale controls"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/BrowserExtensionControls.test.tsx",
+          "name": "retains a lost capture response across views until a pushed effect settles it"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/BrowserExtensionControls.test.tsx",
+          "name": "does not carry an uncertain capture request into another creator account"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/BrowserExtensionControls.test.tsx",
+          "name": "allows a new explicit capture action only after a fresh browser report following unreachable delivery"
         }
       ]
     },
@@ -1768,6 +1783,11 @@
           "kind": "unit",
           "file": "frontend/tests/SettingsView.test.tsx",
           "name": "discards an interrupted change when the creator account changes"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "does not lock a definitely refused history change as an unknown write"
         }
       ]
     },

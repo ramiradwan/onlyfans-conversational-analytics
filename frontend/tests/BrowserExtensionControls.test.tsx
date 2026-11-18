@@ -48,8 +48,8 @@ describe('browser extension controls', () => {
     mount();
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
     await act(async () => vi.advanceTimersByTimeAsync(10_000));
-    expect(screen.getByRole('alert').textContent).toContain("didn't confirm");
-    expect(screen.getByRole('button', { name: 'Pause collecting' })).toHaveProperty('disabled', false);
+    expect(screen.getByRole('alert').textContent).toContain("hasn't been confirmed");
+    expect(screen.getByRole('button', { name: 'Pause collecting' })).toHaveProperty('disabled', true);
   });
 
   it('reports an unreachable extension without changing the shown state', async () => {
@@ -101,7 +101,7 @@ describe('browser extension controls', () => {
     expect(api.setCapture).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('alert').textContent).toContain('not connected right now');
     expect(screen.getByText('Paused. Nothing new is collected.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Resume collecting' })).toHaveProperty('disabled', false);
+    expect(screen.getByRole('button', { name: 'Resume collecting' })).toHaveProperty('disabled', true);
   });
 
   it('removes browser actions when a reporting session disappears', () => {
@@ -196,4 +196,40 @@ it('retains the feedback reservation while pushed browser facts disappear', () =
   expect(document.querySelector('[data-reserved-region="browser-feedback"]')).not.toBeNull();
   rerender({ browser: null, connection: 'connected' });
   expect(document.querySelector('[data-reserved-region="browser-feedback"]')).not.toBeNull();
+});
+
+it('retains a lost capture response across views until a pushed effect settles it', async () => {
+  const api = makeApi();
+  const first = mount({ api, creatorAccountId: 'creator-1' });
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
+  await act(async () => vi.advanceTimersByTimeAsync(10_000));
+  expect(screen.getByRole('button', { name: 'Pause collecting' })).toHaveProperty('disabled', true);
+  cleanup();
+  const second = mount({ api, creatorAccountId: 'creator-1' });
+  expect(screen.getByRole('button', { name: 'Pause collecting' })).toHaveProperty('disabled', true);
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
+  expect(api.setCapture).toHaveBeenCalledOnce();
+  second.rerender({ browser: { ...active, capture: 'paused' } });
+  expect(screen.getByRole('button', { name: 'Resume collecting' })).toHaveProperty('disabled', false);
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(first.api).toBe(api);
+});
+
+it('does not carry an uncertain capture request into another creator account', async () => {
+  const api = makeApi();
+  const h = mount({ api, creatorAccountId: 'creator-1' });
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
+  await act(async () => vi.advanceTimersByTimeAsync(10_000));
+  h.rerender({ creatorAccountId: 'creator-2' });
+  expect(screen.getByRole('button', { name: 'Pause collecting' })).toHaveProperty('disabled', false);
+  expect(api.setCapture).toHaveBeenCalledOnce();
+});
+
+it('allows a new explicit capture action only after a fresh browser report following unreachable delivery', async () => {
+  const h = mount({ api: makeApi('unreachable') });
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
+  expect(screen.getByRole('button', { name: 'Pause collecting' })).toHaveProperty('disabled', true);
+  h.rerender({ browser: { ...active, reported_at: '2026-09-29T10:01:00Z' } });
+  expect(screen.getByRole('button', { name: 'Pause collecting' })).toHaveProperty('disabled', false);
+  expect(h.api.setCapture).toHaveBeenCalledOnce();
 });

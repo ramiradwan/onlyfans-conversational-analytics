@@ -452,6 +452,7 @@ function AdmittedPairings({ api, browserApi, connection, creatorAccountId, onCou
     <Stack spacing={0.75}>
           {pins.length > 0 && <ReservedRegion grow id="browser-facts" size={{ xs: 0, sm: 0 }} sx={{ visibility: pins.length ? 'visible' : 'hidden' }}><BrowserExtensionControls
             api={browserApi}
+            creatorAccountId={creatorAccountId}
             browser={browser}
             canManage={isCreator}
             connection={connection}

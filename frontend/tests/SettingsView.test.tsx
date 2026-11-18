@@ -446,3 +446,31 @@ it('discards an interrupted change when the creator account changes', async () =
   expect(screen.queryByText("Your change hasn't been confirmed.")).toBeNull();
   expect(api.update).toHaveBeenCalledOnce();
 });
+
+it.each([401, 403, 422])('does not repeat a definite history settings read refusal (%s)', async status => {
+  connectExtension();
+  vi.useFakeTimers();
+  const api = { get: vi.fn().mockRejectedValue(new HistorySettingsApiError('Refused', status)),
+    update: vi.fn(), revoke: vi.fn() };
+  render(<ThemeProvider theme={theme}><SettingsView api={api} /></ThemeProvider>);
+  await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+  expect(api.get).toHaveBeenCalledOnce();
+  expect(screen.getByText("Message history settings couldn't be loaded.")).toBeTruthy();
+  expect(api.update).not.toHaveBeenCalled();
+});
+
+it('does not lock a definitely refused history change as an unknown write', async () => {
+  connectExtension();
+  const api = { get: vi.fn().mockResolvedValue(initial),
+    update: vi.fn().mockRejectedValue(new HistorySettingsApiError('Refused', 403)), revoke: vi.fn() };
+  render(<ThemeProvider theme={theme}><SettingsView api={api} /></ThemeProvider>);
+  fireEvent.click(await screen.findByRole('checkbox'));
+  vi.useFakeTimers();
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Turn on message history' })));
+  expect(screen.getByText("Dipsy couldn't change message history settings.")).toBeTruthy();
+  expect(screen.queryByText("Your change hasn't been confirmed.")).toBeNull();
+  expect(screen.getByRole('button', { name: 'Turn on message history' })).toHaveProperty('disabled', true);
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  expect(api.get).toHaveBeenCalledTimes(2);
+  expect(api.update).toHaveBeenCalledOnce();
+});

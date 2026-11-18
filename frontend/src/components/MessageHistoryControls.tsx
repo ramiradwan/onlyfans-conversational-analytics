@@ -27,6 +27,7 @@ import { desktopOnboardingApi, selectAnalysisReadiness, type DesktopOnboardingAp
 import { focusDesktopWindow } from '../services/desktopWindow';
 import {
   historySettingsApi as defaultHistorySettingsApi,
+  historyFailure,
   type HistorySettingsApi,
 } from '../services/historySettingsApi';
 import { bridgeTransportStore, type BridgeTransportStore } from '../store/transportStore';
@@ -108,6 +109,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   const consentAccepted = identity !== null && consentSelection === identity;
   const confirmRevoke = identity !== null && revokeSelection === identity;
   const [pendingChange, setPendingChange] = useState<HistoryChange | null>(null);
+  const [refusedIdentity, setRefusedIdentity] = useState<string | null>(null);
   const [recoveryWake, setRecoveryWake] = useState(0);
   const desktop = useSyncExternalStore(desktopApi.subscribe, desktopApi.getState, desktopApi.getState);
   const [permissionReturn, setPermissionReturn] = useState<PermissionReturn | null>(null);
@@ -136,6 +138,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   useEffect(() => {
     setBusy(false);
     setPendingChange(null);
+    setRefusedIdentity(null);
     setRevokeSelection(null);
     setConsentSelection(null);
     return () => { mutation.current?.abort(); mutation.current = null; };
@@ -159,23 +162,30 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
 
   // Only a current, changed owner snapshot can settle an interrupted write.
   // A read of the old revision does not prove a delayed request never committed.
-  const reconcileChange = async (change: HistoryChange, signal: AbortSignal) => {
+  const reconcileChange = async (change: HistoryChange, signal: AbortSignal, refused = false) => {
     try {
       const next = await api.get(signal);
       if (signal.aborted || !currentAccount(change.before) || !currentAccount(next)
         || next.settings_revision < change.before.settings_revision
-        || (next.settings_revision === change.before.settings_revision
+        || (!refused && next.settings_revision === change.before.settings_revision
           && next.consent_policy_version === change.before.consent_policy_version)) return false;
       if (!acceptSnapshot(next)) return false;
       if (sameEffect(change, next)) {
         setError(null);
         if (change.desired === 'revoked') store.clearMessageCache();
+      } else if (refused && settingsIdentity(next) === settingsIdentity(change.before)) {
+        setRefusedIdentity(settingsIdentity(next));
+        setError("Dipsy couldn't change message history settings.");
       } else {
         setError('Message history settings changed.');
       }
       setPendingChange(null);
       return true;
-    } catch { return false; }
+    } catch (cause) {
+      // The read failed; only a transport failure is eligible for a timed retry.
+      if (!signal.aborted && historyFailure(cause) !== 'transport') throw cause;
+      return false;
+    }
   };
 
   useEffect(() => {
@@ -244,9 +254,9 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
           setError(null);
           setLoading(false);
         },
-        () => {
+        (cause) => {
           if (controller.signal.aborted) return;
-          if (++attempts < 3) {
+          if (historyFailure(cause) === 'transport' && ++attempts < 3) {
             timer = setTimeout(load, 1000 * 2 ** (attempts - 1));
             return;
           }
@@ -283,9 +293,10 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
           if (controller.signal.aborted || mutation.current || !currentAccount(next)) return;
           acceptSnapshot(next);
         }
-      } catch {
-        // A disconnected extension or temporary local API failure must not
-        // leave a successful acknowledgement hidden until manual navigation.
+      } catch (cause) {
+        // Stop active reads after a definite refusal or invalid response.
+        // A later owner revision or normal wake may still reconcile a change.
+        if (historyFailure(cause) !== 'transport') settled = true;
       } finally {
         if (!settled && !controller.signal.aborted && ++attempts < 3) {
           delay = Math.min(Math.max(delay * 2, 1000), 15_000);
@@ -341,7 +352,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
 
   const submitChange = async (desired: HistoryChange['desired'], acceptConsent = false) => {
     if (!settings || loading || busy || pendingChange || mutation.current || !canManageHistorySync
-      || !currentAccount(settings) || latest.current !== settings || !reviewCurrent()) return;
+      || refusedIdentity === identity || !currentAccount(settings) || latest.current !== settings || !reviewCurrent()) return;
     const hasReceipt = settings.consent_revision !== null && settings.desired_state !== 'revoked';
     if (desired === 'revoked' ? review || !confirmRevoke || !hasReceipt
       : acceptConsent ? !consentAccepted || hasReceipt || desired !== 'running'
@@ -376,12 +387,21 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
       } else {
         setError('Message history settings changed.');
       }
-    } catch {
+    } catch (cause) {
       if (controller.signal.aborted || !currentAccount(settings)) return;
-      if (!await reconcileChange(change, controller.signal)
-        && !controller.signal.aborted && currentAccount(settings)) {
-        setPendingChange(change);
-        setError(CHANGE_UNCONFIRMED);
+      const disposition = historyFailure(cause);
+      const refused = disposition === 'refused';
+      let reconciled = false;
+      try { reconciled = await reconcileChange(change, controller.signal, refused); }
+      catch { /* A rejected read is not evidence about the write. */ }
+      if (!reconciled && !controller.signal.aborted && currentAccount(settings)) {
+        if (refused) {
+          setRefusedIdentity(settingsIdentity(settings));
+          setError("Dipsy couldn't change message history settings.");
+        } else {
+          setPendingChange(change);
+          setError(CHANGE_UNCONFIRMED);
+        }
       }
     } finally {
       if (mutation.current === controller) {
@@ -395,7 +415,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   const update = (desired: 'running' | 'paused', acceptConsent = false) => submitChange(desired, acceptConsent);
   const revoke = () => submitChange('revoked');
   const controlsDisabled = loading || busy || pendingChange !== null || accountId === null
-    || transport.creatorAccountId !== accountId;
+    || transport.creatorAccountId !== accountId || refusedIdentity === identity && identity !== null;
 
   const hasConsent = settings !== null
     && settings.consent_revision !== null
