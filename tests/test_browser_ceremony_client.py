@@ -309,3 +309,64 @@ def test_held_read_challenge_never_signs_a_changed_scope(change):
     with pytest.raises(HostedGrantUnavailable):
         subject.read(item["request"], prefetched=ticket, before_send=guard)
     assert len(transport.calls) == 1 and not key.signed
+# The successor contract is purpose-separated from ordinary ceremony prepare.
+def replacement_fixture():
+    cases = json.loads((ROOT.parent / "browser-ceremony-replacement-v1/cases.json").read_text("utf-8"))
+    proof = cases["proof_cases"][0]
+    result = next(item["value"] for item in cases["schema_cases"] if item["case_id"] == "successor")
+    challenge = next(item["value"] for item in cases["schema_cases"] if item["case_id"] == "challenge-response")
+    now = datetime(2025, 8, 7, tzinfo=timezone.utc)
+    from app.security.browser_ceremony_replacement import BrowserCeremonyReplacementClient, CHALLENGE_PATH
+    class Key(VectorKey):
+        def __init__(self):
+            super().__init__({"request": {"binding": proof["predecessor_binding"]}, "public_key": proof["public_key"],
+                "signature": proof["proof"]["signature"], "proof_bytes_hex": proof["proof_hex"]})
+    class ReplacementTransport:
+        def __init__(self):
+            self.calls = []
+            self.result = result
+        def request(self, method, path, *, json_body):
+            self.calls.append((method, path, copy.deepcopy(json_body)))
+            if path == CHALLENGE_PATH:
+                return response(challenge)
+            if isinstance(self.result, Exception):
+                raise self.result
+            return response(self.result)
+    transport, key = ReplacementTransport(), Key()
+    ordinary = BrowserCeremonyClient(transport, key, clock=lambda: now)
+    return BrowserCeremonyReplacementClient(ordinary, clock=lambda: now), proof, transport, key
+
+
+def test_replacement_matches_exact_published_proof_and_successor():
+    from app.security.browser_ceremony_replacement import CHALLENGE_PATH, PATH
+    subject, vector, transport, key = replacement_fixture()
+    assert subject.replace(vector["request"], vector["predecessor_binding"]) == transport.result
+    assert [call[1] for call in transport.calls] == [CHALLENGE_PATH, PATH]
+    assert transport.calls[-1][2] == {"request": vector["request"], "proof": vector["proof"]}
+    assert key.reopened == key.signed == 1
+
+
+@pytest.mark.parametrize("field", ["installation_id", "intended_creator_id", "source_expires_at", "purpose", "attempt_id", "completion"])
+def test_replacement_rejects_changed_successor_binding(field):
+    subject, vector, transport, _ = replacement_fixture()
+    result = copy.deepcopy(transport.result)
+    result["successor_binding"][field] = vector["predecessor_binding"][field] if field == "attempt_id" else "other"
+    with pytest.raises(HostedGrantUnavailable):
+        subject.validate_result(vector["request"], vector["predecessor_binding"], result)
+
+
+def test_replacement_lost_response_does_not_repeat_or_create_another_operation():
+    subject, vector, transport, _ = replacement_fixture()
+    transport.result = OSError("lost response")
+    with pytest.raises(HostedGrantUnavailable, match="unknown"):
+        subject.replace(vector["request"], vector["predecessor_binding"])
+    assert len(transport.calls) == 2
+    assert transport.calls[-1][2]["request"] == vector["request"]
+
+
+def test_replacement_wrong_key_is_rejected_before_transport():
+    subject, vector, transport, key = replacement_fixture()
+    key.reference = replace(key.reference, installation_key_id="different-key")
+    with pytest.raises(HostedGrantUnavailable, match="key changed"):
+        subject.replace(vector["request"], vector["predecessor_binding"])
+    assert not transport.calls and key.signed == 0
