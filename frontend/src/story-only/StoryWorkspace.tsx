@@ -606,7 +606,7 @@ function textAnalysisApi(journey: StoryJourneyName): NlpDependenciesApi {
   };
 }
 
-function createDriver(journey: StoryJourneyName, continuation?: DashboardContinuationState) {
+function createDriver(journey: StoryJourneyName, continuation?: DashboardContinuationState, workspace?: StoryWorkspaceName) {
   let currentJourney = continuation ? 'fresh' as StoryJourneyName : journey;
   const initialSnapshot: DesktopSnapshot = continuation
     ? continuationDesktop(continuation)
@@ -617,7 +617,9 @@ function createDriver(journey: StoryJourneyName, continuation?: DashboardContinu
         : { availability: 'current', creator_account_id: ACCOUNT, value: { schema: 'ofca-analysis-readiness/v1',
           commercial_authority: journey === 'populated' ? 'active' : 'required',
           analysis_admission: journey === 'populated' ? 'admitted' : 'blocked' } },
-      allowed_actions: journey === 'populated' ? [] : ['activation.review'],
+      // The fresh Home case represents browser setup before commercial admission.
+      // Settings retains its independently admitted activation fixture.
+      allowed_actions: journey === 'populated' || workspace === 'home' && journey === 'fresh' ? [] : ['activation.review'],
     };
   let desktop: DesktopState = { connected: continuation ? true : journey !== 'loading', pending: null, error: null, snapshot: initialSnapshot };
   const desktopListeners = new Set<() => void>();
@@ -766,7 +768,7 @@ export function StoryWorkspace({
       return createDriver(journey, target);
     }
     seedStores(workspace === 'analytics' ? 'populated' : journey);
-    return createDriver(journey);
+    return createDriver(journey, undefined, workspace);
   });
   useEffect(() => {
     driver.analytics = (key) => setAnalysis(storyAnalyticsState(key));

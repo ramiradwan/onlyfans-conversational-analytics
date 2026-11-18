@@ -1,7 +1,7 @@
 // Registered observer identities only; browser strings never enter retained metadata.
 export const OBSERVER_REGIONS = Object.freeze(Object.fromEntries(Object.entries({
   home: ['freshness-status', 'issue-band', 'dashboard-notice', 'dashboard-overview', 'dashboard-basis', 'dashboard-recent', 'dashboard-setup'],
-  'dashboard-continuation': ['freshness-status', 'issue-band'],
+  'dashboard-continuation': ['freshness-status', 'issue-band', 'dashboard-notice', 'dashboard-setup', 'dashboard-overview', 'dashboard-basis', 'dashboard-recent'],
   analytics: ['freshness-status', 'issue-band', 'analytics-content'],
   inbox: ['freshness-status', 'issue-band', 'inbox-notice', 'inbox-content'],
   settings: ['freshness-status', 'issue-band', 'settings-browser', 'settings-history', 'settings-activation', 'settings-vault'],

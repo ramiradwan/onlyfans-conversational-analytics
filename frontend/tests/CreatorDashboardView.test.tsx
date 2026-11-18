@@ -860,7 +860,8 @@ describe('CreatorDashboardView', () => {
     await act(async () => source.publish(current));
     const prompt = screen.getByRole('heading', { name: 'Full analytics' });
     const overview = screen.getByRole('region', { name: 'Overview' });
-    expect(overview.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(prompt.compareDocumentPosition(overview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(prompt.closest('[data-reserved-region="dashboard-setup"]')).toBeTruthy();
     expect(screen.queryByText('Loading dashboard…')).toBeNull();
     expectStat('Messages', '19');
   });

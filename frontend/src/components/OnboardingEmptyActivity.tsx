@@ -1,30 +1,20 @@
-import { Box, Chip, Stack, Typography } from '@mui/material';
-import type { ReactNode } from 'react';
+import { Chip, Stack, Typography } from '@mui/material';
 
 import { Panel } from './ui';
 import type { BrowserSurfacePayload } from '../protocol';
 import { extensionLabel, type ExtensionConnection } from '../utils/statusCopy';
 
 /** An empty received snapshot has no distribution or activity chart to draw. */
-export function OnboardingEmptyActivity({ browser, connection, desktopConnected, historyReview, waitingForMessages = false }: {
+export function DashboardConnection({ browser, connection, desktopConnected }: {
   browser: BrowserSurfacePayload | null;
   connection: ExtensionConnection;
   desktopConnected: boolean;
-  historyReview?: ReactNode;
-  waitingForMessages?: boolean;
 }) {
   const browserLabel = connection !== 'connected' ? extensionLabel(connection)
     : browser === null ? 'Not checked'
       : browser.legal_review_required || browser.site_access !== 'granted' ? 'Needs attention'
         : browser.capture === 'paused' ? 'Paused' : browser.capture === 'off' ? 'Off' : 'Connected';
   return (
-    <Stack spacing={3}>
-      {historyReview ?? <Panel component="section" emphasis="dominant" aria-labelledby="empty-activity-title">
-        <Typography component="h2" id="empty-activity-title" variant="h5">{waitingForMessages ? 'Waiting for messages' : 'No new activity yet'}</Typography>
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>{waitingForMessages
-          ? 'Activity appears here when Dipsy receives messages.' : 'No conversations have been received.'}</Typography>
-      </Panel>}
-      <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 1fr) minmax(0, 1fr)' } }}>
         <Panel component="section" aria-labelledby="empty-connection-title">
           <Typography component="h2" id="empty-connection-title" variant="h6">Connection</Typography>
           <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -34,7 +24,13 @@ export function OnboardingEmptyActivity({ browser, connection, desktopConnected,
             <Typography variant="body2">Browser extension</Typography><Chip size="small" variant="outlined" label={browserLabel} />
           </Stack>
         </Panel>
-      </Box>
-    </Stack>
   );
+}
+
+export function OnboardingEmptyActivity({ waitingForMessages = false }: { waitingForMessages?: boolean }) {
+  return <Panel component="section" emphasis="dominant" aria-labelledby="empty-activity-title">
+    <Typography component="h2" id="empty-activity-title" variant="h5">{waitingForMessages ? 'Waiting for messages' : 'No new activity yet'}</Typography>
+    <Typography variant="body2" sx={{ color: 'text.secondary' }}>{waitingForMessages
+      ? 'Activity appears here when Dipsy receives messages.' : 'No conversations have been received.'}</Typography>
+  </Panel>;
 }

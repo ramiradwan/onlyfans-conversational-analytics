@@ -13,7 +13,7 @@ import { CommercialActivationControls } from '../components/CommercialActivation
 import { DashboardOverview, type OverviewProgress } from '../components/dashboard/DashboardOverview';
 import { RecentConversations } from '../components/dashboard/RecentConversations';
 import { MessageHistoryControls } from '../components/MessageHistoryControls';
-import { OnboardingEmptyActivity } from '../components/OnboardingEmptyActivity';
+import { DashboardConnection, OnboardingEmptyActivity } from '../components/OnboardingEmptyActivity';
 import { SetupPrompt } from '../components/SetupPrompt';
 import { LoadingFrame, ReservedRegion, StatusLine } from '../components/ui/ReservedRegion';
 import { usePermissions } from '../hooks/usePermissions';
@@ -403,16 +403,18 @@ export default function CreatorDashboardView({
   const waitingForMessages = emptySnapshot && !completeEmpty && state.coverage.status !== 'complete'
     && historyScope !== null;
   const emptyOnboarding = emptySnapshot && (completeEmpty || waitingForMessages);
-  if (emptyOnboarding) return (
-    <Box data-scroll-container sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pb: 3 }}>
-      <Stack spacing={3} sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}>
-        <Typography component="h1" variant="h4">Dashboard</Typography>
-        {collectionReview ?? <OnboardingEmptyActivity browser={browser}
-          connection={connection} desktopConnected={state.connection === 'connected'} historyReview={historyPrompt}
-          waitingForMessages={waitingForMessages} />}
-      </Stack>
-    </Box>
-  );
+  const connectionSummary = <DashboardConnection browser={browser} connection={connection}
+    desktopConnected={state.connection === 'connected'} />;
+  const continuation = collectionReview ? <Stack spacing={0.5}>
+    {collectionReview}
+    {activationAdmitted && fullAnalyticsReady !== true && !desktop.pending && !collection.reviewOperation && <Button component={RouterLink} to="/settings#full-analytics"
+      sx={{ alignSelf: 'flex-start' }}>Full analytics</Button>}
+  </Stack> : historyPrompt ?? (showSetup
+    ? showCommercial
+      ? <CommercialActivationControls api={activationApi} onboarding={onboardingApi} creatorAccountId={state.creatorAccountId} />
+      : <SetupPrompt extensionConnected={false} fullAnalyticsReady={fullAnalyticsReady === true} title="Finish setup" compact />
+    : emptyOnboarding ? <OnboardingEmptyActivity waitingForMessages={waitingForMessages} />
+      : hasSnapshot && fullAnalyticsReady === true ? connectionSummary : null);
 
   return (
     <Box data-scroll-container sx={{ flex: 1, minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable', pb: 3 }}>
@@ -425,31 +427,23 @@ export default function CreatorDashboardView({
               : fullAnalyticsReady === undefined ? 'Checking setup…' : null} />
           </Box>
         </Box>
-        {collectionReview && <Stack spacing={0.5}>
-          {collectionReview}
-          {activationAdmitted && fullAnalyticsReady !== true && !desktop.pending && !collection.reviewOperation && <Button component={RouterLink} to="/settings#full-analytics"
-            sx={{ alignSelf: 'flex-start' }}>Full analytics</Button>}
-        </Stack>}
-        {historyPrompt}
+        {/* One first-frame reservation for every continuation state. Content
+            may scroll inside it, but never changes the following metric geometry. */}
+        <ReservedRegion id="dashboard-setup" size={{ xs: 320, sm: 272 }} regionRole="scroll">
+          <Box data-region-content>{continuation}</Box>
+        </ReservedRegion>
         {/* The overview stacks its counts until md, so the stacked reservation holds until then. */}
         <ReservedRegion id="dashboard-overview" size={{ xs: 450, md: 300 }}>
-          <Box data-region-content><DashboardOverview isLoading={!hasSnapshot} conversations={format(analytics?.total_conversations)} messages={format(analytics?.total_messages)} progress={progress} received={format(analytics?.inbound_messages)} sent={format(analytics?.outbound_messages)} split={directionSplit(analytics?.inbound_messages, analytics?.outbound_messages, readiness)} /></Box>
-          {!hasSnapshot && <Box sx={{ position: 'absolute', inset: 0 }}><LoadingFrame label="Loading dashboard…" /></Box>}
+          <Box data-region-content>{emptyOnboarding ? connectionSummary
+            : <DashboardOverview isLoading={!hasSnapshot} conversations={format(analytics?.total_conversations)} messages={format(analytics?.total_messages)} progress={progress} received={format(analytics?.inbound_messages)} sent={format(analytics?.outbound_messages)} split={directionSplit(analytics?.inbound_messages, analytics?.outbound_messages, readiness)} />}</Box>
         </ReservedRegion>
         <ReservedRegion id="dashboard-basis" size={{ xs: 128, sm: 88 }}>
-          {hasSnapshot && evidence !== null && <Box data-region-content><NumbersBasis evidence={evidence} messagesCounted={visibleMetrics.includes(analytics?.total_messages) ? analytics?.total_messages?.sample_size ?? null : null} syncing={progress !== null && !progress.complete} /></Box>}
+          {hasSnapshot && !emptyOnboarding && evidence !== null && <Box data-region-content><NumbersBasis evidence={evidence} messagesCounted={visibleMetrics.includes(analytics?.total_messages) ? analytics?.total_messages?.sample_size ?? null : null} syncing={progress !== null && !progress.complete} /></Box>}
         </ReservedRegion>
         {/* Holds four conversations. Below sm the heading and the inbox link can take extra lines. */}
         <ReservedRegion id="dashboard-recent" size={{ xs: 472, sm: 448 }} regionRole="scroll">
           {hasSnapshot ? <Box data-region-content><RecentConversations conversations={state.conversations} showInboxLink={canViewInbox} /></Box> : <LoadingFrame label="Loading dashboard…" />}
         </ReservedRegion>
-        {showSetup && <ReservedRegion id="dashboard-setup" size={{ xs: 720, sm: 600 }} regionRole="scroll">
-          <Box data-region-content>
-            {showCommercial
-              ? <CommercialActivationControls api={activationApi} onboarding={onboardingApi} creatorAccountId={state.creatorAccountId} />
-              : <SetupPrompt extensionConnected={false} fullAnalyticsReady={fullAnalyticsReady === true} title="Finish setup" />}
-          </Box>
-        </ReservedRegion>}
       </Stack>
     </Box>
   );

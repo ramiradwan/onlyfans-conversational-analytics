@@ -81,7 +81,7 @@ return [
   {
     workspace: 'dashboard-continuation',
     state: 'add-older-conversations',
-    ready: (page) => page.getByRole('heading', { name: 'Add older conversations', exact: true }),
+    ready: (page) => page.getByRole('heading', { name: 'See your first conversations', exact: true }),
     assert: async (page) => {
       await page.getByRole('button', { name: 'Review message history', exact: true }).waitFor({ state: 'visible' });
     },

@@ -15,6 +15,7 @@ interface SetupPromptProps {
   /** Whether Full analytics can actually admit licensed analysis. */
   fullAnalyticsReady?: boolean;
   title: string;
+  compact?: boolean;
 }
 
 type StepState = 'done' | 'current' | 'upcoming';
@@ -41,7 +42,7 @@ function useJustCompleted(done: boolean): boolean {
   return justCompleted;
 }
 
-function Step({ index, label, reason, state }: { index: number; label: string; reason: string; state: StepState }) {
+function Step({ index, label, reason, state, compact = false }: { index: number; label: string; reason: string; state: StepState; compact?: boolean }) {
   const done = state === 'done';
   const current = state === 'current';
   const justCompleted = useJustCompleted(done);
@@ -53,7 +54,7 @@ function Step({ index, label, reason, state }: { index: number; label: string; r
       data-reserved-region={`setup-step-${index}`}
       direction="row"
       spacing={1.5}
-      sx={{ alignItems: 'center', minHeight: { xs: current ? 248 : 96, sm: current ? 192 : 72 }, width: '100%' }}
+      sx={{ alignItems: 'center', minHeight: compact ? 0 : { xs: current ? 248 : 96, sm: current ? 192 : 72 }, width: '100%' }}
     >
       <Box
         aria-hidden="true"
@@ -113,6 +114,7 @@ export function SetupPrompt({
   extensionConnected = false,
   fullAnalyticsReady = false,
   title,
+  compact = false,
 }: SetupPromptProps) {
   const headingId = useId();
   const steps = [
@@ -130,14 +132,14 @@ export function SetupPrompt({
         alignSelf: 'center',
         maxWidth: 560,
         mx: 'auto',
-        p: { xs: 3, sm: 4 },
+        p: compact ? 2 : { xs: 3, sm: 4 },
         width: '100%',
         ...theme.effects.cardBorder(theme),
         ...theme.effects.ambientGlow(theme),
       })}
     >
-      <Stack spacing={2.5} sx={{ alignItems: 'flex-start' }}>
-        <Box
+      <Stack spacing={compact ? 0.75 : 2.5} sx={{ alignItems: 'flex-start' }}>
+        {!compact && <Box
           aria-hidden="true"
           sx={(theme) => ({
             alignItems: 'center',
@@ -151,7 +153,7 @@ export function SetupPrompt({
           })}
         >
           <InsightsRoundedIcon />
-        </Box>
+        </Box>}
         <Box>
           <Typography component="h2" id={headingId} variant="h5">
             {title}
@@ -170,6 +172,7 @@ export function SetupPrompt({
               index={index + 1}
               label={step.label}
               reason={step.reason}
+              compact={compact}
               state={step.done ? 'done' : index === currentIndex ? 'current' : 'upcoming'}
             />
           ))}
@@ -180,7 +183,7 @@ export function SetupPrompt({
         <Button
           component={RouterLink}
           endIcon={<ArrowForwardIcon />}
-          size="large"
+          size={compact ? 'medium' : 'large'}
           to={extensionConnected ? '/settings#full-analytics' : '/settings#browser-extension'}
           variant="contained"
         >
