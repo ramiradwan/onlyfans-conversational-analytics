@@ -41,7 +41,7 @@ pytestmark = [pytest.mark.ci_tier('fast')]
 
 
 @pytest.fixture
-def local(tmp_path, contract, grant_references):
+def local(_collect_test_resource_cycles, tmp_path, contract, grant_references):
     clock = SimpleNamespace(
         now=datetime.fromtimestamp(contract["vector"]["now"], timezone.utc)
     )

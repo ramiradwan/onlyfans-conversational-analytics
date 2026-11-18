@@ -127,6 +127,7 @@ REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES = REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NA
 REQUIRED_SHARDED_V7_PRODUCT_CI_JOB_NAMES = (
     REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES - {"windows-platform-contract"}
 ) | {f"windows-platform-contract-{shard}" for shard in range(1, 4)}
+REQUIRED_SHARDED_V8_PRODUCT_CI_JOB_NAMES = REQUIRED_SHARDED_V7_PRODUCT_CI_JOB_NAMES | {"windows-full-regression-3"}
 BROWSER_SERIAL_CONTROL_IF = "${{ github.event_name == 'workflow_dispatch' && inputs.browser_serial_control }}"
 
 PRODUCER_ROOT = Path(__file__).resolve().parent.parent
@@ -821,13 +822,14 @@ def _validate_sharded_v2_source(
     job_source: str, *, pr_cutover: bool = False, browser_aggregate: bool = False,
     native_contracts: bool = False, extended_windows_budget: bool = False,
     extended_analytics_budget: bool = False, platform_shards: bool = False,
+    full_windows_shards: int = 2,
 ) -> None:
     jobs = _ci_literal_mapping(job_source, 2)
     matrix_jobs = [
         ("analytics-integration", "analytics-integration", "ubuntu-latest",
          "30" if extended_analytics_budget else "20", 4),
         ("windows-full-shards", "windows-full-regression", "windows-latest",
-         "90" if extended_windows_budget else "60", 2),
+         "90" if extended_windows_budget else "60", full_windows_shards),
     ]
     if platform_shards:
         matrix_jobs.append(("windows-platform-contract", "windows-platform-contract", "windows-latest", "60", 3))
@@ -882,6 +884,7 @@ def _validate_sharded_v3_source(
     job_source: str, policy_source: bytes | None, *, pr_cutover: bool = False,
     native_contracts: bool = False, extended_windows_budget: bool = False,
     extended_analytics_budget: bool = False, platform_shards: bool = False,
+    full_windows_shards: int = 2,
 ) -> None:
     """Require the reviewed policy at the candidate SHA, not today's checkout."""
     if policy_source is None:
@@ -889,15 +892,17 @@ def _validate_sharded_v3_source(
     policy = load_json_strict(policy_source, label="Product CI source policy")
     expected = {
         "schema_version": 1,
-        "policy_version": "sharded-v7-pr-cutover" if platform_shards else (
+        "policy_version": "sharded-v8-pr-cutover" if full_windows_shards == 3 else (
+            "sharded-v7-pr-cutover" if platform_shards else (
             "sharded-v6-pr-cutover" if extended_analytics_budget else (
             "sharded-v5-pr-cutover" if extended_windows_budget else (
             "sharded-v4-pr-cutover" if native_contracts else (
-                "sharded-v3-pr-cutover" if pr_cutover else "sharded-v3")))),
+                "sharded-v3-pr-cutover" if pr_cutover else "sharded-v3"))))),
         "workflow": PRODUCT_CI_WORKFLOW,
         "job_ids": sorted(SHARDED_V4_PRODUCT_CI_JOB_IDS if native_contracts else SHARDED_V3_PRODUCT_CI_JOB_IDS),
-        "required_job_names": sorted(REQUIRED_SHARDED_V7_PRODUCT_CI_JOB_NAMES if platform_shards else (
-            REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES if native_contracts else REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES)),
+        "required_job_names": sorted(REQUIRED_SHARDED_V8_PRODUCT_CI_JOB_NAMES if full_windows_shards == 3 else (
+            REQUIRED_SHARDED_V7_PRODUCT_CI_JOB_NAMES if platform_shards else (
+            REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES if native_contracts else REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES))),
         "allowed_skipped_jobs": ["browser-e2e-serial-control"],
         "conditional_jobs": {"browser-e2e-serial-control": {
             "if": BROWSER_SERIAL_CONTROL_IF,
@@ -910,7 +915,8 @@ def _validate_sharded_v3_source(
                                 native_contracts=native_contracts,
                                 extended_windows_budget=extended_windows_budget,
                                 extended_analytics_budget=extended_analytics_budget,
-                                platform_shards=platform_shards)
+                                platform_shards=platform_shards,
+                                full_windows_shards=full_windows_shards)
     jobs = _ci_literal_mapping(job_source, 2)
     if native_contracts:
         native = _ci_literal_mapping(jobs["desktop-native-contracts"], 4)
@@ -1026,6 +1032,7 @@ def product_ci_job_policy(workflow_source: bytes, policy_source: bytes | None = 
         "sharded-v5-pr-cutover": (SHARDED_V4_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES),
         "sharded-v6-pr-cutover": (SHARDED_V4_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES),
         "sharded-v7-pr-cutover": (SHARDED_V4_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V7_PRODUCT_CI_JOB_NAMES),
+        "sharded-v8-pr-cutover": (SHARDED_V4_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V8_PRODUCT_CI_JOB_NAMES),
     }
     if len(versions) != 1 or versions[0] not in policies or source.count("CI_POLICY_VERSION") != 1:
         raise ContractError("Product CI source declares an unknown or ambiguous job policy")
@@ -1038,13 +1045,14 @@ def product_ci_job_policy(workflow_source: bytes, policy_source: bytes | None = 
         raise ContractError("sharded Product CI source does not declare the exact required job set")
     if version in {"sharded-v2", "sharded-v2-pr-cutover"}:
         _validate_sharded_v2_source(job_block, pr_cutover=version == "sharded-v2-pr-cutover")
-    elif version in {"sharded-v3", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover", "sharded-v5-pr-cutover", "sharded-v6-pr-cutover", "sharded-v7-pr-cutover"}:
+    elif version in {"sharded-v3", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover", "sharded-v5-pr-cutover", "sharded-v6-pr-cutover", "sharded-v7-pr-cutover", "sharded-v8-pr-cutover"}:
         _validate_sharded_v3_source(job_block, policy_source, pr_cutover=version != "sharded-v3",
-                                    native_contracts=version in {"sharded-v4-pr-cutover", "sharded-v5-pr-cutover", "sharded-v6-pr-cutover", "sharded-v7-pr-cutover"},
-                                    extended_windows_budget=version in {"sharded-v5-pr-cutover", "sharded-v6-pr-cutover", "sharded-v7-pr-cutover"},
-                                    extended_analytics_budget=version in {"sharded-v6-pr-cutover", "sharded-v7-pr-cutover"},
-                                    platform_shards=version == "sharded-v7-pr-cutover")
-    if version in {"sharded-v2-pr-cutover", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover", "sharded-v5-pr-cutover", "sharded-v6-pr-cutover", "sharded-v7-pr-cutover"}:
+                                    native_contracts=version in {"sharded-v4-pr-cutover", "sharded-v5-pr-cutover", "sharded-v6-pr-cutover", "sharded-v7-pr-cutover", "sharded-v8-pr-cutover"},
+                                    extended_windows_budget=version in {"sharded-v5-pr-cutover", "sharded-v6-pr-cutover", "sharded-v7-pr-cutover", "sharded-v8-pr-cutover"},
+                                    extended_analytics_budget=version in {"sharded-v6-pr-cutover", "sharded-v7-pr-cutover", "sharded-v8-pr-cutover"},
+                                    platform_shards=version in {"sharded-v7-pr-cutover", "sharded-v8-pr-cutover"},
+                                    full_windows_shards=3 if version == "sharded-v8-pr-cutover" else 2)
+    if version in {"sharded-v2-pr-cutover", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover", "sharded-v5-pr-cutover", "sharded-v6-pr-cutover", "sharded-v7-pr-cutover", "sharded-v8-pr-cutover"}:
         _validate_cutover_triggers(blocks[0], browser_qualification=version != "sharded-v2-pr-cutover")
     return set(required_names)
 
@@ -1264,7 +1272,7 @@ def qualify_product_ci_source(client: GitHubApi, *, source_commit: str) -> int:
         client, PRODUCT_REPOSITORY, PRODUCT_CI_WORKFLOW, source_commit
     )
     policy_source = None
-    if re.search(rb"(?m)^  CI_POLICY_VERSION: (?:sharded-v3(?:-pr-cutover)?|sharded-v4-pr-cutover|sharded-v5-pr-cutover|sharded-v6-pr-cutover|sharded-v7-pr-cutover)\r?$", workflow_source):
+    if re.search(rb"(?m)^  CI_POLICY_VERSION: (?:sharded-v3(?:-pr-cutover)?|sharded-v4-pr-cutover|sharded-v5-pr-cutover|sharded-v6-pr-cutover|sharded-v7-pr-cutover|sharded-v8-pr-cutover)\r?$", workflow_source):
         _, policy_source = fetch_git_blob(
             client, PRODUCT_REPOSITORY, PRODUCT_CI_POLICY_PATH, source_commit
         )

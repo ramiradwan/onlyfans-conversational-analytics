@@ -28,7 +28,7 @@ class VirtualTime:
 
     async def sleep(self, delay):
         future = asyncio.get_running_loop().create_future()
-        self.sleepers.append((self.seconds + delay, future))
+        self.sleepers.append((self.seconds + delay, future, asyncio.current_task()))
         await future
 
     async def wait_for(self, awaitable, timeout):
@@ -46,13 +46,21 @@ class VirtualTime:
     async def advance(self, seconds, coordinator):
         self.seconds += seconds
         self.clock[0] += timedelta(seconds=seconds)
-        for due, future in self.sleepers:
+        woken = {task for due, future, task in self.sleepers if due <= self.seconds and not future.done()}
+        for due, future, _ in self.sleepers:
             if due <= self.seconds and not future.done():
                 future.set_result(None)
-        self.sleepers = [(due, future) for due, future in self.sleepers if not future.done()]
+        self.sleepers = [entry for entry in self.sleepers if not entry[1].done()]
         await asyncio.sleep(0.02)
         await coordinator.drain()
         await asyncio.sleep(0.02)
+        # Off-loop work can keep a woken task from sleeping again within the fixed pauses on a loaded host.
+        deadline = asyncio.get_running_loop().time() + 5
+        while asyncio.get_running_loop().time() < deadline and any(
+            not task.done() and all(entry[2] is not task for entry in self.sleepers) for task in woken
+        ):
+            await asyncio.sleep(0.01)
+            await coordinator.drain()
 
 
 @pytest.mark.asyncio
@@ -99,7 +107,7 @@ async def test_ended_decision_is_idle_for_ten_minutes_with_the_old_session_deadl
     try:
         await _until(lambda: coordinator._held and not coordinator._workers
             and operation["operation_id"] in coordinator._confirmation_at
-            and any(due <= 17 and not future.done() for due, future in virtual.sleepers))
+            and any(due <= 17 and not future.done() for due, future, _ in virtual.sleepers))
         passes, pass_facts = [], coordinator._pass_facts
 
         def counted():

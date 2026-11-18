@@ -1,6 +1,7 @@
 -r requirements.txt
 
 pytest==9.1.1
+pytest-xdist==3.8.0
 pytest-asyncio==1.4.0
 
 # Release-workflow policy tests parse .github/workflows into a structure.

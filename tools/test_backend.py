@@ -29,6 +29,7 @@ import shutil
 import statistics
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -61,7 +62,40 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--rebalance", action="store_true", help="Reassign all integration files, only with measured --timings")
     result.add_argument("--timings", type=Path, help="Downloaded CI report directory, report.json, or file-to-seconds JSON")
     result.add_argument("--dry-run", action="store_true", help="Print the command or manifest diff without running/writing")
+    result.add_argument("--workers", type=int, default=None,
+                        help="pytest-xdist workers for a non-stateful lane, then one serial process (default: CI_PYTEST_WORKERS or 0)")
+    result.add_argument("--work-dir", type=Path, help="Parent directory for per-phase temporary files and reports")
+    result.add_argument("--contention", type=float, default=None,
+                        help="update-windows-manifest: measured parallel slowdown; weighs non-serial tests by it over --workers")
+    result.add_argument("--dist", default=None,
+                        help="pytest-xdist scheduler for the parallel phase: load or worksteal (default: CI_PYTEST_DIST or load)")
     return result
+
+
+def worker_count(args: argparse.Namespace) -> int:
+    value = args.workers if args.workers is not None else os.environ.get("CI_PYTEST_WORKERS", "0") or "0"
+    try:
+        workers = int(value)
+    except ValueError:
+        raise SelectionError("CI_PYTEST_WORKERS must be a non-negative integer") from None
+    if workers < 0:
+        raise SelectionError("--workers must be a non-negative integer")
+    if lane_name(args) in {"stateful", "scale"} or args.command == "list" or args.list_only:
+        if args.workers:
+            raise SelectionError("--workers applies to executed lanes other than stateful and scale")
+        return 0
+    return workers
+
+
+def lane_scheduler(args: argparse.Namespace, workers: int) -> str:
+    from tools.test_backend_parallel import LANE_SCHEDULERS
+
+    value = args.dist if args.dist is not None else os.environ.get("CI_PYTEST_DIST", "") or "load"
+    if value not in LANE_SCHEDULERS:
+        raise SelectionError(f"CI_PYTEST_DIST and --dist must be one of {', '.join(LANE_SCHEDULERS)}")
+    if args.dist is not None and not workers:
+        raise SelectionError("--dist applies only to lanes run on parallel workers")
+    return value
 
 
 def integration_files(root: Path) -> dict[str, int]:
@@ -132,14 +166,14 @@ def build_command(args: argparse.Namespace, extra: list[str], manifest: dict[str
         raise SelectionError("--shard is only valid for integration, windows-platform or windows-full-regression")
     if lane == "windows-platform" and args.shard not in (None, 1, 2, 3):
         raise SelectionError("Windows platform contract has exactly three shards: --shard 1, 2 or 3")
-    if lane == "legacy-windows" and args.shard not in (None, 1, 2):
-        raise SelectionError("Full Windows regression has exactly two shards: --shard 1 or 2")
+    if lane == "legacy-windows" and args.shard not in (None, *windows_shards.SHARDS):
+        raise SelectionError("Full Windows regression has exactly three shards: --shard 1, 2 or 3")
     if args.profile is not None and lane != "stateful":
         raise SelectionError("--profile is only valid for stateful")
     if args.validate and (not listing or (lane != "all" and not (lane == "legacy-windows" and args.shard)) or extra):
         raise SelectionError("Use list all --validate or list windows-full-regression --shard N --validate without pytest selection arguments")
-    if args.rebalance or args.timings or args.inventory:
-        raise SelectionError("--rebalance, --timings and --inventory belong to manifest update commands")
+    if args.rebalance or args.timings or args.inventory or args.contention is not None:
+        raise SelectionError("--rebalance, --timings, --inventory and --contention belong to manifest update commands")
     environment = os.environ.copy()
     environment.pop("HYPOTHESIS_PROFILE", None)
     if lane == "stateful":
@@ -268,7 +302,7 @@ def read_timings(path: Path) -> dict[str, float]:
     return {file: statistics.median(seconds) for file, seconds in sorted(samples.items())}
 
 
-def run_streaming(command: list[str], environment: dict[str, str], output: Path) -> int:
+def run_streaming(command: list[str], environment: dict[str, str], output: Path, *, append: bool = False) -> int:
     """Retain the same diagnostic log locally while streaming normal pytest UI."""
     output.mkdir(parents=True, exist_ok=True)
     # Do not force Python stdio to UTF-8: on Windows that changes descendant
@@ -278,7 +312,7 @@ def run_streaming(command: list[str], environment: dict[str, str], output: Path)
     encoding = environment.get("PYTHONIOENCODING", "").split(":", 1)[0] or None
     if encoding is None and environment.get("PYTHONUTF8") in {"0", "1"}:
         encoding = "utf-8" if environment["PYTHONUTF8"] == "1" else locale.getencoding()
-    with (output / "run.log").open("w", encoding="utf-8") as log:
+    with (output / "run.log").open("a" if append else "w", encoding="utf-8") as log:
         process = subprocess.Popen(command, cwd=ROOT, env=environment, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, text=True, encoding=encoding, errors="replace")
         try:
@@ -320,15 +354,19 @@ def main(argv: list[str] | None = None) -> int:
             partition = windows_shards.load_manifest(ROOT, args.windows_manifest)
             windows_shards.validate_inventory(inventory["collected"], partition, complete=True)
             print(f"Validated full Windows inventory: {len(partition['files'])} files, "
-                  f"{len(inventory['selected'])} default tests, two exhaustive shards")
+                  f"{len(inventory['selected'])} default tests, {len(windows_shards.SHARDS)} exhaustive shards")
             return 0
         if args.command == "update-windows-manifest":
-            if extra or args.lane or args.list_lane or args.shard or args.profile or args.validate or args.list_only or not args.inventory:
-                raise SelectionError("update-windows-manifest requires --inventory <raw-unsharded-report.json>; optional --timings, --rebalance, --windows-manifest and --dry-run")
+            if (extra or args.lane or args.list_lane or args.shard or args.profile or args.validate or args.list_only
+                    or not args.inventory or (args.workers is None) != (args.contention is None)):
+                raise SelectionError("update-windows-manifest requires --inventory <raw-unsharded-report.json>; optional --timings, --rebalance, "
+                                     "--workers with --contention, --windows-manifest and --dry-run")
             previous = windows_shards.load_manifest(ROOT, args.windows_manifest) if args.windows_manifest.exists() else None
             inventory = windows_shards.read_inventory(args.inventory)
             timings = windows_shards.read_inventory(args.timings, execution=True) if args.timings else None
-            updated = windows_shards.updated_manifest(previous, inventory, timing_report=timings, rebalance=args.rebalance)
+            model = None if args.workers is None else windows_shards.phase_model(args.workers, args.contention)
+            updated = windows_shards.updated_manifest(previous, inventory, timing_report=timings,
+                                                      rebalance=args.rebalance, model=model)
             content = json.dumps(updated, indent=2) + "\n"
             if args.dry_run:
                 import difflib
@@ -357,7 +395,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Updated {args.manifest}; existing assignments {'rebalanced from measurements' if args.rebalance else 'preserved'}")
             return 0
         command, environment = build_command(args, extra, manifest)
+        workers = worker_count(args)
+        dist = lane_scheduler(args, workers)
         print(subprocess.list2cmdline(command), flush=True)
+        if workers:
+            print(f"Parallel phase: {workers} pytest-xdist workers ({dist}); serial-marked tests then run in one process",
+                  flush=True)
         if args.dry_run:
             return 0
         errors = prerequisite_errors(lane_name(args), args.profile, explicit_targets(extra),
@@ -365,7 +408,24 @@ def main(argv: list[str] | None = None) -> int:
         if errors:
             raise SelectionError("\n".join(errors))
         output = Path(command[command.index("--ci-output-dir") + 1])
-        return run_streaming(command, environment, output)
+        if not workers:
+            return run_streaming(command, environment, output)
+        from tools import test_backend_parallel as parallel
+
+        output.mkdir(parents=True, exist_ok=True)
+        (output / "run.log").write_text("", encoding="utf-8")
+
+        def run_phase(phase_command: list[str], phase_environment: dict[str, str]) -> int:
+            print(subprocess.list2cmdline(phase_command), flush=True)
+            return run_streaming(phase_command, phase_environment, output, append=True)
+
+        work_root = args.work_dir or Path(tempfile.gettempdir()) / "ofca-ci"
+        try:
+            return parallel.run_lane(command, environment, output, workers=workers,
+                                     work_root=work_root.resolve(), run=run_phase, dist=dist)
+        except ValueError as error:
+            print(f"Backend parallel evidence error: {error}", file=sys.stderr)
+            return 2
     except (SelectionError, windows_shards.WindowsShardError, OSError, json.JSONDecodeError) as error:
         print(f"Backend CI selection error: {error}", file=sys.stderr)
         return 2

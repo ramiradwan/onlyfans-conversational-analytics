@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -24,9 +25,12 @@ def run_suite(tmp_path, source, *arguments, environment=None):
     for name, content in sources.items():
         (tmp_path / name).write_text(content, encoding="utf-8")
     destination = tmp_path / "evidence"
-    env = dict(os.environ, PYTHONPATH=str(ROOT), PYTEST_ADDOPTS="", CI_TEST_LANE="report-fixture", CI_REPORT_DIR=str(destination),
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [str(ROOT), os.environ.get("PYTHONPATH")])),
+               PYTEST_ADDOPTS="", CI_PYTEST_WATCHDOG_SECONDS="", CI_TEST_LANE="report-fixture", CI_REPORT_DIR=str(destination),
                PRODUCT_SHA="a" * 40, GITHUB_RUN_ID="123", GITHUB_RUN_ATTEMPT="2", GITHUB_JOB="backend-fast",
                GITHUB_STEP_SUMMARY=str(tmp_path / "github-summary.md"))
+    for name in ("PYTEST_XDIST_WORKER", "PYTEST_XDIST_WORKER_COUNT", "PYTEST_XDIST_TESTRUNUID"):
+        env.pop(name, None)
     env.update(environment or {})
     result = subprocess.run([sys.executable, "-m", "pytest", "-p", "tools.ci_pytest", "--junitxml=" + str(tmp_path / "original.xml"),
                              *arguments], cwd=tmp_path, env=env, text=True, capture_output=True, timeout=30)
@@ -298,3 +302,328 @@ def test_socket_loop_test_module_imports_without_application_dependencies(tmp_pa
     assert result.returncode == report["exit_code"] == 0, result.stdout + result.stderr
     assert report["selected"] == ["test_sample.py::test_import"]
     assert [phase["outcome"] for phase in report["reports"]] == ["passed"] * 3
+
+
+LANE_SOURCE = '''import os, time
+from pathlib import Path
+import pytest
+pytestmark = pytest.mark.ci_tier("fast")
+@pytest.mark.parametrize("case", range(3))
+def test_parallel(case, unused_tcp_port):
+    assert int(os.environ["LOCAL_BACKEND_PORT_START"]) <= unused_tcp_port <= int(os.environ["LOCAL_BACKEND_PORT_END"])
+    active = Path(ACTIVE) / (str(os.getpid()) + "-" + str(case))
+    active.touch()
+    time.sleep(0.3)
+    active.unlink()
+def test_skipped():
+    pytest.skip("unavailable here")
+@pytest.mark.xfail(reason="known gap", strict=True)
+def test_expected_failure():
+    assert False
+def test_children(subtests):
+    for index in range(2):
+        with subtests.test("child", value=index, label="same"):
+            pass
+@pytest.mark.omitted
+def test_deselected():
+    pass
+@pytest.mark.serial
+def test_serial_runs_alone():
+    assert not list(Path(ACTIVE).iterdir())
+'''
+
+
+def lane_command(tmp_path, output):
+    return [sys.executable, "-m", "pytest", "-p", "tools.ci_pytest", "--override-ini=addopts=",
+            "--ci-output-dir", str(output), "--junitxml", str(output / "junit.xml"), "-m", "not omitted"]
+
+
+def run_lane_suite(tmp_path, source=LANE_SOURCE, workers=2, dist="load"):
+    """Run the fixture suite once serially and once through the CI lane runner."""
+    from tools import test_backend_parallel as parallel
+
+    active = tmp_path / "active"
+    active.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pytest.ini").write_text(
+        "[pytest]\nmarkers =\n omitted: selection fixture\n ci_tier(name): explicit CI owner\n"
+        " serial: exclusive\n", encoding="utf-8")
+    for name in ("test_a.py", "test_b.py"):
+        (project / name).write_text(source.replace("ACTIVE", repr(str(active))), encoding="utf-8")
+    env = dict(os.environ, PYTEST_ADDOPTS="", CI_TEST_LANE="lane-fixture", PRODUCT_SHA="a" * 40,
+               GITHUB_RUN_ID="123", GITHUB_RUN_ATTEMPT="2", GITHUB_JOB="backend-fast",
+               PYTHONPATH=os.pathsep.join(filter(None, [str(ROOT), os.environ.get("PYTHONPATH")])))
+    env.pop("GITHUB_STEP_SUMMARY", None)
+    baseline_env = dict(env, LOCAL_BACKEND_PORT_START="31000", LOCAL_BACKEND_PORT_END="31063")
+    baseline = subprocess.run([*lane_command(tmp_path, tmp_path / "serial"), "-p", "tools.test_backend_parallel"],
+                              cwd=project, env=baseline_env, capture_output=True, text=True, timeout=120)
+    serial = json.loads((tmp_path / "serial/report.json").read_text(encoding="utf-8"))
+    assert baseline.returncode == serial["exit_code"], baseline.stdout + baseline.stderr
+
+    def run(command, environment):
+        return subprocess.run(command, cwd=project, env=environment, capture_output=True, timeout=120).returncode
+
+    output = tmp_path / "lane"
+    code = parallel.run_lane(lane_command(tmp_path, output), env, output, workers=workers,
+                             work_root=tmp_path / "phases", run=run, port_base=30000, port_width=64, dist=dist)
+    merged = json.loads((output / "report.json").read_text(encoding="utf-8"))
+    return code, serial, merged, output
+
+
+def phase_signature(report):
+    return sorted((phase["nodeid"], phase["when"], phase["outcome"], phase["skip_reason"], phase["wasxfail"],
+                   json.dumps(phase.get("subtest"), sort_keys=True)) for phase in report["reports"])
+
+
+def test_parallel_lane_report_equals_serial_execution_evidence(tmp_path, monkeypatch):
+    pytest.importorskip("xdist")
+    from tools import ci_gate
+
+    monkeypatch.setenv("CI_PYTEST_WATCHDOG_SECONDS", "600")
+    code, serial, merged, output = run_lane_suite(tmp_path)
+    assert code == merged["exit_code"] == serial["exit_code"] == 0
+    assert merged["complete"] is True and "phase" not in merged
+    for key in ("collected", "deselected", "collection_errors", "partial", "selection", "lane"):
+        assert merged[key] == serial[key], key
+    assert sorted(merged["selected"]) == sorted(serial["selected"])
+    assert len(merged["selected"]) == 14 and len(merged["deselected"]) == 2
+    assert phase_signature(merged) == phase_signature(serial)
+    assert [(phase["name"], phase["selected"]) for phase in merged["execution"]["phases"]] == [
+        ("parallel", 12), ("serial", 2)]
+    assert merged["reports"][-1]["nodeid"].endswith("test_serial_runs_alone")
+    assert merged["execution"]["dist"] == "load"
+    workers = merged["execution"]["phases"][0]["workers"]
+    assert sorted(workers) == ["gw0", "gw1"] and "workers" not in merged["execution"]["phases"][1]
+    assert sum(worker["tests"] for worker in workers.values()) == 12
+    assert min(worker["idle_tail_seconds"] for worker in workers.values()) == 0.0
+    assert all(worker["busy_seconds"] >= 0 for worker in workers.values())
+    spec = ci_gate.ReportSpec("backend-fast", merged["platform"],
+                              python=f"{sys.version_info.major}.{sys.version_info.minor}")
+    assert ci_gate.validate_report(merged, spec) == ci_gate.validate_report(serial, spec)
+    # The gate reads every JSON file in a lane artifact as a lane report.
+    assert sorted(path.name for path in output.rglob("*.json")) == ["report.json"]
+    assert len(list(output.glob("progress-gw*-parallel.jsonl"))) == 2
+    for phase in ("parallel", "serial"):
+        assert "monitor stopped" in (output / f"watchdog-{phase}.log").read_text(encoding="utf-8")
+    assert "# Backend: lane-fixture" in (output / "summary.md").read_text(encoding="utf-8")
+    from tools import test_backend_parallel as parallel
+    assert parallel.junit_outcomes(output / "junit.xml") == parallel.junit_outcomes(tmp_path / "serial/junit.xml")
+
+
+def test_work_stealing_lane_report_equals_serial_execution_evidence(tmp_path):
+    pytest.importorskip("xdist")
+    code, serial, merged, _ = run_lane_suite(tmp_path, dist="worksteal")
+    assert code == merged["exit_code"] == serial["exit_code"] == 0
+    assert merged["execution"]["dist"] == "worksteal" and merged["complete"] is True
+    assert sorted(merged["selected"]) == sorted(serial["selected"])
+    assert phase_signature(merged) == phase_signature(serial)
+
+
+def test_parallel_lane_without_serial_tests_runs_one_phase_and_keeps_failures(tmp_path):
+    pytest.importorskip("xdist")
+    source = LANE_SOURCE.replace(
+        "@pytest.mark.serial\ndef test_serial_runs_alone():\n    assert not list(Path(ACTIVE).iterdir())\n", "").replace(
+        "def test_skipped():\n    pytest.skip(\"unavailable here\")", "def test_skipped():\n    assert False")
+    code, serial, merged, _ = run_lane_suite(tmp_path, source)
+    assert code == merged["exit_code"] == serial["exit_code"] == 1
+    assert [phase["name"] for phase in merged["execution"]["phases"]] == ["parallel"]
+    assert phase_signature(merged) == phase_signature(serial)
+
+
+def test_lane_phase_command_keeps_rootdir_inputs_and_trailing_pytest_arguments(tmp_path):
+    from tools import test_backend_parallel as parallel
+
+    command = ["python", "-m", "pytest", "--ci-output-dir", "out", "--junitxml", "out/junit.xml", "-k", "name"]
+    directory = tmp_path / "parallel"
+    result = parallel.lane_phase_command(command, directory, "parallel", 4)
+    assert str(directory) not in result and "out" not in result
+    assert f"--ci-output-dir={directory}" in result and f"--junitxml={directory / 'junit.xml'}" in result
+    assert result[result.index("-n") + 1] == "4" and result[result.index("--ci-phase") + 1] == "parallel"
+    assert result[-2:] == ["-k", "name"]
+    serial = parallel.lane_phase_command(command, directory, "serial", 4)
+    assert serial[serial.index("-n") + 1] == "0" and serial[serial.index("--ci-phase") + 1] == "serial"
+    assert "--dist=load" in result and "--dist=load" in serial
+    stealing = parallel.lane_phase_command(command, directory, "parallel", 4, "worksteal")
+    assert "--dist=worksteal" in stealing and "--dist=load" not in stealing
+    # The serial phase is one process, so its scheduler never varies.
+    assert parallel.lane_phase_command(command, directory, "serial", 4, "worksteal") == serial
+    with pytest.raises(ValueError, match="scheduler"):
+        parallel.lane_phase_command(command, directory, "parallel", 4, "loadfile")
+
+
+def journal_lines(started_at, *tests):
+    lines = [{"event": "session_start", "elapsed_seconds": 0.0, **({} if started_at is None else {"started_at": started_at})}]
+    for node, start, finish in tests:
+        lines += [{"event": "test_start", "elapsed_seconds": start, "nodeid": node},
+                  {"event": "test_finish", "elapsed_seconds": finish, "nodeid": node}]
+    return "\n".join(json.dumps(line) for line in lines) + "\n"
+
+
+def test_worker_timings_align_workers_on_their_session_start(tmp_path):
+    from tools import test_backend_parallel as parallel
+
+    (tmp_path / "progress-gw0.jsonl").write_text(journal_lines(100.0, ("a", 1.0, 4.0), ("b", 4.0, 10.0)), encoding="utf-8")
+    (tmp_path / "progress-gw1.jsonl").write_text(journal_lines(102.0, ("c", 0.5, 3.0)) + "torn", encoding="utf-8")
+    (tmp_path / "progress-gw2.jsonl").write_text(journal_lines(101.0), encoding="utf-8")
+    timings = parallel.worker_timings(sorted(tmp_path.glob("progress-gw*.jsonl")))
+    assert timings == {
+        "gw0": {"tests": 2, "busy_seconds": 9.0, "first_start_seconds": 1.0, "last_finish_seconds": 10.0,
+                "idle_tail_seconds": 0.0},
+        "gw1": {"tests": 1, "busy_seconds": 2.5, "first_start_seconds": 2.5, "last_finish_seconds": 5.0,
+                "idle_tail_seconds": 5.0},
+        "gw2": {"tests": 0, "busy_seconds": 0.0, "first_start_seconds": None, "last_finish_seconds": None,
+                "idle_tail_seconds": 10.0},
+    }
+    (tmp_path / "progress-gw2.jsonl").write_text(journal_lines(None), encoding="utf-8")
+    assert parallel.worker_timings(sorted(tmp_path.glob("progress-gw*.jsonl"))) is None
+    assert parallel.worker_timings([]) is None
+
+
+def phase_report(name, selected, deferred, **changes):
+    report = {"schema": "ci-test-report/v1", "lane": "lane", "collected": [{"nodeid": node} for node in ("a", "b", "c")],
+              "deselected": ["c"], "selected": selected, "reports": [{"nodeid": node} for node in selected],
+              "collection_errors": [], "exit_code": 0, "wall_seconds": 2.0, "complete": True,
+              "phase": {"name": name, "deferred": deferred}}
+    for key in ("source_commit", "workflow_run_id", "run_attempt", "job_id", "platform", "python",
+                "python_implementation", "pytest", "profile", "selection_profile", "collect_only", "partial", "selection"):
+        report[key] = ""
+    report.update(changes)
+    return report
+
+
+def test_lane_merge_requires_an_exact_partition_of_the_lane_selection():
+    from tools import test_backend_parallel as parallel
+
+    merged = parallel.merge_lane_reports([phase_report("parallel", ["a"], ["b"]), phase_report("serial", ["b"], ["a"])], 4)
+    assert merged["selected"] == ["a", "b"] and merged["wall_seconds"] == 4.0 and merged["execution"]["workers"] == 4
+    for reports, message in (
+        ([phase_report("parallel", ["a"], ["b"])], "partition"),
+        ([phase_report("parallel", ["a"], ["b"]), phase_report("serial", ["a", "b"], ["a"])], "more than one phase"),
+        ([phase_report("parallel", ["a"], ["b"]), phase_report("serial", [], ["a"])], "partition"),
+        ([phase_report("parallel", ["a"], ["b"]), phase_report("serial", ["b"], ["a"], deselected=[])], "identity or collection"),
+        ([phase_report("serial", ["b"], ["a"])], "parallel phase"),
+        ([phase_report("parallel", ["a"], [], phase=None)], "parallel phase"),
+    ):
+        if reports[0]["phase"] is None:
+            del reports[0]["phase"]
+        with pytest.raises(ValueError, match=message):
+            parallel.merge_lane_reports(reports, 4)
+    failed = parallel.merge_lane_reports([phase_report("parallel", ["a"], ["b"], exit_code=1),
+                                          phase_report("serial", ["b"], ["a"], complete=False)], 4)
+    assert failed["exit_code"] == 1 and failed["complete"] is False
+    empty = parallel.merge_lane_reports([phase_report("parallel", [], ["b"], exit_code=5),
+                                         phase_report("serial", ["b"], [])], 4)
+    assert empty["exit_code"] == 0
+
+
+def test_distributed_controller_requires_identical_worker_collections():
+    from tools import ci_pytest
+
+    options = {"numprocesses": 2, "ci_windows_shard": None, "ci_lane": None, "ci_shard": None, "ci_phase": "parallel"}
+    config = SimpleNamespace(getoption=lambda name, default=None: options.get(name, default))
+    view = {"collected": [{"nodeid": "a"}], "selected": ["a"], "deselected": [], "deferred": []}
+    evidence = ci_pytest.Evidence(config)
+    evidence.worker_collections = {"gw0": view, "gw1": dict(view)}
+    assert evidence.adopt_worker_collection() is True and evidence.selected == ["a"]
+    for collections, failures in (({"gw0": view, "gw1": dict(view, selected=[])}, []),
+                                  ({"gw0": view}, []), ({"gw0": view, "gw1": view}, ["gw2"]), ({}, [])):
+        evidence = ci_pytest.Evidence(config)
+        evidence.worker_collections, evidence.worker_failures = collections, failures
+        assert evidence.adopt_worker_collection() is False
+
+
+WATCHDOG_SAMPLE = """import os, time
+from pathlib import Path
+import pytest
+
+@pytest.mark.parametrize("case", [0, 1])
+def test_slow(case, request):
+    directory = Path(os.environ["CI_REPORT_DIR"])
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    journal = "progress-" + worker if worker else "progress"
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        try:
+            lines = (directory / "watchdog.log").read_text(encoding="utf-8").splitlines()
+        except OSError:
+            lines = []
+        if any(journal + ": no progress" in line and request.node.nodeid in line
+               and "phase=call" in line for line in lines):
+            return
+        time.sleep(0.02)
+    pytest.fail("external watchdog did not report this test")
+"""
+
+
+@pytest.mark.parametrize("workers", [0, 2])
+def test_external_watchdog_reports_stalled_test_without_terminating_it(tmp_path, workers):
+    if workers:
+        pytest.importorskip("xdist")
+    arguments = ["-n", str(workers), "--max-worker-restart=0"] if workers else []
+    result, report, destination = run_suite(
+        tmp_path, WATCHDOG_SAMPLE, *arguments,
+        "-o", "faulthandler_timeout=0",
+        environment={"CI_PYTEST_WATCHDOG_SECONDS": "0.1"},
+    )
+    assert result.returncode == report["exit_code"] == 0, result.stdout + result.stderr
+    log = (destination / "watchdog.log").read_text(encoding="utf-8")
+    assert "no progress for" in log
+    assert "test_sample.py::test_slow[0]" in log
+    assert "test_sample.py::test_slow[1]" in log
+    assert "phase=call" in log
+    assert "monitor stopped" in log
+    assert "Timeout (" not in result.stderr
+    assert "no progress for" in result.stdout
+    if workers:
+        assert "progress-gw0: no progress" in log
+        assert "progress-gw1: no progress" in log
+        assert log.count("external progress monitor started") == 1
+
+
+def test_external_watchdog_preserves_test_failure(tmp_path):
+    result, report, destination = run_suite(
+        tmp_path, "def test_bad(): assert False\n",
+        "-o", "faulthandler_timeout=0",
+        environment={"CI_PYTEST_WATCHDOG_SECONDS": "0.1"},
+    )
+    assert result.returncode == report["exit_code"] == 1
+    assert "monitor stopped" in (destination / "watchdog.log").read_text(encoding="utf-8")
+
+
+def test_watchdog_journal_handles_partial_records_and_resumed_progress(tmp_path):
+    from tools.ci_pytest_watchdog import Journal
+    path = tmp_path / "progress-gw0.jsonl"
+    journal = Journal(0)
+    path.write_bytes(b'{"event":"phase_start","nodeid":"test_slow","when":"call"}\n{"event":')
+    journal.poll(path, 1)
+    assert journal.warning("gw0", 2, 2) is None
+    assert "test_slow" in journal.warning("gw0", 3, 2)
+    assert journal.warning("gw0", 4, 2) is None
+    with path.open("ab") as stream:
+        stream.write(b'"test_finish","nodeid":"test_slow"}\n')
+    journal.poll(path, 5)
+    assert journal.warning("gw0", 6, 2) is None
+    with path.open("ab") as stream:
+        stream.write(b'{"event":"session_finish"}\n')
+    journal.poll(path, 7)
+    assert journal.warning("gw0", 100, 2) is None
+
+
+def test_external_watchdog_exits_if_controller_dies(tmp_path):
+    env = dict(os.environ, PYTHONPATH=str(ROOT))
+    script = (
+        "from pathlib import Path\n"
+        "import os, sys, time\n"
+        "from tools.ci_pytest_watchdog import start\n"
+        "directory = Path(sys.argv[1])\n"
+        "process = start(directory, 0.1, distributed=False)\n"
+        "deadline = time.monotonic() + 5\n"
+        "while not (directory / 'watchdog.log').is_file() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.02)\n"
+        "os._exit(17)\n"
+    )
+    result = subprocess.run([sys.executable, "-c", script, str(tmp_path)],
+                            env=env, capture_output=True, text=True, timeout=15)
+    assert result.returncode == 17
+    assert "monitor stopped" in (tmp_path / "watchdog.log").read_text(encoding="utf-8")

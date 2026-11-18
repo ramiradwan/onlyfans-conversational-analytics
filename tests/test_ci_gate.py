@@ -20,8 +20,8 @@ WINDOWS_FILES = {
     "tests/test_contract_snapshot.py": 1,
     "tests/test_projection1.py": 1,
     "tests/test_projection2.py": 2,
-    "tests/test_projection3.py": 2,
-    "tests/test_projection4.py": 2,
+    "tests/test_projection3.py": 3,
+    "tests/test_projection4.py": 3,
     "tests/test_boot.py": 2,
     gate.LOOP_TEST_FILE: 2,
 }
@@ -179,7 +179,7 @@ def test_complete_required_graph_and_independent_coverage_pass(tmp_path):
     gate.validate_needs(_needs(), jobs)
     selected = gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=jobs)
     assert gate.validate_coverage(selected) == {
-        "legacy_linux": 18, "legacy_windows": 19, "required_windows": 14, "scale": 4, "reports": 28,
+        "legacy_linux": 18, "legacy_windows": 19, "required_windows": 14, "scale": 4, "reports": 29,
     }
 
 
@@ -262,7 +262,7 @@ def test_changing_reference_selection_cannot_hide_lost_legacy_coverage():
 @pytest.mark.parametrize("fault", ["overlap", "missing", "extra"])
 def test_windows_shard_union_must_equal_raw_legacy_selection(fault):
     reports = _reports()
-    first, second = gate.WINDOWS_FULL_LANES
+    first, second, *_ = gate.WINDOWS_FULL_LANES
     node = reports[first]["selected"][0]
     if fault == "overlap":
         _replace_selection(reports[second], reports[second]["selected"] + [node])

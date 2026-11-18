@@ -749,9 +749,12 @@ def test_companion_change_notices_reach_only_the_account_bridges_in_order() -> N
     class Recorder:
         def __init__(self) -> None:
             self.sent: list[dict] = []
+            self.completed = asyncio.Event()
 
         async def send_text(self, text: str) -> None:
             self.sent.append(json.loads(text))
+            if len(self.sent) == 3:
+                self.completed.set()
 
     mine, other = Recorder(), Recorder()
     for socket, account in ((mine, DEV_ACCOUNT_ID), (other, "other-account")):
@@ -764,8 +767,8 @@ def test_companion_change_notices_reach_only_the_account_bridges_in_order() -> N
         assert transport_manager.companion_state_payload(DEV_ACCOUNT_ID)["revision"] == 0
         transport_manager.notify_companion_changed(DEV_ACCOUNT_ID)
         transport_manager.notify_companion_changed(DEV_ACCOUNT_ID)
-        transport_manager.notify_companion_changed(DEV_ACCOUNT_ID, delay_seconds=0.01)
-        await asyncio.sleep(0.05)
+        transport_manager.notify_companion_changed(DEV_ACCOUNT_ID, delay_seconds=0.1)
+        await asyncio.wait_for(mine.completed.wait(), timeout=10)
 
     asyncio.run(exercise())
     assert other.sent == []

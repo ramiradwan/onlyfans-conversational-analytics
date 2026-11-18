@@ -391,6 +391,8 @@ def test_old_delta_shape_stays_valid_and_check_id_is_accepted():
     assert message("ingest.delta", old).payload.check_id is not None
 
 
+# Thousands of FULL-sync commits contend for storage with other workers.
+@pytest.mark.serial
 @pytest.mark.asyncio
 async def test_channel_rotation_24_hours_and_late_replacement(rig):
     from app.transport.manager import InMemoryTransportManager

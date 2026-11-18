@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 import shutil
 import subprocess
+import time
 
 import pytest
 import yaml
@@ -75,6 +76,10 @@ def test_release_requires_native_host_as_well_as_frozen_backend(tmp_path):
     assert any(item.code == "required_file_missing" and item.path == "Bridge.exe" for item in verify_runtime_files(stage))
 
 
+# Cold concurrent PowerShell/signature/Inno startup reproduced the policy
+# harness timeout on hosted Windows (run 44388264128). Keep these native
+# probes in the serial phase, not behind a larger correctness-test deadline.
+@pytest.mark.serial
 @pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell module inheritance")
 @pytest.mark.parametrize("architecture", ["System32", "SysWOW64"])
 def test_webview_helper_uses_builtin_signature_verifier_after_an_intermediate_process(tmp_path, architecture):
@@ -354,6 +359,7 @@ if (($script:webView2Acquisition.outcome -eq 'fail') -ne $failed) { exit 22 }
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+@pytest.mark.serial
 @pytest.mark.skipif(os.name != "nt", reason="Windows prerequisite result protocol")
 @pytest.mark.parametrize("scenario", ["present", "invalid_minimum", "registry_failure", "diagnostic_write_failure"])
 def test_webview_acquisition_diagnostics_are_bounded_and_preserve_result_protocol(tmp_path, scenario):
@@ -398,6 +404,7 @@ function Invoke-WebRequest { throw 'network must not be reached' }
     assert not list(tmp_path.glob("*.pending"))
 
 
+@pytest.mark.serial
 @pytest.mark.skipif(os.name != "nt", reason="Windows build policy consumer")
 def test_build_passes_validated_shared_webview_floor_to_the_inno_compiler(tmp_path):
     # Evaluate the actual policy function, assignment and compiler call over a
@@ -405,10 +412,17 @@ def test_build_passes_validated_shared_webview_floor_to_the_inno_compiler(tmp_pa
     harness = tmp_path / "build-policy.ps1"
     harness.write_text(r'''
 param([string]$BuildScript, [string]$PolicySource, [string]$ProjectRoot)
+function Write-PolicyProbe([string]$Phase) {
+    [Console]::WriteLine(('policy_probe:{0}:{1}' -f $Phase, [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()))
+    [Console]::Out.Flush()
+}
+Write-PolicyProbe 'script_entry'
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $tokens = $null; $errors = $null
+Write-PolicyProbe 'parse_begin'
 $ast = [Management.Automation.Language.Parser]::ParseFile($BuildScript, [ref]$tokens, [ref]$errors)
+Write-PolicyProbe 'parse_end'
 if ($errors.Count) { throw 'build_script_parse_failed' }
 $function = $ast.Find({ param($node)
     $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-WebView2MinimumVersion'
@@ -423,7 +437,9 @@ $compile = $ast.Find({ param($node)
         $node.Extent.Text.Contains('/DWebView2MinimumVersion=')
 }, $true)
 if (-not $function -or -not $assignment -or -not $compile) { throw 'missing_build_policy_consumer' }
+Write-PolicyProbe 'function_begin'
 Invoke-Expression $function.Extent.Text
+Write-PolicyProbe 'function_end'
 $policy = Get-Content -Raw -LiteralPath $PolicySource | ConvertFrom-Json
 $original = [Version]$policy.webview2_minimum_version
 $policyPath = Join-Path $ProjectRoot 'shared/desktop-release/prerequisite-policy.json'
@@ -431,6 +447,7 @@ New-Item -ItemType Directory -Path (Split-Path -Parent $policyPath) -Force | Out
 $compiler = 'fixture-iscc.exe'; $stagingRoot = 'fixture-stage'; $installerOutput = 'fixture-output'
 $version = '1.2.3'; $InnoScriptPath = 'fixture.iss'
 function Invoke-RequiredCommand { param($FilePath, $Arguments) $script:compileArguments = $Arguments }
+Write-PolicyProbe 'valid_begin'
 foreach ($minimum in @($policy.webview2_minimum_version, "$($original.Major + 1).0.0.0")) {
     $policy.webview2_minimum_version = $minimum
     $policy | ConvertTo-Json | Set-Content -LiteralPath $policyPath
@@ -439,6 +456,7 @@ foreach ($minimum in @($policy.webview2_minimum_version, "$($original.Major + 1)
     $bound = @($script:compileArguments | Where-Object { $_.StartsWith('/DWebView2MinimumVersion=') })
     if ($bound.Count -ne 1 -or $bound[0] -cne "/DWebView2MinimumVersion=$minimum") { throw 'floor_not_bound_to_compiler' }
 }
+Write-PolicyProbe 'invalid_begin'
 foreach ($invalid in @('0.1.2.3', '01.2.3.4', '1.2.3', '1.2.3.4.5', '65536.0.0.0', '1.2.3.4 dev')) {
     $policy.webview2_minimum_version = $invalid
     $policy | ConvertTo-Json | Set-Content -LiteralPath $policyPath
@@ -446,22 +464,43 @@ foreach ($invalid in @('0.1.2.3', '01.2.3.4', '1.2.3', '1.2.3.4.5', '65536.0.0.0
     try { Invoke-Expression $assignment.Extent.Text } catch { $refused = $true }
     if (-not $refused) { throw 'invalid_floor_accepted' }
 }
+Write-PolicyProbe 'schema_begin'
 $policy.webview2_minimum_version = $original.ToString(4)
 $policy.schema = 'unexpected-policy'
 $policy | ConvertTo-Json | Set-Content -LiteralPath $policyPath
 $refused = $false
 try { Invoke-Expression $assignment.Extent.Text } catch { $refused = $true }
 if (-not $refused) { throw 'invalid_policy_accepted' }
+Write-PolicyProbe 'complete'
 ''', encoding="utf-8")
-    result = subprocess.run([
-        "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-        "-File", str(harness), "-BuildScript", str(ROOT / "packaging/build-windows.ps1"),
-        "-PolicySource", str(ROOT / "shared/desktop-release/prerequisite-policy.json"),
-        "-ProjectRoot", str(tmp_path / "source"),
-    ], capture_output=True, text=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW)
+    # Retain the original bound. Record the launch time and progress inside
+    # PowerShell so a future failure distinguishes startup from script work.
+    launched_ms = time.time_ns() // 1_000_000
+    try:
+        result = subprocess.run([
+            "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-File", str(harness), "-BuildScript", str(ROOT / "packaging/build-windows.ps1"),
+            "-PolicySource", str(ROOT / "shared/desktop-release/prerequisite-policy.json"),
+            "-ProjectRoot", str(tmp_path / "source"),
+        ], capture_output=True, text=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW)
+    except subprocess.TimeoutExpired as exc:
+        stdout, stderr = exc.stdout or "", exc.stderr or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        pytest.fail(
+            f"Policy probe timed out after 30s (launch UTC ms={launched_ms}); "
+            f"partial stdout: {stdout[-4096:]!r}; partial stderr: {stderr[-4096:]!r}",
+            pytrace=False,
+        )
     assert result.returncode == 0, result.stdout + result.stderr
+    markers = [line.split(":")[1] for line in result.stdout.splitlines() if line.startswith("policy_probe:")]
+    assert markers == ["script_entry", "parse_begin", "parse_end", "function_begin",
+                       "function_end", "valid_begin", "invalid_begin", "schema_begin", "complete"], result.stdout
 
 
+@pytest.mark.serial
 @pytest.mark.skipif(os.name != "nt", reason="Windows Inno version policy consumer")
 @pytest.mark.parametrize("minimum_kind", ["shared", "large_major"])
 def test_inno_webview_floor_uses_canonical_four_part_numeric_versions(tmp_path, minimum_kind):

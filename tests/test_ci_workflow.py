@@ -474,6 +474,7 @@ def test_windows_hang_diagnostics_preserve_bounded_job_limits_and_test_execution
         job = jobs[name]
         assert job["timeout-minutes"] == minutes
         assert job["env"]["CI_PYTEST_LIVE_PROGRESS"] == "1"
+        assert job["env"]["CI_PYTEST_WATCHDOG_SECONDS"] == "600"
         for step in _steps(job):
             environment = step.get("env", {})
             if "CI_TEST_LANE" not in environment:
@@ -483,8 +484,8 @@ def test_windows_hang_diagnostics_preserve_bounded_job_limits_and_test_execution
                 assert not any("faulthandler_" in option for option in options)
                 continue
             execution_lanes.add(environment["CI_TEST_LANE"])
-            assert "faulthandler_timeout=120" in options
-            assert "faulthandler_exit_on_timeout=false" in options
+            assert "faulthandler_timeout=0" in options
+            assert not any("faulthandler_exit_on_timeout" in option for option in options)
             assert step.get("continue-on-error", False) is False
         upload = next(step for step in _steps(job) if step.get("name") == "Retain backend timing and selection")
         assert upload["if"] == "always()"
@@ -525,7 +526,7 @@ def test_windows_platform_groups_are_independent_and_auxiliary_work_runs_once() 
 
 
 def _assert_windows_pr_cutover(workflow: dict[str, Any]) -> None:
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v7-pr-cutover"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v8-pr-cutover"
     triggers = workflow["on"]
     assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}, "Product CI must not schedule duplicate exhaustive runs"
     assert triggers["push"] == {"branches": ["main"]}
@@ -1311,7 +1312,7 @@ def _assert_python313_loop_counterpart(workflow: dict[str, Any]) -> None:
         "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
         "PYTEST_ADDOPTS": "-p tools.ci_pytest --durations=50 --durations-min=0.25 "
             "--junitxml=artifacts/ci-tests/windows-python313-loop-contract/junit.xml "
-            "-o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false",
+            "-o faulthandler_timeout=0",
     }
     command = execute["run"]
     assert '-m pytest --noconftest --rootdir "$env:GITHUB_WORKSPACE"' in command

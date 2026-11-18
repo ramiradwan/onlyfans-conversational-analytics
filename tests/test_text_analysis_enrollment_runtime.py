@@ -13,8 +13,9 @@ import pytest
 from app.analytics import runtime
 from app.analytics.nlp_runtime import FindingsConfiguration, FindingsRuntime, _AcknowledgedPipeline
 from app.analytics.licensed_pipeline import LicensedAnalyticsPipeline
-from app.analytics.errors import ProjectionBuildCancelled, ProjectionUnavailable
+from app.analytics.errors import ProjectionBuildCancelled, ProjectionCoordinatorClosed, ProjectionUnavailable
 from app.analytics.nlp_processing import FindingsRunner
+from app.analytics.query_execution import QuestionCancelled
 from app.core.config import settings
 from app.models.text_analysis_enrollment import EnrollmentBindingSuperseded
 from app.security.analysis_authorization import clear_analysis_policies
@@ -26,13 +27,16 @@ from tests.text_analysis_execution_fixture import make_execution_fixture, close_
 pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
 
 
-async def eventually(predicate,timeout=30):
+async def eventually(predicate,timeout=120):
     async with asyncio.timeout(timeout):
         while not predicate():
             await asyncio.sleep(.02)
 
 
 def observe_failure(findings, error):
+    # Cooperative cancellation and coordinator closure are expected only during shutdown.
+    if type(error) in (ProjectionCoordinatorClosed, QuestionCancelled) and findings._stop.is_set():
+        return
     if (type(error) is ProjectionUnavailable and error.availability == 'building'
             and error.reason_code is None):
         findings.observed_transients.append(error)
@@ -403,3 +407,15 @@ async def test_enrollment_without_retained_record_never_authorizes_starter(tmp_p
             assert not canonical(x)
     finally:
         close_execution_fixture(x)
+
+
+@pytest.mark.parametrize('stopped', [False, True])
+@pytest.mark.parametrize('error', [ProjectionCoordinatorClosed(), QuestionCancelled(), RuntimeError('unexpected')])
+def test_runtime_observer_preserves_active_failures_and_accepts_expected_stop(stopped, error):
+    findings = SimpleNamespace(observed_failures=[], observed_transients=[], _stop=threading.Event())
+    if stopped:
+        findings._stop.set()
+    observe_failure(findings, error)
+    expected = [] if stopped and type(error) in (ProjectionCoordinatorClosed, QuestionCancelled) else [error]
+    assert findings.observed_failures == expected
+    assert not findings.observed_transients

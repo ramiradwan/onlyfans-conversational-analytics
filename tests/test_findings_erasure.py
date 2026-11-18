@@ -21,6 +21,7 @@ pytestmark = pytest.mark.ci_tier("integration")
 
 
 def resources(f, **kwargs):
+    kwargs.setdefault("budget_seconds", 60)
     erasure = FindingsErasure(f.source, f.stores.projections, clock=lambda: f.clock.now)
     operations = ManagedDeletionOperations(f.repositories.database)
 
