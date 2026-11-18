@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 
 import { Panel, SettingRow } from './ui';
 
+import { captureRecovery, recoveryClass } from '../../shared-setup/recovery.js';
 import type { BrowserSurfacePayload } from '../protocol';
 import {
   type BrowserControlApi,
@@ -97,10 +98,11 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
     <Button onClick={() => void open(step)} size="small" variant="outlined">{label}</Button>
   ) : undefined);
 
+  const captureFailure = recoveryClass(captureRecovery, pending?.status);
   const feedbackText = browser === null ? null
-    : pending?.status === 'unknown' ? "Your change hasn't been confirmed."
-      : pending?.status === 'refused' ? "Dipsy couldn't change message collection."
-        : pending?.status === 'unreachable' || notice === 'unreachable' ? 'The browser extension is not connected right now.'
+    : captureFailure === 'outcome_unknown' ? "Your change hasn't been confirmed."
+      : captureFailure === 'authorization_refused' ? "Dipsy couldn't change message collection."
+        : captureFailure === 'browser_disconnected' || notice === 'unreachable' ? 'The browser extension is not connected right now.'
           : notice === 'failed' ? 'The change was not confirmed.' : null;
   useEffect(() => { onFeedback?.(feedbackText); }, [feedbackText, onFeedback]);
   useEffect(() => () => onFeedback?.(null), [onFeedback]);

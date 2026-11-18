@@ -1,3 +1,4 @@
+import { coverageRecovery, firstResultRecovery, recoveryClass } from '../../shared-setup/recovery.js';
 import type {
   AgentStatePayload,
   AnalyticsMetric,
@@ -102,12 +103,15 @@ export function humanizeProjectionReason(
   if (reason === null) return whenAbsent;
   // Projection reasons do not establish active work or a customer remedy.
   // The caller's state title carries availability; only explicit copy adds detail.
-  return overrides?.[reason] ?? '';
+  return recoveryClass(firstResultRecovery, reason) !== 'invariant_failed' || Object.hasOwn(firstResultRecovery, reason)
+    ? overrides && Object.hasOwn(overrides, reason) ? overrides[reason] : ''
+    : '';
 }
 
 export function humanizeCoverageReason(reason: string | null, whenAbsent: string): string {
   if (reason === null) return whenAbsent;
-  return COVERAGE_REASON_TEXT[reason] ?? whenAbsent;
+  return recoveryClass(coverageRecovery, reason) !== 'invariant_failed' && Object.hasOwn(COVERAGE_REASON_TEXT, reason)
+    ? COVERAGE_REASON_TEXT[reason] : whenAbsent;
 }
 
 /** The inventory is frozen only when the owner enters backfill. */

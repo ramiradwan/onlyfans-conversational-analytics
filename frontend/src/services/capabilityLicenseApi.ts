@@ -1,4 +1,5 @@
 import type { AnalysisReadiness } from '../../onboarding/client.js';
+import { activationRecovery, recoveryClass } from '../../shared-setup/recovery.js';
 
 export const CAPABILITY_LICENSE_CONTINUATION_PATTERN = /^clr1\.[A-Za-z0-9_-]{43}$/u;
 
@@ -77,8 +78,8 @@ const REFUSAL_MESSAGES: Record<string, string> = {
 
 function redemptionFailure(status: number, detail: unknown): CapabilityLicenseApiError {
   if (typeof detail === 'string' && Object.hasOwn(REFUSAL_MESSAGES, detail)) {
-    const refused = ['redemption_expired', 'redemption_invalid', 'redemption_conflict',
-      'redemption_unauthorized', 'redemption_mismatch'].includes(detail);
+    const classification = recoveryClass(activationRecovery, detail);
+    const refused = classification === 'authorization_refused' || classification === 'account_mismatch';
     return new CapabilityLicenseApiError(REFUSAL_MESSAGES[detail], status, refused ? 'refused' : 'unknown');
   }
   // A generic HTTP failure cannot establish the original redemption's outcome.

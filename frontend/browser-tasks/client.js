@@ -2,6 +2,7 @@ import { isPayloadProjection, isPreparingPayload, UUID } from '../../shared/brow
 import { parseOnboardingJson } from '../../shared/onboarding/json.mjs';
 import { connectExtension, openWaiting, reattachExtension } from './extension.js';
 import { readBrowserTaskEvents } from './events.js';
+import { browserReadRecovery, recoveryClass } from '../shared-setup/recovery.js';
 
 const AUTHENTICATION_POLL_MS = 500;
 // A sign-in task can open before its ceremony exists. Its helper reads again until the ceremony arrives.
@@ -35,7 +36,7 @@ function requestFailure(status) {
 }
 function temporaryReadFailure(error) {
   return error instanceof BrowserTaskReadError
-    ? ['read_timeout', 'owner_unavailable'].includes(error.code)
+    ? recoveryClass(browserReadRecovery, error.code) === 'transport_interrupted'
     : error instanceof TypeError;
 }
 
@@ -417,7 +418,11 @@ export class BrowserTaskClient {
       if (run === this.run) {
         const payload = this.payload ?? this.declared;
         this.stop();
-        this.receive({ state: ['task_changed', 'task_expired'].includes(error.message) ? error.message : 'service_unavailable', payload });
+        const state = ['task_changed', 'task_expired'].includes(error.message) ? error.message : 'service_unavailable';
+        this.receive({ state, payload, ...(state === 'service_unavailable' ? {
+          recovery: temporaryReadFailure(error) ? 'owner_unavailable'
+            : error instanceof BrowserTaskReadError ? recoveryClass(browserReadRecovery, error.code) : 'invariant_failed',
+        } : {}) });
       }
     } finally {
       if (this.initialReadController === controller) this.initialReadController = null;
@@ -553,7 +558,8 @@ export class BrowserTaskClient {
       }
       if (!temporaryReadFailure(error)) {
         const payload = this.payload;
-        this.stop(); this.receive({ state: 'service_unavailable', payload }); return;
+        this.stop(); this.receive({ state: 'service_unavailable', payload,
+          recovery: error instanceof BrowserTaskReadError ? recoveryClass(browserReadRecovery, error.code) : 'invariant_failed' }); return;
       }
       this.pollDelay = Math.min((this.statusUnavailable ? this.pollDelay : this.fallbackPoll) * 2, 15000);
       this.statusUnavailable = true;

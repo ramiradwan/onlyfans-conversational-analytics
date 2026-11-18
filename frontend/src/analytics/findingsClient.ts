@@ -1,5 +1,6 @@
 import { parseFindings, parseGroupedFindings, FindingsContractError, type FindingsRequest, type FindingsResponse } from './findingsContract';
 import type { EvidenceContextRequest, EvidenceContext, QuestionEvidence, SourceEvidence } from './questionContract';
+import { findingsRecovery, recoveryClass } from '../../shared-setup/recovery.js';
 import { FINDINGS } from '../config/endpoints';
 import { createQuestionApi } from '../services/questionApi';
 
@@ -59,11 +60,12 @@ export function createFindingsClient(options: { fetcher?: typeof fetch; csrf?: (
         if (!result.ok) {
           const code = value && typeof value === 'object' && 'detail' in value && value.detail
             && typeof value.detail === 'object' && 'code' in value.detail ? value.detail.code : null;
-          if (code === 'analytics_projection_building') throw new FindingsClientError('building', 'Your saved analysis is being updated. Refresh the analytics view shortly.');
-          if (code === 'analytics_findings_invalid' || code === 'analytics_projection_error') throw new FindingsClientError('error', 'The saved text analysis could not be verified. Refresh the analytics view.');
+          const classification = recoveryClass(findingsRecovery, code);
+          if (classification === 'operation_pending') throw new FindingsClientError('building', 'Your saved analysis is being updated.');
           if (result.status === 401 || result.status === 403) throw new FindingsClientError('unavailable', 'Your session changed. Reload the app to sign in again.');
-          if (result.status === 503) throw new FindingsClientError('unavailable', 'Text analysis is unavailable for this saved analysis. Other analytics remain available.');
-          throw new FindingsClientError('error', 'Text analysis results could not be loaded. Check the filters and try again.');
+          if (classification === 'invariant_failed') throw new FindingsClientError('error', 'The saved text analysis could not be verified.');
+          if (classification === 'owner_unavailable' || result.status === 503 && classification === null) throw new FindingsClientError('unavailable', 'Text analysis is unavailable for this saved analysis. Other analytics remain available.');
+          throw new FindingsClientError('error', 'Text analysis results could not be loaded.');
         }
         const parsed = request.view === 'grouped' ? await parseGroupedFindings(value, request) : parseFindings(value, request);
         if (controller.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
@@ -71,7 +73,7 @@ export function createFindingsClient(options: { fetcher?: typeof fetch; csrf?: (
       } catch (error) {
         if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
         if (error instanceof FindingsClientError || error instanceof FindingsContractError) throw error;
-        throw new FindingsClientError('error', 'The app could not be reached. Check that it is running and try again.');
+        throw new FindingsClientError('error', 'Dipsy could not be reached.');
       } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
     },
   };

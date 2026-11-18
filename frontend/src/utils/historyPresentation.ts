@@ -1,3 +1,4 @@
+import { historyOwnerRecovery, recoveryClass } from '../../shared-setup/recovery.js';
 import type { AgentStatePayload, HistoricalCoverage, HistorySettings } from '../protocol';
 
 export interface HistoryPresentation {
@@ -28,8 +29,15 @@ export function presentHistory(settings: HistorySettings, agent: AgentStatePaylo
   if (settings.desired_state !== settings.effective_state) return {
     label: 'Starting', detail: 'Waiting for the extension to apply message history settings.', tone: 'info',
   };
-  if (agent.browser?.history_error_code === 'history_dependency_wait') return {
-    label: 'Waiting', detail: 'History collection is temporarily waiting. It will retry automatically.', tone: 'info',
+  const ownerFailure = recoveryClass(historyOwnerRecovery, agent.browser?.history_error_code);
+  if (ownerFailure === 'account_mismatch') return {
+    label: 'Account needed', detail: 'Open your creator account in Chrome.', tone: 'warning',
+  };
+  if (ownerFailure === 'owner_unavailable' || ownerFailure === 'invariant_failed') return {
+    label: 'Needs attention', detail: 'Message history is unavailable right now.', tone: 'warning',
+  };
+  if (ownerFailure === 'operation_pending') return {
+    label: 'Waiting', detail: 'History collection is waiting for the browser.', tone: 'info',
   };
   if (agent.browser?.history_error_code === 'software_update_required') return {
     label: 'Update needed', detail: 'History collection is waiting for a compatible app update.', tone: 'warning',

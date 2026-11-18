@@ -1813,6 +1813,11 @@
           "kind": "unit",
           "file": "frontend/tests/CreatorDashboardView.test.tsx",
           "name": "offers an explicit resume when coverage is already paused"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/recoveryClassification.test.ts",
+          "name": "covers the current capture, history and protocol reason unions"
         }
       ]
     },
@@ -2049,6 +2054,11 @@
           "kind": "unit",
           "file": "frontend/tests/CommercialActivationControls.test.tsx",
           "name": "retires a pending code response on presentation replacement and resumes only the original code"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/recoveryClassification.test.ts",
+          "name": "covers all customer-facing desktop, browser, passkey and activation codes"
         }
       ]
     },
@@ -2570,6 +2580,11 @@
           "kind": "unit",
           "file": "frontend/tests/desktop-setup.test.js",
           "name": "reconnects after a local service interruption without resending commands or opening Chrome"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/recoveryClassification.test.ts",
+          "name": "fails closed on an unknown desktop failure even with a previously permitted action"
         }
       ]
     },
@@ -3036,6 +3051,11 @@
           "kind": "unit",
           "file": "frontend/tests/browser-task-push.test.js",
           "name": "stops after the existing bounded preparation read recovery budget"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/recoveryClassification.test.ts",
+          "name": "renders a refused browser read differently from an unavailable owner without offering another sign-in"
         }
       ]
     },

@@ -6,6 +6,7 @@ import type {
   ProjectionState,
 } from '../protocol';
 import { isConfigurationAligned } from './dataReadiness';
+import { protocolRecovery, recoveryClass } from '../../shared-setup/recovery.js';
 
 /**
  * Plain-language status copy for creators. Views derive every status sentence from
@@ -85,11 +86,12 @@ export function extensionLabel(connection: ExtensionConnection): string {
 }
 
 export function protocolErrorText(error: Pick<ProtocolErrorPayload, 'code' | 'fatal'>): string {
-  if (error.code === 'unauthorized') return 'Your session ended. Reload the page to sign in again.';
-  if (error.code === 'unsupported_version') return 'This page is out of date. Reload the page.';
+  const classification = recoveryClass(protocolRecovery, error.code);
+  if (classification === 'authentication_required') return 'Your session ended. Reload the page to sign in again.';
+  if (classification === 'version_incompatible') return 'This page is out of date. Reload the page.';
   return error.fatal
-    ? 'Something went wrong. Reload the page to try again.'
-    : 'Something went wrong with the last update. If this keeps happening, reload the page.';
+    ? "Dipsy couldn't continue the connection."
+    : 'The last update could not be verified.';
 }
 
 /** True until the creator has started message history for the first time. */

@@ -20,6 +20,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { Panel, SectionHeader, useRevealHold } from './ui';
 import { StatusLine } from './ui/ReservedRegion';
+import { historyRequestRecovery, recoveryClass } from '../../shared-setup/recovery.js';
 import { usePermissions } from '../hooks/usePermissions';
 import type { HistorySettings } from '../protocol';
 import { browserControlApi, type BrowserControlApi } from '../services/browserControlApi';
@@ -403,7 +404,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
     } catch (cause) {
       if (controller.signal.aborted || !currentAccount(settings)) return;
       const disposition = historyFailure(cause);
-      const refused = disposition === 'refused';
+      const refused = recoveryClass(historyRequestRecovery, disposition) === 'authorization_refused';
       let reconciled = false;
       try { reconciled = await reconcileChange(change, controller.signal, refused); }
       catch { /* A rejected read is not evidence about the write. */ }
@@ -602,6 +603,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
       ? 'Starting message history'
       : presentation?.label === 'Waiting' ? 'Waiting for message history'
         : presentation?.label === 'Update needed' ? 'Update needed'
+          : presentation?.label === 'Account needed' ? 'Open your creator account'
           : presentation?.label === 'Needs attention' || presentation?.label === 'Incomplete' ? 'Message history needs attention'
             : 'Waiting for messages';
   const title = !ready ? 'Waiting for messages'

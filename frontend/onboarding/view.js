@@ -1,5 +1,6 @@
 import { focusTransition, setStatus } from '../shared-setup/presentation.js';
 import { browserRecoveryTarget } from './browser-task.js';
+import { desktopRecovery, passkeyRecovery, recoveryClass } from '../shared-setup/recovery.js';
 
 const tasks = {
   'browser-access': ['Browser access', 'Allow the extension to use this Chrome profile and select the creator account.', 'setup_browser_access'],
@@ -65,7 +66,8 @@ export function renderSetup(document, state) {
   setStatus(get('local-auth-status'), lapsed?.[1]
     || (authentication?.recoveringStatus ? 'Checking access automatically…' : null)
     || (authentication?.checking ? 'Checking access on this computer…' : null)
-    || passkeyErrors[authentication?.error]
+    || (authentication?.error ? recoveryClass(passkeyRecovery, authentication.error) === 'invariant_failed'
+      ? 'Access on this computer could not be checked.' : passkeyErrors[authentication.error] : null)
     || (authentication?.busy ? 'Waiting for verification…' : ''));
   const task = value?.next_task;
   const decision = value?.decision?.action === 'connect-account' && value?.decision_status?.state !== 'accepted'
@@ -140,6 +142,9 @@ export function renderSetup(document, state) {
   get('setup-code-open').disabled = !state.connected || pending;
   const operationReason = value?.pending_operations.find(item => item.reason !== 'none')?.reason;
   const reason = state.error || (value?.reason === 'none' ? null : value?.reason) || operationReason;
+  const reasonClass = recoveryClass(desktopRecovery, reason);
+  const reasonMessage = reasonClass === 'invariant_failed' ? "Setup couldn't continue." : reasonClass ? errors[reason] : null;
+  if (reasonClass === 'invariant_failed') get('setup-code-open').hidden = true;
   const signInMessage = { selected: 'Finish signing in in Chrome.', expired: 'This sign-in request expired.',
     retired: 'Sign-in was cancelled.', unavailable: 'The sign-in request could not be confirmed.' }[signIn?.state];
   const finalizing = task === 'finish-setup' && (allowed.includes('setup.finalize')
@@ -154,13 +159,13 @@ export function renderSetup(document, state) {
   // The access section explains a lapse. Nothing progresses until access returns,
   // so the task line then names only errors unrelated to it.
   const unfinished = canSelect && signIn?.state === 'reauthentication-required' && !state.acting;
-  setStatus(get('task-status'), (lapsed ? reason !== 'authority_unavailable' && errors[reason]
-    : unfinished ? 'Sign-in did not finish.' : errors[reason] || progress) || '');
-  get('sign-in-options').hidden = !showingProviders;
+  setStatus(get('task-status'), (lapsed ? reason !== 'authority_unavailable' && reasonMessage
+    : reasonClass === 'invariant_failed' ? reasonMessage : unfinished ? 'Sign-in did not finish.' : reasonMessage || progress) || '');
+  get('sign-in-options').hidden = !showingProviders || reasonClass === 'invariant_failed';
   for (const button of get('sign-in-options').querySelectorAll('[data-provider]')) {
     // Without a projection the opening choices keep the visibility they were clicked in.
     if (signIn || !opening) button.hidden = !signIn?.choices[button.dataset.provider];
-    button.disabled = controlsDisabled || opening;
+    button.disabled = controlsDisabled || opening || reasonClass === 'invariant_failed';
     if (opening && button.dataset.provider === state.provider) button.setAttribute('aria-busy', 'true');
     else button.removeAttribute('aria-busy');
     button.dataset.action = choosingAccount ? 'auth.switch' : selectAction;
@@ -169,7 +174,7 @@ export function renderSetup(document, state) {
     : allowed.find(item => actions[item] && (item !== 'browser.access' || task === 'browser-access')
       && (item !== 'account.connect' || signIn?.state === 'admitted'));
   const taskAction = get('task-action');
-  taskAction.hidden = !action || showingProviders || accepted || !localAccessReady
+  taskAction.hidden = reasonClass === 'invariant_failed' || !action || showingProviders || accepted || !localAccessReady
     || action === 'browser.pair' && (!pairingAvailable || pending);
   taskAction.disabled = controlsDisabled || (decision ? Boolean(state.pending) : pending);
   taskAction.textContent = value?.continuation_available && action === 'account.connect' ? 'Continue setup'
@@ -177,12 +182,12 @@ export function renderSetup(document, state) {
   taskAction.dataset.action = taskAction.hidden ? '' : action;
   const recoveryTarget = browserRecoveryTarget(value, reason ?? null);
   const browserReopen = get('browser-reopen');
-  browserReopen.hidden = !recoveryTarget || accepted || showingProviders || Boolean(decision) || !state.connected
+  browserReopen.hidden = reasonClass === 'invariant_failed' || !recoveryTarget || accepted || showingProviders || Boolean(decision) || !state.connected
     || Boolean(state.browserLaunchPending || state.acting || !localAccessReady);
   browserReopen.disabled = controlsDisabled;
   browserReopen.dataset.operation = browserReopen.hidden ? '' : recoveryTarget;
   browserReopen.textContent = 'Open Chrome';
-  get('sign-in-switch').hidden = !canSwitch || choosingAccount;
+  get('sign-in-switch').hidden = !canSwitch || choosingAccount || reasonClass === 'invariant_failed';
   get('sign-in-switch').textContent = 'Use a different sign-in account';
   get('sign-in-switch').disabled = controlsDisabled;
   get('sign-in-back').hidden = !choosingAccount;

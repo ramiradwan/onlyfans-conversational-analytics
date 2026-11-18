@@ -65,7 +65,7 @@ export function createFindingsStore(api?: FindingsClient, options: { view?: 'gro
       store.setState({ result, status: 'ready', message: null });
     } catch (error) {
       if (current(run.id)) store.setState({ result: null, status: error instanceof FindingsClientError ? error.state : 'error',
-        message: error instanceof FindingsClientError ? error.message : 'These text analysis results could not be verified. Refresh the analytics view.' });
+        message: error instanceof FindingsClientError ? error.message : 'These text analysis results could not be verified.' });
     }
   }
   function setContext(baseline: FindingsBaseline | null, next: Context, direction: FindingsDirection, conversation: string | null = null,

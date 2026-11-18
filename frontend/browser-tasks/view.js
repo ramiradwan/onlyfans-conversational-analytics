@@ -1,4 +1,5 @@
 import { setStatus } from '../shared-setup/presentation.js';
+import { browserRecovery, recoveryClass } from '../shared-setup/recovery.js';
 const journeyStates = { loading: 'loading', unavailable: 'unavailable', profile_mismatch: 'profile_mismatch',
   account_mismatch: 'account_mismatch', auth_idle: 'auth_idle', auth_opening: 'auth_opening', auth_checking: 'auth_checking',
   auth_unconfirmed: 'auth_unconfirmed', auth_access_required: 'auth_access_required', auth_closed: 'auth_closed',
@@ -43,8 +44,13 @@ export function renderBrowserTask(document, value) {
   const pairing = payload?.task.purpose === 'browser.pairing-confirmation';
   const state = Object.hasOwn(status, value.state) ? value.state : 'service_unavailable';
   document.querySelector('main').dataset.journeyState = 'browser.' + journeyStates[state];
-  setStatus(get('task-status'), !payload && state === 'service_unavailable'
-    ? 'Dipsy can’t connect right now. Open the desktop app to continue setup.' : status[state]);
+  const classification = value.recovery ?? recoveryClass(browserRecovery, value.state);
+  const failure = state === 'service_unavailable' && classification === 'invariant_failed'
+    ? "This browser task couldn't continue."
+    : state === 'service_unavailable' && classification === 'authorization_refused'
+      ? 'This browser task is not authorized.' : null;
+  setStatus(get('task-status'), failure || (!payload && state === 'service_unavailable'
+    ? 'Dipsy can’t connect right now. Open the desktop app to continue setup.' : status[state]));
   get('pairing-replace').hidden = !pairing || state !== 'pairing_saved';
   get('task-title').textContent = pairing ? 'Connect browser' : authentication ? 'Sign in' : 'Browser access';
   get('extension-open').hidden = authentication || pairing || !['needs-consent', 'needs-permission', 'needs-account'].includes(state);
