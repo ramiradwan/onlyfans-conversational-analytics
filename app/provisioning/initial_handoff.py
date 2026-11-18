@@ -378,8 +378,10 @@ class InitialInstallationEnrollment:
         if receipt["operation_id"] != row["operation_id"]:
             raise HostedGrantUnavailable("Initial operation mismatch")
         self._record_claim(row, receipt)
-        await self._effects.run(self.grants.recover_bootstrap_v2, claim_id=receipt["claim_id"],
-                                recovery_request_id=self.journeys.new_operation(), journey_id=row["journey_id"])
+        # The existing durable handoff operation ID is also the stable
+        # purpose-separated bootstrap recovery correlation. No new ID on a lost reply.
+        await self._effects.run(self.grants.recover_bootstrap_v3, claim_id=receipt["claim_id"],
+                                recovery_request_id=row["operation_id"], journey_id=row["journey_id"])
         row = self.journeys.update(row["journey_id"], state="completed", reason=None)
         self._candidate(row)
         events.publish()

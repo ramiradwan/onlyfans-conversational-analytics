@@ -242,3 +242,63 @@ def test_bootstrap_recovery_matches_all_published_v2_outcome_classes(filename: s
         with pytest.raises(BootstrapRecoveryRefused) as exc:
             client.recover_bootstrap_v2(claim_id=store.submission.claim_id, recovery_request_id=recovery_id)
         assert exc.value.result == case["expected_result"]
+
+@pytest.mark.parametrize("detail", ["bootstrap_authentication_required", "bootstrap_authority_withdrawn",
+    "installation_binding_mismatch", "unknown"])
+def test_bounded_bootstrap_v3_preserves_exact_refusal_without_a_v2_fallback(detail):
+    from app.security.hosted_grants import BOOTSTRAP_RECOVERY_PROFILE_V3
+    store = FakeStore(_submission(consumed=True, enrolled_at=NOW - timedelta(days=37)))
+    key = _key()
+    final = _response(403, {"profile": "urn:bridge-clean:error:v1",
+        "request_id": "0198a1b2-c3d4-7300-8000-000000000099", "code": "forbidden", "detail": detail})
+    class RecordingTransport(VectorTransport):
+        def request(self, method, path, *, json_body):
+            if self.calls == 1:
+                assert json_body["request"]["profile"] == BOOTSTRAP_RECOVERY_PROFILE_V3
+            return super().request(method, path, json_body=json_body)
+    transport = RecordingTransport(key, final)
+    client = HostedGrantClient(transport, FakeProofAuthority(key), store, trust_set={"keys": []})
+    with pytest.raises(HostedGrantUnavailable if detail == "unknown" else BootstrapRecoveryRefused) as exc:
+        client.recover_bootstrap_v3(claim_id=store.submission.claim_id,
+            recovery_request_id="0198a1b2-c3d4-7300-8000-000000000020")
+    if detail != "unknown":
+        assert exc.value.result == detail
+    assert transport.calls == 2 and not store.recorded
+
+
+def test_bounded_bootstrap_v3_cannot_admit_a_success_beyond_the_fixed_enrollment_window(monkeypatch):
+    from app.security.hosted_grants import BOOTSTRAP_RECOVERY_PROFILE_V3
+    case = json.loads((VECTORS / "bootstrap-recovery-v2-positive.json").read_text("utf-8"))[0]
+    response = {**case["response"], "profile": BOOTSTRAP_RECOVERY_PROFILE_V3}
+    enrolled = datetime(2026, 9, 13, 7, 51, tzinfo=timezone.utc)
+    response["recovered_at"] = (enrolled + timedelta(days=37)).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    key = _key()
+    store = FakeStore(_submission(consumed=True, enrolled_at=enrolled))
+    client = HostedGrantClient(VectorTransport(key, _response(200, response)), FakeProofAuthority(key), store,
+        trust_set={"keys": []})
+    monkeypatch.setattr(client, "_verify_bundle", lambda *args, **kwargs: pytest.fail("late grants must not be verified or applied"))
+    with pytest.raises(HostedGrantUnavailable, match="deadline changed"):
+        client.recover_bootstrap_v3(claim_id=store.submission.claim_id,
+            recovery_request_id=response["recovery_request_id"])
+    assert not store.recorded
+
+
+def test_bounded_bootstrap_v3_accepts_verified_grants_before_fixed_deadline(monkeypatch):
+    from app.security.hosted_grants import BOOTSTRAP_RECOVERY_PROFILE_V3
+    case = json.loads((VECTORS / "bootstrap-recovery-v2-positive.json").read_text("utf-8"))[0]
+    response = {**case["response"], "profile": BOOTSTRAP_RECOVERY_PROFILE_V3}
+    enrolled = datetime(2026, 9, 13, 7, 51, tzinfo=timezone.utc)
+    recovered = enrolled + timedelta(days=37, milliseconds=-1)
+    response["recovered_at"] = recovered.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    key = _key()
+    store = FakeStore(_submission(consumed=True, enrolled_at=enrolled))
+    transport = VectorTransport(key, _response(200, response))
+    client = HostedGrantClient(transport, FakeProofAuthority(key), store, trust_set={"keys": []})
+    verified = _fake_references()
+    monkeypatch.setattr(client, "_verify_bundle", lambda *args, **kwargs: verified)
+    result = client.recover_bootstrap_v3(claim_id=store.submission.claim_id,
+        recovery_request_id=response["recovery_request_id"])
+    assert result.enrolled_at == enrolled
+    assert result.recovered_at == recovered
+    assert tuple(store.recorded) == verified
+    assert transport.calls == 2
