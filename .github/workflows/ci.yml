@@ -22,17 +22,6 @@ name: CI
         description: Run the complete serial browser control (requires browser_qualification)
         type: boolean
         default: false
-      windows_pytest_dist:
-        description: pytest-xdist scheduler for the parallel phase of Windows backend lanes
-        type: choice
-        options:
-          - load
-          - worksteal
-        default: load
-      windows_defender_exclusions:
-        description: Exclude the workspace and runner temporary directory from Defender scanning on Windows backend lanes
-        type: boolean
-        default: false
 permissions:
   contents: read
 concurrency:
@@ -470,10 +459,6 @@ jobs:
           New-Item -ItemType Directory -Force $testTemp | Out-Null
           "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp" |
             Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Exclude test storage from Defender scanning
-        if: github.event_name == 'workflow_dispatch' && inputs.windows_defender_exclusions
-        shell: pwsh
-        run: ./tools/ci_windows_host.ps1 -ExcludeTestStorage
       - name: Describe Windows test host
         shell: pwsh
         run: ./tools/ci_windows_host.ps1
@@ -538,15 +523,23 @@ jobs:
       - name: Validate exhaustive Windows shard inventory
         if: matrix.shard == 1
         run: python tools/test_backend.py validate-windows-manifest --inventory artifacts/ci-tests/legacy-windows-reference/report.json
+      - name: Start host counter sampling
+        continue-on-error: true
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1 -StartCounters
       - name: Test Windows platform contract
         env:
           CI_TEST_LANE: windows-platform-contract-${{ matrix.shard }}
           CI_REPORT_DIR: artifacts/ci-tests/windows-platform-contract-${{ matrix.shard }}
           CI_PYTEST_WORKERS: '4'
-          CI_PYTEST_DIST: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_pytest_dist || 'load' }}
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-platform-contract-${{ matrix.shard }}/junit.xml
             -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: python tools/test_backend.py --lane windows-platform-contract --shard ${{ matrix.shard }}
+      - name: Stop host counter sampling
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1 -StopCounters -Destination artifacts/ci-tests/windows-platform-contract-${{ matrix.shard }}
       - name: Test Windows production boot
         if: matrix.shard == 1
         run: python -m pytest -m "not slow and windows_production and not stateful_tier_b"
@@ -685,10 +678,6 @@ jobs:
           New-Item -ItemType Directory -Force $testTemp | Out-Null
           "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp" |
             Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Exclude test storage from Defender scanning
-        if: github.event_name == 'workflow_dispatch' && inputs.windows_defender_exclusions
-        shell: pwsh
-        run: ./tools/ci_windows_host.ps1 -ExcludeTestStorage
       - name: Describe Windows test host
         shell: pwsh
         run: ./tools/ci_windows_host.ps1
@@ -742,15 +731,23 @@ jobs:
         run: npm run build:assets --prefix frontend
       - name: Build extension
         run: npm run build --prefix extension
+      - name: Start host counter sampling
+        continue-on-error: true
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1 -StartCounters
       - name: Test Windows analytics contract
         env:
           CI_TEST_LANE: analytics-windows-contract
           CI_REPORT_DIR: artifacts/ci-tests/analytics-windows-contract
           CI_PYTEST_WORKERS: '4'
-          CI_PYTEST_DIST: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_pytest_dist || 'load' }}
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/analytics-windows-contract/junit.xml
             -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: python tools/test_backend.py --lane analytics-windows-contract
+      - name: Stop host counter sampling
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1 -StopCounters -Destination artifacts/ci-tests/analytics-windows-contract
       - name: Retain backend timing and selection
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -787,10 +784,6 @@ jobs:
           New-Item -ItemType Directory -Force $testTemp | Out-Null
           "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp" |
             Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Exclude test storage from Defender scanning
-        if: github.event_name == 'workflow_dispatch' && inputs.windows_defender_exclusions
-        shell: pwsh
-        run: ./tools/ci_windows_host.ps1 -ExcludeTestStorage
       - name: Describe Windows test host
         shell: pwsh
         run: ./tools/ci_windows_host.ps1
@@ -844,15 +837,23 @@ jobs:
         run: npm run build:assets --prefix frontend
       - name: Build extension
         run: npm run build --prefix extension
+      - name: Start host counter sampling
+        continue-on-error: true
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1 -StartCounters
       - name: Test complete Windows backend regression shard
         env:
           CI_TEST_LANE: windows-full-regression-${{ matrix.shard }}
           CI_REPORT_DIR: artifacts/ci-tests/windows-full-regression-${{ matrix.shard }}
           CI_PYTEST_WORKERS: '4'
-          CI_PYTEST_DIST: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_pytest_dist || 'load' }}
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-full-regression-${{ matrix.shard }}/junit.xml
             -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: python tools/test_backend.py --lane windows-full-regression --shard ${{ matrix.shard }}
+      - name: Stop host counter sampling
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1 -StopCounters -Destination artifacts/ci-tests/windows-full-regression-${{ matrix.shard }}
       - name: Retain backend timing and selection
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -894,10 +895,6 @@ jobs:
           New-Item -ItemType Directory -Force $testTemp | Out-Null
           "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp" |
             Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Exclude test storage from Defender scanning
-        if: github.event_name == 'workflow_dispatch' && inputs.windows_defender_exclusions
-        shell: pwsh
-        run: ./tools/ci_windows_host.ps1 -ExcludeTestStorage
       - name: Describe Windows test host
         shell: pwsh
         run: ./tools/ci_windows_host.ps1
@@ -951,6 +948,10 @@ jobs:
         run: npm run build:assets --prefix frontend
       - name: Build extension
         run: npm run build --prefix extension
+      - name: Start host counter sampling
+        continue-on-error: true
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1 -StartCounters
       - name: Qualify analytics scale on Windows
         env:
           CI_TEST_LANE: analytics-scale-qualification
@@ -958,6 +959,11 @@ jobs:
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/analytics-scale-qualification/junit.xml
             -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: python tools/test_backend.py scale -- --ignore=tests/test_packaged_runtime.py --ignore=tests/test_installation_key.py
+      - name: Stop host counter sampling
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1 -StopCounters -Destination artifacts/ci-tests/analytics-scale-qualification
       - name: Retain backend timing and selection
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

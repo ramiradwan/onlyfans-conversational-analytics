@@ -227,66 +227,6 @@ def test_only_the_default_lane_runners_use_parallel_workers() -> None:
     assert all(command.startswith("python tools/test_backend.py --lane ") for _, command in parallel.values())
 
 
-WINDOWS_PARALLEL_LANES = {"windows-platform-contract": "windows-platform-contract-${{ matrix.shard }}",
-                          "analytics-windows-contract": "analytics-windows-contract",
-                          "windows-full-shards": "windows-full-regression-${{ matrix.shard }}"}
-WINDOWS_DIST = "${{ github.event_name == 'workflow_dispatch' && inputs.windows_pytest_dist || 'load' }}"
-DEFENDER_IF = "github.event_name == 'workflow_dispatch' && inputs.windows_defender_exclusions"
-
-
-def _assert_windows_scheduler_and_host_steps(jobs) -> None:
-    dist = {}
-    for name, job in jobs.items():
-        for step in job.get("steps", []):
-            if "CI_PYTEST_DIST" in step.get("env", {}):
-                dist[(name, step["env"].get("CI_TEST_LANE"))] = step["env"]["CI_PYTEST_DIST"]
-    assert dist == {(name, lane): WINDOWS_DIST for name, lane in WINDOWS_PARALLEL_LANES.items()}, \
-        "only the parallel Windows lanes take the dispatch scheduler, which defaults to load"
-    # Scale qualification shares the analytics contract setup, so it records the same host state.
-    host_jobs = set(WINDOWS_PARALLEL_LANES) | {"analytics-scale-qualification"}
-    for name, job in jobs.items():
-        names = [step.get("name") for step in job.get("steps", [])]
-        if name not in host_jobs:
-            assert "Exclude test storage from Defender scanning" not in names, name
-            continue
-        steps = {step.get("name"): step for step in job["steps"]}
-        exclude, describe = steps["Exclude test storage from Defender scanning"], steps["Describe Windows test host"]
-        assert exclude["if"] == DEFENDER_IF, "Defender exclusions must stay an explicit dispatch choice"
-        assert exclude["run"] == "./tools/ci_windows_host.ps1 -ExcludeTestStorage"
-        assert describe["run"] == "./tools/ci_windows_host.ps1" and "if" not in describe
-        assert not exclude.get("continue-on-error") and not describe.get("continue-on-error")
-        lane = next(index for index, step in enumerate(job["steps"]) if "CI_TEST_LANE" in step.get("env", {}))
-        assert names.index("Exclude test storage from Defender scanning") < names.index("Describe Windows test host") < lane
-
-
-def test_windows_parallel_lanes_take_the_dispatch_scheduler_and_host_diagnostics() -> None:
-    _assert_windows_scheduler_and_host_steps(_workflow_document()["jobs"])
-    assert (ROOT / "tools/ci_windows_host.ps1").is_file()
-
-
-@pytest.mark.parametrize("fault", ["linux-dist", "fixed-dist", "missing-dist", "unconditional-exclusion",
-                                   "exclusion-after-tests"])
-def test_windows_scheduler_and_defender_falsifiers(fault: str) -> None:
-    jobs = deepcopy(_workflow_document()["jobs"])
-    full = jobs["windows-full-shards"]["steps"]
-    lane = next(step for step in full if "CI_PYTEST_DIST" in step.get("env", {}))
-    if fault == "linux-dist":
-        step = next(step for step in jobs["backend-fast"]["steps"] if "CI_PYTEST_WORKERS" in step.get("env", {}))
-        step["env"]["CI_PYTEST_DIST"] = WINDOWS_DIST
-    elif fault == "fixed-dist":
-        lane["env"]["CI_PYTEST_DIST"] = "worksteal"
-    elif fault == "missing-dist":
-        del lane["env"]["CI_PYTEST_DIST"]
-    elif fault == "unconditional-exclusion":
-        del next(step for step in full if step.get("name") == "Exclude test storage from Defender scanning")["if"]
-    else:
-        exclude = next(step for step in full if step.get("name") == "Exclude test storage from Defender scanning")
-        full.remove(exclude)
-        full.append(exclude)
-    with pytest.raises((AssertionError, KeyError)):
-        _assert_windows_scheduler_and_host_steps(jobs)
-
-
 @pytest.mark.parametrize("command", [
     "python tools/test_backend.py --lane fast",
     "python tools/test_backend.py validate-windows-manifest "
@@ -326,15 +266,10 @@ def test_main_and_manual_qualification_are_explicit_without_duplicate_schedule_o
     assert set(events) == {"push", "pull_request", "workflow_dispatch"}
     dispatch = events["workflow_dispatch"]
     assert set(dispatch) == {"inputs"}
-    assert set(dispatch["inputs"]) == {"browser_qualification", "browser_serial_control", "windows_pytest_dist",
-                                       "windows_defender_exclusions"}
-    for name, declaration in dispatch["inputs"].items():
+    assert set(dispatch["inputs"]) == {"browser_qualification", "browser_serial_control"}
+    for declaration in dispatch["inputs"].values():
+        assert declaration["type"] == "boolean" and declaration["default"] is False
         assert declaration.get("required", False) is False
-        if name == "windows_pytest_dist":
-            assert declaration["type"] == "choice" and declaration["options"] == ["load", "worksteal"]
-            assert declaration["default"] == "load"
-        else:
-            assert declaration["type"] == "boolean" and declaration["default"] is False
     assert events["push"] == {"branches": ["main"]}
     assert events["pull_request"] == {"branches": ["main"], "types": ["opened", "synchronize", "reopened"]}
     for event in ("push", "pull_request"):
@@ -370,3 +305,140 @@ def test_legacy_reference_collections_are_independent_of_the_new_selector() -> N
         reference = references[0]
         assert reference["run"] == f'python -m pytest --collect-only --override-ini=addopts= -m "{marker}"'
         assert "--ci-lane" not in reference["env"]["PYTEST_ADDOPTS"]
+
+
+HOST_JOBS = {"windows-platform-contract": "Test Windows platform contract",
+             "analytics-windows-contract": "Test Windows analytics contract",
+             "windows-full-shards": "Test complete Windows backend regression shard",
+             "analytics-scale-qualification": "Qualify analytics scale on Windows"}
+HOST_STEPS = ("Describe Windows test host", "Start host counter sampling", "Stop host counter sampling")
+BENCH = WORKFLOW.parent / "windows-backend-bench.yml"
+
+
+def _assert_windows_host_diagnostics(jobs) -> None:
+    for name, job in jobs.items():
+        steps = job.get("steps", [])
+        names = [step.get("name") for step in steps]
+        if name not in HOST_JOBS:
+            assert not set(HOST_STEPS) & set(names), name
+            continue
+        lane = names.index(HOST_JOBS[name])
+        describe, start, stop = (steps[names.index(step)] for step in HOST_STEPS)
+        assert describe["run"] == "./tools/ci_windows_host.ps1" and "if" not in describe
+        assert names.index("Describe Windows test host") < lane
+        # Sampling brackets exactly the lane step and can never fail the job.
+        assert names[lane - 1] == "Start host counter sampling" and names[lane + 1] == "Stop host counter sampling"
+        assert start["run"] == "./tools/ci_windows_host.ps1 -StartCounters" and "if" not in start
+        assert stop["if"] == "always()"
+        assert start["continue-on-error"] is True and stop["continue-on-error"] is True
+        assert stop["run"] == "./tools/ci_windows_host.ps1 -StopCounters -Destination " + steps[lane]["env"]["CI_REPORT_DIR"]
+        assert lane + 1 < names.index("Retain backend timing and selection")
+    for job in jobs.values():
+        for step in job.get("steps", []):
+            assert "CI_PYTEST_DIST" not in step.get("env", {}), "Product CI keeps the default scheduler"
+
+
+def test_windows_backend_jobs_record_host_state_and_counters_around_the_lane() -> None:
+    _assert_windows_host_diagnostics(_workflow_document()["jobs"])
+
+
+@pytest.mark.parametrize("fault", ["no-describe", "unbracketed", "fatal-sampler", "wrong-destination", "dist"])
+def test_windows_host_diagnostic_falsifiers(fault: str) -> None:
+    jobs = deepcopy(_workflow_document()["jobs"])
+    steps = jobs["windows-full-shards"]["steps"]
+    named = {step["name"]: step for step in steps}
+    if fault == "no-describe":
+        steps.remove(named["Describe Windows test host"])
+    elif fault == "unbracketed":
+        steps.remove(named["Start host counter sampling"])
+        steps.insert(0, named["Start host counter sampling"])
+    elif fault == "fatal-sampler":
+        del named["Stop host counter sampling"]["continue-on-error"]
+    elif fault == "wrong-destination":
+        named["Stop host counter sampling"]["run"] = "./tools/ci_windows_host.ps1 -StopCounters -Destination artifacts"
+    else:
+        named["Test complete Windows backend regression shard"]["env"]["CI_PYTEST_DIST"] = "worksteal"
+    with pytest.raises((AssertionError, KeyError, ValueError)):
+        _assert_windows_host_diagnostics(jobs)
+
+
+def _bench_document() -> dict[str, Any]:
+    document = yaml.safe_load(BENCH.read_text(encoding="utf-8"))
+    assert isinstance(document, dict)
+    return document
+
+
+def _bench_triggers(bench: dict[str, Any]) -> dict[str, Any]:
+    # PyYAML reads the unquoted key `on` as True.
+    return bench[True] if True in bench else bench["on"]
+
+
+def _assert_bench_repeats_product_ci(bench: dict[str, Any], product: dict[str, Any]) -> None:
+    jobs = bench["jobs"]
+    assert set(jobs) == {"plan", "fixed-sqlcipher-wheel", "windows-full-regression"}
+    assert jobs["fixed-sqlcipher-wheel"] == product["jobs"]["fixed-sqlcipher-wheel"]
+    shard = "${{ needs.plan.outputs.shard }}"
+    def substitute(value):
+        if isinstance(value, dict):
+            return {key: substitute(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [substitute(item) for item in value]
+        return value.replace("${{ matrix.shard }}", shard) if isinstance(value, str) else value
+
+    expected = substitute(product["jobs"]["windows-full-shards"]["steps"])
+    lane = next(step for step in expected if step["name"] == "Test complete Windows backend regression shard")
+    lane["env"]["CI_PYTEST_WORKERS"] = "${{ needs.plan.outputs.workers }}"
+    lane["env"]["CI_PYTEST_DIST"] = "${{ needs.plan.outputs.dist }}"
+    full = jobs["windows-full-regression"]
+    assert full["steps"] == expected, "bench shard steps must repeat Product CI apart from its parameters"
+    assert full["name"] == f"windows-full-regression-{shard}"
+    assert full["needs"] == ["plan", "fixed-sqlcipher-wheel"]
+    assert full["env"] == product["jobs"]["windows-full-shards"]["env"]
+    assert full["timeout-minutes"] == product["jobs"]["windows-full-shards"]["timeout-minutes"]
+    assert bench["env"]["CI_POLICY_VERSION"] == product["env"]["CI_POLICY_VERSION"]
+
+
+def test_windows_backend_bench_repeats_the_product_ci_shard() -> None:
+    bench = _bench_document()
+    _assert_bench_repeats_product_ci(bench, _workflow_document())
+    # The bench is opt-in only: bench branches or a manual run, never main or pull requests.
+    triggers = _bench_triggers(bench)
+    assert set(triggers) == {"push", "workflow_dispatch"}
+    assert triggers["push"] == {"branches": ["bench/windows-backend/**"]}
+    inputs = triggers["workflow_dispatch"]["inputs"]
+    assert {name: (value["type"], value["options"], value["default"]) for name, value in inputs.items()} == {
+        "shard": ("choice", ["1", "2"], "2"), "workers": ("choice", ["2", "3", "4"], "4"),
+        "dist": ("choice", ["load", "worksteal"], "load")}
+
+
+@pytest.mark.parametrize("fault", ["step", "wheel", "workers", "extra-job"])
+def test_windows_backend_bench_falsifiers(fault: str) -> None:
+    bench = deepcopy(_bench_document())
+    jobs = bench["jobs"]
+    if fault == "step":
+        jobs["windows-full-regression"]["steps"][-2]["run"] = "true"
+    elif fault == "wheel":
+        jobs["fixed-sqlcipher-wheel"]["timeout-minutes"] = 5
+    elif fault == "workers":
+        lane = next(step for step in jobs["windows-full-regression"]["steps"] if "CI_TEST_LANE" in step.get("env", {}))
+        lane["env"]["CI_PYTEST_WORKERS"] = "8"
+    else:
+        jobs["backend-fast"] = _workflow_document()["jobs"]["backend-fast"]
+    with pytest.raises(AssertionError):
+        _assert_bench_repeats_product_ci(bench, _workflow_document())
+
+
+def test_windows_backend_bench_branch_names_select_only_supported_parameters() -> None:
+    import re
+
+    run = _bench_document()["jobs"]["plan"]["steps"][0]["run"]
+    pattern = re.compile(re.search(r"=~ (\S+) \]\]", run).group(1))
+    accepted = {"bench/windows-backend/s2-w3-load": ("2", "3", "load"),
+                "bench/windows-backend/s1-w2-worksteal-r1": ("1", "2", "worksteal"),
+                "bench/windows-backend/s2-w4-load-round-3": ("2", "4", "load")}
+    for name, groups in accepted.items():
+        assert pattern.fullmatch(name).groups()[:3] == groups
+    for name in ("bench/windows-backend/s3-w3-load", "bench/windows-backend/s2-w8-load",
+                 "bench/windows-backend/s2-w3-loadfile", "bench/windows-backend/s2-w3-load-R1",
+                 "bench/windows-backend/x/s2-w3-load", "main"):
+        assert pattern.fullmatch(name) is None, name

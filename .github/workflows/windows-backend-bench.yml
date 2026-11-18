@@ -1,0 +1,230 @@
+# Manual timing runs of one exhaustive Windows regression shard. Not part of Required CI.
+# A push to bench/windows-backend/s<shard>-w<workers>-<scheduler>[-label] runs that shard with
+# those parallel workers and pytest-xdist scheduler. The jobs repeat ci.yml's wheel and shard steps.
+name: Windows backend bench
+'on':
+  push:
+    branches:
+      - bench/windows-backend/**
+  workflow_dispatch:
+    inputs:
+      shard:
+        description: Exhaustive Windows regression shard
+        type: choice
+        options:
+          - '1'
+          - '2'
+        default: '2'
+      workers:
+        description: pytest-xdist workers for the parallel phase
+        type: choice
+        options:
+          - '2'
+          - '3'
+          - '4'
+        default: '4'
+      dist:
+        description: pytest-xdist scheduler for the parallel phase
+        type: choice
+        options:
+          - load
+          - worksteal
+        default: load
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.run_id }}
+  cancel-in-progress: false
+env:
+  PRODUCT_SHA: ${{ github.sha }}
+  CI_POLICY_VERSION: sharded-v7-pr-cutover
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      shard: ${{ steps.parameters.outputs.shard }}
+      workers: ${{ steps.parameters.outputs.workers }}
+      dist: ${{ steps.parameters.outputs.dist }}
+    steps:
+      - name: Resolve bench parameters
+        id: parameters
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_SHARD: ${{ inputs.shard }}
+          INPUT_WORKERS: ${{ inputs.workers }}
+          INPUT_DIST: ${{ inputs.dist }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            shard="$INPUT_SHARD"; workers="$INPUT_WORKERS"; dist="$INPUT_DIST"
+          elif [[ "$REF_NAME" =~ ^bench/windows-backend/s([12])-w([234])-(load|worksteal)(-[a-z0-9-]+)?$ ]]; then
+            shard="${BASH_REMATCH[1]}"; workers="${BASH_REMATCH[2]}"; dist="${BASH_REMATCH[3]}"
+          else
+            echo "Name bench branches bench/windows-backend/s<1|2>-w<2|3|4>-<load|worksteal>[-label]" >&2
+            exit 1
+          fi
+          case "$shard:$workers:$dist" in
+            [12]:[234]:load|[12]:[234]:worksteal) ;;
+            *) echo "Unsupported bench parameters" >&2; exit 1 ;;
+          esac
+          printf 'shard=%s\nworkers=%s\ndist=%s\n' "$shard" "$workers" "$dist" >> "$GITHUB_OUTPUT"
+          echo "Windows backend bench: shard $shard, $workers workers, $dist"
+  fixed-sqlcipher-wheel:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Prepare native dependency cache
+        id: native-cache
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:ImageVersion)) {
+            throw "The hosted runner image version is required for the native dependency cache"
+          }
+          "image-version=$env:ImageVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP "ofca-vcpkg-cache") | Out-Null
+      - name: Cache native dependencies
+        id: vcpkg-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ runner.temp }}\ofca-vcpkg-cache
+          key: ofca-vcpkg-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.image-version }}-${{
+            hashFiles('packaging/sqlcipher/fixed-runtime-sources.json', 'packaging/sqlcipher/build-fixed-wheel.py',
+            'packaging/sqlcipher/build-fixed-wheel.ps1') }}
+      - name: Build fixed SQLCipher wheel
+        shell: pwsh
+        env:
+          VCPKG_BINARY_SOURCES: clear;files,${{ runner.temp }}\ofca-vcpkg-cache,readwrite
+        run: |
+          $wheelhouse = Join-Path $env:RUNNER_TEMP "ofca-fixed-sqlcipher-wheelhouse"
+          .\packaging\sqlcipher\build-fixed-wheel.ps1 `
+            -BuildPython (Get-Command python.exe).Source `
+            -Wheelhouse $wheelhouse
+      - name: Record fixed SQLCipher CI source
+        shell: pwsh
+        run: |
+          $wheelhouse = Join-Path $env:RUNNER_TEMP "ofca-fixed-sqlcipher-wheelhouse"
+          $payload = [ordered]@{
+            schema_version = 1
+            source_commit = $env:PRODUCT_SHA
+            workflow_run_id = [long]$env:GITHUB_RUN_ID
+            workflow_run_attempt = [int]$env:GITHUB_RUN_ATTEMPT
+          }
+          $payload | ConvertTo-Json | Set-Content -Encoding utf8NoBOM (Join-Path $wheelhouse "ci-source.json")
+      - name: Retain fixed SQLCipher wheel and provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse\
+          retention-days: 30
+          if-no-files-found: error
+          overwrite: true
+  windows-full-regression:
+    name: windows-full-regression-${{ needs.plan.outputs.shard }}
+    needs:
+      - plan
+      - fixed-sqlcipher-wheel
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      CI_PYTEST_LIVE_PROGRESS: '1'
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Keep temporary test files on runner storage
+        shell: pwsh
+        run: |
+          $testTemp = Join-Path $env:RUNNER_TEMP "ofca-tests"
+          New-Item -ItemType Directory -Force $testTemp | Out-Null
+          "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Describe Windows test host
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
+      - name: Retrieve fixed SQLCipher wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
+      - name: Verify fixed SQLCipher CI source
+        shell: pwsh
+        run: |
+          $source = Get-Content -Raw "$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse\ci-source.json" | ConvertFrom-Json
+          if ($source.source_commit -ne $env:PRODUCT_SHA) { throw "Fixed SQLCipher source SHA mismatch" }
+          if ([long]$source.workflow_run_id -ne [long]$env:GITHUB_RUN_ID) { throw "Fixed SQLCipher run ID mismatch" }
+          if ([int]$source.workflow_run_attempt -lt 1 -or [int]$source.workflow_run_attempt -gt [int]$env:GITHUB_RUN_ATTEMPT) { throw "Fixed SQLCipher producer attempt is invalid" }
+      - name: Declare fixed SQLCipher wheelhouse
+        shell: pwsh
+        run: |
+          "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            extension/package-lock.json
+      - name: Install pinned native Noise toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Install backend dependencies
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.1
+        run: python -m pip install --find-links "$env:SQLCIPHER_WHEELHOUSE" -r requirements-dev.txt
+      - name: Qualify the fixed SQLCipher runtime
+        run: |
+          python tools/qualify_sqlcipher_runtime.py --output "$env:RUNNER_TEMP\fixed-sqlcipher-runtime-evidence.json"
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+      - name: Install extension dependencies
+        run: npm ci --prefix extension
+      - name: Build frontend
+        run: npm run build:assets --prefix frontend
+      - name: Build extension
+        run: npm run build --prefix extension
+      - name: Start host counter sampling
+        continue-on-error: true
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1 -StartCounters
+      - name: Test complete Windows backend regression shard
+        env:
+          CI_TEST_LANE: windows-full-regression-${{ needs.plan.outputs.shard }}
+          CI_REPORT_DIR: artifacts/ci-tests/windows-full-regression-${{ needs.plan.outputs.shard }}
+          CI_PYTEST_WORKERS: ${{ needs.plan.outputs.workers }}
+          CI_PYTEST_DIST: ${{ needs.plan.outputs.dist }}
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-full-regression-${{ needs.plan.outputs.shard }}/junit.xml
+            -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
+        run: python tools/test_backend.py --lane windows-full-regression --shard ${{ needs.plan.outputs.shard }}
+      - name: Stop host counter sampling
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1 -StopCounters -Destination artifacts/ci-tests/windows-full-regression-${{ needs.plan.outputs.shard }}
+      - name: Retain backend timing and selection
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ci-tests-windows-full-regression-${{ needs.plan.outputs.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt
+            }}
+          path: artifacts/ci-tests/
+          retention-days: 14
+          if-no-files-found: error
