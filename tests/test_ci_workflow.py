@@ -532,10 +532,16 @@ def _assert_windows_pr_cutover(workflow: dict[str, Any]) -> None:
     assert triggers["pull_request"] == {"branches": ["main"], "types": ["opened", "synchronize", "reopened"]}
     dispatch = triggers["workflow_dispatch"]
     assert set(dispatch) == {"inputs"}
-    assert set(dispatch["inputs"]) == {"browser_qualification", "browser_serial_control"}
-    for declaration in dispatch["inputs"].values():
-        assert declaration["type"] == "boolean" and declaration["default"] is False
+    assert set(dispatch["inputs"]) == {"browser_qualification", "browser_serial_control", "windows_pytest_dist",
+                                       "windows_defender_exclusions"}
+    for name, declaration in dispatch["inputs"].items():
         assert declaration.get("required", False) is False
+        if name == "windows_pytest_dist":
+            # The only non-boolean input is a closed scheduler choice whose default keeps push and PR behaviour.
+            assert declaration["type"] == "choice" and declaration["options"] == ["load", "worksteal"]
+            assert declaration["default"] == "load"
+        else:
+            assert declaration["type"] == "boolean" and declaration["default"] is False
     jobs = _jobs(workflow)
     assert jobs["windows-full-shards"]["if"] == "${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}", "exhaustive Windows must run on main and manual only"
     for name in ("windows-platform-contract", "analytics-windows-contract", "browser-reporting-safety", "browser-e2e-execution"):
@@ -569,7 +575,8 @@ def test_windows_pr_cutover_preserves_blocking_checks_and_main_execution() -> No
 
 
 @pytest.mark.parametrize("fault", ["matrix-if", "focused-if", "aggregate-if", "aggregate-success", "nightly", "alias",
-                                   "browser-aggregate-if", "browser-execution-if", "extra-input", "missing-input", "input-type", "input-default"])
+                                   "browser-aggregate-if", "browser-execution-if", "extra-input", "missing-input", "input-type", "input-default",
+                                   "dist-option", "dist-default", "defender-default"])
 def test_windows_pr_cutover_falsifiers_refuse_lost_coverage_or_hidden_failures(fault: str) -> None:
     workflow = deepcopy(_workflow_document())
     jobs = _jobs(workflow)
@@ -595,6 +602,12 @@ def test_windows_pr_cutover_falsifiers_refuse_lost_coverage_or_hidden_failures(f
         workflow["on"]["workflow_dispatch"]["inputs"]["browser_serial_control"]["type"] = "string"
     elif fault == "input-default":
         workflow["on"]["workflow_dispatch"]["inputs"]["browser_serial_control"]["default"] = True
+    elif fault == "dist-option":
+        workflow["on"]["workflow_dispatch"]["inputs"]["windows_pytest_dist"]["options"].append("loadfile")
+    elif fault == "dist-default":
+        workflow["on"]["workflow_dispatch"]["inputs"]["windows_pytest_dist"]["default"] = "worksteal"
+    elif fault == "defender-default":
+        workflow["on"]["workflow_dispatch"]["inputs"]["windows_defender_exclusions"]["default"] = True
     else:
         _steps(jobs["windows-tests"])[0]["run"] = "true"
     with pytest.raises(AssertionError):

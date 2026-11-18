@@ -456,6 +456,29 @@ def test_lane_worker_count_comes_from_option_or_ci_environment(monkeypatch):
             count("fast")
 
 
+def test_lane_scheduler_comes_from_option_or_ci_environment_and_is_closed(monkeypatch):
+    def scheduler(workers, *argv):
+        return runner.lane_scheduler(runner.parser().parse_args(list(argv)), workers)
+
+    monkeypatch.delenv("CI_PYTEST_DIST", raising=False)
+    assert scheduler(4, "windows-full-regression", "--shard", "1") == "load"
+    assert scheduler(0, "fast") == "load"
+    monkeypatch.setenv("CI_PYTEST_DIST", "")
+    assert scheduler(4, "fast") == "load"
+    monkeypatch.setenv("CI_PYTEST_DIST", "worksteal")
+    assert scheduler(4, "windows-full-regression", "--shard", "2") == "worksteal"
+    assert scheduler(4, "fast", "--dist", "load") == "load"
+    for value in ("loadfile", "each", "Worksteal"):
+        monkeypatch.setenv("CI_PYTEST_DIST", value)
+        with pytest.raises(selection.SelectionError, match="load, worksteal"):
+            scheduler(4, "fast")
+    monkeypatch.delenv("CI_PYTEST_DIST")
+    with pytest.raises(selection.SelectionError, match="load, worksteal"):
+        scheduler(4, "fast", "--dist", "loadscope")
+    with pytest.raises(selection.SelectionError, match="parallel workers"):
+        scheduler(0, "fast", "--dist", "worksteal")
+
+
 def test_local_parallel_rejects_incomplete_worker_evidence():
     from tools import test_backend_parallel as parallel
 

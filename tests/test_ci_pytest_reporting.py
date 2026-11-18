@@ -335,7 +335,7 @@ def lane_command(tmp_path, output):
             "--ci-output-dir", str(output), "--junitxml", str(output / "junit.xml"), "-m", "not omitted"]
 
 
-def run_lane_suite(tmp_path, source=LANE_SOURCE, workers=2):
+def run_lane_suite(tmp_path, source=LANE_SOURCE, workers=2, dist="load"):
     """Run the fixture suite once serially and once through the CI lane runner."""
     from tools import test_backend_parallel as parallel
 
@@ -363,7 +363,7 @@ def run_lane_suite(tmp_path, source=LANE_SOURCE, workers=2):
 
     output = tmp_path / "lane"
     code = parallel.run_lane(lane_command(tmp_path, output), env, output, workers=workers,
-                             work_root=tmp_path / "phases", run=run, port_base=30000, port_width=64)
+                             work_root=tmp_path / "phases", run=run, port_base=30000, port_width=64, dist=dist)
     merged = json.loads((output / "report.json").read_text(encoding="utf-8"))
     return code, serial, merged, output
 
@@ -388,6 +388,12 @@ def test_parallel_lane_report_equals_serial_execution_evidence(tmp_path):
     assert [(phase["name"], phase["selected"]) for phase in merged["execution"]["phases"]] == [
         ("parallel", 12), ("serial", 2)]
     assert merged["reports"][-1]["nodeid"].endswith("test_serial_runs_alone")
+    assert merged["execution"]["dist"] == "load"
+    workers = merged["execution"]["phases"][0]["workers"]
+    assert sorted(workers) == ["gw0", "gw1"] and "workers" not in merged["execution"]["phases"][1]
+    assert sum(worker["tests"] for worker in workers.values()) == 12
+    assert min(worker["idle_tail_seconds"] for worker in workers.values()) == 0.0
+    assert all(worker["busy_seconds"] >= 0 for worker in workers.values())
     spec = ci_gate.ReportSpec("backend-fast", merged["platform"],
                               python=f"{sys.version_info.major}.{sys.version_info.minor}")
     assert ci_gate.validate_report(merged, spec) == ci_gate.validate_report(serial, spec)
@@ -397,6 +403,15 @@ def test_parallel_lane_report_equals_serial_execution_evidence(tmp_path):
     assert "# Backend: lane-fixture" in (output / "summary.md").read_text(encoding="utf-8")
     from tools import test_backend_parallel as parallel
     assert parallel.junit_outcomes(output / "junit.xml") == parallel.junit_outcomes(tmp_path / "serial/junit.xml")
+
+
+def test_work_stealing_lane_report_equals_serial_execution_evidence(tmp_path):
+    pytest.importorskip("xdist")
+    code, serial, merged, _ = run_lane_suite(tmp_path, dist="worksteal")
+    assert code == merged["exit_code"] == serial["exit_code"] == 0
+    assert merged["execution"]["dist"] == "worksteal" and merged["complete"] is True
+    assert sorted(merged["selected"]) == sorted(serial["selected"])
+    assert phase_signature(merged) == phase_signature(serial)
 
 
 def test_parallel_lane_without_serial_tests_runs_one_phase_and_keeps_failures(tmp_path):
@@ -422,6 +437,41 @@ def test_lane_phase_command_keeps_rootdir_inputs_and_trailing_pytest_arguments(t
     assert result[-2:] == ["-k", "name"]
     serial = parallel.lane_phase_command(command, directory, "serial", 4)
     assert serial[serial.index("-n") + 1] == "0" and serial[serial.index("--ci-phase") + 1] == "serial"
+    assert "--dist=load" in result and "--dist=load" in serial
+    stealing = parallel.lane_phase_command(command, directory, "parallel", 4, "worksteal")
+    assert "--dist=worksteal" in stealing and "--dist=load" not in stealing
+    # The serial phase is one process, so its scheduler never varies.
+    assert parallel.lane_phase_command(command, directory, "serial", 4, "worksteal") == serial
+    with pytest.raises(ValueError, match="scheduler"):
+        parallel.lane_phase_command(command, directory, "parallel", 4, "loadfile")
+
+
+def journal_lines(started_at, *tests):
+    lines = [{"event": "session_start", "elapsed_seconds": 0.0, **({} if started_at is None else {"started_at": started_at})}]
+    for node, start, finish in tests:
+        lines += [{"event": "test_start", "elapsed_seconds": start, "nodeid": node},
+                  {"event": "test_finish", "elapsed_seconds": finish, "nodeid": node}]
+    return "\n".join(json.dumps(line) for line in lines) + "\n"
+
+
+def test_worker_timings_align_workers_on_their_session_start(tmp_path):
+    from tools import test_backend_parallel as parallel
+
+    (tmp_path / "progress-gw0.jsonl").write_text(journal_lines(100.0, ("a", 1.0, 4.0), ("b", 4.0, 10.0)), encoding="utf-8")
+    (tmp_path / "progress-gw1.jsonl").write_text(journal_lines(102.0, ("c", 0.5, 3.0)) + "torn", encoding="utf-8")
+    (tmp_path / "progress-gw2.jsonl").write_text(journal_lines(101.0), encoding="utf-8")
+    timings = parallel.worker_timings(sorted(tmp_path.glob("progress-gw*.jsonl")))
+    assert timings == {
+        "gw0": {"tests": 2, "busy_seconds": 9.0, "first_start_seconds": 1.0, "last_finish_seconds": 10.0,
+                "idle_tail_seconds": 0.0},
+        "gw1": {"tests": 1, "busy_seconds": 2.5, "first_start_seconds": 2.5, "last_finish_seconds": 5.0,
+                "idle_tail_seconds": 5.0},
+        "gw2": {"tests": 0, "busy_seconds": 0.0, "first_start_seconds": None, "last_finish_seconds": None,
+                "idle_tail_seconds": 10.0},
+    }
+    (tmp_path / "progress-gw2.jsonl").write_text(journal_lines(None), encoding="utf-8")
+    assert parallel.worker_timings(sorted(tmp_path.glob("progress-gw*.jsonl"))) is None
+    assert parallel.worker_timings([]) is None
 
 
 def phase_report(name, selected, deferred, **changes):

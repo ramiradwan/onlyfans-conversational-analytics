@@ -87,7 +87,8 @@ class Evidence:
             self.progress("session_start", source_commit=os.environ.get("PRODUCT_SHA", ""),
                           workflow_run_id=os.environ.get("GITHUB_RUN_ID", ""),
                           run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT", ""),
-                          job_id=os.environ.get("GITHUB_JOB", "local"), lane=self.lane(), pid=os.getpid())
+                          job_id=os.environ.get("GITHUB_JOB", "local"), lane=self.lane(), pid=os.getpid(),
+                          started_at=round(time.time() - (time.monotonic() - self.start), 3))
         except OSError as error:
             print(f"Could not open optional CI progress journal: {error}", file=sys.stderr)
 

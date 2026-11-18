@@ -227,6 +227,66 @@ def test_only_the_default_lane_runners_use_parallel_workers() -> None:
     assert all(command.startswith("python tools/test_backend.py --lane ") for _, command in parallel.values())
 
 
+WINDOWS_PARALLEL_LANES = {"windows-platform-contract": "windows-platform-contract-${{ matrix.shard }}",
+                          "analytics-windows-contract": "analytics-windows-contract",
+                          "windows-full-shards": "windows-full-regression-${{ matrix.shard }}"}
+WINDOWS_DIST = "${{ github.event_name == 'workflow_dispatch' && inputs.windows_pytest_dist || 'load' }}"
+DEFENDER_IF = "github.event_name == 'workflow_dispatch' && inputs.windows_defender_exclusions"
+
+
+def _assert_windows_scheduler_and_host_steps(jobs) -> None:
+    dist = {}
+    for name, job in jobs.items():
+        for step in job.get("steps", []):
+            if "CI_PYTEST_DIST" in step.get("env", {}):
+                dist[(name, step["env"].get("CI_TEST_LANE"))] = step["env"]["CI_PYTEST_DIST"]
+    assert dist == {(name, lane): WINDOWS_DIST for name, lane in WINDOWS_PARALLEL_LANES.items()}, \
+        "only the parallel Windows lanes take the dispatch scheduler, which defaults to load"
+    # Scale qualification shares the analytics contract setup, so it records the same host state.
+    host_jobs = set(WINDOWS_PARALLEL_LANES) | {"analytics-scale-qualification"}
+    for name, job in jobs.items():
+        names = [step.get("name") for step in job.get("steps", [])]
+        if name not in host_jobs:
+            assert "Exclude test storage from Defender scanning" not in names, name
+            continue
+        steps = {step.get("name"): step for step in job["steps"]}
+        exclude, describe = steps["Exclude test storage from Defender scanning"], steps["Describe Windows test host"]
+        assert exclude["if"] == DEFENDER_IF, "Defender exclusions must stay an explicit dispatch choice"
+        assert exclude["run"] == "./tools/ci_windows_host.ps1 -ExcludeTestStorage"
+        assert describe["run"] == "./tools/ci_windows_host.ps1" and "if" not in describe
+        assert not exclude.get("continue-on-error") and not describe.get("continue-on-error")
+        lane = next(index for index, step in enumerate(job["steps"]) if "CI_TEST_LANE" in step.get("env", {}))
+        assert names.index("Exclude test storage from Defender scanning") < names.index("Describe Windows test host") < lane
+
+
+def test_windows_parallel_lanes_take_the_dispatch_scheduler_and_host_diagnostics() -> None:
+    _assert_windows_scheduler_and_host_steps(_workflow_document()["jobs"])
+    assert (ROOT / "tools/ci_windows_host.ps1").is_file()
+
+
+@pytest.mark.parametrize("fault", ["linux-dist", "fixed-dist", "missing-dist", "unconditional-exclusion",
+                                   "exclusion-after-tests"])
+def test_windows_scheduler_and_defender_falsifiers(fault: str) -> None:
+    jobs = deepcopy(_workflow_document()["jobs"])
+    full = jobs["windows-full-shards"]["steps"]
+    lane = next(step for step in full if "CI_PYTEST_DIST" in step.get("env", {}))
+    if fault == "linux-dist":
+        step = next(step for step in jobs["backend-fast"]["steps"] if "CI_PYTEST_WORKERS" in step.get("env", {}))
+        step["env"]["CI_PYTEST_DIST"] = WINDOWS_DIST
+    elif fault == "fixed-dist":
+        lane["env"]["CI_PYTEST_DIST"] = "worksteal"
+    elif fault == "missing-dist":
+        del lane["env"]["CI_PYTEST_DIST"]
+    elif fault == "unconditional-exclusion":
+        del next(step for step in full if step.get("name") == "Exclude test storage from Defender scanning")["if"]
+    else:
+        exclude = next(step for step in full if step.get("name") == "Exclude test storage from Defender scanning")
+        full.remove(exclude)
+        full.append(exclude)
+    with pytest.raises((AssertionError, KeyError)):
+        _assert_windows_scheduler_and_host_steps(jobs)
+
+
 @pytest.mark.parametrize("command", [
     "python tools/test_backend.py --lane fast",
     "python tools/test_backend.py validate-windows-manifest "
@@ -266,10 +326,15 @@ def test_main_and_manual_qualification_are_explicit_without_duplicate_schedule_o
     assert set(events) == {"push", "pull_request", "workflow_dispatch"}
     dispatch = events["workflow_dispatch"]
     assert set(dispatch) == {"inputs"}
-    assert set(dispatch["inputs"]) == {"browser_qualification", "browser_serial_control"}
-    for declaration in dispatch["inputs"].values():
-        assert declaration["type"] == "boolean" and declaration["default"] is False
+    assert set(dispatch["inputs"]) == {"browser_qualification", "browser_serial_control", "windows_pytest_dist",
+                                       "windows_defender_exclusions"}
+    for name, declaration in dispatch["inputs"].items():
         assert declaration.get("required", False) is False
+        if name == "windows_pytest_dist":
+            assert declaration["type"] == "choice" and declaration["options"] == ["load", "worksteal"]
+            assert declaration["default"] == "load"
+        else:
+            assert declaration["type"] == "boolean" and declaration["default"] is False
     assert events["push"] == {"branches": ["main"]}
     assert events["pull_request"] == {"branches": ["main"], "types": ["opened", "synchronize", "reopened"]}
     for event in ("push", "pull_request"):

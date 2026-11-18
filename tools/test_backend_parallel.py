@@ -164,8 +164,13 @@ PHASE_IDENTITY = ("schema", "source_commit", "workflow_run_id", "run_attempt", "
                   "collect_only", "partial", "selection")
 
 
-def lane_phase_command(command, directory, phase, workers):
+LANE_SCHEDULERS = ("load", "worksteal")
+
+
+def lane_phase_command(command, directory, phase, workers, dist="load"):
     """Direct one CI lane command's evidence to a phase directory and add its scheduler."""
+    if dist not in LANE_SCHEDULERS:
+        raise ValueError(f"Unsupported lane scheduler {dist!r}")
     result = list(command)
     # Attached values keep existing phase directories out of pytest's rootdir inference.
     for option, value in (("--ci-output-dir", directory), ("--junitxml", directory / "junit.xml")):
@@ -173,9 +178,49 @@ def lane_phase_command(command, directory, phase, workers):
         result[position:position + 2] = [f"{option}={value}"]
     position = result.index(f"--ci-output-dir={directory}")
     options = ["-p", "xdist", "-p", "tools.test_backend_parallel", "--ci-phase", phase,
-               "-n", str(workers) if phase == "parallel" else "0", "--dist=load", "--maxschedchunk=1",
+               "-n", str(workers) if phase == "parallel" else "0",
+               f"--dist={dist if phase == 'parallel' else 'load'}", "--maxschedchunk=1",
                "--max-worker-restart=0", f"--basetemp={directory / 'bt'}"]
     return result[:position] + options + result[position:]
+
+
+def worker_timings(journals):
+    """Summarise each worker's test count, busy time and idle tail from its progress journal.
+
+    Offsets are seconds from the earliest worker session start. Returns None when a journal
+    lacks the session start time that aligns workers on one clock.
+    """
+    workers = {}
+    for path in journals:
+        started_at, starts, busy, count, first, last = None, {}, 0.0, 0, None, None
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            kind, elapsed = event.get("event"), event.get("elapsed_seconds")
+            if kind == "session_start":
+                started_at = event.get("started_at")
+            elif kind == "test_start":
+                starts[event.get("nodeid")] = elapsed
+                first = elapsed if first is None else first
+            elif kind == "test_finish" and event.get("nodeid") in starts:
+                busy += elapsed - starts.pop(event["nodeid"])
+                count += 1
+                last = elapsed
+        if not isinstance(started_at, (int, float)):
+            return None
+        workers[path.stem.split("-")[1]] = (started_at, count, busy, first, last)
+    if not workers:
+        return None
+    origin = min(started_at for started_at, *_ in workers.values())
+    finishes = [started_at + last for started_at, _, _, _, last in workers.values() if last is not None]
+    end = max(finishes, default=origin)
+    return {name: {"tests": count, "busy_seconds": round(busy, 3),
+                   "first_start_seconds": None if first is None else round(started_at + first - origin, 3),
+                   "last_finish_seconds": None if last is None else round(started_at + last - origin, 3),
+                   "idle_tail_seconds": round(end - (origin if last is None else started_at + last), 3)}
+            for name, (started_at, count, busy, first, last) in sorted(workers.items())}
 
 
 def merge_lane_reports(reports, workers):
@@ -206,10 +251,12 @@ def merge_lane_reports(reports, workers):
     return merged
 
 
-def run_lane(command, environment, output, *, workers, work_root, run, port_base=20000, port_width=512):
+def run_lane(command, environment, output, *, workers, work_root, run, port_base=20000, port_width=512, dist="load"):
     """Run a CI lane on workers, then its serial tests in one process, and write one lane report."""
     from tools import ci_pytest
 
+    if dist not in LANE_SCHEDULERS:
+        raise ValueError(f"Unsupported lane scheduler {dist!r}")
     work_root.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="l", dir=work_root)).resolve()
     reports = []
@@ -221,7 +268,7 @@ def run_lane(command, environment, output, *, workers, work_root, run, port_base
         phase_env = phase_environment(environment, directory / "temp", index, port_base, port_width)
         phase_env.update(LOCAL_BACKEND_WORK_ROOT=str(directory), LOCAL_BACKEND_PORT_BASE=str(port_base),
                          LOCAL_BACKEND_PORT_WIDTH=str(port_width))
-        code = run(lane_phase_command(command, directory, phase, workers), phase_env)
+        code = run(lane_phase_command(command, directory, phase, workers, dist), phase_env)
         if not (directory / "report.json").is_file():
             raise ValueError(f"The {phase} phase wrote no report (exit {code})")
         report = json.loads((directory / "report.json").read_text(encoding="utf-8"))
@@ -229,6 +276,10 @@ def run_lane(command, environment, output, *, workers, work_root, run, port_base
             raise ValueError(f"The {phase} phase report differs from its process")
         reports.append(report)
     merged = merge_lane_reports(reports, workers)
+    merged["execution"]["dist"] = dist
+    timings = worker_timings(sorted((work / "parallel").glob("progress-gw*.jsonl")))
+    if timings is not None:
+        merged["execution"]["phases"][0]["workers"] = timings
     output.mkdir(parents=True, exist_ok=True)
     junits = [work / report["phase"]["name"] / "junit.xml" for report in reports]
     if all(path.is_file() for path in junits):

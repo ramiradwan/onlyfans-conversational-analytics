@@ -22,6 +22,17 @@ name: CI
         description: Run the complete serial browser control (requires browser_qualification)
         type: boolean
         default: false
+      windows_pytest_dist:
+        description: pytest-xdist scheduler for the parallel phase of Windows backend lanes
+        type: choice
+        options:
+          - load
+          - worksteal
+        default: load
+      windows_defender_exclusions:
+        description: Exclude the workspace and runner temporary directory from Defender scanning on Windows backend lanes
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -459,6 +470,13 @@ jobs:
           New-Item -ItemType Directory -Force $testTemp | Out-Null
           "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp" |
             Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Exclude test storage from Defender scanning
+        if: github.event_name == 'workflow_dispatch' && inputs.windows_defender_exclusions
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1 -ExcludeTestStorage
+      - name: Describe Windows test host
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
@@ -525,6 +543,7 @@ jobs:
           CI_TEST_LANE: windows-platform-contract-${{ matrix.shard }}
           CI_REPORT_DIR: artifacts/ci-tests/windows-platform-contract-${{ matrix.shard }}
           CI_PYTEST_WORKERS: '4'
+          CI_PYTEST_DIST: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_pytest_dist || 'load' }}
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-platform-contract-${{ matrix.shard }}/junit.xml
             -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: python tools/test_backend.py --lane windows-platform-contract --shard ${{ matrix.shard }}
@@ -666,6 +685,13 @@ jobs:
           New-Item -ItemType Directory -Force $testTemp | Out-Null
           "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp" |
             Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Exclude test storage from Defender scanning
+        if: github.event_name == 'workflow_dispatch' && inputs.windows_defender_exclusions
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1 -ExcludeTestStorage
+      - name: Describe Windows test host
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
@@ -721,6 +747,7 @@ jobs:
           CI_TEST_LANE: analytics-windows-contract
           CI_REPORT_DIR: artifacts/ci-tests/analytics-windows-contract
           CI_PYTEST_WORKERS: '4'
+          CI_PYTEST_DIST: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_pytest_dist || 'load' }}
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/analytics-windows-contract/junit.xml
             -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: python tools/test_backend.py --lane analytics-windows-contract
@@ -760,6 +787,13 @@ jobs:
           New-Item -ItemType Directory -Force $testTemp | Out-Null
           "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp" |
             Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Exclude test storage from Defender scanning
+        if: github.event_name == 'workflow_dispatch' && inputs.windows_defender_exclusions
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1 -ExcludeTestStorage
+      - name: Describe Windows test host
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
@@ -815,6 +849,7 @@ jobs:
           CI_TEST_LANE: windows-full-regression-${{ matrix.shard }}
           CI_REPORT_DIR: artifacts/ci-tests/windows-full-regression-${{ matrix.shard }}
           CI_PYTEST_WORKERS: '4'
+          CI_PYTEST_DIST: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_pytest_dist || 'load' }}
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-full-regression-${{ matrix.shard }}/junit.xml
             -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: python tools/test_backend.py --lane windows-full-regression --shard ${{ matrix.shard }}
@@ -859,6 +894,13 @@ jobs:
           New-Item -ItemType Directory -Force $testTemp | Out-Null
           "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp" |
             Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Exclude test storage from Defender scanning
+        if: github.event_name == 'workflow_dispatch' && inputs.windows_defender_exclusions
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1 -ExcludeTestStorage
+      - name: Describe Windows test host
+        shell: pwsh
+        run: ./tools/ci_windows_host.ps1
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:

@@ -65,6 +65,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--workers", type=int, default=None,
                         help="pytest-xdist workers for a non-stateful lane, then one serial process (default: CI_PYTEST_WORKERS or 0)")
     result.add_argument("--work-dir", type=Path, help="Parent directory for per-phase temporary files and reports")
+    result.add_argument("--dist", default=None,
+                        help="pytest-xdist scheduler for the parallel phase: load or worksteal (default: CI_PYTEST_DIST or load)")
     return result
 
 
@@ -81,6 +83,17 @@ def worker_count(args: argparse.Namespace) -> int:
             raise SelectionError("--workers applies to executed lanes other than stateful and scale")
         return 0
     return workers
+
+
+def lane_scheduler(args: argparse.Namespace, workers: int) -> str:
+    from tools.test_backend_parallel import LANE_SCHEDULERS
+
+    value = args.dist if args.dist is not None else os.environ.get("CI_PYTEST_DIST", "") or "load"
+    if value not in LANE_SCHEDULERS:
+        raise SelectionError(f"CI_PYTEST_DIST and --dist must be one of {', '.join(LANE_SCHEDULERS)}")
+    if args.dist is not None and not workers:
+        raise SelectionError("--dist applies only to lanes run on parallel workers")
+    return value
 
 
 def integration_files(root: Path) -> dict[str, int]:
@@ -377,9 +390,11 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         command, environment = build_command(args, extra, manifest)
         workers = worker_count(args)
+        dist = lane_scheduler(args, workers)
         print(subprocess.list2cmdline(command), flush=True)
         if workers:
-            print(f"Parallel phase: {workers} pytest-xdist workers; serial-marked tests then run in one process", flush=True)
+            print(f"Parallel phase: {workers} pytest-xdist workers ({dist}); serial-marked tests then run in one process",
+                  flush=True)
         if args.dry_run:
             return 0
         errors = prerequisite_errors(lane_name(args), args.profile, explicit_targets(extra),
@@ -401,7 +416,7 @@ def main(argv: list[str] | None = None) -> int:
         work_root = args.work_dir or Path(tempfile.gettempdir()) / "ofca-ci"
         try:
             return parallel.run_lane(command, environment, output, workers=workers,
-                                     work_root=work_root.resolve(), run=run_phase)
+                                     work_root=work_root.resolve(), run=run_phase, dist=dist)
         except ValueError as error:
             print(f"Backend parallel evidence error: {error}", file=sys.stderr)
             return 2
