@@ -27,6 +27,16 @@ Install the dependencies described in [Contributing](../CONTRIBUTING.md). Build 
 
 Arguments after `--` pass through to pytest. For example, `python tools/test_backend.py integration --shard 2 -- -k publication -vv` runs a filtered subset. The runner prints the command and writes reports under `artifacts/ci-tests/`. Profile variables apply only to the child process. `fast` runs the fast tier; CI also runs the named stateful profiles as separate steps in its backend-fast job. That job has a 30-minute limit covering the fast selection and all follow-up checks.
 
+## Parallel local backend selection
+
+Install `requirements-dev.txt`, then run `python tools/test_backend_parallel.py --workers 8 --work-dir C:\test-work\backend-1` from the checkout with its test interpreter. Use a fresh work directory on each run. Build the frontend and extension first, as for full serial collection. The runner uses the pinned pytest-xdist dependency. The default worker count leaves one logical core free.
+
+The selection is `not slow and not windows_production and not stateful_tier_a and not stateful_tier_b and not stateful_agent_tier_a`. It also excludes the packaged-runtime and packaging-smoke files and the launcher provisioning loopback test used by hosted runtime qualification. The runner distributes individual tests by default. Use `--dist worksteal` to compare larger queues that rebalance pending work, or `--dist loadfile` to keep every file in one worker when checking fixture behavior. Every selected `serial` test runs in one final process after all workers exit. This barrier applies to this invocation, so schedule other local test jobs separately when they use machine resources.
+
+Each process receives its own basetemp, TEMP, TMP and TCP port range. The `unused_tcp_port` and `unused_tcp_port_factory` fixtures use that range. Direct socket binds to port zero retain operating system allocation. The runner sets `tmp_path_retention_policy=failed` and `faulthandler_timeout=300`, verifies collection and execution coverage, and retains each process's log and CI evidence. `junit.xml` merges the original suites, including subtests and setup or teardown errors. `summary.json` records elapsed time, counts and comparison differences. Test failures produce a nonzero exit status.
+
+Add `--baseline-junit C:\test-work\serial\junit.xml` to compare outcomes by node ID with a prior serial or merged report. New tests appear as additional nodes in the comparison. Keep enough free disk space for failed-test temporary files, then remove the work directory after retaining the required evidence.
+
 Windows contract execution requires Windows and the fixed SQLCipher runtime. A Linux collection that skips a Windows-native test does not reproduce that test. Required hosted and packaged-runtime evidence still comes from their respective workflows.
 
 CI runs the Windows platform contract in three groups, with one pytest worker per runner. Whole files stay together; group 1 also runs the reference collection, production boot, persistence profiles and CPython 3.13 socket-loop checks. The existing Required CI check verifies all three groups. Linux integration keeps four shards and exhaustive Windows keeps two, balanced separately from their recorded execution times.

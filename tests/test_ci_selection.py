@@ -336,3 +336,110 @@ def test_full_validation_detects_stale_selectors_but_local_narrowing_is_supporte
 def test_checked_in_manifest_assignments_match_explicit_module_declarations():
     real = selection.load_manifest(runner.ROOT)
     assert set(runner.integration_files(runner.ROOT)) == set(real["integration_shards"])
+
+
+def test_local_parallel_command_selects_scheduler_and_separates_serial(tmp_path):
+    from tools import test_backend_parallel as parallel
+    from types import SimpleNamespace
+
+    args = SimpleNamespace(workers=3, dist="load")
+    command = parallel.build_command(tmp_path, args, serial=False)
+    assert command[command.index("-n") + 1] == "3"
+    assert "--dist=load" in command
+    assert "--maxschedchunk=1" in command
+    assert command[command.index("-m", 3) + 1] == parallel.EXPRESSION + " and not serial"
+    command = parallel.build_command(tmp_path, args, serial=True)
+    assert command[command.index("-n") + 1] == "0"
+    assert command[command.index("-m", 3) + 1] == parallel.EXPRESSION + " and serial"
+    assert all(option in command for option in parallel.EXCLUSIONS)
+    args.dist = "loadfile"
+    assert "--dist=loadfile" in parallel.build_command(tmp_path, args, serial=False)
+
+
+def test_local_parallel_junit_preserves_subtests_and_teardown_errors(tmp_path):
+    from tools import test_backend_parallel as parallel
+    import xml.etree.ElementTree as ET
+
+    first = tmp_path / "first.xml"
+    first.write_text('<testsuites><testsuite tests="3" failures="1" errors="1" skipped="0" time="2">'
+                     '<testcase classname="tests.test_one.TestGroup" name="test_case[a.b]" time="1"/>'
+                     '<testcase classname="tests.test_one.TestGroup" name="test_case[a.b]" time="0"><error/></testcase>'
+                     '<testcase classname="tests.test_one" name="test_child (x=1)" time="1"><failure/></testcase>'
+                     '</testsuite></testsuites>', encoding="utf-8")
+    output = tmp_path / "merged.xml"
+    parallel.merge_junit([first], output, 3.5)
+    outcomes = parallel.junit_outcomes(output)
+    assert outcomes["tests/test_one.py::TestGroup::test_case[a.b]"] == "error"
+    assert outcomes["tests/test_one.py::test_child (x=1)"] == "failure"
+    assert parallel.junit_nodeid(ET.Element(
+        "testcase", classname="tests.test_one.TimingChecks", name="test_clock")) == "tests/test_one.py::TimingChecks::test_clock"
+    assert len(list(ET.parse(output).iter("testcase"))) == 3
+    assert ET.parse(output).getroot().get("time") == "3.5"
+    with pytest.raises(ValueError, match="Missing JUnit"):
+        parallel.merge_junit([tmp_path / "missing.xml"], output, 1)
+
+
+def test_local_parallel_worker_environment_is_disjoint_and_does_not_mutate_parent(tmp_path):
+    from tools import test_backend_parallel as parallel
+    import os
+
+    before = dict(os.environ)
+    a = parallel.worker_environment(tmp_path / "a", 0, 20000, 128)
+    b = parallel.worker_environment(tmp_path / "b", 1, 20000, 128)
+    assert a["TEMP"] == a["TMP"] != b["TEMP"]
+    assert int(a["LOCAL_BACKEND_PORT_END"]) < int(b["LOCAL_BACKEND_PORT_START"])
+    assert a["PYTHONDONTWRITEBYTECODE"] == "1"
+    assert dict(os.environ) == before
+    with pytest.raises(ValueError, match="port"):
+        parallel.worker_environment(tmp_path / "bad", 1000, 65000, 128)
+
+
+@pytest.mark.parametrize("autoload", ["0", "1"])
+@pytest.mark.parametrize("dist", ["load", "worksteal"])
+def test_local_parallel_executes_every_node_and_waits_for_serial(tmp_path, monkeypatch, autoload, dist):
+    from tools import test_backend_parallel as parallel
+    import json
+
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app/__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "pytest.ini").write_text(
+        "[pytest]\nmarkers =\n ci_tier(name): owner\n serial: exclusive\n", encoding="utf-8")
+    source = '''import os, time
+from pathlib import Path
+import pytest
+pytestmark = pytest.mark.ci_tier("fast")
+@pytest.mark.parametrize("case", range(4))
+def test_parallel(tmp_path, unused_tcp_port, case):
+    assert Path(os.environ["TEMP"]).is_dir()
+    assert int(os.environ["LOCAL_BACKEND_PORT_START"]) <= unused_tcp_port <= int(os.environ["LOCAL_BACKEND_PORT_END"])
+    Path("worker-" + os.environ["PYTEST_XDIST_WORKER"]).touch()
+    active = Path("active-" + str(os.getpid()) + "-" + str(case))
+    active.touch()
+    time.sleep(0.4)
+    active.unlink()
+@pytest.mark.serial
+def test_serial():
+    assert not list(Path(".").glob("active-*"))
+'''
+    for name in ("test_a.py", "test_b.py"):
+        (tmp_path / name).write_text(source, encoding="utf-8")
+    if autoload == "1":
+        monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
+    else:
+        monkeypatch.delenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", raising=False)
+    status = parallel.main(["--workers", "2", "--dist", dist, "--work-dir", str(tmp_path / "work")], root=tmp_path)
+    assert status == 0
+    summary = json.loads((tmp_path / "work/summary.json").read_text(encoding="utf-8"))
+    assert summary["selected"] == 10
+    assert summary["missing"] == summary["unexpected"] == []
+    assert len(parallel.junit_outcomes(tmp_path / "work/junit.xml")) == 10
+    assert len(list(tmp_path.glob("worker-*"))) == 2
+
+
+def test_local_parallel_rejects_incomplete_worker_evidence():
+    from tools import test_backend_parallel as parallel
+
+    with pytest.raises(ValueError, match="selection"):
+        parallel.validate_execution(["a::test_one"], [{"selected": [], "reports": [], "complete": True}])
+    with pytest.raises(ValueError, match="executed"):
+        parallel.validate_execution(["a::test_one"], [{"selected": ["a::test_one"], "reports": [], "complete": True}])

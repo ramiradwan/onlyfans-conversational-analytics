@@ -259,10 +259,13 @@ async def test_open_sign_in_probe_only_reads_and_reports_each_change_once(auth):
 @pytest.mark.asyncio
 async def test_admission_ends_the_open_sign_in_task_after_one_probe_not_the_slow_retry(auth, monkeypatch):
     monkeypatch.setattr("app.onboarding.authentication.PROBE_INTERVAL_SECONDS", 0.02, raising=False)
+    monkeypatch.setattr("app.onboarding.coordinator.RECOVERY_INTERVAL_SECONDS", 3600)
     coordinator, _, authentication, client, _, _, _ = auth
     operation, _ = accept(auth)
     tasks = BrowserTasks(coordinator.admissions, extension_id="a" * 32)
     owner = coordinator.owner
+    unchanged, completed = asyncio.Event(), asyncio.Event()
+    probes = []
 
     async def execute(current, *, reconcile, actor=None):
         if current["operation_id"] != operation["operation_id"]:
@@ -270,11 +273,23 @@ async def test_admission_ends_the_open_sign_in_task_after_one_probe_not_the_slow
         owner.calls.append((dict(current), reconcile))
         return await authentication.execute(current, authorize=authorized, read_guard=authorized, reconcile=reconcile)
 
+    async def probe(current):
+        changed = await authentication.probe(current["operation_id"], authorize=authorized)
+        probes.append(changed)
+        if not changed:
+            unchanged.set()
+        return changed
+
+    def settled(current, result):
+        if result.state == "completed":
+            tasks.complete(current["operation_id"])
+            completed.set()
+
     owner.execute = execute
     owner.automatic_recovery = lambda current: current["operation_id"] == operation["operation_id"]
     owner.probe_interval = lambda current: authentication.probe_interval(current["operation_id"])
-    owner.probe = lambda current: authentication.probe(current["operation_id"], authorize=authorized)
-    owner.settled = lambda current, result: tasks.complete(current["operation_id"]) if result.state == "completed" else None
+    owner.probe = probe
+    owner.settled = settled
 
     def task_state():
         with coordinator.store.database.read() as connection:
@@ -286,21 +301,14 @@ async def test_admission_ends_the_open_sign_in_task_after_one_probe_not_the_slow
     tasks.prepare(operation, "browser.authentication")
     coordinator.start()
     try:
-        # Fresh send, startup recovery, then the first probe has nothing to compare.
-        async with asyncio.timeout(1):
-            while len(owner.calls) < 3:
-                await asyncio.sleep(0.005)
-        await asyncio.sleep(0.1)
+        await asyncio.wait_for(unchanged.wait(), timeout=60)
         assert [reconcile for _, reconcile in owner.calls] == [False, True, True]
         assert task_state() == "pending"
+        probes.clear()
         client.attempts[client.current]["state"] = "admitted"
-        started = asyncio.get_running_loop().time()
-        async with asyncio.timeout(1):
-            while task_state() != "completed":
-                await asyncio.sleep(0.005)
-        # The ordinary 15 s recovery interval is untouched. One probe period and
-        # one full read separate the server's admission from the task's end.
-        assert asyncio.get_running_loop().time() - started < 0.5
+        await asyncio.wait_for(completed.wait(), timeout=60)
+        assert task_state() == "completed"
+        assert probes == [True]
         assert [reconcile for _, reconcile in owner.calls] == [False, True, True, True]
         assert [verb for verb, _ in client.calls if verb != "read"] == ["select"]
     finally:

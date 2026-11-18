@@ -24,7 +24,7 @@ from tests.test_nlp_dependencies import Environment
 pytestmark = pytest.mark.ci_tier('integration')
 
 
-async def eventually(predicate, timeout=15):
+async def eventually(predicate, timeout=60):
     async with asyncio.timeout(timeout):
         while not predicate():
             await asyncio.sleep(.02)
@@ -504,7 +504,7 @@ async def test_selected_accounts_rotate_between_bounded_jobs(tmp_path):
         e.findings.select(other, e.profile)
     async with configured(tmp_path, authorize=authorize, hook=hook, setup=setup) as e:
         await eventually(lambda: all(e.findings.state(account)['completion_revision'] == 2
-            for account in (ACCOUNT, other)), timeout=30)
+            for account in (ACCOUNT, other)), timeout=120)
         assert seen == [other, other, ACCOUNT, ACCOUNT, other, other, ACCOUNT, ACCOUNT]
 
 

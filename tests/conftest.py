@@ -8,8 +8,11 @@ explicit temporary SQLite repositories themselves.
 from __future__ import annotations
 
 import os
+import gc
 import tempfile
 from pathlib import Path
+
+import pytest
 
 
 os.environ.setdefault("CANONICAL_PERSISTENCE_BACKEND", "memory")
@@ -32,3 +35,9 @@ for _environment_name, _filename in (
     ("ANALYTICS_PROJECTION_DATABASE_PATH", "analytics-projections.sqlite3"),
 ):
     os.environ[_environment_name] = str(_TEST_DATABASE_ROOT / _filename)
+
+
+@pytest.fixture
+def _collect_test_resource_cycles():
+    """Collect released resource owners before fixture setup."""
+    gc.collect()
