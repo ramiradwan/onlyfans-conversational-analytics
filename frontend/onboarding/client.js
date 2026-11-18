@@ -314,8 +314,8 @@ export class DesktopSetupClient {
       initialAuthentication: action === 'account.connect' && intent.provider !== undefined };
     this.remember(intent.operation_id);
     const sourceContinuation = action === 'account.connect' && this.value.continuation_available && !authentication;
-    if (this.openBrowser && !intent.replace_ceremony && !sourceContinuation && ['browser.access', 'account.connect', 'browser.pair', 'auth.select', 'auth.switch'].includes(action)) this.launchOperation = intent.operation_id;
-    if (action === 'auth.cancel' || action === 'activation.review' || intent.replace_ceremony || sourceContinuation) this.launchOperation = null;
+    if (this.openBrowser && !intent.replace_ceremony && !intent.recover_authority && !sourceContinuation && ['browser.access', 'account.connect', 'browser.pair', 'auth.select', 'auth.switch'].includes(action)) this.launchOperation = intent.operation_id;
+    if (action === 'auth.cancel' || action === 'activation.review' || intent.replace_ceremony || intent.recover_authority || sourceContinuation) this.launchOperation = null;
     this.notify();
     try {
       observe('command-send');
@@ -381,6 +381,11 @@ export class DesktopSetupClient {
 
   async launchBrowser(explicit = false, selectedOperation = null) {
     if (!this.openBrowser || !this.connected) return;
+    if (this.value?.authority_recovery !== undefined) {
+      this.launchOperation = null;
+      if (explicit) throw Error('browser_unavailable');
+      return;
+    }
     if (this.launching) {
       if (!explicit && this.launchOperation) this.launchRequested = true;
       return;
@@ -395,6 +400,7 @@ export class DesktopSetupClient {
       && this.value?.pending_operations.some(item => item.operation_id === operationId && item.action === selected.action)
       && (!authChild || this.value?.authentication?.browser_operation_id === operationId && this.value.authentication.actions.open_browser);
     const current = () => this.connected && this.launchEpoch === epoch
+      && this.value?.authority_recovery === undefined
       && (explicit ? stillSelected() : this.launchOperation === operationId);
     this.launching = true;
     this.launchRequested = false;

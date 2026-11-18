@@ -1311,3 +1311,29 @@ it.each(['activation.review', 'activation.confirm'])('submits a fresh explicit r
   expect(commands[0][1]).toMatchObject({ action: 'activation.review', operation_id: successorId });
   expect(openBrowser).not.toHaveBeenCalled();
 });
+
+it('requires the explicit protected recovery discriminator and never opens an ordinary browser task', async () => {
+  const calls = [];
+  const openBrowser = vi.fn();
+  const parent = { ...record, action: 'account.connect', state: 'waiting' };
+  const subject = new DesktopSetupClient({ generation, storage: storage(), receive() {},
+    uuid: () => operationId, stream: () => () => {}, openBrowser,
+    request: async (url, options) => {
+      calls.push([url, options?.body && JSON.parse(options.body)]);
+      return response(parent, url.endsWith('/commands') ? 202 : 200);
+    } });
+  subject.value = { ...initial(), next_task: 'account-connection', authority_recovery: 'available',
+    allowed_actions: ['account.connect'] };
+  subject.session = session;
+  subject.connected = true;
+  await expect(subject.act('account.connect')).rejects.toThrow('action_unavailable');
+  await expect(subject.act('account.connect', { provider: 'default', recover_authority: true })).rejects.toThrow('action_unavailable');
+  await subject.act('account.connect', { recover_authority: true });
+  const commands = calls.filter(([url]) => url.endsWith('/commands'));
+  expect(commands).toHaveLength(1);
+  expect(commands[0][1]).toMatchObject({ action: 'account.connect', recover_authority: true });
+  expect(openBrowser).not.toHaveBeenCalled();
+  subject.value = { ...subject.value, authority_recovery: 'sign-in-required', pending_operations: [parent], allowed_actions: [] };
+  await expect(subject.launchBrowser(true, operationId)).rejects.toThrow('browser_unavailable');
+  expect(openBrowser).not.toHaveBeenCalled();
+});

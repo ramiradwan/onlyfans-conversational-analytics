@@ -70,6 +70,9 @@ class ReceivingSessions:
                 "SELECT 1 FROM desktop_setup_operations WHERE state IN ('accepted','waiting','outcome_unknown')"
             ).fetchone():
                 raise ValueError("Setup action is pending")
+            protected = getattr(owner, "blocks_setup_transfer", None)
+            if protected is not None and protected(connection, parent["journey_id"]):
+                raise ValueError("Initial setup is unavailable")
             roots = connection.execute(
                 "SELECT * FROM desktop_setup_journeys LIMIT 2"
             ).fetchall()

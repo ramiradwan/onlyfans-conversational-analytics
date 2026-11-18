@@ -38,6 +38,7 @@ export interface DesktopSnapshot {
   decision_status?: { operation_id: string; state: 'awaiting-authentication' | 'confirmation-required' | 'accepted' | 'unavailable' } | null;
   authentication?: DesktopAuthentication | null;
   continuation_available?: boolean;
+  authority_recovery?: 'available' | 'preparing' | 'sign-in-required' | 'checking' | 'blocked';
   creator_label?: { creator_id: string; display_name: string | null; username: string | null } | null;
 }
 export interface DesktopState {
@@ -59,7 +60,7 @@ export class DesktopSetupClient {
   json(path: string, body?: unknown): Promise<unknown>;
   browserTaskPrepared(task: { operation_id: string; journey_id: string; expires_at: number }): void;
   connect(): Promise<void>;
-  act(action: string, options?: { provider?: SignInProvider; replace_ceremony?: true }): Promise<void>;
+  act(action: string, options?: { provider?: SignInProvider; replace_ceremony?: true; recover_authority?: true }): Promise<void>;
   reconcile(selectedOperation?: string): Promise<void>;
   launchBrowser(explicit?: boolean, selectedOperation?: string): Promise<void>;
   stop(): void;

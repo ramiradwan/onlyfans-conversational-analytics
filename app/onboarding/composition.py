@@ -59,10 +59,13 @@ class DesktopSetupCore:
 
 
 def build_desktop_setup(*, store, stage, extension_id, hosted_origin, authentication_providers,
-                        finalize, completion_ready, completed=lambda: None, adapt_owner=None):
+                        finalize, completion_ready, completed=lambda: None, adapt_owner=None,
+                        protected_recovery_enabled=False):
     """Construct common services; the runtime root supplies its authority adapter."""
     if (stage == "runtime") != (adapt_owner is not None):
         raise ValueError("Runtime setup requires its authority adapter")
+    if type(protected_recovery_enabled) is not bool or protected_recovery_enabled and not hosted_origin:
+        raise ValueError("Protected recovery qualification requires the configured Provider")
     admissions = ScopedAdmissions(store, stage=stage)
     tasks = BrowserTasks(admissions, extension_id=extension_id or None)
     key = installation_proof_authority(store)
@@ -93,6 +96,29 @@ def build_desktop_setup(*, store, stage, extension_id, hosted_origin, authentica
     if initial is not None:
         initial.authorize_scope = recovery.authorize_initial_scope
     owner = recovery if adapt_owner is None else adapt_owner(recovery)
+    # The public boot graphs do not opt in yet. This composition seam is for
+    # bounded qualification until the protected sign-in/launch UI is connected.
+    # A disabled boot with a retained admission must still fence that command.
+    with store.database.read() as connection:
+        retained = connection.execute("SELECT 1 FROM protected_recovery_desktop_admissions LIMIT 1").fetchone() is not None
+    if protected_recovery_enabled or retained:
+        from app.onboarding.protected_authority_setup import ProtectedAuthoritySetupOwner
+        components = {}
+        if protected_recovery_enabled:
+            from app.onboarding.protected_browser_recovery import ProtectedBrowserRecoveryEffects
+            from app.persistence.installation_authority_recovery import InstallationAuthorityRecoveries
+            from app.persistence.protected_browser_recovery import ProtectedBrowserRecoveries
+            from app.security.hosted_grants import HostedGrantClient
+            from app.security.installation_authority_recovery import InstallationAuthorityRecoveryClient
+            from app.security.protected_browser_recovery import ProtectedCeremonyClient, ProtectedAuthenticationClient
+            journal = InstallationAuthorityRecoveries(store, origin=hosted_origin)
+            browser = ProtectedBrowserRecoveryEffects(ProtectedBrowserRecoveries(journal),
+                ProtectedCeremonyClient(proofs, key, clock=store._now),
+                ProtectedAuthenticationClient(proofs, key, clock=store._now))
+            components = dict(recovery=journal, browser=browser,
+                client=InstallationAuthorityRecoveryClient(proofs, key, clock=store._now),
+                verifier=HostedGrantClient(proofs, key, store, clock=store._now))
+        owner = ProtectedAuthoritySetupOwner(owner, store, **components)
     return DesktopSetupCore(admissions, tasks, ceremonies, recovery,
         DesktopOnboardingCoordinator(admissions, owner))
 

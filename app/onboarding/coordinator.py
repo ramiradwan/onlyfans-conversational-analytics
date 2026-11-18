@@ -237,6 +237,14 @@ class DesktopOnboardingCoordinator:
                 for action, permitted in (("auth.select", "select"), ("auth.cancel", "cancel"), ("auth.switch", "switch_account")):
                     if authentication["actions"][permitted]:
                         actions.append(action)
+        protected_recovery = view.scope.get("protected_recovery")
+        if protected_recovery is not None:
+            # A recovery presentation has an independent owner. Neither
+            # ordinary enrollment nor activation may interpret it as their own.
+            task = "account-connection"
+            decision = authentication = None
+            local_ready = False
+            actions = ["account.connect"] if protected_recovery["state"] == "available" else []
         review_replacement = view.scope.get("activation_replacement")
         actions = [name for name in actions if all(item["action"] != name or (
             name == "activation.review" and review_replacement is not None
@@ -257,7 +265,8 @@ class DesktopOnboardingCoordinator:
             "decision": decision, "decision_status": view.scope.get("desktop_decision_status"),
             "continuation_available": view.scope.get("source_recovery") is not None,
             "creator_label": creator_label(view.scope.get("browser"), view.scope.get("creator_account_id")),
-            "authentication": authentication, "analysis_readiness": view.analysis_readiness.projection()}, kind="snapshot")
+            "authentication": authentication, "analysis_readiness": view.analysis_readiness.projection(),
+            **({"authority_recovery": protected_recovery["state"]} if protected_recovery is not None else {})}, kind="snapshot")
 
     @staticmethod
     def _public(row):
@@ -301,6 +310,14 @@ class DesktopOnboardingCoordinator:
         scope = dict(view.scope)
         action = command["action"]
         authentication = snapshot["authentication"]
+        protected_recovery = scope.get("protected_recovery")
+        if protected_recovery is not None:
+            if (action != "account.connect" or protected_recovery["state"] != "available"
+                    or command.get("recover_authority") is not True or "provider" in command):
+                raise CommandRefused("action_unavailable")
+            scope["protected_recovery_command_id"] = command["operation_id"]
+        elif "recover_authority" in command:
+            raise CommandRefused("action_unavailable")
         replacement = scope.pop("ceremony_replacement", None)
         review_replacement = scope.pop("activation_replacement", None)
         if action == "activation.review" and review_replacement is not None:

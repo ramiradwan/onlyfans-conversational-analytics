@@ -123,8 +123,7 @@ class InstallationAuthorityRecoveries:
         row = connection.execute("SELECT * FROM installation_authority_recoveries WHERE recovery_id=?", (recovery_id,)).fetchone()
         return None if row is None else dict(row)
 
-    def reserve(self, connection, *, authorize):
-        authorize(connection=connection)
+    def eligible(self, connection):
         evidence = previous_authority(self.store, connection)
         rows = connection.execute("SELECT * FROM installation_authority_recoveries WHERE installation_id=? ORDER BY created_at DESC",
             (evidence.scope["installation_id"],)).fetchall()
@@ -141,6 +140,11 @@ class InstallationAuthorityRecoveries:
                 raise HostedGrantUnavailable("Original recovery deadline remains live")
         if len(rows) >= 128:
             raise HostedGrantUnavailable("Authority recovery retention exceeded")
+        return evidence
+
+    def reserve(self, connection, *, authorize):
+        authorize(connection=connection)
+        evidence = self.eligible(connection)
         now = self.store._now()
         request = exact_request(_new_uuid7(now), evidence.scope)
         connection.execute("INSERT INTO installation_authority_recoveries "

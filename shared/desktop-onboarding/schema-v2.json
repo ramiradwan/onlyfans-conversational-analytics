@@ -150,9 +150,15 @@
             "default"
           ]
         },
-        "replace_ceremony": {"const": true}
+        "replace_ceremony": {"const": true},
+        "recover_authority": {"const": true}
       },
       "allOf": [
+        {
+          "if": {"required": ["recover_authority"]},
+          "then": {"properties": {"action": {"const": "account.connect"}},
+            "not": {"anyOf": [{"required": ["provider"]}, {"required": ["replace_ceremony"]}]}}
+        },
         {
           "if": {
             "properties": {
@@ -254,6 +260,9 @@
         "scope_digest": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
+        },
+        "authority_recovery": {
+          "enum": ["available", "preparing", "sign-in-required", "checking", "blocked"]
         },
         "next_task": {
           "enum": [

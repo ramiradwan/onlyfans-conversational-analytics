@@ -54,6 +54,7 @@ SECURITY_TABLES = (
     'desktop_activation_reconciliations','desktop_activation_review_replacements',
     'installation_authority_recoveries',
     'protected_recovery_ceremonies','protected_recovery_authentication_children',
+    'protected_recovery_desktop_admissions',
     'desktop_admission_sessions','desktop_authentication_projections','desktop_browser_observations','desktop_browser_progress',
     'desktop_browser_task_dispatches','desktop_browser_tasks','desktop_decision_projections','desktop_presentations',
     'desktop_setup_journeys','desktop_setup_operations','first_enrollment_contexts',
