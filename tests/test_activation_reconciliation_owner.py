@@ -57,7 +57,8 @@ def original(tmp_path):
     projection = Owner()
     projection.facts = dict.fromkeys(projection.facts, "verified")
     projection.facts["activation"] = "missing"
-    projection.scope = {**scope, "key": {"installation_key_id": ref.installation_key_id,
+    projection.scope = {**scope, "actor": {"principal_id": "principal.test",
+        "creator_account_id": scope["creator_account_id"], "role": "creator"}, "key": {"installation_key_id": ref.installation_key_id,
         "installation_key_jkt": ref.installation_key_jkt}}
     coordinator = DesktopOnboardingCoordinator(admissions, projection)
     operation, _ = coordinator._accept(native, command(coordinator.read(native), "activation.review"))
@@ -110,7 +111,7 @@ def original(tmp_path):
             reconciliation_client=Client(), reconciliation_origin=state.get("origin", "https://fixture.invalid/"))
     return SimpleNamespace(store=store, owner=owner, operation=operation, path=path, clock=clock, state=state,
         calls=calls, deliveries=deliveries, source=original_source, journey=journey, activation_id=activation_id,
-        delivery=delivery, forbid=forbid)
+        delivery=delivery, forbid=forbid, admissions=admissions, native=native)
 
 
 async def recover(case, activation):

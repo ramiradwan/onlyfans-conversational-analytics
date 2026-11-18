@@ -129,7 +129,9 @@ export function CommercialActivationControls({
     && unconfirmedOffer !== offerIdentity && !unresolvedCommand && !codeInProgress;
   const activationOutcome = sameCreator ? snapshot?.pending_operations.find(value => value.action === 'activation.review') : undefined;
   const pendingActivation = Boolean(activationOutcome);
-  const canOpen = currentAuthority && !pendingActivation && !unresolvedCommand && !codeInProgress && allowed.includes('activation.review');
+  const replacementAvailable = pendingActivation && allowed.includes('activation.review');
+  const canOpen = currentAuthority && (!pendingActivation || replacementAvailable)
+    && (!unresolvedCommand || (replacementAvailable && !unprojectedOperation)) && !codeInProgress && allowed.includes('activation.review');
   // Code recovery may continue an accepted activation, not compete with an
   // outstanding confirmation or an unacknowledged desktop command.
   // Intent can display an already-admitted review. It cannot prepare a
@@ -190,7 +192,7 @@ export function CommercialActivationControls({
   }, [decisionStatus]);
 
   const openSetup = async (action: 'activation.review' | 'activation.confirm' | 'auth.select' | 'auth.switch' = 'activation.review', provider?: SignInProvider) => {
-    if (codeOperation.current || codeInProgress || unresolvedCommand || (entryOperation.current && !entryOperation.current.signal.aborted)) return;
+    if (codeOperation.current || codeInProgress || (unresolvedCommand && !(action === 'activation.review' && replacementAvailable && !unprojectedOperation)) || (entryOperation.current && !entryOperation.current.signal.aborted)) return;
     const permitted = action === 'activation.confirm' ? canConfirm : action === 'auth.select' ? canSelect
       : action === 'auth.switch' ? canSwitch : canOpen;
     if (!currentPresentation()) return;
@@ -218,7 +220,7 @@ export function CommercialActivationControls({
       if (!controller.signal.aborted) {
         setEntryError(cause instanceof Error && cause.message === 'browser_unavailable'
           ? 'The browser action could not be confirmed.' : action === 'activation.confirm' ? 'Activation could not be confirmed.'
-            : 'Sign-in could not be opened.');
+            : action === 'activation.review' ? "The activation offer couldn't be prepared." : 'Sign-in could not be opened.');
       }
     } finally {
       if (entryOperation.current === controller) {
@@ -324,6 +326,7 @@ export function CommercialActivationControls({
     : fullReady ? null : opening ? openingAction === 'activation.confirm' ? 'Confirming activation…'
       : openingAction === 'activation.review' ? 'Preparing activation…' : 'Opening Chrome…'
         : accepted ? 'Activation accepted. Checking Full analytics…'
+          : replacementAvailable ? 'Activation was not completed.'
           : unresolvedCommand ? 'Activation has not been confirmed.'
           : choosingProvider ? choosingAccount ? 'Choose how to sign in with another account.' : 'Choose how to sign in.'
             : activationOutcome?.state === 'waiting' && activationOutcome.reason === 'activation_unavailable' ? 'Checking the activation offer.'
@@ -389,9 +392,9 @@ export function CommercialActivationControls({
         {!choosingAccount && <Button onClick={() => void openSetup('activation.confirm')} disabled={!canConfirm || opening || codeBusy || codePending}
           aria-describedby="activation-offer-feedback" variant="contained" sx={{ alignSelf: 'flex-start' }}>Activate for free</Button>}
         </DialogActions></Dialog></>}
-      {!decision && !fullReady && !choosingProvider && ((activationRequired && canOpen) || codeOpen) && !pendingActivation && <Button
-        onClick={() => void openSetup()} disabled={!canOpen || !canRedeem || opening || checking || codeBusy || codePending}
-        aria-describedby="activation-notice" variant="outlined">Set up Full analytics</Button>}
+      {!decision && !fullReady && !choosingProvider && ((activationRequired && canOpen) || codeOpen) && (!pendingActivation || replacementAvailable) && <Button
+        onClick={() => void openSetup()} disabled={!canOpen || (!canRedeem && !replacementAvailable) || opening || checking || codeBusy || codePending}
+        aria-describedby="activation-notice" variant="outlined">{replacementAvailable ? 'Review offer again' : 'Set up Full analytics'}</Button>}
       {!fullReady && <Stack direction="row" useFlexGap sx={{ flexWrap: 'wrap', ml: -1 }} spacing={1}>
         {!accepted && !unresolvedCommand && !codeInProgress && !choosingProvider && authentication?.actions.open_browser && authentication.browser_operation_id
           && currentAuthority && !desktop.browserLaunchPending

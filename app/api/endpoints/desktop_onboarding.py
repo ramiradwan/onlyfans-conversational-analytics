@@ -15,6 +15,7 @@ from app.provisioning.completion import durable_completion_reader, durable_final
 from app.provisioning.installation_continuation import RegisteredInstallationContinuation
 from app.security.capability_license_redemption import durable_capability_license_opaque_redemption
 from app.security.activation_reconciliation import ActivationReconciliationClient
+from app.security.activation_review_replacement import ActivationReviewReplacementClient
 from app.security.companion_pairing import CompanionPairingService
 
 
@@ -36,7 +37,8 @@ def configure_desktop_setup(application, *, launcher_token, grant_refresh=lambda
                 registered=registered, ceremonies=recovery.ceremonies, browser_tasks=recovery.browser_tasks,
                 redemption=durable_capability_license_opaque_redemption(lambda: store, hosted_origin=origin),
                 reconciliation_client=ActivationReconciliationClient(registered.client.transport, recovery.key),
-                reconciliation_origin=origin)
+                reconciliation_origin=origin,
+                replacement_client=ActivationReviewReplacementClient(registered.client.transport, recovery.key))
             recovery.commercial_reconciliation = activation.reconcile_registered_source
         pairing = DesktopPairing(store, browser_tasks=recovery.browser_tasks,
             service=CompanionPairingService(store, recovery.key))

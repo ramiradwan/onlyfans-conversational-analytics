@@ -99,7 +99,8 @@ export function subscribeDesktopOnboarding(listener: () => void) {
 export async function beginDesktopAction(action: DesktopAction, options: { provider?: AuthenticationProvider } = {}) {
   if (!client || !state.connected || !state.snapshot) throw Error('session_unavailable');
   const pending = state.snapshot.pending_operations.find(value => value.action === action);
-  if (pending) {
+  const replacesReview = action === 'activation.review' && pending && state.snapshot.allowed_actions.includes(action);
+  if (pending && !replacesReview) {
     if (options.provider !== undefined && state.snapshot.authentication?.authentication_attempt?.provider !== options.provider) throw Error('operation_pending');
     await client.launchBrowser(true, pending.operation_id);
   }
@@ -107,7 +108,9 @@ export async function beginDesktopAction(action: DesktopAction, options: { provi
     const authentication = state.snapshot.authentication;
     const replacesCurrentAuthentication = ['auth.cancel', 'auth.switch'].includes(action)
       && [authentication?.operation_id, authentication?.browser_operation_id].includes(state.pending);
-    if (state.pending !== null && !replacesCurrentAuthentication) throw Error('operation_pending');
+    const replacesReviewChild = replacesReview && state.snapshot.pending_operations.some(item =>
+      item.operation_id === state.pending && ['activation.review', 'activation.confirm', 'auth.select', 'auth.switch', 'auth.cancel'].includes(item.action));
+    if (state.pending !== null && !replacesCurrentAuthentication && !replacesReviewChild) throw Error('operation_pending');
     if (!state.snapshot.allowed_actions.includes(action)) throw Error('action_unavailable');
     await client.act(action, options);
   }

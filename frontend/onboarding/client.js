@@ -297,7 +297,11 @@ export class DesktopSetupClient {
         && authentication.actions.select && authentication.operation_id === this.pending && !this.intent?.initialAuthentication
         || action === 'auth.select' && authentication?.state === 'reauthentication-required'
         && authentication.actions.select && authentication.browser_operation_id === this.pending);
-    if (!this.connected || !this.value || (this.pending && !replacesCurrentAuthentication)) return;
+    const replacesReview = action === 'activation.review' && this.value?.allowed_actions.includes(action)
+      && this.value.pending_operations.some(item => item.action === action)
+      && this.value.pending_operations.some(item => item.operation_id === this.pending
+        && ['activation.review', 'activation.confirm', 'auth.select', 'auth.switch', 'auth.cancel'].includes(item.action));
+    if (!this.connected || !this.value || (this.pending && !replacesCurrentAuthentication && !replacesReview)) return;
     observe('click');
     const intent = command(this.value, action, this.uuid(), options);
     // Later launch steps of this click are recorded once each.
@@ -311,7 +315,7 @@ export class DesktopSetupClient {
     this.remember(intent.operation_id);
     const sourceContinuation = action === 'account.connect' && this.value.continuation_available && !authentication;
     if (this.openBrowser && !intent.replace_ceremony && !sourceContinuation && ['browser.access', 'account.connect', 'browser.pair', 'auth.select', 'auth.switch'].includes(action)) this.launchOperation = intent.operation_id;
-    if (action === 'auth.cancel' || intent.replace_ceremony || sourceContinuation) this.launchOperation = null;
+    if (action === 'auth.cancel' || action === 'activation.review' || intent.replace_ceremony || sourceContinuation) this.launchOperation = null;
     this.notify();
     try {
       observe('command-send');

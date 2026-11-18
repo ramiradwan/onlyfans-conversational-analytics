@@ -142,9 +142,12 @@ class SourceReplacementClient:
             raise SourceReplacementRefused(reason)
         return self.contract.validate(schema, value)
 
+    def _target(self, request):
+        return _validate_request(self.kind, request)
+
     def envelope(self, request, *, before_send):
         request = _document(canonical_request(request), limit=LIMIT)
-        target = _validate_request(self.kind, request)
+        target = self._target(request)
         before_send()
         # Replacement must never create a missing key, even for initial enrollment.
         key = signing_reference(self.key)

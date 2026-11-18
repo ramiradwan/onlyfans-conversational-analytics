@@ -1291,3 +1291,23 @@ it('names only the current deliberate desktop action while the owner receipt is 
   expect(states.at(-1)).not.toHaveProperty('pendingAction');
   subject.stop();
 });
+
+it.each(['activation.review', 'activation.confirm'])('submits a fresh explicit replacement review without launching the old browser task (%s)', async localAction => {
+  const calls = [];
+  const openBrowser = vi.fn();
+  const old = { ...record, action: 'activation.review', state: 'outcome_unknown', reason: 'operation_unconfirmed' };
+  const successorId = '33333333-3333-4333-8333-333333333333';
+  const subject = new DesktopSetupClient({ generation, storage: storage(), receive() {},
+    uuid: () => successorId, stream: () => () => {}, openBrowser, request: async (url, options) => {
+      calls.push([url, options?.body && JSON.parse(options.body)]);
+      return response({ ...old, operation_id: successorId, state: 'accepted', reason: 'none' }, 202);
+    } });
+  const child = { ...old, action: 'activation.confirm', operation_id: '44444444-4444-4444-8444-444444444444' };
+  subject.value = { ...initial(), pending_operations: localAction === 'activation.review' ? [old] : [old, child], allowed_actions: ['activation.review'] };
+  subject.session = session; subject.connected = true; subject.remember(localAction === 'activation.review' ? old.operation_id : child.operation_id);
+  await subject.act('activation.review');
+  const commands = calls.filter(([url]) => url.endsWith('/commands'));
+  expect(commands).toHaveLength(1);
+  expect(commands[0][1]).toMatchObject({ action: 'activation.review', operation_id: successorId });
+  expect(openBrowser).not.toHaveBeenCalled();
+});

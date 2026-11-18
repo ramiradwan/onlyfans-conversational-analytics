@@ -771,6 +771,9 @@ class InstallationContinuationStore:
         if connection.execute("SELECT 1 FROM onboarding_source_replacement_outcomes "
                 "WHERE predecessor_operation_id=? AND status='prepared'", (row["operation_id"],)).fetchone():
             raise OnboardingJourneyUnavailable("journey_unavailable")
+        if connection.execute("SELECT 1 FROM desktop_activation_review_replacements "
+                "WHERE source_operation_id=? AND status='prepared'", (row["operation_id"],)).fetchone():
+            raise OnboardingJourneyUnavailable("journey_unavailable")
         if datetime.fromisoformat(row["expires_at"]) <= self.authentication._now():
             raise OnboardingJourneyUnavailable("journey_expired")
         target = self.selection.select_in_transaction(connection, association_request_id=row["association_request_id"])

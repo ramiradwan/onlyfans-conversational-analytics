@@ -237,7 +237,10 @@ class DesktopOnboardingCoordinator:
                 for action, permitted in (("auth.select", "select"), ("auth.cancel", "cancel"), ("auth.switch", "switch_account")):
                     if authentication["actions"][permitted]:
                         actions.append(action)
+        review_replacement = view.scope.get("activation_replacement")
         actions = [name for name in actions if all(item["action"] != name or (
+            name == "activation.review" and review_replacement is not None
+            and item["operation_id"] == review_replacement["original_operation_id"]) or (
             name == "auth.select" and authentication is not None
             and authentication["state"] == "reauthentication-required" and authentication["actions"]["select"]
             and item["operation_id"] == authentication["browser_operation_id"]) for item in pending)]
@@ -299,6 +302,10 @@ class DesktopOnboardingCoordinator:
         action = command["action"]
         authentication = snapshot["authentication"]
         replacement = scope.pop("ceremony_replacement", None)
+        review_replacement = scope.pop("activation_replacement", None)
+        if action == "activation.review" and review_replacement is not None:
+            scope["activation_replacement"] = {**review_replacement,
+                "successor_desktop_operation_id": command["operation_id"]}
         if command.get("replace_ceremony") is True:
             if (action != "auth.select" or replacement is None or authentication is None
                     or authentication["state"] != "replacement-required"
@@ -334,6 +341,8 @@ class DesktopOnboardingCoordinator:
         # new commands without preventing reads or native reattachment.
         connection.execute("DELETE FROM desktop_setup_operations WHERE state IN ('completed','refused') AND expires_at<=? "
             "AND NOT (action='setup.finalize' AND state='refused') AND NOT EXISTS (SELECT 1 "
+            "FROM desktop_activation_review_replacements ar WHERE ar.original_operation_id=desktop_setup_operations.operation_id) "
+            "AND NOT EXISTS (SELECT 1 "
             "FROM desktop_browser_ceremony_replacements r WHERE r.parent_operation_id=desktop_setup_operations.operation_id "
             "AND julianday(r.source_expires_at)>julianday(?, 'unixepoch')) "
             "AND NOT EXISTS (SELECT 1 FROM desktop_setup_operations child "

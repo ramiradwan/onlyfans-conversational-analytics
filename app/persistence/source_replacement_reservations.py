@@ -37,6 +37,9 @@ class SourceReplacementReservations:
                 or not valid_identifier(creator_account_id)
                 or self.preparations.classify(evidence["journey_id"], connection=connection) != "retained-prepare"):
             raise OnboardingJourneyUnavailable("journey_unavailable")
+        if connection.execute("SELECT 1 FROM desktop_activation_review_replacements WHERE source_operation_id=?",
+                (operation_id,)).fetchone():
+            raise OnboardingJourneyUnavailable("journey_unavailable")
         # Do not reserve against a completed or revoked original, even if its
         # expiry/receipt still remains. Authority and original outcome must be
         # rechecked by the caller, including its Provider-specific proof reads.

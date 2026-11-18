@@ -24,7 +24,7 @@ class ActivationReconciliationJournal:
         self.preparations = SourcePreparations(store)
         self.contexts = InstallationContinuationStore(store)
 
-    def request(self, connection, operation):
+    def request(self, connection, operation, *, allow_replaced=False):
         """Derive only from the admitted original action and its immutable ceremony."""
         saved = connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?",
             (operation["operation_id"],)).fetchone()
@@ -34,7 +34,10 @@ class ActivationReconciliationJournal:
             (operation["operation_id"],)).fetchone()
         if (saved is None or saved["owner_scope_json"] != operation["owner_scope_json"]
                 or saved["journey_id"] != operation["journey_id"] or saved["action"] != "activation.review"
-                or saved["state"] not in {"accepted", "waiting", "outcome_unknown"}
+                or (saved["state"] not in {"accepted", "waiting", "outcome_unknown"}
+                    and not (allow_replaced and saved["state"] == "refused" and saved["reason"] == "operation_expired"
+                        and connection.execute("SELECT 1 FROM desktop_activation_review_replacements WHERE original_operation_id=?",
+                            (operation["operation_id"],)).fetchone()))
                 or source is None or ceremony is None):
             raise HostedGrantUnavailable("Original activation is unavailable")
         selected = json.loads(saved["owner_scope_json"])
@@ -91,15 +94,15 @@ class ActivationReconciliationJournal:
             (operation_id,)).fetchone()
         return None if row is None else dict(row)
 
-    def _require(self, connection, operation, expected, *, authorize):
+    def _require(self, connection, operation, expected, *, authorize, allow_replaced=False):
         authorize()
-        request, deadline = self.request(connection, operation)
+        request, deadline = self.request(connection, operation, allow_replaced=allow_replaced)
         if request != expected or self.store._now().timestamp() < deadline:
             raise HostedGrantUnavailable("Original activation is not eligible for reconciliation")
         return hashlib.sha256(canonical_request(request)).hexdigest()
 
-    def exact_row(self, connection, operation, expected, *, authorize):
-        digest = self._require(connection, operation, expected, authorize=authorize)
+    def exact_row(self, connection, operation, expected, *, authorize, allow_replaced=False):
+        digest = self._require(connection, operation, expected, authorize=authorize, allow_replaced=allow_replaced)
         row = self.row(connection, operation["operation_id"])
         if row is not None and (row["request_digest"] != digest or row["source_operation_id"] != expected["source_operation_id"]
                 or row["activation_operation_id"] != expected["activation_operation_id"]):

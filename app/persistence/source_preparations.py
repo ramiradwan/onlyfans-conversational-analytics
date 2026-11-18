@@ -55,7 +55,7 @@ class SourcePreparations:
             (evidence["journey_id"], row["journey_id"], row["operation_id"], row["installation_id"],
             now.isoformat())).fetchone() is not None
 
-    def retain(self, connection, row, request, *, predecessor_operation_id=None):
+    def retain(self, connection, row, request, *, predecessor_operation_id=None, review_predecessor_operation_id=None):
         """Within the owner's transaction before send, or verified adoption."""
         raw = self._validate(row, request)
         if len(raw) > 8192:
@@ -88,6 +88,22 @@ class SourcePreparations:
         if created.tzinfo is None or not created <= now < created + RETENTION:
             raise OnboardingJourneyUnavailable("journey_unavailable")
         retain_until = (created + RETENTION).timestamp()
+        if predecessor_operation_id is not None and review_predecessor_operation_id is not None:
+            raise OnboardingJourneyUnavailable("journey_unavailable")
+        if review_predecessor_operation_id is not None:
+            parent = self.get(review_predecessor_operation_id, connection=connection)
+            reservation = connection.execute("SELECT * FROM desktop_activation_review_replacements "
+                "WHERE source_operation_id=? AND successor_source_operation_id=? AND status='send-claimed'",
+                (review_predecessor_operation_id, row["operation_id"])).fetchone()
+            if (parent is None or reservation is None or parent["kind"] != REGISTERED or row["kind"] != REGISTERED
+                    or parent["installation_id"] != row["installation_id"]
+                    or reservation["successor_journey_id"] != row["journey_id"]):
+                raise OnboardingJourneyUnavailable("journey_unavailable")
+            from app.security.activation_review_replacement import prepare_request
+            if raw != canonical_request(prepare_request(json.loads(reservation["request_json"]), successor=True)):
+                raise OnboardingJourneyUnavailable("journey_unavailable")
+            created = datetime.fromtimestamp(parent["created_at"], tz=created.tzinfo)
+            retain_until = parent["retain_until"]
         if predecessor_operation_id is not None:
             parent = self.get(predecessor_operation_id, connection=connection)
             reservation = connection.execute("SELECT * FROM onboarding_source_replacement_reservations "

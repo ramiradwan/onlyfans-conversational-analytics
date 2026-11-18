@@ -144,7 +144,8 @@
         "0043_onboarding_source_replacement_reservations.sql": "f953a37a404b0b555ec8b71295343e64710d0c6311d340e2efe7c64b17a50c6a",
         "0044_onboarding_source_replacement_outcomes.sql": "f84c374b393ab5b4668735744f78fdcc396e19b05448bb0eac79b2796d69d88a",
         "0045_desktop_activation_reconciliation.sql": "2bcecc1d48a0ba329c404fd1acb1bbfdc048c5501d6691808729fcf1af917348",
-        "0046_initial_replacement_recovery.sql": "f9098709b1adadf8c025f1dd89ed0a8b6c8be16d4fb8dc206a47ea545753ab86"
+        "0046_initial_replacement_recovery.sql": "f9098709b1adadf8c025f1dd89ed0a8b6c8be16d4fb8dc206a47ea545753ab86",
+        "0047_activation_review_replacements.sql": "9e9ec45d5c07b6e2592427110b2c6fee8d8eb2c210fef128814fa22f51f2e19e"
       }
     },
     {
