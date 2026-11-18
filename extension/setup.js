@@ -24,6 +24,7 @@ for (const mode of ['preview', 'full']) {
 
 let failed = false;
 let dismissed = false;
+let revokedChoice = false;
 let fullReviewRequested = false;
 let browserTask = null, browserTaskExpiry = null, desktopAdoption = false;
 let currentTask = null, taskHeading = null, taskLifetime = 0;
@@ -160,14 +161,16 @@ function render(model) {
   // A new legal review supersedes an earlier optional mode-choice dismissal.
   if (agreement) dismissed = false;
   const active = ['preview', 'full'].includes(mode) && !legal.requires_reauthorization;
-  const choose = (modeChoiceAvailable(model) && !dismissed) || (mode === 'preview' && fullReviewRequested)
+  const revoked = mode === 'revoked' || status.phase === 'revoked';
+  if (!revoked) revokedChoice = false;
+  const choose = (modeChoiceAvailable(model) && !dismissed && (!revoked || revokedChoice)) || (mode === 'preview' && fullReviewRequested)
     || Boolean(browserTask) && mode !== 'full' && !(mode === 'paused' && status.consent.resume_mode === 'full');
-  const access = status.phase === 'permission_required';
+  const access = status.phase === 'permission_required' && !revoked;
   const selected = browserTask ? 'full' : setupChoice?.mode ?? (fullReviewRequested ? 'full' : legal.requires_reauthorization
     ? status.consent.resume_mode ?? (['preview', 'full'].includes(mode) ? mode : null) : null);
   const pendingAccess = selected && setupChoice?.stage === 'access' && !agreement
     && legal.flow.stage === 'mode_selection';
-  const full = selected === 'full' || mode === 'full' || mode === 'paused' && status.consent.resume_mode === 'full';
+  const full = (!revoked || revokedChoice || Boolean(browserTask)) && (selected === 'full' || mode === 'full' || mode === 'paused' && status.consent.resume_mode === 'full');
   const view = full && !browserTask ? 'desktop'
     : agreement ? selected ? 'agree' : 'start'
       : pendingAccess ? 'access' : choose ? 'mode' : access ? 'access' : 'journey';
@@ -192,10 +195,17 @@ function render(model) {
       : view === 'mode' ? 'Choose a mode' : view === 'access' ? 'Allow site access' : full ? 'Browser access' : currentJourney.title;
   if (element('step-summary').textContent !== summary) text('step-summary', summary);
   show('desktop-entry', view === 'desktop');
-  const desktop = desktopLaunchPresentation(desktopLaunch.state);
+  const fullWorkspace = mode === 'full' || mode === 'paused' && status.consent.resume_mode === 'full';
+  const desktopJourney = fullWorkspace && !legal.requires_reauthorization ? currentJourney : null;
+  const desktop = desktopLaunchPresentation(desktopLaunch.state, desktopJourney);
   text('desktop-entry-title', desktop.title); text('desktop-entry-body', desktop.body);
+  element('desktop-entry').dataset.tone = desktopLaunch.state === 'opening' ? 'progress'
+    : desktopLaunch.state === 'unconfirmed' ? 'warning' : desktopJourney?.tone ?? 'info';
+  const desktopReady = desktopJourney?.id === 'full_ready';
+  show('desktop-setup-code', !desktopReady && !model.pairing?.desktop_control && !model.desktopRuntimeReachable);
+  text('open-desktop', desktopReady ? currentJourney.primaryLabel : 'Open desktop app');
   page.lock('open-desktop', desktopLaunch.state === 'opening' || !workspaceRecord);
-  show('download-desktop', secureExternalUrl(model.config.desktop_app_download_url) !== null);
+  show('download-desktop', !desktopReady && !model.desktopRuntimeReachable && secureExternalUrl(model.config.desktop_app_download_url) !== null);
   show('desktop-back', mode !== 'full' && status.consent.resume_mode !== 'full');
   text('desktop-back', mode === 'preview' ? 'Keep Preview' : 'Back');
   show('pre-mode', view === 'agree'); show('mode-choice', view === 'mode');
@@ -247,9 +257,14 @@ function render(model) {
   const daily = previewCounts(status.preview);
   text('metrics-range', daily.label);
   for (const [id, key] of [['messages-count', 'message_observations'], ['inbound-count', 'inbound_observations'], ['outbound-count', 'outbound_observations']]) text(id, new Intl.NumberFormat().format(daily.counts[key] ?? 0));
+  if (currentJourney.id === 'analytics_off') {
+    text('journey-icon', 'Ⅱ'); text('journey-badge', '');
+  }
   if (currentJourney.id === 'preview_available') {
-    text('journey-title', status.observer?.attachment === 'ready' ? 'Preview is ready' : 'Waiting for OnlyFans activity');
-    text('journey-badge', status.observer?.attachment === 'ready' ? 'Counting as you use OnlyFans' : '');
+    const ready = status.observer?.attachment === 'ready' && !status.reload_required;
+    if (!ready) text('journey-icon', '…');
+    text('journey-title', ready ? 'Preview is ready' : 'Waiting for OnlyFans activity');
+    text('journey-badge', ready ? 'Counting as you use OnlyFans' : '');
     text('journey-body', '');
   }
   for (const [id, action, label] of [['journey-primary', currentJourney.primaryAction,
@@ -276,7 +291,9 @@ function focusTask() {
 }
 function runJourneyAction(action) {
   if (action === 'review_full' || action === 'choose_mode') {
-    dismissed = false; setFullReview(action === 'review_full'); render(client.model); return;
+    dismissed = false;
+    revokedChoice = action === 'choose_mode' && client.model.status.consent.mode === 'revoked';
+    setFullReview(action === 'review_full'); render(client.model); return;
   }
   if (action === 'open_desktop') return desktopLaunch.launch(client.model);
   if (action === 'open_creator_account') return openCreatorAccount();
@@ -334,7 +351,7 @@ page.bind('desktop-back', () => {
 page.bind('enable-preview', () => enableMode('preview'));
 page.bind('enable-full', () => enableMode('full'));
 page.bind('review-full', () => { setFullReview(true); render(client.model); });
-page.bind('not-now-preview', () => { dismissed = true; render(client.model); });
+page.bind('not-now-preview', () => { dismissed = true; revokedChoice = false; render(client.model); });
 page.bind('full-secondary', async () => {
   if (browserTask) await send({ type: WORKSPACE_MESSAGE_TYPE, action: 'dismiss_browser_task' });
   browserTask = null; clearTimeout(browserTaskExpiry);

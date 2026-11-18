@@ -42,7 +42,13 @@ export function createDesktopLaunch({ workspace, prepare, dispatch, changed,
   });
 }
 
-export function desktopLaunchPresentation(state) {
+export function desktopLaunchPresentation(state, journey = null) {
+  // A settled Full workspace reports the current owner state, not the
+  // outcome of a previous launch. The handoff remains explicit.
+  if (journey && state !== 'opening' && state !== 'unconfirmed') {
+    const body = journey.id === 'pairing_failed' ? '' : journey.body;
+    return { title: journey.title, body };
+  }
   if (state === 'opening') return { title: 'Waiting for the desktop app…', body: 'Continue in the desktop window.' };
   if (state === 'unconfirmed') return { title: 'Desktop connection not confirmed', body: '' };
   if (state === 'adopted') return { title: 'Continue in the desktop app', body: 'Desktop setup has received this browser’s setup request.' };

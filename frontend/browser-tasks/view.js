@@ -1,4 +1,4 @@
-import { setStatus } from '../shared-setup/presentation.js';
+import { recoveryTone, setStatus } from '../shared-setup/presentation.js';
 import { browserRecovery, recoveryClass } from '../shared-setup/recovery.js';
 const journeyStates = { loading: 'loading', unavailable: 'unavailable', profile_mismatch: 'profile_mismatch',
   account_mismatch: 'account_mismatch', auth_idle: 'auth_idle', auth_opening: 'auth_opening', auth_checking: 'auth_checking',
@@ -50,7 +50,9 @@ export function renderBrowserTask(document, value) {
     : state === 'service_unavailable' && classification === 'authorization_refused'
       ? 'This browser task is not authorized.' : null;
   setStatus(get('task-status'), failure || (!payload && state === 'service_unavailable'
-    ? 'Dipsy can’t connect right now. Open the desktop app to continue setup.' : status[state]));
+    ? 'Dipsy can’t connect right now. Open the desktop app to continue setup.' : status[state]),
+  ['task_completed', 'reported'].includes(state) ? 'success'
+    : state === 'auth_unconfirmed' ? 'progress' : recoveryTone(classification));
   get('pairing-replace').hidden = !pairing || state !== 'pairing_saved';
   get('task-title').textContent = pairing ? 'Connect browser' : authentication ? 'Sign in' : 'Browser access';
   get('extension-open').hidden = authentication || pairing || !['needs-consent', 'needs-permission', 'needs-account'].includes(state);

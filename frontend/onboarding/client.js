@@ -288,9 +288,11 @@ export class DesktopSetupClient {
         elapsed_ms: Math.max(0, Math.round(performance.now() - clicked)) }).catch(() => {});
     };
     const authentication = this.value?.authentication;
-    const replacesCurrentAuthentication = ['auth.cancel', 'auth.switch'].includes(action)
-      && this.value?.allowed_actions.includes(action)
-      && [authentication?.operation_id, authentication?.browser_operation_id].includes(this.pending);
+    const replacesCurrentAuthentication = this.value?.allowed_actions.includes(action)
+      && (['auth.cancel', 'auth.switch'].includes(action)
+        && [authentication?.operation_id, authentication?.browser_operation_id].includes(this.pending)
+        || action === 'auth.select' && authentication?.state === 'reauthentication-required'
+        && authentication.actions.select && authentication.browser_operation_id === this.pending);
     if (!this.connected || !this.value || (this.pending && !replacesCurrentAuthentication)) return;
     observe('click');
     const intent = command(this.value, action, this.uuid(), options);

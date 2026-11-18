@@ -11,8 +11,8 @@ export const OBSERVER_REGIONS = Object.freeze(Object.fromEntries(Object.entries(
   popup: ['popup-content', 'popup-status', 'surface-feedback'],
   setup: ['extension-stage', 'surface-feedback'],
   options: ['options-notice', 'options-capture', 'options-connection', 'options-data', 'surface-feedback'],
-  'desktop-onboarding': [],
-  'browser-task': [],
+  'desktop-onboarding': ['desktop-task-card', 'desktop-task-status', 'desktop-task-actions'],
+  'browser-task': ['browser-task-card', 'browser-task-status', 'browser-task-actions'],
 }).map(([view, regions]) => [view, Object.freeze(regions)])));
 
 const PHASES = Object.freeze({

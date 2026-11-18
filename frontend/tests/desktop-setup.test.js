@@ -659,6 +659,39 @@ describe('desktop setup presentation', () => {
     expect(document.getElementById('browser-reopen').hidden).toBe(true);
   });
 
+  it('replaces only the ended sign-in attempt through the owner-admitted provider action', async () => {
+    const nextId = '44444444-4444-4444-8444-444444444444';
+    const value = { ...initial(), journey_id: generation, next_task: 'account-connection',
+      allowed_actions: ['auth.select'], pending_operations: [{ ...record, action: 'auth.select', state: 'outcome_unknown', reason: 'operation_unconfirmed' }],
+      authentication: { ...signIn(), operation_id: generation, browser_operation_id: operationId, state: 'reauthentication-required' } };
+    const request = vi.fn(async (url) => response(url.endsWith('/commands')
+      ? { ...record, operation_id: nextId, action: 'auth.select' }
+      : { ...record, operation_id: nextId, action: 'auth.select', state: 'waiting' }));
+    const client = new DesktopSetupClient({ generation, request, storage: storage(), uuid: () => nextId, receive: vi.fn() });
+    client.value = value; client.session = session; client.connected = true;
+    client.remember(generation);
+    await client.act('auth.select', { provider: 'google' });
+    expect(request.mock.calls.filter(([url]) => url.endsWith('/commands'))).toHaveLength(0);
+    client.remember(operationId);
+    await client.act('auth.select', { provider: 'google' });
+    expect(request.mock.calls.filter(([url]) => url.endsWith('/commands'))).toHaveLength(1);
+    expect(client.pending).toBe(nextId);
+    client.stop();
+  });
+
+  it('does not suggest opening an unavailable browser and reserves the warning line', () => {
+    mount();
+    renderSetup(document, { snapshot: { ...initial(), pending_operations: [record], allowed_actions: [] },
+      connected: true, error: 'chrome_unavailable' });
+    expect(document.getElementById('browser-reopen').hidden).toBe(true);
+    expect(document.getElementById('task-status').dataset.tone).toBe('warning');
+    expect(document.getElementById('task-status').dataset.reservedRegion).toBe('desktop-task-status');
+    renderSetup(document, { snapshot: { ...initial(), pending_operations: [record], allowed_actions: [] },
+      connected: true, error: 'chrome_unavailable', chromeAvailable: true });
+    expect(document.getElementById('browser-reopen').hidden).toBe(false);
+    expect(document.getElementById('task-status').textContent).not.toContain('Install Chrome');
+  });
+
   it('renders only configured provider choices with the governed initial action', () => {
     mount();
     const value = { ...initial(), next_task: 'account-connection', allowed_actions: ['account.connect'],

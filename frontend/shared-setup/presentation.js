@@ -5,9 +5,16 @@ export function focusTransition(heading, deliberate) {
   heading.scrollIntoView({ behavior: 'instant', block: 'start' });
 }
 
-export function setStatus(element, text) {
+export function setStatus(element, text, tone) {
   // Avoid repeating an unchanged live-region announcement on pushed snapshots.
   if (element.textContent !== text) element.textContent = text;
+  if (tone !== undefined) element.dataset.tone = text ? tone : 'none';
+}
+
+export function recoveryTone(classification) {
+  if (['operation_pending', 'transport_interrupted'].includes(classification)) return 'progress';
+  if (['invariant_failed', 'authorization_refused', 'owner_unavailable'].includes(classification)) return 'error';
+  return classification ? 'warning' : 'neutral';
 }
 
 export function applyTheme(document, storage) {

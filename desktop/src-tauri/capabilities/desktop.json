@@ -22,6 +22,7 @@
   },
   "permissions": [
     "allow-desktop-state",
+    "allow-desktop-chrome-available",
     "allow-desktop-update-status",
     "allow-desktop-engine-acquisition-review",
     "allow-desktop-engine-acquisition-start",
