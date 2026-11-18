@@ -483,7 +483,7 @@ def test_windows_hang_diagnostics_preserve_bounded_job_limits_and_test_execution
                 assert not any("faulthandler_" in option for option in options)
                 continue
             execution_lanes.add(environment["CI_TEST_LANE"])
-            assert "faulthandler_timeout=120" in options
+            assert "faulthandler_timeout=600" in options
             assert "faulthandler_exit_on_timeout=false" in options
             assert step.get("continue-on-error", False) is False
         upload = next(step for step in _steps(job) if step.get("name") == "Retain backend timing and selection")
@@ -1311,7 +1311,7 @@ def _assert_python313_loop_counterpart(workflow: dict[str, Any]) -> None:
         "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
         "PYTEST_ADDOPTS": "-p tools.ci_pytest --durations=50 --durations-min=0.25 "
             "--junitxml=artifacts/ci-tests/windows-python313-loop-contract/junit.xml "
-            "-o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false",
+            "-o faulthandler_timeout=600 -o faulthandler_exit_on_timeout=false",
     }
     command = execute["run"]
     assert '-m pytest --noconftest --rootdir "$env:GITHUB_WORKSPACE"' in command
