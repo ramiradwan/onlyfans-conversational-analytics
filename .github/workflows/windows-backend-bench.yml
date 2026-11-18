@@ -1,39 +1,15 @@
 # Manual timing runs of one exhaustive Windows regression shard. Not part of Required CI.
-# A push to bench/windows-backend/s<shard>-w<workers>-<scheduler>[-label] runs that shard with
-# those parallel workers and pytest-xdist scheduler. The jobs repeat ci.yml's wheel and shard steps.
+# A push to bench/windows-backend/s<shard>-w<workers>-<scheduler>[-label] runs that shard with those
+# parallel workers and pytest-xdist scheduler. The wheel and shard jobs repeat ci.yml's steps.
 name: Windows backend bench
 'on':
   push:
     branches:
       - bench/windows-backend/**
-  workflow_dispatch:
-    inputs:
-      shard:
-        description: Exhaustive Windows regression shard
-        type: choice
-        options:
-          - '1'
-          - '2'
-        default: '2'
-      workers:
-        description: pytest-xdist workers for the parallel phase
-        type: choice
-        options:
-          - '2'
-          - '3'
-          - '4'
-        default: '4'
-      dist:
-        description: pytest-xdist scheduler for the parallel phase
-        type: choice
-        options:
-          - load
-          - worksteal
-        default: load
 permissions:
   contents: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.run_id }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 env:
   PRODUCT_SHA: ${{ github.sha }}
@@ -50,15 +26,9 @@ jobs:
       - name: Resolve bench parameters
         id: parameters
         env:
-          EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
-          INPUT_SHARD: ${{ inputs.shard }}
-          INPUT_WORKERS: ${{ inputs.workers }}
-          INPUT_DIST: ${{ inputs.dist }}
         run: |
-          if [ "$EVENT_NAME" = workflow_dispatch ]; then
-            shard="$INPUT_SHARD"; workers="$INPUT_WORKERS"; dist="$INPUT_DIST"
-          elif [[ "$REF_NAME" =~ ^bench/windows-backend/s([12])-w([234])-(load|worksteal)(-[a-z0-9-]+)?$ ]]; then
+          if [[ "$REF_NAME" =~ ^bench/windows-backend/s([12])-w([234])-(load|worksteal)(-[a-z0-9-]+)?$ ]]; then
             shard="${BASH_REMATCH[1]}"; workers="${BASH_REMATCH[2]}"; dist="${BASH_REMATCH[3]}"
           else
             echo "Name bench branches bench/windows-backend/s<1|2>-w<2|3|4>-<load|worksteal>[-label]" >&2
@@ -71,6 +41,7 @@ jobs:
           printf 'shard=%s\nworkers=%s\ndist=%s\n' "$shard" "$workers" "$dist" >> "$GITHUB_OUTPUT"
           echo "Windows backend bench: shard $shard, $workers workers, $dist"
   fixed-sqlcipher-wheel:
+    needs: plan
     runs-on: windows-latest
     timeout-minutes: 30
     steps:

@@ -376,7 +376,8 @@ def _bench_triggers(bench: dict[str, Any]) -> dict[str, Any]:
 def _assert_bench_repeats_product_ci(bench: dict[str, Any], product: dict[str, Any]) -> None:
     jobs = bench["jobs"]
     assert set(jobs) == {"plan", "fixed-sqlcipher-wheel", "windows-full-regression"}
-    assert jobs["fixed-sqlcipher-wheel"] == product["jobs"]["fixed-sqlcipher-wheel"]
+    # Invalid bench refs stop in the plan job before any Windows setup runs.
+    assert jobs["fixed-sqlcipher-wheel"] == {"needs": "plan", **product["jobs"]["fixed-sqlcipher-wheel"]}
     shard = "${{ needs.plan.outputs.shard }}"
     def substitute(value):
         if isinstance(value, dict):
@@ -401,17 +402,13 @@ def _assert_bench_repeats_product_ci(bench: dict[str, Any], product: dict[str, A
 def test_windows_backend_bench_repeats_the_product_ci_shard() -> None:
     bench = _bench_document()
     _assert_bench_repeats_product_ci(bench, _workflow_document())
-    # The bench is opt-in only: bench branches or a manual run, never main or pull requests.
-    triggers = _bench_triggers(bench)
-    assert set(triggers) == {"push", "workflow_dispatch"}
-    assert triggers["push"] == {"branches": ["bench/windows-backend/**"]}
-    inputs = triggers["workflow_dispatch"]["inputs"]
-    assert {name: (value["type"], value["options"], value["default"]) for name, value in inputs.items()} == {
-        "shard": ("choice", ["1", "2"], "2"), "workers": ("choice", ["2", "3", "4"], "4"),
-        "dist": ("choice", ["load", "worksteal"], "load")}
+    # The bench runs only for pushes to bench branches, never for main or pull requests.
+    assert _bench_triggers(bench) == {"push": {"branches": ["bench/windows-backend/**"]}}
+    assert bench["permissions"] == {"contents": "read"}
+    assert bench["concurrency"] == {"group": "${{ github.workflow }}-${{ github.ref }}", "cancel-in-progress": False}
 
 
-@pytest.mark.parametrize("fault", ["step", "wheel", "workers", "extra-job"])
+@pytest.mark.parametrize("fault", ["step", "wheel", "wheel-before-plan", "workers", "extra-job"])
 def test_windows_backend_bench_falsifiers(fault: str) -> None:
     bench = deepcopy(_bench_document())
     jobs = bench["jobs"]
@@ -419,6 +416,8 @@ def test_windows_backend_bench_falsifiers(fault: str) -> None:
         jobs["windows-full-regression"]["steps"][-2]["run"] = "true"
     elif fault == "wheel":
         jobs["fixed-sqlcipher-wheel"]["timeout-minutes"] = 5
+    elif fault == "wheel-before-plan":
+        del jobs["fixed-sqlcipher-wheel"]["needs"]
     elif fault == "workers":
         lane = next(step for step in jobs["windows-full-regression"]["steps"] if "CI_TEST_LANE" in step.get("env", {}))
         lane["env"]["CI_PYTEST_WORKERS"] = "8"
