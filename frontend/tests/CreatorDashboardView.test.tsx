@@ -289,29 +289,29 @@ describe('CreatorDashboardView', () => {
     expect(source.api.begin).not.toHaveBeenCalled();
   });
 
-  function historyReviewFixture(creator = ACCOUNT_ID) {
+  function historyReviewFixture(creator = ACCOUNT_ID, saved: Partial<HistorySettings> = {}, permission: BrowserSurfacePayload['history_permission'] = 'missing') {
     const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]),
       coverage: { ...COMPLETE_COVERAGE, status: 'partial', phase: 'not_started', complete_as_of: null } }), conversations: [] });
     const browser: BrowserSurfacePayload = { capture: 'active', site_access: 'granted',
-      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF };
+      history_permission: permission, legal_review_required: false, reported_at: AS_OF };
     store.setAgent({ ...store.getState().agent!, browser, required_history_settings_revision: 1, applied_history_settings_revision: 1 });
     const settings: HistorySettings = { creator_account_id: creator, settings_revision: 1,
       consent_policy_version: 'history-consent-v1', consent_revision: null, authorized_platform_creator_id: null,
       desired_state: 'not_started', effective_state: 'not_applied', effective_config_revision: null,
-      recent_window_days: 30, page_size: 50, pages_per_wake: 2, request_interval_ms: 1000, retry_limit: 3, updated_at: AS_OF };
+      recent_window_days: 30, page_size: 50, pages_per_wake: 2, request_interval_ms: 1000, retry_limit: 3, updated_at: AS_OF, ...saved };
     const running: HistorySettings = { ...settings, settings_revision: 2, consent_revision: 'consent-1',
       authorized_platform_creator_id: 'platform-creator-1', desired_state: 'running', effective_state: 'running' };
     const api = { get: vi.fn(async () => settings), update: vi.fn(async () => running), revoke: vi.fn() };
     const browserApi = { open: vi.fn(async () => 'delivered' as const), setCapture: vi.fn() };
     const source = readinessSource(true);
     mountDashboard(store, source, browserApi, api);
-    return { store, browser, api, browserApi, source };
+    return { store, browser, api, browserApi, source, settings };
   }
 
   it('reviews history in the dashboard, then requests Chrome permission only after explicit consent', async () => {
     const { store, browser, api, browserApi } = historyReviewFixture();
-    expect(api.get).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Review message history' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review message history' }));
+    expect(api.get).toHaveBeenCalledOnce();
     const dialog = screen.getByRole('dialog', { name: 'Add older conversations' });
     const allow = await within(dialog).findByRole('button', { name: 'Allow message history' });
     expect(allow.hasAttribute('disabled')).toBe(true);
@@ -326,22 +326,60 @@ describe('CreatorDashboardView', () => {
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Allow Chrome access' }));
     await waitFor(() => expect(browserApi.open).toHaveBeenCalledExactlyOnceWith('history', expect.any(AbortSignal)));
     await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, history_permission: 'granted' } }));
-    expect(within(dialog).queryByRole('button', { name: 'Allow Chrome access' })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add older conversations' })).toBeNull());
+    expect(screen.getByRole('heading', { name: 'Adding messages' })).toBeTruthy();
     expect(api.update).toHaveBeenCalledOnce();
   });
 
-  it('never submits history consent when the review is dismissed or belongs to a different creator', async () => {
+  it('does not offer history for a different creator', async () => {
     const { api, browserApi } = historyReviewFixture('other-creator');
-    fireEvent.click(screen.getByRole('button', { name: 'Review message history' }));
-    const dialog = screen.getByRole('dialog', { name: 'Add older conversations' });
-    await within(dialog).findByText('Message history settings are unavailable for this account.');
-    expect(within(dialog).queryByRole('checkbox')).toBeNull();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await screen.findByText('Message history settings are unavailable for this account.');
+    expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
     expect(api.update).not.toHaveBeenCalled();
     expect(browserApi.open).not.toHaveBeenCalled();
+  });
+
+  it('keeps a dismissed optional history offer quiet across session renewal', async () => {
+    const { api, source } = historyReviewFixture();
+    fireEvent.click(await screen.findByRole('button', { name: 'Not now' }));
+    expect(screen.getByRole('heading', { name: 'Waiting for messages' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Message history' })).toBeTruthy();
+    await act(async () => source.publish({ snapshot: { ...source.api.getState().snapshot!,
+      generation: '33333333-3333-4333-8333-333333333333' } }));
+    expect(screen.queryByRole('button', { name: 'Not now' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Message history' })).toBeTruthy();
+    expect(api.get).toHaveBeenCalledOnce();
+    expect(api.update).not.toHaveBeenCalled();
+  });
+
+  it('resumes paused history using the existing consent without manufacturing a new receipt', async () => {
+    const { api, browserApi } = historyReviewFixture(ACCOUNT_ID, {
+      consent_revision: 'consent-1', authorized_platform_creator_id: 'platform-creator-1',
+      desired_state: 'paused', effective_state: 'paused',
+    }, 'granted');
+    expect(await screen.findByRole('heading', { name: 'Message history is paused' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Review message history' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add older conversations' });
+    expect(within(dialog).queryByRole('checkbox')).toBeNull();
+    await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Resume' })));
+    expect(api.update).toHaveBeenCalledExactlyOnceWith(1, expect.objectContaining({
+      desired_state: 'running', accept_consent: false, consent_policy_version: null,
+    }), expect.any(AbortSignal));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add older conversations' })).toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    expect(screen.getByRole('heading', { name: 'Adding messages' })).toBeTruthy();
+    expect(browserApi.open).not.toHaveBeenCalled();
+  });
+
+  it('shows existing authorized history as starting or adding without offering consent again', async () => {
+    const { api } = historyReviewFixture(ACCOUNT_ID, {
+      consent_revision: 'consent-1', authorized_platform_creator_id: 'platform-creator-1',
+      desired_state: 'running', effective_state: 'not_applied',
+    }, 'granted');
+    expect(await screen.findByRole('heading', { name: 'Starting message history' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(api.update).not.toHaveBeenCalled();
   });
 
   it('shows the first saved message without waiting for history or asking for another action', async () => {
@@ -351,11 +389,10 @@ describe('CreatorDashboardView', () => {
     store.setAgent({ ...store.getState().agent!, browser: { capture: 'active', site_access: 'granted',
       history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
     const source = readinessSource(true);
-    const historyApi = { get: vi.fn(), update: vi.fn(), revoke: vi.fn() };
+    const historyApi = { get: vi.fn(() => new Promise<HistorySettings>(() => {})), update: vi.fn(), revoke: vi.fn() };
     mountDashboard(store, source, undefined, historyApi);
     expect(screen.getByRole('heading', { name: 'Waiting for messages' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
-    expect(historyApi.get).not.toHaveBeenCalled();
+    expect(historyApi.get).toHaveBeenCalledOnce();
     expect(historyApi.update).not.toHaveBeenCalled();
     await act(async () => {
       store.applySnapshot(snapshot({ analyticsView: analytics([1, 1, 1, 0], 'synced_subset', 5),

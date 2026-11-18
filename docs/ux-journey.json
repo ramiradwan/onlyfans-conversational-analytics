@@ -1761,11 +1761,6 @@
         },
         {
           "kind": "unit",
-          "file": "frontend/tests/CreatorDashboardView.test.tsx",
-          "name": "never submits history consent when the review is dismissed or belongs to a different creator"
-        },
-        {
-          "kind": "unit",
           "file": "frontend/tests/SettingsView.test.tsx",
           "name": "requires new consent for the current policy and preserves the current configuration"
         },
@@ -1788,6 +1783,26 @@
           "kind": "unit",
           "file": "frontend/tests/SettingsView.test.tsx",
           "name": "does not lock a definitely refused history change as an unknown write"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "does not offer history for a different creator"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "keeps a dismissed optional history offer quiet across session renewal"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "resumes paused history using the existing consent without manufacturing a new receipt"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "shows existing authorized history as starting or adding without offering consent again"
         }
       ]
     },

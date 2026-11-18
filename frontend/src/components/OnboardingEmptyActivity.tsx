@@ -19,11 +19,11 @@ export function OnboardingEmptyActivity({ browser, connection, desktopConnected,
         : browser.capture === 'paused' ? 'Paused' : browser.capture === 'off' ? 'Off' : 'Connected';
   return (
     <Stack spacing={3}>
-      <Panel component="section" emphasis="dominant" aria-labelledby="empty-activity-title">
+      {historyReview ?? <Panel component="section" emphasis="dominant" aria-labelledby="empty-activity-title">
         <Typography component="h2" id="empty-activity-title" variant="h5">{waitingForMessages ? 'Waiting for messages' : 'No new activity yet'}</Typography>
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>{waitingForMessages
           ? 'Activity appears here when Dipsy receives messages.' : 'No conversations have been received.'}</Typography>
-      </Panel>
+      </Panel>}
       <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 1fr) minmax(0, 1fr)' } }}>
         <Panel component="section" aria-labelledby="empty-connection-title">
           <Typography component="h2" id="empty-connection-title" variant="h6">Connection</Typography>
@@ -34,7 +34,6 @@ export function OnboardingEmptyActivity({ browser, connection, desktopConnected,
             <Typography variant="body2">Browser extension</Typography><Chip size="small" variant="outlined" label={browserLabel} />
           </Stack>
         </Panel>
-        {historyReview}
       </Box>
     </Stack>
   );

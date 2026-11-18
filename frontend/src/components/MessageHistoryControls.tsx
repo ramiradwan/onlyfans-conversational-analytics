@@ -36,12 +36,23 @@ import { extensionConnection } from '../utils/statusCopy';
 
 const NUMBER_FORMAT = new Intl.NumberFormat('en-US');
 
+// Optional promotion is presentation state, scoped to the current account,
+// journey and legal policy, not to a disposable desktop session generation.
+const dismissedReviews = new WeakMap<HistorySettingsApi, Set<string>>();
+function rememberDismissal(api: HistorySettingsApi, scope: string) {
+  let scopes = dismissedReviews.get(api);
+  if (!scopes) { scopes = new Set(); dismissedReviews.set(api, scopes); }
+  scopes.add(scope);
+  if (scopes.size > 128) scopes.delete(scopes.values().next().value!);
+}
+
 export interface MessageHistoryControlsProps {
   api?: HistorySettingsApi;
   browserApi?: BrowserControlApi;
   desktopApi?: DesktopOnboardingApi;
   store?: BridgeTransportStore;
   reviewCreatorId?: string;
+  continuation?: boolean;
 }
 
 interface PermissionReturn {
@@ -88,7 +99,7 @@ function settingsIdentity(value: HistorySettings | null): string | null {
 
 /** Shared history consent, permission, progress and management controls. */
 export function MessageHistoryControls({ api = defaultHistorySettingsApi, browserApi = browserControlApi,
-  desktopApi = desktopOnboardingApi, store = bridgeTransportStore, reviewCreatorId }: MessageHistoryControlsProps) {
+  desktopApi = desktopOnboardingApi, store = bridgeTransportStore, reviewCreatorId, continuation = false }: MessageHistoryControlsProps) {
   const { canManageHistorySync } = usePermissions();
   const transport = useSyncExternalStore(
     store.subscribe,
@@ -111,6 +122,8 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   const [pendingChange, setPendingChange] = useState<HistoryChange | null>(null);
   const [refusedIdentity, setRefusedIdentity] = useState<string | null>(null);
   const [recoveryWake, setRecoveryWake] = useState(0);
+  const [openReview, setOpenReview] = useState<string | null>(null);
+  const [dismissedReview, setDismissedReview] = useState<string | null>(null);
   const desktop = useSyncExternalStore(desktopApi.subscribe, desktopApi.getState, desktopApi.getState);
   const [permissionReturn, setPermissionReturn] = useState<PermissionReturn | null>(null);
   const consumedPermissionReturn = useRef<PermissionReturn | null>(null);
@@ -142,13 +155,13 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
     setRevokeSelection(null);
     setConsentSelection(null);
     return () => { mutation.current?.abort(); mutation.current = null; };
-  }, [review, reviewCreatorId, reviewGeneration, reviewJourney, transport.creatorAccountId]);
+  }, [review, reviewCreatorId, reviewJourney, transport.creatorAccountId]);
 
   const currentAccount = (value: HistorySettings) => {
     const current = store.getState().creatorAccountId;
     const owner = desktopApi.getState().snapshot;
     return current !== null && current === value.creator_account_id && current === accountId
-      && (!review || (owner?.generation === reviewGeneration && owner?.journey_id === reviewJourney));
+      && (!review || owner?.journey_id === reviewJourney && owner?.analysis_readiness.creator_account_id === value.creator_account_id);
   };
   const acceptSnapshot = (next: HistorySettings) => {
     if ((accountId !== null && next.creator_account_id !== accountId)
@@ -270,7 +283,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
       controller.abort();
       if (timer !== null) clearTimeout(timer);
     };
-  }, [api, transport.creatorAccountId, review, reviewCreatorId, reviewGeneration, reviewJourney]);
+  }, [api, transport.creatorAccountId, review, reviewCreatorId, reviewJourney]);
 
   useEffect(() => {
     if (busy || settings === null) return;
@@ -356,7 +369,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
     const hasReceipt = settings.consent_revision !== null && settings.desired_state !== 'revoked';
     if (desired === 'revoked' ? review || !confirmRevoke || !hasReceipt
       : acceptConsent ? !consentAccepted || hasReceipt || desired !== 'running'
-        : review || !hasReceipt || desired === settings.desired_state) return;
+        : !hasReceipt || desired === settings.desired_state || review && (desired !== 'running' || settings.desired_state !== 'paused')) return;
     const change: HistoryChange = { before: settings, desired, acceptConsent };
     const controller = new AbortController();
     mutation.current = controller;
@@ -427,8 +440,19 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   const waitingForExtension = settings !== null && !hasConsent && extensionConnection(agent) === 'offline';
   const presentation = settings && !pendingChange ? presentHistory(settings, agent, transport.coverage) : null;
   const permissionNeeded = hasConsent && !paused && agent?.browser?.history_permission === 'missing';
+  const reviewScope = continuation && settings && reviewJourney && accountId
+    ? JSON.stringify([accountId, reviewJourney, settings.consent_policy_version]) : null;
+  const dismissed = reviewScope !== null && (dismissedReview === reviewScope
+    || dismissedReviews.get(api)?.has(reviewScope) === true);
+  const reviewNeeded = !hasConsent || paused || permissionNeeded;
+  const dialogOpen = continuation && reviewScope !== null && openReview === reviewScope
+    && reviewAvailable && (reviewNeeded || busy || pendingChange !== null);
+  useEffect(() => {
+    if (openReview !== null && (!reviewAvailable || openReview !== reviewScope
+      || !reviewNeeded && !busy && pendingChange === null)) setOpenReview(null);
+  }, [openReview, reviewAvailable, reviewScope, reviewNeeded, busy, pendingChange]);
 
-  return (
+  const controls = (
     <Panel sx={{ gap: 1.5 }}>
       <SectionHeader
         sx={{ minHeight: '1.5rem', display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) 10rem' },
@@ -516,7 +540,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
                 </Button>
               ) : permissionNeeded ? (
                 <Button disabled={controlsDisabled || openingPermission} onClick={() => void allowBrowserHistory()} variant="contained">Allow Chrome access</Button>
-              ) : review ? null : paused ? (
+              ) : paused ? (
                 <Button
                   disabled={controlsDisabled}
                   onClick={() => void update('running')}
@@ -526,7 +550,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
                 >
                   Resume
                 </Button>
-              ) : (
+              ) : review ? null : (
                 <Button
                   disabled={controlsDisabled}
                   onClick={() => void update('paused')}
@@ -567,5 +591,52 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
         </DialogActions>
       </Dialog>
     </Panel>
+  );
+
+  if (!continuation) return controls;
+  const ready = reviewAvailable && reviewScope !== null && settings !== null && !loading;
+  const offer = ready && (!hasConsent || paused) && !dismissed && settings.desired_state !== 'revoked';
+  const quiet = ready && (!hasConsent || paused) && !offer;
+  const title = !ready || quiet ? 'Waiting for messages'
+    : offer ? paused ? 'Message history is paused' : 'See your first conversations'
+      : pendingChange !== null ? 'Checking message history'
+        : permissionNeeded ? 'Allow Chrome access'
+          : settings?.desired_state === 'running' && settings.effective_state !== 'running' ? 'Starting message history'
+            : settings?.desired_state === 'running' ? 'Adding messages' : 'Waiting for messages';
+  const detail = offer ? paused ? 'Resume adding older messages when you’re ready.'
+    : 'Dipsy can use new messages as they arrive. Add older conversations to see results sooner.'
+    : permissionNeeded && ready ? 'Allow Chrome to read older messages for this app.'
+      : pendingChange !== null && ready ? "Your change hasn't been confirmed."
+        : ready && settings?.desired_state === 'running' && settings.effective_state !== 'running'
+          ? 'Checking your browser connection.'
+          : 'Results will appear as messages become available.';
+  const dismiss = () => {
+    if (!reviewScope) return;
+    rememberDismissal(api, reviewScope);
+    setDismissedReview(reviewScope);
+    setOpenReview(null);
+  };
+  return (
+    <>
+      <Panel component="section" emphasis="quiet" aria-labelledby="history-continuation-title">
+        <Typography component="h2" id="history-continuation-title" variant="h5">{title}</Typography>
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>{detail}</Typography>
+        {offer && <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+          <Button variant="outlined" disabled={controlsDisabled} onClick={() => setOpenReview(reviewScope)}>Review message history</Button>
+          <Button onClick={dismiss}>Not now</Button>
+        </Stack>}
+        {quiet && <Button variant="text" disabled={controlsDisabled} onClick={() => setOpenReview(reviewScope)}
+          sx={{ alignSelf: 'flex-start' }}>Message history</Button>}
+        {ready && permissionNeeded && !dialogOpen && <Button variant="outlined"
+          disabled={controlsDisabled || openingPermission} onClick={() => void allowBrowserHistory()}
+          sx={{ alignSelf: 'flex-start' }}>Allow Chrome access</Button>}
+        {error && !dialogOpen && <StatusLine id="history-continuation-feedback" text={error} tone="error" />}
+      </Panel>
+      <Dialog open={dialogOpen} onClose={() => setOpenReview(null)} aria-labelledby="history-review-title" fullWidth maxWidth="sm">
+        <DialogTitle id="history-review-title">Add older conversations</DialogTitle>
+        <DialogContent>{controls}</DialogContent>
+        <DialogActions><Button onClick={() => setOpenReview(null)}>Close</Button></DialogActions>
+      </Dialog>
+    </>
   );
 }
