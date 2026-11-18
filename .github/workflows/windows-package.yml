@@ -105,7 +105,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js for the release gate
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
@@ -141,7 +141,7 @@ jobs:
           --environment-file="$env:GITHUB_ENV"
 
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -161,7 +161,7 @@ jobs:
           "SQLCIPHER_WHEELHOUSE=$wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: 'npm'
@@ -232,7 +232,7 @@ jobs:
           Get-Content $report
 
       - name: Retain production companion native evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-package-companion-${{ inputs.product_revision }}
           path: |
@@ -259,7 +259,7 @@ jobs:
       # The release candidate's native dependency evidence travels separately
       # from the installer because signing later rewrites only the installer.
       - name: Retain fixed SQLCipher wheel and provenance
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-package-sqlcipher-${{ inputs.product_revision }}
           path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse\
@@ -267,7 +267,7 @@ jobs:
           if-no-files-found: error
 
       - name: Retain package size measurements
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-package-measurements-${{ inputs.product_revision }}
           path: ${{ runner.temp }}\windows-package\package-measurements.json
@@ -278,7 +278,7 @@ jobs:
       # bundle, and the sha256sums.txt computed over both. Signing rewrites the
       # installer, so the signing job recomputes that digest file.
       - name: Upload the unsigned package
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-package-unsigned-${{ github.ref_name }}
           path: ${{ runner.temp }}\windows-package\${{ (inputs.desktop_target == 'msix-direct' || inputs.desktop_target == 'msix-store') && 'msix-release' || 'installer' }}\
@@ -318,7 +318,7 @@ jobs:
 
       - name: Retain the qualified direct publisher runtime
         if: inputs.desktop_target == 'msix-direct'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-publisher-runtime-${{ env.PRODUCT_REVISION }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/desktop-publisher-runtime.zip
@@ -362,7 +362,7 @@ jobs:
           persist-credentials: false
 
       - name: Download the unsigned package
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: windows-package-unsigned-${{ github.ref_name }}
           path: ${{ github.workspace }}\release
@@ -421,7 +421,7 @@ jobs:
 
       - name: Publish the signed package
         if: steps.verify-signatures.outcome == 'success'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-package-${{ github.ref_name }}
           path: ${{ github.workspace }}\release\
@@ -456,12 +456,12 @@ jobs:
             tools/desktop-delivery/package.json
             tools/desktop-delivery/package-lock.json
       - name: Download the verified final release
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: windows-package-${{ github.ref_name }}
           path: ${{ github.workspace }}/release
       - name: Download the qualified publisher runtime
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: desktop-publisher-runtime-${{ env.PRODUCT_REVISION }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/publisher-archive
@@ -479,7 +479,7 @@ jobs:
             if ((Get-FileHash -LiteralPath (Join-Path $runtime $name) -Algorithm SHA256).Hash -cne (Get-FileHash -LiteralPath "tools/desktop-delivery/$name" -Algorithm SHA256).Hash) { throw 'Publisher runtime differs from approved source' }
           }
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Independently admit final direct publication bytes
@@ -509,7 +509,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Direct publication failed' }
       - name: Retain direct publication evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-publication-${{ env.PRODUCT_REVISION }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -625,7 +625,7 @@ jobs:
           sparse-checkout: tools/desktop-credential-check
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
@@ -639,7 +639,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Credential checker safety checks failed' }
 
       - name: Retain the qualified checker
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: r2-credential-checker-${{ github.run_id }}-${{ github.run_attempt }}
           path: tools/desktop-credential-check/
@@ -657,13 +657,13 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Download the same-run qualified checker
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: r2-credential-checker-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ github.workspace }}/credential-checker
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
@@ -689,7 +689,7 @@ jobs:
 
       - name: Retain the credential check receipt
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: r2-credential-check-receipt-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
