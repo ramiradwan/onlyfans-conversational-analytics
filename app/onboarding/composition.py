@@ -19,6 +19,7 @@ from app.provisioning.initial_handoff import InitialInstallationEnrollment
 from app.provisioning.installation_continuation import RegisteredInstallationContinuation
 from app.security.browser_authentication import BrowserAuthenticationClient
 from app.security.browser_ceremony import BrowserCeremonyClient
+from app.security.browser_ceremony_replacement import BrowserCeremonyReplacementClient
 from app.security.browser_ceremony_wait import BrowserCeremonyWaitClient
 from app.security.desktop_decision import DesktopDecisionClient
 
@@ -68,8 +69,10 @@ def build_desktop_setup(*, store, stage, extension_id, hosted_origin, authentica
     if hosted_origin:
         # One pool keeps a sign-in's proof exchanges on an open connection.
         proofs = hosted_transport(hosted_origin, keepalive_seconds=SIGN_IN_KEEPALIVE_SECONDS)
+        ceremony_client = BrowserCeremonyClient(proofs, key)
         ceremonies = BrowserCeremonies(store,
-            BrowserCeremonyClient(proofs, key), hosted_origin=hosted_origin,
+            ceremony_client, hosted_origin=hosted_origin,
+            replacement_client=BrowserCeremonyReplacementClient(ceremony_client),
             decision_client=DesktopDecisionClient(proofs, key),
             authentication_client=BrowserAuthenticationClient(proofs, key),
             authentication_providers=authentication_providers,

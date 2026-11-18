@@ -522,7 +522,10 @@ class ProvisioningSetupOwner:
             return OperationResult("waiting")
         if operation["action"] == "account.connect":
             if stale:
-                result = await self.ceremonies.reconcile(operation["operation_id"], authorize=lambda: self._read_guard(operation))
+                result = await self.ceremonies.reconcile(operation["operation_id"], authorize=lambda: self._read_guard(operation),
+                    adopt_authorize=lambda connection=None: self._read_guard(operation, connection=connection))
+                if result.get("status") == "unavailable" and self.ceremonies.replacement_pending(operation["operation_id"]):
+                    return OperationResult("outcome_unknown", "operation_unconfirmed")
                 terminal = await self._terminal_initial_read(operation, result)
                 if terminal is not None:
                     return terminal
@@ -616,7 +619,10 @@ class ProvisioningSetupOwner:
                         binding = self._binding(operation)
                 await self.ceremonies.prepare(operation["operation_id"], binding, authorize=guard)
             else:
-                result = await self.ceremonies.reconcile(operation["operation_id"], authorize=lambda: self._read_guard(operation))
+                result = await self.ceremonies.reconcile(operation["operation_id"], authorize=lambda: self._read_guard(operation),
+                    adopt_authorize=lambda connection=None: self._read_guard(operation, connection=connection))
+                if result.get("status") == "unavailable" and self.ceremonies.replacement_pending(operation["operation_id"]):
+                    return OperationResult("outcome_unknown", "operation_unconfirmed")
                 terminal = await self._terminal_initial_read(operation, result)
                 if terminal is not None:
                     return terminal

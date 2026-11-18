@@ -136,7 +136,8 @@ class DesktopActivation:
                 if row["domain_status"] == "committed":
                     return await self._redeem(operation, None)
                 response = await self.ceremonies.reconcile(operation["operation_id"],
-                    authorize=lambda: self._proof_read_guard(operation))
+                    authorize=lambda: self._proof_read_guard(operation),
+                    adopt_authorize=lambda connection=None: self._proof_read_guard(operation))
                 if response.get("status") != "found":
                     return OperationResult("outcome_unknown", "operation_unconfirmed")
             if response.get("status") == "found":

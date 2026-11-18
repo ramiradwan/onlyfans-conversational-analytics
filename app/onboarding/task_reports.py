@@ -27,6 +27,7 @@ class AuthenticationTaskReports:
         if (task is None or task["task_id"] != handle.task_id
                 or task["admission_generation"] != handle.generation
                 or task["purpose"] != "browser.authentication"
+                or task["state"] in {"cancelled", "expired"}
                 or task["expires_at"] <= self.coordinator.admissions._now()):
             raise AdmissionRefused("task_scope_changed")
         operation = connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?",
@@ -49,7 +50,7 @@ class AuthenticationTaskReports:
             _contract().validate("notification", notification)
             with self.coordinator.store.database.read() as connection:
                 operation = self._operation(handle, connection)
-                saved = self.ceremonies.task_row(operation["operation_id"])
+                saved = self.ceremonies.task_row(operation["operation_id"], connection=connection)
                 if (saved is None or notification["ceremony_id"] != saved["ceremony_id"]
                         or notification["attempt_id"] != json.loads(saved["binding_json"])["attempt_id"]):
                     raise AdmissionRefused("task_scope_changed")

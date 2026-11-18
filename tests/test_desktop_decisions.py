@@ -280,3 +280,31 @@ async def test_a_hint_holds_its_parent_read_challenges_before_its_own_read(decis
     owner._read_guard = lambda *_: None
     assert await owner.reconcile_hint({"operation_id": "child"}) is True
     assert sorted(order[:2]) == ["ceremony", "decision"] and order[2] == "hinted"
+
+
+@pytest.mark.asyncio
+async def test_replacement_requires_reconciliation_of_pending_decision_and_fences_old_projection(decision):
+    from app.onboarding.coordinator import OperationResult
+    from app.security.hosted_grants import HostedGrantUnavailable
+    from test_desktop_ceremonies import ReplacementClient, replacement_predecessor
+    coordinator, ceremonies, decisions, client, parent, _, _, ordinary = decision
+    old_operation = accept(decision)
+    local_id = parent["operation_id"]
+    old, _ = decisions._request(local_id)
+    old_projection = decisions.presentation(parent["journey_id"], "account.connect")["projection"]
+    ordinary.state, ordinary.revision = "retired", 2
+    await ceremonies.reconcile(local_id, authorize=authorized)
+    ceremonies.replacement_client = ReplacementClient(ordinary)
+    predecessor = replacement_predecessor(ceremonies, parent)
+    with pytest.raises(HostedGrantUnavailable):
+        await ceremonies.replace(local_id, predecessor, authorize=authorized)
+    assert ceremonies.replacement_client.calls == []
+    coordinator._settle(old_operation, OperationResult("refused", "operation_unconfirmed"))
+    await ceremonies.replace(local_id, predecessor, authorize=authorized)
+    assert decisions.presentation(parent["journey_id"], "account.connect") is None
+    before = copy.deepcopy(client.calls)
+    with pytest.raises(HostedGrantUnavailable):
+        await decisions.execute(old_operation, authorize=authorized, read_guard=authorized, reconcile=False)
+    with pytest.raises(HostedGrantUnavailable):
+        decisions._save(old, old_projection)
+    assert client.calls == before

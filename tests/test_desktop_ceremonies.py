@@ -27,7 +27,12 @@ class Client:
         self.state = "active"
         self.revision = 1
         self.result = None
+        self.successors = {}
+        self.unknown = set()
         self.validator = BrowserCeremonyClient(None, None, clock=lambda: NOW)
+
+    def validate_result(self, operation, request, result, *, expires_at=None):
+        self.validator.validate_result(operation, request, result, expires_at=expires_at)
 
     def prepare(self, request, *, before_send):
         before_send()
@@ -44,8 +49,11 @@ class Client:
     def read(self, request, *, before_send, expires_at=None):
         before_send()
         self.calls.append(("read", copy.deepcopy(request)))
+        if request["operation_id"] in self.unknown:
+            return {"profile": PROFILE, "operation_id": request["operation_id"], "status": "unavailable"}
+        successor = self.successors.get(request["operation_id"])
         result = {"profile": PROFILE, "operation_id": request["operation_id"], "status": "found",
-            "snapshot": {"operation_id": request["operation_id"], "ceremony_id": vector()["request"]["ceremony_id"],
+            "snapshot": {"operation_id": request["operation_id"], "ceremony_id": vector()["request"]["ceremony_id"] if successor is None else successor["ceremony_id"],
                 "attempt_id": request["binding"]["attempt_id"], "binding_digest": binding_digest(request["binding"]),
                 "expires_at": request["binding"]["source_expires_at"], "revision": self.revision,
                 "presentation_state": self.state, "domain_status": "pending"}}
@@ -182,7 +190,8 @@ async def test_sign_in_proof_clients_share_one_long_lived_connection_pool(tmp_pa
     ceremonies = core.ceremonies
     shared = ceremonies.client.transport
     assert all(client.transport is shared for client in (
-        ceremonies.decisions.client, ceremonies.authentication.client, ceremonies.authentication.waits))
+        ceremonies.decisions.client, ceremonies.authentication.client, ceremonies.authentication.waits,
+        ceremonies.replacement_client))
     assert shared._client._transport._pool._keepalive_expiry == SIGN_IN_KEEPALIVE_SECONDS == 60
     await core.close()
     assert shared._client.is_closed
@@ -299,3 +308,205 @@ async def test_replacement_reservation_cannot_select_new_successor_after_predece
     with pytest.raises(HostedGrantUnavailable):
         ceremonies.reserve_replacement(local_id, replacement_predecessor(ceremonies, operation), authorize=authorized)
     assert ceremonies.replacement_reservation(local_id, predecessor["predecessor_operation_id"]) == first
+
+
+class ReplacementClient:
+    def __init__(self, ordinary):
+        from app.security.browser_ceremony_replacement import BrowserCeremonyReplacementClient
+        self.ordinary = ordinary
+        self.validator = BrowserCeremonyReplacementClient(ordinary.validator, clock=lambda: NOW)
+        self.calls = []
+        self.lost = False
+        self.refused = False
+        self.tampered = False
+
+    def validate_result(self, request, predecessor, result):
+        self.validator.validate_result(request, predecessor, result)
+
+    def replace(self, request, predecessor, *, before_send):
+        from app.persistence.auth import _new_uuid7
+        from app.security.browser_ceremony_replacement import PROFILE as REPLACEMENT_PROFILE
+        from app.security.browser_ceremony import BrowserCeremonyRefused
+        before_send()
+        self.calls.append(copy.deepcopy(request))
+        if self.refused:
+            self.ordinary.unknown.add(request["successor_operation_id"])
+            raise BrowserCeremonyRefused("not_ready")
+        binding = {**predecessor, "attempt_id": request["successor_attempt_id"]}
+        successor = {"profile": PROFILE, "operation_id": request["successor_operation_id"],
+            "ceremony_id": _new_uuid7(NOW), "binding_digest": binding_digest(binding),
+            "expires_at": binding["source_expires_at"], "entry_reference": binding["source"]["reference"],
+            "completion": expected_completion(binding)}
+        self.ordinary.successors[request["successor_operation_id"]] = copy.deepcopy(successor)
+        self.ordinary.state = "active"
+        if self.lost:
+            raise OSError("Lost replacement response")
+        if self.tampered:
+            successor["operation_id"] = request["predecessor_operation_id"]
+        return {"profile": REPLACEMENT_PROFILE, "predecessor_operation_id": request["predecessor_operation_id"],
+            "successor_binding": binding, "successor": successor}
+
+
+async def retired_predecessor(setup):
+    _, ceremonies, client, operation, binding, _ = setup
+    operation_id = operation["operation_id"]
+    await ceremonies.prepare(operation_id, binding, authorize=authorized)
+    client.state, client.revision = "retired", 2
+    await ceremonies.reconcile(operation_id, authorize=authorized)
+    predecessor = replacement_predecessor(ceremonies, operation)
+    replacement = ReplacementClient(client)
+    ceremonies.replacement_client = replacement
+    return ceremonies, client, operation_id, predecessor, replacement
+
+
+@pytest.mark.asyncio
+async def test_replacement_adopts_distinct_successor_and_retains_original_lineage(setup):
+    ceremonies, client, operation_id, predecessor, replacement = await retired_predecessor(setup)
+    original = ceremonies.row(operation_id)
+    result = await ceremonies.replace(operation_id, predecessor, authorize=authorized)
+    successor = ceremonies.row(operation_id)
+    assert successor["hosted_operation_id"] == result["successor"]["operation_id"]
+    assert json.loads(successor["binding_json"]) == result["successor_binding"]
+    assert successor["provider_expires_at"] == original["provider_expires_at"]
+    assert successor["ceremony_id"] != original["ceremony_id"]
+    assert len(replacement.calls) == 1
+    with ceremonies.store.database.read() as connection:
+        root = dict(connection.execute("SELECT * FROM desktop_browser_ceremonies WHERE operation_id=?", (operation_id,)).fetchone())
+        assert root == original
+        assert connection.execute("SELECT count(*) FROM desktop_browser_ceremony_successors").fetchone()[0] == 1
+    assert (await ceremonies.reconcile(operation_id, authorize=authorized))["status"] == "found"
+    assert client.calls[-1][1]["operation_id"] == successor["hosted_operation_id"]
+    with pytest.raises(HostedGrantUnavailable):
+        ceremonies.require_current(original)
+    with pytest.raises(HostedGrantUnavailable):
+        await ceremonies.replace(operation_id, predecessor, authorize=authorized)
+    assert len(replacement.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_lost_replacement_response_reconciles_exact_successor_on_restart_without_send(setup):
+    ceremonies, client, operation_id, predecessor, replacement = await retired_predecessor(setup)
+    replacement.lost = True
+    original = ceremonies.row(operation_id)
+    with pytest.raises(OSError):
+        await ceremonies.replace(operation_id, predecessor, authorize=authorized)
+    request = ceremonies.replacement_reservation(operation_id, original["hosted_operation_id"])
+    assert ceremonies.row(operation_id) == original
+    reopened = BrowserCeremonies(ceremonies.store, client, hosted_origin=ceremonies.hosted_origin,
+        replacement_client=replacement)
+    result = await reopened.reconcile(operation_id, authorize=authorized)
+    assert result["status"] == "found"
+    assert reopened.row(operation_id)["hosted_operation_id"] == request["successor_operation_id"]
+    assert client.calls[-1][1]["operation_id"] == request["successor_operation_id"]
+    assert "ceremony_id" not in client.calls[-1][1]
+    assert len(replacement.calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["refused", "tampered"])
+async def test_replacement_refusal_and_invalid_result_do_not_install_successor(setup, failure):
+    from app.security.browser_ceremony import BrowserCeremonyRefused
+    ceremonies, client, operation_id, predecessor, replacement = await retired_predecessor(setup)
+    original = ceremonies.row(operation_id)
+    setattr(replacement, failure, True)
+    with pytest.raises((BrowserCeremonyRefused, HostedGrantUnavailable)):
+        await ceremonies.replace(operation_id, predecessor, authorize=authorized)
+    assert ceremonies.row(operation_id) == original
+    assert ceremonies.browser_entry(operation_id) is None
+    assert len(replacement.calls) == 1
+    if failure == "refused":
+        result = await ceremonies.reconcile_replacement(operation_id, authorize=authorized)
+        assert result["status"] == "unavailable"
+        assert ceremonies.row(operation_id) == original
+        assert len(replacement.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_adoption_cannot_overwrite_committed_predecessor_or_reuse_ceremony(setup):
+    ceremonies, client, operation_id, predecessor, replacement = await retired_predecessor(setup)
+    request = ceremonies.reserve_replacement(operation_id, predecessor, authorize=authorized)
+    original = ceremonies.row(operation_id)
+    result = replacement.replace(request, json.loads(original["binding_json"]), before_send=authorized)
+    with ceremonies.store.database.transaction() as connection:
+        connection.execute("UPDATE desktop_browser_ceremonies SET domain_status='committed' WHERE operation_id=?",
+            (operation_id,))
+    with pytest.raises(HostedGrantUnavailable):
+        ceremonies._adopt_replacement(operation_id, request, result["successor"], preparing=True, authorize=authorized)
+    assert ceremonies.row(operation_id)["hosted_operation_id"] == original["hosted_operation_id"]
+    with ceremonies.store.database.transaction() as connection:
+        connection.execute("UPDATE desktop_browser_ceremonies SET domain_status='pending' WHERE operation_id=?",
+            (operation_id,))
+    reused = {**result["successor"], "ceremony_id": original["ceremony_id"]}
+    with pytest.raises(HostedGrantUnavailable):
+        ceremonies._adopt_replacement(operation_id, request, reused, preparing=True, authorize=authorized)
+    assert ceremonies.row(operation_id)["hosted_operation_id"] == original["hosted_operation_id"]
+
+
+@pytest.mark.asyncio
+async def test_replacement_chain_preserves_each_predecessor(setup):
+    ceremonies, client, operation_id, predecessor, replacement = await retired_predecessor(setup)
+    root = ceremonies.row(operation_id)
+    await ceremonies.replace(operation_id, predecessor, authorize=authorized)
+    first = ceremonies.row(operation_id)
+    client.state, client.revision = "retired", 3
+    await ceremonies.reconcile(operation_id, authorize=authorized)
+    second_predecessor = replacement_predecessor(ceremonies, {"operation_id": operation_id})
+    await ceremonies.replace(operation_id, second_predecessor, authorize=authorized)
+    second = ceremonies.row(operation_id)
+    assert len({root["ceremony_id"], first["ceremony_id"], second["ceremony_id"]}) == 3
+    assert root["provider_expires_at"] == first["provider_expires_at"] == second["provider_expires_at"]
+    assert len(replacement.calls) == 2
+    with ceremonies.store.database.read() as connection:
+        assert connection.execute("SELECT count(*) FROM desktop_browser_ceremony_successors").fetchone()[0] == 2
+        assert connection.execute("SELECT count(*) FROM desktop_browser_ceremony_current").fetchone()[0] == 1
+
+
+@pytest.mark.asyncio
+async def test_unknown_successor_does_not_hide_committed_activation(tmp_path):
+    from app.security.browser_ceremony import BrowserCeremonyRefused
+    store = SQLiteAuthenticationStore(tmp_path / "auth.sqlite3", clock=lambda: NOW)
+    admissions = ScopedAdmissions(store, stage="runtime")
+    native = admissions.consume(admissions.prepare_desktop(), role="desktop")
+    owner = Owner()
+    owner.facts = dict.fromkeys(owner.facts, "verified")
+    owner.facts["activation"] = "missing"
+    coordinator = DesktopOnboardingCoordinator(admissions, owner)
+    operation, _ = coordinator._accept(native, command(coordinator.read(native), "activation.review"))
+    binding = copy.deepcopy(vector("prepare", "activation")["request"]["binding"])
+    client = Client()
+    replacement = ReplacementClient(client)
+    ceremonies = BrowserCeremonies(store, client, hosted_origin="https://provider.example", replacement_client=replacement)
+    operation_id = operation["operation_id"]
+    await ceremonies.prepare(operation_id, binding, authorize=authorized)
+    client.state, client.revision = "retired", 2
+    await ceremonies.reconcile(operation_id, authorize=authorized)
+    original = ceremonies.row(operation_id)
+    replacement.refused = True
+    with pytest.raises(BrowserCeremonyRefused):
+        await ceremonies.replace(operation_id, replacement_predecessor(ceremonies, operation), authorize=authorized)
+    client.result = {"kind": "activation-redemption", "activation_operation_id": binding["activation_operation_id"],
+        "redemption": {"profile": "urn:bridge-clean:capability-license-redemption-continuation:v1",
+            "continuation": "clr1." + "A" * 43, "expires_at": binding["source_expires_at"]}}
+    result = await ceremonies.reconcile(operation_id, authorize=authorized)
+    assert result["snapshot"]["result"] == client.result
+    assert ceremonies.row(operation_id)["hosted_operation_id"] == original["hosted_operation_id"]
+    assert ceremonies.row(operation_id)["domain_status"] == "committed"
+    assert len(replacement.calls) == 1
+    assert "clr1." not in json.dumps(ceremonies.row(operation_id))
+
+
+@pytest.mark.asyncio
+async def test_terminal_lineage_retained_until_source_deadline(setup):
+    coordinator, ceremonies, client, operation, binding, clock = setup
+    binding["source_expires_at"] = (NOW + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    operation_id = operation["operation_id"]
+    await ceremonies.prepare(operation_id, binding, authorize=authorized)
+    client.state, client.revision = "retired", 2
+    await ceremonies.reconcile(operation_id, authorize=authorized)
+    ceremonies.replacement_client = ReplacementClient(client)
+    await ceremonies.replace(operation_id, replacement_predecessor(ceremonies, operation), authorize=authorized)
+    coordinator._settle(operation, OperationResult("completed"))
+    clock[0] += timedelta(minutes=31)
+    native = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(), role="desktop")
+    coordinator._accept(native, command(coordinator.read(native), "account.connect"))
+    assert ceremonies.row(operation_id) is not None

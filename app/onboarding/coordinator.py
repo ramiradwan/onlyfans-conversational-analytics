@@ -305,7 +305,10 @@ class DesktopOnboardingCoordinator:
             raise CommandRefused("setup_changed")
         # Retain unresolved work independently of presentation expiry. Bound
         # new commands without preventing reads or native reattachment.
-        connection.execute("DELETE FROM desktop_setup_operations WHERE state IN ('completed','refused') AND expires_at<=? AND NOT (action='setup.finalize' AND state='refused')", (now,))
+        connection.execute("DELETE FROM desktop_setup_operations WHERE state IN ('completed','refused') AND expires_at<=? "
+            "AND NOT (action='setup.finalize' AND state='refused') AND NOT EXISTS (SELECT 1 "
+            "FROM desktop_browser_ceremony_replacements r WHERE r.parent_operation_id=desktop_setup_operations.operation_id "
+            "AND julianday(r.source_expires_at)>julianday(?, 'unixepoch'))", (now, now))
         if connection.execute("SELECT count(*) FROM desktop_setup_operations").fetchone()[0] >= 128:
             raise CommandRefused("operation_limit_reached")
         connection.execute("INSERT OR IGNORE INTO desktop_setup_journeys (journey_id,revision,created_at) VALUES (?,0,?)", (journey, now))
