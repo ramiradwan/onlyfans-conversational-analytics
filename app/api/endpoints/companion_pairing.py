@@ -461,13 +461,25 @@ async def browser_capture(request: Request):
             identity = policy.identity
             if identity is None or identity.role != "creator":
                 raise _Refusal("pairing_account_refused", 403)
-            body = await _body(request, "action")
+            scope_fields = frozenset({"operation_id", "owner_scope", "consent_epoch", "policy_revision"})
+            body = await _body(request, "action", optional=scope_fields)
             action = _CAPTURE_ACTIONS.get(body["action"])
             if action is None:
                 raise _Refusal()
-            delivered = await transport_manager.send_browser_control(
-                identity.creator_account_id, action
-            )
+            if scope_fields.intersection(body):
+                uuid_pattern = r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                if (not scope_fields.issubset(body)
+                    or any(not isinstance(body[key], str) or not re.fullmatch(uuid_pattern, body[key])
+                           for key in ("operation_id", "consent_epoch"))
+                    or not isinstance(body["owner_scope"], str) or not re.fullmatch(r"[0-9a-f]{64}", body["owner_scope"])
+                    or not isinstance(body["policy_revision"], str)
+                    or not re.fullmatch(r"[0-9]{1,10}", body["policy_revision"])):
+                    raise _Refusal()
+                delivered = await transport_manager.send_scoped_capture_control(identity.creator_account_id, body)
+            else:
+                delivered = await transport_manager.send_browser_control(
+                    identity.creator_account_id, action
+                )
         if delivered == 0:
             return _response({"detail": "browser_unreachable"}, 409)
         return _response({"delivered": delivered}, 202)

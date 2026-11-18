@@ -1696,6 +1696,36 @@
           "kind": "unit",
           "file": "frontend/tests/BrowserExtensionControls.test.tsx",
           "name": "allows a new explicit capture action only after a fresh browser report following unreachable delivery"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/consent-controller.test.mjs",
+          "name": "scoped capture receipt survives restart and admits only the exact consent epoch and owner"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/consent-controller.test.mjs",
+          "name": "a capture receipt candidate is not proof if the consent write did not commit"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/consent-controller.test.mjs",
+          "name": "a scoped resume denied by Legal records refusal without changing consent"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_companion_browser_controls.py",
+          "name": "test_scoped_capture_dispatch_and_owner_receipt_survive_session_replacement"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/BrowserExtensionControls.test.tsx",
+          "name": "binds capture to the reported owner revision and confirms only its matching receipt or a retired scope"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/BrowserExtensionControls.test.tsx",
+          "name": "does not dispatch an unscoped action when a modern browser cannot report its current consent scope"
         }
       ]
     },

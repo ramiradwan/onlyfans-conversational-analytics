@@ -53,7 +53,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   const capture = useMemo(() => captureOperation(api, continuationCreatorId ?? creatorAccountId),
     [api, continuationCreatorId, creatorAccountId]);
   const pending = useSyncExternalStore(capture.subscribe, capture.getState, capture.getState);
-  const captureBlocked = pending !== null;
+  const captureBlocked = pending !== null || Boolean(browser?.capture_control_supported && browser.capture_control?.capture !== browser.capture);
   const [notice, setNotice] = useState<Notice>(null);
   const operation = useRef<AbortController | null>(null);
   const controlAvailable = browser !== null;

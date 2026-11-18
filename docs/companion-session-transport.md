@@ -46,9 +46,15 @@ Hello fields remain closed. New features negotiate only through capabilities and
 | `agent.browser-task.waiting` | After this session's `agent.browser-task.capabilities`, record that it accepts the closed waiting-window controls. Params are exactly `{}`. Returns `{}`. |
 | `agent.surface.report` | After Agent authentication, record the extension's closed browser state (`schema` `ofca-browser-surface/v1`, `capture`, `site_access`, `history_permission`, `legal_review_required`) for `agent.state`, and admit the session for controls. Returns `{}`. |
 
+## Scoped capture status
+
+The optional authenticated agent.capture-control.status RPC admits the existing browser surface and scope atomically with exactly {surface,status}, or updates an existing report with {status}. It returns {}. Status is null if unavailable, otherwise exactly {owner_scope,consent_epoch,policy_revision,capture,receipt}. Owner scope is a SHA-256 digest of the authenticated account and pairing; consent epoch is a UUID4; capture is active or paused. Receipt is null or exactly {operation_id,action,previous_consent_epoch,outcome}. Action is pause or resume and outcome is applied or refused. Applied requires a distinct current saved epoch and matching resulting mode; refused retains the previous epoch. The extension retains the candidate locally and the runtime holds only the current authenticated session report. A scoped session accepts no legacy capture command.
+
 ## Session controls
 
 Brain sends a control as a routine document with exactly `type` `session.control`, a canonical UUID `id`, and an `action` of `capture.pause`, `capture.resume`, or `companion.revoked` ([ADR 0045](adr/0045-desktop-led-extension-setup.md)). Agent refuses any other shape by closing the session, ignores a repeated `id`, and applies pause and resume through its consent controller. Brain sends controls only to sessions that have reported browser state, and `companion.revoked` only to sessions of the pin being revoked.
+
+For scoped capture, Brain sends a session.control document with action capture.control and payload exactly {operation_id,action,owner_scope,consent_epoch,policy_revision}. Brain admits one unambiguous current pairing with the requested scope; Agent rechecks its scope before committing. The receipt establishes the consent transition, not socket delivery or successful ingestion. No unresolved desktop request is persisted or automatically replayed.
 
 Agent calls `agent.browser-task.capabilities` once per session, after its first browser state report. A session that called it also receives `browser.task.end` with only `task_id` and `admission_generation` when a task Brain dispatched to its pairing ends. The control is a notification and carries no outcome. Agent matches it to an active task or ignores it. Brain sends it to no other session, so an older extension never receives it.
 

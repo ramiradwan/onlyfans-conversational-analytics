@@ -136,6 +136,8 @@ class BrowserSession:
     send: Callable[[dict[str, Any]], Awaitable[None]]
     surface: dict[str, Any] | None = None
     full_intent: dict[str, Any] | None = None
+    capture_control: dict[str, Any] | None = None
+    capture_control_supported: bool = False
     tasks: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Set only by this session's own advertisement; an older extension never advertises.
     end_control: bool = False
@@ -1424,13 +1426,18 @@ class InMemoryTransportManager:
         return token
 
     async def record_browser_surface(
-        self, account_id: str, token: int, surface: dict[str, Any]
+        self, account_id: str, token: int, surface: dict[str, Any], *,
+        capture_control_supported: bool = False, capture_control: dict[str, Any] | None = None,
     ) -> None:
         session = self._browser_sessions.get(account_id, {}).get(token)
         if session is None:
             return
         previous = self.browser_surface(account_id)
         session.surface = {**surface, "reported_at": utc_now().isoformat()}
+        if capture_control_supported or session.capture_control_supported:
+            session.capture_control_supported = True
+            session.capture_control = (dict(capture_control) if capture_control is not None
+                and capture_control["capture"] == surface["capture"] else None)
         if surface["legal_review_required"] or surface["capture"] == "off":
             session.full_intent = None
         # Keep the newest report last so it is the account's current state.
@@ -1439,7 +1446,9 @@ class InMemoryTransportManager:
         current = self.browser_surface(account_id)
         if previous is None or current is None or any(
             previous[key] != current[key] for key in surface
-        ) or previous.get("full_intent") != current.get("full_intent"):
+        ) or any(previous.get(key) != current.get(key) for key in (
+            "full_intent", "capture_control", "capture_control_supported"
+        )):
             await self.broadcast_agent_state(account_id)
 
     async def record_browser_intent(self, account_id: str, token: int, intent: dict[str, Any] | None) -> None:
@@ -1452,6 +1461,34 @@ class InMemoryTransportManager:
         after = self.browser_surface(account_id)
         if before != after:
             await self.broadcast_agent_state(account_id)
+
+    async def record_capture_control_status(self, account_id: str, token: int, status: dict[str, Any] | None) -> None:
+        session = self._browser_sessions.get(account_id, {}).get(token)
+        if session is None or session.surface is None:
+            return
+        before = self.browser_surface(account_id)
+        session.capture_control_supported = True
+        session.capture_control = (dict(status) if status is not None
+            and status["capture"] == session.surface["capture"] else None)
+        if before != self.browser_surface(account_id):
+            await self.broadcast_agent_state(account_id)
+
+    async def send_scoped_capture_control(self, account_id: str, command: dict[str, Any]) -> int:
+        token = self.browser_task_target(account_id)
+        session = self._browser_sessions.get(account_id, {}).get(token)
+        if session is None or session.capture_control is None:
+            return 0
+        scope = session.capture_control
+        if (scope["owner_scope"] != command["owner_scope"] or scope["consent_epoch"] != command["consent_epoch"]
+            or scope["policy_revision"] != command["policy_revision"]
+            or scope["capture"] != ("active" if command["action"] == "pause" else "paused")
+            or (command["action"] == "resume" and session.surface["legal_review_required"])):
+            return 0
+        # A transport exception is not proof of non-delivery. Let the route
+        # report uncertainty instead of trying another browser.
+        await session.send({"type": "session.control", "id": str(uuid4()),
+            "action": "capture.control", "payload": command})
+        return 1
 
     async def unregister_browser_session(self, account_id: str, token: int) -> None:
         sessions = self._browser_sessions.get(account_id)
@@ -1471,7 +1508,9 @@ class InMemoryTransportManager:
         for session in reversed(self._browser_sessions.get(account_id, {}).values()):
             if session.surface is not None:
                 return {**session.surface, **({"full_intent": dict(session.full_intent)}
-                    if session.full_intent is not None else {})}
+                    if session.full_intent is not None else {}), **({"capture_control": dict(session.capture_control)}
+                    if session.capture_control is not None else {}), **({"capture_control_supported": True}
+                    if session.capture_control_supported else {})}
         return None
 
     async def send_browser_control(
@@ -1485,6 +1524,11 @@ class InMemoryTransportManager:
         """
         if action not in BROWSER_CONTROL_ACTIONS:
             raise ValueError("Unknown browser control")
+        if action in {"capture.pause", "capture.resume"} and any(
+            session.capture_control_supported for session in self._browser_sessions.get(account_id, {}).values()
+        ):
+            # Never fall back to an unscoped capture action for a modern browser.
+            return 0
         delivered = 0
         for session in list(self._browser_sessions.get(account_id, {}).values()):
             if pairing_id is not None and session.pairing_id != pairing_id:

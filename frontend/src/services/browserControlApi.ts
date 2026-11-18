@@ -9,10 +9,11 @@ import { z } from 'zod';
  */
 export type CaptureAction = 'pause' | 'resume';
 export type CaptureDelivery = 'delivered' | 'unreachable';
+export interface CaptureRequestScope { operation_id: string; owner_scope: string; consent_epoch: string; policy_revision: string }
 export type BrowserDestination = 'setup' | 'access' | 'history' | 'creator';
 
 export interface BrowserControlApi {
-  setCapture(action: CaptureAction, signal?: AbortSignal): Promise<CaptureDelivery>;
+  setCapture(action: CaptureAction, signal?: AbortSignal, scope?: CaptureRequestScope): Promise<CaptureDelivery>;
   open(destination: BrowserDestination, signal?: AbortSignal): Promise<CaptureDelivery>;
 }
 
@@ -33,7 +34,7 @@ export function createBrowserControlApi({
   fetch: request = (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
   getCsrfToken = () => document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content || null,
 }: { fetch?: typeof fetch; getCsrfToken?: () => string | null } = {}): BrowserControlApi {
-  async function deliver(path: 'capture' | 'open', action: CaptureAction | BrowserDestination, signal?: AbortSignal): Promise<CaptureDelivery> {
+  async function deliver(path: 'capture' | 'open', action: CaptureAction | BrowserDestination, signal?: AbortSignal, scope?: CaptureRequestScope): Promise<CaptureDelivery> {
       const csrf = getCsrfToken();
       if (!csrf) throw new BrowserControlApiError('csrf');
       const controller = new AbortController();
@@ -49,7 +50,7 @@ export function createBrowserControlApi({
           redirect: 'error',
           cache: 'no-store',
           headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-          body: JSON.stringify({ action }),
+          body: JSON.stringify({ action, ...scope }),
           signal: controller.signal,
         });
         const body = await response.json().catch(() => null) as unknown;
@@ -71,7 +72,7 @@ export function createBrowserControlApi({
       }
   }
   return {
-    setCapture: (action, signal) => deliver('capture', action, signal),
+    setCapture: (action, signal, scope) => deliver('capture', action, signal, scope),
     open: (destination, signal) => deliver('open', destination, signal),
   };
 }

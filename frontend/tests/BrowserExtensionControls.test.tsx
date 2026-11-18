@@ -233,3 +233,45 @@ it('allows a new explicit capture action only after a fresh browser report follo
   expect(screen.getByRole('button', { name: 'Pause collecting' })).toHaveProperty('disabled', false);
   expect(h.api.setCapture).toHaveBeenCalledOnce();
 });
+
+it('binds capture to the reported owner revision and confirms only its matching receipt or a retired scope', async () => {
+  const before = '00000000-0000-4000-8000-000000000001';
+  const after = '00000000-0000-4000-8000-000000000002';
+  const scope = { capture: 'active' as const, owner_scope: 'a'.repeat(64), consent_epoch: before, policy_revision: '1', receipt: null };
+  const h = mount({ browser: { ...active, capture_control: scope } });
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
+  const request = vi.mocked(h.api.setCapture).mock.calls[0][2];
+  expect(request).toMatchObject({ owner_scope: 'a'.repeat(64), consent_epoch: before, policy_revision: '1', operation_id: expect.any(String) });
+  h.rerender({ browser: { ...active, capture: 'paused' } });
+  expect(screen.getByRole('button', { name: 'Pausing…' })).toHaveProperty('disabled', true);
+  h.rerender({ browser: { ...active, capture: 'paused', capture_control: {
+    ...scope, consent_epoch: after, capture: 'paused', receipt: {
+      operation_id: request!.operation_id, action: 'pause', previous_consent_epoch: before, outcome: 'applied',
+    },
+  } } });
+  expect(screen.getByRole('button', { name: 'Resume collecting' })).toHaveProperty('disabled', false);
+  expect(h.api.setCapture).toHaveBeenCalledOnce();
+});
+
+it('reports the exact scoped refusal without claiming that resume happened', async () => {
+  const epoch = '00000000-0000-4000-8000-000000000001';
+  const scope = { capture: 'paused' as const, owner_scope: 'a'.repeat(64), consent_epoch: epoch, policy_revision: '1', receipt: null };
+  const browser = { ...active, capture: 'paused' as const, capture_control: scope };
+  const h = mount({ browser });
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Resume collecting' })));
+  const request = vi.mocked(h.api.setCapture).mock.calls[0][2]!;
+  h.rerender({ browser: { ...browser, capture_control: { ...scope, receipt: {
+    operation_id: request.operation_id, action: 'resume', previous_consent_epoch: epoch, outcome: 'refused',
+  } } } });
+  expect(screen.getByRole('alert').textContent).toContain("couldn't change");
+  expect(screen.getByText('Paused. Nothing new is collected.')).toBeTruthy();
+  expect(h.api.setCapture).toHaveBeenCalledOnce();
+});
+
+it('does not dispatch an unscoped action when a modern browser cannot report its current consent scope', async () => {
+  const { api } = mount({ browser: { ...active, capture_control_supported: true, capture_control: null } });
+  const button = screen.getByRole('button', { name: 'Pause collecting' });
+  expect(button).toHaveProperty('disabled', true);
+  await act(async () => fireEvent.click(button));
+  expect(api.setCapture).not.toHaveBeenCalled();
+});

@@ -5,6 +5,7 @@ import { createConnectionRecovery, CONNECTION_RECOVERY_KEY } from '../runtime/re
 
 import {
   CONSENT_STORAGE_KEY,
+  CAPTURE_RECEIPT_KEY,
   ConsentController,
   ONLYFANS_ORIGIN_PATTERN,
 } from '../runtime/consent-controller.mjs';
@@ -660,3 +661,76 @@ for (const change of ['removed', 'created', 'updated', 'replaced']) {
     if (change === 'replaced') assert.equal(reports[0].page_socket_open, false);
   });
 }
+
+test('scoped capture receipt survives restart and admits only the exact consent epoch and owner', async () => {
+  const h = harness();
+  h.permissionState.onlyFans = true;
+  h.onlyFansTabs.length = 0;
+  await h.controller.setMode('full');
+  const identity = { creator_account_id: 'creator', pairing_id: 'pin' };
+  const initial = await h.controller.captureControlStatus(identity);
+  const command = { operation_id: crypto.randomUUID(), action: 'pause', owner_scope: initial.owner_scope,
+    consent_epoch: initial.consent_epoch, policy_revision: initial.policy_revision };
+  await h.controller.applyCaptureControl(command, { ...identity, pairing_id: 'other' }, () => {});
+  assert.deepEqual(await h.controller.captureControlStatus(identity), initial);
+  await h.controller.applyCaptureControl(command, identity, () => {});
+  const paused = await h.controller.captureControlStatus(identity);
+  assert.equal(paused.capture, 'paused');
+  assert.deepEqual(paused.receipt, { operation_id: command.operation_id, action: 'pause',
+    previous_consent_epoch: initial.consent_epoch, outcome: 'applied' });
+  assert.equal((await h.controller.captureControlStatus({ ...identity, pairing_id: 'other' })).receipt, null);
+  await h.controller.applyCaptureControl(command, identity, () => {});
+  assert.equal((await h.controller.captureControlStatus(identity)).consent_epoch, paused.consent_epoch);
+  const restarted = harness();
+  Object.assign(restarted.local, structuredClone(h.local));
+  restarted.permissionState.onlyFans = true;
+  await restarted.controller.initialize();
+  assert.deepEqual(await restarted.controller.captureControlStatus(identity), paused);
+  await restarted.controller.applyCaptureControl({ ...command, action: 'resume', operation_id: crypto.randomUUID(),
+    consent_epoch: paused.consent_epoch }, identity, () => {});
+  assert.equal((await restarted.controller.captureControlStatus(identity)).capture, 'active');
+  assert.equal(restarted.counters.reloads, 0);
+});
+
+test('a capture receipt candidate is not proof if the consent write did not commit', async () => {
+  const h = harness();
+  h.permissionState.onlyFans = true;
+  await h.controller.setMode('full');
+  const identity = { creator_account_id: 'creator', pairing_id: 'pin' };
+  const initial = await h.controller.captureControlStatus(identity);
+  const store = h.chromeApi.storage.local;
+  const set = store.set.bind(store);
+  store.set = async update => {
+    if (Object.hasOwn(update, CONSENT_STORAGE_KEY)) throw new Error('write failed');
+    return set(update);
+  };
+  await assert.rejects(h.controller.applyCaptureControl({ operation_id: crypto.randomUUID(), action: 'pause', owner_scope: initial.owner_scope,
+    consent_epoch: initial.consent_epoch, policy_revision: initial.policy_revision }, identity, () => {}));
+  assert.equal(h.local[CAPTURE_RECEIPT_KEY].outcome, 'applied');
+  assert.equal(await h.controller.captureControlStatus(identity), null);
+  const restarted = harness();
+  Object.assign(restarted.local, structuredClone(h.local));
+  restarted.permissionState.onlyFans = true;
+  await restarted.controller.initialize();
+  assert.deepEqual(await restarted.controller.captureControlStatus(identity), initial);
+});
+
+test('a scoped resume denied by Legal records refusal without changing consent', async () => {
+  const h = harness({ activeModeAuthorization: {
+    async authorizeTransition() { return true; }, async authorizeResume() { return false; },
+    async reconcileActiveMode() { return true; },
+  } });
+  h.permissionState.onlyFans = true;
+  await h.controller.setMode('full');
+  await h.controller.setMode('pause');
+  const identity = { creator_account_id: 'creator', pairing_id: 'pin' };
+  const paused = await h.controller.captureControlStatus(identity);
+  const command = { operation_id: crypto.randomUUID(), action: 'resume', owner_scope: paused.owner_scope,
+    consent_epoch: paused.consent_epoch, policy_revision: paused.policy_revision };
+  await assert.rejects(h.controller.applyCaptureControl(command, identity, () => {}));
+  const refused = await h.controller.captureControlStatus(identity);
+  assert.equal(refused.capture, 'paused');
+  assert.equal(refused.consent_epoch, paused.consent_epoch);
+  assert.equal(refused.receipt.outcome, 'refused');
+  assert.equal(refused.receipt.operation_id, command.operation_id);
+});
