@@ -160,3 +160,69 @@ def test_connection_configuration_cancellation_closes_native_handle(
     assert database_module.LocalSQLite.open_connection_count(path) == 0
     with pytest.raises(database_module.sqlite3.ProgrammingError):
         connections[0].execute("SELECT 1")
+
+
+
+def test_private_file_observation_preserves_live_sqlcipher_write_lock(tmp_path):
+    """A second process must never acquire an active transaction's write lock."""
+    import os
+    import stat
+    import subprocess
+    import sys
+    from app.persistence.private_files import PrivateFileSecurityError, private_file_identity
+
+    database = database_module.ProjectionsSQLite(tmp_path / "write-lock.sqlite3", encryption_key=b"r" * 32)
+    with database.transaction() as connection:
+        connection.execute("CREATE TABLE fixture (value INTEGER NOT NULL)")
+        connection.execute("INSERT INTO fixture VALUES (1)")
+
+    contender = """
+import sys
+from app.persistence.database import open_encrypted_sqlite
+from app.persistence.sqlite_api import OperationalError
+connection = open_encrypted_sqlite(sys.argv[1], b'r' * 32)
+try:
+    connection.execute('PRAGMA busy_timeout=0')
+    try:
+        connection.execute('BEGIN IMMEDIATE')
+    except OperationalError as error:
+        if str(error) != 'database is locked':
+            raise
+        print('blocked')
+    else:
+        connection.rollback()
+        print('acquired')
+finally:
+    connection.close()
+"""
+
+    def competing_writer():
+        result = subprocess.run(
+            [sys.executable, "-c", contender, str(database.path)],
+            capture_output=True, text=True, timeout=30, check=True,
+        )
+        return result.stdout.strip()
+
+    with database.transaction() as connection:
+        connection.execute("UPDATE fixture SET value=2")
+        assert competing_writer() == "blocked"
+        # Exercise read-only identity checks and the repair path, including
+        # the WAL and SHM observations made by the actual persistence layer.
+        identity = private_file_identity(database.path, repair_permissions=False)
+        assert identity
+        if hasattr(os, "O_PATH"):
+            # Exercise actual mode repair on the locked inode as well as the
+            # already-private observation. Read-only verification must refuse
+            # the insecure mode without changing it.
+            os.chmod(database.path, 0o640)
+            with pytest.raises(PrivateFileSecurityError):
+                private_file_identity(database.path, repair_permissions=False)
+            assert stat.S_IMODE(database.path.stat().st_mode) == 0o640
+            assert competing_writer() == "blocked"
+            assert private_file_identity(database.path) == identity
+            assert stat.S_IMODE(database.path.stat().st_mode) == 0o600
+        database._restrict_permissions()
+        assert competing_writer() == "blocked"
+    assert competing_writer() == "acquired"
+    with database.read() as connection:
+        assert connection.execute("SELECT value FROM fixture").fetchone()[0] == 2
