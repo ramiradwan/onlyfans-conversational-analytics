@@ -1838,3 +1838,269 @@ describe('one explicit protected sign-in', () => {
     subject.stop();
   });
 });
+
+describe('one-click provider sign-in across ceremony and source replacement', () => {
+  const journey = '44444444-4444-4444-8444-444444444444';
+  const otherJourney = '55555555-5555-4555-8555-555555555555';
+  const existingParent = '22222222-2222-4222-8222-222222222222';
+  const replaceOp = '33333333-3333-4333-8333-333333333333';
+  const selectOp = '66666666-6666-4666-8666-666666666666';
+  const otherParent = '77777777-7777-4777-8777-777777777777';
+  const extraOp = '88888888-8888-4888-8888-888888888888';
+  const verifiedChoices = { google: true, 'microsoft-personal': false, telegram: false, tiktok: false, default: true };
+  const allFalse = { google: false, 'microsoft-personal': false, telegram: false, tiktok: false, default: false };
+  const parentRecord = id => ({ ...record, operation_id: id, action: 'account.connect', state: 'waiting' });
+
+  const startPath = (kind, { clock = () => 1000, saved = storage(), choices = verifiedChoices, withProjection = true } = {}) => {
+    const parentId = kind === 'ceremony' ? existingParent : replaceOp;
+    const base = kind === 'ceremony'
+      ? { ...initial(), journey_id: journey, next_task: 'account-connection', allowed_actions: ['auth.select'],
+          pending_operations: [parentRecord(existingParent)],
+          authentication: { operation_id: existingParent, browser_operation_id: null, state: 'replacement-required',
+            choices: withProjection ? choices : allFalse,
+            actions: { select: true, cancel: false, open_browser: false, switch_account: false }, authentication_attempt: null } }
+      : { ...initial(), journey_id: journey, next_task: 'account-connection', continuation_available: true,
+          allowed_actions: ['account.connect'], pending_operations: [],
+          authentication: withProjection
+            ? { operation_id: null, browser_operation_id: null, state: 'replacement-required', choices,
+                actions: { select: false, cancel: false, open_browser: false, switch_account: false }, authentication_attempt: null }
+            : null };
+    const replacementPending = revision => ({ ...base, revision, scope_digest: 'b'.repeat(64), continuation_available: false,
+      allowed_actions: [],
+      pending_operations: kind === 'ceremony'
+        ? [parentRecord(existingParent), { ...record, operation_id: replaceOp, action: 'auth.select', state: 'waiting' }]
+        : [{ ...record, operation_id: replaceOp, action: 'account.connect', state: 'waiting' }],
+      authentication: { operation_id: parentId, browser_operation_id: null, state: 'replacement-pending',
+        choices: allFalse, actions: { select: false, cancel: false, open_browser: false, switch_account: false }, authentication_attempt: null } });
+    const adopting = revision => ({ ...base, revision, scope_digest: 'c'.repeat(64), continuation_available: false,
+      allowed_actions: [], pending_operations: [parentRecord(parentId)], authentication: null });
+    const successor = (revision, overrides = {}) => ({ ...base, revision, scope_digest: 'd'.repeat(64),
+      continuation_available: false, allowed_actions: ['auth.select'],
+      pending_operations: [parentRecord(overrides.parentId ?? parentId)],
+      authentication: { operation_id: overrides.parentId ?? parentId, browser_operation_id: null, state: 'selection-required',
+        choices: overrides.choices ?? verifiedChoices,
+        actions: { select: true, cancel: false, open_browser: false, switch_account: false }, authentication_attempt: null },
+      ...(overrides.journeyId ? { journey_id: overrides.journeyId } : {}) });
+
+    let publish, latest = base;
+    const ids = [replaceOp, selectOp, extraOp], commands = [], states = [];
+    const openBrowser = vi.fn(async () => true);
+    const subject = new DesktopSetupClient({ generation, storage: saved, receive: state => states.push(state),
+      uuid: () => ids.shift(), now: clock, openBrowser,
+      stream: async (_request, _headers, _signal, listener) => {
+        publish = next => { latest = next; listener(JSON.stringify(next)); };
+        listener(JSON.stringify(latest));
+      },
+      request: async (url, options) => {
+        const body = options?.body && JSON.parse(options.body);
+        if (url.endsWith('/session')) return response(session);
+        if (url.endsWith('/commands')) {
+          commands.push(body);
+          return response({ ...record, operation_id: body.operation_id, action: body.action, state: 'accepted' }, 202);
+        }
+        const id = url.split('/').pop();
+        return response({ ...record, operation_id: id, action: id === replaceOp && kind === 'source' ? 'account.connect' : 'auth.select', state: 'waiting' });
+      } });
+    const clickProvider = (provider = 'google') => kind === 'ceremony'
+      ? subject.act('auth.select', { replace_ceremony: true }, { continueProvider: provider })
+      : subject.act('account.connect', {}, { continueProvider: provider });
+    return { subject, commands, states, openBrowser, saved, base, parentId, replacementPending, adopting, successor, clickProvider,
+      publish: next => publish(next) };
+  };
+
+  describe.each(['ceremony', 'source'])('%s replacement path', kind => {
+    it('renders verified predecessor provider buttons and keeps the clicked provider busy in place without layout shift', () => {
+      document.documentElement.innerHTML = markup;
+      const { base, parentId, replacementPending, successor } = startPath(kind);
+      const busy = () => [...document.querySelectorAll('[data-provider]')].filter(button => button.getAttribute('aria-busy') === 'true')
+        .map(button => button.dataset.provider);
+      renderSetup(document, { snapshot: base, connected: true, pending: kind === 'ceremony' ? parentId : null });
+      expect(document.getElementById('sign-in-options').hidden).toBe(false);
+      expect(document.getElementById('task-action').hidden).toBe(true);
+      expect(document.getElementById('browser-reopen').hidden).toBe(true);
+      expect(document.getElementById('task-status').textContent).toBe('Sign-in ended.');
+      expect(document.getElementById('task-status').dataset.tone).toBe('warning');
+      expect(document.getElementById('task-status').dataset.reservedRegion).toBe('desktop-task-status');
+      const google = document.querySelector('[data-provider="google"]');
+      expect(google.hidden).toBe(false);
+      expect(google.disabled).toBe(false);
+      expect(google.dataset.action).toBe(kind === 'ceremony' ? 'auth.select' : 'account.connect');
+      expect(google.dataset.replaceCeremony).toBe(String(kind === 'ceremony'));
+      expect(google.dataset.sourceContinuation).toBe(String(kind === 'source'));
+      expect(document.querySelector('[data-provider="microsoft-personal"]').hidden).toBe(true);
+      expect(document.querySelector('[data-provider="default"]').hidden).toBe(false);
+
+      // Clicked provider stays visible and busy in place through replacement-pending and follow-up selection.
+      renderSetup(document, { snapshot: replacementPending(1), connected: true, pending: replaceOp, continuingProvider: 'google', provider: 'google' });
+      expect(document.getElementById('sign-in-options').hidden).toBe(false);
+      expect(google.hidden).toBe(false);
+      expect(document.querySelector('[data-provider="microsoft-personal"]').hidden).toBe(true);
+      expect(busy()).toEqual(['google']);
+      expect([...document.querySelectorAll('[data-provider]:not([hidden])')].every(button => button.disabled)).toBe(true);
+      expect(document.getElementById('task-status').textContent).toBe('Preparing sign-in\u2026');
+      expect(document.getElementById('task-action').hidden).toBe(true);
+
+      renderSetup(document, { snapshot: successor(2), connected: true, pending: selectOp, pendingAction: 'auth.select', provider: 'google' });
+      expect(document.getElementById('sign-in-options').hidden).toBe(false);
+      expect(busy()).toEqual(['google']);
+      expect(document.getElementById('task-status').textContent).toBe('Opening Chrome…');
+
+      renderSetup(document, { snapshot: { ...successor(3), allowed_actions: [],
+        authentication: { ...successor(3).authentication, state: 'selected', browser_operation_id: selectOp,
+          actions: { select: false, cancel: true, open_browser: true, switch_account: false } } },
+      connected: true, pending: selectOp, provider: 'google' });
+      expect(document.getElementById('sign-in-options').hidden).toBe(true);
+      expect(busy()).toEqual([]);
+      expect(document.getElementById('task-status').textContent).toBe('Finish signing in in Chrome.');
+    });
+
+    it('sends the replacement command then exactly one selection with the clicked provider and opens Chrome only through auth.select', async () => {
+      const { subject, commands, states, openBrowser, replacementPending, adopting, successor, clickProvider, publish } = startPath(kind);
+      await subject.connect();
+      await clickProvider('google');
+      expect(commands).toHaveLength(1);
+      expect(commands[0]).toMatchObject(kind === 'ceremony'
+        ? { action: 'auth.select', replace_ceremony: true, operation_id: replaceOp }
+        : { action: 'account.connect', operation_id: replaceOp });
+      expect(commands[0].provider).toBeUndefined();
+      expect(openBrowser).not.toHaveBeenCalled();
+      expect(states.at(-1).continuingProvider).toBe('google');
+
+      publish(replacementPending(1));
+      publish(adopting(2));
+      expect(commands).toHaveLength(1);
+      expect(openBrowser).not.toHaveBeenCalled();
+      expect(states.at(-1).continuingProvider).toBe('google');
+
+      publish(successor(3));
+      await vi.waitFor(() => expect(commands).toHaveLength(2));
+      expect(commands[1]).toEqual({
+        profile: 'desktop-onboarding.v1', kind: 'command', journey_id: journey,
+        operation_id: selectOp, action: 'auth.select', provider: 'google',
+        expected: { generation, revision: 3, scope_digest: 'd'.repeat(64) },
+      });
+      await vi.waitFor(() => expect(openBrowser).toHaveBeenCalledTimes(1));
+      expect(openBrowser.mock.calls[0][1]).toBe(selectOp);
+      expect(subject.providerContinuation).toBeNull();
+      expect(states.at(-1).continuingProvider).toBeNull();
+
+      // Another selection-required snapshot never sends a second selection.
+      publish(successor(4));
+      await Promise.resolve();
+      expect(commands).toHaveLength(2);
+      expect(openBrowser).toHaveBeenCalledTimes(1);
+      subject.stop();
+    });
+
+    it.each(['reconnect', 'another-command', 'changed-parent', 'changed-journey', 'provider-missing', 'time-bound'])(
+      'ends the sequence with no selection sent on %s', async cause => {
+        let now = 1000;
+        const { subject, commands, states, openBrowser, successor, clickProvider, publish } = startPath(kind, { clock: () => now });
+        await subject.connect();
+        await clickProvider('google');
+        expect(commands).toHaveLength(1);
+        expect(states.at(-1).continuingProvider).toBe('google');
+        expect(subject.providerContinuation).not.toBeNull();
+
+        if (cause === 'reconnect') {
+          await subject.connect();
+          expect(subject.providerContinuation).toBeNull();
+          publish(successor(1));
+        } else if (cause === 'another-command') {
+          subject.remember(null);
+          publish({ ...initial(), journey_id: journey, revision: 1, next_task: 'account-connection',
+            allowed_actions: ['browser.access'], pending_operations: [], authentication: null });
+          await subject.act('browser.access');
+          expect(subject.providerContinuation).toBeNull();
+          publish(successor(2));
+        } else if (cause === 'changed-parent') {
+          publish(successor(1, { parentId: otherParent }));
+        } else if (cause === 'changed-journey') {
+          publish(successor(1, { journeyId: otherJourney }));
+        } else if (cause === 'provider-missing') {
+          publish(successor(1, { choices: { google: false, 'microsoft-personal': true, telegram: false, tiktok: false, default: true } }));
+        } else if (cause === 'time-bound') {
+          now += 120_001;
+          publish(successor(1));
+        }
+        await Promise.resolve();
+        expect(subject.providerContinuation).toBeNull();
+        expect(states.at(-1).continuingProvider).toBeNull();
+        const selections = commands.filter(item => item.action === 'auth.select' && item.provider !== undefined);
+        expect(selections).toHaveLength(0);
+        if (cause !== 'another-command') expect(openBrowser).not.toHaveBeenCalled();
+        if (['provider-missing', 'time-bound'].includes(cause)) {
+          document.documentElement.innerHTML = markup;
+          renderSetup(document, { ...states.at(-1), pending: null });
+          expect(document.getElementById('sign-in-options').hidden).toBe(false);
+          const expectedButton = cause === 'provider-missing' ? 'microsoft-personal' : 'google';
+          expect(document.querySelector(`[data-provider="${expectedButton}"]`).hidden).toBe(false);
+          expect(document.querySelector(`[data-provider="${expectedButton}"]`).disabled).toBe(false);
+          expect(document.querySelector(`[data-provider="${expectedButton}"]`).hasAttribute('aria-busy')).toBe(false);
+        }
+        subject.stop();
+      });
+
+    it('never continues a remembered provider after a restart and shows the successor buttons', async () => {
+      const saved = storage();
+      const first = startPath(kind, { saved });
+      await first.subject.connect();
+      await first.clickProvider('google');
+      expect(first.states.at(-1).continuingProvider).toBe('google');
+      expect(saved.getItem('desktop-setup-operation:' + generation)).toBe(replaceOp);
+      first.subject.stop();
+
+      // Reloaded client shares storage only; remembered provider is never persisted or sent.
+      const reloadedCommands = [], reloadedStates = [];
+      const reloadedOpen = vi.fn();
+      let publishReloaded;
+      const reopened = new DesktopSetupClient({ generation, storage: saved, receive: state => reloadedStates.push(state),
+        uuid: () => selectOp, openBrowser: reloadedOpen,
+        stream: async (_request, _headers, _signal, listener) => {
+          publishReloaded = next => listener(JSON.stringify(next));
+          publishReloaded(first.successor(2));
+        },
+        request: async (url, options) => {
+          if (url.endsWith('/session')) return response(session);
+          if (url.endsWith('/commands')) {
+            reloadedCommands.push(JSON.parse(options.body));
+            return response({ ...record, action: 'auth.select', state: 'accepted' }, 202);
+          }
+          return response({ ...record, operation_id: replaceOp, action: kind === 'ceremony' ? 'auth.select' : 'account.connect', state: 'completed' });
+        } });
+      await reopened.connect();
+      await reopened.receipt();
+      expect(reloadedCommands).toHaveLength(0);
+      expect(reloadedOpen).not.toHaveBeenCalled();
+      expect(reopened.providerContinuation).toBeNull();
+      expect(reloadedStates.at(-1).continuingProvider).toBeNull();
+      document.documentElement.innerHTML = markup;
+      renderSetup(document, reloadedStates.at(-1));
+      expect(document.getElementById('sign-in-options').hidden).toBe(false);
+      expect(document.querySelector('[data-provider="google"]').disabled).toBe(false);
+      expect(document.querySelector('[data-provider="google"]').hasAttribute('aria-busy')).toBe(false);
+      reopened.stop();
+    });
+
+    it('keeps the single fallback button and refuses continuation when no verified predecessor projection exists', async () => {
+      const { subject, commands, states, openBrowser, base, parentId, successor, clickProvider, publish } = startPath(kind, { withProjection: false });
+      document.documentElement.innerHTML = markup;
+      renderSetup(document, { snapshot: base, connected: true, pending: kind === 'ceremony' ? parentId : null });
+      const action = document.getElementById('task-action');
+      expect(action.hidden).toBe(false);
+      expect(action.textContent).toBe(kind === 'ceremony' ? 'Sign in again' : 'Continue setup');
+      expect(document.getElementById('sign-in-options').hidden).toBe(true);
+
+      await subject.connect();
+      await clickProvider('google');
+      expect(commands).toHaveLength(1);
+      expect(subject.providerContinuation).toBeNull();
+      expect(states.at(-1)).toHaveProperty('continuingProvider', null);
+      publish(successor(1));
+      await Promise.resolve();
+      expect(commands).toHaveLength(1);
+      expect(openBrowser).not.toHaveBeenCalled();
+      subject.stop();
+    });
+  });
+});

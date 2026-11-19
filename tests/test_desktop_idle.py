@@ -228,11 +228,18 @@ async def test_confirm_idle_offers_exact_source_replacement_without_repeating_br
     snapshot = coordinator.read(native)
     assert snapshot["next_task"] == "account-connection"
     assert snapshot["decision"] is None and "account.confirm" not in snapshot["allowed_actions"]
-    # The expired ceremony consumed its prepared initial source, so sign-in waits for the exact replacement.
-    assert snapshot["authentication"] is None
+    # The expired ceremony consumed its prepared initial source; only its verified choices are shown before replacement.
+    assert snapshot["authentication"] == {
+        "operation_id": None, "browser_operation_id": None, "state": "replacement-required",
+        "choices": authentication_projection(row)["choices"],
+        "actions": {"select": False, "cancel": False, "open_browser": False, "switch_account": False},
+        "authentication_attempt": None,
+    }
     assert "account.connect" in snapshot["allowed_actions"] and "browser.access" not in snapshot["allowed_actions"]
     with pytest.raises(CommandRefused):
         coordinator._accept(native, stale_click)
+    with pytest.raises(CommandRefused):
+        coordinator._accept(native, command(snapshot, "account.connect") | {"provider": "default"})
     selected, fresh = coordinator._accept(native, command(snapshot, "account.connect"))
     replacement = json.loads(selected["owner_scope_json"])["source_replacement"]
     assert fresh and replacement["creator_account_id"] == scope["creator_account_id"]

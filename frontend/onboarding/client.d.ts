@@ -51,6 +51,7 @@ export interface DesktopState {
   deliberate?: boolean;
   browserLaunchPending?: boolean;
   recoverySignInPending?: boolean;
+  continuingProvider?: SignInProvider | null;
 }
 export class DesktopSetupClient {
   constructor(options: { generation: string; receive(state: DesktopState): void;
@@ -63,7 +64,8 @@ export class DesktopSetupClient {
   browserTaskPrepared(task: { operation_id: string; journey_id: string; expires_at: number }): void;
   connect(): Promise<void>;
   wake(): void;
-  act(action: string, options?: { provider?: SignInProvider; replace_ceremony?: true; recover_authority?: true }): Promise<void>;
+  act(action: string, options?: { provider?: SignInProvider; replace_ceremony?: true; recover_authority?: true },
+    continued?: { continueProvider?: SignInProvider; until?: number } | null): Promise<void>;
   reconcile(selectedOperation?: string): Promise<void>;
   launchBrowser(explicit?: boolean, selectedOperation?: string): Promise<void>;
   launchProtectedBrowser(): Promise<void>;

@@ -225,3 +225,44 @@ it('renders R14 without a Retry button when the presentation fragment is missing
   expect(document.getElementById('task-status').dataset.tone).toBe('error');
   expect(document.getElementById('task-reconnect')).toBeNull();
 });
+
+it('clicks a verified provider in ceremony replacement and prepared source continuation without putting provider on the replacement command', async () => {
+  const parent = '22222222-2222-4222-8222-222222222222';
+  const choices = { google: true, 'microsoft-personal': false, telegram: false, tiktok: false, default: true };
+  const busy = () => [...document.querySelectorAll('[data-provider]')].filter(button => button.getAttribute('aria-busy') === 'true')
+    .map(button => button.dataset.provider);
+  owners.client.session.stage = 'setup';
+  let settle;
+  owners.client.act.mockImplementation(() => new Promise(resolve => { settle = resolve; }));
+
+  // Path 1: ceremony replacement with retained predecessor choices.
+  publish({ ...ready(), journey_id: parent, next_task: 'account-connection', local_ready: false,
+    allowed_actions: ['auth.select'], pending_operations: [{ operation_id: parent, action: 'account.connect', state: 'waiting', reason: 'none' }],
+    authentication: { operation_id: parent, browser_operation_id: null, state: 'replacement-required', choices,
+      actions: { select: true, cancel: false, open_browser: false, switch_account: false }, authentication_attempt: null } });
+  expect(document.getElementById('task-action').hidden).toBe(true);
+  document.querySelector('[data-provider="google"]').click();
+  expect(owners.client.act).toHaveBeenCalledExactlyOnceWith('auth.select', { replace_ceremony: true }, { continueProvider: 'google' });
+  expect(busy()).toEqual(['google']);
+  publish({ ...ready(), journey_id: parent, next_task: 'account-connection', local_ready: false,
+    allowed_actions: [], pending_operations: [{ operation_id: parent, action: 'account.connect', state: 'waiting', reason: 'none' }],
+    authentication: { operation_id: parent, browser_operation_id: null, state: 'replacement-pending',
+      choices: { google: false, 'microsoft-personal': false, telegram: false, tiktok: false, default: false },
+      actions: { select: false, cancel: false, open_browser: false, switch_account: false }, authentication_attempt: null } },
+  { pending: '33333333-3333-4333-8333-333333333333', continuingProvider: 'google' });
+  settle(); await Promise.resolve(); await Promise.resolve();
+  expect(busy()).toEqual(['google']);
+  expect(document.getElementById('task-status').textContent).toBe('Preparing sign-in\u2026');
+
+  // Path 2: prepared source continuation with retained predecessor choices.
+  owners.client.act.mockClear();
+  publish({ ...ready(), journey_id: parent, next_task: 'account-connection', local_ready: false,
+    continuation_available: true, allowed_actions: ['account.connect'], pending_operations: [],
+    authentication: { operation_id: null, browser_operation_id: null, state: 'replacement-required', choices,
+      actions: { select: false, cancel: false, open_browser: false, switch_account: false }, authentication_attempt: null } });
+  expect(document.getElementById('task-action').hidden).toBe(true);
+  document.querySelector('[data-provider="default"]').click();
+  expect(owners.client.act).toHaveBeenCalledExactlyOnceWith('account.connect', {}, { continueProvider: 'default' });
+  expect(busy()).toEqual(['default']);
+  settle(); await Promise.resolve();
+});

@@ -2521,6 +2521,11 @@
           "action": "browser-reopen"
         },
         {
+          "to": "browser.loading",
+          "by": "user",
+          "action": "sign-in-options"
+        },
+        {
           "to": "desktop.setup_authority_recovery",
           "by": "system"
         }
@@ -2675,6 +2680,36 @@
           "kind": "unit",
           "file": "frontend/tests/desktop-setup.test.js",
           "name": "shows no task action for an admitted sign-in with no decision"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "one-click provider sign-in across ceremony and source replacement"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "clicks a verified provider in ceremony replacement and prepared source continuation without putting provider on the replacement command"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_ceremony_replacement_exposes_exact_predecessor_choices_and_falls_back_without_projection"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_expired_prepared_source_exposes_exact_ceremony_choices_only_when_verified_projection_retained"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_coordinator.py",
+          "name": "test_replacement_required_projects_only_verified_predecessor_choices_and_keeps_admission_closed"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_authentication.py",
+          "name": "test_verified_choices_requires_exact_retained_ceremony_projection"
         }
       ]
     },

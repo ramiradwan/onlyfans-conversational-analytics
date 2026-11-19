@@ -34,6 +34,7 @@ export class DesktopSetupClient {
     this.protectedOpening = false;
     this.protectedLaunchError = null;
     this.recoverySignIn = null;
+    this.providerContinuation = null;
     this.launchRequested = false;
     this.focusIntent = null;
     this.value = null;
@@ -61,7 +62,8 @@ export class DesktopSetupClient {
       error: error || this.protectedLaunchError || this.operationError?.reason || this.browserNotice || null, deliberate,
       ...(this.intent?.operationId === this.pending ? { pendingAction: this.intent.action } : {}),
       browserLaunchPending: Boolean(this.launchOperation || this.protectedOpening),
-      recoverySignInPending: Boolean(this.recoverySignIn) });
+      recoverySignInPending: Boolean(this.recoverySignIn),
+      continuingProvider: this.providerContinuation?.provider ?? null });
   }
 
   retireAuthenticationError() {
@@ -243,6 +245,7 @@ export class DesktopSetupClient {
   async _connect() {
     this.launchEpoch++;
     this.launchOperation = null;
+    this.providerContinuation = null;
     this.focusIntent = null;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
@@ -291,8 +294,11 @@ export class DesktopSetupClient {
         this.reconnectExhausted = false;
         this.notify(null, deliberate);
         if (this.launchOperation) void this.launchBrowser();
+        const pendingBefore = this.pending;
         this.continueRecoverySignIn();
-        if (this.pending && !value.pending_operations.some(item => item.operation_id === this.pending)) void this.receipt();
+        this.continueProviderSelection();
+        if (this.pending && this.pending === pendingBefore
+          && !value.pending_operations.some(item => item.operation_id === this.pending)) void this.receipt();
       }, text => {
         if (controller.signal.aborted) return;
         const value = parseOnboardingJson(text);
@@ -309,6 +315,7 @@ export class DesktopSetupClient {
         this.intent = null;
         this.launchOperation = null;
         this.recoverySignIn = null;
+        this.providerContinuation = null;
         const message = typeof error === 'string' ? error : error?.message;
         const terminal = ['session_unavailable', 'authorization_unavailable'].includes(message);
         if (terminal) {
@@ -353,6 +360,7 @@ export class DesktopSetupClient {
     if (!this.connected || snapshot?.authority_recovery_browser !== 'ready' || !snapshot.authentication?.actions.open_browser) throw Error('browser_unavailable');
     this.protectedOpening = true;
     this.protectedLaunchError = null;
+    this.providerContinuation = null;
     this.notify();
     try {
       // Do not spend the one-use launch claim on a missing browser.
@@ -412,6 +420,59 @@ export class DesktopSetupClient {
     }
   }
 
+  /**
+   * Sends the clicked provider selection once after a ceremony replacement or
+   * prepared-source continuation adopts its successor for the same journey and
+   * parent. Any reconnect, other command, changed journey or parent, missing
+   * provider, refusal or two-minute bound ends the sequence.
+   */
+  continueProviderSelection() {
+    const step = this.providerContinuation, value = this.value, auth = value?.authentication;
+    if (!step) return;
+    const sameParentPending = value?.pending_operations.some(item =>
+      item.operation_id === step.parent && item.action === 'account.connect');
+    const foreignPending = value?.pending_operations.some(item =>
+      item.action === 'account.connect' && item.operation_id !== step.parent
+      || ['auth.select', 'auth.switch', 'auth.cancel'].includes(item.action)
+        && item.operation_id !== step.replaceOperation);
+    const replacementPending = value?.pending_operations.some(item => item.operation_id === step.replaceOperation);
+    const awaitingAcceptance = this.pending === step.replaceOperation
+      && (step.kind === 'ceremony'
+        ? auth?.state === 'replacement-required' && auth.operation_id === step.parent
+        : Boolean(value?.continuation_available && (!auth || auth.state === 'replacement-required' && auth.operation_id === null)));
+    const replacing = auth?.state === 'replacement-pending' && auth.operation_id === step.parent;
+    const adopting = auth === null && sameParentPending;
+    const ready = auth?.state === 'selection-required' && auth.operation_id === step.parent
+      && auth.authentication_attempt === null && auth.browser_operation_id === null;
+    const live = this.connected && step.epoch === this.launchEpoch && this.now() <= step.until
+      && value?.journey_id === step.journey && value.next_task === 'account-connection'
+      && value.authority_recovery === undefined && !value.decision && !foreignPending
+      && (awaitingAcceptance || replacing || adopting || ready);
+    if (!live) {
+      this.providerContinuation = null;
+      this.notify();
+      return;
+    }
+    if (!ready) return;
+    if (!auth.choices?.[step.provider]) {
+      this.providerContinuation = null;
+      this.notify();
+      return;
+    }
+    if (!auth.actions.select || !value.allowed_actions.includes('auth.select')) {
+      if (!replacementPending) {
+        this.providerContinuation = null;
+        this.notify();
+      }
+      return;
+    }
+    this.providerContinuation = null;
+    if (this.pending === step.replaceOperation && !replacementPending) this.remember(null);
+    void this.act('auth.select', { provider: step.provider }).catch(() => {
+      this.notify();
+    });
+  }
+
   async act(action, options = {}, continued = null) {
     const clicked = performance.now();
     const observe = phase => {
@@ -454,7 +515,19 @@ export class DesktopSetupClient {
           selected: action === 'auth.select', attempt: authentication?.authentication_attempt?.authentication_attempt_id ?? null,
           until: continued?.until ?? this.now() + RECOVERY_SIGN_IN_MS }
       : null;
-    const sourceContinuation = action === 'account.connect' && this.value.continuation_available && !authentication;
+    const sourceContinuation = action === 'account.connect' && this.value.continuation_available
+      && (!authentication || authentication.state === 'replacement-required');
+    const continueProvider = typeof continued?.continueProvider === 'string' ? continued.continueProvider : null;
+    const canContinueProvider = Boolean(continueProvider && this.value.journey_id !== null
+      && authentication?.state === 'replacement-required' && authentication.choices?.[continueProvider] === true
+      && (action === 'auth.select' && intent.replace_ceremony === true && authentication.operation_id !== null
+        || sourceContinuation && authentication.operation_id === null && intent.provider === undefined));
+    this.providerContinuation = canContinueProvider
+      ? { epoch, journey: this.value.journey_id,
+          parent: action === 'account.connect' ? intent.operation_id : authentication.operation_id,
+          provider: continueProvider, kind: action === 'account.connect' ? 'source' : 'ceremony',
+          replaceOperation: intent.operation_id, until: this.now() + RECOVERY_SIGN_IN_MS }
+      : null;
     if (this.openBrowser && !intent.replace_ceremony && !intent.recover_authority && !sourceContinuation && ['browser.access', 'account.connect', 'browser.pair', 'auth.select', 'auth.switch'].includes(action)) this.launchOperation = intent.operation_id;
     if (action === 'auth.cancel' || action === 'activation.review' || intent.replace_ceremony || intent.recover_authority || sourceContinuation) this.launchOperation = null;
     this.notify();
@@ -467,6 +540,7 @@ export class DesktopSetupClient {
     } catch (error) {
       if (epoch !== this.launchEpoch || !this.connected) return;
       this.recoverySignIn = null;
+      this.providerContinuation = null;
       if (['setup_changed', 'action_unavailable', 'authority_unavailable', 'account_mismatch', 'operation_limit_reached'].includes(error.reason)) {
         this.remember(null);
         this.intent = null;
@@ -498,6 +572,7 @@ export class DesktopSetupClient {
         const deliberate = this.intent?.confirmed === true && this.value?.next_task !== this.intent.task;
         if (deliberate || result.state === 'refused') this.intent = null;
         if (result.state === 'refused') {
+          if (this.providerContinuation?.replaceOperation === operationId) this.providerContinuation = null;
           this.operationFeedback(operationId, result.action, result.reason);
         }
         this.notify(null, deliberate);
@@ -586,6 +661,7 @@ export class DesktopSetupClient {
     this.launchEpoch++;
     this.launchOperation = null;
     this.recoverySignIn = null;
+    this.providerContinuation = null;
     this.focusIntent = null;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
