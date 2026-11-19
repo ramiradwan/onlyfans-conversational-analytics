@@ -10,14 +10,16 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from app.persistence.auth import (
-    RevocationKey, RevocationScopeType, _new_uuid7, _verified_grant_reference, refresh_window_open,
+    RevocationKey, RevocationScopeType, _new_uuid7, _time_text, _verified_grant_reference, refresh_window_open,
 )
 from app.persistence.catchup_events import capture_authority_change
+from app.persistence.lost_enrollment_evidence import LostEnrollmentEvidence
 from app.security.capability_license_redemption_journal import provider_origin
 from app.security.hosted_grants import CLAIM_PROFILE_V2, HostedGrantUnavailable, grant_offline_grace_seconds
 from app.security.initial_handoff import timestamp
 from app.security.installation_authority_recovery import (
-    AuthorityRecoveryRefused, contract, exact_request, scope_digest, validate_result, verify_delivery_bundle, WITHDRAWALS,
+    AuthorityRecoveryRefused, contract, exact_request, scope_digest, validate_result, verify_delivery_bundle,
+    verify_lost_enrollment_bundle, WITHDRAWALS,
 )
 from app.security.installation_continuation import canonical_request
 
@@ -118,13 +120,20 @@ class InstallationAuthorityRecoveries:
     def __init__(self, store, *, origin):
         self.store = self.authentication = store
         self.origin = provider_origin(origin)
+        self.lost_enrollment = LostEnrollmentEvidence(store, self.origin)
 
     def row(self, connection, recovery_id):
         row = connection.execute("SELECT * FROM installation_authority_recoveries WHERE recovery_id=?", (recovery_id,)).fetchone()
         return None if row is None else dict(row)
 
     def eligible(self, connection):
-        evidence = previous_authority(self.store, connection)
+        return self._check_lineage(connection, previous_authority(self.store, connection))
+
+    def eligible_lost(self, connection):
+        """Separate owner-only admission; never fall back from prior grants."""
+        return self._check_lineage(connection, self.lost_enrollment.eligible(connection))
+
+    def _check_lineage(self, connection, evidence):
         rows = connection.execute("SELECT * FROM installation_authority_recoveries WHERE installation_id=? ORDER BY created_at DESC",
             (evidence.scope["installation_id"],)).fetchall()
         for row in rows:
@@ -144,7 +153,14 @@ class InstallationAuthorityRecoveries:
 
     def reserve(self, connection, *, authorize):
         authorize(connection=connection)
-        evidence = self.eligible(connection)
+        return self._reserve(connection, self.eligible(connection), authorize=authorize)
+
+    def reserve_lost(self, connection, *, authorize):
+        """Only the owner of an explicitly admitted lost-enrollment recovery."""
+        authorize(connection=connection)
+        return self._reserve(connection, self.eligible_lost(connection), authorize=authorize)
+
+    def _reserve(self, connection, evidence, *, authorize):
         now = self.store._now()
         request = exact_request(_new_uuid7(now), evidence.scope)
         connection.execute("INSERT INTO installation_authority_recoveries "
@@ -157,8 +173,15 @@ class InstallationAuthorityRecoveries:
     def exact(self, connection, request, *, authorize):
         authorize(connection=connection)
         row = self.row(connection, request["recovery_id"])
-        evidence = previous_authority(self.store, connection)
-        if (row is None or row["provider_origin"] != self.origin or row["enrollment_claim_id"] != evidence.claim_id
+        if row is None or row["request_json"] != canonical_request(request).decode():
+            raise HostedGrantUnavailable("Original authority recovery changed")
+        # The persisted, immutable operation chooses the evidence branch.
+        # The caller cannot turn an ordinary operation into lost enrollment.
+        if request["scope"]["evidence"]["kind"] == "lost-enrollment":
+            evidence = self.lost_enrollment.eligible(connection)
+        else:
+            evidence = previous_authority(self.store, connection)
+        if (row["provider_origin"] != self.origin or row["enrollment_claim_id"] != evidence.claim_id
                 or row["scope_digest"] != scope_digest(evidence.scope)
                 or row["request_json"] != canonical_request(exact_request(row["recovery_id"], evidence.scope)).decode()
                 or row["request_json"] != canonical_request(request).decode()):
@@ -243,8 +266,10 @@ class InstallationAuthorityRecoveries:
             now = self.store._now()
             if row["committed_at"] is not None and row["committed_at"] != result.get("committed_at"):
                 raise HostedGrantUnavailable("Authority recovery commitment changed")
-            grants = verify_delivery_bundle(verifier, request, result, evidence=evidence, now=now)
-            prior = {grant.grant_type: grant for grant in evidence.grants}
+            lost = request["scope"]["evidence"]["kind"] == "lost-enrollment"
+            grants = (verify_lost_enrollment_bundle if lost else verify_delivery_bundle)(
+                verifier, request, result, evidence=evidence, now=now)
+            prior = {} if lost else {grant.grant_type: grant for grant in evidence.grants}
             if timestamp(result["committed_at"]).timestamp() < row["created_at"] - 60:
                 raise HostedGrantUnavailable("Authority recovery commitment predates admission")
             for grant in grants:
@@ -255,12 +280,15 @@ class InstallationAuthorityRecoveries:
                     raise HostedGrantUnavailable("Authority recovery grant is not a fresh exact reference")
             self.guard(connection, request, "deliver", attempt, authorize=authorize)
             for grant in grants:
-                previous = prior[grant.grant_type]
                 self.store._insert_verified_grant(connection, grant)
-                connection.execute("UPDATE authorized_account_binding_grants SET grant_reference_id=? WHERE grant_reference_id=?",
-                    (grant.reference_id, previous.reference_id))
-                self.store._revoke_in_transaction(connection,
-                    RevocationKey(RevocationScopeType.VERIFIED_GRANT, previous.reference_id), reason="replaced")
+                if not lost:
+                    previous = prior[grant.grant_type]
+                    connection.execute("UPDATE authorized_account_binding_grants SET grant_reference_id=? WHERE grant_reference_id=?",
+                        (grant.reference_id, previous.reference_id))
+                    self.store._revoke_in_transaction(connection,
+                        RevocationKey(RevocationScopeType.VERIFIED_GRANT, previous.reference_id), reason="replaced")
+            if lost:
+                self._complete_lost_claim(connection, evidence, now)
             receipt = canonical_request({grant.grant_type: {"reference_id": grant.reference_id,
                 "jti": grant.grant_identifier, "digest": grant.grant_digest} for grant in grants}).decode()
             connection.execute("UPDATE installation_authority_recoveries SET state='admitted',source_reference=NULL,"
@@ -274,3 +302,20 @@ class InstallationAuthorityRecoveries:
             # from the now-replaced previous-grant evidence.
             authorize(connection=connection)
             return tuple(grant.reference_id for grant in grants)
+
+    def _complete_lost_claim(self, connection, evidence, now):
+        """Admit the original enrollment, never a creator binding or new claim."""
+        updated = connection.execute("UPDATE provisioning_claim_submissions SET state='consumed',outcome=NULL,"
+            "resolved_at=?,enrolled_at=? WHERE claim_id=? AND state='submitted' AND enrolled_at IS NULL",
+            (_time_text(now), _time_text(evidence.enrolled_at), evidence.claim_id))
+        if updated.rowcount != 1:
+            raise HostedGrantUnavailable("Original enrollment claim changed")
+        self.store._enqueue_onboarding_progress_in_transaction(connection, "enrolled",
+            event_id=_new_uuid7(now), correlation_id=_new_uuid7(now), occurred_at=now)
+        if not connection.execute("SELECT 1 FROM provisioning_candidates WHERE association_request_id=?",
+                (evidence.association_request_id,)).fetchone():
+            connection.execute("INSERT INTO provisioning_candidates (association_request_id,installation_id,"
+                "onboarding_transaction_id,organization_id,creator_account_id,state,requested_at,resolved_at) "
+                "VALUES (?,?,?,?,?,'pending',?,NULL)", (evidence.association_request_id,
+                evidence.scope["installation_id"], evidence.scope["enrollment_transaction_id"],
+                evidence.scope["organization_id"], evidence.intended_creator_id, _time_text(now)))

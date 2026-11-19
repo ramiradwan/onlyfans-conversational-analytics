@@ -230,3 +230,50 @@ def verify_delivery_bundle(verifier, request, result, *, evidence, now):
     except GrantVerificationRefused:
         raise HostedGrantUnavailable("Authority recovery signed grant could not be verified") from None
     return tuple(references)
+
+def verify_lost_enrollment_bundle(verifier, request, result, *, evidence, now):
+    """Verify the original authenticated result when no prior actor/JTIs exist.
+
+    The consumed receipt binds the enrollment, not the human actor. The
+    release-selected Provider resolves and freshly authenticates that actor
+    against its original enrollment evidence. Only the signed membership in
+    its exact proof-bound committed delivery can establish the local actor.
+    This branch cannot be used to replace any previously known authority.
+    """
+    from app.security.hosted_grants import _untrusted_payload, _required_int, _required_string, GrantVerificationRefused
+    result = validate_result("deliver", request, result, now=now)
+    if (request["scope"] != evidence.scope
+            or evidence.scope["evidence"] != {"kind": "lost-enrollment", "claim_id": evidence.claim_id,
+                "creator_scope": {"kind": "none"}}
+            or timestamp(result["enrolled_at"]) != evidence.enrolled_at
+            or result["creator_scope"] != {"kind": "none"}
+            or set(result["grants"]) != {"installation_grant", "membership_snapshot"}):
+        raise HostedGrantUnavailable("Lost enrollment delivery evidence changed")
+    instant = int(now.timestamp())
+    committed = int(timestamp(result["committed_at"]).timestamp())
+    references = []
+    seen = set()
+    try:
+        # Derive only the expected signed identity; the unverified payload
+        # is never persisted or used as authority before signature checking.
+        membership = _untrusted_payload(result["grants"]["membership_snapshot"])
+        issuer = _required_string(membership, "ciam_issuer")
+        subject = _required_string(membership, "ciam_subject")
+        for kind in ("membership_snapshot", "installation_grant"):
+            token = result["grants"][kind]
+            payload = _untrusted_payload(token)
+            reference = verifier._verified_reference(token, payload, grant_type=kind,
+                organization_id=evidence.scope["organization_id"], installation_id=evidence.scope["installation_id"],
+                key=evidence.key, external_issuer=issuer, external_subject=subject, requested_account_ids=())
+            if (reference.grant_identifier in seen or _required_int(payload, "iat") != committed
+                    or not _required_int(payload, "nbf") <= instant < _required_int(payload, "exp")
+                    or committed > instant or reference.creator_account_id is not None):
+                raise HostedGrantUnavailable("Lost enrollment grant commitment changed")
+            if kind == "membership_snapshot" and (not reference.membership_id
+                    or reference.allowed_creator_account_ids != ()):
+                raise HostedGrantUnavailable("Lost enrollment cannot admit creator authority")
+            seen.add(reference.grant_identifier)
+            references.append(reference)
+    except GrantVerificationRefused:
+        raise HostedGrantUnavailable("Lost enrollment signed grant could not be verified") from None
+    return tuple(references)

@@ -249,3 +249,134 @@ async def test_actual_initial_owner_fences_key_only_send_at_original_deadline(ca
     assert not sent
     assert eligible(case).claim_id==case.receipt["claim_id"]
     await worker.stop()
+
+def reserved_lost(case):
+    from app.persistence.installation_authority_recovery import InstallationAuthorityRecoveries
+    from test_installation_authority_recovery_client import response_for
+    with case.store.database.transaction() as connection:
+        retain(case,connection)
+    case.clock[0]+=BOOTSTRAP_WINDOW
+    journal=InstallationAuthorityRecoveries(case.store,origin="https://fixture.invalid")
+    with case.store.database.transaction() as connection:
+        with pytest.raises(HostedGrantUnavailable):
+            journal.reserve(connection,authorize=allow)
+        request=journal.reserve_lost(connection,authorize=allow)
+        assert request["scope"]["evidence"]["kind"]=="lost-enrollment"
+        with pytest.raises(HostedGrantUnavailable):
+            journal.reserve_lost(connection,authorize=allow)
+        attempt=journal.claim(connection,request,"prepare",authorize=allow)
+        journal.record_preparation(connection,request,attempt,response_for("prepare",request)|{"expires_at":wire_time(case.clock[0]+timedelta(minutes=20))},authorize=allow)
+    case.clock[0]+=timedelta(seconds=16)
+    with case.store.database.transaction() as connection:
+        attempt=journal.claim(connection,request,"deliver",authorize=allow)
+        assert attempt==1
+    return journal,request,attempt
+
+
+def lost_delivery(case,request,*,change=None):
+    # The Provider fixture is the signer and enrollment-actor authority, not
+    # an invented prior local grant. No prior references exist in the database.
+    from test_installation_authority_recovery_owner import signed_delivery
+    signing_case=SimpleNamespace(clock=case.clock,store=case.store,creator=False,
+        grants=(None,SimpleNamespace(issuer="https://fixture.invalid/identity",subject="original-actor",
+            membership_id="membership.fixture")))
+    verifier,result=signed_delivery(signing_case,request,change=change)
+    result["enrolled_at"]=case.receipt["consumed_at"]
+    return verifier,result
+
+
+def test_protected_lost_delivery_atomically_completes_original_claim(case):
+    journal,request,attempt=reserved_lost(case)
+    verifier,result=lost_delivery(case,request)
+    before=case.store.read_epoch()
+    references=journal.adopt_delivery(request,attempt,result,verifier=verifier,authorize=allow)
+    assert len(references)==2
+    assert case.store.read_epoch().value==before.value+1
+    assert case.store.claim_submission(case.receipt["claim_id"]).state.value=="consumed"
+    assert case.store.claim_submission(case.receipt["claim_id"]).enrolled_at==NOW
+    candidate=case.store.provisioning_candidate(case.scope["association_request_id"])
+    assert candidate.creator_account_id==case.scope["intended_creator_id"] and candidate.state.value=="pending"
+    with case.store.database.read() as connection:
+        saved=journal.row(connection,request["recovery_id"])
+        assert saved["state"]=="admitted" and saved["source_reference"] is None
+        assert all(token not in saved["admitted_grants_json"] for token in result["grants"].values())
+        assert connection.execute("SELECT count(*) FROM authorized_account_bindings").fetchone()[0]==0
+        assert connection.execute("SELECT count(*) FROM webauthn_credentials").fetchone()[0]==0
+        assert {row["grant_type"] for row in connection.execute("SELECT * FROM verified_grant_references")}=={
+            "installation_grant","membership_snapshot"}
+        assert connection.execute("SELECT count(*) FROM onboarding_progress_outbox WHERE milestone='enrolled'").fetchone()[0]==1
+        with pytest.raises(HostedGrantUnavailable):
+            journal.eligible_lost(connection)
+    case.store=SQLiteAuthenticationStore(case.path,clock=lambda:case.clock[0])
+    from app.persistence.installation_authority_recovery import InstallationAuthorityRecoveries
+    reopened=InstallationAuthorityRecoveries(case.store,origin="https://fixture.invalid")
+    with case.store.database.transaction() as connection:
+        assert reopened.row(connection,request["recovery_id"])["state"]=="admitted"
+        with pytest.raises(HostedGrantUnavailable):
+            reopened.reserve_lost(connection,authorize=allow)
+
+
+@pytest.mark.parametrize("change",["signature","key","accounts","time","enrolled-at","scope-digest","wrong-recovery","creator",
+    "local-withdrawal","late-guard"])
+def test_protected_lost_delivery_rejects_changed_result_and_preserves_original_claim(case,change):
+    journal,request,attempt=reserved_lost(case)
+    verifier,result=lost_delivery(case,request,change=change)
+    if change=="enrolled-at":
+        result["enrolled_at"]=wire_time(NOW-timedelta(days=1))
+    if change=="scope-digest":
+        result["scope_digest"]="0"*64
+    if change=="wrong-recovery":
+        result["recovery_id"]="0198a1b2-c3d4-7300-8000-000000000090"
+    if change=="creator":
+        result["creator_scope"]={"kind":"approved","creator_account_id":"creator.test",
+            "approval_id":"0198a1b2-c3d4-7300-8000-000000000090","approval_revision":1}
+    if change=="local-withdrawal":
+        with case.store.database.transaction() as connection:
+            case.store._revoke_in_transaction(connection,RevocationKey(RevocationScopeType.INSTALLATION,
+                case.receipt["installation_id"]),reason="test")
+    def guard(*,connection):
+        if change=="late-guard" and connection.execute("SELECT 1 FROM installation_authority_recoveries WHERE state='admitted'").fetchone():
+            raise HostedGrantUnavailable("Changed before commit")
+    with pytest.raises(HostedGrantUnavailable):
+        journal.adopt_delivery(request,attempt,result,verifier=verifier,authorize=guard)
+    assert case.store.claim_submission(case.receipt["claim_id"]).state.value=="submitted"
+    assert case.store.provisioning_candidate(case.scope["association_request_id"]) is None
+    with case.store.database.read() as connection:
+        assert journal.row(connection,request["recovery_id"])["state"]=="prepared"
+        assert connection.execute("SELECT count(*) FROM verified_grant_references").fetchone()[0]==0
+        assert connection.execute("SELECT count(*) FROM onboarding_progress_outbox WHERE milestone='enrolled'").fetchone()[0]==0
+
+
+def test_lost_recovery_original_delivery_and_refusal_survive_restart(case):
+    from app.persistence.installation_authority_recovery import InstallationAuthorityRecoveries
+    from app.security.installation_authority_recovery import AuthorityRecoveryRefused
+    journal,request,attempt=reserved_lost(case)
+    with case.store.database.transaction() as connection:
+        journal.record_refusal(connection,request,"deliver",attempt,AuthorityRecoveryRefused("not_ready"),authorize=allow)
+    case.clock[0]+=timedelta(seconds=16)
+    case.store=SQLiteAuthenticationStore(case.path,clock=lambda:case.clock[0])
+    journal=InstallationAuthorityRecoveries(case.store,origin="https://fixture.invalid")
+    with case.store.database.transaction() as connection:
+        with pytest.raises(HostedGrantUnavailable):
+            journal.reserve_lost(connection,authorize=allow)
+        assert journal.claim(connection,request,"deliver",authorize=allow)==2
+        journal.record_refusal(connection,request,"deliver",2,AuthorityRecoveryRefused("grant_withdrawn"),authorize=allow)
+    case.clock[0]+=timedelta(days=1)
+    with case.store.database.transaction() as connection:
+        assert journal.row(connection,request["recovery_id"])["refusal_reason"]=="grant_withdrawn"
+        with pytest.raises(HostedGrantUnavailable):
+            journal.reserve_lost(connection,authorize=allow)
+        assert journal.claim(connection,request,"deliver",authorize=allow) is None
+
+
+def test_lost_recovery_cannot_change_immutable_scope_or_admit_competing_branch(case):
+    from app.security.installation_authority_recovery import exact_request
+    journal,request,attempt=reserved_lost(case)
+    scope=request["scope"]|{"evidence":{"kind":"lost-enrollment",
+        "claim_id":"0198a1b2-c3d4-7300-8000-000000000099","creator_scope":{"kind":"none"}}}
+    changed=exact_request(request["recovery_id"],scope)
+    with case.store.database.read() as connection:
+        with pytest.raises(HostedGrantUnavailable):
+            journal.guard(connection,changed,"deliver",attempt,authorize=allow)
+        with pytest.raises(HostedGrantUnavailable):
+            journal.guard(connection,request,"deliver",attempt+1,authorize=allow)
