@@ -1875,13 +1875,35 @@ def test_delayed_complete_webview_receipt_is_accepted_without_a_window(tmp_path:
     runtime_recheck = "    and SharedWebView2Available() then"
     assert runtime_recheck in source
     source = source.replace(detection, "", 1).replace(runtime_recheck, f"    and {str(runtime_available)} then", 1)
+    # Keep one writer open from the empty receipt through completion. Reopening
+    # for truncation can collide with the installer's concurrent reader. The
+    # real installer must still wait for a complete receipt and recheck runtime
+    # availability; no production wait or fallback is changed.
+    fixture_status = tmp_path / "receipt-fixture-status.txt"
+    status_literal = str(fixture_status).replace("'", "''")
     installer = _compile_installer(tmp_path, source, version="1.0.0-webview-delayed",
-        webview_prerequisite="param([string] $MinimumVersion, [string] $ResultPath)\n[IO.File]::WriteAllText($ResultPath, '')\n"
-        "Start-Sleep -Milliseconds 1500\n[IO.File]::WriteAllText($ResultPath, '0')\nexit 0\n")
+        webview_prerequisite=(
+            "param([string] $MinimumVersion, [string] $ResultPath)\n"
+            "$ErrorActionPreference = 'Stop'\n"
+            f"$status = '{status_literal}'\n"
+            "try {\n"
+            "  $stream = [IO.File]::Open($ResultPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)\n"
+            "  try {\n"
+            "    [IO.File]::WriteAllText($status, 'started')\n"
+            "    Start-Sleep -Milliseconds 1500\n"
+            "    $stream.WriteByte(48)\n"
+            "    $stream.Flush()\n"
+            "  } finally { $stream.Dispose() }\n"
+            "  [IO.File]::WriteAllText($status, 'completed')\n"
+            "} catch { [IO.File]::WriteAllText($status, 'failed'); exit 1 }\n"
+            "exit 0\n"))
     prefix = tmp_path / "successful-prerequisite"
     try:
         with visible_windows.recording_windows(lambda window: visible_windows.is_inno_setup_image(window.process_image)) as observed:
-            assert (_install_silently(installer, prefix) == 0) is runtime_available
+            exit_code = _install_silently(installer, prefix)
+            status = fixture_status.read_text(encoding="utf-8") if fixture_status.is_file() else "not_started"
+            status = status if status in {"not_started", "started", "completed", "failed"} else "unknown"
+            assert (exit_code == 0) is runtime_available, f"installer exit={exit_code}; receipt fixture={status}"
         assert (prefix / "Bridge.exe").is_file() is runtime_available
         assert not [window for window in observed if window.steals_focus()]
     finally:
