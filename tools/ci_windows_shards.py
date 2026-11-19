@@ -206,6 +206,68 @@ def file_timings(report: dict[str, Any], *, only: Iterable[str] | None = None) -
     return totals
 
 
+
+def prove_focused_overlap(full: dict[str, Any], focused: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """Prove historical default-node overlap before considering deduplication.
+
+    Caller must independently verify workflow inputs and producer attempts.
+    This does not authorize a changed workflow or remove any tests.
+    """
+    _check_scope(full, execution=True)
+    file_timings(full)
+    identity = ("source_commit", "workflow_run_id", "platform", "python", "python_implementation", "pytest")
+
+    def inventory(report):
+        rows = report["collected"]
+        result = {row["nodeid"]: (row["path"], tuple(sorted(row["markers"]))) for row in rows}
+        if len(result) != len(rows):
+            raise WindowsShardError("Duplicate focused or exhaustive inventory identity")
+        return result
+
+    def outcomes(report):
+        result = {}
+        for phase in report["reports"]:
+            result.setdefault(phase["nodeid"], []).append(json.dumps({
+                k: phase.get(k) for k in ("when", "outcome", "wasxfail", "skip_reason", "subtest")
+            }, sort_keys=True))
+        return {node: sorted(phases) for node, phases in result.items()}
+
+    raw = inventory(full)
+    all_nodes = set(full["selected"])
+    full_outcomes = outcomes(full)
+    seen: set[str] = set()
+    for report in focused:
+        if (any(not full.get(k) or report.get(k) != full.get(k) for k in identity)
+                or full.get("execution", {}).get("workers") != 4
+                or report.get("execution", {}).get("workers") != 4
+                or not full.get("execution", {}).get("dist")
+                or report.get("execution", {}).get("dist") != full.get("execution", {}).get("dist")
+                or inventory(report) != raw):
+            raise WindowsShardError("Focused Windows inventory or execution identity differs")
+        selected = set(report["selected"])
+        if not selected or not selected <= all_nodes or seen & selected:
+            raise WindowsShardError("Focused Windows selection is not a disjoint subset of the default inventory")
+        # Validate complete focused execution with the same phase checks used for exhaustive evidence.
+        if (report.get("schema") != full.get("schema") or report.get("complete") is not True
+                or report.get("exit_code") != 0 or report.get("collect_only") is not False
+                or report.get("partial") is not False or report.get("collection_errors") != []
+                or report.get("profile") != "" or report.get("selection_profile") != ""
+                or report.get("selection") != {"keyword": "", "marker": "", "targets": ["tests"]}
+                or len(report["selected"]) != len(selected)
+                or len(report["deselected"]) != len(set(report["deselected"]))
+                or set(report["deselected"]) != set(raw) - selected):
+            raise WindowsShardError("Focused Windows execution is incomplete or narrowed")
+        file_timings(dict(report, collected=[row for row in report["collected"] if row["nodeid"] in selected]))
+        actual = outcomes(report)
+        if set(actual) != selected or any(actual[node] != full_outcomes[node] for node in selected):
+            raise WindowsShardError("Focused Windows phase or subtest outcomes differ")
+        seen.update(selected)
+    if not seen:
+        raise WindowsShardError("No focused Windows evidence")
+    return {"default_count": len(all_nodes), "focused_count": len(seen),
+            "complement_count": len(all_nodes - seen), "focused_nodeids": sorted(seen)}
+
+
 def phase_model(workers: Any, contention: Any) -> dict[str, Any]:
     """Expected job seconds: parallel tests share workers at a measured slowdown."""
     if (type(workers) is not int or workers < 1 or type(contention) not in (int, float)

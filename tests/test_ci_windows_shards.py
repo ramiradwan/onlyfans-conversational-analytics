@@ -475,3 +475,37 @@ def test_external_workflows_consume_capacity_without_delaying_product_gate_when_
         "visual": {"duration": 100, "needs": (), "gate_dependency": False}}, repeats=2)[0]
     assert result["median_seconds"] == 18
     assert result["median_runner_seconds"] == 122
+
+
+
+def overlap_fixture():
+    full = inventory()
+    full.update(python="3.11.9", python_implementation="CPython", pytest="9.1.1",
+                execution={"workers": 4, "dist": "load"})
+    selected = ["test_two.py::test_windows"]
+    focused = dict(full, selected=selected,
+                   deselected=sorted({r["nodeid"] for r in full["collected"]} - set(selected)),
+                   reports=[dict(r) for r in full["reports"] if r["nodeid"] in selected])
+    return full, focused
+
+
+def test_overlap_requires_exact_focused_execution_and_retains_complement():
+    full, focused = overlap_fixture()
+    assert windows.prove_focused_overlap(full, [focused]) == {
+        "default_count": 3, "focused_count": 1, "complement_count": 2,
+        "focused_nodeids": ["test_two.py::test_windows"],
+    }
+
+
+@pytest.mark.parametrize("change", ["python", "workers", "outcome", "missing-phase", "inventory", "duplicate", "subtest"])
+def test_overlap_rejects_non_equivalent_execution(change):
+    full, focused = overlap_fixture()
+    if change == "python": focused["python"] = "3.13.1"
+    elif change == "workers": focused["execution"] = {"workers": 1, "dist": "load"}
+    elif change == "outcome": focused["reports"][1].update(outcome="skipped", skip_reason="changed")
+    elif change == "missing-phase": focused["reports"].pop()
+    elif change == "inventory": focused["collected"] = [dict(r, markers=[]) for r in focused["collected"]]
+    elif change == "duplicate": focused["selected"] *= 2
+    elif change == "subtest": focused["reports"].append(dict(focused["reports"][1], subtest={"index": 1, "msg": "extra", "kwargs": {}}))
+    with pytest.raises(windows.WindowsShardError):
+        windows.prove_focused_overlap(full, [focused])
