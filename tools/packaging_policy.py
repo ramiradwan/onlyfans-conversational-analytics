@@ -197,8 +197,10 @@ def _check_required_paths(
 def _check_forbidden_paths(
     root: Path, policy: Mapping[str, Any], findings: list[PackagingFinding]
 ) -> None:
+    # Parse each relative POSIX path once, rather than once per policy pattern.
+    # Keep declaration-first matching and exactly the same PurePosixPath semantics.
     paths = tuple(
-        path.relative_to(root).as_posix()
+        PurePosixPath(path.relative_to(root).as_posix())
         for path in root.rglob("*")
         if path.is_file() or path.is_dir()
     )
@@ -207,9 +209,33 @@ def _check_forbidden_paths(
             findings.append(PackagingFinding("policy_invalid", "forbidden_paths", "pattern is not a string"))
             continue
         for relative in paths:
-            if PurePosixPath(relative).match(pattern):
-                findings.append(PackagingFinding("forbidden_path_present", relative, f"matches {pattern}"))
+            if relative.match(pattern):
+                findings.append(PackagingFinding("forbidden_path_present", relative.as_posix(), f"matches {pattern}"))
 
+
+# Necessary literals for exact, reviewed regexes, not alternate detectors.
+# On ASCII input, these literals survive lowercase conversion. Every possible
+# match of the corresponding regex contains one of them. Unknown or changed
+# regexes and all non-ASCII text always use the original regex search.
+_ASCII_MATERIAL_PREFILTERS: dict[str, tuple[str, ...]] = {
+    '(?i)\\binstallation[_-]?claim(?:[_-]?package)?[\\"\']?\\s*[:=]\\s*(?:[\\"\'][^\\"\']{16,}[\\"\']|[A-Za-z0-9_-]{16,})':
+        ('installationclaim', 'installation_claim', 'installation-claim'),
+    '(?i)\\bclaim[_-]?secret\\b\\s*[:=]':
+        ('claimsecret', 'claim_secret', 'claim-secret'),
+    '(?i)(?:(?<![\\w-])bearer\\s+[A-Za-z0-9._~-]{16,}|\\b(?:bearer|session)[_-]?token[\\"\']?\\s*[:=]\\s*(?:[\\"\'][^\\"\']{16,}[\\"\']|[A-Za-z0-9._~-]{16,}))':
+        ('bearer', 'sessiontoken', 'session_token', 'session-token'),
+    '(?i)\\b(?:runtime|security|signing)[_-]?secret\\b\\s*[:=]':
+        ('runtimesecret', 'runtime_secret', 'runtime-secret', 'securitysecret', 'security_secret', 'security-secret', 'signingsecret', 'signing_secret', 'signing-secret'),
+    '(?i)(?:[a-z]:\\\\users\\\\|(?<![A-Za-z0-9._~%-])/(?:users|home)/)':
+        ('\\users\\', '/users/', '/home/'),
+}
+
+
+def _payload_matches(matcher: re.Pattern[str], contents: str, folded_ascii: str | None,
+                     necessary: tuple[str, ...]) -> bool:
+    if folded_ascii is not None and necessary and not any(literal in folded_ascii for literal in necessary):
+        return False
+    return matcher.search(contents) is not None
 
 def _check_forbidden_material(
     root: Path, policy: Mapping[str, Any], findings: list[PackagingFinding]
@@ -235,7 +261,7 @@ def _check_forbidden_material(
     # so scanning each file once preserves the declaration-first output order.
     declaration_findings: list[list[PackagingFinding]] = []
     compiled_rules: list[
-        tuple[str, re.Pattern[str], Mapping[str, str], list[PackagingFinding]]
+        tuple[str, re.Pattern[str], tuple[str, ...], Mapping[str, str], list[PackagingFinding]]
     ] = []
     for declaration in declarations:
         bucket: list[PackagingFinding] = []
@@ -266,7 +292,7 @@ def _check_forbidden_material(
             bucket.append(PackagingFinding("policy_invalid", name, str(error)))
             continue
         reviewed_files = _reviewed_synthetic_files(declaration, name, bucket)
-        compiled_rules.append((name, matcher, reviewed_files, bucket))
+        compiled_rules.append((name, matcher, _ASCII_MATERIAL_PREFILTERS.get(pattern, ()), reviewed_files, bucket))
 
     if compiled_rules:
         for path, relative in staged_paths:
@@ -275,10 +301,11 @@ def _check_forbidden_material(
                 contents = payload.decode("utf-8") if payload is not None else None
             except UnicodeError:
                 contents = None
-            for name, matcher, reviewed_files, bucket in compiled_rules:
+            folded_ascii = contents.lower() if contents is not None and contents.isascii() else None
+            for name, matcher, necessary, reviewed_files, bucket in compiled_rules:
                 if matcher.search(relative) is not None or (
                     payload is not None and contents is not None
-                    and matcher.search(contents) is not None
+                    and _payload_matches(matcher, contents, folded_ascii, necessary)
                     and (
                         relative not in reviewed_files
                         or hashlib.sha256(payload).hexdigest() != reviewed_files[relative]

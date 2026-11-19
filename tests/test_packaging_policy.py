@@ -703,6 +703,40 @@ def test_copied_reviewed_fixture_is_not_admitted_at_another_path(
     ) in verify_runtime_files(stage)
 
 
+def test_ascii_material_prefilters_preserve_regex_semantics(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    policy = load_runtime_policy(POLICY_PATH)
+    declarations = policy["forbidden_material"]
+    token = "synthetic-value-1234567890"
+    payloads = ["ordinary prose", "non-ASCII: \u0131nstallation_claim=" + token,
+                "\u017figning_secret=", "\u212a:/users/", "Bearer\x1c" + token,
+                "--bootstrap-related-source", "-----BEGIN PRIVATE KEY-----",
+                "x-bearer " + token, "https://example.invalid/api/users/123"]
+    for sep in ("", "_", "-"):
+        payloads.extend([
+            f"INSTALLATION{sep}CLAIM={token}",
+            f"installation{sep}claim_package: '{token}'",
+            f"CLAIM{sep}SECRET =", f"SESSION{sep}TOKEN: {token}",
+            f"bearer{sep}token={token}",
+            *(f"{stem.upper()}{sep}SECRET\t:" for stem in ("runtime", "security", "signing")),
+        ])
+    payloads.extend(["AUTHORIZATION: bEaReR " + token, r"C:\Users\synthetic", "/HOME/synthetic", "/users/synthetic"])
+    for i, payload in enumerate(payloads):
+        (tmp_path / f"payload-{i}.txt").write_text(payload, encoding="utf-8")
+    (tmp_path / "binary.bin").write_bytes(b"\xffBearer synthetic-value-1234567890")
+    (tmp_path / "claim_secret=path.txt").write_text("ordinary", encoding="utf-8")
+    # A changed rule using a familiar name must not inherit any prefilter.
+    declarations.append({"name": "installation_claim", "pattern": "ordinary"})
+    fast: list[PackagingFinding] = []
+    packaging_policy._check_forbidden_material(tmp_path, policy, fast)
+    monkeypatch.setattr(packaging_policy, "_ASCII_MATERIAL_PREFILTERS", {})
+    reference: list[PackagingFinding] = []
+    packaging_policy._check_forbidden_material(tmp_path, policy, reference)
+    assert fast == reference
+    assert {finding.detail.removeprefix("matches forbidden material declaration: ") for finding in fast} == {
+        declaration["name"] for declaration in declarations
+    }
+
+
 def test_reviewed_payload_admission_preserves_path_and_other_material_rules(tmp_path: Path) -> None:
     payload = b"installation_claim=unreviewed-material-sentinel\r\n"
     name = "installation_claim=unreviewed-material-sentinel.txt"
