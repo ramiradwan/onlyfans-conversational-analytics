@@ -211,7 +211,7 @@ def _assert_a_windows_runner_executes_the_backend_tests(
         for name, job in _jobs(workflow).items()
         if _runs_on_windows(job)
         and any(
-            "--ci-windows-candidate platform-${{ matrix.shard }}" in str(step.get("run", ""))
+            "--windows-v9-group platform-${{ matrix.shard }}" in str(step.get("run", ""))
             for step in _steps(job)
         )
     )
@@ -506,7 +506,7 @@ def test_windows_platform_groups_are_independent_and_auxiliary_work_runs_once() 
     assert set(job["needs"]) == {"fixed-sqlcipher-wheel", "web-build-assets"}
     steps = {step["name"]: step for step in _steps(job)}
     primary = steps["Test Windows platform contract"]
-    assert primary["run"] == "python tools/test_backend.py --lane windows-full-regression -- --ci-windows-candidate platform-${{ matrix.shard }}"
+    assert primary["run"] == "python tools/test_backend.py --lane windows-full-regression --windows-v9-group platform-${{ matrix.shard }}"
     assert "if" not in primary and not primary.get("continue-on-error")
     assert primary["env"]["CI_TEST_LANE"] == "candidate-platform-${{ matrix.shard }}"
     assert primary["env"]["CI_REPORT_DIR"] == "artifacts/ci-tests/candidate-platform-${{ matrix.shard }}"

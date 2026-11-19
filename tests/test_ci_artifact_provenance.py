@@ -122,7 +122,7 @@ def test_windows_platform_evidence_keeps_each_shard_and_auxiliary_producer_disti
     assert job["strategy"]["fail-fast"] is False
     steps = _steps(job)
     execute = next(step for step in steps if step.get("name") == "Test Windows platform contract")
-    assert execute["run"] == "python tools/test_backend.py --lane windows-full-regression -- --ci-windows-candidate platform-${{ matrix.shard }}"
+    assert execute["run"] == "python tools/test_backend.py --lane windows-full-regression --windows-v9-group platform-${{ matrix.shard }}"
     assert execute["env"]["CI_TEST_LANE"] == "candidate-platform-${{ matrix.shard }}"
     assert execute["env"]["CI_REPORT_DIR"] == "artifacts/ci-tests/candidate-platform-${{ matrix.shard }}"
     retain = next(step for step in steps if step.get("name") == "Retain backend timing and selection")

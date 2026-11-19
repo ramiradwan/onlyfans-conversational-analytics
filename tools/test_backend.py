@@ -9,8 +9,9 @@ Examples:
   python tools/test_backend.py list all --validate
   python tools/test_backend.py list windows-full-regression --shard 1 --validate
   python tools/test_backend.py windows-full-regression --shard 2
-  python tools/test_backend.py update-windows-manifest --inventory raw/report.json
-  python tools/test_backend.py validate-windows-manifest --inventory raw/report.json
+  python tools/test_backend.py windows-full-regression --windows-v9-group full-2 --workers 4
+  python tools/test_backend.py update-windows-v9-manifest --inventory raw/report.json
+  python tools/test_backend.py validate-windows-v9-manifest --inventory raw/report.json
 
 Use the repository's Python environment and build the frontend before full
 collection, just as for bare ``python -m pytest``. Arguments after ``--`` go
@@ -39,6 +40,7 @@ if str(ROOT) not in sys.path:
 
 from tools.ci_selection import LANES, LEGACY_EXCLUDED, SelectionError, load_manifest
 from tools import ci_windows_shards as windows_shards
+from tools import ci_windows_v9 as windows_v9
 
 
 ALIASES = {"backend-fast": "fast", "analytics-integration": "integration",
@@ -56,6 +58,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--profile", help="Exact checked-in Hypothesis profile, or analytics_oracle_falsifiers")
     result.add_argument("--output-dir", type=Path, help="JUnit and CI report directory")
     result.add_argument("--manifest", type=Path, default=ROOT / "ci/backend-test-shards.json")
+    result.add_argument("--windows-v9-group", choices=windows_v9.GROUPS, help="Select a production v9 Windows shard (complete raw inventory)")
+    result.add_argument("--windows-v9-manifest", type=Path, default=ROOT / windows_v9.PATH)
     result.add_argument("--windows-manifest", type=Path, default=ROOT / "ci/windows-full-test-shards.json")
     result.add_argument("--inventory", type=Path, help="Complete raw unsharded Windows collection report for update-windows-manifest")
     result.add_argument("--validate", action="store_true", help="Check full manifest inventory while listing all tests")
@@ -174,6 +178,8 @@ def build_command(args: argparse.Namespace, extra: list[str], manifest: dict[str
         raise SelectionError("Use list all --validate or list windows-full-regression --shard N --validate without pytest selection arguments")
     if args.rebalance or args.timings or args.inventory or args.contention is not None:
         raise SelectionError("--rebalance, --timings, --inventory and --contention belong to manifest update commands")
+    if args.windows_v9_group and (lane != "legacy-windows" or args.shard or args.profile or explicit_targets(extra) or extra):
+        raise SelectionError("--windows-v9-group requires the raw Windows lane without narrowing or extra pytest arguments")
     environment = os.environ.copy()
     environment.pop("HYPOTHESIS_PROFILE", None)
     if lane == "stateful":
@@ -194,6 +200,8 @@ def build_command(args: argparse.Namespace, extra: list[str], manifest: dict[str
         identity = args.profile
     elif lane == "legacy-windows":
         identity = "windows-full-regression" + (f"-{args.shard}" if args.shard else "")
+    if args.windows_v9_group:
+        identity = f"candidate-{args.windows_v9_group}"
     environment.setdefault("CI_TEST_LANE", identity)
     output = args.output_dir or Path(environment.get("CI_REPORT_DIR", ROOT / "artifacts/ci-tests" / identity))
     command = [sys.executable, "-m", "pytest", "-p", "tools.ci_pytest", "--override-ini=addopts=",
@@ -201,7 +209,9 @@ def build_command(args: argparse.Namespace, extra: list[str], manifest: dict[str
                "--junitxml", str(output / "junit.xml"), "--durations=50", "--durations-min=0.25"]
     if lane == "legacy-windows":
         command.extend(["-m", windows_shards.LEGACY_WINDOWS_EXPRESSION])
-        if args.shard:
+        if args.windows_v9_group:
+            command.extend(["--ci-windows-v9", args.windows_v9_group, "--ci-windows-v9-manifest", str(args.windows_v9_manifest)])
+        elif args.shard:
             command.extend(["--ci-windows-shard", str(args.shard), "--ci-windows-manifest", str(args.windows_manifest)])
     else:
         command.extend(["--ci-lane", lane, "--ci-manifest", str(args.manifest)])
@@ -346,6 +356,31 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(values[:split])
     extra = values[split + 1:] if split < len(values) else []
     try:
+        if args.command in {"validate-windows-v9-manifest", "update-windows-v9-manifest"}:
+            if (extra or args.lane or args.list_lane or args.shard or args.profile or args.validate or args.list_only
+                    or args.windows_v9_group or args.workers is not None or args.contention is not None or not args.inventory):
+                raise SelectionError("Production v9 maintenance requires --inventory <raw Windows report>; update accepts --rebalance --timings <complete report directory> and --dry-run")
+            plan = windows_v9.load_manifest(ROOT, args.windows_v9_manifest)
+            raw = windows_shards.read_inventory(args.inventory)
+            contracts = load_manifest(ROOT, args.manifest)["windows_contracts"]
+            if args.command == "validate-windows-v9-manifest":
+                if args.rebalance or args.timings or args.dry_run:
+                    raise SelectionError("Validation does not accept update options")
+                groups = windows_v9.groups(raw["collected"], plan, contracts)
+                print(f"Validated production v9: {len(groups)} shards, {len(set().union(*groups.values()))} default nodes")
+                return 0
+            if args.rebalance != bool(args.timings):
+                raise SelectionError("Use --rebalance with a complete same-source --timings directory")
+            timings = windows_v9.read_timings(args.timings, raw, plan, contracts) if args.timings else None
+            updated = windows_v9.updated_manifest(plan, raw, contracts, rebalance=args.rebalance, timings=timings)
+            content = json.dumps(updated, indent=2) + "\n"
+            if args.dry_run:
+                import difflib
+                print("".join(difflib.unified_diff(args.windows_v9_manifest.read_text(encoding="utf-8").splitlines(True), content.splitlines(True), fromfile=str(args.windows_v9_manifest), tofile="updated v9 manifest")), end="")
+            else:
+                args.windows_v9_manifest.write_text(content, encoding="utf-8")
+                print(f"Updated production v9 manifest: {args.windows_v9_manifest}")
+            return 0
         if args.command == "validate-windows-manifest":
             if (extra or args.lane or args.list_lane or args.shard or args.profile or args.validate
                     or args.list_only or args.rebalance or args.timings or args.dry_run or not args.inventory):

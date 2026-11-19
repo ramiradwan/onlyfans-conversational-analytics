@@ -127,7 +127,7 @@ def _assert_full_windows_shards_are_blocking(workflow: dict[str, Any]) -> None:
     assert job["strategy"] == {"fail-fast": False, "max-parallel": 8, "matrix": {"shard": list(range(1, 9))}}
     assert job["timeout-minutes"] == 90
     execution = next(step for step in job["steps"] if step.get("name") == "Test complete Windows backend regression shard")
-    assert execution["run"] == "python tools/test_backend.py --lane windows-full-regression -- --ci-windows-candidate full-${{ matrix.shard }}"
+    assert execution["run"] == "python tools/test_backend.py --lane windows-full-regression --windows-v9-group full-${{ matrix.shard }}"
     assert execution["env"]["CI_TEST_LANE"] == "candidate-full-${{ matrix.shard }}"
     assert not execution.get("continue-on-error")
     upload = next(step for step in job["steps"] if step.get("name") == "Retain backend timing and selection")
@@ -187,7 +187,7 @@ def _assert_backend_execution_evidence(workflow: dict[str, Any]) -> None:
         # This exact command only consumes the preceding raw report. Everything
         # else invoking the runner remains subject to execution-evidence checks.
         report_validation = (
-            "python tools/test_backend.py validate-windows-manifest "
+            "python tools/test_backend.py validate-windows-v9-manifest "
             "--inventory artifacts/ci-tests/legacy-windows-reference/report.json"
         )
         invocations = [step for step in steps
@@ -236,7 +236,7 @@ def test_only_the_default_lane_runners_use_parallel_workers() -> None:
 
 @pytest.mark.parametrize("command", [
     "python tools/test_backend.py --lane fast",
-    "python tools/test_backend.py validate-windows-manifest "
+    "python tools/test_backend.py validate-windows-v9-manifest "
     "--inventory artifacts/ci-tests/legacy-windows-reference/report.json\n"
     "python tools/test_backend.py --lane fast",
 ])

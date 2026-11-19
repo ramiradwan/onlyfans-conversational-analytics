@@ -56,7 +56,8 @@ def required_lanes(event):
 
 
 def load_plan(root=ROOT):
-    plan = json.loads((root / "tools/windows-topology-candidate.json").read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)
+    from tools.ci_windows_v9 import load_manifest
+    plan = load_manifest(root)
     if candidate_counts(plan) != COUNTS or plan["schema"] != 2:
         raise gate.GateError("v9 Windows shard counts differ from the qualified policy")
     if set(plan["retain_in_full"]) != set(gate.PR_WINDOWS_SKIP_LANES):

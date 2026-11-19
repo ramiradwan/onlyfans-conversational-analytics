@@ -324,7 +324,7 @@ def test_pr_windows_inventory_validation_runs_after_raw_collection_before_execut
     assert "windows-qualification" in workflow["jobs"]["required-ci-gate"]["needs"]
     assert names.index("Collect independent legacy Windows selection") < check < names.index("Test Windows production boot")
     assert steps[check]["run"] == (
-        "python tools/test_backend.py validate-windows-manifest "
+        "python tools/test_backend.py validate-windows-v9-manifest "
         "--inventory artifacts/ci-tests/legacy-windows-reference/report.json"
     )
 
@@ -701,3 +701,63 @@ def test_candidate_report_loader_binds_artifact_and_attempt(tmp_path):
     assert load_candidate_reports(tmp_path, source="a"*40, run=1, attempt=1) == {lane: reports[lane]}
     with pytest.raises(GateError):
         load_candidate_reports(tmp_path, source="a"*40, run=1, attempt=2)
+
+
+
+def production_v9_fixture(monkeypatch):
+    from tools import ci_windows_v9 as v9, ci_gate as gate
+    retained = "tests/test_platform_1.py::test_case"
+    monkeypatch.setattr(gate, "PR_WINDOWS_SKIP_LANES", {retained: "windows-platform-contract"})
+    plan = {"schema": 2, "full": {f"tests/test_full_{n}.py": n for n in range(1, 9)},
+            "platform": {f"tests/test_platform_{n}.py": n for n in range(1, 6)},
+            "analytics": {f"tests/test_analytics_{n}.py": n for n in range(1, 3)}, "retain_in_full": [retained]}
+    for kind in ("platform", "analytics"):
+        plan["full"].update({p: 1 for p in plan[kind]})
+    rows = [row(p + "::test_case") for p in plan["full"]]
+    contracts = {kind: [{"selector": p} for p in plan[kind]] for kind in ("platform", "analytics")}
+    return v9, plan, rows, contracts
+
+
+def test_production_v9_update_preserves_owners_and_validates_new_files(monkeypatch):
+    v9, plan, rows, contracts = production_v9_fixture(monkeypatch)
+    rows += [row("tests/test_new.py::test_case"), row("tests/test_new_focused.py::test_case")]
+    contracts["platform"].append({"selector": "tests/test_new_focused.py"})
+    with pytest.raises(v9.Error):
+        v9.groups(rows, plan, contracts)
+    updated = v9.updated_manifest(plan, {"collected": rows}, contracts)
+    for kind in v9.COUNTS:
+        assert all(updated[kind][file] == owner for file, owner in plan[kind].items())
+    assert v9.updated_manifest(updated, {"collected": rows}, contracts) == updated
+    groups = v9.groups(rows, updated, contracts)
+    assert set().union(*groups.values()) == windows.legacy_nodeids(rows)
+    assert sum(map(len, groups.values())) == len(rows) + 1
+
+
+def test_production_v9_rebalance_requires_complete_weights(monkeypatch):
+    v9, plan, rows, contracts = production_v9_fixture(monkeypatch)
+    inventory = {"collected": rows}
+    with pytest.raises(v9.Error, match="Rebalance requires"):
+        v9.updated_manifest(plan, inventory, contracts, rebalance=True)
+    pop = v9.populations(rows, contracts, set(plan["retain_in_full"]))
+    weights = {kind: {file: float(i + 1) for i, (file, nodes) in enumerate(sorted(files.items())) if nodes}
+               for kind, files in pop.items()}
+    updated = v9.updated_manifest(plan, inventory, contracts, rebalance=True, timings=(weights, {"run": "test"}))
+    groups = v9.groups(rows, updated, contracts)
+    assert len(groups) == 15 and all(groups.values())
+    assert set().union(*groups.values()) == windows.legacy_nodeids(rows)
+    weights["full"].pop("tests/test_full_1.py")
+    with pytest.raises(v9.Error, match="Incomplete measured"):
+        v9.updated_manifest(plan, inventory, contracts, rebalance=True, timings=(weights, {}))
+
+
+def test_production_v9_manifest_is_used_by_local_runner_and_gate():
+    from tools import ci_windows_v9 as v9, ci_gate_v9 as gate, test_backend as runner
+    assert v9.load_manifest(ROOT) == gate.load_plan(ROOT)
+    args = runner.parser().parse_args(["windows-full-regression", "--windows-v9-group", "analytics-2"])
+    command, env = runner.build_command(args, [], {})
+    assert command[command.index("--ci-windows-v9") + 1] == "analytics-2"
+    assert Path(command[command.index("--ci-windows-v9-manifest") + 1]) == ROOT / v9.PATH
+    assert "--ci-windows-shard" not in command and "--ci-windows-candidate" not in command
+    assert env["CI_TEST_LANE"] == "candidate-analytics-2"
+    with pytest.raises(ValueError, match="without narrowing"):
+        runner.build_command(args, ["-k", "something"], {})
