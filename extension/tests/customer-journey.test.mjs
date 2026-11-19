@@ -132,8 +132,9 @@ test('a missing pairing status never instructs the customer to sign in to OnlyFa
   assert.equal(recovering.primaryAction, null);
   const exhausted = deriveCustomerJourney({ ...model, connectionRecovery: 'exhausted' });
   assert.equal(exhausted.title, 'Connection status unavailable');
-  assert.equal(exhausted.primaryLabel, 'Try again');
-  assert.doesNotMatch(exhausted.title + exhausted.body, /sign in|enable extension|desktop app closed/i);
+  assert.equal(exhausted.primaryAction, null);
+  assert.equal(exhausted.primaryLabel, null);
+  assert.doesNotMatch(exhausted.title + exhausted.body, /sign in|enable extension|desktop app closed|try again/i);
 });
 
 test('missing site permission cannot inherit the old Full-ready state', () => {

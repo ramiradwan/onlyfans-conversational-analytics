@@ -6,10 +6,16 @@ export const text = (id, value) => { element(id).textContent = value; };
 
 // Reveal lower-page navigation after the first result, in its final position.
 // The heading and loading notice stay visible, including during recovery.
-export function renderLoading(status, failed) {
+export function renderLoading(status, failed, connectionRecovery = 'idle') {
   document.querySelector('main').dataset.initialized = String(Boolean(status) || failed);
   show('loading', !status && !failed);
   show('runtime-unavailable', !status && failed);
+  const body = element('runtime-body');
+  if (body) {
+    body.textContent = connectionRecovery === 'retrying'
+      ? 'Connection interrupted. Reconnecting…'
+      : "Dipsy can't connect right now.";
+  }
   if (!status) document.querySelector('main').removeAttribute('data-ready');
 }
 

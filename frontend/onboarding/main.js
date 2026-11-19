@@ -126,7 +126,6 @@ try {
   document.getElementById('sign-in-back').addEventListener('click', () => {
     choosingAccount = false; render(); document.getElementById('sign-in-switch').focus();
   });
-  document.getElementById('task-reconnect').addEventListener('click', () => { void client.connect(); });
   document.getElementById('browser-reopen').addEventListener('click', async event => {
     const button = event.currentTarget, operation = button.dataset.operation;
     if (acting || button.hidden || button.disabled || !operation) return;
@@ -142,9 +141,22 @@ try {
     finally { render(); }
   });
   document.getElementById('local-authenticate').addEventListener('click', () => { void enrollment.authenticate(); });
-  window.addEventListener('focus', () => { void checkChrome(); });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) void checkChrome(); });
-  window.addEventListener('pagehide', () => { finished = true; chromeCheck++; client.stop(); enrollment.stop(); });
+  const onWake = () => {
+    if (finished) return;
+    void checkChrome();
+    client.wake?.();
+  };
+  const onVisibility = () => { if (!document.hidden) onWake(); };
+  window.addEventListener('focus', onWake);
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('pagehide', () => {
+    finished = true;
+    chromeCheck++;
+    window.removeEventListener('focus', onWake);
+    document.removeEventListener('visibilitychange', onVisibility);
+    client.stop();
+    enrollment.stop();
+  });
   void client.connect();
 } catch {
   renderSetup(document, { snapshot: null, pending: null, connected: false, error: 'session_unavailable', deliberate: false });

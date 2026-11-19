@@ -11,7 +11,7 @@ const page = createPageActions(client, render);
 
 function render(model) {
   const { status, legal } = model;
-  renderLoading(status, failed);
+  renderLoading(status, failed, model.connectionRecovery);
   show('journey-card', status !== null);
   show('preview-metrics', isPreview(status));
   show('preview-limit', isPreview(status) && status?.preview?.limited === true);
@@ -72,5 +72,4 @@ page.bind('continue-setup', () => openSurface('setup'));
 page.bind('open-manage', () => openSurface('options'));
 page.bind('open-connection', () => openSurface('options', 'connection'));
 page.bind('clear-preview', () => openSurface('options', 'data'));
-page.bind('retry-runtime', () => client.sync());
 void client.start();

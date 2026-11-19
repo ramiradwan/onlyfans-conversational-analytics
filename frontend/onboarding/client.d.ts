@@ -62,6 +62,7 @@ export class DesktopSetupClient {
   json(path: string, body?: unknown): Promise<unknown>;
   browserTaskPrepared(task: { operation_id: string; journey_id: string; expires_at: number }): void;
   connect(): Promise<void>;
+  wake(): void;
   act(action: string, options?: { provider?: SignInProvider; replace_ceremony?: true; recover_authority?: true }): Promise<void>;
   reconcile(selectedOperation?: string): Promise<void>;
   launchBrowser(explicit?: boolean, selectedOperation?: string): Promise<void>;

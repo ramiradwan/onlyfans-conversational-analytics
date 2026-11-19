@@ -154,8 +154,8 @@ export function deriveCustomerJourney({
       tone: trying ? 'progress' : 'warning',
       title: trying ? 'Reconnecting to the extension' : 'Connection status unavailable',
       body: trying ? '' : 'The extension connection could not be checked.',
-      primaryAction: trying ? null : 'retry_readiness',
-      primaryLabel: trying ? null : 'Try again',
+      primaryAction: null,
+      primaryLabel: null,
       secondaryAction: null,
       secondaryLabel: null,
     });

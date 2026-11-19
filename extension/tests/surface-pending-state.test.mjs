@@ -9,7 +9,7 @@ const tick = () => new Promise(setImmediate);
 function event() {
   const listeners = new Set();
   return { addListener: (fn) => listeners.add(fn), removeListener: (fn) => listeners.delete(fn),
-    emit: (value) => { for (const fn of listeners) fn(value); } };
+    emit: (...args) => { for (const fn of listeners) fn(...args); } };
 }
 async function surface(t, entry, mode = 'off') {
   const source = new URL(`../${entry}.js`, import.meta.url);
@@ -91,4 +91,91 @@ test('paused Full remains a desktop handoff as control sessions change', async (
   await h.client.refresh();
   await tick();
   assert.equal(h.node('journey-primary').textContent, 'Continue in the desktop app');
+});
+
+test('setup and popup omit #retry-runtime and recover passively through surface-client', async (t) => {
+  for (const page of ['setup', 'popup']) {
+    const markup = await readFile(new URL(`../${page}.html`, import.meta.url), 'utf8');
+    assert.doesNotMatch(markup, /id="retry-runtime"/);
+    const section = markup.match(/<section id="runtime-unavailable"[\s\S]*?<\/section>/)?.[0] ?? '';
+    assert.ok(section.includes('id="runtime-body"'), `${page}.html must include #runtime-body`);
+    assert.doesNotMatch(section, /Try again/i);
+    assert.match(section, /Dipsy can't connect right now\./);
+
+    const source = new URL(`../${page}.js`, import.meta.url);
+    const bundle = await build({
+      stdin: {
+        contents: `${await readFile(source, 'utf8')}\nglobalThis.probe = {client};`,
+        resolveDir: fileURLToPath(new URL('../', import.meta.url)),
+        sourcefile: `${page}.js`,
+      },
+      bundle: true, write: false, format: 'iife',
+    });
+    const nodes = new Map();
+    const queried = new Set();
+    const node = (id) => {
+      queried.add(id);
+      if (!nodes.has(id)) {
+        const classes = new Set();
+        nodes.set(id, {
+          dataset: {}, disabled: false, checked: false, textContent: '',
+          classList: {
+            toggle(name, force) { if (force) classes.add(name); else classes.delete(name); },
+            contains(name) { return classes.has(name); },
+          },
+          setAttribute() {}, removeAttribute() {},
+          addEventListener() {},
+        });
+      }
+      return nodes.get(id);
+    };
+    let runtimeDown = true, connectAllowed = false;
+    const windowListeners = new Map();
+    const storageChanged = event();
+    const port = { onMessage: event(), onDisconnect: event(), disconnect() {}, postMessage() {} };
+    const sandbox = {
+      chrome: {
+        runtime: {
+          getURL: () => 'fixture',
+          connect() {
+            if (!connectAllowed) throw new Error('worker_unavailable');
+            return port;
+          },
+          async sendMessage(message) {
+            if (runtimeDown) throw new Error('worker_unavailable');
+            if (message.type === 'ofca.ui.status') return { ok: true, status: { consent: { mode: 'off', resume_mode: null }, phase: 'off' } };
+            if (message.type === 'ofca.legal-activation.status') {
+              return { ok: true, result: { configured: true, flow: { stage: 'pre_mode', terms_event_id: null, risk_event_id: null } } };
+            }
+            return { ok: true, result: null };
+          },
+        },
+        storage: { onChanged: storageChanged, session: { async get() { return {}; } } },
+      },
+      URL, TextEncoder, AbortController, setTimeout, clearTimeout, HTMLElement: class {},
+      location: { hash: '' }, sessionStorage: { getItem() { return null; } },
+      window: {
+        addEventListener(name, fn) { windowListeners.set(name, fn); },
+        removeEventListener() {},
+      },
+      document: {
+        visibilityState: 'visible',
+        getElementById: node, querySelector: node, querySelectorAll: () => [],
+        addEventListener() {}, removeEventListener() {},
+      },
+      fetch: async () => ({ json: async () => ({}) }),
+    };
+    runInNewContext(bundle.outputFiles[0].text, sandbox);
+    t.after(() => sandbox.probe.client.stop());
+    for (let i = 0; i < 30 && node('main').dataset.initialized !== 'true'; i++) await tick();
+    assert.equal(node('main').dataset.initialized, 'true');
+    assert.equal(queried.has('retry-runtime'), false, `${page}.js must not bind #retry-runtime`);
+    assert.equal(node('runtime-unavailable').classList.contains('hidden'), false);
+    assert.equal(node('runtime-body').textContent, 'Connection interrupted. Reconnecting…');
+    runtimeDown = false; connectAllowed = true;
+    storageChanged.emit({ recovery: { newValue: true } }, 'local');
+    for (let i = 0; i < 30 && node('main').dataset.ready !== 'true'; i++) await tick();
+    assert.equal(node('runtime-unavailable').classList.contains('hidden'), true);
+    assert.equal(node('main').dataset.ready, 'true');
+  }
 });

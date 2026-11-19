@@ -504,6 +504,158 @@ describe('desktop setup projection', () => {
     expect(request).toHaveBeenCalledOnce();
     client.stop();
   });
+  it('recovers transient presentation refresh unavailability through bounded reconnect, exhausts to R13 without controls, and wakes once on focus', async () => {
+    vi.useFakeTimers();
+    const nextGeneration = '33333333-3333-4333-8333-333333333333';
+    let refreshCalls = 0, releaseAttempt = null, dropStream = null, shouldFailAfterSuccess = false;
+    const refreshPresentation = vi.fn(async () => {
+      const attempt = ++refreshCalls;
+      if (releaseAttempt) {
+        const wait = releaseAttempt;
+        releaseAttempt = null;
+        await wait;
+      }
+      if (attempt <= 10 || shouldFailAfterSuccess) throw 'handoff_unavailable';
+      return 'B'.repeat(43);
+    });
+    const request = vi.fn(async path => {
+      if (path.endsWith('/session')) return response({}, 401);
+      if (path.endsWith('/entry/consume')) return response({ ...session, generation: nextGeneration, journey_id: null });
+      return response(record);
+    });
+    const received = [];
+    const client = new DesktopSetupClient({ generation, request, refreshPresentation, storage: storage(),
+      receive: state => received.push(state),
+      stream: async (_request, _headers, _signal, publish) => {
+        publish(JSON.stringify({ ...initial(), generation: nextGeneration }));
+        await new Promise((_resolve, reject) => { dropStream = reject; });
+      } });
+    try {
+      await client.connect();
+      expect(received.at(-1)).toMatchObject({ connected: false, error: 'status_unavailable' });
+      // Initial attempt + 6 bounded retries (1s..30s = 61s) exhaust into R13.
+      await vi.advanceTimersByTimeAsync(61_000);
+      expect(refreshPresentation).toHaveBeenCalledTimes(7);
+      expect(received.at(-1)).toMatchObject({ connected: false, error: 'connection_unavailable' });
+      document.documentElement.innerHTML = markup;
+      renderSetup(document, { snapshot: null, connected: false, error: 'connection_unavailable' });
+      expect(document.querySelector('main').dataset.journeyState).toBe('desktop.setup_unavailable');
+      expect(document.getElementById('task-status').textContent).toBe("Dipsy can't connect right now.");
+      expect(document.getElementById('task-status').dataset.tone).toBe('error');
+      expect(document.getElementById('task-reconnect')).toBeNull();
+      expect([...document.querySelectorAll('button')].filter(button => !button.closest('[hidden]'))).toEqual([]);
+      renderSetup(document, { snapshot: { ...initial(), journey_id: operationId }, connected: false, error: 'connection_unavailable' });
+      expect(document.getElementById('task-status').textContent).toBe("Dipsy can't connect right now. Your setup progress is saved.");
+      expect([...document.querySelectorAll('button')].filter(button => !button.closest('[hidden]'))).toEqual([]);
+
+      // After the budget, R13 stays active and reconnect repeats every 30s.
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(refreshPresentation).toHaveBeenCalledTimes(7);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(refreshPresentation).toHaveBeenCalledTimes(8);
+      expect(received.at(-1)).toMatchObject({ connected: false, error: 'connection_unavailable' });
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(refreshPresentation).toHaveBeenCalledTimes(9);
+      expect(received.at(-1)).toMatchObject({ connected: false, error: 'connection_unavailable' });
+
+      // A wake during the 30s wait cancels the timer, runs one attempt without overlapping, and reschedules 30s after failure.
+      await vi.advanceTimersByTimeAsync(10_000);
+      let finishWakeFailure;
+      releaseAttempt = new Promise(resolve => { finishWakeFailure = resolve; });
+      client.wake();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(refreshPresentation).toHaveBeenCalledTimes(10);
+      client.wake();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(refreshPresentation).toHaveBeenCalledTimes(10);
+      finishWakeFailure();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(received.at(-1)).toMatchObject({ connected: false, error: 'connection_unavailable' });
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(refreshPresentation).toHaveBeenCalledTimes(10);
+
+      // Slow attempt in flight never overlaps with a concurrent wake; success leaves R13 and resets to 1s delay.
+      let finishSlowSuccess;
+      releaseAttempt = new Promise(resolve => { finishSlowSuccess = resolve; });
+      await vi.advanceTimersByTimeAsync(1);
+      expect(refreshPresentation).toHaveBeenCalledTimes(11);
+      client.wake();
+      expect(refreshPresentation).toHaveBeenCalledTimes(11);
+      finishSlowSuccess();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(client.connected).toBe(true);
+      expect(received.at(-1)).toMatchObject({ connected: true, error: null });
+
+      shouldFailAfterSuccess = true;
+      dropStream(new Error('stream_unavailable'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(received.at(-1)).toMatchObject({ connected: false, error: 'status_unavailable' });
+      await vi.advanceTimersByTimeAsync(999);
+      expect(refreshPresentation).toHaveBeenCalledTimes(11);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(refreshPresentation).toHaveBeenCalledTimes(12);
+    } finally { client.stop(); }
+  });
+  it('recovers transient entry consume server failures through bounded reconnect', async () => {
+    vi.useFakeTimers();
+    const nextGeneration = '33333333-3333-4333-8333-333333333333';
+    let consumes = 0;
+    const refreshPresentation = vi.fn(async () => 'B'.repeat(43));
+    const request = vi.fn(async path => {
+      if (path.endsWith('/session')) return response({}, 401);
+      if (path.endsWith('/entry/consume')) {
+        return ++consumes === 1 ? response({ detail: 'starting' }, 503)
+          : response({ ...session, generation: nextGeneration, journey_id: null });
+      }
+      return response(record);
+    });
+    const received = [];
+    const client = new DesktopSetupClient({ generation, request, refreshPresentation, storage: storage(),
+      receive: state => received.push(state),
+      stream: async (_request, _headers, _signal, publish) => publish(JSON.stringify({ ...initial(), generation: nextGeneration })) });
+    try {
+      await client.connect();
+      expect(received.at(-1)).toMatchObject({ connected: false, error: 'status_unavailable' });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(client.connected).toBe(true);
+      expect(refreshPresentation).toHaveBeenCalledTimes(2);
+      expect(received.at(-1)).toMatchObject({ connected: true, error: null });
+    } finally { client.stop(); }
+  });
+  it('treats terminal presentation refresh failures as R14 without reconnecting or offering Retry', async () => {
+    vi.useFakeTimers();
+    for (const failure of ['handoff_rejected', 'desktop_admission_required', 'invalid-code', 'consume-401', 'malformed-session']) {
+      const refreshPresentation = vi.fn(async () => {
+        if (failure === 'handoff_rejected' || failure === 'desktop_admission_required') throw failure;
+        if (failure === 'invalid-code') return 'short';
+        return 'B'.repeat(43);
+      });
+      const request = vi.fn(async path => {
+        if (path.endsWith('/session')) {
+          return failure === 'malformed-session' ? response({ role: 'other', generation }) : response({}, 401);
+        }
+        return response({ detail: 'expired' }, 401);
+      });
+      const received = [];
+      const client = new DesktopSetupClient({ generation, request, refreshPresentation, storage: storage(),
+        receive: state => received.push(state) });
+      try {
+        await client.connect();
+        await vi.advanceTimersByTimeAsync(60_000);
+        client.wake();
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(received.at(-1)).toMatchObject({ connected: false, error: 'session_unavailable' });
+        expect(request.mock.calls.filter(([path]) => path.endsWith('/session'))).toHaveLength(1);
+        document.documentElement.innerHTML = markup;
+        renderSetup(document, { snapshot: initial(), connected: false, error: 'session_unavailable' });
+        expect(document.querySelector('main').dataset.journeyState).toBe('desktop.setup_unavailable');
+        expect(document.getElementById('task-status').textContent).toBe("Setup couldn't continue.");
+        expect(document.getElementById('task-status').dataset.tone).toBe('error');
+        expect(document.getElementById('task-reconnect')).toBeNull();
+        expect([...document.querySelectorAll('button')].filter(button => !button.closest('[hidden]'))).toEqual([]);
+      } finally { client.stop(); }
+    }
+  });
   it.each(['/desktop/entry', '/browser-tasks/entry'])('retains a desktop locator only from its exact consumed native entry: %s', async path => {
     const local = { setItem: vi.fn() }, replace = vi.fn(), scrub = vi.fn();
     const request = vi.fn(async () => {
@@ -1046,13 +1198,37 @@ describe('desktop setup presentation', () => {
     expect([...document.querySelectorAll('.setup-actions')].every(group => group.hidden)).toBe(true);
   });
 
+  it('shows no task action for an admitted sign-in with no decision', () => {
+    mount();
+    const admitted = {
+      operation_id: operationId,
+      browser_operation_id: '44444444-4444-4444-8444-444444444444',
+      state: 'admitted',
+      choices: { google: true, 'microsoft-personal': false, telegram: false, tiktok: false, default: true },
+      actions: { select: false, cancel: false, open_browser: false, switch_account: false },
+      authentication_attempt: { authentication_attempt_id: '55555555-5555-4555-8555-555555555555', provider: 'google', mode: 'sign-in' },
+    };
+    for (const snapshot of [
+      { ...initial(), next_task: 'account-connection', allowed_actions: [], decision: null,
+        pending_operations: [{ ...record, action: 'account.connect', state: 'waiting' }], authentication: admitted },
+      { ...initial(), next_task: 'account-connection', allowed_actions: ['account.connect'], decision: null,
+        continuation_available: false, authentication: admitted },
+    ]) {
+      renderSetup(document, { snapshot, connected: true });
+      const action = document.getElementById('task-action');
+      expect(action.hidden).toBe(true);
+      expect(action.dataset.action).toBe('');
+      expect(action.textContent).toBe('');
+      expect(action.textContent).not.toBe('Continue');
+    }
+  });
+
   it('shows factual unavailable status and disables stale actions', () => {
     mount();
     renderSetup(document, { snapshot: initial(), connected: false, error: 'status_unavailable' });
     expect(document.querySelector('main').dataset.journeyState).toBe('desktop.setup_unavailable');
     expect(document.getElementById('task-action').disabled).toBe(true);
-    expect(document.getElementById('task-reconnect').hidden).toBe(true);
-    expect(document.getElementById('task-reconnect').getAttribute('aria-describedby')).toContain('task-status');
+    expect(document.getElementById('task-reconnect')).toBeNull();
     expect(document.getElementById('task-status').textContent).not.toMatch(/saved data|removed|safe/iu);
     renderSetup(document, { snapshot: null, connected: false, error: 'status_unavailable' });
     expect(document.getElementById('task-description').hidden).toBe(true);
@@ -1519,6 +1695,12 @@ it('renders the protected recovery sequence as one task and never exposes ordina
 it('protected recovery never enables stale controls during a command or disconnected presentation', () => {
   const value = { ...protectedSelected(), authority_recovery_browser: 'ready', allowed_actions: ['auth.cancel'] };
   expect(authorityRecoveryView({ snapshot: value, connected: false }).action).toBeNull();
+  expect(authorityRecoveryView({ snapshot: value, connected: false, error: 'session_unavailable' }))
+    .toMatchObject({ status: "Setup couldn't continue.", tone: 'error', action: null, cancel: false });
+  expect(authorityRecoveryView({ snapshot: { ...value, journey_id: operationId }, connected: false, error: 'connection_unavailable' }))
+    .toMatchObject({ status: "Dipsy can't connect right now. Your setup progress is saved.", tone: 'error', action: null, cancel: false });
+  expect(authorityRecoveryView({ snapshot: { ...value, journey_id: null }, connected: false, error: 'connection_unavailable' }))
+    .toMatchObject({ status: "Dipsy can't connect right now.", tone: 'error', action: null, cancel: false });
   expect(authorityRecoveryView({ snapshot: value, connected: true }, 'auth.cancel').action).toBeNull();
   expect(authorityRecoveryView({ snapshot: value, connected: true, pending: 'new', pendingAction: 'auth.cancel' }).cancel).toBe(false);
   expect(authorityRecoveryView({ snapshot: value, connected: true, browserLaunchPending: true }).action).toBeNull();

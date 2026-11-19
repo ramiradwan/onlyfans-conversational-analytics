@@ -10,6 +10,8 @@ const NOTICE_ERRORS = { extension_unavailable: 'extension_unavailable', profile_
   needs_account: 'browser_needs_account', needs_consent: 'browser_needs_consent', needs_permission: 'browser_needs_permission' };
 // The later steps of one explicit protected sign-in run only within this bound.
 const RECOVERY_SIGN_IN_MS = 120_000;
+const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16_000, 30_000];
+const RECONNECT_SLOW_MS = 30_000;
 
 async function refreshNativePresentation(generation) {
   const invoke = globalThis.__TAURI__?.core?.invoke;
@@ -41,7 +43,10 @@ export class DesktopSetupClient {
     this.controller = null;
     this.intent = null;
     this.reconnectTimer = null;
-    this.reconnectDelay = 1000;
+    this.reconnectAttempt = 0;
+    this.reconnectExhausted = false;
+    this.connecting = false;
+    this.stopped = false;
     this.operationError = null;
     this.browserNotice = null;
     this.key = 'desktop-setup-operation:' + generation;
@@ -176,14 +181,31 @@ export class DesktopSetupClient {
   }
 
   async renewPresentation(signal) {
-    const code = await this.refreshPresentation(this.generation);
+    let code;
+    try {
+      code = await this.refreshPresentation(this.generation);
+    } catch (error) {
+      if (signal.aborted) return;
+      const reason = typeof error === 'string' ? error : error?.message;
+      // Only a transient loopback transport/channel timeout retries through the
+      // bounded reconnect policy; rejected or missing native admission fails closed.
+      if (reason === 'handoff_unavailable') throw new Error('status_unavailable');
+      throw new Error('session_unavailable');
+    }
     if (signal.aborted) return;
     if (!/^[A-Za-z0-9_-]{43}$/u.test(code)) throw Error('session_unavailable');
     const response = await this.request('/api/v1/desktop/entry/consume', {
       credentials: 'same-origin', redirect: 'error', cache: 'no-store', signal,
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }),
     });
-    const session = await response.json();
+    if (signal.aborted) return;
+    if (response.status >= 500) throw new Error('status_unavailable');
+    if (response.status === 403) throw new Error('authorization_unavailable');
+    let session;
+    try { session = await response.json(); }
+    catch {
+      throw new Error(response.ok ? 'session_unavailable' : 'status_unavailable');
+    }
     if (signal.aborted) return;
     if (!response.ok || session.role !== 'desktop' || !UUID.test(session.generation)
       || session.generation === this.generation || !['setup', 'runtime'].includes(session.stage)
@@ -204,7 +226,21 @@ export class DesktopSetupClient {
     this.session = session;
   }
 
-  async connect() {
+  connect() {
+    this.stopped = false;
+    this.reconnectAttempt = 0;
+    this.reconnectExhausted = false;
+    return this._connect();
+  }
+
+  wake() {
+    if (this.stopped || this.connected || this.connecting || !this.reconnectExhausted) return;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    void this._connect();
+  }
+
+  async _connect() {
     this.launchEpoch++;
     this.launchOperation = null;
     this.focusIntent = null;
@@ -214,6 +250,7 @@ export class DesktopSetupClient {
     const controller = new AbortController();
     this.controller = controller;
     this.connected = false;
+    this.connecting = true;
     try {
       let session;
       try { session = await this.json('/api/v1/desktop/session'); }
@@ -250,7 +287,8 @@ export class DesktopSetupClient {
         }
         this.connected = true;
         this.returnFocus();
-        this.reconnectDelay = 1000;
+        this.reconnectAttempt = 0;
+        this.reconnectExhausted = false;
         this.notify(null, deliberate);
         if (this.launchOperation) void this.launchBrowser();
         this.continueRecoverySignIn();
@@ -266,21 +304,38 @@ export class DesktopSetupClient {
         this.notify();
       });
     } catch (error) {
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && !this.stopped) {
         this.connected = false;
         this.intent = null;
         this.launchOperation = null;
         this.recoverySignIn = null;
-        this.notify(error.message === 'stream_expired' ? null
-          : ['session_unavailable', 'authorization_unavailable'].includes(error.message) ? error.message : 'status_unavailable');
-        if (!['session_unavailable', 'authorization_unavailable'].includes(error.message)) {
-          this.reconnectTimer = setTimeout(() => {
-            this.reconnectTimer = null;
-            if (!controller.signal.aborted) void this.connect();
-          }, this.reconnectDelay);
-          this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30_000);
+        const message = typeof error === 'string' ? error : error?.message;
+        const terminal = ['session_unavailable', 'authorization_unavailable'].includes(message);
+        if (terminal) {
+          this.reconnectExhausted = false;
+          this.notify(message);
+        } else {
+          const delay = RECONNECT_DELAYS[this.reconnectAttempt];
+          if (delay !== undefined) {
+            this.reconnectAttempt++;
+            this.reconnectExhausted = false;
+            this.notify(message === 'stream_expired' ? null : 'status_unavailable');
+            this.reconnectTimer = setTimeout(() => {
+              this.reconnectTimer = null;
+              if (!controller.signal.aborted && !this.stopped) void this._connect();
+            }, delay);
+          } else {
+            this.reconnectExhausted = true;
+            this.notify('connection_unavailable');
+            this.reconnectTimer = setTimeout(() => {
+              this.reconnectTimer = null;
+              if (!controller.signal.aborted && !this.stopped) void this._connect();
+            }, RECONNECT_SLOW_MS);
+          }
         }
       }
+    } finally {
+      if (this.controller === controller) this.connecting = false;
     }
   }
 
@@ -525,6 +580,9 @@ export class DesktopSetupClient {
   }
 
   stop() {
+    this.stopped = true;
+    this.connecting = false;
+    this.reconnectExhausted = false;
     this.launchEpoch++;
     this.launchOperation = null;
     this.recoverySignIn = null;

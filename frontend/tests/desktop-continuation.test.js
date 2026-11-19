@@ -6,6 +6,7 @@ vi.mock('../onboarding/client.js', () => ({
   DesktopSetupClient: class {
     session = { stage: 'runtime' };
     connect = vi.fn();
+    wake = vi.fn();
     act = vi.fn();
     launchBrowser = vi.fn();
     stop = vi.fn();
@@ -195,4 +196,32 @@ it('marks the clicked provider busy at once and keeps it busy while its sign-in 
   expect(busy()).toEqual(['telegram']);
   publish(choosing);
   expect(busy()).toEqual([]);
+});
+
+it('wakes setup reconnection on focus and visibility without a Retry button', () => {
+  expect(document.getElementById('task-reconnect')).toBeNull();
+  window.dispatchEvent(new Event('focus'));
+  expect(owners.client.wake).toHaveBeenCalledTimes(1);
+  Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+  document.dispatchEvent(new Event('visibilitychange'));
+  expect(owners.client.wake).toHaveBeenCalledTimes(1);
+  Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+  document.dispatchEvent(new Event('visibilitychange'));
+  expect(owners.client.wake).toHaveBeenCalledTimes(2);
+  window.dispatchEvent(new Event('pagehide'));
+  window.dispatchEvent(new Event('focus'));
+  document.dispatchEvent(new Event('visibilitychange'));
+  expect(owners.client.wake).toHaveBeenCalledTimes(2);
+});
+
+it('renders R14 without a Retry button when the presentation fragment is missing', async () => {
+  window.dispatchEvent(new Event('pagehide'));
+  vi.resetModules();
+  document.documentElement.innerHTML = html;
+  vi.stubGlobal('location', { hash: '', replace });
+  await import('../onboarding/main.js');
+  expect(document.querySelector('main').dataset.journeyState).toBe('desktop.setup_unavailable');
+  expect(document.getElementById('task-status').textContent).toBe("Setup couldn't continue.");
+  expect(document.getElementById('task-status').dataset.tone).toBe('error');
+  expect(document.getElementById('task-reconnect')).toBeNull();
 });
