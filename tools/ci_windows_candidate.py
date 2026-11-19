@@ -53,19 +53,29 @@ def validate_candidate(reports, plan, contracts, *, source, run, attempt):
             "retained_overlap": len(plan["retain_in_full"])}
 
 
+def load_candidate_reports(directory, *, source, run, attempt):
+    """Accept candidate reports only from their exact immutable artifact."""
+    reports = {}
+    for path in directory.rglob("report.json"):
+        row = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)
+        lane = row.get("lane", "")
+        if not (lane.startswith("candidate-") or lane == "legacy-windows-reference"):
+            continue
+        producer = "windows-qualification" if lane == "legacy-windows-reference" else lane
+        artifact = f"ci-tests-{producer}-{source}-{run}-{attempt}"
+        if path.relative_to(directory).parts != (artifact, lane, "report.json") or lane in reports:
+            raise gate.GateError("Candidate artifact path or duplicate report differs")
+        reports[lane] = row
+    return reports
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reports", type=Path, required=True)
     args = parser.parse_args()
-    reports = {}
     try:
-        for path in args.reports.rglob("report.json"):
-            row = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)
-            lane = row.get("lane", "")
-            if lane.startswith("candidate-") or lane == "legacy-windows-reference":
-                if lane in reports:
-                    raise gate.GateError("Duplicate candidate report")
-                reports[lane] = row
+        reports = load_candidate_reports(args.reports, source=os.environ["PRODUCT_SHA"],
+                                         run=os.environ["GITHUB_RUN_ID"], attempt=os.environ["GITHUB_RUN_ATTEMPT"])
         plan = json.loads((ROOT / "tools/windows-topology-candidate.json").read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)
         contracts = json.loads((ROOT / "ci/backend-test-shards.json").read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)["windows_contracts"]
         result = validate_candidate(reports, plan, contracts, source=os.environ["PRODUCT_SHA"], run=os.environ["GITHUB_RUN_ID"], attempt=os.environ["GITHUB_RUN_ATTEMPT"])

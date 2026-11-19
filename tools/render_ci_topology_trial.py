@@ -6,14 +6,21 @@ production gate can be authorized by this workflow. Requires PyYAML.
 from __future__ import annotations
 
 from copy import deepcopy
+import json
+import sys
 from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from tools.ci_windows_shards import candidate_counts
+
 REFS = ["bench/windows-topology/qualification-1", "bench/windows-topology/qualification-2"]
 
 
-def render(ci, visual):
+def render(ci, visual, *, plan=None):
+    counts = candidate_counts(plan) if plan is not None else {"full": 10, "platform": 4, "analytics": 1}
     trial = deepcopy(ci)
     trial["name"] = "Windows topology qualification"
     trial["on"] = {"push": {"branches": REFS}}
@@ -56,15 +63,22 @@ def render(ci, visual):
     qualifier["steps"].append(retain)
     jobs["windows-qualification"] = qualifier
     platform["steps"] = steps[:index["Collect independent legacy Windows selection"]] + steps[index["Start host counter sampling"]:index["Test Windows production boot"]] + [steps[-1]]
-    platform["strategy"]["matrix"]["shard"] = list(range(1, 5))
-    platform["strategy"]["max-parallel"] = 4
+    platform["strategy"]["matrix"]["shard"] = list(range(1, counts["platform"] + 1))
+    platform["strategy"]["max-parallel"] = counts["platform"]
     full = jobs["windows-full-shards"]
-    full["strategy"]["matrix"]["shard"] = list(range(1, 11))
-    full["strategy"]["max-parallel"] = 10
+    full["strategy"]["matrix"]["shard"] = list(range(1, counts["full"] + 1))
+    full["strategy"]["max-parallel"] = counts["full"]
+    analytics_group = "analytics"
+    if plan is not None and plan["schema"] == 2:
+        analytics = jobs["analytics-windows-contract"]
+        analytics["name"] = "analytics-windows-contract-${{ matrix.shard }}"
+        analytics["strategy"] = {"fail-fast": False, "max-parallel": counts["analytics"],
+                                 "matrix": {"shard": list(range(1, counts["analytics"] + 1))}}
+        analytics_group = "analytics-${{ matrix.shard }}"
     for key, group, old, execute_name in (
         ("windows-platform-contract", "platform-${{ matrix.shard }}", "windows-platform-contract-${{ matrix.shard }}", "Test Windows platform contract"),
         ("windows-full-shards", "full-${{ matrix.shard }}", "windows-full-regression-${{ matrix.shard }}", "Test complete Windows backend regression shard"),
-        ("analytics-windows-contract", "analytics", "analytics-windows-contract", "Test Windows analytics contract"),
+        ("analytics-windows-contract", analytics_group, "analytics-windows-contract", "Test Windows analytics contract"),
     ):
         job = jobs[key]
         for step in job["steps"]:
@@ -81,7 +95,7 @@ def render(ci, visual):
     jobs.pop("windows-tests")
     gate = deepcopy(original_gate)
     gate["name"] = "Candidate coverage (not release CI)"
-    gate["needs"] += ["windows-qualification", "candidate-preflight"]
+    gate["needs"] += ["windows-qualification", "candidate-preflight", "visual-capture"]
     gate["steps"][-1] = {"name": "Require current-run candidate coverage and mandatory producers",
         "env": {"CI_NEEDS_JSON": "${{ toJSON(needs) }}"},
         "run": 'python -c \'import json,os; assert all(v["result"] == "success" for v in json.loads(os.environ["CI_NEEDS_JSON"]).values())\'\npython tools/ci_windows_candidate.py --reports artifacts/ci-downloaded'}
@@ -100,7 +114,8 @@ def main():
     destination = ROOT / ".github/workflows/ci-topology-qualification.yml"
     if destination.exists():
         raise SystemExit("Refusing to overwrite an existing trial workflow")
-    destination.write_text(yaml.safe_dump(render(ci, visual), sort_keys=False, width=110), encoding="utf-8")
+    plan = json.loads((ROOT / "tools/windows-topology-candidate.json").read_text(encoding="utf-8"))
+    destination.write_text(yaml.safe_dump(render(ci, visual, plan=plan), sort_keys=False, width=110), encoding="utf-8")
 
 
 if __name__ == "__main__":

@@ -48,3 +48,21 @@ Ten full shards are the smallest candidate meeting the isolated 900-second thres
 | 44433778549 | windows-platform-contract-1 | 1 | `d3d37a2f854fa150254f72679636ff307a9bd591293afa50e5f8afac8d2fef25` |
 | 44433778549 | windows-platform-contract-2 | 1 | `a7c9103855a1b2b5b684fae157851b7f5ba2c63c5b4dae7f367bc0ef8335a49a` |
 | 44433778549 | windows-platform-contract-3 | 1 | `e421829bd7a859b19e512e1b846ed395df2ae19d34614a113424cbfff58b364f` |
+
+
+## Completed experimental runs and revised candidate (2026-11-19)
+
+Both main-equivalent trials used signed source `551a496b2889ddf275ecf84c2035ce6750fdc829`, attempt 1. Runs `44467810456` and `44467932794` started 64 seconds apart. They ended unsuccessfully after 1,103 and 1,290 seconds of observed execution span, consuming 247.267 and 248.600 runner minutes. The observed peak was 40 concurrent executing jobs. Both selected exactly the 17,996 default Windows nodes, with no missing or extra identities; eight retained overlapping nodes remained in both paths. Four architecture-classification tests failed on each run because the trial manifest was unclassified. The visual safety sentinel also failed on both runs because it used the previous group name. Both defects were corrected in the stack, but these historical failures cannot qualify a cutover.
+
+The first and second runs took 679.4 and 669.8 seconds of pytest wall time for platform shard 3 alone, and 702.0 and 322.3 seconds for the unsplit analytics lane. Median per-job non-phase time (including setup, collection, scheduling overhead and teardown outside measured phases) was approximately 234?249 seconds for full shards and 265?267 seconds for platform shards.
+
+The replacement experimental manifest uses the maximum observed per-file serial and parallel parent-phase seconds across the two runs, excludes subtest durations already accounted for by parent phases, keeps four workers, and allocates complete files by serial seconds plus parallel seconds divided by four. It binds the two source reports and their digests, records the failed test identities, and retains all eight reviewed overlaps. This is diagnostic timing evidence, not successful qualification. Replaying the observed job graph under a 40-runner ceiling gives the following illustrative results; the overlapping pair starts 64 seconds apart. These are conditional estimates, not measured outcomes or p95 values.
+
+| Full / platform / analytics shards | Isolated seconds (first sample) | Overlapping run seconds | Envelope overlapping seconds |
+|---|---:|---:|---:|
+| 10 / 4 / 1 | 1050 | 1050 / 1166 | 1050 / 1244 |
+| 7 / 5 / 2 | 767 | 767 / 1090 | 918 / 1177 |
+| 8 / 5 / 2 | 765 | 765 / 1072 | 860 / 1154 |
+| 8 / 6 / 2 | 746 | 746 / 1080 | 860 / 1163 |
+
+Select 8 / 5 / 2 only as the next candidate for qualification: it keeps 15 test jobs, rebalances the platform work, and removes the unsplit analytics bottleneck. No replay configuration meets the 900-second overlapping target. Do not change the active v8 topology on the strength of these failed runs. Further hosted trials require an explicit budget decision; no third experiment is authorized by this document.

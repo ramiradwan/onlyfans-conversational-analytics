@@ -649,3 +649,54 @@ def test_candidate_plugin_selects_whole_partition_from_raw_collection(tmp_path):
     report = json.loads((tmp_path / "out/report.json").read_text(encoding="utf-8"))
     assert report["selected"] == ["test_platform_2.py::test_case"]
     assert report["lane"] == "candidate-platform-2" and report["complete"] is True
+
+
+
+def test_candidate_v2_splits_analytics_without_losing_raw_nodes():
+    rows, plan, contracts = candidate_fixture()
+    rows.append(row("test_analytics_two.py::test_case"))
+    plan["schema"] = 2
+    plan["full"]["test_analytics_two.py"] = 3
+    plan["analytics"] = {"test_analytics.py": 1, "test_analytics_two.py": 2}
+    contracts["analytics"].append({"selector": "test_analytics_two.py"})
+    groups = windows.candidate_groups(rows, plan, contracts)
+    assert windows.candidate_counts(plan) == {"full": 10, "platform": 4, "analytics": 2}
+    assert groups["analytics-1"] == {"test_analytics.py::test_case"}
+    assert groups["analytics-2"] == {"test_analytics_two.py::test_case"}
+    assert set().union(*groups.values()) == windows.legacy_nodeids(rows)
+    assert sum(map(len, groups.values())) == len(windows.legacy_nodeids(rows)) + len(plan["retain_in_full"])
+    del plan["analytics"]["test_analytics_two.py"]
+    with pytest.raises(windows.WindowsShardError):
+        windows.candidate_groups(rows, plan, contracts)
+
+
+def test_trial_renderer_uses_manifest_shard_counts_and_requires_visual_gate():
+    import yaml
+    from tools.render_ci_topology_trial import render
+    ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    visual = yaml.safe_load((ROOT / ".github/workflows/visual-capture.yml").read_text(encoding="utf-8"))
+    plan = json.loads((ROOT / "tools/windows-topology-candidate.json").read_text(encoding="utf-8"))
+    jobs = render(ci, visual, plan=plan)["jobs"]
+    assert jobs["windows-full-shards"]["strategy"]["matrix"]["shard"] == list(range(1, 9))
+    assert jobs["windows-platform-contract"]["strategy"]["matrix"]["shard"] == list(range(1, 6))
+    analytics = jobs["analytics-windows-contract"]
+    assert analytics["strategy"]["matrix"]["shard"] == [1, 2]
+    assert analytics["name"] == "analytics-windows-contract-${{ matrix.shard }}"
+    step = next(s for s in analytics["steps"] if s["name"] == "Test Windows analytics contract")
+    assert step["env"]["CI_TEST_LANE"] == "candidate-analytics-${{ matrix.shard }}"
+    assert step["run"].endswith("--ci-windows-candidate analytics-${{ matrix.shard }}")
+    assert "visual-capture" in jobs["candidate-coverage"]["needs"]
+
+
+
+def test_candidate_report_loader_binds_artifact_and_attempt(tmp_path):
+    from tools.ci_windows_candidate import load_candidate_reports
+    from tools.ci_gate import GateError
+    reports, _, _ = candidate_reports()
+    lane = "candidate-platform-2"
+    folder = tmp_path / f"ci-tests-{lane}-{'a'*40}-1-1" / lane
+    folder.mkdir(parents=True)
+    write_json(folder / "report.json", reports[lane])
+    assert load_candidate_reports(tmp_path, source="a"*40, run=1, attempt=1) == {lane: reports[lane]}
+    with pytest.raises(GateError):
+        load_candidate_reports(tmp_path, source="a"*40, run=1, attempt=2)

@@ -522,48 +522,68 @@ def replay_topologies(weights, *, observations, counts=range(3, 13), workers=4, 
 
 
 
+def candidate_counts(plan):
+    """Historical schema 1 is fixed; schema 2 explicitly owns analytics files too."""
+    schema = plan.get("schema")
+    if type(schema) is not int or schema not in (1, 2):
+        raise WindowsShardError("Invalid candidate schema")
+    counts = {}
+    for key in (("full", "platform") if schema == 1 else ("full", "platform", "analytics")):
+        owners = plan.get(key)
+        if not isinstance(owners, dict) or not owners or any(type(n) is not int or not 1 <= n <= 12 for n in owners.values()):
+            raise WindowsShardError("Invalid candidate file assignments")
+        count = max(owners.values())
+        if set(owners.values()) != set(range(1, count + 1)):
+            raise WindowsShardError("Candidate shard assignments have gaps")
+        counts[key] = count
+    if schema == 1 and counts != {"full": 10, "platform": 4}:
+        raise WindowsShardError("Historical candidate counts differ")
+    return {**counts, "analytics": counts.get("analytics", 1)}
+
+
 def candidate_groups(rows, plan, contracts, *, complete=True):
-    """Non-gating trial partition. Keep all raw nodes except independently
-    declared focused nodes; the trial gate demands actual execution of each
-    omitted node. Preserve historical non-pass outcomes in the full path.
-    """
+    """Non-gating trial partition, preserving every raw default node."""
     from tools.ci_selection import matches
     rows = list(rows)
     if len(rows) != len({r["nodeid"] for r in rows}):
         raise WindowsShardError("Duplicate candidate inventory")
-    if plan.get("schema") != 1 or set(contracts) != {"platform", "analytics"}:
+    if set(contracts) != {"platform", "analytics"}:
         raise WindowsShardError("Invalid candidate inputs")
-    groups = {f"full-{n}": set() for n in range(1, 11)}
-    groups.update({f"platform-{n}": set() for n in range(1, 5)})
-    groups["analytics"] = set()
-    for key, count in (("full", 10), ("platform", 4)):
-        owners = plan[key]
-        if not isinstance(owners, dict) or any(type(n) is not int or not 1 <= n <= count for n in owners.values()) or set(owners.values()) != set(range(1, count+1)):
-            raise WindowsShardError("Invalid candidate file assignments")
-    retain = set(plan["retain_in_full"])
+    counts = candidate_counts(plan)
+    groups = {f"{kind}-{n}": set() for kind, count in counts.items() for n in range(1, count + 1)
+              if kind != "analytics" or plan["schema"] == 2}
+    if plan["schema"] == 1:
+        groups["analytics"] = set()
+    retain_list = plan["retain_in_full"]
+    if not isinstance(retain_list, list) or any(not isinstance(n, str) for n in retain_list) or len(set(retain_list)) != len(retain_list):
+        raise WindowsShardError("Invalid retained node identities")
+    retain = set(retain_list)
     raw = legacy_nodeids(rows)
     full_files = {node_path(n) for n in raw}
     if full_files - plan["full"].keys() or complete and full_files != set(plan["full"]):
         raise WindowsShardError("Candidate raw file inventory differs")
-    platform_files = set()
+    focused_files = {"platform": set(), "analytics": set()}
     focused = set()
     for node in raw:
         declared = [key for key, entries in contracts.items() if any(matches(node, e["selector"]) for e in entries)]
         if len(declared) > 1:
             raise WindowsShardError("Candidate focused declarations overlap")
         path = node_path(node)
-        if declared == ["platform"]:
-            platform_files.add(path)
-            if path not in plan["platform"]:
-                raise WindowsShardError("Candidate platform file unassigned")
-            groups[f"platform-{plan['platform'][path]}"].add(node)
-            focused.add(node)
-        elif declared == ["analytics"]:
-            groups["analytics"].add(node)
+        if declared:
+            kind = declared[0]
+            focused_files[kind].add(path)
+            if kind == "analytics" and plan["schema"] == 1:
+                group = kind
+            else:
+                if path not in plan[kind]:
+                    raise WindowsShardError(f"Candidate {kind} file unassigned")
+                group = f"{kind}-{plan[kind][path]}"
+            groups[group].add(node)
             focused.add(node)
         if not declared or node in retain:
             groups[f"full-{plan['full'][path]}"].add(node)
-    if complete and (platform_files != set(plan["platform"]) or not retain <= focused or any(not group for group in groups.values())):
+    if complete and (any(focused_files[key] != set(plan[key]) for key in focused_files if key in plan)
+                     or not retain <= focused or any(not group for group in groups.values())):
         raise WindowsShardError("Candidate focused inventory or retained skip set differs")
     if set().union(*groups.values()) != raw:
         raise WindowsShardError("Candidate union differs from raw legacy inventory")
