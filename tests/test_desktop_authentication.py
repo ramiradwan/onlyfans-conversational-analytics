@@ -357,7 +357,7 @@ async def test_setup_owners_probe_only_through_the_operation_read_guard():
         return value
     runtime = runtime_owner(activation=activation, setup_owner=setup)
     runtime_child = {"operation_id": "runtime-child", "action": "auth.select", "owner_scope_json": json.dumps({"actor": {}})}
-    review = {"operation_id": "review", "action": "activation.review", "owner_scope_json": "{}"}
+    review = {"operation_id": "review", "journey_id": "review-journey", "action": "activation.review", "owner_scope_json": "{}"}
     connect = {"operation_id": "connect", "action": "account.connect", "owner_scope_json": "{}"}
     for operation in (runtime_child, review, child, connect):
         assert RuntimeSetupOwner.probe_interval(runtime, operation) == 2
@@ -836,6 +836,8 @@ async def test_guards_and_binding_check_the_persisted_key_without_provider_work(
     owner = ProvisioningSetupOwner.__new__(ProvisioningSetupOwner)
     owner.store = SimpleNamespace(database=ceremonies.store.database, installation_key_reference=lambda **_: reference[0])
     owner.ceremonies = ceremonies
+    from app.persistence.source_replacement_reservations import SourceReplacementReservations
+    owner.source_replacements = SimpleNamespace(reservations=SourceReplacementReservations(ceremonies.store))
     owner.key = SimpleNamespace(reopen_existing=lambda: pytest.fail("provider key work in a guard"))
     owner._read_guard({"operation_id": parent["operation_id"]})
     journey = SimpleNamespace(kind="initial-enrollment", installation_id="installation", operation_id="source-operation",
