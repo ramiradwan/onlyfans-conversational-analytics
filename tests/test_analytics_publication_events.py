@@ -6,6 +6,8 @@ from fastapi import HTTPException
 from app.analytics.publication_events import PublicationEvents
 from app.api.endpoints.insights import AnalyticsPublicationResponse
 
+pytestmark = pytest.mark.ci_tier("fast")
+
 
 @pytest.mark.asyncio
 async def test_publication_stream_is_account_scoped_and_reconciles_on_connect():
