@@ -63,13 +63,19 @@ test('processing commands preserve durable enrollment and canonical findings', a
         && current.canonical.members === paused.canonical.members, 'saved_read_reanalysis');
     };
     const readFromUi = async (pathname, action, accept = () => true) => {
-      const [response] = await Promise.all([
-        x.page.waitForResponse((entry) => new URL(entry.url()).pathname === pathname && accept(entry.request())), action(),
-      ]);
-      check(response.status() === 200 && /no-store/.test(response.headers()['cache-control'] ?? ''), 'saved_read_response');
-      if (response.request().method() === 'POST') check(Boolean(response.request().headers()['x-csrf-token']), 'saved_read_csrf');
-      const value = await response.json(); await unchanged();
-      return { value, body: response.request().method() === 'POST' ? response.request().postDataJSON() : null };
+      // Consume the real response as soon as it arrives. Waiting for the
+      // click to settle first can lose Chromium's response body under load.
+      const captured = x.page.waitForResponse((entry) => new URL(entry.url()).pathname === pathname && accept(entry.request()))
+        .then(async (response) => {
+          check(response.status() === 200 && /no-store/.test(response.headers()['cache-control'] ?? ''), 'saved_read_response');
+          const request = response.request(), post = request.method() === 'POST';
+          if (post) check(Boolean(request.headers()['x-csrf-token']), 'saved_read_csrf');
+          const value = await response.json();
+          return { value, body: post ? request.postDataJSON() : null };
+        });
+      const [result] = await Promise.all([captured, action()]);
+      await unchanged();
+      return result;
     };
     const findings = '/api/v1/insights/findings';
     const selectCategory = async (task, category, button) => {
