@@ -66,7 +66,7 @@ def main():
                 if lane in reports:
                     raise gate.GateError("Duplicate candidate report")
                 reports[lane] = row
-        plan = json.loads((ROOT / "ci/windows-topology-candidate.json").read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)
+        plan = json.loads((ROOT / "tools/windows-topology-candidate.json").read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)
         contracts = json.loads((ROOT / "ci/backend-test-shards.json").read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)["windows_contracts"]
         result = validate_candidate(reports, plan, contracts, source=os.environ["PRODUCT_SHA"], run=os.environ["GITHUB_RUN_ID"], attempt=os.environ["GITHUB_RUN_ATTEMPT"])
         print(json.dumps(result, sort_keys=True))

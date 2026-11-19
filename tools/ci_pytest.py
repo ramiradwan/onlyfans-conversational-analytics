@@ -224,7 +224,7 @@ def pytest_collection_modifyitems(session, config, items):
     if candidate is not None:
         from tools.ci_windows_shards import candidate_groups, WindowsShardError, _unique_pairs
         try:
-            plan = json.loads((config.rootpath / "ci/windows-topology-candidate.json").read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)
+            plan = json.loads((config.rootpath / "tools/windows-topology-candidate.json").read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)
             contracts = json.loads((config.rootpath / "ci/backend-test-shards.json").read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)["windows_contracts"]
             wanted = candidate_groups(evidence.collected, plan, contracts)[candidate]
         except (WindowsShardError, OSError, ValueError, KeyError) as error:

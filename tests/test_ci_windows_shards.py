@@ -631,7 +631,8 @@ def test_trial_workflow_preserves_main_producers_without_release_authority():
 def test_candidate_plugin_selects_whole_partition_from_raw_collection(tmp_path):
     rows, plan, contracts = candidate_fixture()
     (tmp_path / "ci").mkdir()
-    write_json(tmp_path / "ci/windows-topology-candidate.json", plan)
+    (tmp_path / "tools").mkdir()
+    write_json(tmp_path / "tools/windows-topology-candidate.json", plan)
     write_json(tmp_path / "ci/backend-test-shards.json", {"windows_contracts": contracts})
     (tmp_path / "pytest.ini").write_text("[pytest]\nmarkers =\n slow: legacy exclusion\n stateful_tier_a: legacy exclusion\n stateful_tier_b: legacy exclusion\n stateful_agent_tier_a: legacy exclusion\n", encoding="utf-8")
     for file in plan["full"]:
