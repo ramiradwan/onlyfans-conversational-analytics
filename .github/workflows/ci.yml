@@ -379,6 +379,10 @@ jobs:
   fixed-sqlcipher-wheel:
     runs-on: windows-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
     steps:
       - name: Checkout exact Product revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -388,8 +392,42 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.11'
+      - name: Compute fixed wheel cache identity
+        id: wheel-input
+        shell: pwsh
+        run: |
+          $fingerprint = python tools/ci_sqlcipher_cache.py inputs --inputs "$env:RUNNER_TEMP\ofca-wheel-inputs.json"
+          if ($LASTEXITCODE -eq 0 -and $fingerprint -match '^[a-f0-9]{64}$') {
+            "fingerprint=$fingerprint" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Warning 'Wheel cache identity unavailable; building fresh.'
+          }
+          exit 0
+      - name: Restore attested fixed wheel cache
+        id: wheel-restore
+        if: steps.wheel-input.outputs.fingerprint != ''
+        continue-on-error: true
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-cache
+          key: ofca-sqlcipher-wheel-v1-${{ steps.wheel-input.outputs.fingerprint }}
+      - name: Verify cached fixed SQLCipher wheel
+        id: wheel-verified
+        if: steps.wheel-restore.outputs.cache-hit == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python tools/ci_sqlcipher_cache.py restore --inputs "$env:RUNNER_TEMP\ofca-wheel-inputs.json" --cache "$env:RUNNER_TEMP\ofca-fixed-sqlcipher-cache" --wheelhouse "$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse"
+          if ($LASTEXITCODE -eq 0) {
+            'reused=true' >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Warning 'Wheel cache verification refused; building fresh.'
+          }
+          exit 0
       - name: Prepare native dependency cache
         id: native-cache
+        if: steps.wheel-verified.outputs.reused != 'true'
         shell: pwsh
         run: |
           if ([string]::IsNullOrWhiteSpace($env:ImageVersion)) {
@@ -399,13 +437,16 @@ jobs:
           New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP "ofca-vcpkg-cache") | Out-Null
       - name: Cache native dependencies
         id: vcpkg-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        if: steps.wheel-verified.outputs.reused != 'true'
+        continue-on-error: true
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ${{ runner.temp }}\ofca-vcpkg-cache
           key: ofca-vcpkg-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.image-version }}-${{
             hashFiles('packaging/sqlcipher/fixed-runtime-sources.json', 'packaging/sqlcipher/build-fixed-wheel.py',
             'packaging/sqlcipher/build-fixed-wheel.ps1') }}
       - name: Build fixed SQLCipher wheel
+        if: steps.wheel-verified.outputs.reused != 'true'
         shell: pwsh
         env:
           VCPKG_BINARY_SOURCES: clear;files,${{ runner.temp }}\ofca-vcpkg-cache,readwrite
@@ -414,6 +455,47 @@ jobs:
           .\packaging\sqlcipher\build-fixed-wheel.ps1 `
             -BuildPython (Get-Command python.exe).Source `
             -Wheelhouse $wheelhouse
+      - name: Seal input-bound fixed wheel manifest
+        id: wheel-sealed
+        if: steps.wheel-verified.outputs.reused != 'true' && steps.wheel-input.outputs.fingerprint != ''
+        shell: pwsh
+        run: |
+          python tools/ci_sqlcipher_cache.py seal --inputs "$env:RUNNER_TEMP\ofca-wheel-inputs.json" --wheelhouse "$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse"
+          if ($LASTEXITCODE -eq 0) { 'sealed=true' >> $env:GITHUB_OUTPUT }
+          else { Write-Warning 'Wheel cache sealing unavailable; retaining fresh wheel only.' }
+          exit 0
+      - name: Attest protected main wheel manifest
+        id: wheel-attestation
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.wheel-sealed.outputs.sealed == 'true' && steps.wheel-restore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d
+        with:
+          subject-path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse\wheel-cache-manifest.json
+      - name: Stage attested wheel cache
+        id: wheel-stage
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.wheel-attestation.outcome == 'success'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $cache = Join-Path $env:RUNNER_TEMP 'ofca-fixed-sqlcipher-cache'
+          if (Test-Path $cache) { Remove-Item -Recurse -Force $cache }
+          Copy-Item -Recurse -LiteralPath "$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" -Destination $cache
+      - name: Save attested fixed wheel cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.wheel-stage.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-cache
+          key: ofca-sqlcipher-wheel-v1-${{ steps.wheel-input.outputs.fingerprint }}
+      - name: Save native dependencies on protected main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.wheel-verified.outputs.reused != 'true' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ runner.temp }}\ofca-vcpkg-cache
+          key: ofca-vcpkg-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.image-version }}-${{
+            hashFiles('packaging/sqlcipher/fixed-runtime-sources.json', 'packaging/sqlcipher/build-fixed-wheel.py',
+            'packaging/sqlcipher/build-fixed-wheel.ps1') }}
       - name: Record fixed SQLCipher CI source
         shell: pwsh
         run: |

@@ -325,10 +325,10 @@ def _assert_fixed_sqlcipher_native_cache(workflow: dict[str, Any]) -> None:
     build = steps[_fixed_sqlcipher_build_indexes(job)[0]]
     prepare = next(step for step in steps if step.get("id") == "native-cache")
     cache = next(step for step in steps if step.get("id") == "vcpkg-cache")
-    assert "if" not in job and "if" not in build, "every run must build a fresh wheel"
+    assert "if" not in job and build.get("if") == "steps.wheel-verified.outputs.reused != 'true'", "every run must build a fresh wheel unless independently verified"
     assert steps.index(prepare) < steps.index(cache) < steps.index(build)
     action, _, revision = cache["uses"].partition("@")
-    assert action == "actions/cache" and len(revision) == 40
+    assert action == "actions/cache/restore" and len(revision) == 40
     assert all(character in "0123456789abcdef" for character in revision)
     cache_inputs = cache["with"]
     assert "restore-keys" not in cache_inputs, "native cache must use exact inputs"
@@ -1369,3 +1369,36 @@ def test_python313_loop_counterpart_is_required_isolated_and_after_original_prof
         next(step for step in steps if step.get("name") == "Retain backend timing and selection")["with"]["path"] = "artifacts/ci-tests/windows-platform-contract/"
     with pytest.raises(AssertionError):
         _assert_python313_loop_counterpart(broken)
+
+
+def test_attested_wheel_reuse_is_optional_and_published_only_from_protected_main():
+    job = _jobs(_workflow_document())["fixed-sqlcipher-wheel"]
+    steps = _steps(job)
+    by_name = {step["name"]: step for step in steps}
+    restore = by_name["Restore attested fixed wheel cache"]
+    verify = by_name["Verify cached fixed SQLCipher wheel"]
+    build = by_name["Build fixed SQLCipher wheel"]
+    attest = by_name["Attest protected main wheel manifest"]
+    stage = by_name["Stage attested wheel cache"]
+    save = by_name["Save attested fixed wheel cache"]
+    native_save = by_name["Save native dependencies on protected main"]
+    envelope = by_name["Record fixed SQLCipher CI source"]
+    assert steps.index(restore) < steps.index(verify) < steps.index(build) < steps.index(attest) < steps.index(stage) < steps.index(save) < steps.index(envelope)
+    assert restore["uses"].startswith("actions/cache/restore@") and save["uses"].startswith("actions/cache/save@")
+    assert restore["with"] == save["with"]
+    assert restore["with"]["key"] == "ofca-sqlcipher-wheel-v1-${{ steps.wheel-input.outputs.fingerprint }}"
+    assert "restore-keys" not in restore["with"]
+    assert verify["if"] == "steps.wheel-restore.outputs.cache-hit == 'true'"
+    assert "ci_sqlcipher_cache.py restore" in verify["run"]
+    assert "if ($LASTEXITCODE -eq 0)" in verify["run"]
+    assert build["if"] == "steps.wheel-verified.outputs.reused != 'true'"
+    assert not build.get("continue-on-error")
+    for step in (attest, stage, save, native_save):
+        assert "github.event_name == 'push' && github.ref == 'refs/heads/main'" in step["if"]
+    assert "steps.wheel-sealed.outputs.sealed == 'true'" in attest["if"]
+    assert "steps.wheel-attestation.outcome == 'success'" in stage["if"]
+    assert "steps.wheel-stage.outcome == 'success'" in save["if"]
+    assert attest["with"]["subject-path"].endswith("wheel-cache-manifest.json")
+    assert "if" not in envelope and not envelope.get("continue-on-error")
+    assert "if" not in by_name["Retain fixed SQLCipher wheel and provenance"]
+    assert "workflow_run_attempt" in envelope["run"] and "source_commit = $env:PRODUCT_SHA" in envelope["run"]
