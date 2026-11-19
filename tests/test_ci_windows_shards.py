@@ -316,12 +316,13 @@ def test_validate_manifest_refuses_stale_or_incomplete_raw_reference(tmp_path, f
 def test_pr_windows_inventory_validation_runs_after_raw_collection_before_execution():
     import yaml
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
-    job = workflow["jobs"]["windows-platform-contract"]
+    job = workflow["jobs"]["windows-qualification"]
     steps = job["steps"]
     names = [step.get("name") for step in steps]
     check = names.index("Validate exhaustive Windows shard inventory")
-    assert "if" not in job and steps[check]["if"] == "matrix.shard == 1"
-    assert names.index("Collect independent legacy Windows selection") < check < names.index("Test Windows platform contract")
+    assert "strategy" not in job and "if" not in steps[check]
+    assert "windows-qualification" in workflow["jobs"]["required-ci-gate"]["needs"]
+    assert names.index("Collect independent legacy Windows selection") < check < names.index("Test Windows production boot")
     assert steps[check]["run"] == (
         "python tools/test_backend.py validate-windows-manifest "
         "--inventory artifacts/ci-tests/legacy-windows-reference/report.json"
@@ -599,7 +600,7 @@ def test_candidate_gate_refuses_unproven_deduplication(fault):
 def test_trial_workflow_preserves_main_producers_without_release_authority():
     import yaml
     from tools.render_ci_topology_trial import render, REFS
-    ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    ci = yaml.safe_load((ROOT / "tests/fixtures/product-ci-sharded-v8-pr-cutover.yml").read_text(encoding="utf-8"))
     visual = yaml.safe_load((ROOT / ".github/workflows/visual-capture.yml").read_text(encoding="utf-8"))
     trial = render(ci, visual)
     assert trial["on"] == {"push": {"branches": REFS}}
@@ -673,7 +674,7 @@ def test_candidate_v2_splits_analytics_without_losing_raw_nodes():
 def test_trial_renderer_uses_manifest_shard_counts_and_requires_visual_gate():
     import yaml
     from tools.render_ci_topology_trial import render
-    ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    ci = yaml.safe_load((ROOT / "tests/fixtures/product-ci-sharded-v8-pr-cutover.yml").read_text(encoding="utf-8"))
     visual = yaml.safe_load((ROOT / ".github/workflows/visual-capture.yml").read_text(encoding="utf-8"))
     plan = json.loads((ROOT / "tools/windows-topology-candidate.json").read_text(encoding="utf-8"))
     jobs = render(ci, visual, plan=plan)["jobs"]

@@ -166,7 +166,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reuse-frontend", action="store_true")
     args = parser.parse_args()
-    ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    ci = yaml.safe_load((ROOT / "tests/fixtures/product-ci-sharded-v8-pr-cutover.yml").read_text(encoding="utf-8"))
     visual = yaml.safe_load((ROOT / ".github/workflows/visual-capture.yml").read_text(encoding="utf-8"))
     destination = ROOT / ".github/workflows/ci-topology-qualification.yml"
     if destination.exists():

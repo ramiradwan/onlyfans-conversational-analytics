@@ -211,7 +211,7 @@ def _assert_a_windows_runner_executes_the_backend_tests(
         for name, job in _jobs(workflow).items()
         if _runs_on_windows(job)
         and any(
-            "tools/test_backend.py --lane windows-platform-contract" in str(step.get("run", ""))
+            "--ci-windows-candidate platform-${{ matrix.shard }}" in str(step.get("run", ""))
             for step in _steps(job)
         )
     )
@@ -308,7 +308,7 @@ def test_windows_ci_builds_the_fixed_wheel_before_resolving_requirements() -> No
     assert isinstance(wheel_job, dict), "CI must declare the fixed SQLCipher wheel job"
     wheel = _fixed_sqlcipher_build_indexes(wheel_job)
     assert len(wheel) == 1, "CI must construct exactly one fixed SQLCipher wheel"
-    assert _jobs(workflow)[windows_job].get("needs") == "fixed-sqlcipher-wheel"
+    assert set(_jobs(workflow)[windows_job]["needs"]) == {"fixed-sqlcipher-wheel", "web-build-assets"}
     assert "Retrieve fixed SQLCipher wheel" in str(_steps(job))
     assert "--find-links" in str(_steps(job)[install[0]]["run"])
 
@@ -414,7 +414,7 @@ def _tier_b_steps(workflow: dict[str, Any]) -> list[tuple[str, int, dict[str, An
 
 
 def _assert_windows_tier_b_qualification(workflow: dict[str, Any]) -> None:
-    windows_job = _assert_a_windows_runner_executes_the_backend_tests(workflow)
+    windows_job = "windows-qualification"
     job = _jobs(workflow)[windows_job]
     steps = _steps(job)
     install = _backend_dependency_install_indexes(job)
@@ -468,7 +468,7 @@ def test_windows_ci_qualifies_the_fixed_runtime_and_every_tier_b_profile() -> No
 def test_windows_hang_diagnostics_preserve_bounded_job_limits_and_test_execution() -> None:
     jobs = _jobs(_workflow_document())
     expected_limits = {"windows-platform-contract": 60, "analytics-windows-contract": 20,
-                       "windows-full-shards": 90, "analytics-scale-qualification": 45}
+                       "windows-full-shards": 90, "analytics-scale-qualification": 45, "windows-qualification": 60}
     execution_lanes = set()
     for name, minutes in expected_limits.items():
         job = jobs[name]
@@ -491,26 +491,28 @@ def test_windows_hang_diagnostics_preserve_bounded_job_limits_and_test_execution
         assert upload["if"] == "always()"
         assert upload["with"]["path"] == "artifacts/ci-tests/"
     assert execution_lanes == {
-        "windows-platform-contract-${{ matrix.shard }}", "windows-production-boot", "windows-persistence-general",
-        "windows-persistence-deletion", "windows-persistence-smoke", "analytics-windows-contract",
-        "windows-full-regression-${{ matrix.shard }}", "analytics-scale-qualification",
+        "candidate-platform-${{ matrix.shard }}", "windows-production-boot", "windows-persistence-general",
+        "windows-persistence-deletion", "windows-persistence-smoke", "candidate-analytics-${{ matrix.shard }}",
+        "candidate-full-${{ matrix.shard }}", "analytics-scale-qualification",
         "windows-python313-loop-contract",
     }
 
 
 def test_windows_platform_groups_are_independent_and_auxiliary_work_runs_once() -> None:
-    job = _jobs(_workflow_document())["windows-platform-contract"]
+    jobs = _jobs(_workflow_document())
+    job = jobs["windows-platform-contract"]
     assert job["name"] == "windows-platform-contract-${{ matrix.shard }}"
-    assert job["strategy"] == {
-        "fail-fast": False, "max-parallel": 3, "matrix": {"shard": [1, 2, 3]},
-    }
-    assert job["needs"] == "fixed-sqlcipher-wheel"
+    assert job["strategy"] == {"fail-fast": False, "max-parallel": 5, "matrix": {"shard": [1, 2, 3, 4, 5]}}
+    assert set(job["needs"]) == {"fixed-sqlcipher-wheel", "web-build-assets"}
     steps = {step["name"]: step for step in _steps(job)}
     primary = steps["Test Windows platform contract"]
-    assert primary["run"] == "python tools/test_backend.py --lane windows-platform-contract --shard ${{ matrix.shard }}"
+    assert primary["run"] == "python tools/test_backend.py --lane windows-full-regression -- --ci-windows-candidate platform-${{ matrix.shard }}"
     assert "if" not in primary and not primary.get("continue-on-error")
-    assert primary["env"]["CI_TEST_LANE"] == "windows-platform-contract-${{ matrix.shard }}"
-    assert primary["env"]["CI_REPORT_DIR"] == "artifacts/ci-tests/windows-platform-contract-${{ matrix.shard }}"
+    assert primary["env"]["CI_TEST_LANE"] == "candidate-platform-${{ matrix.shard }}"
+    assert primary["env"]["CI_REPORT_DIR"] == "artifacts/ci-tests/candidate-platform-${{ matrix.shard }}"
+    qualifier = jobs["windows-qualification"]
+    assert "strategy" not in qualifier and not qualifier.get("continue-on-error")
+    auxiliary = {step["name"]: step for step in _steps(qualifier)}
     for name in (
         "Collect independent legacy Windows selection", "Validate exhaustive Windows shard inventory",
         "Test Windows production boot", "Test Windows persistent SQLCipher general profile",
@@ -518,15 +520,16 @@ def test_windows_platform_groups_are_independent_and_auxiliary_work_runs_once() 
         "Setup CPython 3.13 for socket-loop contracts", "Install isolated socket-loop test dependencies",
         "Test CPython 3.13 socket-loop contracts",
     ):
-        assert steps[name].get("if") == "matrix.shard == 1"
-        assert not steps[name].get("continue-on-error")
+        assert name not in steps
+        assert "if" not in auxiliary[name] and not auxiliary[name].get("continue-on-error")
+        assert sum(step.get("name") == name for j in jobs.values() for step in _steps(j)) == 1
     artifact = steps["Retain backend timing and selection"]
-    assert artifact["with"]["name"] == "ci-tests-windows-platform-contract-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}"
+    assert artifact["with"]["name"] == "ci-tests-candidate-platform-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}"
     assert artifact["if"] == "always()"
 
 
 def _assert_windows_pr_cutover(workflow: dict[str, Any]) -> None:
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v8-pr-cutover"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v9-pr-cutover"
     triggers = workflow["on"]
     assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}, "Product CI must not schedule duplicate exhaustive runs"
     assert triggers["push"] == {"branches": ["main"]}
@@ -538,9 +541,12 @@ def _assert_windows_pr_cutover(workflow: dict[str, Any]) -> None:
         assert declaration["type"] == "boolean" and declaration["default"] is False
         assert declaration.get("required", False) is False
     jobs = _jobs(workflow)
-    assert jobs["windows-full-shards"]["if"] == "${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}", "exhaustive Windows must run on main and manual only"
+    assert jobs["windows-full-shards"]["if"] == "${{ always() && !cancelled() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.fixed-sqlcipher-wheel.result == 'success' }}", "exhaustive Windows must run on main and manual only"
     for name in ("windows-platform-contract", "analytics-windows-contract", "browser-reporting-safety", "browser-e2e-execution"):
-        assert "if" not in jobs[name], "focused Windows and browser acceptance must remain mandatory on PRs"
+        if name in {"windows-platform-contract", "analytics-windows-contract"}:
+            assert jobs[name]["if"] == "${{ always() && !cancelled() && (true) && needs.fixed-sqlcipher-wheel.result == 'success' }}"
+        else:
+            assert "if" not in jobs[name], "focused Windows and browser acceptance must remain mandatory on PRs"
         assert jobs[name].get("continue-on-error", False) is False
     browser = jobs["windows-browser-e2e"]
     assert browser["if"] == "${{ always() }}", "browser aggregate must evaluate every producer result"
@@ -603,18 +609,18 @@ def test_windows_pr_cutover_falsifiers_refuse_lost_coverage_or_hidden_failures(f
 
 
 def test_partial_persistence_evidence_retains_available_profiles_and_source_receipt() -> None:
-    steps = _steps(_jobs(_workflow_document())["windows-platform-contract"])
+    steps = _steps(_jobs(_workflow_document())["windows-qualification"])
     copy = next(step for step in steps if step.get("name") == "Preserve persistence evidence filenames")
-    assert copy["if"] == "always() && matrix.shard == 1"
+    assert copy["if"] == "always()"
     command = copy["run"]
     assert 'foreach ($profile in @("general", "deletion", "smoke"))' in command
     assert command.index("Test-Path -LiteralPath $source -PathType Leaf") < command.index("Copy-Item")
     assert 'tier-b-$profile-junit.xml' in command
     assert "Write-Warning" in command
     receipt = next(step for step in steps if step.get("name") == "Record Windows persistence CI source")
-    assert receipt["if"] == "always() && matrix.shard == 1"
+    assert receipt["if"] == "always()"
     upload = next(step for step in steps if step.get("name") == "Retain Windows persistence evidence")
-    assert upload["if"] == "always() && matrix.shard == 1"
+    assert upload["if"] == "always()"
     assert upload["with"]["if-no-files-found"] == "error"
 
 
@@ -1104,14 +1110,22 @@ def _assert_python_guards_have_one_required_owner(workflow: dict[str, Any]) -> N
     for command in commands:
         owners = [(name, step) for name, job in jobs.items() for step in _steps(job)
                   if str(step.get("run", "")).strip().startswith(command)]
-        assert len(owners) == 1 and owners[0][0] == "backend-fast", "Python guard must have one mandatory backend owner"
+        expected_owner = "backend-fast" if command == "lint-imports" else "candidate-preflight"
+        assert len(owners) == 1 and owners[0][0] == expected_owner, "Python guard must have one mandatory owner"
+        assert expected_owner in jobs["required-ci-gate"]["needs"]
+        owner = jobs[expected_owner]
+        assert "if" not in owner and not owner.get("continue-on-error")
         step = owners[0][1]
         assert not step.get("continue-on-error"), "Python guard failures must block"
         if "check_boundary_declaration" in command:
             assert step.get("if") == "github.event_name == 'pull_request'"
         else:
             assert "if" not in step, "Python guard cannot be skipped"
-        assert _backend_dependency_install_indexes(backend)[0] < _steps(backend).index(step)
+        if expected_owner == "backend-fast":
+            assert _backend_dependency_install_indexes(backend)[0] < _steps(backend).index(step)
+        else:
+            setup = next(s for s in _steps(owner) if s.get("name") == "Setup Python")
+            assert _steps(owner).index(setup) < _steps(owner).index(step)
 
 
 @pytest.mark.parametrize("mutation", ["drop", "skip", "ignore", "optional-owner"])
@@ -1286,8 +1300,8 @@ def test_browser_bundle_retains_independent_same_run_assembly_proof(mutation: st
 def _assert_python313_loop_counterpart(workflow: dict[str, Any]) -> None:
     from tools.ci_gate import PYTHON313_LOOP_SELECTORS
 
-    job = _jobs(workflow)["windows-platform-contract"]
-    assert job["timeout-minutes"] == 60 and "if" not in job
+    job = _jobs(workflow)["windows-qualification"]
+    assert job["timeout-minutes"] == 60 and job["if"] == "${{ always() && !cancelled() && (true) && needs.fixed-sqlcipher-wheel.result == 'success' }}"
     steps = _steps(job)
     names = ("Setup CPython 3.13 for socket-loop contracts", "Install isolated socket-loop test dependencies",
              "Test CPython 3.13 socket-loop contracts")
@@ -1296,7 +1310,7 @@ def _assert_python313_loop_counterpart(workflow: dict[str, Any]) -> None:
         matches = [index for index, step in enumerate(steps) if step.get("name") == name]
         assert len(matches) == 1
         indexes.append(matches[0])
-        assert steps[matches[0]].get("if") == "matrix.shard == 1" and not steps[matches[0]].get("continue-on-error")
+        assert "if" not in steps[matches[0]] and not steps[matches[0]].get("continue-on-error")
     assert indexes == sorted(indexes)
     setup, install, execute = (steps[index] for index in indexes)
     assert setup["with"]["python-version"] == "3.13" and setup["id"] == "loop-python"
@@ -1322,7 +1336,7 @@ def _assert_python313_loop_counterpart(workflow: dict[str, Any]) -> None:
                 if line.strip().startswith("tests/")]
     assert selected == list(PYTHON313_LOOP_SELECTORS)
     assert "-k " not in command and " -m '" not in command
-    for name in ("Test Windows platform contract", "Test Windows production boot",
+    for name in ("Collect independent legacy Windows selection", "Test Windows production boot",
                  "Test Windows persistent SQLCipher general profile", "Test Windows persistent SQLCipher deletion profile",
                  "Test Windows persistent SQLCipher smoke profile"):
         assert next(i for i, step in enumerate(steps) if step.get("name") == name) < indexes[0]
@@ -1338,7 +1352,7 @@ def test_python313_loop_counterpart_is_required_isolated_and_after_original_prof
     workflow = _workflow_document()
     _assert_python313_loop_counterpart(workflow)
     broken = deepcopy(workflow)
-    steps = _jobs(broken)["windows-platform-contract"]["steps"]
+    steps = _jobs(broken)["windows-qualification"]["steps"]
     setup = next(step for step in steps if step.get("id") == "loop-python")
     install = next(step for step in steps if step.get("name") == "Install isolated socket-loop test dependencies")
     execute = next(step for step in steps if step.get("name") == "Test CPython 3.13 socket-loop contracts")
@@ -1402,3 +1416,10 @@ def test_attested_wheel_reuse_is_optional_and_published_only_from_protected_main
     assert "if" not in envelope and not envelope.get("continue-on-error")
     assert "if" not in by_name["Retain fixed SQLCipher wheel and provenance"]
     assert "workflow_run_attempt" in envelope["run"] and "source_commit = $env:PRODUCT_SHA" in envelope["run"]
+
+
+def test_active_product_ci_source_qualifies_under_v9_policy():
+    from tools import engineering_attestation as attestation
+    source = WORKFLOW.read_bytes()
+    policy = (ROOT / attestation.PRODUCT_CI_POLICY_PATH).read_bytes()
+    assert attestation.product_ci_job_policy(source, policy) == attestation.REQUIRED_SHARDED_V9_PRODUCT_CI_JOB_NAMES

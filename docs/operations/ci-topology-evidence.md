@@ -1,6 +1,6 @@
 # Windows CI topology decision evidence
 
-Status: offline candidate analysis only. No change to the active v8 topology or coverage is authorized by this document.
+Status: v9 production workflow prepared on the draft stack after successful isolated functional qualification. Main remains v8 until review, required validation and merge. Performance p95 is not established.
 
 ## Inputs
 
@@ -82,3 +82,5 @@ Trial 4 (`44486895075`, `fd45188`): 1,282 seconds; 263.1 runner minutes. All pla
 Trial 5 (`44490347349`, `17e8156f2b14a3749ad30ec185a854d7a53ab128`): 882 seconds; 232.8 runner minutes. All required experimental jobs passed, including the independent Windows byte comparison and 17 verified frontend consumers. The aggregate independently verified 18,017 default Windows nodes, 15,627 exhaustive-complement selections, 2,398 focused selections and eight retained overlaps. The experiment is not a release CI result. All 37 exact-source pytest reports were retrieved and checked by the new v9 production coverage verifier: 18,005 Linux default nodes, 18,017 Windows default nodes, 2,398 mandatory Windows nodes, 15 scale cases, and the required explicit profiles including CPython 3.13. This establishes functional qualification of the partition, not a population p95 or warm wheel-cache qualification.
 
 The v9 source policy freezes 8 exhaustive, 5 platform, 2 analytics shards, separate Windows qualification and preflight, and the source-bound frontend producer. Historical v8 workflow and policy fixtures remain unchanged. The production gate independently requires exact latest job attempts and complete execution reports, raw collection parity, approved retained skips, Linux execution for Linux-only observations, and every auxiliary profile. The active workflow stays v8 until the final integrated v9 source is validated. The frontend producer is part of that one policy change; do not introduce a second policy version for reuse or authorize a release from the experimental workflow.
+
+The integrated draft moves the active workflow and policy to v9 once, in the artifact-reuse PR, because the new mandatory frontend producer is part of the same exact-source job set. The intermediate B2 and C branches retain v8. The old three-shard worker-count benchmark and trial renderer use the frozen optimized v8 source intentionally; they are historical controls, not a release authority. Existing branch-protection check names remain unchanged. A failed producer still blocks the required aggregate; unavailable or invalid downloaded assets exercise the original local build fallback. The independent byte-control job is experimental only, not an additional production requirement.
