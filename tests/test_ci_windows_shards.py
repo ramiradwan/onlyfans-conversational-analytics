@@ -750,7 +750,10 @@ def test_production_v9_rebalance_requires_complete_weights(monkeypatch):
         v9.updated_manifest(plan, inventory, contracts, rebalance=True, timings=(weights, {}))
 
 
-def test_production_v9_manifest_is_used_by_local_runner_and_gate():
+def test_production_v9_manifest_is_used_by_local_runner_and_gate(monkeypatch):
+    # A local command must not inherit the enclosing hosted test lane.
+    monkeypatch.delenv("CI_TEST_LANE", raising=False)
+    monkeypatch.delenv("CI_REPORT_DIR", raising=False)
     from tools import ci_windows_v9 as v9, ci_gate_v9 as gate, test_backend as runner
     assert v9.load_manifest(ROOT) == gate.load_plan(ROOT)
     args = runner.parser().parse_args(["windows-full-regression", "--windows-v9-group", "analytics-2"])

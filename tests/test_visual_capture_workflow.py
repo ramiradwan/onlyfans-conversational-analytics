@@ -127,7 +127,7 @@ def _assert_isolated_groups_and_optional_control(workflow: dict[str, Any]) -> No
     assert capture["strategy"] == {"fail-fast": False, "max-parallel": 3, "matrix": {"group": ["dynamic-a", "dynamic-b", "remaining"]}}
     for name in PRODUCERS:
         job = jobs[name]
-        assert job["runs-on"] == "ubuntu-latest" and job["timeout-minutes"] == 20
+        assert job["runs-on"] == "ubuntu-latest" and job["timeout-minutes"] == (20 if name == "visual-capture-execution" else 40)
         assert not job.get("continue-on-error")
         group = "${{ matrix.group }}" if name == "visual-capture-execution" else "all"
         execute = _step(job, "Capture the required visual stage group")
@@ -143,6 +143,7 @@ def _assert_isolated_groups_and_optional_control(workflow: dict[str, Any]) -> No
     expected = json.loads(json.dumps(capture).replace("${{ matrix.group }}", "all"))
     del expected["strategy"]
     expected["name"] = "visual-capture-serial-control"
+    expected["timeout-minutes"] = 40
     expected["needs"] = "visual-contracts"
     expected["if"] = "${{ github.event_name == 'workflow_dispatch' && inputs.visual_serial_control }}"
     assert jobs["visual-capture-serial-control"] == expected, "control must execute the same owned bootstrap and full capture"
