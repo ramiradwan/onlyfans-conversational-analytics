@@ -31,11 +31,11 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
       - name: Retrieve exact upstream wheel
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: fixed-sqlcipher-wheel-${{ github.sha }}
           path: ${{ runner.temp }}\ofca-upstream-wheel
@@ -60,7 +60,7 @@ jobs:
       - name: Attest protected main wheel manifest
         id: attest
         if: steps.stage.outputs.fingerprint != ''
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: ${{ runner.temp }}\ofca-fixed-sqlcipher-cache\wheel-cache-manifest.json
       - name: Save attested fixed wheel cache
