@@ -186,6 +186,55 @@ export async function dropNextReply(page, pathname) {
   await page.route(BRAIN_ORIGIN + pathname, handler);
   return { received, async close() { clearTimeout(timer); page.off('close', closed); await page.unroute(BRAIN_ORIGIN + pathname, handler); } };
 }
+// Capture the original response before it enters Chromium's disposable
+// Network.getResponseBody buffer. Forward the UI request once to the real
+// isolated Brain and deliver its unmodified response back to the browser.
+export async function observeSavedRead(page, pathname, action, accept = () => true) {
+  check(['/api/v1/insights/findings', '/api/v1/insights/findings/literals',
+    '/api/v1/insights/questions/evidence', '/api/v1/insights/questions/evidence/context'].includes(pathname), 'saved_read_path');
+  const matches = (url) => url.origin === BRAIN_ORIGIN && url.pathname === pathname;
+  let resolve, reject, entered = false;
+  const received = new Promise((done, fail) => { resolve = done; reject = fail; });
+  const timer = setTimeout(() => reject(new Error('text_analysis_saved_read_timeout')), 30_000);
+  const closed = () => reject(new Error('text_analysis_saved_read_closed'));
+  page.once('close', closed);
+  void received.catch(() => undefined);
+  const handler = async (route) => {
+    const request = route.request();
+    if (entered || !accept(request)) { await route.fallback(); return; }
+    entered = true;
+    let response;
+    try {
+      const url = new URL(request.url()), post = request.method() === 'POST';
+      check(request.method() === (pathname.includes('/questions/') ? 'POST' : 'GET'), 'saved_read_method');
+      const headers = await request.allHeaders();
+      if (post) check(Boolean(headers['x-csrf-token']), 'saved_read_csrf');
+      response = await route.fetch({ url: BRAIN_LOOPBACK_URL + url.pathname + url.search,
+        headers: { ...headers, host: new URL(BRAIN_ORIGIN).host }, maxRedirects: 0, maxRetries: 0, timeout: 12_000 });
+      check(response.status() === 200 && /no-store/.test(response.headers()['cache-control'] ?? ''), 'saved_read_response');
+      const raw = await response.body();
+      check(raw.length <= 2 * 1024 * 1024, 'saved_read_response_limit');
+      let value;
+      try { value = JSON.parse(raw.toString('utf8')); } catch { throw new Error('text_analysis_saved_read_json'); }
+      const body = post ? request.postDataJSON() : null;
+      await route.fulfill({ response });
+      resolve({ value, body });
+    } catch (error) {
+      try { await route.abort('failed'); } catch { /* Request may already be closed. */ }
+      const safe = typeof error?.message === 'string' && /^text_analysis_saved_read_[a-z_]+$/.test(error.message);
+      reject(safe ? error : new Error('text_analysis_saved_read_observation_failed'));
+    } finally { await response?.dispose(); }
+  };
+  try {
+    await page.route(matches, handler);
+    const [result] = await Promise.all([received, action()]);
+    return result;
+  } finally {
+    clearTimeout(timer); page.off('close', closed);
+    await page.unroute(matches, handler);
+  }
+}
+
 export async function ready(page, log, route = '/settings', conversationCount = fixture.messages.length) {
   const sessions = log.sessions.length;
   await page.goto(BRAIN_ORIGIN + route, { waitUntil: 'domcontentloaded' });

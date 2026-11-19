@@ -1,6 +1,6 @@
 # Windows CI topology decision evidence
 
-Status: offline candidate analysis only. No change to the active v8 topology or coverage is authorized by this document.
+Status: v9 production workflow prepared on the draft stack after successful isolated functional qualification. Main remains v8 until review, required validation and merge. Performance p95 is not established.
 
 ## Inputs
 
@@ -67,6 +67,12 @@ The replacement experimental manifest uses the maximum observed per-file serial 
 
 Select 8 / 5 / 2 only as the next candidate for qualification: it keeps 15 test jobs, rebalances the platform work, and removes the unsplit analytics bottleneck. No replay configuration meets the 900-second overlapping target. Do not change the active v8 topology on the strength of these failed runs. Further hosted trials require an explicit budget decision; no third experiment is authorized by this document.
 
+### Frontend asset reuse (opt-in, not active CI)
+
+A local Windows assets-only build and the exact trial Linux frontend artifact matched all 50 files (1,989,190 bytes) after pinning the four HTML entry templates to LF at checkout. This is one cross-platform comparison, not a hosted repeatability or performance claim. The local warm npm install took approximately 54 seconds and the assets build approximately 8 seconds.
+
+The optional topology renderer now adds a separate assets producer and uses same-run source/attempt-bound SHA-256 receipts. Windows consumers retain their original local installation/build fallback if publication, download or validation fails. Normal web validation, extension installation/build, release packaging and active CI remain unchanged. A future hosted comparison must measure producer wait, download/verification overhead, fallback frequency and total runner cost before enabling this optimization.
+
 ## Successful functional qualification and production gate preparation
 
 Trial 3 (`44483743034`, `613e8e9`): 891 seconds queue-inclusive; 228.2 runner minutes; 18,015 default Windows nodes and exact per-shard selection. One coordinator test failed because a reconnect frame could arrive before the expected fallback probe. The test now holds the first frame until the probe executes; 92 coordinator tests passed. No production timeout changed.
@@ -76,3 +82,14 @@ Trial 4 (`44486895075`, `fd45188`): 1,282 seconds; 263.1 runner minutes. All pla
 Trial 5 (`44490347349`, `17e8156f2b14a3749ad30ec185a854d7a53ab128`): 882 seconds; 232.8 runner minutes. All required experimental jobs passed, including the independent Windows byte comparison and 17 verified frontend consumers. The aggregate independently verified 18,017 default Windows nodes, 15,627 exhaustive-complement selections, 2,398 focused selections and eight retained overlaps. The experiment is not a release CI result. All 37 exact-source pytest reports were retrieved and checked by the new v9 production coverage verifier: 18,005 Linux default nodes, 18,017 Windows default nodes, 2,398 mandatory Windows nodes, 15 scale cases, and the required explicit profiles including CPython 3.13. This establishes functional qualification of the partition, not a population p95 or warm wheel-cache qualification.
 
 The v9 source policy freezes 8 exhaustive, 5 platform, 2 analytics shards, separate Windows qualification and preflight, and the source-bound frontend producer. Historical v8 workflow and policy fixtures remain unchanged. The production gate independently requires exact latest job attempts and complete execution reports, raw collection parity, approved retained skips, Linux execution for Linux-only observations, and every auxiliary profile. The active workflow stays v8 until the final integrated v9 source is validated. The frontend producer is part of that one policy change; do not introduce a second policy version for reuse or authorize a release from the experimental workflow.
+
+The integrated draft moves the active workflow and policy to v9 once, in the artifact-reuse PR, because the new mandatory frontend producer is part of the same exact-source job set. The intermediate B2 and C branches retain v8. The old three-shard worker-count benchmark and trial renderer use the frozen optimized v8 source intentionally; they are historical controls, not a release authority. Existing branch-protection check names remain unchanged. A failed producer still blocks the required aggregate; unavailable or invalid downloaded assets exercise the original local build fallback. The independent byte-control job is experimental only, not an additional production requirement.
+
+
+## Integrated production workflow qualification
+
+Manual CI run `44500582946` at exact stack source `3e728205d5d9cd235c09d53aa3751f1f949fad3c` passed in 819 seconds, consuming 189.2 runner minutes (production CI only, not visual). All 37 production reports passed the v9 gate: 18,145 Linux and 18,157 Windows default nodes, 2,398 required focused Windows nodes, 15 scale cases. Both browser lanes passed on their first attempt; the optional serial browser control was intentionally not requested. All 17 Windows consumers verified and reused frontend assets, with 2?4 seconds of retrieval/verification; none rebuilt locally. Preflight took 18 seconds. Native dependency cache was warm, but protected-main attested wheel reuse was not exercised. The slowest Linux analytics shard took 691 seconds, fast backend 598 seconds, and Windows exhaustive shard 8 took 631 seconds. This is one successful manual production-workflow run, not release qualification or sustained p95 evidence. Exact main push and protected-main wheel publication must remain independently verified.
+
+A cancelled historical worker benchmark on B1 used a protected production check name. Benchmark jobs now have distinct `bench-` check names; production check names remain unchanged. The initial browser response-read timing correction passed this hosted run but failed one of two local repeats, so it is insufficient as a deterministic fix. The follow-up captures a single real UI-triggered response from the isolated Brain before returning that same response to Chromium, preserving status, no-store, CSRF, exact body and UI assertions; no retry or timeout increase is introduced.
+
+The integrated run's four Linux analytics reports contained 5,293 selected nodes across 255 files, with measured parent-phase sums of 880 / 1,005 / 998 / 1,699 seconds. A minimal offline reassignment moves `test_analytics_closure_collectors.py` (4 to 1), `test_nlp_read_projection.py` (4 to 3), and `test_conversation_graph_receipts.py` (4 to 2). Predicted phase sums are 1,172 / 1,121 / 1,143 / 1,144 seconds; this is a 31% reduction of maximum phase-work, not a measured wall-clock improvement. Keep this as a separate follow-up experiment after integrated rollout rather than invalidate the successful partition qualification.

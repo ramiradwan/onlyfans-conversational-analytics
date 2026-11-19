@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { assertJournalOrder, check, dropNextReply, fixture, prepareProfile, processingCommand, readJson, ready, sameMeaning,
-  selectProfile, stats, withTextAnalysis } from '../lib/text-analysis-browser.mjs';
+  selectProfile, stats, withTextAnalysis, observeSavedRead } from '../lib/text-analysis-browser.mjs';
 
 test('processing commands preserve durable enrollment and canonical findings', async () => {
   await withTextAnalysis('joint', async (x) => {
@@ -63,13 +63,9 @@ test('processing commands preserve durable enrollment and canonical findings', a
         && current.canonical.members === paused.canonical.members, 'saved_read_reanalysis');
     };
     const readFromUi = async (pathname, action, accept = () => true) => {
-      const [response] = await Promise.all([
-        x.page.waitForResponse((entry) => new URL(entry.url()).pathname === pathname && accept(entry.request())), action(),
-      ]);
-      check(response.status() === 200 && /no-store/.test(response.headers()['cache-control'] ?? ''), 'saved_read_response');
-      if (response.request().method() === 'POST') check(Boolean(response.request().headers()['x-csrf-token']), 'saved_read_csrf');
-      const value = await response.json(); await unchanged();
-      return { value, body: response.request().method() === 'POST' ? response.request().postDataJSON() : null };
+      const result = await observeSavedRead(x.page, pathname, action, accept);
+      await unchanged();
+      return result;
     };
     const findings = '/api/v1/insights/findings';
     const selectCategory = async (task, category, button) => {

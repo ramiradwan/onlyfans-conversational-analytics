@@ -5,6 +5,7 @@ production gate can be authorized by this workflow. Requires PyYAML.
 """
 from __future__ import annotations
 
+import argparse
 from copy import deepcopy
 import json
 import sys
@@ -19,7 +20,7 @@ from tools.ci_windows_shards import candidate_counts
 REFS = ["bench/windows-topology/qualification-1", "bench/windows-topology/qualification-2"]
 
 
-def render(ci, visual, *, plan=None):
+def render(ci, visual, *, plan=None, reuse_frontend=False):
     counts = candidate_counts(plan) if plan is not None else {"full": 10, "platform": 4, "analytics": 1}
     trial = deepcopy(ci)
     trial["name"] = "Windows topology qualification"
@@ -105,17 +106,73 @@ def render(ci, visual, *, plan=None):
             raise ValueError("Unexpected job name collision")
         jobs[key] = deepcopy(job)
     jobs["visual-capture-serial-control"]["if"] = "${{ false }}"
+    if reuse_frontend:
+        attach_frontend_reuse(trial)
     return trial
 
 
+def attach_frontend_reuse(trial):
+    """Opt-in experiment only; preserve the normal web tests and cold builds."""
+    jobs = trial["jobs"]
+    web = jobs["web-build-and-test"]
+    steps = web["steps"]
+    checkout = deepcopy(next(s for s in steps if s.get("name") == "Checkout exact Product revision"))
+    node = deepcopy(next(s for s in steps if s.get("name") == "Setup Node.js"))
+    node["with"]["cache-dependency-path"] = "frontend/package-lock.json"
+    install = deepcopy(next(s for s in steps if s.get("name") == "Install frontend dependencies"))
+    build = deepcopy(next(s for s in steps if s.get("name") == "Build frontend"))
+    build["run"] = "npm run build:assets --prefix frontend"
+    verify = deepcopy(next(s for s in steps if s.get("name") == "Check committed theme artifacts against the generator"))
+    python = deepcopy(next(s for s in jobs["candidate-preflight"]["steps"] if s.get("name") == "Setup Python"))
+    upload = deepcopy(next(s for s in steps if s.get("name") == "Upload frontend build"))
+    upload["name"] = "Retain source-bound frontend assets"
+    upload["with"]["name"] = "ci-frontend-assets-${{ env.PRODUCT_SHA }}"
+    upload["with"]["path"] = "${{ runner.temp }}/ofca-frontend-assets/"
+    jobs["web-build-assets"] = {"runs-on": "ubuntu-latest", "timeout-minutes": 10,
+        "steps": [checkout, node, install, build, verify, python,
+            {"name": "Seal frontend asset receipt", "run": 'python tools/ci_frontend_assets.py seal app/static/dist "$RUNNER_TEMP/ofca-frontend-assets" --producer-attempt "$GITHUB_RUN_ATTEMPT"'}, upload]}
+    for key in ("windows-platform-contract", "windows-full-shards", "analytics-windows-contract",
+                "analytics-scale-qualification", "windows-qualification"):
+        job = jobs[key]
+        deps = job["needs"] if isinstance(job["needs"], list) else [job["needs"]]
+        job["needs"] = [*deps, "web-build-assets"]
+        job["permissions"] = {"contents": "read", "actions": "read"}
+        old_if = job.get("if", "${{ true }}").removeprefix("${{").removesuffix("}}").strip()
+        # A failed asset producer does not block the original local build.
+        # All original prerequisites must still have succeeded.
+        predicate = " && ".join(f"needs.{dep}.result == 'success'" for dep in deps)
+        job["if"] = "${{ always() && !cancelled() && (" + old_if + ") && " + predicate + " }}"
+        steps = job["steps"]
+        index = next(i for i, s in enumerate(steps) if s.get("name") == "Install frontend dependencies")
+        fetch = {"name": "Retrieve exact-run frontend assets", "id": "frontend-download",
+            "if": "needs.web-build-assets.result == 'success'", "continue-on-error": True,
+            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+            "with": {"name": "ci-frontend-assets-${{ env.PRODUCT_SHA }}", "path": "${{ runner.temp }}/ofca-frontend-assets"}}
+        restore = {"name": "Verify exact producer and frontend bytes", "id": "frontend-reuse",
+            "if": "steps.frontend-download.outcome == 'success'", "shell": "pwsh", "env": {"GH_TOKEN": "${{ github.token }}"},
+            "run": 'python tools/ci_frontend_assets.py restore "$env:RUNNER_TEMP/ofca-frontend-assets" app/static/dist --resolve-producer\n'
+                   'if ($LASTEXITCODE -eq 0) { "reused=true" >> $env:GITHUB_OUTPUT } else { Write-Warning "Frontend asset verification refused; building locally." }\nexit 0'}
+        steps[index:index] = [fetch, restore]
+        for step in steps:
+            if step.get("name") in {"Install frontend dependencies", "Build frontend"}:
+                step["if"] = "steps.frontend-reuse.outputs.reused != 'true'"
+    # Include the producer in the experiment's result. Its failure is visible
+    # even if every consumer successfully falls back to a local build.
+    jobs["candidate-coverage"]["needs"].append("web-build-assets")
+
+
+
 def main():
-    ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--reuse-frontend", action="store_true")
+    args = parser.parse_args()
+    ci = yaml.safe_load((ROOT / "tests/fixtures/product-ci-sharded-v8-pr-cutover.yml").read_text(encoding="utf-8"))
     visual = yaml.safe_load((ROOT / ".github/workflows/visual-capture.yml").read_text(encoding="utf-8"))
     destination = ROOT / ".github/workflows/ci-topology-qualification.yml"
     if destination.exists():
         raise SystemExit("Refusing to overwrite an existing trial workflow")
     plan = json.loads((ROOT / "tools/windows-topology-candidate.json").read_text(encoding="utf-8"))
-    destination.write_text(yaml.safe_dump(render(ci, visual, plan=plan), sort_keys=False, width=110), encoding="utf-8")
+    destination.write_text(yaml.safe_dump(render(ci, visual, plan=plan, reuse_frontend=args.reuse_frontend), sort_keys=False, width=110), encoding="utf-8")
 
 
 if __name__ == "__main__":

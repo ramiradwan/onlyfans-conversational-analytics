@@ -426,7 +426,9 @@ def test_malformed_existing_base_manifest_is_not_treated_as_an_initial_manifest(
 
 def test_required_backend_job_runs_the_pull_request_gate_with_local_inputs() -> None:
     workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
-    job = workflow["jobs"]["backend-fast"]
+    job = workflow["jobs"]["candidate-preflight"]
+    assert "candidate-preflight" in workflow["jobs"]["required-ci-gate"]["needs"]
+    assert "if" not in job and not job.get("continue-on-error")
     checkout = next(
         step
         for step in job["steps"]

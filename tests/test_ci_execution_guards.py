@@ -19,17 +19,17 @@ REQUIRED_JOBS = {
     "fixed-sqlcipher-wheel", "windows-platform-contract",
     "analytics-windows-contract", "windows-browser-e2e", "windows-full-regression",
     "windows-full-shards",
-    "analytics-scale-qualification",
+    "analytics-scale-qualification", "candidate-preflight", "windows-qualification", "web-build-assets",
 }
 BACKEND_JOBS = {
     "backend-fast", "analytics-integration", "windows-platform-contract",
     "analytics-windows-contract", "windows-full-shards",
-    "analytics-scale-qualification",
+    "analytics-scale-qualification", "windows-qualification",
 }
 WINDOWS_CONSUMERS = {
     "windows-platform-contract", "analytics-windows-contract",
     "browser-e2e-execution", "browser-e2e-serial-control", "windows-full-shards",
-    "analytics-scale-qualification",
+    "analytics-scale-qualification", "windows-qualification",
 }
 WINDOWS_FULL_CUTOVER_RUN = (
     'case "$GITHUB_EVENT_NAME" in\n'
@@ -56,16 +56,18 @@ def _assert_gate_covers_every_lane(workflow: dict[str, Any]) -> None:
     for job_name in REQUIRED_JOBS:
         job = jobs[job_name]
         if job_name == "analytics-scale-qualification":
-            assert job.get("if") == "${{ github.event_name != 'pull_request' }}", "scale may skip only pull requests"
+            assert job.get("if") == "${{ always() && !cancelled() && (github.event_name != 'pull_request') && needs.fixed-sqlcipher-wheel.result == 'success' }}", "scale may skip only pull requests"
         elif job_name == "windows-full-regression":
             assert job.get("if") == "${{ always() }}", "full Windows aggregate must evaluate shard failures"
             assert job["needs"] == "windows-full-shards"
             assert job["steps"][0]["run"] == WINDOWS_FULL_CUTOVER_RUN
         elif job_name == "windows-full-shards":
-            assert job.get("if") == "${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}", "exhaustive Windows may skip only pull requests"
+            assert job.get("if") == "${{ always() && !cancelled() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.fixed-sqlcipher-wheel.result == 'success' }}", "exhaustive Windows may skip only pull requests"
         elif job_name == "windows-browser-e2e":
             assert job.get("if") == "${{ always() }}", "browser aggregate must evaluate execution failures"
             assert set(job["needs"]) == {"browser-reporting-safety", "browser-e2e-execution", "browser-e2e-serial-control"}
+        elif job_name in {"windows-platform-contract", "analytics-windows-contract", "windows-qualification"}:
+            assert job.get("if") == "${{ always() && !cancelled() && (true) && needs.fixed-sqlcipher-wheel.result == 'success' }}"
         else:
             assert "if" not in job, f"required lane {job_name} cannot skip during PR cutover"
         assert not job.get("continue-on-error"), f"required lane {job_name} cannot ignore failures"
@@ -122,14 +124,14 @@ def _assert_full_windows_shards_are_blocking(workflow: dict[str, Any]) -> None:
     job = workflow["jobs"]["windows-full-shards"]
     assert job["name"] == "windows-full-regression-${{ matrix.shard }}"
     assert job["runs-on"] == "windows-latest"
-    assert job["strategy"] == {"fail-fast": False, "max-parallel": 3, "matrix": {"shard": [1, 2, 3]}}
+    assert job["strategy"] == {"fail-fast": False, "max-parallel": 8, "matrix": {"shard": list(range(1, 9))}}
     assert job["timeout-minutes"] == 90
     execution = next(step for step in job["steps"] if step.get("name") == "Test complete Windows backend regression shard")
-    assert execution["run"] == "python tools/test_backend.py --lane windows-full-regression --shard ${{ matrix.shard }}"
-    assert execution["env"]["CI_TEST_LANE"] == "windows-full-regression-${{ matrix.shard }}"
+    assert execution["run"] == "python tools/test_backend.py --lane windows-full-regression -- --ci-windows-candidate full-${{ matrix.shard }}"
+    assert execution["env"]["CI_TEST_LANE"] == "candidate-full-${{ matrix.shard }}"
     assert not execution.get("continue-on-error")
     upload = next(step for step in job["steps"] if step.get("name") == "Retain backend timing and selection")
-    assert upload["with"]["name"] == "ci-tests-windows-full-regression-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}"
+    assert upload["with"]["name"] == "ci-tests-candidate-full-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}"
 
 
 @pytest.mark.parametrize("mutation", ["omit-shard", "two-shards", "serialize-shards", "overlap-shard", "ignore-failure",
@@ -166,7 +168,7 @@ def test_windows_consumers_fail_closed_on_the_shared_producer() -> None:
         if name in {"browser-e2e-execution", "browser-e2e-serial-control"}:
             assert set(job["needs"]) == {"fixed-sqlcipher-wheel", "browser-reporting-safety"}
         else:
-            assert job["needs"] == "fixed-sqlcipher-wheel"
+            assert set(job["needs"]) == {"fixed-sqlcipher-wheel", "web-build-assets"}
         assert job["runs-on"].startswith("windows")
         steps = job["steps"]
         verify = next(step for step in steps if step.get("name") == "Verify fixed SQLCipher CI source")
@@ -226,8 +228,8 @@ def test_only_the_default_lane_runners_use_parallel_workers() -> None:
                 parallel[environment["CI_TEST_LANE"]] = (environment["CI_PYTEST_WORKERS"], step["run"])
     assert {lane: workers for lane, (workers, _) in parallel.items()} == {
         "backend-fast": "4", "analytics-integration-${{ matrix.shard }}": "4",
-        "windows-platform-contract-${{ matrix.shard }}": "4", "analytics-windows-contract": "4",
-        "windows-full-regression-${{ matrix.shard }}": "4"}
+        "candidate-platform-${{ matrix.shard }}": "4", "candidate-analytics-${{ matrix.shard }}": "4",
+        "candidate-full-${{ matrix.shard }}": "4"}
     # Stateful profiles, explicit selectors and scale qualification stay in one process.
     assert all(command.startswith("python tools/test_backend.py --lane ") for _, command in parallel.values())
 
@@ -240,7 +242,7 @@ def test_only_the_default_lane_runners_use_parallel_workers() -> None:
 ])
 def test_read_only_validation_cannot_hide_execution_without_failure_evidence(command: str) -> None:
     workflow = _workflow_document()
-    step = next(step for step in workflow["jobs"]["windows-platform-contract"]["steps"]
+    step = next(step for step in workflow["jobs"]["windows-qualification"]["steps"]
                 if step.get("name") == "Validate exhaustive Windows shard inventory")
     step["run"] = command
     with pytest.raises(AssertionError, match="no execution evidence environment"):
@@ -266,7 +268,7 @@ def test_gate_keeps_attempt_artifacts_separate_and_compatibility_checks_block() 
 
 def test_main_and_manual_qualification_are_explicit_without_duplicate_schedule_or_path_filters() -> None:
     workflow = _workflow_document()
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v8-pr-cutover"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v9-pr-cutover"
     events = workflow["on"]
     assert set(events) == {"push", "pull_request", "workflow_dispatch"}
     dispatch = events["workflow_dispatch"]
@@ -287,7 +289,7 @@ def test_main_and_manual_qualification_are_explicit_without_duplicate_schedule_o
 def test_analytics_scale_qualification_uses_complete_analytics_populations() -> None:
     jobs = _workflow_document()["jobs"]
     job = jobs["analytics-scale-qualification"]
-    assert job["if"] == "${{ github.event_name != 'pull_request' }}"
+    assert job["if"] == "${{ always() && !cancelled() && (github.event_name != 'pull_request') && needs.fixed-sqlcipher-wheel.result == 'success' }}"
     steps = job["steps"]
     execution = next(step for step in steps if step.get("env", {}).get("CI_TEST_LANE") == "analytics-scale-qualification")
     assert execution["run"] == (
@@ -295,7 +297,7 @@ def test_analytics_scale_qualification_uses_complete_analytics_populations() -> 
         "--ignore=tests/test_installation_key.py"
     )
     contract_steps = jobs["analytics-windows-contract"]["steps"]
-    contract_execution = next(step for step in contract_steps if step.get("env", {}).get("CI_TEST_LANE") == "analytics-windows-contract")
+    contract_execution = next(step for step in contract_steps if step.get("env", {}).get("CI_TEST_LANE") == "candidate-analytics-${{ matrix.shard }}")
     assert steps[:steps.index(execution)] == contract_steps[:contract_steps.index(contract_execution)]
 
 
@@ -303,7 +305,7 @@ def test_legacy_reference_collections_are_independent_of_the_new_selector() -> N
     jobs = _workflow_document()["jobs"]
     for job_name, lane, marker in (
         ("backend-fast", "legacy-linux-reference", "not slow and not windows_production and not stateful_tier_a and not stateful_tier_b and not stateful_agent_tier_a"),
-        ("windows-platform-contract", "legacy-windows-reference", "not slow and not stateful_tier_a and not stateful_tier_b and not stateful_agent_tier_a"),
+        ("windows-qualification", "legacy-windows-reference", "not slow and not stateful_tier_a and not stateful_tier_b and not stateful_agent_tier_a"),
     ):
         references = [step for step in jobs[job_name]["steps"] if step.get("env", {}).get("CI_TEST_LANE") == lane]
         assert len(references) == 1
@@ -367,6 +369,10 @@ def test_windows_host_diagnostic_falsifiers(fault: str) -> None:
         _assert_windows_host_diagnostics(jobs)
 
 
+def _historical_bench_product():
+    return yaml.safe_load((ROOT / "tests/fixtures/product-ci-sharded-v8-pr-cutover.yml").read_text(encoding="utf-8"))
+
+
 def _bench_document() -> dict[str, Any]:
     document = yaml.safe_load(BENCH.read_text(encoding="utf-8"))
     assert isinstance(document, dict)
@@ -418,7 +424,7 @@ def _assert_bench_repeats_product_ci(bench: dict[str, Any], product: dict[str, A
 
 def test_windows_backend_bench_repeats_the_product_ci_shard() -> None:
     bench = _bench_document()
-    _assert_bench_repeats_product_ci(bench, _workflow_document())
+    _assert_bench_repeats_product_ci(bench, _historical_bench_product())
     # The bench runs only for pushes to bench branches, never for main or pull requests.
     assert _bench_triggers(bench) == {"push": {"branches": ["bench/windows-backend/**"]}}
     assert bench["permissions"] == {"contents": "read"}
@@ -441,7 +447,7 @@ def test_windows_backend_bench_falsifiers(fault: str) -> None:
     else:
         jobs["backend-fast"] = _workflow_document()["jobs"]["backend-fast"]
     with pytest.raises(AssertionError):
-        _assert_bench_repeats_product_ci(bench, _workflow_document())
+        _assert_bench_repeats_product_ci(bench, _historical_bench_product())
 
 
 def _assert_bench_shards_match_product_ci(run: str, product: dict[str, Any]) -> None:
@@ -457,7 +463,7 @@ def test_windows_backend_bench_branch_names_select_only_supported_parameters() -
     import re
 
     run = _bench_document()["jobs"]["plan"]["steps"][0]["run"]
-    _assert_bench_shards_match_product_ci(run, _workflow_document())
+    _assert_bench_shards_match_product_ci(run, _historical_bench_product())
     pattern = re.compile(re.search(r"=~ (\S+) \]\]", run).group(1))
     accepted = {"bench/windows-backend/s2-w3-load": ("2", "3", "load"),
                 "bench/windows-backend/s1-w2-worksteal-r1": ("1", "2", "worksteal"),

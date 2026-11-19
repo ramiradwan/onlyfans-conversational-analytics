@@ -8,7 +8,6 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 import json
-import os
 import sys
 
 if __package__ in (None, ""):
@@ -77,6 +76,23 @@ def validate_coverage(reports, *, event="push", plan=None, contracts=None):
     legacy, linux_lanes, linux_owners = gate._common_selection(reports, inventories, SPECS)
     groups = candidate_groups(inventories["Windows"].values(), plan, contracts)
     expected = {f"candidate-{name}": nodes for name, nodes in groups.items()}
+    # Independently derive required ownership from the raw reference and the
+    # declared selector contract, rather than trusting the runner's partition.
+    from collections import Counter
+    ownership = Counter(node for nodes in expected.values() for node in nodes)
+    if set(ownership) != legacy["Windows"] or {node for node, count in ownership.items() if count != 1} != set(plan["retain_in_full"]) or any(count != 2 for node, count in ownership.items() if node in plan["retain_in_full"]):
+        raise gate.GateError("v9 full/focused union or retained overlap differs from independent Windows selection")
+    for kind, lanes in (("platform", PLATFORM), ("analytics", ANALYTICS)):
+        declared = {node for node in legacy["Windows"] if any(gate._matches(node, entry["selector"]) for entry in contracts[kind])}
+        actual = set().union(*(expected[lane] for lane in lanes))
+        if actual != declared:
+            raise gate.GateError(f"v9 {kind} ownership differs from independent selector contract")
+        for lane in lanes:
+            if any(plan[kind].get(node.split("::", 1)[0]) != int(lane.rsplit("-", 1)[1]) for node in expected[lane]):
+                raise gate.GateError(f"{lane}: focused file owner differs from manifest")
+    for lane in FULL:
+        if any(plan["full"].get(node.split("::", 1)[0]) != int(lane.rsplit("-", 1)[1]) for node in expected[lane]):
+            raise gate.GateError(f"{lane}: exhaustive file owner differs from manifest")
     signature = gate._raw_inventory_signature(inventories["Windows"])
     reference = reports["legacy-windows-reference"]
     for lane in set(PARTITION) & set(reports):
