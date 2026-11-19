@@ -47,7 +47,8 @@ INVENTORY_CASE_KEYS = {"id", "group", "kind", "configuration", "observations", "
 PHASES = {"prepare", "frontend", "dynamic", "freshness", "review", "static", "cleanup", "manifest"}
 OBSERVER_REGIONS = {
     "home": ["freshness-status", "issue-band", "dashboard-notice", "dashboard-overview", "dashboard-basis", "dashboard-recent", "dashboard-setup"],
-    "dashboard-continuation": ["freshness-status", "issue-band"],
+    "dashboard-continuation": ["freshness-status", "issue-band", "dashboard-notice", "dashboard-setup", "dashboard-overview",
+                               "dashboard-basis", "dashboard-recent"],
     "analytics": ["freshness-status", "issue-band", "analytics-content"],
     "inbox": ["freshness-status", "issue-band", "inbox-notice", "inbox-content"],
     "settings": ["freshness-status", "issue-band", "settings-browser", "settings-history", "settings-activation", "settings-vault"],
@@ -57,8 +58,8 @@ OBSERVER_REGIONS = {
     "popup": ["popup-content", "popup-status", "surface-feedback"],
     "setup": ["extension-stage", "surface-feedback"],
     "options": ["options-notice", "options-capture", "options-connection", "options-data", "surface-feedback"],
-    "desktop-onboarding": [],
-    "browser-task": [],
+    "desktop-onboarding": ["desktop-task-card", "desktop-task-status", "desktop-task-actions"],
+    "browser-task": ["browser-task-card", "browser-task-status", "browser-task-actions"],
 }
 OBSERVER_PHASES = {
     "required_region_missing_at_first_surface": "first_surface",
