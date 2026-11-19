@@ -93,3 +93,25 @@ Manual CI run `44500582946` at exact stack source `3e728205d5d9cd235c09d53aa3751
 A cancelled historical worker benchmark on B1 used a protected production check name. Benchmark jobs now have distinct `bench-` check names; production check names remain unchanged. The initial browser response-read timing correction passed this hosted run but failed one of two local repeats, so it is insufficient as a deterministic fix. The follow-up captures a single real UI-triggered response from the isolated Brain before returning that same response to Chromium, preserving status, no-store, CSRF, exact body and UI assertions; no retry or timeout increase is introduced.
 
 The integrated run's four Linux analytics reports contained 5,293 selected nodes across 255 files, with measured parent-phase sums of 880 / 1,005 / 998 / 1,699 seconds. A minimal offline reassignment moves `test_analytics_closure_collectors.py` (4 to 1), `test_nlp_read_projection.py` (4 to 3), and `test_conversation_graph_receipts.py` (4 to 2). Predicted phase sums are 1,172 / 1,121 / 1,143 / 1,144 seconds; this is a 31% reduction of maximum phase-work, not a measured wall-clock improvement. Keep this as a separate follow-up experiment after integrated rollout rather than invalidate the successful partition qualification.
+
+
+## Follow-up: serial-aware Linux integration balancing
+
+The raw three-file proposal above is superseded by a two-sample serial-aware model. Successful runs `44490347349` and `44500582946` each covered all 255 Linux integration files and 5,293 selected nodes. Every selected node was checked against the exact-source collected inventory and original shard ownership; every parent phase was counted once, with subtest phases excluded. The model weights each file as serial phase seconds plus parallel phase seconds divided by four. It is not a wall-clock estimate and does not include setup, collection, scheduler tail or runner contention.
+
+The selected five whole-file moves are:
+
+| File | From | To |
+|---|---:|---:|
+| `test_prefix_update_attribution.py` | 4 | 1 |
+| `test_analytics_closure_collectors.py` | 4 | 3 |
+| `test_text_analysis_retention_lifecycle.py` | 2 | 1 |
+| `test_final_visibility_runtime.py` | 2 | 4 |
+| `test_nlp_processing_publication.py` | 1 | 2 |
+
+| Run | Original modeled shard seconds | Rebalanced modeled shard seconds |
+|---|---|---|
+| 44490347349 | 246 / 403 / 271 / 297 | 348 / 348 / 306 / 214 |
+| 44500582946 | 229 / 255 / 274 / 488 | 324 / 229 / 347 / 346 |
+
+Worst modeled load across both samples decreases from 487.940 to 348.481 seconds (28.6%). All 5,293 selected nodes retain exactly one Linux integration owner (1,377 / 1,209 / 1,448 / 1,259). Only integration file ownership and timing provenance change. The raw Windows partition, explicit profiles, marker selection, four workers, scheduler, required check names, and v9 policy remain unchanged. The manifest stores both source revisions, run attempts, all eight report SHA-256 digests, and the model details. This is a follow-up candidate, not an active main allocation or a hosted speed claim. Normal CI must demonstrate exact parity and successful execution on its own source before rollout; measure the wall-clock effect separately from overlapping runs.
