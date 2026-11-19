@@ -509,3 +509,137 @@ def test_overlap_rejects_non_equivalent_execution(change):
     elif change == "subtest": focused["reports"].append(dict(focused["reports"][1], subtest={"index": 1, "msg": "extra", "kwargs": {}}))
     with pytest.raises(windows.WindowsShardError):
         windows.prove_focused_overlap(full, [focused])
+
+
+
+def candidate_fixture():
+    full = {f"test_full_{n}.py": n for n in range(1, 11)}
+    platform = {f"test_platform_{n}.py": n for n in range(1, 5)}
+    full.update({p: 1 for p in platform})
+    full["test_analytics.py"] = 2
+    rows = [row(p + "::test_case") for p in full]
+    rows.append(row("test_platform_1.py::test_slow", "slow"))
+    retained = "test_platform_1.py::test_case"
+    plan = {"schema": 1, "full": full, "platform": platform, "retain_in_full": [retained]}
+    contracts = {"platform": [{"selector": p} for p in platform],
+                 "analytics": [{"selector": "test_analytics.py::test_case"}]}
+    return rows, plan, contracts
+
+
+def test_candidate_keeps_every_raw_default_node_and_intentional_overlap():
+    rows, plan, contracts = candidate_fixture()
+    groups = windows.candidate_groups(rows, plan, contracts)
+    assert set().union(*groups.values()) == windows.legacy_nodeids(rows)
+    assert groups["full-1"] & groups["platform-1"] == set(plan["retain_in_full"])
+    assert groups["full-2"] == {"test_full_2.py::test_case"}
+    assert groups["analytics"] == {"test_analytics.py::test_case"}
+    assert not groups["full-1"] & groups["platform-2"]
+
+
+@pytest.mark.parametrize("fault", ["missing-file", "new-focused-file", "overlap", "retained-stale", "duplicate", "empty-shard"])
+def test_candidate_refuses_invalid_scope(fault):
+    rows, plan, contracts = candidate_fixture()
+    if fault == "missing-file": plan["full"].pop("test_full_1.py")
+    elif fault == "new-focused-file": contracts["platform"].append({"selector": "test_full_2.py"})
+    elif fault == "overlap": contracts["analytics"].append({"selector": "test_platform_1.py"})
+    elif fault == "retained-stale": plan["retain_in_full"].append("test_missing.py::test_case")
+    elif fault == "duplicate": rows.append(rows[0])
+    elif fault == "empty-shard": plan["full"]["test_full_10.py"] = 1
+    with pytest.raises(windows.WindowsShardError):
+        windows.candidate_groups(rows, plan, contracts)
+
+
+def candidate_reports():
+    rows, plan, contracts = candidate_fixture()
+    groups = windows.candidate_groups(rows, plan, contracts)
+    def report(lane, group, selected):
+        job = ("windows-qualification" if group is None else "windows-full-shards" if group.startswith("full-")
+               else "windows-platform-contract" if group.startswith("platform-") else "analytics-windows-contract")
+        selected = sorted(selected)
+        return dict(schema="ci-test-report/v1", complete=True, exit_code=0, collect_only=group is None,
+            partial=False, platform="Windows", python="3.11.9", python_implementation="CPython", pytest="9.1.1",
+            profile="", selection_profile="", collection_errors=[], source_commit="a"*40,
+            workflow_run_id="1", run_attempt="1", job_id=job, lane=lane, wall_seconds=1.0,
+            collected=rows, selected=selected, deselected=sorted({r["nodeid"] for r in rows}-set(selected)),
+            selection={"keyword": "", "marker": windows.LEGACY_WINDOWS_EXPRESSION, "targets": ["tests"]},
+            execution={"workers": 4, "dist": "load"},
+            reports=[] if group is None else [dict(nodeid=n, when=phase, outcome="passed", duration=0.1,
+                wasxfail=None, skip_reason=None, detail="") for n in selected for phase in ("setup", "call", "teardown")])
+    reports = {f"candidate-{g}": report(f"candidate-{g}", g, nodes) for g,nodes in groups.items()}
+    reports["legacy-windows-reference"] = report("legacy-windows-reference", None, windows.legacy_nodeids(rows))
+    return reports, plan, contracts
+
+
+def test_candidate_evidence_requires_current_run_and_exact_execution():
+    from tools.ci_windows_candidate import validate_candidate
+    reports, plan, contracts = candidate_reports()
+    assert validate_candidate(reports, plan, contracts, source="a"*40, run=1, attempt=1) == {
+        "default_nodes": 15, "full_nodes": 11, "focused_nodes": 5, "retained_overlap": 1}
+
+
+@pytest.mark.parametrize("fault", ["wrong-attempt", "wrong-source", "wrong-job", "missing-report", "skip-omitted", "missing-node", "workers", "raw-marker"])
+def test_candidate_gate_refuses_unproven_deduplication(fault):
+    from tools.ci_windows_candidate import validate_candidate
+    from tools.ci_gate import GateError
+    reports, plan, contracts = candidate_reports()
+    r = reports["candidate-platform-2"]
+    if fault == "wrong-attempt": r["run_attempt"] = "2"
+    elif fault == "wrong-source": r["source_commit"] = "b"*40
+    elif fault == "wrong-job": r["job_id"] = "windows-full-shards"
+    elif fault == "missing-report": reports.pop("candidate-platform-2")
+    elif fault == "skip-omitted": r["reports"][1].update(outcome="skipped", skip_reason="Skipped: new reason")
+    elif fault == "missing-node": r["selected"] = []
+    elif fault == "workers": r["execution"]["workers"] = 2
+    elif fault == "raw-marker": r["collected"] = [dict(row, markers=["changed"]) for row in r["collected"]]
+    with pytest.raises(GateError):
+        validate_candidate(reports, plan, contracts, source="a"*40, run=1, attempt=1)
+
+
+
+def test_trial_workflow_preserves_main_producers_without_release_authority():
+    import yaml
+    from tools.render_ci_topology_trial import render, REFS
+    ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    visual = yaml.safe_load((ROOT / ".github/workflows/visual-capture.yml").read_text(encoding="utf-8"))
+    trial = render(ci, visual)
+    assert trial["on"] == {"push": {"branches": REFS}}
+    assert trial["name"] != ci["name"] and trial["name"] != visual["name"]
+    jobs = trial["jobs"]
+    assert {"required-ci-gate", "build-and-test", "windows-tests"}.isdisjoint(jobs)
+    assert trial["permissions"] == {"contents": "read"}
+    assert "permissions" not in jobs["fixed-sqlcipher-wheel"]
+    assert not any("actions/attest@" in s.get("uses", "") for s in jobs["fixed-sqlcipher-wheel"]["steps"])
+    assert jobs["windows-full-shards"]["strategy"]["matrix"]["shard"] == list(range(1, 11))
+    assert jobs["windows-platform-contract"]["strategy"]["matrix"]["shard"] == list(range(1, 5))
+    for name in ("windows-qualification", "candidate-preflight", "windows-full-shards", "windows-platform-contract", "analytics-windows-contract"):
+        assert name in jobs["candidate-coverage"]["needs"]
+    for step in ci["jobs"]["windows-platform-contract"]["steps"]:
+        if step.get("if") == "matrix.shard == 1" or step.get("if") == "always() && matrix.shard == 1":
+            copied = next(s for s in jobs["windows-qualification"]["steps"] if s["name"] == step["name"])
+            assert copied.get("run") == step.get("run")
+            assert copied.get("if") == ("always()" if step["if"].startswith("always()") else None)
+    for key in visual["jobs"]:
+        assert jobs[key] == visual["jobs"][key]
+    assert yaml.safe_load(yaml.safe_dump(trial, sort_keys=False)) == trial
+
+
+def test_candidate_plugin_selects_whole_partition_from_raw_collection(tmp_path):
+    rows, plan, contracts = candidate_fixture()
+    (tmp_path / "ci").mkdir()
+    write_json(tmp_path / "ci/windows-topology-candidate.json", plan)
+    write_json(tmp_path / "ci/backend-test-shards.json", {"windows_contracts": contracts})
+    (tmp_path / "pytest.ini").write_text("[pytest]\nmarkers =\n slow: legacy exclusion\n stateful_tier_a: legacy exclusion\n stateful_tier_b: legacy exclusion\n stateful_agent_tier_a: legacy exclusion\n", encoding="utf-8")
+    for file in plan["full"]:
+        source = "def test_case(): pass\n"
+        if file == "test_platform_1.py":
+            source += "import pytest\n@pytest.mark.slow\ndef test_slow(): assert False\n"
+        (tmp_path / file).write_text(source, encoding="utf-8")
+    env = dict(os.environ, PYTHONPATH=str(ROOT), PYTEST_ADDOPTS="", CI_TEST_LANE="candidate-platform-2",
+               CI_REPORT_DIR=str(tmp_path / "out"))
+    command = [sys.executable, "-m", "pytest", "-p", "tools.ci_pytest", "-m", windows.LEGACY_WINDOWS_EXPRESSION,
+               "--ci-windows-candidate", "platform-2"]
+    result = subprocess.run(command, cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads((tmp_path / "out/report.json").read_text(encoding="utf-8"))
+    assert report["selected"] == ["test_platform_2.py::test_case"]
+    assert report["lane"] == "candidate-platform-2" and report["complete"] is True

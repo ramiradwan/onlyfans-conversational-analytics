@@ -519,3 +519,52 @@ def replay_topologies(weights, *, observations, counts=range(3, 13), workers=4, 
             "stress": {factor: {k: row[k] for k in ("run_seconds", "runner_seconds", "peak_concurrency", "queue_seconds")}
                        for factor, row in stress.items()}})
     return outputs
+
+
+
+def candidate_groups(rows, plan, contracts, *, complete=True):
+    """Non-gating trial partition. Keep all raw nodes except independently
+    declared focused nodes; the trial gate demands actual execution of each
+    omitted node. Preserve historical non-pass outcomes in the full path.
+    """
+    from tools.ci_selection import matches
+    rows = list(rows)
+    if len(rows) != len({r["nodeid"] for r in rows}):
+        raise WindowsShardError("Duplicate candidate inventory")
+    if plan.get("schema") != 1 or set(contracts) != {"platform", "analytics"}:
+        raise WindowsShardError("Invalid candidate inputs")
+    groups = {f"full-{n}": set() for n in range(1, 11)}
+    groups.update({f"platform-{n}": set() for n in range(1, 5)})
+    groups["analytics"] = set()
+    for key, count in (("full", 10), ("platform", 4)):
+        owners = plan[key]
+        if not isinstance(owners, dict) or any(type(n) is not int or not 1 <= n <= count for n in owners.values()) or set(owners.values()) != set(range(1, count+1)):
+            raise WindowsShardError("Invalid candidate file assignments")
+    retain = set(plan["retain_in_full"])
+    raw = legacy_nodeids(rows)
+    full_files = {node_path(n) for n in raw}
+    if full_files - plan["full"].keys() or complete and full_files != set(plan["full"]):
+        raise WindowsShardError("Candidate raw file inventory differs")
+    platform_files = set()
+    focused = set()
+    for node in raw:
+        declared = [key for key, entries in contracts.items() if any(matches(node, e["selector"]) for e in entries)]
+        if len(declared) > 1:
+            raise WindowsShardError("Candidate focused declarations overlap")
+        path = node_path(node)
+        if declared == ["platform"]:
+            platform_files.add(path)
+            if path not in plan["platform"]:
+                raise WindowsShardError("Candidate platform file unassigned")
+            groups[f"platform-{plan['platform'][path]}"].add(node)
+            focused.add(node)
+        elif declared == ["analytics"]:
+            groups["analytics"].add(node)
+            focused.add(node)
+        if not declared or node in retain:
+            groups[f"full-{plan['full'][path]}"].add(node)
+    if complete and (platform_files != set(plan["platform"]) or not retain <= focused or any(not group for group in groups.values())):
+        raise WindowsShardError("Candidate focused inventory or retained skip set differs")
+    if set().union(*groups.values()) != raw:
+        raise WindowsShardError("Candidate union differs from raw legacy inventory")
+    return groups
