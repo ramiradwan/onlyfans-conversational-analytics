@@ -15,6 +15,7 @@ from app.persistence.auth import (
 from app.persistence.catchup_events import capture_authority_change
 from app.persistence.lost_enrollment_evidence import LostEnrollmentEvidence
 from app.security.capability_license_redemption_journal import provider_origin
+from app.security.grant_types import ACCOUNT_AUTHORITY_GRANT_TYPES
 from app.security.hosted_grants import CLAIM_PROFILE_V2, HostedGrantUnavailable, grant_offline_grace_seconds
 from app.security.initial_handoff import timestamp
 from app.security.installation_authority_recovery import (
@@ -23,7 +24,6 @@ from app.security.installation_authority_recovery import (
 )
 from app.security.installation_continuation import canonical_request
 
-AUTHORITY_TYPES = ("installation_grant", "membership_snapshot", "creator_account_binding")
 PREPARE_LIMIT = 2
 DELIVERY_LIMIT = 3
 BACKOFF = (15, 30, 60)
@@ -53,7 +53,7 @@ def previous_authority(store, connection):
     if key is None:
         raise HostedGrantUnavailable("Installation authority recovery is unavailable")
     rows = connection.execute("SELECT * FROM verified_grant_references WHERE grant_type IN (?,?,?)",
-        AUTHORITY_TYPES).fetchall()
+        ACCOUNT_AUTHORITY_GRANT_TYPES).fetchall()
     active = [_verified_grant_reference(row) for row in rows if row["revoked_at"] is None]
     if any((grant.installation_key_id, grant.installation_key_jkt) != (key.installation_key_id, key.installation_key_jkt)
             or store._grant_is_withdrawn(connection, grant) for grant in active):
