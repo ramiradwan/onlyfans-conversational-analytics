@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, posix, win32 } from 'node:path';
-import { generateInventory } from './inventory.mjs';
+import { DYNAMIC_GROUPS_V2, generateInventory, inventoryBytes, validateDynamicPartition } from './inventory.mjs';
+import { DYNAMIC_VIEWS, dynamicCases } from '../dynamic-matrix.mjs';
 import { assertSafeCaptureOutput, CaptureRecorder, parseCaptureOptions, sourceIdentity } from './recording.mjs';
 
 const source = { source_commit: 'a'.repeat(40), workflow_run_id: 'local', run_attempt: 1 };
@@ -118,4 +119,37 @@ test('observer diagnostics retain closed failure metadata without changing case 
   assert.throws(() => invalid.begin(definition.id, definition.configuration)({ outcome: 'passed', observations: definition.observations,
     files: definition.files, observerDiagnostics: [{ code: 'observer_read_failed', phase: 'observer_read', region: null }] }), /invalid_observer_diagnostics/);
   assert.equal(invalid.records.get(definition.id).outcome, 'incomplete');
+});
+
+
+test('candidate v2 preserves all existing case identities, observations and files', () => {
+  const candidate = generateInventory({ layout: 'visual-v2' });
+  const { cases, shared_files, ...metadata } = candidate;
+  const { cases: previous, shared_files: previousShared, ...previousMetadata } = inventory;
+  assert.deepEqual(metadata, previousMetadata);
+  assert.deepEqual(cases.map(({ group, ...value }) => value), previous.map(({ group, ...value }) => value));
+  assert.deepEqual(cases.filter(value => value.group === 'remaining'), previous.filter(value => value.group === 'remaining'));
+  assert.deepEqual(shared_files.remaining, previousShared.remaining);
+  for (const [group, views] of Object.entries(DYNAMIC_GROUPS_V2)) {
+    assert.deepEqual(shared_files[group], previousShared.dynamic);
+    const actual = cases.filter(value => value.group === group);
+    assert.deepEqual(actual.map(value => value.configuration), dynamicCases(DYNAMIC_VIEWS.filter(view => views.includes(view))));
+    assert(actual.every(value => value.kind === 'dynamic'));
+  }
+  assert.equal(cases.filter(value => value.group === 'dynamic-a').length, 72);
+  assert.equal(cases.filter(value => value.group === 'dynamic-b').length, 120);
+  assert.equal(inventoryBytes(), inventoryBytes({ layout: 'visual-v1' }));
+  assert.throws(() => generateInventory({ layout: 'unknown' }), /invalid_inventory_layout/);
+});
+
+test('candidate dynamic partition rejects missing, duplicate and unknown views', () => {
+  const a = [...DYNAMIC_GROUPS_V2['dynamic-a']], b = [...DYNAMIC_GROUPS_V2['dynamic-b']];
+  for (const groups of [
+    { 'dynamic-a': a.slice(1), 'dynamic-b': b },
+    { 'dynamic-a': a, 'dynamic-b': [...b, a[0]] },
+    { 'dynamic-a': ['unknown', ...a.slice(1)], 'dynamic-b': b },
+    { 'dynamic-a': [], 'dynamic-b': [...a, ...b] },
+    { 'dynamic-a': a, 'dynamic-b': b, extra: [] },
+  ]) assert.throws(() => validateDynamicPartition(groups), /invalid_dynamic_partition/);
+  assert.throws(() => validateDynamicPartition(DYNAMIC_GROUPS_V2, [...DYNAMIC_VIEWS, 'new-view']), /invalid_dynamic_partition/);
 });
