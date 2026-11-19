@@ -313,3 +313,147 @@ def model_candidate_partitions(report: dict[str, Any], *, workers: int = 4,
                                stress_1_5_work_seconds=peak * 1.5,
                                stress_1_7_work_seconds=peak * 1.7))
     return candidates
+
+
+
+def allocate_phase_work(weights: dict[str, tuple[float, float]], count: int, *, workers: int = 4):
+    """Assign whole files by observed serial and parallel work, never test count."""
+    phase_model(workers, 1.0)
+    if type(count) is not int or not 1 <= count <= len(weights):
+        raise WindowsShardError("Invalid number of candidate shards")
+    if any(not isinstance(path, str) or not path or len(pair) != 2
+           or any(type(value) not in (int, float) or not math.isfinite(value) or value < 0 for value in pair)
+           for path, pair in weights.items()):
+        raise WindowsShardError("Invalid phase work")
+    loads = {n: [0.0, 0.0] for n in range(1, count + 1)}
+    owners = {}
+    cost = lambda pair: pair[0] + pair[1] / workers
+    for path in sorted(weights, key=lambda path: (-cost(weights[path]), path)):
+        assigned = set(owners.values())
+        owner = min(loads, key=lambda n: (cost(loads[n]), n in assigned, n))
+        owners[path] = owner
+        for phase in range(2):
+            loads[owner][phase] += weights[path][phase]
+    return dict(sorted(owners.items())), loads
+
+
+def replay_schedule(jobs, *, capacity: int, group_limits=None):
+    """Replay a deterministic non-preemptive DAG at an explicit runner ceiling.
+
+    Each job declares a release time, duration, prerequisites and optional
+    matrix group. Groups are scoped to a workflow invocation by the caller.
+    Queue time starts when all dependencies and the release time are satisfied.
+    """
+    if type(capacity) is not int or capacity < 1:
+        raise WindowsShardError("Invalid runner capacity")
+    group_limits = group_limits or {}
+    if any(type(limit) is not int or limit < 1 for limit in group_limits.values()):
+        raise WindowsShardError("Invalid matrix concurrency")
+    if not jobs or any(not isinstance(name, str) or not name for name in jobs):
+        raise WindowsShardError("Invalid schedule job identities")
+    for name, job in jobs.items():
+        if (any(type(job[k]) not in (int, float) or not math.isfinite(job[k]) or job[k] < 0
+                for k in ("release", "duration")) or set(job["needs"]) - jobs.keys()
+                or name in job["needs"] or job.get("group") is not None and job["group"] not in group_limits):
+            raise WindowsShardError("Invalid schedule job declaration")
+    pending, active, result = set(jobs), {}, {}
+    now = 0.0
+    peak = 0
+    while pending or active:
+        for name in sorted(tuple(active)):
+            if active[name] <= now:
+                result[name]["end"] = active.pop(name)
+        finished = {name for name, row in result.items() if "end" in row}
+        ready = sorted((name for name in pending if set(jobs[name]["needs"]) <= finished
+                        and jobs[name]["release"] <= now),
+                       key=lambda name: (max([jobs[name]["release"], *(result[n]["end"] for n in jobs[name]["needs"])]), name))
+        for name in ready:
+            if len(active) >= capacity:
+                break
+            group = jobs[name].get("group")
+            if group is not None and sum(jobs[n].get("group") == group for n in active) >= group_limits[group]:
+                continue
+            ready_at = max([jobs[name]["release"], *(result[n]["end"] for n in jobs[name]["needs"])])
+            result[name] = {"start": now, "queue": now - ready_at}
+            active[name] = now + jobs[name]["duration"]
+            pending.remove(name)
+            peak = max(peak, len(active))
+        if not pending and not active:
+            break
+        future = list(active.values()) + [jobs[name]["release"] for name in pending if jobs[name]["release"] > now]
+        if not future:
+            raise WindowsShardError("Schedule dependencies are cyclic or blocked")
+        now = min(future)
+    return {"jobs": result, "elapsed_seconds": max(row["end"] for row in result.values()),
+            "runner_seconds": sum(job["duration"] for job in jobs.values()), "peak_concurrency": peak,
+            "queue_seconds": sum(row["queue"] for row in result.values())}
+
+
+def replay_topologies(weights, *, observations, counts=range(3, 13), workers=4, capacity=40,
+                      other_jobs, matrix_limit=None, repeats=300, seed=20261119, second_run_delay=60):
+    """Resample complete observed host profiles, not individual test durations.
+
+    Observations contain correlated serial/parallel multipliers and observed
+    setup/collection overhead. The estimates are conditional on this sample,
+    not claims about population p95. Replay also reports deterministic stress
+    scenarios and two adjacent main pushes sharing one runner budget.
+    """
+    import random
+    if (not observations or type(repeats) is not int or repeats < 1 or
+            any(set(row) != {"serial", "parallel", "overhead"} or
+                any(type(v) not in (int, float) or not math.isfinite(v) or v < 0 for v in row.values())
+                for row in observations)):
+        raise WindowsShardError("Invalid observed host profiles")
+    if type(second_run_delay) not in (int, float) or not math.isfinite(second_run_delay) or second_run_delay < 0:
+        raise WindowsShardError("Invalid second run delay")
+    if not other_jobs or "wheel" not in other_jobs or "gate" in other_jobs or any(name.startswith("full-") for name in other_jobs):
+        raise WindowsShardError("Missing supporting job declarations")
+    counts = list(counts)
+    if not counts or len(set(counts)) != len(counts) or any(type(n) is not int or not 3 <= n <= 12 for n in counts):
+        raise WindowsShardError("Invalid candidate topology counts")
+    rng = random.Random(seed)
+    # Use common random numbers across candidate counts for fair comparisons.
+    draws = [[rng.choice(observations) for _ in range(max(counts) * 2)] for _ in range(repeats)]
+    outputs = []
+    for count in sorted(counts):
+        owners, loads = allocate_phase_work(weights, count, workers=workers)
+        limit = min(count, matrix_limit) if matrix_limit is not None else count
+        def schedule(profiles, *, stress=1.0, two=False):
+            jobs, groups = {}, {}
+            for run in range(2 if two else 1):
+                prefix = f"{run}:"
+                release = run * second_run_delay
+                groups[prefix + "full"] = limit
+                for name, original in other_jobs.items():
+                    jobs[prefix + name] = {"release": release + original.get("release", 0),
+                        "duration": original["duration"], "needs": tuple(prefix + n for n in original["needs"])}
+                full = []
+                for shard, (serial, parallel) in loads.items():
+                    host = profiles[run * max(counts) + shard - 1]
+                    name = prefix + f"full-{shard}"
+                    full.append(name)
+                    jobs[name] = {"release": release, "duration": host["overhead"] + stress * (
+                        serial * host["serial"] + parallel / workers * host["parallel"]),
+                        "needs": (prefix + "wheel",), "group": prefix + "full"}
+                jobs[prefix + "gate"] = {"release": release, "duration": 15,
+                    "needs": (*full, *(prefix + name for name in other_jobs))}
+            result = replay_schedule(jobs, capacity=capacity, group_limits=groups)
+            result["run_seconds"] = [result["jobs"][f"{run}:gate"]["end"] - run * second_run_delay
+                                     for run in range(2 if two else 1)]
+            return result
+        samples = [schedule(draw) for draw in draws]
+        doubled = [schedule(draw, two=True) for draw in draws]
+        percentile = lambda values, p: sorted(values)[max(0, math.ceil(len(values) * p) - 1)]
+        typical = {k: statistics.median(row[k] for row in observations) for k in ("serial", "parallel", "overhead")}
+        stress_profiles = [typical] * (max(counts) * 2)
+        stress = {str(factor): schedule(stress_profiles, stress=factor, two=True) for factor in (1.5, 1.7)}
+        outputs.append({"shards": count, "max_parallel": limit, "files": owners,
+            "observed_profiles": len(observations), "bootstrap_draws": repeats,
+            "median_seconds": percentile([r["run_seconds"][0] for r in samples], .5),
+            "conditional_p95_seconds": percentile([r["run_seconds"][0] for r in samples], .95),
+            "two_run_conditional_p95_seconds": percentile([max(r["run_seconds"]) for r in doubled], .95),
+            "median_runner_seconds": percentile([r["runner_seconds"] for r in samples], .5),
+            "two_run_p95_queue_seconds": percentile([r["queue_seconds"] for r in doubled], .95),
+            "stress": {factor: {k: row[k] for k in ("run_seconds", "runner_seconds", "peak_concurrency", "queue_seconds")}
+                       for factor, row in stress.items()}})
+    return outputs

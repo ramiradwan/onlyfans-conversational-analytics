@@ -430,3 +430,39 @@ def test_candidate_model_handles_zero_weights_without_empty_shards():
     candidate = windows.model_candidate_partitions(report, counts=[3])[0]
     assert set(candidate["files"].values()) == {1, 2, 3}
     assert candidate["peak_work_seconds"] == 0.0
+
+
+
+def test_queue_replay_respects_matrix_caps_and_runner_capacity():
+    jobs = {"wheel": {"duration": 3, "release": 0, "needs": ()},
+            "a": {"duration": 4, "release": 0, "needs": ("wheel",), "group": "matrix"},
+            "b": {"duration": 4, "release": 0, "needs": ("wheel",), "group": "matrix"},
+            "other": {"duration": 5, "release": 0, "needs": ()},
+            "gate": {"duration": 1, "release": 0, "needs": ("a", "b", "other")}}
+    result = windows.replay_schedule(jobs, capacity=2, group_limits={"matrix": 1})
+    assert result["elapsed_seconds"] == 12
+    assert result["jobs"]["b"]["queue"] == 4
+    assert result["peak_concurrency"] == 2
+    assert result["runner_seconds"] == 17
+    jobs["wheel"]["needs"] = ("gate",)
+    with pytest.raises(windows.WindowsShardError, match="cyclic"):
+        windows.replay_schedule(jobs, capacity=2, group_limits={"matrix": 1})
+
+
+def test_topology_replay_is_reproducible_and_includes_stress_and_overlapping_runs():
+    weights = {f"f{n}.py": (4.0 if n == 0 else 0.0, 16.0) for n in range(6)}
+    profiles = [{"serial": 1.0, "parallel": 1.0, "overhead": 2.0},
+                {"serial": 1.4, "parallel": 1.5, "overhead": 4.0}]
+    other = {"wheel": {"duration": 3, "needs": ()}, "visual": {"duration": 6, "needs": ()}}
+    args = dict(observations=profiles, counts=[3, 4], capacity=3, other_jobs=other,
+                repeats=20, second_run_delay=0, matrix_limit=2)
+    result = windows.replay_topologies(weights, **args)
+    assert result == windows.replay_topologies(weights, **args)
+    assert [r["shards"] for r in result] == [3, 4]
+    for row in result:
+        assert set(row["files"]) == set(weights)
+        assert row["conditional_p95_seconds"] >= row["median_seconds"]
+        assert row["two_run_conditional_p95_seconds"] >= row["conditional_p95_seconds"]
+        assert row["stress"]["1.7"]["peak_concurrency"] <= 3
+        assert max(row["stress"]["1.7"]["run_seconds"]) >= max(row["stress"]["1.5"]["run_seconds"])
+        assert row["max_parallel"] == 2
