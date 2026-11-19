@@ -136,7 +136,7 @@ it('waits for a new authenticated snapshot before offering the explicit extensio
   expect(owners.client.act).not.toHaveBeenCalled();
   button.click();
   await Promise.resolve();
-  expect(owners.client.act).toHaveBeenCalledExactlyOnceWith('browser.pair', undefined);
+  expect(owners.client.act).toHaveBeenCalledExactlyOnceWith('browser.pair', {});
 });
 it('does not navigate from the old setup snapshot while authenticated status is being refreshed', () => {
   publish();
