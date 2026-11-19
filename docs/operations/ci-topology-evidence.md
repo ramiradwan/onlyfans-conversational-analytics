@@ -67,6 +67,12 @@ The replacement experimental manifest uses the maximum observed per-file serial 
 
 Select 8 / 5 / 2 only as the next candidate for qualification: it keeps 15 test jobs, rebalances the platform work, and removes the unsplit analytics bottleneck. No replay configuration meets the 900-second overlapping target. Do not change the active v8 topology on the strength of these failed runs. Further hosted trials require an explicit budget decision; no third experiment is authorized by this document.
 
+### Frontend asset reuse (opt-in, not active CI)
+
+A local Windows assets-only build and the exact trial Linux frontend artifact matched all 50 files (1,989,190 bytes) after pinning the four HTML entry templates to LF at checkout. This is one cross-platform comparison, not a hosted repeatability or performance claim. The local warm npm install took approximately 54 seconds and the assets build approximately 8 seconds.
+
+The optional topology renderer now adds a separate assets producer and uses same-run source/attempt-bound SHA-256 receipts. Windows consumers retain their original local installation/build fallback if publication, download or validation fails. Normal web validation, extension installation/build, release packaging and active CI remain unchanged. A future hosted comparison must measure producer wait, download/verification overhead, fallback frequency and total runner cost before enabling this optimization.
+
 ## Successful functional qualification and production gate preparation
 
 Trial 3 (`44483743034`, `613e8e9`): 891 seconds queue-inclusive; 228.2 runner minutes; 18,015 default Windows nodes and exact per-shard selection. One coordinator test failed because a reconnect frame could arrive before the expected fallback probe. The test now holds the first frame until the probe executes; 92 coordinator tests passed. No production timeout changed.

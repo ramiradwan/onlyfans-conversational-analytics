@@ -282,3 +282,42 @@ def test_frontend_asset_comparison_reports_exact_differences(tmp_path):
     result = compare(root, other)
     assert result["equal"] is False
     assert result["changed"] == ["assets/style.css"] and result["only_second"] == ["extra.js"]
+
+
+def test_frontend_asset_producer_attempt_is_authoritative(monkeypatch):
+    from tools import engineering_attestation
+    from tools.ci_frontend_assets import successful_producer_attempt, AssetError
+    coordinate = dict(source="a"*40, run=12, current_attempt=3)
+    def jobs(client, **kwargs):
+        assert kwargs == dict(run_id=12, run_attempt=3, source_commit="a"*40)
+        return {"web-build-assets": {"status": "completed", "conclusion": "success", "run_attempt": 1}}
+    monkeypatch.setattr(engineering_attestation, "latest_ci_jobs", jobs)
+    assert successful_producer_attempt(None, **coordinate) == 1
+    monkeypatch.setattr(engineering_attestation, "latest_ci_jobs", lambda *a, **k: {"web-build-assets": {"status": "completed", "conclusion": "failure", "run_attempt": 3}})
+    with pytest.raises(AssetError):
+        successful_producer_attempt(None, **coordinate)
+
+
+def test_trial_frontend_reuse_preserves_checks_and_cold_fallback():
+    from tools.render_ci_topology_trial import render
+    ci = _workflow_document()
+    visual = yaml.safe_load((ROOT / ".github/workflows/visual-capture.yml").read_text(encoding="utf-8"))
+    baseline = render(ci, visual)
+    candidate = render(ci, visual, reuse_frontend=True)
+    assert "web-build-assets" not in baseline["jobs"]
+    assert "web-build-assets" not in ci["jobs"]
+    assert candidate["jobs"]["web-build-and-test"] == baseline["jobs"]["web-build-and-test"]
+    assert "web-build-assets" in candidate["jobs"]["candidate-coverage"]["needs"]
+    for key in ("windows-platform-contract", "windows-full-shards", "analytics-windows-contract", "analytics-scale-qualification", "windows-qualification"):
+        job = candidate["jobs"][key]
+        assert "web-build-assets" in job["needs"]
+        assert "always()" in job["if"] and "!cancelled()" in job["if"]
+        assert "needs.fixed-sqlcipher-wheel.result == 'success'" in job["if"]
+        steps = {s["name"]: s for s in job["steps"]}
+        assert steps["Retrieve exact-run frontend assets"]["continue-on-error"] is True
+        assert "--resolve-producer" in steps["Verify exact producer and frontend bytes"]["run"]
+        for name in ("Install frontend dependencies", "Build frontend"):
+            assert steps[name]["if"] == "steps.frontend-reuse.outputs.reused != 'true'"
+        for name in ("Install extension dependencies", "Build extension"):
+            if name in steps:
+                assert steps[name] == next(s for s in baseline["jobs"][key]["steps"] if s["name"] == name)

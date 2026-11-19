@@ -134,6 +134,16 @@ def compare(first, second):
             "changed": sorted(name for name in a.keys() & b.keys() if a[name] != b[name])}
 
 
+def successful_producer_attempt(client, *, source, run, current_attempt):
+    from tools.engineering_attestation import latest_ci_jobs
+    coordinate(source, run, current_attempt)
+    latest = latest_ci_jobs(client, run_id=run, run_attempt=current_attempt, source_commit=source)
+    job = latest.get(PRODUCER)
+    require(isinstance(job, dict) and job.get("status") == "completed" and job.get("conclusion") == "success",
+            "current asset producer is not successful")
+    return job["run_attempt"]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("seal", "restore", "compare"))
@@ -142,14 +152,27 @@ def main():
     parser.add_argument("--source", default=os.environ.get("PRODUCT_SHA"))
     parser.add_argument("--run-id", type=int, default=os.environ.get("GITHUB_RUN_ID"))
     parser.add_argument("--producer-attempt", type=int)
+    parser.add_argument("--resolve-producer", action="store_true")
     args = parser.parse_args()
     try:
         if args.action == "compare":
             result = compare(args.first, args.second)
             print(json.dumps(result, sort_keys=True))
             return 0 if result["equal"] else 1
+        attempt = args.producer_attempt
+        if args.resolve_producer:
+            require(args.action == "restore" and attempt is None, "producer resolution is only for restore")
+            root = Path(__file__).resolve().parents[1]
+            if str(root) not in sys.path:
+                sys.path.insert(0, str(root))
+            from tools.engineering_attestation import GitHubApi, ContractError
+            try:
+                attempt = successful_producer_attempt(GitHubApi(os.environ["GH_TOKEN"]), source=args.source,
+                    run=args.run_id, current_attempt=int(os.environ["GITHUB_RUN_ATTEMPT"]))
+            except ContractError as error:
+                raise AssetError("asset producer metadata unavailable") from error
         action = seal if args.action == "seal" else restore
-        result = action(args.first, args.second, source=args.source, run=args.run_id, attempt=args.producer_attempt)
+        result = action(args.first, args.second, source=args.source, run=args.run_id, attempt=attempt)
         print(f"verified frontend assets: {len(result['files'])} files")
         return 0
     except (OSError, ValueError, TypeError, KeyError) as error:
