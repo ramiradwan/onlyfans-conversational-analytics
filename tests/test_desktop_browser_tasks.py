@@ -332,6 +332,10 @@ async def initial_ceremony_case(setup, *, active_wait=False):
     await coordinator.drain()
     operation, _ = coordinator._accept(native, command(coordinator.read(native), "account.connect"))
     scope = json.loads(operation["owner_scope_json"])
+    # Finish the earlier browser-access key preparation before installing the
+    # synthetic enrollment key. Otherwise its delayed worker can remember the
+    # old browser observation against the new key after a virtual-clock jump.
+    await launched_key(coordinator, tasks, request["operation_id"])
     fixture = _HandoffFixture()
     original_prepare = fixture.prepare
     def prepare(request, **kwargs):
@@ -484,7 +488,10 @@ async def test_restart_after_initial_sign_in_expiry_offers_browser_retry(setup, 
             retry = command(coordinator.read(native), "browser.access")
             await coordinator.command(native, retry)
             await coordinator.drain()
-        task = coordinator.owner.browser_tasks.current_native(native)[0]
+        assert coordinator.receipt(native, retry["operation_id"])["state"] == "waiting"
+        tasks = coordinator.owner.browser_tasks.current_native(native)
+        assert len(tasks) == 1 and tasks[0]["operation_id"] == retry["operation_id"]
+        task = tasks[0]
         code = coordinator.admissions.reissue_task_entry(native.identifier, generation=native.generation, task_id=task["task_id"])
         browser = coordinator.admissions.consume(code, role="browser_task")
         coordinator.owner.browser_tasks.observe(browser, observation(browser))
