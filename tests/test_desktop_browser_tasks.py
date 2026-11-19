@@ -973,6 +973,10 @@ async def test_initial_replacement_recovers_only_original_enrollment(setup, mode
     assert len([call for call in case.client.calls if call[0]=="prepare"]) == 1
     assert len(case.store.consumed_claim_submissions()) == 1
     assert case.store.provisioning_candidate(case.scope["association_request_id"]).state.value == "pending"
+    with case.store.database.read() as connection:
+        retained,receipt,_,claim=case.initial.lost_enrollment.exact_receipt(connection,operation_id=case.original_id)
+        assert receipt==case.receipt and claim["state"]=="consumed"
+        assert retained["bootstrap_refusal"] is None
     assert case.owner.observe(case.operation) is None
     await case.owner.execute(case.operation, reconcile=True)
     assert len(case.bootstrap_calls) == 1 and len(case.replacement.calls) == 1
@@ -1002,6 +1006,12 @@ async def test_initial_replacement_does_not_invent_authority(setup, fault):
         assert bool(journal["receipt_json"]) == (fault in {"missing-scope","bootstrap-refused"})
         assert bool(journal["blocked"]) == (fault == "bootstrap-refused")
     assert len(case.bootstrap_calls) == (1 if fault == "bootstrap-refused" else 0)
+    with case.store.database.read() as connection:
+        retained=connection.execute("SELECT * FROM lost_enrollment_evidence").fetchone()
+        if fault=="bootstrap-refused":
+            assert retained["bootstrap_refusal"]=="bootstrap_authority_withdrawn"
+        else:
+            assert retained is None
     case.clock[0] += timedelta(minutes=1)
     if fault in {"missing-scope","bootstrap-refused","wrong-completion"}:
         assert not case.owner.automatic_recovery(case.operation)
@@ -1052,3 +1062,26 @@ async def test_original_bootstrap_adoption_is_atomic_and_retries_retained_receip
     assert result.state == "waiting" and original_journal(case)["completed"] == 1
     assert len(case.receipt_calls) == 1 and case.bootstrap_calls == [case.original_id]*2
     assert len(case.replacement.calls) == 1
+
+@pytest.mark.asyncio
+async def test_original_lost_bootstrap_receipt_survives_source_cleanup(setup):
+    from app.persistence.lost_enrollment_evidence import BOOTSTRAP_WINDOW
+    from app.persistence.source_preparations import SourcePreparations
+    from app.security.initial_handoff import timestamp
+    case=await original_initial_case(setup)
+    case.control.bootstrap_transient=True
+    assert (await case.owner.execute(case.operation,reconcile=False)).state=="outcome_unknown"
+    with case.store.database.read() as connection:
+        assert SourcePreparations(case.store).get(case.original_id,connection=connection) is not None
+        assert case.initial.lost_enrollment.exact_receipt(connection)[1]==case.receipt
+    case.clock[0]=timestamp(case.receipt["consumed_at"])+BOOTSTRAP_WINDOW
+    with case.store.database.transaction() as connection:
+        SourcePreparations.cleanup(connection,case.clock[0])
+        assert SourcePreparations(case.store).get(case.original_id,connection=connection) is None
+        candidate=case.initial.lost_enrollment.eligible(connection)
+        assert candidate.claim_id==case.receipt["claim_id"] and candidate.operation_id==case.original_id
+        assert candidate.scope["evidence"]=={"kind":"lost-enrollment","claim_id":case.receipt["claim_id"],
+            "creator_scope":{"kind":"none"}}
+        assert connection.execute("SELECT count(*) FROM verified_grant_references").fetchone()[0]==0
+    assert case.bootstrap_calls==[case.original_id]
+    assert not case.store.consumed_claim_submissions()

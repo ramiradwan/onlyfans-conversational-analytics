@@ -52,7 +52,7 @@ SECURITY_TABLES = (
     'desktop_browser_ceremony_replacements','desktop_browser_ceremony_successors',
     'desktop_pairing_operations','desktop_activation_sources','desktop_admission_entries',
     'desktop_activation_reconciliations','desktop_activation_review_replacements',
-    'installation_authority_recoveries',
+    'installation_authority_recoveries','lost_enrollment_evidence',
     'protected_recovery_ceremonies','protected_recovery_authentication_children',
     'protected_recovery_desktop_admissions','protected_recovery_browser_dispatches',
     'desktop_admission_sessions','desktop_authentication_projections','desktop_browser_observations','desktop_browser_progress',

@@ -73,6 +73,8 @@ class InitialInstallationEnrollment:
         self._original_effects = OwnerEffects()
         from app.persistence.initial_replacement_recovery import InitialReplacementRecovery
         self.original_recovery = InitialReplacementRecovery(store, hosted_origin)
+        from app.persistence.lost_enrollment_evidence import LostEnrollmentEvidence
+        self.lost_enrollment = LostEnrollmentEvidence(store, hosted_origin)
         self._stopped = False
 
     def accepted_work(self):
@@ -451,21 +453,34 @@ class InitialInstallationEnrollment:
             return None
         with self.store.database.read() as connection:
             recovery._check_claims(connection, recovery.guard(connection, operation, context, authorize=authorize), receipt)
-        row = {"journey_id": context["evidence"]["journey_id"], "operation_id": original,
-            "installation_id": context["evidence"]["installation_id"], "scope_json": json.dumps(context["scope"])}
-        guard()
-        self._record_claim(row, receipt, key=key)
+        def authorize_receipt(*, connection):
+            recovery.guard(connection, operation, context, authorize=authorize)
+        with self.store.database.transaction() as connection:
+            self.lost_enrollment.retain(connection, receipt, scope=context["scope"],
+                operation_id=original, authorize=authorize_receipt)
+        from app.persistence.lost_enrollment_evidence import BOOTSTRAP_WINDOW
+        with self.store.database.read() as connection:
+            retained,_,_,_=self.lost_enrollment.exact_receipt(connection,operation_id=original)
+        if retained["bootstrap_refusal"] is not None or self.store._now()>=timestamp(receipt["consumed_at"])+BOOTSTRAP_WINDOW:
+            with self.store.database.transaction() as connection:
+                recovery.block(connection,operation,context,authorize=authorize)
+            return None
+        def bootstrap_guard():
+            with self.store.database.read() as connection:
+                self.lost_enrollment.require_bootstrap(connection,operation_id=original,authorize=authorize_receipt)
         adopted = []
         def adopt_verified(grants, *, enrolled_at, recovered_at):
             adopted.append(recovery.adopt_bootstrap(operation, context, grants, enrolled_at=enrolled_at,
                 recovered_at=recovered_at, authorize=authorize))
         try:
             result = self.grants.recover_bootstrap_v3(claim_id=receipt["claim_id"], recovery_request_id=original,
-                before_send=guard, existing_key=key, expected_enrolled_at=timestamp(receipt["consumed_at"]),
+                before_send=bootstrap_guard, existing_key=key, expected_enrolled_at=timestamp(receipt["consumed_at"]),
                 adopt_verified=adopt_verified)
-        except BootstrapRecoveryRefused:
+        except BootstrapRecoveryRefused as error:
             # A refused recovery is not noncommit and must not start enrollment.
             with self.store.database.transaction() as connection:
+                self.lost_enrollment.record_refusal(connection, operation_id=original,
+                    reason=error.result, authorize=authorize_receipt)
                 recovery.block(connection, operation, context, authorize=authorize)
             return None
         if (not isinstance(result, BootstrapRecovery) or result.enrolled_at != timestamp(receipt["consumed_at"])
@@ -474,17 +489,57 @@ class InitialInstallationEnrollment:
         return adopted[0]
 
     async def _recover(self, row: dict) -> None:
-        key = await self._effects.run(self.client.key.ensure_ready, journey_id=row["journey_id"])
+        from app.security.installation_continuation import signing_reference
+        from app.security.initial_handoff import timestamp
+        from app.security.hosted_grants import BootstrapRecoveryRefused
+        from app.persistence.lost_enrollment_evidence import BOOTSTRAP_WINDOW
+        scope = json.loads(row["scope_json"]) if row["scope_json"] else None
+        if scope is None:
+            raise HostedGrantUnavailable("Original enrollment scope unavailable")
+
+        def authorize_receipt(*, connection):
+            current = connection.execute("SELECT * FROM onboarding_journeys WHERE journey_id=?",
+                (row["journey_id"],)).fetchone()
+            if (current is None or current["kind"]!="initial-enrollment"
+                    or current["state"] not in {"waiting","completing","unknown"}
+                    or any(current[name]!=row[name] for name in ("operation_id","installation_id","scope_json"))
+                    or connection.execute("SELECT 1 FROM onboarding_transfer_intents WHERE journey_id=? AND expires_at>?",
+                        (row["journey_id"],self.store._now().timestamp())).fetchone()):
+                raise HostedGrantUnavailable("Original enrollment owner changed")
+
+        def guard():
+            with self.store.database.read() as connection:
+                authorize_receipt(connection=connection)
+
+        key = await self._effects.run(signing_reference, self.client.key, journey_id=row["journey_id"])
         receipt = await self._effects.run(self.client.receipt, {"profile": PROFILE,
             "operation_id": row["operation_id"], "installation_id": row["installation_id"],
-            "installation_key_id": key.installation_key_id}, journey_id=row["journey_id"])
-        if receipt["operation_id"] != row["operation_id"]:
-            raise HostedGrantUnavailable("Initial operation mismatch")
-        self._record_claim(row, receipt)
-        # The existing durable handoff operation ID is also the stable
-        # purpose-separated bootstrap recovery correlation. No new ID on a lost reply.
-        await self._effects.run(self.grants.recover_bootstrap_v3, claim_id=receipt["claim_id"],
-                                recovery_request_id=row["operation_id"], journey_id=row["journey_id"])
+            "installation_key_id": key.installation_key_id}, before_send=guard, key=key,
+            journey_id=row["journey_id"])
+        with self.store.database.transaction() as connection:
+            self.lost_enrollment.retain(connection, receipt, scope=scope,
+                operation_id=row["operation_id"], authorize=authorize_receipt)
+            retained,_,_,_=self.lost_enrollment.exact_receipt(connection,operation_id=row["operation_id"])
+            if retained["bootstrap_refusal"] is not None:
+                raise BootstrapRecoveryRefused(retained["bootstrap_refusal"])
+        # Do not mint another bootstrap grant at or beyond the fixed original
+        # enrollment boundary. The retained receipt survives presentation cleanup.
+        if self.store._now() >= timestamp(receipt["consumed_at"]) + BOOTSTRAP_WINDOW:
+            raise HostedGrantUnavailable("Original enrollment requires authenticated recovery")
+        def bootstrap_guard():
+            with self.store.database.read() as connection:
+                self.lost_enrollment.require_bootstrap(connection,operation_id=row["operation_id"],authorize=authorize_receipt)
+        # The existing durable handoff operation ID is the stable bootstrap
+        # correlation. No new ID on a lost reply.
+        try:
+            await self._effects.run(self.grants.recover_bootstrap_v3, claim_id=receipt["claim_id"],
+                recovery_request_id=row["operation_id"], before_send=bootstrap_guard, existing_key=key,
+                expected_enrolled_at=timestamp(receipt["consumed_at"]), journey_id=row["journey_id"])
+        except BootstrapRecoveryRefused as error:
+            with self.store.database.transaction() as connection:
+                self.lost_enrollment.record_refusal(connection,operation_id=row["operation_id"],
+                    reason=error.result,authorize=authorize_receipt)
+            raise
         row = self.journeys.update(row["journey_id"], state="completed", reason=None)
         self._candidate(row)
         events.publish()

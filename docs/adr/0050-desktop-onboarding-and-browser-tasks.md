@@ -88,3 +88,33 @@ The coordinator delegates to existing domain services rather than duplicating th
 Qualify the installed native host, Windows Hello, scoped admission and provisioning restart before broad controller replacement. Cover hostile listeners, external navigation and native command denial; wrong profiles, stale presentations and entry replay; consent/permission gates, independent pairing, paused controls; duplicate actions, real worker cancellation, lost committed results and expiry; and dashboard access independent of activation. Keep offline authorization and all existing cryptographic, recovery and evidence semantics.
 
 Architecture declarations classify the native host, coordinator and local schemas. The customer journey manifest changes with rendered states, not ahead of executable surfaces. [ADR 0056](0056-msix-packaging-and-managed-updates.md) supersedes the Inno-only packaging choice while preserving the complete frozen Brain distribution and shared WebView2. This decision grants no automatic live deployment authority.
+
+#### Retained lost-enrollment receipt evidence
+
+A locally submitted claim or missing grants alone cannot establish lost enrollment.
+The initial owner retains the exact proof-read original consumed receipt, current
+installation key and independently retained original authorization-scope digest
+with the original claim in one encrypted transaction. The same port is used for
+the original receipt read after accepted/committed source replacement. The
+record is durable enrollment evidence, not short-lived presentation evidence;
+it retains no hosted locator, proof, token, signed grant, or customer actor.
+No backfill from historical claim rows is attempted. The receipt does not mark
+the local claim consumed, approve an account or admit access.
+
+The local candidate classifier requires the original fixed 37-day deadline,
+the exact Provider origin, current key, unique unresolved local claim, and
+absence of any prior local grants (including withdrawn grants), account,
+credential, session or withdrawal evidence. A known candidate, if present,
+must remain the original pending association. Only the published no-creator
+lost-enrollment scope may be constructed. Exact closed v3 bootstrap refusals
+are immutable; withdrawal or binding mismatch blocks the candidate. A
+validated receipt is not sufficient to identify the actor: Provider separately
+resolves the original enrollment actor and current authority. Existing
+key-only recovery checks the original deadline and retained refusal before
+each protected exchange and cannot issue after the fixed boundary.
+
+This checkpoint retains evidence and classifies a candidate only. It does not
+yet reserve lost-enrollment protected authority recovery, resolve competing
+original enrollment owners, or admit any delivery without previous grant
+identifiers. Those require a separately verified signed-bundle path and
+atomic completion of the original claim. Public boot remains disabled.

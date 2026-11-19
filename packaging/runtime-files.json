@@ -149,7 +149,8 @@
         "0048_installation_authority_recoveries.sql": "5241f95d78ee638e1aa03c6176cea27b0e29cb04758201f2cd091fedd6992d83",
         "0049_protected_recovery_browser.sql": "26d25540fad3f35f12294f6f99eb36032333ff72ddc9ee348be933c9ceb4aaba",
         "0050_protected_recovery_desktop.sql": "652422ca223e7ba57e7fa7a43157feb1df00e4898535a7dac0a6594f8652712d",
-        "0051_protected_recovery_browser_dispatch.sql": "06a67109881193549b267c8ed038ca74305c371c7b32ce80d8660677ac10e851"
+        "0051_protected_recovery_browser_dispatch.sql": "06a67109881193549b267c8ed038ca74305c371c7b32ce80d8660677ac10e851",
+        "0052_lost_enrollment_evidence.sql": "35240165cd5a4dfa83d7a53e52813713a08a96b71b41f2dcac93369f37b1e1a3"
       }
     },
     {
