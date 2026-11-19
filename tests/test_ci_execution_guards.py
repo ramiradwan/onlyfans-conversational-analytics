@@ -382,7 +382,7 @@ def _assert_bench_repeats_product_ci(bench: dict[str, Any], product: dict[str, A
     jobs = bench["jobs"]
     assert set(jobs) == {"plan", "fixed-sqlcipher-wheel", "windows-full-regression"}
     # Invalid bench refs stop in the plan job before any Windows setup runs.
-    assert jobs["fixed-sqlcipher-wheel"] == {"needs": "plan", **product["jobs"]["fixed-sqlcipher-wheel"]}
+    assert jobs["fixed-sqlcipher-wheel"] == {"name": "bench-fixed-sqlcipher-wheel", "needs": "plan", **product["jobs"]["fixed-sqlcipher-wheel"]}
     shard = "${{ needs.plan.outputs.shard }}"
     def substitute(value):
         if isinstance(value, dict):
@@ -397,7 +397,7 @@ def _assert_bench_repeats_product_ci(bench: dict[str, Any], product: dict[str, A
     lane["env"]["CI_PYTEST_DIST"] = "${{ needs.plan.outputs.dist }}"
     full = jobs["windows-full-regression"]
     assert full["steps"] == expected, "bench shard steps must repeat Product CI apart from its parameters"
-    assert full["name"] == f"windows-full-regression-{shard}"
+    assert full["name"] == f"bench-windows-full-regression-{shard}"
     assert full["needs"] == ["plan", "fixed-sqlcipher-wheel"]
     assert full["env"] == product["jobs"]["windows-full-shards"]["env"]
     assert full["timeout-minutes"] == product["jobs"]["windows-full-shards"]["timeout-minutes"]
