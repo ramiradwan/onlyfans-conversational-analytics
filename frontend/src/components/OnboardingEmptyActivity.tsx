@@ -18,10 +18,10 @@ export function DashboardConnection({ browser, connection, desktopConnected }: {
         <Panel component="section" aria-labelledby="empty-connection-title">
           <Typography component="h2" id="empty-connection-title" variant="h6">Connection</Typography>
           <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-            <Typography variant="body2">Desktop app</Typography><Chip size="small" variant="outlined" label={desktopConnected ? 'Connected' : 'Not connected'} />
+            <Typography variant="body2">Desktop app</Typography><Chip size="small" variant="outlined" label={desktopConnected ? 'Connected' : 'Not connected'} sx={{ width: '9.5rem', maxWidth: '100%', '& .MuiChip-label': { width: '100%', textAlign: 'left' } }} />
           </Stack>
           <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-            <Typography variant="body2">Browser extension</Typography><Chip size="small" variant="outlined" label={browserLabel} />
+            <Typography variant="body2">Browser extension</Typography><Chip size="small" variant="outlined" label={browserLabel} sx={{ width: '9.5rem', maxWidth: '100%', '& .MuiChip-label': { width: '100%', textAlign: 'left' } }} />
           </Stack>
         </Panel>
   );

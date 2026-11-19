@@ -382,9 +382,9 @@ export function CommercialActivationControls({
         <Box id="activation-offer-feedback"><StatusLine essential id="activation-offer-feedback" text={!desktop.connected ? 'Activation status could not be received.' : noticeError || (opening ? 'Confirming activation…' : null)} tone={noticeError ? 'error' : 'secondary'} /></Box>
         {canSwitch && <Button ref={switchElement} onClick={() => setChoosingAccount(true)} disabled={!desktop.connected || opening || codeBusy || codePending}
           sx={{ justifyContent: 'flex-start', minHeight: componentTokens.staticUi.controlHeight, mx: -1, textAlign: 'start', '&, &:hover': { textDecoration: 'underline' } }}>Sign in to Full analytics with another account</Button>}
-        {canRedeem && !codeInProgress && <Button onClick={() => {
-          if (currentPresentation()) { dismissOffer(); setCodeOpen(true); }
-        }} disabled={opening} sx={{ justifyContent: 'flex-start', alignSelf: 'flex-start' }}>Other activation options</Button>}
+        <Button onClick={() => {
+          if (currentPresentation() && canRedeem && !codeInProgress) { dismissOffer(); setCodeOpen(true); }
+        }} disabled={opening || !canRedeem || codeInProgress} sx={{ justifyContent: 'flex-start', alignSelf: 'flex-start', visibility: canRedeem && !codeInProgress ? 'visible' : 'hidden' }}>Other activation options</Button>
         </Stack>}</DialogContent><DialogActions><Button onClick={dismissOffer}>Not now</Button>
         {!choosingAccount && <Button onClick={() => void openSetup('activation.confirm')} disabled={!canConfirm || opening || codeBusy || codePending}
           aria-describedby="activation-offer-feedback" variant="contained" sx={{ alignSelf: 'flex-start' }}>Activate for free</Button>}
@@ -400,7 +400,7 @@ export function CommercialActivationControls({
         {canSwitch && !offer && !choosingAccount && <Button ref={switchElement} onClick={() => setChoosingAccount(true)} disabled={!desktop.connected || opening || codeBusy || codePending}>Sign in to Full analytics with another account</Button>}
         {choosingAccount && !offer && <Button onClick={() => setChoosingAccount(false)} disabled={opening}>Back</Button>}
       </Stack>}
-      {!decision && !authentication && !accepted && activationRequired && !canOpen && !pendingActivation && desktop.connected && <Typography variant="body2">The activation request is unavailable.</Typography>}
+      {!decision && !authentication && !accepted && activationRequired && !allowed.includes('activation.review') && !pendingActivation && desktop.connected && <Typography variant="body2">The activation request is unavailable.</Typography>}
       {!fullReady && ((!offer && activationRequired) || codeOpen || codeInProgress) && <Box sx={{ mt: 2 }}>
         <Button type="button" aria-expanded={codeOpen} aria-controls={codeFormId}
           onClick={() => setCodeOpen(value => !value)} sx={{ ml: -1 }}>Use an activation code</Button>

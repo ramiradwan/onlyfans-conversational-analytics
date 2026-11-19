@@ -205,7 +205,11 @@ body.onboarding-workspace > main { max-width: none; padding: 28px; }
 .onboarding-workspace .preview-journey #journey-badge { display: flex; min-height: 1.55em; }
 .onboarding-workspace .preview-journey #journey-badge:empty { visibility: hidden; }
 .onboarding-workspace #journey-card[data-tone] { background:var(--dipsy-color-paper); border-color:var(--dipsy-intent-surface-dominant-border); }
-.onboarding-workspace #desktop-entry[data-tone] #desktop-entry-title { position: relative; padding-inline-start: 32px; }
+.onboarding-workspace #desktop-entry[data-tone] #desktop-entry-title { position: relative; padding-inline-start: 32px; min-height: 2.5em; }
+.onboarding-workspace #desktop-entry #desktop-entry-body { min-height: 3.2em; }
+.onboarding-workspace #desktop-entry #desktop-entry-body:empty { display: block; visibility: hidden; }
+.onboarding-workspace #desktop-entry #desktop-setup-code.hidden,
+.onboarding-workspace #desktop-entry #download-desktop.hidden { display: block !important; visibility: hidden; }
 .onboarding-workspace #desktop-entry[data-tone] #desktop-entry-title::before { content: ""; position: absolute; inset-inline-start: 0; inset-block-start: .25em; inline-size: 18px; block-size: 18px; border: 2px solid currentColor; border-radius: 50%; }
 .onboarding-workspace #desktop-entry[data-tone="warning"] #desktop-entry-title::before { color: var(--dipsy-color-warning); }
 .onboarding-workspace #desktop-entry[data-tone="error"] #desktop-entry-title::before { color: var(--dipsy-color-error); }
@@ -214,11 +218,18 @@ body.onboarding-workspace > main { max-width: none; padding: 28px; }
 @keyframes desktop-progress-rotate { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .onboarding-workspace #desktop-entry[data-tone="progress"] #desktop-entry-title::before { animation: none; } }
 @container onboarding-stage (max-width: 25rem) {
+  .onboarding-workspace #desktop-entry[data-tone] #desktop-entry-title { min-height: 5em; }
+  .onboarding-workspace #desktop-entry #desktop-entry-body { min-height: 4.8em; }
   .onboarding-workspace #journey-card { grid-template-columns: minmax(0, 1fr); }
   .onboarding-workspace #journey-icon { grid-column: 1; grid-row: 1; align-self: start; inline-size: max(44px, 1.5rem); block-size: max(44px, 1.5rem); line-height: 1; margin-bottom: 12px; }
   .onboarding-workspace #journey-title { grid-column: 1; grid-row: 2; }
   .onboarding-workspace #journey-badge { grid-column: 1; grid-row: 3; }
   .onboarding-workspace .pairing-actions > button { flex-basis: 100%; }
+}
+
+@container onboarding-stage (max-width: 15rem) {
+  .onboarding-workspace #desktop-entry[data-tone] #desktop-entry-title { min-height: 7.5em; }
+  .onboarding-workspace #desktop-entry #desktop-entry-body { min-height: 9.6em; }
 }
 
 @container onboarding-stage (max-width: 11rem) {

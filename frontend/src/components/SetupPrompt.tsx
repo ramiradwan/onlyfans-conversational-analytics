@@ -158,8 +158,23 @@ export function SetupPrompt({
           <Typography component="h2" id={headingId} variant="h5">
             {title}
           </Typography>
-          <Typography variant="body1" sx={{ color: 'text.secondary', mt: 1 }}>
-            {fullAnalyticsReady ? 'Connect your browser.' : 'Connect your browser. Full analytics is optional.'}
+          <Typography
+            variant="body1"
+            sx={{
+              color: 'text.secondary',
+              mt: 1,
+              display: 'grid',
+              '&::before': {
+                content: '"Connect your browser. Full analytics is optional." / ""',
+                gridArea: '1 / 1',
+                visibility: 'hidden',
+                pointerEvents: 'none',
+              },
+            }}
+          >
+            <Box component="span" sx={{ gridArea: '1 / 1' }}>
+              {fullAnalyticsReady ? 'Connect your browser.' : 'Connect your browser. Full analytics is optional.'}
+            </Box>
           </Typography>
         </Box>
         <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
@@ -177,8 +192,22 @@ export function SetupPrompt({
             />
           ))}
         </Stack>
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          {extensionConnected ? 'Open Full analytics in Settings.' : 'Open Browser extension in Settings.'}
+        <Typography
+          variant="body2"
+          sx={{
+            color: 'text.secondary',
+            display: 'grid',
+            '&::before': {
+              content: '"Open Browser extension in Settings." / ""',
+              gridArea: '1 / 1',
+              visibility: 'hidden',
+              pointerEvents: 'none',
+            },
+          }}
+        >
+          <Box component="span" sx={{ gridArea: '1 / 1' }}>
+            {extensionConnected ? 'Open Full analytics in Settings.' : 'Open Browser extension in Settings.'}
+          </Box>
         </Typography>
         <Button
           component={RouterLink}
