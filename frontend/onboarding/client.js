@@ -8,6 +8,8 @@ import { parseOnboardingJson } from '../../shared/onboarding/json.mjs';
 const NOTICE_ERRORS = { extension_unavailable: 'extension_unavailable', profile_mismatch: 'profile_mismatch',
   account_mismatch: 'account_mismatch', task_expired: 'operation_expired', unavailable: 'browser_unavailable',
   needs_account: 'browser_needs_account', needs_consent: 'browser_needs_consent', needs_permission: 'browser_needs_permission' };
+// The later steps of one explicit protected sign-in run only within this bound.
+const RECOVERY_SIGN_IN_MS = 120_000;
 
 async function refreshNativePresentation(generation) {
   const invoke = globalThis.__TAURI__?.core?.invoke;
@@ -29,6 +31,7 @@ export class DesktopSetupClient {
     this.launching = false;
     this.protectedOpening = false;
     this.protectedLaunchError = null;
+    this.recoverySignIn = null;
     this.launchRequested = false;
     this.focusIntent = null;
     this.value = null;
@@ -52,7 +55,8 @@ export class DesktopSetupClient {
     this.receive({ snapshot: this.value, pending: this.pending, connected: this.connected,
       error: error || this.protectedLaunchError || this.operationError?.reason || this.browserNotice || null, deliberate,
       ...(this.intent?.operationId === this.pending ? { pendingAction: this.intent.action } : {}),
-      browserLaunchPending: Boolean(this.launchOperation || this.protectedOpening) });
+      browserLaunchPending: Boolean(this.launchOperation || this.protectedOpening),
+      recoverySignInPending: Boolean(this.recoverySignIn) });
   }
 
   retireAuthenticationError() {
@@ -249,6 +253,7 @@ export class DesktopSetupClient {
         this.reconnectDelay = 1000;
         this.notify(null, deliberate);
         if (this.launchOperation) void this.launchBrowser();
+        this.continueRecoverySignIn();
         if (this.pending && !value.pending_operations.some(item => item.operation_id === this.pending)) void this.receipt();
       }, text => {
         if (controller.signal.aborted) return;
@@ -265,6 +270,7 @@ export class DesktopSetupClient {
         this.connected = false;
         this.intent = null;
         this.launchOperation = null;
+        this.recoverySignIn = null;
         this.notify(error.message === 'stream_expired' ? null
           : ['session_unavailable', 'authorization_unavailable'].includes(error.message) ? error.message : 'status_unavailable');
         if (!['session_unavailable', 'authorization_unavailable'].includes(error.message)) {
@@ -313,7 +319,45 @@ export class DesktopSetupClient {
     }
   }
 
-  async act(action, options = {}) {
+  /**
+   * Runs the next step of an explicit protected sign-in once its owner offers it.
+   * Each step runs once for its own parent and attempt. A retired, cancelled or
+   * claimed sign-in, a reconnect, another action or the time bound ends the
+   * sequence, and the customer then acts again.
+   */
+  continueRecoverySignIn() {
+    const step = this.recoverySignIn, value = this.value, auth = value?.authentication;
+    if (!step) return;
+    const attempt = auth?.authentication_attempt?.authentication_attempt_id ?? null;
+    const recovery = value?.authority_recovery;
+    const live = this.connected && step.epoch === this.launchEpoch && this.now() <= step.until
+      && (['preparing', 'checking', 'sign-in-required'].includes(recovery)
+        || recovery === 'available' && !step.selected && this.pending === step.parent)
+      && (!auth || auth.operation_id === step.parent)
+      && !(auth?.state === 'retired' && attempt !== step.attempt)
+      && !(auth?.state === 'selected' && (!step.selected || value.authority_recovery_browser !== 'ready'));
+    if (!live) {
+      this.recoverySignIn = null;
+      this.notify();
+      return;
+    }
+    if (recovery !== 'sign-in-required' || !auth) return;
+    if (!step.selected) {
+      if (auth.state === 'selection-required' && attempt === null && auth.actions.select && auth.choices.default
+          && value.allowed_actions.includes('auth.select')) {
+        void this.act('auth.select', { recover_authority: true, provider: 'default' }, step).catch(() => {
+          if (this.recoverySignIn === step) { this.recoverySignIn = null; this.notify(); }
+        });
+      }
+      return;
+    }
+    if (auth.state === 'selected' && attempt !== step.attempt && auth.actions.open_browser && !this.protectedOpening) {
+      this.recoverySignIn = null;
+      void this.launchProtectedBrowser().catch(() => {});
+    }
+  }
+
+  async act(action, options = {}, continued = null) {
     const clicked = performance.now();
     const observe = phase => {
       void this.json('/api/v1/desktop/setup/timing', { operation: 'frontend', phase, status: 'ok',
@@ -348,6 +392,13 @@ export class DesktopSetupClient {
     this.intent = { task: this.value.next_task, action, operationId: intent.operation_id, confirmed: false,
       initialAuthentication: action === 'account.connect' && intent.provider !== undefined };
     this.remember(intent.operation_id);
+    // An explicit protected sign-in continues through the default selection and
+    // the Chrome launch. Neither later step needs its own click.
+    this.recoverySignIn = intent.recover_authority && ['account.connect', 'auth.select'].includes(action)
+      ? { epoch, parent: action === 'account.connect' ? intent.operation_id : authentication.operation_id,
+          selected: action === 'auth.select', attempt: authentication?.authentication_attempt?.authentication_attempt_id ?? null,
+          until: continued?.until ?? this.now() + RECOVERY_SIGN_IN_MS }
+      : null;
     const sourceContinuation = action === 'account.connect' && this.value.continuation_available && !authentication;
     if (this.openBrowser && !intent.replace_ceremony && !intent.recover_authority && !sourceContinuation && ['browser.access', 'account.connect', 'browser.pair', 'auth.select', 'auth.switch'].includes(action)) this.launchOperation = intent.operation_id;
     if (action === 'auth.cancel' || action === 'activation.review' || intent.replace_ceremony || intent.recover_authority || sourceContinuation) this.launchOperation = null;
@@ -360,6 +411,7 @@ export class DesktopSetupClient {
       await Promise.all([this.receipt(), this.launchOperation ? this.launchBrowser() : null]);
     } catch (error) {
       if (epoch !== this.launchEpoch || !this.connected) return;
+      this.recoverySignIn = null;
       if (['setup_changed', 'action_unavailable', 'authority_unavailable', 'account_mismatch', 'operation_limit_reached'].includes(error.reason)) {
         this.remember(null);
         this.intent = null;
@@ -475,6 +527,7 @@ export class DesktopSetupClient {
   stop() {
     this.launchEpoch++;
     this.launchOperation = null;
+    this.recoverySignIn = null;
     this.focusIntent = null;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;

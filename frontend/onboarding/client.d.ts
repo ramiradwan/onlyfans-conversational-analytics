@@ -50,6 +50,7 @@ export interface DesktopState {
   error: string | null;
   deliberate?: boolean;
   browserLaunchPending?: boolean;
+  recoverySignInPending?: boolean;
 }
 export class DesktopSetupClient {
   constructor(options: { generation: string; receive(state: DesktopState): void;

@@ -1479,6 +1479,14 @@ it('renders the protected recovery sequence as one task and never exposes ordina
   expect(primary.textContent).toBe('Sign in');
   expect(primary.disabled).toBe(false);
   expect(authorityRecoveryOptions(primary.dataset.action)).toEqual({ recover_authority: true, provider: 'default' });
+  // The explicit sign-in continues by itself, so neither later step offers a click.
+  render({ ...selected, authentication: auth, allowed_actions: ['auth.select'] }, { recoverySignInPending: true });
+  expect(primary.hidden).toBe(true);
+  expect(document.getElementById('task-status').textContent).toBe('Preparing sign-in\u2026');
+  render({ ...selected, authority_recovery_browser: 'ready', allowed_actions: ['auth.cancel'] }, { recoverySignInPending: true });
+  expect(primary.hidden).toBe(true);
+  expect(document.getElementById('task-status').textContent).toBe('Opening Chrome\u2026');
+  expect(cancel.hidden).toBe(true);
   render({ ...selected, authority_recovery_browser: 'ready', allowed_actions: ['auth.cancel'] });
   expect(primary.textContent).toBe('Open Chrome');
   expect(primary.dataset.action).toBe('browser.open');
@@ -1554,4 +1562,97 @@ it('opens the protected native entry once from the current explicit gesture', as
     expect(request).toHaveBeenCalledOnce();
     subject.stop();
   } finally { vi.unstubAllGlobals(); }
+});
+
+describe('one explicit protected sign-in', () => {
+  const child = '33333333-3333-4333-8333-333333333333';
+  const attempt = { authentication_attempt_id: '0198a1b2-c3d4-7300-8000-000000000063', provider: 'default', mode: 'sign-in' };
+  const auth = (state, actions, authenticationAttempt = null) => ({ operation_id: operationId, browser_operation_id: null, state,
+    choices: { default: true, google: false, 'microsoft-personal': false, telegram: false, tiktok: false },
+    actions: { select: false, cancel: false, open_browser: false, switch_account: false, ...actions },
+    authentication_attempt: authenticationAttempt });
+  const parent = { ...record, action: 'account.connect', state: 'waiting' };
+  const base = { ...initial(), next_task: 'account-connection', authority_recovery: 'available', allowed_actions: ['account.connect'] };
+  const selection = revision => ({ ...base, revision, authority_recovery: 'sign-in-required', allowed_actions: ['auth.select'],
+    pending_operations: [parent], authentication: auth('selection-required', { select: true }) });
+  const ready = revision => ({ ...base, revision, authority_recovery: 'sign-in-required', authority_recovery_browser: 'ready',
+    allowed_actions: ['auth.cancel'], pending_operations: [parent], authentication: auth('selected', { cancel: true, open_browser: true }, attempt) });
+  const start = (clock = () => 1000) => {
+    let publish, latest = base;
+    const ids = [operationId, child], commands = [], opens = [], states = [];
+    const subject = new DesktopSetupClient({ generation, storage: storage(), receive: state => states.push(state), uuid: () => ids.shift(), now: clock,
+      stream: async (_request, _headers, _signal, listener) => {
+        publish = next => { latest = next; listener(JSON.stringify(next)); };
+        listener(JSON.stringify(latest));
+      },
+      request: async (url, options) => {
+        const body = options?.body && JSON.parse(options.body);
+        if (url.endsWith('/session')) return response(session);
+        if (url.endsWith('/commands')) {
+          commands.push(body);
+          return response({ ...record, operation_id: body.operation_id, action: body.action, state: 'accepted' }, 202);
+        }
+        if (url.endsWith('/protected-browser/open')) { opens.push(body); return response({ entry_code: 'A'.repeat(43) }); }
+        const id = url.split('/').pop();
+        return response(id === child ? { ...record, operation_id: id, action: 'auth.select', state: 'completed' } : { ...parent, operation_id: id });
+      } });
+    return { subject, commands, opens, states, publish: next => publish(next) };
+  };
+
+  it('continues through the default selection to one Chrome launch and never past a retired attempt', async () => {
+    const invoke = vi.fn(async name => name === 'desktop_chrome_available' ? true : undefined);
+    vi.stubGlobal('__TAURI__', { core: { invoke } });
+    try {
+      const { subject, commands, opens, states, publish } = start();
+      await subject.connect();
+      await subject.act('account.connect', { recover_authority: true });
+      expect(commands).toEqual([expect.objectContaining({ action: 'account.connect', recover_authority: true })]);
+      publish({ ...base, revision: 1, authority_recovery: 'preparing', allowed_actions: [], pending_operations: [parent] });
+      expect(commands).toHaveLength(1);
+      publish(selection(2));
+      await vi.waitFor(() => expect(commands).toHaveLength(2));
+      expect(commands[1]).toMatchObject({ action: 'auth.select', provider: 'default', recover_authority: true });
+      expect(authorityRecoveryView(states.at(-1)).action).toBeNull();
+      publish(selection(3));
+      publish({ ...base, revision: 4, authority_recovery: 'checking', allowed_actions: [], pending_operations: [parent] });
+      publish(ready(5));
+      await vi.waitFor(() => expect(opens).toHaveLength(1));
+      expect(opens[0]).toMatchObject({ parent_operation_id: operationId, attempt_id: attempt.authentication_attempt_id });
+      await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('desktop_browser_task', { entryCode: 'A'.repeat(43) }));
+      publish(ready(6));
+      publish({ ...ready(7), authority_recovery_browser: undefined, allowed_actions: ['auth.select'],
+        authentication: auth('retired', { select: true }, attempt) });
+      await vi.waitFor(() => expect(authorityRecoveryView(states.at(-1))).toMatchObject({ action: 'auth.select', label: 'Sign in again' }));
+      expect(commands).toHaveLength(2);
+      expect(opens).toHaveLength(1);
+      expect(subject.recoverySignIn).toBeNull();
+      subject.stop();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('leaves each later step to an explicit click once its time bound has passed', async () => {
+    let now = 1000;
+    const { subject, commands, states, publish } = start(() => now);
+    await subject.connect();
+    await subject.act('account.connect', { recover_authority: true });
+    now += 120_001;
+    publish(selection(1));
+    await Promise.resolve();
+    expect(commands).toHaveLength(1);
+    expect(subject.recoverySignIn).toBeNull();
+    expect(authorityRecoveryView(states.at(-1))).toMatchObject({ action: 'auth.select', label: 'Sign in' });
+    subject.stop();
+  });
+
+  it('ends the sequence on a reconnect instead of continuing an old click', async () => {
+    const { subject, commands, publish } = start();
+    await subject.connect();
+    await subject.act('account.connect', { recover_authority: true });
+    await subject.connect();
+    publish(selection(1));
+    await Promise.resolve();
+    expect(commands).toHaveLength(1);
+    expect(subject.recoverySignIn).toBeNull();
+    subject.stop();
+  });
 });

@@ -8,6 +8,8 @@ export function authorityRecoveryView(state, acting = null) {
   const disabled = !state.connected || Boolean(acting || state.browserLaunchPending);
   const card = (title, description, status, tone = 'neutral', action = null, label = null, cancel = false) =>
     ({ title, description, status, tone, action, label, cancel, disabled });
+  // An explicit sign-in continues by itself, so its next step shows progress instead of a button.
+  const continuing = state.recoverySignInPending && recovery === 'sign-in-required';
   if (!state.connected) return card('Restore access on this computer', 'Sign in to restore access.',
     'Checking recovery status\u2026', 'progress');
   const childPending = state.pending && state.pending !== auth?.operation_id && ['account.connect', 'auth.select', 'auth.cancel'].includes(state.pendingAction);
@@ -15,11 +17,13 @@ export function authorityRecoveryView(state, acting = null) {
     if (state.pendingAction === 'auth.cancel') return card('Restore access on this computer', '', 'Checking sign-in\u2026', 'progress');
     return card('Restore access on this computer', '', 'Preparing sign-in\u2026', 'progress');
   }
-  if (acting === 'account.connect' || acting === 'auth.select') return card('Restore access on this computer',
-    'Sign in to restore access.', 'Preparing sign-in\u2026', 'progress');
+  if (acting === 'account.connect' || acting === 'auth.select' || continuing && auth?.state === 'selection-required') {
+    return card('Restore access on this computer', 'Sign in to restore access.', 'Preparing sign-in\u2026', 'progress');
+  }
   if (acting === 'auth.cancel') return card('Restore access on this computer',
     '', 'Cancelling sign-in\u2026', 'progress');
-  if (acting === 'browser.open' || state.browserLaunchPending) return card('Sign in to restore access',
+  if (acting === 'browser.open' || state.browserLaunchPending || continuing && auth?.state === 'selected'
+      && value.authority_recovery_browser === 'ready' && auth.actions.open_browser) return card('Sign in to restore access',
     'Use the account connected to this computer.', 'Opening Chrome\u2026', 'progress');
   if (recovery === 'available') return card('Restore access on this computer',
     'Your access has expired. Sign in with your connected account to restore it.', '', 'neutral',
