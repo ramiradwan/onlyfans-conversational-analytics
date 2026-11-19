@@ -627,3 +627,104 @@ def test_external_watchdog_exits_if_controller_dies(tmp_path):
                             env=env, capture_output=True, text=True, timeout=15)
     assert result.returncode == 17
     assert "monitor stopped" in (tmp_path / "watchdog.log").read_text(encoding="utf-8")
+
+
+def test_live_annotations_share_job_budget_and_omit_payloads(tmp_path):
+    runner_temp = tmp_path / "runner"
+    runner_temp.mkdir()
+    env = {"GITHUB_ACTIONS": "true", "GITHUB_WORKSPACE": str(tmp_path),
+           "RUNNER_TEMP": str(runner_temp)}
+    source = "import pytest\n" + "\n".join(
+        f"def test_failure_{i}(): raise ValueError('sensitive payload')" for i in range(10))
+    first, report, _ = run_suite(tmp_path, source, "-q", "-k", "failure_0 or failure_1", environment=env)
+    second, second_report, _ = run_suite(tmp_path, source, "-q", environment=env | {"HYPOTHESIS_PROFILE": "other"})
+    third, _, _ = run_suite(tmp_path, source, "-q", environment=env)
+    commands = [line for result in (first, second, third) for line in result.stdout.splitlines()
+                if line.startswith(("::error", "::notice"))]
+    assert sum(line.startswith("::error") for line in commands) == 8
+    assert sum(line.startswith("::notice") for line in commands) == 1
+    assert all("sensitive payload" not in line for line in commands)
+    assert all("file=test_sample.py,line=" in line for line in commands if line.startswith("::error"))
+    assert first.returncode == report["exit_code"] == second.returncode == second_report["exit_code"] == 1
+    assert sum(row["outcome"] == "failed" for row in second_report["reports"]) == 10
+
+
+def test_annotation_command_escaping():
+    from tools.ci_pytest import _command_escape
+    assert _command_escape("%\r\n::error::") == "%25%0D%0A::error::"
+    assert _command_escape("a:b,c%\n", property_value=True) == "a%3Ab%2Cc%25%0A"
+
+
+def test_distributed_annotations_deduplicate_shared_fixture_failures(tmp_path):
+    pytest.importorskip("xdist")
+    runner_temp = tmp_path / "runner"
+    runner_temp.mkdir()
+    env = {"GITHUB_ACTIONS": "true", "GITHUB_WORKSPACE": str(tmp_path),
+           "RUNNER_TEMP": str(runner_temp)}
+    source = ("import pytest\n"
+              "@pytest.fixture\ndef broken(): raise RuntimeError('private fixture data')\n"
+              "@pytest.mark.parametrize('value', range(4))\n"
+              "def test_broken(broken, value): pass\n"
+              "@pytest.mark.parametrize('value', ['private-parameter'])\n"
+              "def test_call(value): assert False\n")
+    result, report, _ = run_suite(tmp_path, source, "-q", "-n", "2", environment=env)
+    commands = [line for line in result.stdout.splitlines() if line.startswith("::error")]
+    assert len(commands) == 2, result.stdout
+    assert any("setup |" in line and "RuntimeError" in line for line in commands)
+    assert any("call |" in line and "test_call[id:" in line for line in commands)
+    assert all("private" not in line for line in commands)
+    assert sum(row["outcome"] == "failed" for row in report["reports"]) == 5
+    assert result.returncode == report["exit_code"] == 1
+
+
+def test_failure_annotation_is_streamed_before_pytest_finishes(tmp_path):
+    import threading
+
+    (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    (tmp_path / "test_live.py").write_text(
+        "from pathlib import Path\nimport time\n"
+        "def test_first(): assert False\n"
+        "def test_wait_for_annotation():\n"
+        " deadline = time.monotonic() + 25\n"
+        " while not Path('release').exists() and time.monotonic() < deadline: time.sleep(0.02)\n"
+        " assert Path('release').exists()\n", encoding="utf-8")
+    runner_temp = tmp_path / "runner"
+    runner_temp.mkdir()
+    env = dict(os.environ, PYTHONPATH=str(ROOT), PYTEST_ADDOPTS="", GITHUB_ACTIONS="true",
+               GITHUB_WORKSPACE=str(tmp_path), RUNNER_TEMP=str(runner_temp), GITHUB_JOB="live-fixture",
+               CI_REPORT_DIR=str(tmp_path / "evidence"), CI_PYTEST_WATCHDOG_SECONDS="", GITHUB_STEP_SUMMARY="")
+    for name in ("PYTEST_XDIST_WORKER", "PYTEST_XDIST_WORKER_COUNT", "PYTEST_XDIST_TESTRUNUID"):
+        env.pop(name, None)
+    source = ("import os, sys; from pathlib import Path; from tools import test_backend as runner; "
+              "runner.ROOT = Path.cwd(); sys.exit(runner.run_streaming("
+              "[sys.executable, '-m', 'pytest', '-q', '-p', 'tools.ci_pytest'], os.environ, Path('logs')))")
+    process = subprocess.Popen([sys.executable, "-c", source], cwd=tmp_path, env=env,
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    lines = []
+    seen = threading.Event()
+
+    def read_output():
+        for line in process.stdout:
+            lines.append(line)
+            if line.startswith("::error"):
+                seen.set()
+
+    reader = threading.Thread(target=read_output, daemon=True)
+    reader.start()
+    try:
+        assert seen.wait(20), "Failure annotation did not reach the streaming parent"
+        assert process.poll() is None
+        assert not (tmp_path / "evidence/report.json").exists()
+    finally:
+        (tmp_path / "release").touch()
+        try:
+            process.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        reader.join(timeout=5)
+        process.stdout.close()
+    assert process.returncode == 1, "".join(lines)
+    report = json.loads((tmp_path / "evidence/report.json").read_text(encoding="utf-8"))
+    assert sum(row["outcome"] == "failed" for row in report["reports"]) == 1
+    assert "::error file=test_live.py" in (tmp_path / "logs/run.log").read_text(encoding="utf-8")

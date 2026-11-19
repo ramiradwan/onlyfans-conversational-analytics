@@ -468,3 +468,50 @@ def test_windows_backend_bench_shards_cannot_drift_from_product_ci(old: str, new
     assert old in run
     with pytest.raises(AssertionError):
         _assert_bench_shards_match_product_ci(run.replace(old, new, 1), _workflow_document())
+
+
+@pytest.mark.parametrize("defender_available", [True, False])
+def test_windows_host_sampler_records_defender_activity_without_requiring_access(tmp_path, defender_available):
+    import csv
+    import shutil
+    import subprocess
+
+    pwsh = shutil.which("pwsh")
+    assert pwsh is not None, "PowerShell is required to exercise the mocked counter contract"
+    harness = tmp_path / "sample.ps1"
+    harness.write_text(r"""
+param([string]$Script, [string]$Output, [string]$DefenderAvailable)
+function Split-Path {
+    param($Path, [switch]$Qualifier)
+    if (-not $Qualifier) { throw "Unexpected path operation" }
+    "C:"
+}
+function Get-Counter {
+    param($Counter, $SampleInterval, [switch]$Continuous, $ErrorAction)
+    [pscustomobject]@{
+        Timestamp = [datetime]::UtcNow
+        CounterSamples = @([pscustomobject]@{
+            Path = '\host\processor(_total)\% processor time'; CookedValue = 42.5
+        })
+    }
+}
+function Get-Process {
+    param($Name, $ErrorAction)
+    if ($Name -ne 'MsMpEng' -or $DefenderAvailable -ne 'yes') { throw 'not accessible' }
+    [pscustomobject]@{ Id = 1234; CPU = 12.25; WorkingSet64 = 98765 }
+}
+& $Script -SampleCounters -Output $Output
+""", encoding="utf-8")
+    output = tmp_path / "host-counters.csv"
+    result = subprocess.run([pwsh, "-NoProfile", "-File", str(harness), "-Script",
+                             str(ROOT / "tools/ci_windows_host.ps1"), "-Output", str(output),
+                             "-DefenderAvailable", "yes" if defender_available else "no"],
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    with output.open(encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    assert len(rows) == 1 and None not in rows[0]
+    row = rows[0]
+    assert row["processor_time_percent"] == "42.5" and row["disk_queue_length"] == ""
+    values = tuple(row[k] for k in ("defender_pid", "defender_cpu_seconds", "defender_working_set_bytes"))
+    assert values == (("1234", "12.25", "98765") if defender_available else ("", "", ""))

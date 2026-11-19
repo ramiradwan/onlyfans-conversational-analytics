@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import sys
 import time
@@ -85,7 +87,18 @@ class Evidence:
             name = (f"progress-{self.config.workerinput['workerid']}.jsonl" if is_worker(self.config)
                     else "progress.jsonl")
             self.progress_stream = (output / name).open("w", encoding="utf-8")
-            self.progress("session_start", source_commit=os.environ.get("PRODUCT_SHA", ""),
+            host = {}
+            if not is_worker(self.config):
+                host = {"logical_processors": os.cpu_count(), "runner_image": os.environ.get("ImageOS", ""),
+                        "runner_image_version": os.environ.get("ImageVersion", ""), "cpu_model": platform.processor()}
+                if sys.platform.startswith("linux"):
+                    try:
+                        host["cpu_model"] = next((line.partition(":")[2].strip()
+                            for line in Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines()
+                            if line.startswith("model name")), host["cpu_model"])
+                    except OSError:
+                        pass
+            self.progress("session_start", **host, source_commit=os.environ.get("PRODUCT_SHA", ""),
                           workflow_run_id=os.environ.get("GITHUB_RUN_ID", ""),
                           run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT", ""),
                           job_id=os.environ.get("GITHUB_JOB", "local"), lane=self.lane(), pid=os.getpid(),
@@ -275,6 +288,100 @@ def _context_kwargs(report, distributed):
     return kwargs
 
 
+def _command_escape(value, *, property_value=False):
+    value = str(value).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    if property_value:
+        value = value.replace(":", "%3A").replace(",", "%2C")
+    return value
+
+
+def annotate_failure(evidence, report):
+    """Emit bounded, payload-free diagnostics from the controlling pytest process."""
+    config = evidence.config
+    if is_worker(config) or os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    workspace = os.environ.get("GITHUB_WORKSPACE")
+    temp = os.environ.get("RUNNER_TEMP")
+    if not workspace or not temp:
+        return
+    try:
+        if Path(workspace).resolve() != config.rootpath.resolve():
+            return
+    except (OSError, RuntimeError, ValueError):
+        return
+    # All controllers in a hosted job run sequentially; RUNNER_TEMP is job-local.
+    # Exclusive creation also bounds the budget if controllers overlap.
+    identity = hashlib.sha256(json.dumps([os.environ.get(k, "") for k in
+        ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_JOB")]).encode()).hexdigest()
+    budget = Path(temp) / ("ofca-failure-annotations-" + identity)
+    crash = getattr(report.longrepr, "reprcrash", None)
+    raw_message = getattr(crash, "message", "")
+    if not isinstance(raw_message, str):
+        raw_message = ""
+    match = re.match(r"([A-Za-z_][A-Za-z_0-9]*(?:Error|Exception|Failure))\b", raw_message)
+    classification = match.group(1) if match else "test failure"
+    # Only a fixed vocabulary is displayed; never include exception messages.
+    if classification not in {"AssertionError", "IndexError", "KeyError", "TypeError", "ValueError",
+                              "RuntimeError", "TimeoutError", "OSError", "FileNotFoundError", "AttributeError"}:
+        classification = "test failure"
+    location = getattr(report, "location", None)
+    path = None
+    if location:
+        try:
+            candidate = (config.rootpath / location[0]).resolve()
+            if candidate.is_relative_to(config.rootpath.resolve()) and candidate.is_file():
+                path = candidate.relative_to(config.rootpath.resolve()).as_posix()
+        except (OSError, RuntimeError, ValueError):
+            pass  # An unavailable source location must not prevent reporting.
+    nodeid = report.nodeid
+    # An external source location must not expose an absolute machine path.
+    if path is None:
+        nodeid = nodeid.partition("::")[2] or "test-id:" + hashlib.sha256(nodeid.encode()).hexdigest()[:12]
+    # Parameter values can contain arbitrary fixture data. Keep the test name,
+    # and identify parametrizations by digest rather than exposing their values.
+    if "[" in nodeid:
+        base, parameters = nodeid.split("[", 1)
+        nodeid = base + "[id:" + hashlib.sha256(parameters.encode()).hexdigest()[:12] + "]"
+    signature = [report.when, report.nodeid]
+    if report.when != "call" and crash is not None:
+        signature = [report.when, str(crash.path), crash.lineno, classification]
+    digest = hashlib.sha256(json.dumps(signature).encode()).hexdigest()
+    try:
+        budget.mkdir(exist_ok=True)
+        # Claim the signature, then one of eight slots with exclusive creates.
+        # No persistent lock can block a later invocation after a worker dies.
+        signature_path = budget / ("signature-" + digest)
+        try:
+            signature_path.touch(exist_ok=False)
+        except FileExistsError:
+            return
+        for slot in range(8):
+            try:
+                (budget / f"slot-{slot}").touch(exist_ok=False)
+                break
+            except FileExistsError:
+                continue
+        else:
+            signature_path.unlink(missing_ok=True)
+            try:
+                (budget / "overflow").touch(exist_ok=False)
+            except FileExistsError:
+                return
+            print("\n::notice::Additional test failures are in the full logs and execution report.",
+                  file=sys.__stdout__ or sys.stdout, flush=True)
+            return
+    except OSError:
+        return  # Diagnostics must never change the test outcome.
+    profile = config.getoption("ci_profile") or os.environ.get("HYPOTHESIS_PROFILE", "") or "default"
+    message = f"{nodeid} | {report.when} | {evidence.lane()} | {profile} | {classification}"
+    properties = ""
+    if path is not None:
+        properties = " file=" + _command_escape(path, property_value=True)
+        if isinstance(location[1], int) and location[1] >= 0:
+            properties += f",line={location[1] + 1}"
+    print(f"\n::error{properties}::{_command_escape(message)}", file=sys.__stdout__ or sys.stdout, flush=True)
+
+
 class ReportCollector:
     def __init__(self, evidence):
         self.evidence = evidence
@@ -310,6 +417,8 @@ class ReportCollector:
         yield from self._phase(item, "teardown")
 
     def pytest_runtest_logreport(self, report):
+        if report.failed:
+            annotate_failure(self.evidence, report)
         skip_reason = None
         if report.skipped:
             skip_reason = getattr(report, "wasxfail", None)
