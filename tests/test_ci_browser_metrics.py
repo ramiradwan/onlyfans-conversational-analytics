@@ -245,3 +245,33 @@ def test_complete_saved_history_is_paginated_through_the_shared_resolver():
     document["total_count"] = len(document["jobs"])
     result = metrics.summarize(run, document)
     assert result["all_attempts_workflow_runner_minutes"] == round((43 + 102 * 20) / 60, 3)
+
+
+def test_product_timing_occupancy_counts_actual_intervals_and_separates_outcomes():
+    from tools import product_ci_metrics as product
+    run, document = evidence()
+    run.update(status='completed', conclusion='success', event='pull_request', name='CI', head_branch='feature')
+    document['jobs'][0]['labels'] = ['windows-latest']
+    document['jobs'][1]['labels'] = ['ubuntu-latest']
+    result = product.summarize(run, document)
+    assert result['complete'] and result['observed_span_seconds'] == 40
+    assert result['runner_minutes_by_os']['windows'] == round(14/60,3)
+    assert product.overlap([result])['observed_peak_concurrent_jobs'] == 2
+    second = deepcopy(result)
+    second.update(run_id=8, conclusion='failure')
+    summary = product.overlap([result, second])
+    assert summary['peak_across_overlapping_runs'] == 4
+    assert summary['overlapping_run_seconds'] == 34
+    assert len(product.observations([result, second])) == 2
+    with pytest.raises(metrics.TimingError, match='duplicate_run'):
+        product.overlap([result, result])
+
+
+def test_product_timing_reports_incomplete_runs_without_latency_observations():
+    from tools import product_ci_metrics as product
+    run, document = evidence()
+    run.update(status='in_progress', conclusion=None)
+    document['jobs'][-1].update(status='in_progress', conclusion=None, completed_at=None)
+    result = product.summarize(run, document)
+    assert not result['complete'] and result['incomplete_job_ids'] == [12]
+    assert product.observations([result]) == []
