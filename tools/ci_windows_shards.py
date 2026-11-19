@@ -436,7 +436,7 @@ def replay_topologies(weights, *, observations, counts=range(3, 13), workers=4, 
                         serial * host["serial"] + parallel / workers * host["parallel"]),
                         "needs": (prefix + "wheel",), "group": prefix + "full"}
                 jobs[prefix + "gate"] = {"release": release, "duration": 15,
-                    "needs": (*full, *(prefix + name for name in other_jobs))}
+                    "needs": (*full, *(prefix + name for name, job in other_jobs.items() if job.get("gate_dependency", True)))}
             result = replay_schedule(jobs, capacity=capacity, group_limits=groups)
             result["run_seconds"] = [result["jobs"][f"{run}:gate"]["end"] - run * second_run_delay
                                      for run in range(2 if two else 1)]

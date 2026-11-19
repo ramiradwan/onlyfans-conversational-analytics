@@ -466,3 +466,12 @@ def test_topology_replay_is_reproducible_and_includes_stress_and_overlapping_run
         assert row["stress"]["1.7"]["peak_concurrency"] <= 3
         assert max(row["stress"]["1.7"]["run_seconds"]) >= max(row["stress"]["1.5"]["run_seconds"])
         assert row["max_parallel"] == 2
+
+
+def test_external_workflows_consume_capacity_without_delaying_product_gate_when_capacity_is_available():
+    weights = {f"f{n}.py": (1., 4.) for n in range(3)}
+    result = windows.replay_topologies(weights, observations=[{"serial": 1., "parallel": 1., "overhead": 0.}],
+        counts=[3], capacity=20, other_jobs={"wheel": {"duration": 1, "needs": ()},
+        "visual": {"duration": 100, "needs": (), "gate_dependency": False}}, repeats=2)[0]
+    assert result["median_seconds"] == 18
+    assert result["median_runner_seconds"] == 122
