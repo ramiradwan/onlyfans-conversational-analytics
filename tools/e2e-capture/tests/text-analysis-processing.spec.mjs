@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { assertJournalOrder, check, dropNextReply, fixture, prepareProfile, processingCommand, readJson, ready, sameMeaning,
-  selectProfile, stats, withTextAnalysis } from '../lib/text-analysis-browser.mjs';
+  selectProfile, stats, withTextAnalysis, observeSavedRead } from '../lib/text-analysis-browser.mjs';
 
 test('processing commands preserve durable enrollment and canonical findings', async () => {
   await withTextAnalysis('joint', async (x) => {
@@ -63,17 +63,7 @@ test('processing commands preserve durable enrollment and canonical findings', a
         && current.canonical.members === paused.canonical.members, 'saved_read_reanalysis');
     };
     const readFromUi = async (pathname, action, accept = () => true) => {
-      // Consume the real response as soon as it arrives. Waiting for the
-      // click to settle first can lose Chromium's response body under load.
-      const captured = x.page.waitForResponse((entry) => new URL(entry.url()).pathname === pathname && accept(entry.request()))
-        .then(async (response) => {
-          check(response.status() === 200 && /no-store/.test(response.headers()['cache-control'] ?? ''), 'saved_read_response');
-          const request = response.request(), post = request.method() === 'POST';
-          if (post) check(Boolean(request.headers()['x-csrf-token']), 'saved_read_csrf');
-          const value = await response.json();
-          return { value, body: post ? request.postDataJSON() : null };
-        });
-      const [result] = await Promise.all([captured, action()]);
+      const result = await observeSavedRead(x.page, pathname, action, accept);
       await unchanged();
       return result;
     };
