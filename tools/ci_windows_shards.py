@@ -206,6 +206,68 @@ def file_timings(report: dict[str, Any], *, only: Iterable[str] | None = None) -
     return totals
 
 
+
+def prove_focused_overlap(full: dict[str, Any], focused: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """Prove historical default-node overlap before considering deduplication.
+
+    Caller must independently verify workflow inputs and producer attempts.
+    This does not authorize a changed workflow or remove any tests.
+    """
+    _check_scope(full, execution=True)
+    file_timings(full)
+    identity = ("source_commit", "workflow_run_id", "platform", "python", "python_implementation", "pytest")
+
+    def inventory(report):
+        rows = report["collected"]
+        result = {row["nodeid"]: (row["path"], tuple(sorted(row["markers"]))) for row in rows}
+        if len(result) != len(rows):
+            raise WindowsShardError("Duplicate focused or exhaustive inventory identity")
+        return result
+
+    def outcomes(report):
+        result = {}
+        for phase in report["reports"]:
+            result.setdefault(phase["nodeid"], []).append(json.dumps({
+                k: phase.get(k) for k in ("when", "outcome", "wasxfail", "skip_reason", "subtest")
+            }, sort_keys=True))
+        return {node: sorted(phases) for node, phases in result.items()}
+
+    raw = inventory(full)
+    all_nodes = set(full["selected"])
+    full_outcomes = outcomes(full)
+    seen: set[str] = set()
+    for report in focused:
+        if (any(not full.get(k) or report.get(k) != full.get(k) for k in identity)
+                or full.get("execution", {}).get("workers") != 4
+                or report.get("execution", {}).get("workers") != 4
+                or not full.get("execution", {}).get("dist")
+                or report.get("execution", {}).get("dist") != full.get("execution", {}).get("dist")
+                or inventory(report) != raw):
+            raise WindowsShardError("Focused Windows inventory or execution identity differs")
+        selected = set(report["selected"])
+        if not selected or not selected <= all_nodes or seen & selected:
+            raise WindowsShardError("Focused Windows selection is not a disjoint subset of the default inventory")
+        # Validate complete focused execution with the same phase checks used for exhaustive evidence.
+        if (report.get("schema") != full.get("schema") or report.get("complete") is not True
+                or report.get("exit_code") != 0 or report.get("collect_only") is not False
+                or report.get("partial") is not False or report.get("collection_errors") != []
+                or report.get("profile") != "" or report.get("selection_profile") != ""
+                or report.get("selection") != {"keyword": "", "marker": "", "targets": ["tests"]}
+                or len(report["selected"]) != len(selected)
+                or len(report["deselected"]) != len(set(report["deselected"]))
+                or set(report["deselected"]) != set(raw) - selected):
+            raise WindowsShardError("Focused Windows execution is incomplete or narrowed")
+        file_timings(dict(report, collected=[row for row in report["collected"] if row["nodeid"] in selected]))
+        actual = outcomes(report)
+        if set(actual) != selected or any(actual[node] != full_outcomes[node] for node in selected):
+            raise WindowsShardError("Focused Windows phase or subtest outcomes differ")
+        seen.update(selected)
+    if not seen:
+        raise WindowsShardError("No focused Windows evidence")
+    return {"default_count": len(all_nodes), "focused_count": len(seen),
+            "complement_count": len(all_nodes - seen), "focused_nodeids": sorted(seen)}
+
+
 def phase_model(workers: Any, contention: Any) -> dict[str, Any]:
     """Expected job seconds: parallel tests share workers at a measured slowdown."""
     if (type(workers) is not int or workers < 1 or type(contention) not in (int, float)
@@ -273,3 +335,256 @@ def updated_manifest(manifest: dict[str, Any] | None, inventory: dict[str, Any],
                + " longest-first allocation; existing owners retained unless --rebalance",
         source=source, timing_seconds=dict(sorted(timings.items())), **phase_fields,
         unmeasured_files=sorted(files - timings.keys())))
+
+
+
+def model_candidate_partitions(report: dict[str, Any], *, workers: int = 4,
+                               contention: float = 1.0,
+                               counts: Iterable[int] = range(3, 13)) -> list[dict[str, Any]]:
+    """Estimate alternative file partitions without modifying the active manifest.
+
+    Timings must be complete Windows execution evidence. The parallel component
+    divides measured test-phase work by the worker count; serial work is never
+    divided. Estimates exclude collection, setup outside pytest and queue time,
+    and are not approval to change the required CI topology.
+    """
+    _check_scope(report, execution=True)
+    model = phase_model(workers, contention)
+    totals = file_timings(report)
+    serial = file_timings(report, only={row["nodeid"] for row in report["collected"]
+                                       if "serial" in row["markers"]})
+    counts = list(counts)
+    if (not counts or any(type(count) is not int or not 3 <= count <= 12 or count > len(totals)
+                          for count in counts) or len(counts) != len(set(counts))):
+        raise WindowsShardError("Candidate counts must be distinct integers from 3 to 12 with sufficient files")
+    weights = {path: serial[path] + (seconds - serial[path]) * model["contention"] / model["workers"]
+               for path, seconds in totals.items()}
+    candidates = []
+    for count in sorted(counts):
+        loads = dict.fromkeys(range(1, count + 1), 0.0)
+        assignments = {}
+        for path in sorted(weights, key=lambda name: (-weights[name], name)):
+            # Prefer an unused shard on ties, including all-zero timing reports.
+            assigned = set(assignments.values())
+            shard = min(loads, key=lambda owner: (loads[owner], owner in assigned, owner))
+            assignments[path] = shard
+            loads[shard] += weights[path]
+        peak = max(loads.values())
+        candidates.append(dict(shards=count, files=dict(sorted(assignments.items())),
+                               expected_work_seconds=loads, peak_work_seconds=peak,
+                               stress_1_5_work_seconds=peak * 1.5,
+                               stress_1_7_work_seconds=peak * 1.7))
+    return candidates
+
+
+
+def allocate_phase_work(weights: dict[str, tuple[float, float]], count: int, *, workers: int = 4):
+    """Assign whole files by observed serial and parallel work, never test count."""
+    phase_model(workers, 1.0)
+    if type(count) is not int or not 1 <= count <= len(weights):
+        raise WindowsShardError("Invalid number of candidate shards")
+    if any(not isinstance(path, str) or not path or len(pair) != 2
+           or any(type(value) not in (int, float) or not math.isfinite(value) or value < 0 for value in pair)
+           for path, pair in weights.items()):
+        raise WindowsShardError("Invalid phase work")
+    loads = {n: [0.0, 0.0] for n in range(1, count + 1)}
+    owners = {}
+    cost = lambda pair: pair[0] + pair[1] / workers
+    for path in sorted(weights, key=lambda path: (-cost(weights[path]), path)):
+        assigned = set(owners.values())
+        owner = min(loads, key=lambda n: (cost(loads[n]), n in assigned, n))
+        owners[path] = owner
+        for phase in range(2):
+            loads[owner][phase] += weights[path][phase]
+    return dict(sorted(owners.items())), loads
+
+
+def replay_schedule(jobs, *, capacity: int, group_limits=None):
+    """Replay a deterministic non-preemptive DAG at an explicit runner ceiling.
+
+    Each job declares a release time, duration, prerequisites and optional
+    matrix group. Groups are scoped to a workflow invocation by the caller.
+    Queue time starts when all dependencies and the release time are satisfied.
+    """
+    if type(capacity) is not int or capacity < 1:
+        raise WindowsShardError("Invalid runner capacity")
+    group_limits = group_limits or {}
+    if any(type(limit) is not int or limit < 1 for limit in group_limits.values()):
+        raise WindowsShardError("Invalid matrix concurrency")
+    if not jobs or any(not isinstance(name, str) or not name for name in jobs):
+        raise WindowsShardError("Invalid schedule job identities")
+    for name, job in jobs.items():
+        if (any(type(job[k]) not in (int, float) or not math.isfinite(job[k]) or job[k] < 0
+                for k in ("release", "duration")) or set(job["needs"]) - jobs.keys()
+                or name in job["needs"] or job.get("group") is not None and job["group"] not in group_limits):
+            raise WindowsShardError("Invalid schedule job declaration")
+    pending, active, result = set(jobs), {}, {}
+    now = 0.0
+    peak = 0
+    while pending or active:
+        for name in sorted(tuple(active)):
+            if active[name] <= now:
+                result[name]["end"] = active.pop(name)
+        finished = {name for name, row in result.items() if "end" in row}
+        ready = sorted((name for name in pending if set(jobs[name]["needs"]) <= finished
+                        and jobs[name]["release"] <= now),
+                       key=lambda name: (max([jobs[name]["release"], *(result[n]["end"] for n in jobs[name]["needs"])]), name))
+        for name in ready:
+            if len(active) >= capacity:
+                break
+            group = jobs[name].get("group")
+            if group is not None and sum(jobs[n].get("group") == group for n in active) >= group_limits[group]:
+                continue
+            ready_at = max([jobs[name]["release"], *(result[n]["end"] for n in jobs[name]["needs"])])
+            result[name] = {"start": now, "queue": now - ready_at}
+            active[name] = now + jobs[name]["duration"]
+            pending.remove(name)
+            peak = max(peak, len(active))
+        if not pending and not active:
+            break
+        future = list(active.values()) + [jobs[name]["release"] for name in pending if jobs[name]["release"] > now]
+        if not future:
+            raise WindowsShardError("Schedule dependencies are cyclic or blocked")
+        now = min(future)
+    return {"jobs": result, "elapsed_seconds": max(row["end"] for row in result.values()),
+            "runner_seconds": sum(job["duration"] for job in jobs.values()), "peak_concurrency": peak,
+            "queue_seconds": sum(row["queue"] for row in result.values())}
+
+
+def replay_topologies(weights, *, observations, counts=range(3, 13), workers=4, capacity=40,
+                      other_jobs, matrix_limit=None, repeats=300, seed=20261119, second_run_delay=60):
+    """Resample complete observed host profiles, not individual test durations.
+
+    Observations contain correlated serial/parallel multipliers and observed
+    setup/collection overhead. The estimates are conditional on this sample,
+    not claims about population p95. Replay also reports deterministic stress
+    scenarios and two adjacent main pushes sharing one runner budget.
+    """
+    import random
+    if (not observations or type(repeats) is not int or repeats < 1 or
+            any(set(row) != {"serial", "parallel", "overhead"} or
+                any(type(v) not in (int, float) or not math.isfinite(v) or v < 0 for v in row.values())
+                for row in observations)):
+        raise WindowsShardError("Invalid observed host profiles")
+    if type(second_run_delay) not in (int, float) or not math.isfinite(second_run_delay) or second_run_delay < 0:
+        raise WindowsShardError("Invalid second run delay")
+    if not other_jobs or "wheel" not in other_jobs or "gate" in other_jobs or any(name.startswith("full-") for name in other_jobs):
+        raise WindowsShardError("Missing supporting job declarations")
+    counts = list(counts)
+    if not counts or len(set(counts)) != len(counts) or any(type(n) is not int or not 3 <= n <= 12 for n in counts):
+        raise WindowsShardError("Invalid candidate topology counts")
+    rng = random.Random(seed)
+    # Use common random numbers across candidate counts for fair comparisons.
+    draws = [[rng.choice(observations) for _ in range(max(counts) * 2)] for _ in range(repeats)]
+    outputs = []
+    for count in sorted(counts):
+        owners, loads = allocate_phase_work(weights, count, workers=workers)
+        limit = min(count, matrix_limit) if matrix_limit is not None else count
+        def schedule(profiles, *, stress=1.0, two=False):
+            jobs, groups = {}, {}
+            for run in range(2 if two else 1):
+                prefix = f"{run}:"
+                release = run * second_run_delay
+                groups[prefix + "full"] = limit
+                for name, original in other_jobs.items():
+                    jobs[prefix + name] = {"release": release + original.get("release", 0),
+                        "duration": original["duration"], "needs": tuple(prefix + n for n in original["needs"])}
+                full = []
+                for shard, (serial, parallel) in loads.items():
+                    host = profiles[run * max(counts) + shard - 1]
+                    name = prefix + f"full-{shard}"
+                    full.append(name)
+                    jobs[name] = {"release": release, "duration": host["overhead"] + stress * (
+                        serial * host["serial"] + parallel / workers * host["parallel"]),
+                        "needs": (prefix + "wheel",), "group": prefix + "full"}
+                jobs[prefix + "gate"] = {"release": release, "duration": 15,
+                    "needs": (*full, *(prefix + name for name, job in other_jobs.items() if job.get("gate_dependency", True)))}
+            result = replay_schedule(jobs, capacity=capacity, group_limits=groups)
+            result["run_seconds"] = [result["jobs"][f"{run}:gate"]["end"] - run * second_run_delay
+                                     for run in range(2 if two else 1)]
+            return result
+        samples = [schedule(draw) for draw in draws]
+        doubled = [schedule(draw, two=True) for draw in draws]
+        percentile = lambda values, p: sorted(values)[max(0, math.ceil(len(values) * p) - 1)]
+        typical = {k: statistics.median(row[k] for row in observations) for k in ("serial", "parallel", "overhead")}
+        stress_profiles = [typical] * (max(counts) * 2)
+        stress = {str(factor): schedule(stress_profiles, stress=factor, two=True) for factor in (1.5, 1.7)}
+        outputs.append({"shards": count, "max_parallel": limit, "files": owners,
+            "observed_profiles": len(observations), "bootstrap_draws": repeats,
+            "median_seconds": percentile([r["run_seconds"][0] for r in samples], .5),
+            "conditional_p95_seconds": percentile([r["run_seconds"][0] for r in samples], .95),
+            "two_run_conditional_p95_seconds": percentile([max(r["run_seconds"]) for r in doubled], .95),
+            "median_runner_seconds": percentile([r["runner_seconds"] for r in samples], .5),
+            "two_run_p95_queue_seconds": percentile([r["queue_seconds"] for r in doubled], .95),
+            "stress": {factor: {k: row[k] for k in ("run_seconds", "runner_seconds", "peak_concurrency", "queue_seconds")}
+                       for factor, row in stress.items()}})
+    return outputs
+
+
+
+def candidate_counts(plan):
+    """Historical schema 1 is fixed; schema 2 explicitly owns analytics files too."""
+    schema = plan.get("schema")
+    if type(schema) is not int or schema not in (1, 2):
+        raise WindowsShardError("Invalid candidate schema")
+    counts = {}
+    for key in (("full", "platform") if schema == 1 else ("full", "platform", "analytics")):
+        owners = plan.get(key)
+        if not isinstance(owners, dict) or not owners or any(type(n) is not int or not 1 <= n <= 12 for n in owners.values()):
+            raise WindowsShardError("Invalid candidate file assignments")
+        count = max(owners.values())
+        if set(owners.values()) != set(range(1, count + 1)):
+            raise WindowsShardError("Candidate shard assignments have gaps")
+        counts[key] = count
+    if schema == 1 and counts != {"full": 10, "platform": 4}:
+        raise WindowsShardError("Historical candidate counts differ")
+    return {**counts, "analytics": counts.get("analytics", 1)}
+
+
+def candidate_groups(rows, plan, contracts, *, complete=True):
+    """Non-gating trial partition, preserving every raw default node."""
+    from tools.ci_selection import matches
+    rows = list(rows)
+    if len(rows) != len({r["nodeid"] for r in rows}):
+        raise WindowsShardError("Duplicate candidate inventory")
+    if set(contracts) != {"platform", "analytics"}:
+        raise WindowsShardError("Invalid candidate inputs")
+    counts = candidate_counts(plan)
+    groups = {f"{kind}-{n}": set() for kind, count in counts.items() for n in range(1, count + 1)
+              if kind != "analytics" or plan["schema"] == 2}
+    if plan["schema"] == 1:
+        groups["analytics"] = set()
+    retain_list = plan["retain_in_full"]
+    if not isinstance(retain_list, list) or any(not isinstance(n, str) for n in retain_list) or len(set(retain_list)) != len(retain_list):
+        raise WindowsShardError("Invalid retained node identities")
+    retain = set(retain_list)
+    raw = legacy_nodeids(rows)
+    full_files = {node_path(n) for n in raw}
+    if full_files - plan["full"].keys() or complete and full_files != set(plan["full"]):
+        raise WindowsShardError("Candidate raw file inventory differs")
+    focused_files = {"platform": set(), "analytics": set()}
+    focused = set()
+    for node in raw:
+        declared = [key for key, entries in contracts.items() if any(matches(node, e["selector"]) for e in entries)]
+        if len(declared) > 1:
+            raise WindowsShardError("Candidate focused declarations overlap")
+        path = node_path(node)
+        if declared:
+            kind = declared[0]
+            focused_files[kind].add(path)
+            if kind == "analytics" and plan["schema"] == 1:
+                group = kind
+            else:
+                if path not in plan[kind]:
+                    raise WindowsShardError(f"Candidate {kind} file unassigned")
+                group = f"{kind}-{plan[kind][path]}"
+            groups[group].add(node)
+            focused.add(node)
+        if not declared or node in retain:
+            groups[f"full-{plan['full'][path]}"].add(node)
+    if complete and (any(focused_files[key] != set(plan[key]) for key in focused_files if key in plan)
+                     or not retain <= focused or any(not group for group in groups.values())):
+        raise WindowsShardError("Candidate focused inventory or retained skip set differs")
+    if set().union(*groups.values()) != raw:
+        raise WindowsShardError("Candidate union differs from raw legacy inventory")
+    return groups

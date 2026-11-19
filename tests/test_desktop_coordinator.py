@@ -730,8 +730,11 @@ async def test_idle_confirmation_wakes_only_on_frame_expiry_or_failed_wait(setup
 async def test_lost_wait_falls_back_to_probe_then_reconnects(setup, monkeypatch):
     monkeypatch.setattr("app.onboarding.coordinator.WAIT_BACKOFF_CAP_SECONDS", 0.3)
     coordinator, owner, session, _ = setup
-    lose = asyncio.Event()
-    hints = Hints((_hint(1), lose, OSError("stream lost")), (_hint(2, "retired", "committed"), "hold"))
+    lose, reconnected_frame = asyncio.Event(), asyncio.Event()
+    # A reconnect may open before the watcher gets CPU time. Keep its first
+    # frame pending to exercise the fallback probe while the wait is unheld.
+    hints = Hints((_hint(1), lose, OSError("stream lost")),
+                  (reconnected_frame, _hint(2, "retired", "committed"), "hold"))
     request, probes = await _waited_connect(setup, hints)
     try:
         await _until(lambda: request["operation_id"] in coordinator._held)
@@ -741,8 +744,12 @@ async def test_lost_wait_falls_back_to_probe_then_reconnects(setup, monkeypatch)
         lose.set()
         # The probe resumes while the wait is down, then the reconnected wait reconciles.
         await _until(lambda: probes, timeout=1)
+        assert request["operation_id"] not in coordinator._held
+        assert set(probes) == {request["operation_id"]}
         await _until(lambda: len(hints.opened) >= 2, timeout=2)
+        reconnected_frame.set()
         await _until(lambda: [reconcile for _, reconcile in owner.calls].count(True) > before, timeout=2)
+        assert request["operation_id"] in coordinator._held
     finally:
         await coordinator.stop()
 

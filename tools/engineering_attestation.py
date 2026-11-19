@@ -128,6 +128,21 @@ REQUIRED_SHARDED_V7_PRODUCT_CI_JOB_NAMES = (
     REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES - {"windows-platform-contract"}
 ) | {f"windows-platform-contract-{shard}" for shard in range(1, 4)}
 REQUIRED_SHARDED_V8_PRODUCT_CI_JOB_NAMES = REQUIRED_SHARDED_V7_PRODUCT_CI_JOB_NAMES | {"windows-full-regression-3"}
+SHARDED_V9_PRODUCT_CI_JOB_IDS = SHARDED_V4_PRODUCT_CI_JOB_IDS | {
+    "candidate-preflight", "windows-qualification", "web-build-assets",
+}
+REQUIRED_SHARDED_V9_PRODUCT_CI_JOB_NAMES = (
+    REQUIRED_SHARDED_V8_PRODUCT_CI_JOB_NAMES - {"analytics-windows-contract"}
+) | {f"windows-full-regression-{n}" for n in range(4, 9)} | {
+    "windows-platform-contract-4", "windows-platform-contract-5",
+    "analytics-windows-contract-1", "analytics-windows-contract-2",
+    "candidate-preflight", "windows-qualification", "web-build-assets",
+}
+
+
+def _v9_reuse_condition(event_condition: str = "true") -> str:
+    return "${{ always() && !cancelled() && (" + event_condition + ") && needs.fixed-sqlcipher-wheel.result == 'success' }}"
+
 BROWSER_SERIAL_CONTROL_IF = "${{ github.event_name == 'workflow_dispatch' && inputs.browser_serial_control }}"
 
 PRODUCER_ROOT = Path(__file__).resolve().parent.parent
@@ -822,7 +837,7 @@ def _validate_sharded_v2_source(
     job_source: str, *, pr_cutover: bool = False, browser_aggregate: bool = False,
     native_contracts: bool = False, extended_windows_budget: bool = False,
     extended_analytics_budget: bool = False, platform_shards: bool = False,
-    full_windows_shards: int = 2,
+    full_windows_shards: int = 2, v9: bool = False,
 ) -> None:
     jobs = _ci_literal_mapping(job_source, 2)
     matrix_jobs = [
@@ -832,10 +847,14 @@ def _validate_sharded_v2_source(
          "90" if extended_windows_budget else "60", full_windows_shards),
     ]
     if platform_shards:
-        matrix_jobs.append(("windows-platform-contract", "windows-platform-contract", "windows-latest", "60", 3))
+        matrix_jobs.append(("windows-platform-contract", "windows-platform-contract", "windows-latest", "60", 5 if v9 else 3))
+    if v9:
+        matrix_jobs.append(("analytics-windows-contract", "analytics-windows-contract", "windows-latest", "20", 2))
     for job_id, name, runner, timeout, count in matrix_jobs:
         fields = _ci_literal_mapping(jobs[job_id], 4)
         expected_if = WINDOWS_FULL_CUTOVER_CONDITION if pr_cutover and job_id == "windows-full-shards" else None
+        if v9 and job_id != "analytics-integration":
+            expected_if = _v9_reuse_condition("github.event_name == 'push' || github.event_name == 'workflow_dispatch'" if job_id == "windows-full-shards" else "true")
         if (fields.get("name") != name + "-${{ matrix.shard }}"
                 or fields.get("runs-on") != runner
                 or fields.get("timeout-minutes") != timeout
@@ -850,7 +869,10 @@ def _validate_sharded_v2_source(
                 or set(matrix) != {"shard"}
                 or _ci_literal_list(matrix["shard"]) != [str(shard) for shard in range(1, count + 1)]):
             raise ContractError(f"{job_id}: Product CI matrix must declare every bounded execution in its source policy")
-        if job_id == "windows-platform-contract" and fields.get("needs") != "fixed-sqlcipher-wheel":
+        if v9 and job_id != "analytics-integration":
+            if set(_ci_literal_list(fields.get("needs", ""))) != {"fixed-sqlcipher-wheel", "web-build-assets"}:
+                raise ContractError("v9 Windows shards must retain wheel and exact-run asset producer dependencies")
+        elif job_id == "windows-platform-contract" and fields.get("needs") != "fixed-sqlcipher-wheel":
             raise ContractError("Windows platform shards must retain their qualified SQLCipher wheel dependency")
     aggregate = _ci_literal_mapping(jobs["windows-full-regression"], 4)
     gate = _ci_literal_mapping(jobs["required-ci-gate"], 4)
@@ -859,6 +881,8 @@ def _validate_sharded_v2_source(
     }
     if native_contracts:
         gate_needs = gate_needs | {"desktop-native-contracts"}
+    if v9:
+        gate_needs |= {"candidate-preflight", "windows-qualification", "web-build-assets"}
     if (aggregate.get("name", "windows-full-regression") != "windows-full-regression"
             or aggregate.get("if") != "${{ always() }}"
             or aggregate.get("needs") != "windows-full-shards"
@@ -876,7 +900,8 @@ def _validate_sharded_v2_source(
             focused_jobs.append("windows-browser-e2e")
         for job_id in focused_jobs:
             fields = _ci_literal_mapping(jobs[job_id], 4)
-            if "if" in fields or fields.get("continue-on-error", "false") != "false":
+            if ((not v9 and "if" in fields) or (v9 and fields.get("if") != _v9_reuse_condition())
+                    or fields.get("continue-on-error", "false") != "false"):
                 raise ContractError("Windows PR cutover cannot make a focused Windows or browser job optional")
 
 
@@ -884,7 +909,7 @@ def _validate_sharded_v3_source(
     job_source: str, policy_source: bytes | None, *, pr_cutover: bool = False,
     native_contracts: bool = False, extended_windows_budget: bool = False,
     extended_analytics_budget: bool = False, platform_shards: bool = False,
-    full_windows_shards: int = 2,
+    full_windows_shards: int = 2, v9: bool = False,
 ) -> None:
     """Require the reviewed policy at the candidate SHA, not today's checkout."""
     if policy_source is None:
@@ -892,15 +917,15 @@ def _validate_sharded_v3_source(
     policy = load_json_strict(policy_source, label="Product CI source policy")
     expected = {
         "schema_version": 1,
-        "policy_version": "sharded-v8-pr-cutover" if full_windows_shards == 3 else (
+        "policy_version": "sharded-v9-pr-cutover" if v9 else "sharded-v8-pr-cutover" if full_windows_shards == 3 else (
             "sharded-v7-pr-cutover" if platform_shards else (
             "sharded-v6-pr-cutover" if extended_analytics_budget else (
             "sharded-v5-pr-cutover" if extended_windows_budget else (
             "sharded-v4-pr-cutover" if native_contracts else (
                 "sharded-v3-pr-cutover" if pr_cutover else "sharded-v3"))))),
         "workflow": PRODUCT_CI_WORKFLOW,
-        "job_ids": sorted(SHARDED_V4_PRODUCT_CI_JOB_IDS if native_contracts else SHARDED_V3_PRODUCT_CI_JOB_IDS),
-        "required_job_names": sorted(REQUIRED_SHARDED_V8_PRODUCT_CI_JOB_NAMES if full_windows_shards == 3 else (
+        "job_ids": sorted(SHARDED_V9_PRODUCT_CI_JOB_IDS if v9 else SHARDED_V4_PRODUCT_CI_JOB_IDS if native_contracts else SHARDED_V3_PRODUCT_CI_JOB_IDS),
+        "required_job_names": sorted(REQUIRED_SHARDED_V9_PRODUCT_CI_JOB_NAMES if v9 else REQUIRED_SHARDED_V8_PRODUCT_CI_JOB_NAMES if full_windows_shards == 3 else (
             REQUIRED_SHARDED_V7_PRODUCT_CI_JOB_NAMES if platform_shards else (
             REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES if native_contracts else REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES))),
         "allowed_skipped_jobs": ["browser-e2e-serial-control"],
@@ -916,8 +941,35 @@ def _validate_sharded_v3_source(
                                 extended_windows_budget=extended_windows_budget,
                                 extended_analytics_budget=extended_analytics_budget,
                                 platform_shards=platform_shards,
-                                full_windows_shards=full_windows_shards)
+                                full_windows_shards=full_windows_shards, v9=v9)
     jobs = _ci_literal_mapping(job_source, 2)
+    if v9:
+        for name, runner, timeout in (("candidate-preflight", "ubuntu-latest", "5"),
+                                       ("windows-qualification", "windows-latest", "60"),
+                                       ("web-build-assets", "ubuntu-latest", "10")):
+            fields = _ci_literal_mapping(jobs[name], 4)
+            if (fields.get("runs-on") != runner or fields.get("timeout-minutes") != timeout
+                    or "strategy" in fields or "name" in fields
+                    or fields.get("continue-on-error", "false") != "false"):
+                raise ContractError(f"{name}: v9 mandatory job differs from source policy")
+            if name == "windows-qualification":
+                if (fields.get("if") != _v9_reuse_condition() or set(_ci_literal_list(fields.get("needs", ""))) != {"fixed-sqlcipher-wheel", "web-build-assets"}):
+                    raise ContractError("v9 Windows qualification dependency or condition differs")
+            elif "if" in fields or "needs" in fields:
+                raise ContractError(f"{name}: v9 producer must run independently")
+        scale = _ci_literal_mapping(jobs["analytics-scale-qualification"], 4)
+        if (scale.get("if") != _v9_reuse_condition("github.event_name != 'pull_request'")
+                or set(_ci_literal_list(scale.get("needs", ""))) != {"fixed-sqlcipher-wheel", "web-build-assets"}
+                or scale.get("continue-on-error", "false") != "false"):
+            raise ContractError("v9 analytics scale must remain mandatory on main and manual runs")
+        gate = _ci_literal_mapping(jobs["required-ci-gate"], 4)
+        verifier_step = """      - name: Require complete successful CI evidence
+        env:
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/ci_gate.py --needs-json "$CI_NEEDS_JSON" --reports-dir artifacts/ci-downloaded"""
+        if not gate.get("steps", "").endswith(verifier_step) or gate.get("steps", "").count(verifier_step) != 1:
+            raise ContractError("v9 Required CI must invoke the unconditional production evidence verifier")
     if native_contracts:
         native = _ci_literal_mapping(jobs["desktop-native-contracts"], 4)
         if (native.get("runs-on") != "windows-latest"
@@ -1033,6 +1085,7 @@ def product_ci_job_policy(workflow_source: bytes, policy_source: bytes | None = 
         "sharded-v6-pr-cutover": (SHARDED_V4_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES),
         "sharded-v7-pr-cutover": (SHARDED_V4_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V7_PRODUCT_CI_JOB_NAMES),
         "sharded-v8-pr-cutover": (SHARDED_V4_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V8_PRODUCT_CI_JOB_NAMES),
+        "sharded-v9-pr-cutover": (SHARDED_V9_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V9_PRODUCT_CI_JOB_NAMES),
     }
     if len(versions) != 1 or versions[0] not in policies or source.count("CI_POLICY_VERSION") != 1:
         raise ContractError("Product CI source declares an unknown or ambiguous job policy")
@@ -1045,6 +1098,10 @@ def product_ci_job_policy(workflow_source: bytes, policy_source: bytes | None = 
         raise ContractError("sharded Product CI source does not declare the exact required job set")
     if version in {"sharded-v2", "sharded-v2-pr-cutover"}:
         _validate_sharded_v2_source(job_block, pr_cutover=version == "sharded-v2-pr-cutover")
+    elif version == "sharded-v9-pr-cutover":
+        _validate_sharded_v3_source(job_block, policy_source, pr_cutover=True, native_contracts=True,
+                                    extended_windows_budget=True, extended_analytics_budget=True,
+                                    platform_shards=True, full_windows_shards=8, v9=True)
     elif version in {"sharded-v3", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover", "sharded-v5-pr-cutover", "sharded-v6-pr-cutover", "sharded-v7-pr-cutover", "sharded-v8-pr-cutover"}:
         _validate_sharded_v3_source(job_block, policy_source, pr_cutover=version != "sharded-v3",
                                     native_contracts=version in {"sharded-v4-pr-cutover", "sharded-v5-pr-cutover", "sharded-v6-pr-cutover", "sharded-v7-pr-cutover", "sharded-v8-pr-cutover"},
@@ -1052,7 +1109,7 @@ def product_ci_job_policy(workflow_source: bytes, policy_source: bytes | None = 
                                     extended_analytics_budget=version in {"sharded-v6-pr-cutover", "sharded-v7-pr-cutover", "sharded-v8-pr-cutover"},
                                     platform_shards=version in {"sharded-v7-pr-cutover", "sharded-v8-pr-cutover"},
                                     full_windows_shards=3 if version == "sharded-v8-pr-cutover" else 2)
-    if version in {"sharded-v2-pr-cutover", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover", "sharded-v5-pr-cutover", "sharded-v6-pr-cutover", "sharded-v7-pr-cutover", "sharded-v8-pr-cutover"}:
+    if version in {"sharded-v2-pr-cutover", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover", "sharded-v5-pr-cutover", "sharded-v6-pr-cutover", "sharded-v7-pr-cutover", "sharded-v8-pr-cutover", "sharded-v9-pr-cutover"}:
         _validate_cutover_triggers(blocks[0], browser_qualification=version != "sharded-v2-pr-cutover")
     return set(required_names)
 
@@ -1272,7 +1329,7 @@ def qualify_product_ci_source(client: GitHubApi, *, source_commit: str) -> int:
         client, PRODUCT_REPOSITORY, PRODUCT_CI_WORKFLOW, source_commit
     )
     policy_source = None
-    if re.search(rb"(?m)^  CI_POLICY_VERSION: (?:sharded-v3(?:-pr-cutover)?|sharded-v4-pr-cutover|sharded-v5-pr-cutover|sharded-v6-pr-cutover|sharded-v7-pr-cutover|sharded-v8-pr-cutover)\r?$", workflow_source):
+    if re.search(rb"(?m)^  CI_POLICY_VERSION: (?:sharded-v3(?:-pr-cutover)?|sharded-v4-pr-cutover|sharded-v5-pr-cutover|sharded-v6-pr-cutover|sharded-v7-pr-cutover|sharded-v8-pr-cutover|sharded-v9-pr-cutover)\r?$", workflow_source):
         _, policy_source = fetch_git_blob(
             client, PRODUCT_REPOSITORY, PRODUCT_CI_POLICY_PATH, source_commit
         )

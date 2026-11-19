@@ -167,3 +167,89 @@ def test_active_windows_driver_is_fixed_and_fails_closed() -> None:
     assert report["encryption"]["stdlib_sqlite_rejected"] is True
     assert report["encryption"]["wrong_key_rejected"] is True
     assert report["qualified"] is True
+
+
+@pytest.fixture
+def fixed_wheel_cache_fixture(tmp_path):
+    from tools import ci_sqlcipher_cache as cache
+    sources = json.loads(SOURCES.read_text(encoding="utf-8"))
+    inputs = {"schema": 1, "files": {name: cache.digest(ROOT / name) for name in cache.INPUT_FILES},
+              "runner": {"ImageOS": "win", "ImageVersion": "1", "RUNNER_OS": "Windows", "RUNNER_ARCH": "X64"},
+              "python_version": "reviewed CPython 3.11", "python_tag": "cp311", "msvc_compiler_version": "19.51"}
+    producer = {"source_commit": "a" * 40, "workflow_run_id": 42, "workflow_run_attempt": 1}
+    directory = tmp_path / "wheel-cache"
+    names = cache.payload_names(sources, inputs)
+    for name in names:
+        if not name.endswith(".provenance.json"):
+            target = directory / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(name.encode())
+    wheel = next(name for name in names if name.endswith(".whl"))
+    provenance = {"schema_version": 1, "wheel": {"filename": wheel, "sha256": cache.digest(directory / wheel)},
+        "sources": {**sources, "generated_amalgamation_sha256": "b" * 64},
+        "build": {"target_python_version": inputs["python_version"], "builder_python_version": inputs["python_version"],
+                  "msvc_compiler_version": inputs["msvc_compiler_version"], "platform": "nt",
+                  "openssl_linkage": "static /MD; dumpbin found no libcrypto/libssl DLL dependency",
+                  "vcpkg_openssl": {"triplet": sources["vcpkg"]["triplet"], "port": sources["vcpkg"]["port"]}},
+        "licenses_retained": {name: cache.digest(directory / name) for name in names if ".licenses/" in name}}
+    (directory / next(name for name in names if name.endswith(".provenance.json"))).write_bytes(cache.canonical(provenance))
+    manifest = cache.seal(directory, inputs, sources, producer)
+    return cache, directory, inputs, sources, manifest
+
+
+def test_attested_wheel_restore_binds_original_producer_and_current_inputs(fixed_wheel_cache_fixture, tmp_path):
+    cache, directory, inputs, sources, manifest = fixed_wheel_cache_fixture
+    observed = []
+    def verify(path, source):
+        observed.append((path, source))
+    destination = tmp_path / "current-wheelhouse"
+    assert cache.restore(directory, destination, inputs, sources, verifier=verify) == manifest
+    assert observed == [(directory / cache.MANIFEST, "a" * 40)]
+    assert cache.inventory(destination) == set(manifest["files"]) | {cache.MANIFEST}
+    assert not (destination / "ci-source.json").exists()
+    assert cache.validate_payload(destination, inputs, sources, sealed=True) == manifest["files"]
+
+
+@pytest.mark.parametrize("mutation", ["inputs", "wheel", "notice", "extra-file", "missing", "untrusted", "duplicate-key", "producer", "manifest"])
+def test_untrusted_cache_cannot_enter_current_wheelhouse(fixed_wheel_cache_fixture, tmp_path, mutation):
+    from copy import deepcopy
+    cache, directory, inputs, sources, manifest = fixed_wheel_cache_fixture
+    inputs = deepcopy(inputs)
+    attested = (directory / cache.MANIFEST).read_bytes()
+    def verify(path, source):
+        if mutation == "untrusted" or path.read_bytes() != attested:
+            raise cache.CacheError("signature mismatch")
+    if mutation == "inputs": inputs["runner"]["ImageVersion"] = "2"
+    elif mutation == "wheel": next(directory.glob("*.whl")).write_bytes(b"different bytes")
+    elif mutation == "notice": next(directory.rglob("LICENSE.txt")).write_bytes(b"different bytes")
+    elif mutation == "extra-file": (directory / "extra.whl").write_bytes(b"bad")
+    elif mutation == "missing": next(directory.glob("*.whl")).unlink()
+    elif mutation == "duplicate-key": (directory / cache.MANIFEST).write_bytes(b'{"schema":1,"schema":1}')
+    elif mutation == "producer":
+        manifest["producer"]["source_commit"] = "not-a-sha"
+        (directory / cache.MANIFEST).write_bytes(cache.canonical(manifest))
+    elif mutation == "manifest":
+        manifest["producer"]["workflow_run_id"] = 43
+        (directory / cache.MANIFEST).write_bytes(cache.canonical(manifest))
+    destination = tmp_path / "current-wheelhouse"
+    with pytest.raises(cache.CacheError):
+        cache.restore(directory, destination, inputs, sources, verifier=verify)
+    assert not destination.exists()
+
+
+def test_wheel_attestation_verifier_requires_protected_main_and_exact_signer(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from tools import ci_sqlcipher_cache as cache
+    calls = []
+    def run(args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(cache.subprocess, "run", run)
+    source = "a" * 40
+    cache.verify_attestation(tmp_path / cache.MANIFEST, source)
+    assert calls == [["gh", "attestation", "verify", str(tmp_path / cache.MANIFEST), "--repo", cache.REPO,
+        "--signer-workflow", cache.SIGNER, "--source-ref", "refs/heads/main", "--source-digest", source,
+        "--signer-digest", source, "--deny-self-hosted-runners"]]
+    monkeypatch.setattr(cache.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=1))
+    with pytest.raises(cache.CacheError):
+        cache.verify_attestation(tmp_path / cache.MANIFEST, source)

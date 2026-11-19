@@ -960,6 +960,8 @@ def test_source_policy_accepts_normal_git_line_endings(line_ending, version) -> 
 
 V7_SOURCE = ROOT / "tests/fixtures/product-ci-sharded-v7-pr-cutover.yml"
 V7_POLICY = ROOT / "tests/fixtures/product-ci-sharded-v7-pr-cutover-policy.json"
+V8_SOURCE = ROOT / "tests/fixtures/product-ci-sharded-v8-pr-cutover.yml"
+V8_POLICY = ROOT / "tests/fixtures/product-ci-sharded-v8-pr-cutover-policy.json"
 
 
 @pytest.mark.parametrize("line_ending", [b"\n", b"\r\n"])
@@ -973,8 +975,8 @@ def test_v7_source_policy_requires_three_actual_platform_results(line_ending) ->
 
 @pytest.mark.parametrize("line_ending", [b"\n", b"\r\n"])
 def test_v8_source_policy_requires_three_actual_full_windows_results(line_ending) -> None:
-    source = (ROOT / producer.PRODUCT_CI_WORKFLOW).read_bytes().replace(b"\r\n", b"\n").replace(b"\n", line_ending)
-    policy = (ROOT / producer.PRODUCT_CI_POLICY_PATH).read_bytes()
+    source = V8_SOURCE.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", line_ending)
+    policy = V8_POLICY.read_bytes()
     expected = producer.REQUIRED_SHARDED_V7_PRODUCT_CI_JOB_NAMES | {"windows-full-regression-3"}
     assert producer.product_ci_job_policy(source, policy) == expected
     assert {"windows-full-regression-1", "windows-full-regression-2"} <= expected
@@ -994,20 +996,20 @@ def test_v8_source_policy_requires_three_actual_full_windows_results(line_ending
     ("    strategy:\n", "    continue-on-error: true\n    strategy:\n"),
 ])
 def test_v8_source_policy_refuses_incomplete_or_optional_full_windows_matrix(old, new) -> None:
-    source = (ROOT / producer.PRODUCT_CI_WORKFLOW).read_text()
+    source = V8_SOURCE.read_text()
     before, body = source.split("  windows-full-shards:\n", 1)
     matrix, after = body.split("  windows-full-regression:\n", 1)
     assert old in matrix
     source = (before + "  windows-full-shards:\n" + matrix.replace(old, new, 1)
               + "  windows-full-regression:\n" + after).encode()
-    policy = (ROOT / producer.PRODUCT_CI_POLICY_PATH).read_bytes()
+    policy = V8_POLICY.read_bytes()
     with pytest.raises(producer.ContractError):
         producer.product_ci_job_policy(source, policy)
 
 
 def test_v8_and_v7_sources_never_accept_each_others_policy_document() -> None:
-    current_source = (ROOT / producer.PRODUCT_CI_WORKFLOW).read_bytes()
-    current_policy = (ROOT / producer.PRODUCT_CI_POLICY_PATH).read_bytes()
+    current_source = V8_SOURCE.read_bytes()
+    current_policy = V8_POLICY.read_bytes()
     assert b"  CI_POLICY_VERSION: sharded-v8-pr-cutover" in current_source.replace(b"\r\n", b"\n")
     for source, policy in ((current_source, V7_POLICY.read_bytes()), (V7_SOURCE.read_bytes(), current_policy)):
         with pytest.raises(producer.ContractError, match="source policy"):
@@ -2473,3 +2475,49 @@ def test_handoff_rejects_app_permission_expansion(tmp_path: Path) -> None:
             openssl=_openssl_executable(),
             client_factory=Client,
         )
+
+
+V9_SOURCE = ROOT / "tests/fixtures/product-ci-sharded-v9-pr-cutover.yml"
+V9_POLICY = ROOT / "tests/fixtures/product-ci-sharded-v9-pr-cutover-policy.json"
+
+
+@pytest.mark.parametrize("line_ending", [b"\n", b"\r\n"])
+def test_v9_source_requires_every_rebalanced_producer(line_ending):
+    source = V9_SOURCE.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", line_ending)
+    expected = producer.REQUIRED_SHARDED_V9_PRODUCT_CI_JOB_NAMES
+    assert producer.product_ci_job_policy(source, V9_POLICY.read_bytes()) == expected
+    assert len(expected) == 36
+    assert {"windows-qualification", "candidate-preflight", "web-build-assets",
+            "windows-full-regression-8", "analytics-windows-contract-2", "windows-platform-contract-5"} <= expected
+
+
+@pytest.mark.parametrize("job,old,new", [
+    ("windows-full-shards", "max-parallel: 8", "max-parallel: 7"),
+    ("windows-full-shards", "- 8\n", "- 7\n"),
+    ("windows-platform-contract", "max-parallel: 5", "max-parallel: 4"),
+    ("analytics-windows-contract", "max-parallel: 2", "max-parallel: 1"),
+    ("analytics-windows-contract", "fail-fast: false", "fail-fast: true"),
+    ("windows-platform-contract", "- web-build-assets", "- backend-fast"),
+    ("windows-qualification", "timeout-minutes: 60", "timeout-minutes: 90"),
+    ("candidate-preflight", "runs-on: ubuntu-latest", "runs-on: windows-latest"),
+    ("web-build-assets", "timeout-minutes: 10", "timeout-minutes: 20"),
+    ("analytics-scale-qualification", "github.event_name != 'pull_request'", "true"),
+    ("required-ci-gate", "- windows-qualification", "- browser-reporting-safety"),
+    ("required-ci-gate", "- name: Require complete successful CI evidence", "- name: Require complete successful CI evidence\n        if: false"),
+])
+def test_v9_source_refuses_missing_optional_or_changed_mandatory_jobs(job, old, new):
+    source = V9_SOURCE.read_text(encoding="utf-8")
+    before, body = source.split(f"  {job}:\n", 1)
+    import re
+    pieces = re.split(r"(?m)(?=^  [a-zA-Z0-9_-]+:\n)", body, maxsplit=1)
+    block = pieces[0]
+    assert old in block
+    changed = before + f"  {job}:\n" + block.replace(old, new, 1) + "".join(pieces[1:])
+    with pytest.raises(producer.ContractError):
+        producer.product_ci_job_policy(changed.encode(), V9_POLICY.read_bytes())
+
+
+def test_v9_policy_cannot_be_confused_with_v8():
+    for source, policy in ((V9_SOURCE, V8_POLICY), (V8_SOURCE, V9_POLICY)):
+        with pytest.raises(producer.ContractError):
+            producer.product_ci_job_policy(source.read_bytes(), policy.read_bytes())

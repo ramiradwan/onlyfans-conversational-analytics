@@ -382,7 +382,19 @@ def _assert_bench_repeats_product_ci(bench: dict[str, Any], product: dict[str, A
     jobs = bench["jobs"]
     assert set(jobs) == {"plan", "fixed-sqlcipher-wheel", "windows-full-regression"}
     # Invalid bench refs stop in the plan job before any Windows setup runs.
-    assert jobs["fixed-sqlcipher-wheel"] == {"name": "bench-fixed-sqlcipher-wheel", "needs": "plan", **product["jobs"]["fixed-sqlcipher-wheel"]}
+    # The worker benchmark deliberately measures the cold wheel control, not cache reuse.
+    cold = deepcopy(product["jobs"]["fixed-sqlcipher-wheel"])
+    cold.pop("permissions", None)
+    cold["steps"] = [step for step in cold["steps"] if step["name"] in {
+        "Checkout exact Product revision", "Setup Python", "Prepare native dependency cache",
+        "Cache native dependencies", "Build fixed SQLCipher wheel", "Record fixed SQLCipher CI source",
+        "Retain fixed SQLCipher wheel and provenance"}]
+    for step in cold["steps"]:
+        step.pop("if", None)
+        if step.get("id") == "vcpkg-cache":
+            step.pop("continue-on-error", None)
+            step["uses"] = step["uses"].replace("actions/cache/restore@", "actions/cache@")
+    assert jobs["fixed-sqlcipher-wheel"] == {"name": "bench-fixed-sqlcipher-wheel", "needs": "plan", **cold}
     shard = "${{ needs.plan.outputs.shard }}"
     def substitute(value):
         if isinstance(value, dict):

@@ -1,10 +1,11 @@
 """Root-scoped reads preserve current content, bounds and graph results."""
 
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 
-from app.analytics import sqlite_graph_store as storage
+from app.analytics import graph_store, sqlite_graph_store as storage
 from app.analytics.graph_store import GraphDeadlineExceeded
 from app.models.analytics import GraphTraversalBounds
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, advance, insert_message
@@ -23,6 +24,16 @@ def active_reader(fixture):
     return reader, generation, account
 
 
+def traversal_clock(monkeypatch):
+    # Only the graph budget clocks are controlled; database I/O, SQL progress
+    # handlers, traversal limits, and the rest of the process remain real.
+    clock = SimpleNamespace(now=100.0)
+    timer = SimpleNamespace(monotonic=lambda: clock.now)
+    monkeypatch.setattr(storage, 'time', timer)
+    monkeypatch.setattr(graph_store, 'time', timer)
+    return clock
+
+
 def bounds(account, **updates):
     values = dict(account_ref=account, start_time=NOW-timedelta(days=90), end_time=NOW,
                   max_hops=1, max_results=16, max_visited=32, max_queue=32,
@@ -32,11 +43,12 @@ def bounds(account, **updates):
 
 @pytest.mark.parametrize('direction', ['incoming', 'outgoing', 'both'])
 @pytest.mark.parametrize('hops', [1, 2])
-def test_bounded_results_match_independent_memory_graph(fixture, direction, hops):
+def test_bounded_results_match_independent_memory_graph(fixture, direction, hops, monkeypatch):
     artifact = fixture.pipeline.project_account(ACCOUNT).artifact
     reader, _, account = active_reader(fixture)
     memory = reader._memory_snapshot(account, artifact.nodes, artifact.edges, 0)
     root = next(node.node_id for node in artifact.nodes if node.kind.value == 'message')
+    traversal_clock(monkeypatch)
     limit = bounds(account, max_hops=hops, max_results=len(artifact.edges)+1,
                    max_edges_examined=len(artifact.edges)+1,
                    max_visited=len(artifact.nodes)+1, max_queue=len(artifact.nodes)+1)
@@ -81,6 +93,7 @@ def test_selected_reads_keep_time_kind_and_result_limits(fixture, monkeypatch):
     reader, _, account = active_reader(fixture)
     memory = reader._memory_snapshot(account, artifact.nodes, artifact.edges, 0)
     root = next(node.node_id for node in artifact.nodes if node.kind.value == 'message')
+    traversal_clock(monkeypatch)
     for options in ({'max_results': 1}, {'max_edges_examined': 1}, {'include_timeless': False}):
         limit = bounds(account, **options)
         actual_degree = reader.degree(account, root, bounds=limit)
@@ -89,3 +102,24 @@ def test_selected_reads_keep_time_kind_and_result_limits(fixture, monkeypatch):
             original.setattr(storage, '_selected_read_prefix', lambda *a, **kw: ('', ()))
             assert actual_degree == reader.degree(account, root, bounds=limit)
             assert actual_neighborhood == reader.neighborhood(account, root, bounds=limit)
+
+
+@pytest.mark.parametrize('operation', ['degree', 'neighborhood'])
+def test_selected_read_deadline_covers_sql_execution(fixture, monkeypatch, operation):
+    artifact = fixture.pipeline.project_account(ACCOUNT).artifact
+    reader, _, account = active_reader(fixture)
+    root = next(node.node_id for node in artifact.nodes if node.kind.value == 'message')
+    clock = traversal_clock(monkeypatch)
+    original = storage._selected_read_prefix
+    entered = []
+
+    def expire_during_read(*args, **kwargs):
+        result = original(*args, **kwargs)
+        entered.append(True)
+        clock.now += 2.0
+        return result
+
+    monkeypatch.setattr(storage, '_selected_read_prefix', expire_during_read)
+    with pytest.raises(GraphDeadlineExceeded, match='graph_deadline_exceeded'):
+        getattr(reader, operation)(account, root, bounds=bounds(account))
+    assert entered, 'deadline must expire during the selected SQL read'

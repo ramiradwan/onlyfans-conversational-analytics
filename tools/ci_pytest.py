@@ -23,6 +23,7 @@ def pytest_addoption(parser):
     group.addoption("--ci-lane", default=None)
     group.addoption("--ci-shard", type=int, default=None)
     group.addoption("--ci-windows-shard", type=int, choices=(1, 2, 3), default=None)
+    group.addoption("--ci-windows-candidate", default=None)
     group.addoption("--ci-windows-manifest", default=None)
     group.addoption("--ci-profile", default=None)
     group.addoption("--ci-output-dir", default=os.environ.get("CI_REPORT_DIR"))
@@ -41,6 +42,12 @@ def is_distributed(config):
 
 
 def pytest_configure(config):
+    if config.getoption("ci_windows_candidate") is not None:
+        if config.getoption("ci_windows_shard") is not None or config.getoption("ci_lane") or config.getoption("ci_shard") or config.getoption("ci_profile"):
+            raise pytest.UsageError("Candidate selection cannot combine with active lane selection")
+        from tools.ci_windows_shards import LEGACY_WINDOWS_EXPRESSION
+        if config.option.markexpr != LEGACY_WINDOWS_EXPRESSION or config.option.keyword:
+            raise pytest.UsageError("Candidate requires raw legacy expression without narrowing")
     if config.getoption("ci_windows_shard") is not None:
         from tools.ci_windows_shards import LEGACY_WINDOWS_EXPRESSION
         if config.getoption("ci_lane") or config.getoption("ci_shard") or config.getoption("ci_profile"):
@@ -213,7 +220,20 @@ def pytest_collection_modifyitems(session, config, items):
     evidence.collected = [_describe(item) for item in items]
     lane = config.getoption("ci_lane")
     windows_shard = config.getoption("ci_windows_shard")
-    if windows_shard is not None:
+    candidate = config.getoption("ci_windows_candidate")
+    if candidate is not None:
+        from tools.ci_windows_shards import candidate_groups, WindowsShardError, _unique_pairs
+        try:
+            plan = json.loads((config.rootpath / "tools/windows-topology-candidate.json").read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)
+            contracts = json.loads((config.rootpath / "ci/backend-test-shards.json").read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)["windows_contracts"]
+            wanted = candidate_groups(evidence.collected, plan, contracts)[candidate]
+        except (WindowsShardError, OSError, ValueError, KeyError) as error:
+            raise pytest.UsageError(str(error)) from error
+        deselected = [item for item in items if item.nodeid not in wanted]
+        items[:] = [item for item in items if item.nodeid in wanted]
+        if deselected:
+            config.hook.pytest_deselected(items=deselected)
+    elif windows_shard is not None:
         from tools.ci_windows_shards import WindowsShardError, load_manifest, selected_nodeids
         # Full default collection fails closed; positional targeting/--ignore is
         # useful locally, and hosted parity separately refuses narrowed evidence.

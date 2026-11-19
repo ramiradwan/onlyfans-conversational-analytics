@@ -388,3 +388,315 @@ def test_contention_belongs_only_to_manifest_updates():
     args = runner.parser().parse_args(["windows-full-regression", "--shard", "1", "--contention", "2.0"])
     with pytest.raises(runner.SelectionError, match="--contention"):
         runner.build_command(args, [], {})
+
+
+
+def test_candidate_model_keeps_complete_files_and_serial_work():
+    report = inventory()
+    models = windows.model_candidate_partitions(report, counts=[3])
+    assert len(models) == 1
+    candidate = models[0]
+    assert set(candidate["files"]) == {"test_one.py", "test_two.py", "test_three.py"}
+    assert set(candidate["files"].values()) == {1, 2, 3}
+    assert candidate["expected_work_seconds"][candidate["files"]["test_three.py"]] == 4.5
+    assert candidate["peak_work_seconds"] == 4.5
+    assert candidate["stress_1_5_work_seconds"] == 6.75
+    assert candidate["stress_1_7_work_seconds"] == pytest.approx(7.65)
+    assert candidate == windows.model_candidate_partitions(report, counts=[3])[0]
+    assert sum(candidate["expected_work_seconds"].values()) == 6.75
+
+
+@pytest.mark.parametrize("counts", [[], [2], [13], [3, 3], [True], [4]])
+def test_candidate_model_rejects_invalid_counts(counts):
+    with pytest.raises(windows.WindowsShardError, match="Candidate counts"):
+        windows.model_candidate_partitions(inventory(), counts=counts)
+
+
+def test_candidate_model_rejects_incomplete_evidence_and_phase_data():
+    report = inventory()
+    report["complete"] = False
+    with pytest.raises(windows.WindowsShardError):
+        windows.model_candidate_partitions(report, counts=[3])
+    report = inventory()
+    report["reports"].pop()
+    with pytest.raises(windows.WindowsShardError, match="Incomplete Windows timing evidence"):
+        windows.model_candidate_partitions(report, counts=[3])
+
+
+def test_candidate_model_handles_zero_weights_without_empty_shards():
+    report = inventory()
+    for phase in report["reports"]:
+        phase["duration"] = 0.0
+    candidate = windows.model_candidate_partitions(report, counts=[3])[0]
+    assert set(candidate["files"].values()) == {1, 2, 3}
+    assert candidate["peak_work_seconds"] == 0.0
+
+
+
+def test_queue_replay_respects_matrix_caps_and_runner_capacity():
+    jobs = {"wheel": {"duration": 3, "release": 0, "needs": ()},
+            "a": {"duration": 4, "release": 0, "needs": ("wheel",), "group": "matrix"},
+            "b": {"duration": 4, "release": 0, "needs": ("wheel",), "group": "matrix"},
+            "other": {"duration": 5, "release": 0, "needs": ()},
+            "gate": {"duration": 1, "release": 0, "needs": ("a", "b", "other")}}
+    result = windows.replay_schedule(jobs, capacity=2, group_limits={"matrix": 1})
+    assert result["elapsed_seconds"] == 12
+    assert result["jobs"]["b"]["queue"] == 4
+    assert result["peak_concurrency"] == 2
+    assert result["runner_seconds"] == 17
+    jobs["wheel"]["needs"] = ("gate",)
+    with pytest.raises(windows.WindowsShardError, match="cyclic"):
+        windows.replay_schedule(jobs, capacity=2, group_limits={"matrix": 1})
+
+
+def test_topology_replay_is_reproducible_and_includes_stress_and_overlapping_runs():
+    weights = {f"f{n}.py": (4.0 if n == 0 else 0.0, 16.0) for n in range(6)}
+    profiles = [{"serial": 1.0, "parallel": 1.0, "overhead": 2.0},
+                {"serial": 1.4, "parallel": 1.5, "overhead": 4.0}]
+    other = {"wheel": {"duration": 3, "needs": ()}, "visual": {"duration": 6, "needs": ()}}
+    args = dict(observations=profiles, counts=[3, 4], capacity=3, other_jobs=other,
+                repeats=20, second_run_delay=0, matrix_limit=2)
+    result = windows.replay_topologies(weights, **args)
+    assert result == windows.replay_topologies(weights, **args)
+    assert [r["shards"] for r in result] == [3, 4]
+    for row in result:
+        assert set(row["files"]) == set(weights)
+        assert row["conditional_p95_seconds"] >= row["median_seconds"]
+        assert row["two_run_conditional_p95_seconds"] >= row["conditional_p95_seconds"]
+        assert row["stress"]["1.7"]["peak_concurrency"] <= 3
+        assert max(row["stress"]["1.7"]["run_seconds"]) >= max(row["stress"]["1.5"]["run_seconds"])
+        assert row["max_parallel"] == 2
+
+
+def test_external_workflows_consume_capacity_without_delaying_product_gate_when_capacity_is_available():
+    weights = {f"f{n}.py": (1., 4.) for n in range(3)}
+    result = windows.replay_topologies(weights, observations=[{"serial": 1., "parallel": 1., "overhead": 0.}],
+        counts=[3], capacity=20, other_jobs={"wheel": {"duration": 1, "needs": ()},
+        "visual": {"duration": 100, "needs": (), "gate_dependency": False}}, repeats=2)[0]
+    assert result["median_seconds"] == 18
+    assert result["median_runner_seconds"] == 122
+
+
+
+def overlap_fixture():
+    full = inventory()
+    full.update(python="3.11.9", python_implementation="CPython", pytest="9.1.1",
+                execution={"workers": 4, "dist": "load"})
+    selected = ["test_two.py::test_windows"]
+    focused = dict(full, selected=selected,
+                   deselected=sorted({r["nodeid"] for r in full["collected"]} - set(selected)),
+                   reports=[dict(r) for r in full["reports"] if r["nodeid"] in selected])
+    return full, focused
+
+
+def test_overlap_requires_exact_focused_execution_and_retains_complement():
+    full, focused = overlap_fixture()
+    assert windows.prove_focused_overlap(full, [focused]) == {
+        "default_count": 3, "focused_count": 1, "complement_count": 2,
+        "focused_nodeids": ["test_two.py::test_windows"],
+    }
+
+
+@pytest.mark.parametrize("change", ["python", "workers", "outcome", "missing-phase", "inventory", "duplicate", "subtest"])
+def test_overlap_rejects_non_equivalent_execution(change):
+    full, focused = overlap_fixture()
+    if change == "python": focused["python"] = "3.13.1"
+    elif change == "workers": focused["execution"] = {"workers": 1, "dist": "load"}
+    elif change == "outcome": focused["reports"][1].update(outcome="skipped", skip_reason="changed")
+    elif change == "missing-phase": focused["reports"].pop()
+    elif change == "inventory": focused["collected"] = [dict(r, markers=[]) for r in focused["collected"]]
+    elif change == "duplicate": focused["selected"] *= 2
+    elif change == "subtest": focused["reports"].append(dict(focused["reports"][1], subtest={"index": 1, "msg": "extra", "kwargs": {}}))
+    with pytest.raises(windows.WindowsShardError):
+        windows.prove_focused_overlap(full, [focused])
+
+
+
+def candidate_fixture():
+    full = {f"test_full_{n}.py": n for n in range(1, 11)}
+    platform = {f"test_platform_{n}.py": n for n in range(1, 5)}
+    full.update({p: 1 for p in platform})
+    full["test_analytics.py"] = 2
+    rows = [row(p + "::test_case") for p in full]
+    rows.append(row("test_platform_1.py::test_slow", "slow"))
+    retained = "test_platform_1.py::test_case"
+    plan = {"schema": 1, "full": full, "platform": platform, "retain_in_full": [retained]}
+    contracts = {"platform": [{"selector": p} for p in platform],
+                 "analytics": [{"selector": "test_analytics.py::test_case"}]}
+    return rows, plan, contracts
+
+
+def test_candidate_keeps_every_raw_default_node_and_intentional_overlap():
+    rows, plan, contracts = candidate_fixture()
+    groups = windows.candidate_groups(rows, plan, contracts)
+    assert set().union(*groups.values()) == windows.legacy_nodeids(rows)
+    assert groups["full-1"] & groups["platform-1"] == set(plan["retain_in_full"])
+    assert groups["full-2"] == {"test_full_2.py::test_case"}
+    assert groups["analytics"] == {"test_analytics.py::test_case"}
+    assert not groups["full-1"] & groups["platform-2"]
+
+
+@pytest.mark.parametrize("fault", ["missing-file", "new-focused-file", "overlap", "retained-stale", "duplicate", "empty-shard"])
+def test_candidate_refuses_invalid_scope(fault):
+    rows, plan, contracts = candidate_fixture()
+    if fault == "missing-file": plan["full"].pop("test_full_1.py")
+    elif fault == "new-focused-file": contracts["platform"].append({"selector": "test_full_2.py"})
+    elif fault == "overlap": contracts["analytics"].append({"selector": "test_platform_1.py"})
+    elif fault == "retained-stale": plan["retain_in_full"].append("test_missing.py::test_case")
+    elif fault == "duplicate": rows.append(rows[0])
+    elif fault == "empty-shard": plan["full"]["test_full_10.py"] = 1
+    with pytest.raises(windows.WindowsShardError):
+        windows.candidate_groups(rows, plan, contracts)
+
+
+def candidate_reports():
+    rows, plan, contracts = candidate_fixture()
+    groups = windows.candidate_groups(rows, plan, contracts)
+    def report(lane, group, selected):
+        job = ("windows-qualification" if group is None else "windows-full-shards" if group.startswith("full-")
+               else "windows-platform-contract" if group.startswith("platform-") else "analytics-windows-contract")
+        selected = sorted(selected)
+        return dict(schema="ci-test-report/v1", complete=True, exit_code=0, collect_only=group is None,
+            partial=False, platform="Windows", python="3.11.9", python_implementation="CPython", pytest="9.1.1",
+            profile="", selection_profile="", collection_errors=[], source_commit="a"*40,
+            workflow_run_id="1", run_attempt="1", job_id=job, lane=lane, wall_seconds=1.0,
+            collected=rows, selected=selected, deselected=sorted({r["nodeid"] for r in rows}-set(selected)),
+            selection={"keyword": "", "marker": windows.LEGACY_WINDOWS_EXPRESSION, "targets": ["tests"]},
+            execution={"workers": 4, "dist": "load"},
+            reports=[] if group is None else [dict(nodeid=n, when=phase, outcome="passed", duration=0.1,
+                wasxfail=None, skip_reason=None, detail="") for n in selected for phase in ("setup", "call", "teardown")])
+    reports = {f"candidate-{g}": report(f"candidate-{g}", g, nodes) for g,nodes in groups.items()}
+    reports["legacy-windows-reference"] = report("legacy-windows-reference", None, windows.legacy_nodeids(rows))
+    return reports, plan, contracts
+
+
+def test_candidate_evidence_requires_current_run_and_exact_execution():
+    from tools.ci_windows_candidate import validate_candidate
+    reports, plan, contracts = candidate_reports()
+    assert validate_candidate(reports, plan, contracts, source="a"*40, run=1, attempt=1) == {
+        "default_nodes": 15, "full_nodes": 11, "focused_nodes": 5, "retained_overlap": 1}
+
+
+@pytest.mark.parametrize("fault", ["wrong-attempt", "wrong-source", "wrong-job", "missing-report", "skip-omitted", "missing-node", "workers", "raw-marker"])
+def test_candidate_gate_refuses_unproven_deduplication(fault):
+    from tools.ci_windows_candidate import validate_candidate
+    from tools.ci_gate import GateError
+    reports, plan, contracts = candidate_reports()
+    r = reports["candidate-platform-2"]
+    if fault == "wrong-attempt": r["run_attempt"] = "2"
+    elif fault == "wrong-source": r["source_commit"] = "b"*40
+    elif fault == "wrong-job": r["job_id"] = "windows-full-shards"
+    elif fault == "missing-report": reports.pop("candidate-platform-2")
+    elif fault == "skip-omitted": r["reports"][1].update(outcome="skipped", skip_reason="Skipped: new reason")
+    elif fault == "missing-node": r["selected"] = []
+    elif fault == "workers": r["execution"]["workers"] = 2
+    elif fault == "raw-marker": r["collected"] = [dict(row, markers=["changed"]) for row in r["collected"]]
+    with pytest.raises(GateError):
+        validate_candidate(reports, plan, contracts, source="a"*40, run=1, attempt=1)
+
+
+
+def test_trial_workflow_preserves_main_producers_without_release_authority():
+    import yaml
+    from tools.render_ci_topology_trial import render, REFS
+    ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    visual = yaml.safe_load((ROOT / ".github/workflows/visual-capture.yml").read_text(encoding="utf-8"))
+    trial = render(ci, visual)
+    assert trial["on"] == {"push": {"branches": REFS}}
+    assert trial["name"] != ci["name"] and trial["name"] != visual["name"]
+    jobs = trial["jobs"]
+    assert {"required-ci-gate", "build-and-test", "windows-tests"}.isdisjoint(jobs)
+    assert trial["permissions"] == {"contents": "read"}
+    assert "permissions" not in jobs["fixed-sqlcipher-wheel"]
+    assert not any("actions/attest@" in s.get("uses", "") for s in jobs["fixed-sqlcipher-wheel"]["steps"])
+    assert jobs["windows-full-shards"]["strategy"]["matrix"]["shard"] == list(range(1, 11))
+    assert jobs["windows-platform-contract"]["strategy"]["matrix"]["shard"] == list(range(1, 5))
+    for name in ("windows-qualification", "candidate-preflight", "windows-full-shards", "windows-platform-contract", "analytics-windows-contract"):
+        assert name in jobs["candidate-coverage"]["needs"]
+    for step in ci["jobs"]["windows-platform-contract"]["steps"]:
+        if step.get("if") == "matrix.shard == 1" or step.get("if") == "always() && matrix.shard == 1":
+            copied = next(s for s in jobs["windows-qualification"]["steps"] if s["name"] == step["name"])
+            assert copied.get("run") == step.get("run")
+            assert copied.get("if") == ("always()" if step["if"].startswith("always()") else None)
+    for key in visual["jobs"]:
+        expected = dict(visual["jobs"][key])
+        if key == "visual-capture-serial-control":
+            expected["if"] = "${{ false }}"
+        assert jobs[key] == expected
+    assert jobs["browser-e2e-serial-control"]["if"] == "${{ false }}"
+    assert all(trial["env"][key] == "false" for key in ("BROWSER_QUALIFICATION", "BROWSER_SERIAL_CONTROL", "VISUAL_QUALIFICATION", "VISUAL_SERIAL_CONTROL"))
+    assert yaml.safe_load(yaml.safe_dump(trial, sort_keys=False)) == trial
+
+
+def test_candidate_plugin_selects_whole_partition_from_raw_collection(tmp_path):
+    rows, plan, contracts = candidate_fixture()
+    (tmp_path / "ci").mkdir()
+    (tmp_path / "tools").mkdir()
+    write_json(tmp_path / "tools/windows-topology-candidate.json", plan)
+    write_json(tmp_path / "ci/backend-test-shards.json", {"windows_contracts": contracts})
+    (tmp_path / "pytest.ini").write_text("[pytest]\nmarkers =\n slow: legacy exclusion\n stateful_tier_a: legacy exclusion\n stateful_tier_b: legacy exclusion\n stateful_agent_tier_a: legacy exclusion\n", encoding="utf-8")
+    for file in plan["full"]:
+        source = "def test_case(): pass\n"
+        if file == "test_platform_1.py":
+            source += "import pytest\n@pytest.mark.slow\ndef test_slow(): assert False\n"
+        (tmp_path / file).write_text(source, encoding="utf-8")
+    env = dict(os.environ, PYTHONPATH=str(ROOT), PYTEST_ADDOPTS="", CI_TEST_LANE="candidate-platform-2",
+               CI_REPORT_DIR=str(tmp_path / "out"))
+    command = [sys.executable, "-m", "pytest", "-p", "tools.ci_pytest", "-m", windows.LEGACY_WINDOWS_EXPRESSION,
+               "--ci-windows-candidate", "platform-2"]
+    result = subprocess.run(command, cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads((tmp_path / "out/report.json").read_text(encoding="utf-8"))
+    assert report["selected"] == ["test_platform_2.py::test_case"]
+    assert report["lane"] == "candidate-platform-2" and report["complete"] is True
+
+
+
+def test_candidate_v2_splits_analytics_without_losing_raw_nodes():
+    rows, plan, contracts = candidate_fixture()
+    rows.append(row("test_analytics_two.py::test_case"))
+    plan["schema"] = 2
+    plan["full"]["test_analytics_two.py"] = 3
+    plan["analytics"] = {"test_analytics.py": 1, "test_analytics_two.py": 2}
+    contracts["analytics"].append({"selector": "test_analytics_two.py"})
+    groups = windows.candidate_groups(rows, plan, contracts)
+    assert windows.candidate_counts(plan) == {"full": 10, "platform": 4, "analytics": 2}
+    assert groups["analytics-1"] == {"test_analytics.py::test_case"}
+    assert groups["analytics-2"] == {"test_analytics_two.py::test_case"}
+    assert set().union(*groups.values()) == windows.legacy_nodeids(rows)
+    assert sum(map(len, groups.values())) == len(windows.legacy_nodeids(rows)) + len(plan["retain_in_full"])
+    del plan["analytics"]["test_analytics_two.py"]
+    with pytest.raises(windows.WindowsShardError):
+        windows.candidate_groups(rows, plan, contracts)
+
+
+def test_trial_renderer_uses_manifest_shard_counts_and_requires_visual_gate():
+    import yaml
+    from tools.render_ci_topology_trial import render
+    ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    visual = yaml.safe_load((ROOT / ".github/workflows/visual-capture.yml").read_text(encoding="utf-8"))
+    plan = json.loads((ROOT / "tools/windows-topology-candidate.json").read_text(encoding="utf-8"))
+    jobs = render(ci, visual, plan=plan)["jobs"]
+    assert jobs["windows-full-shards"]["strategy"]["matrix"]["shard"] == list(range(1, 9))
+    assert jobs["windows-platform-contract"]["strategy"]["matrix"]["shard"] == list(range(1, 6))
+    analytics = jobs["analytics-windows-contract"]
+    assert analytics["strategy"]["matrix"]["shard"] == [1, 2]
+    assert analytics["name"] == "analytics-windows-contract-${{ matrix.shard }}"
+    step = next(s for s in analytics["steps"] if s["name"] == "Test Windows analytics contract")
+    assert step["env"]["CI_TEST_LANE"] == "candidate-analytics-${{ matrix.shard }}"
+    assert step["run"].endswith("--ci-windows-candidate analytics-${{ matrix.shard }}")
+    assert "visual-capture" in jobs["candidate-coverage"]["needs"]
+
+
+
+def test_candidate_report_loader_binds_artifact_and_attempt(tmp_path):
+    from tools.ci_windows_candidate import load_candidate_reports
+    from tools.ci_gate import GateError
+    reports, _, _ = candidate_reports()
+    lane = "candidate-platform-2"
+    folder = tmp_path / f"ci-tests-{lane}-{'a'*40}-1-1" / lane
+    folder.mkdir(parents=True)
+    write_json(folder / "report.json", reports[lane])
+    assert load_candidate_reports(tmp_path, source="a"*40, run=1, attempt=1) == {lane: reports[lane]}
+    with pytest.raises(GateError):
+        load_candidate_reports(tmp_path, source="a"*40, run=1, attempt=2)
