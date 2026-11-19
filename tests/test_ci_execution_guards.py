@@ -473,16 +473,19 @@ def test_windows_backend_bench_shards_cannot_drift_from_product_ci(old: str, new
 @pytest.mark.parametrize("defender_available", [True, False])
 def test_windows_host_sampler_records_defender_activity_without_requiring_access(tmp_path, defender_available):
     import csv
-    import os
     import shutil
     import subprocess
 
     pwsh = shutil.which("pwsh")
-    if os.name != "nt" or pwsh is None:
-        pytest.skip("Windows PowerShell counter contract")
+    assert pwsh is not None, "PowerShell is required to exercise the mocked counter contract"
     harness = tmp_path / "sample.ps1"
     harness.write_text(r"""
 param([string]$Script, [string]$Output, [string]$DefenderAvailable)
+function Split-Path {
+    param($Path, [switch]$Qualifier)
+    if (-not $Qualifier) { throw "Unexpected path operation" }
+    "C:"
+}
 function Get-Counter {
     param($Counter, $SampleInterval, [switch]$Continuous, $ErrorAction)
     [pscustomobject]@{
