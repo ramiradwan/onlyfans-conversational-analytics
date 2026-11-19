@@ -1,18 +1,25 @@
 {
   "schema": "visual-ci-policy/v1",
-  "policy_version": "visual-v1",
+  "policy_version": "visual-v2",
   "workflow": ".github/workflows/visual-capture.yml",
-  "groups": ["dynamic", "remaining"],
+  "groups": [
+    "dynamic-a",
+    "dynamic-b",
+    "remaining"
+  ],
   "workers_per_runner": 4,
-  "max_parallel": 2,
+  "max_parallel": 3,
   "contracts_job": "visual-contracts",
   "execution_job": "visual-capture-execution",
   "aggregate_job": "visual-capture",
   "producer_jobs": {
-    "dynamic": "visual-capture-dynamic",
+    "dynamic-a": "visual-capture-dynamic-a",
+    "dynamic-b": "visual-capture-dynamic-b",
     "remaining": "visual-capture-remaining",
     "all": "visual-capture-serial-control"
   },
-  "allowed_skipped_jobs": ["visual-capture-serial-control"],
+  "allowed_skipped_jobs": [
+    "visual-capture-serial-control"
+  ],
   "serial_condition": "${{ github.event_name == 'workflow_dispatch' && inputs.visual_serial_control }}"
 }

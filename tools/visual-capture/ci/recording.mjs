@@ -4,11 +4,11 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path, { resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { performance } from 'node:perf_hooks';
-import { generateInventory, inventoryBytes } from './inventory.mjs';
+import { DYNAMIC_GROUPS_V2, generateInventory, inventoryBytes } from './inventory.mjs';
 import { validateObserverDiagnostics } from '../observer-diagnostics.mjs';
 
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
-export const GROUPS = ['all', 'dynamic', 'remaining'];
+export const GROUPS = ['all', ...Object.keys(DYNAMIC_GROUPS_V2), 'remaining'];
 export function assertSafeCaptureOutput(output, repository, paths = path) {
   const target = paths.resolve(output);
   const sourceWithinTarget = paths.relative(target, paths.resolve(repository));

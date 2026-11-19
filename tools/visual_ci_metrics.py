@@ -19,13 +19,20 @@ except ModuleNotFoundError:
     import browser_ci_metrics as timing
 
 
-DEPENDENCIES = {
+LEGACY_DEPENDENCIES = {
     "visual-contracts": (),
     "visual-capture-dynamic": (),
     "visual-capture-remaining": (),
     "visual-capture-serial-control": ("visual-contracts",),
     "visual-capture": ("visual-contracts", "visual-capture-dynamic", "visual-capture-remaining",
                        "visual-capture-serial-control"),
+}
+DEPENDENCIES = {
+    **{name: deps for name, deps in LEGACY_DEPENDENCIES.items()
+       if name not in {"visual-capture-dynamic", "visual-capture"}},
+    "visual-capture-dynamic-a": (), "visual-capture-dynamic-b": (),
+    "visual-capture": ("visual-contracts", "visual-capture-dynamic-a", "visual-capture-dynamic-b",
+                       "visual-capture-remaining", "visual-capture-serial-control"),
 }
 EXECUTION = {
     "Test extension surface interactions", "Test visual capture contracts", "Test visual output safety",
@@ -46,8 +53,12 @@ ASSEMBLY = {
 
 
 def summarize(run, document):
-    result = timing.summarize(run, document, dependencies=DEPENDENCIES,
-        execution_names={name: EXECUTION for name in DEPENDENCIES}, assembly_names=ASSEMBLY,
+    names = {row.get("name") for row in document.get("jobs", [])}
+    if "visual-capture-dynamic" in names and names & {"visual-capture-dynamic-a", "visual-capture-dynamic-b"}:
+        raise timing.TimingError("mixed visual job topology")
+    dependencies = LEGACY_DEPENDENCIES if "visual-capture-dynamic" in names else DEPENDENCIES
+    result = timing.summarize(run, document, dependencies=dependencies,
+        execution_names={name: EXECUTION for name in dependencies}, assembly_names=ASSEMBLY,
         optional_dependencies={"visual-capture-serial-control"}, schema="visual-ci-timing/v1",
         measurement_scope="visual jobs; capture-step duration includes internal preparation, reported separately in producer phase timings")
     result["qualification_claim"] = False
@@ -55,7 +66,7 @@ def summarize(run, document):
 
 
 def observations(summaries):
-    return timing.observations(summaries, DEPENDENCIES)
+    return timing.observations(summaries, LEGACY_DEPENDENCIES | DEPENDENCIES)
 
 
 def main():

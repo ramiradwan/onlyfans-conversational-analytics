@@ -10,13 +10,14 @@ pytestmark = pytest.mark.ci_tier("fast")
 
 def proof():
     shared = dict(source_commit="a"*40, inventory_sha256="b"*64, workflow_run_id=7, current_attempt=1,
-                  qualification=True, retries=0, selected_ids=["dynamic-case", "freshness-case"], selected_count=2)
+                  qualification=True, retries=0, selected_ids=["dynamic-case", "other-case", "freshness-case"], selected_count=3)
     def group(identity, duration, outcomes):
         return dict(job_id=identity, runner_duration_ms=duration, outcomes=outcomes, phase_timings={"prepare": 1})
     control = dict(shared, serial_control=True,
-                   groups={"all": group(91, 9000, {"dynamic-case": "passed", "freshness-case": "passed"})})
+                   groups={"all": group(91, 9000, {"dynamic-case": "passed", "other-case": "passed", "freshness-case": "passed"})})
     return dict(shared, serial_control=False, paired_control=True, control=control,
-                groups={"dynamic": group(92, 5000, {"dynamic-case": "passed"}),
+                groups={"dynamic-a": group(92, 5000, {"dynamic-case": "passed"}),
+                        "dynamic-b": group(94, 4000, {"other-case": "passed"}),
                         "remaining": group(93, 6000, {"freshness-case": "passed"})})
 
 
@@ -32,8 +33,8 @@ def test_mismatched_control_source_retries_or_missing_cases_refuse_comparison(fi
 def test_missing_or_reused_execution_cannot_qualify(mutation):
     split = proof()
     if mutation == "missing-control": split["paired_control"] = False
-    if mutation == "same-producer": split["groups"]["dynamic"]["job_id"] = 91
-    if mutation == "overlap": split["groups"]["dynamic"]["outcomes"]["freshness-case"] = "passed"
+    if mutation == "same-producer": split["groups"]["dynamic-a"]["job_id"] = 91
+    if mutation == "overlap": split["groups"]["dynamic-a"]["outcomes"]["freshness-case"] = "passed"
     if mutation == "missing-outcome": split["groups"]["remaining"]["outcomes"] = {}
     if mutation == "failed-outcome": split["groups"]["remaining"]["outcomes"]["freshness-case"] = "failed"
     with pytest.raises(compare.ComparisonError): compare.compare_proof(split)

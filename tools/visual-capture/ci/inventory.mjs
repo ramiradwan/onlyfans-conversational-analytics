@@ -59,7 +59,7 @@ export function validateDynamicPartition(groups, views = DYNAMIC_VIEWS) {
   return new Map(names.flatMap(name => groups[name].map(view => [view, name])));
 }
 
-export function generateInventory({ layout = 'visual-v1' } = {}) {
+export function generateInventory({ layout = 'visual-v2' } = {}) {
   if (!['visual-v1', 'visual-v2'].includes(layout)) throw new Error('visual_ci_invalid_inventory_layout');
   const partition = layout === 'visual-v2' ? validateDynamicPartition(DYNAMIC_GROUPS_V2) : null;
   const cases = [];

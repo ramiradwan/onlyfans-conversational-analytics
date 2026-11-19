@@ -166,3 +166,23 @@ def test_visual_retained_aliases_refuse_contradictory_or_missing_execution_evide
     run["run_attempt"] = 2
     with pytest.raises(metrics.timing.TimingError):
         metrics.summarize(run, document)
+
+
+def test_v2_topology_preserves_both_dynamic_dependencies_and_historical_metrics():
+    run, doc = evidence()
+    first = doc["jobs"][1]
+    first["name"] = "visual-capture-dynamic-a"
+    second = deepcopy(first)
+    second.update(name="visual-capture-dynamic-b", id=23, runner_id=123, runner_name="Hosted runner 23")
+    doc["jobs"].append(second)
+    doc["total_count"] += 1
+    result = metrics.summarize(run, doc)
+    aggregate = next(row for row in result["jobs"] if row["job"] == "visual-capture")
+    assert aggregate["prerequisite_seconds"] == 35
+    assert {row["job"] for row in result["jobs"]} == set(metrics.DEPENDENCIES) - {"visual-capture-serial-control"}
+    old = metrics.summarize(*evidence())
+    names = {row["job"] for row in metrics.observations([old, result])}
+    assert {"visual-capture-dynamic", "visual-capture-dynamic-a", "visual-capture-dynamic-b"} <= names
+    second["name"] = "visual-capture-dynamic"
+    with pytest.raises(metrics.timing.TimingError, match="mixed visual"):
+        metrics.summarize(run, doc)

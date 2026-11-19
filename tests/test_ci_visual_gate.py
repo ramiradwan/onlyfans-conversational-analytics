@@ -24,10 +24,14 @@ def _write(path, value):
 @pytest.fixture
 def inventory():
     cases = [
-        {"id": "dynamic-home-390-light-1-reduce", "kind": "dynamic", "group": "dynamic",
+        {"id": "dynamic-home-390-light-1-reduce", "kind": "dynamic", "group": "dynamic-b",
          "configuration": {"view": "home", "width": 390, "mode": "light", "fontScale": 1, "motion": "reduce"},
          "observations": ["loading", "snapshot:fresh", "loading"],
          "report": "transitions/home.json", "files": ["transitions/home.json"]},
+        {"id": "dynamic-graph-390-light-1-reduce", "kind": "dynamic", "group": "dynamic-a",
+         "configuration": {"view": "graph", "width": 390, "mode": "light", "fontScale": 1, "motion": "reduce"},
+         "observations": ["loading", "pending:current"],
+         "report": "transitions/graph.json", "files": ["transitions/graph.json"]},
         {"id": "ordinary-home-fresh-light-desktop", "kind": "ordinary", "group": "remaining",
          "configuration": {"workspace": "home", "state": "fresh", "variant": None, "mode": "light",
                            "viewport": "desktop", "width": 1440, "height": 900},
@@ -48,7 +52,8 @@ def inventory():
                    "static-surfaces/popup-ready-light-390-fold.png", "static-surfaces/popup-ready-light-390-full.png"]},
     ]
     value = {"schema": "visual-ci-inventory/v1", "workers": 4, "fixed_now": NOW, "cases": cases,
-        "shared_files": {"dynamic": ["manifest.json", "transitions/manifest.json"],
+        "shared_files": {"dynamic-a": ["manifest.json", "transitions/manifest.json"],
+                         "dynamic-b": ["manifest.json", "transitions/manifest.json"],
                          "remaining": ["manifest.json", "freshness-transitions.json"]}}
     return gate.validate_inventory((json.dumps(value) + "\n").encode())
 
@@ -112,7 +117,7 @@ def _make(root, inventory_pair, group, *, attempt=1):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(">II", 1, 1) + b"\x08\x06\x00\x00\x00" + b"\x00" * 4)
     _write(path / "manifest.json", manifest)
-    if group in {"dynamic", "all"}:
+    if group in {"dynamic-a", "dynamic-b", "all"}:
         _write(path / "transitions/manifest.json", manifest["dynamic"])
     if group in {"remaining", "all"}:
         _write(path / "freshness-transitions.json", manifest["freshness"])
@@ -154,23 +159,24 @@ def _edit(path, name, change, *, rehash=True):
 
 def test_independent_full_inventory_validates_all_five_case_kinds(tmp_path, inventory):
     path = _make(tmp_path, inventory, "all")
-    assert len(_verify(path, inventory, "all")["cases"]) == 5
+    assert len(_verify(path, inventory, "all")["cases"]) == 6
 
 
 def test_latest_producer_attempts_keep_successful_dependencies_and_pair_control(tmp_path, inventory):
-    _make(tmp_path, inventory, "dynamic")
+    _make(tmp_path, inventory, "dynamic-a")
+    _make(tmp_path, inventory, "dynamic-b")
     _make(tmp_path, inventory, "remaining")
     newest = _make(tmp_path, inventory, "remaining", attempt=2)
     _make(tmp_path, inventory, "all")
     chosen, proof = gate.validate_evidence(tmp_path, jobs=_jobs(remaining=2), source=SOURCE, run_id=42,
         current_attempt=2, qualification=True, serial_requested=True, inventory=inventory[0], digest=inventory[1])
     assert chosen["remaining"] == newest
-    assert proof["groups"]["dynamic"]["producer_attempt"] == 1
+    assert proof["groups"]["dynamic-b"]["producer_attempt"] == 1
     assert proof["groups"]["remaining"]["producer_attempt"] == 2
-    assert proof["selected_count"] == proof["control"]["selected_count"] == 5
-    assert proof["control"]["groups"]["all"]["case_count"] == 5
+    assert proof["selected_count"] == proof["control"]["selected_count"] == 6
+    assert proof["control"]["groups"]["all"]["case_count"] == 6
     assert proof["control"]["serial_control"] is True and proof["paired_control"] is True
-    assert set(proof["groups"]) == {"dynamic", "remaining"}
+    assert set(proof["groups"]) == set(gate.GROUPS)
 
 
 def test_gate_generated_control_proof_is_comparator_compatible(tmp_path, inventory):
@@ -181,7 +187,7 @@ def test_gate_generated_control_proof_is_comparator_compatible(tmp_path, invento
     _, proof = gate.validate_evidence(tmp_path, jobs=_jobs(), source=SOURCE, run_id=42,
         current_attempt=1, qualification=True, serial_requested=True, inventory=inventory[0], digest=inventory[1])
     comparison = compare_proof(proof)
-    assert comparison["selected_count"] == 5
+    assert comparison["selected_count"] == 6
     assert comparison["source_commit"] == SOURCE
     assert comparison["serial_runner_ms"] == proof["control"]["groups"]["all"]["runner_duration_ms"]
 
@@ -261,9 +267,9 @@ def test_changed_bytes_and_non_png_cannot_enter_complete_artifact(tmp_path, inve
 
 @pytest.mark.parametrize("conclusion", ["failure", "cancelled", "skipped", None])
 def test_newer_producer_failure_never_reuses_old_green(conclusion):
-    jobs = _jobs(dynamic=2)
+    jobs = _jobs(**{"dynamic-b": 2})
     jobs[gate.JOBS["all"]]["conclusion"] = "skipped"
-    jobs[gate.JOBS["dynamic"]]["conclusion"] = conclusion
+    jobs[gate.JOBS["dynamic-b"]]["conclusion"] = conclusion
     with pytest.raises(gate.VisualGateError, match="latest_visual_job_failed"):
         gate.validate_jobs(_needs(), jobs)
 
@@ -280,7 +286,8 @@ def test_only_unrequested_control_may_skip():
 
 @pytest.mark.parametrize("failure", ["missing", "stale", "duplicate", "wrong-name", "unexpected-control"])
 def test_artifact_execution_identity_and_exact_partition(tmp_path, inventory, failure):
-    _make(tmp_path, inventory, "dynamic")
+    _make(tmp_path, inventory, "dynamic-a")
+    _make(tmp_path, inventory, "dynamic-b")
     if failure != "missing":
         path = _make(tmp_path, inventory, "remaining")
     jobs = _jobs(remaining=2 if failure == "stale" else 1)
@@ -342,13 +349,13 @@ def test_generic_gate_failure_summary_has_only_closed_reason_and_rerun_commands(
     text = summary.read_text()
     assert "invalid_source" in text
     assert "private-invalid-source-value" not in text
-    assert "--stage-group dynamic" in text and "--stage-group remaining" in text
+    assert all(f"--stage-group {group}" in text for group in gate.GROUPS)
     assert not (tmp_path / "complete").exists()
 
 
 @pytest.mark.parametrize("phases", [{"prepare": 1}, {"private-phase-canary": 1}, {"prepare": True}, {"prepare": -1}])
 def test_partial_phase_summary_keeps_only_closed_names_and_valid_durations(tmp_path, inventory, monkeypatch, phases):
-    raw = _make(tmp_path / "inputs", inventory, "dynamic")
+    raw = _make(tmp_path / "inputs", inventory, "dynamic-b")
     receipt = json.loads((raw / "capture-ci.json").read_text())
     receipt["cases"][0]["outcome"] = "failed"
     receipt["phase_timings"] = phases
@@ -379,7 +386,7 @@ def test_observer_region_registry_matches_compiled_capture_source():
 ])
 def test_closed_observer_diagnostics_survive_restricted_retention_without_qualifying_failure(
         tmp_path, inventory, monkeypatch, capsys, code, phase, region):
-    raw = _make(tmp_path/'inputs', inventory, 'dynamic')
+    raw = _make(tmp_path/'inputs', inventory, 'dynamic-b')
     diagnostic = {'code':code, 'phase':phase, 'region':region}
     def fail(receipt):
         receipt.update(complete=False, exit_code=1)
@@ -401,7 +408,7 @@ def test_closed_observer_diagnostics_survive_restricted_retention_without_qualif
 @pytest.mark.parametrize('mutation', ['extra-key','unknown-code','wrong-phase','private-region','cross-view',
     'missing-region','non-null-region','duplicate','oversized','empty','object','passed','code-type'])
 def test_malformed_observer_diagnostics_cannot_enter_restricted_artifacts(tmp_path, inventory, monkeypatch, capsys, mutation):
-    raw = _make(tmp_path/'inputs', inventory, 'dynamic')
+    raw = _make(tmp_path/'inputs', inventory, 'dynamic-b')
     canary = 'PRIVATE-observer-cookie-url'
     value = [{'code':'required_region_missing_at_first_surface', 'phase':'first_surface', 'region':'freshness-status'}]
     if mutation == 'extra-key': value[0]['error'] = canary
@@ -438,7 +445,7 @@ def test_assembly_preserves_approved_files_and_finalize_binds_color(tmp_path, in
     output, proof_path = tmp_path / "complete", tmp_path / "verified.json"
     proof = gate.assemble(chosen, output, inventory[0], proof)
     _write(proof_path, proof)
-    assert (output / "transitions/home.json").read_bytes() == (chosen["dynamic"] / "transitions/home.json").read_bytes()
+    assert (output / "transitions/home.json").read_bytes() == (chosen["dynamic-b"] / "transitions/home.json").read_bytes()
     assert (output / "freshness.json").read_bytes() == (chosen["remaining"] / "freshness.json").read_bytes()
     assert not (output / "capture-ci.json").exists()
     for key, value in {"PRODUCT_SHA": SOURCE, "GITHUB_RUN_ID": "42", "GITHUB_RUN_ATTEMPT": "1"}.items():
@@ -447,7 +454,7 @@ def test_assembly_preserves_approved_files_and_finalize_binds_color(tmp_path, in
     receipt = gate.finalize(output, proof_path)
     assert "color-qualification.json" in receipt["file_sha256"]
     assert json.loads(proof_path.read_text())["finalized"] is True
-    assert receipt["producers"]["dynamic"]["producer_attempt"] == 1
+    assert receipt["producers"]["dynamic-b"]["producer_attempt"] == 1
     with pytest.raises(gate.VisualGateError):
         gate.finalize(output, proof_path)
 
@@ -478,8 +485,8 @@ def test_source_policy_matches_complete_current_visual_workflow():
 
 @pytest.mark.parametrize("old,new", [
     ("    name: visual-capture-${{ matrix.group }}", "    name: visual-capture-dynamic"),
-    ("      max-parallel: 2", "      max-parallel: 3"),
-    ("group: [dynamic, remaining]", "group: [dynamic, dynamic]"),
+    ("      max-parallel: 3", "      max-parallel: 2"),
+    ("group: [dynamic-a, dynamic-b, remaining]", "group: [dynamic-a, dynamic-a, remaining]"),
     ("    strategy:", "    needs: visual-contracts\n    strategy:"),
     ("    if: ${{ always() }}", "    if: success()"),
     (gate.SERIAL_IF, "${{ always() }}"),
@@ -495,3 +502,28 @@ def test_source_policy_rejects_coverage_or_aggregate_weakening(old, new):
         source = source.replace(old, new, 1)
     with pytest.raises((gate.VisualGateError, gate.ContractError)):
         gate.validate_policy(source.encode(), (gate.ROOT / "ci/visual-ci-policy.json").read_bytes())
+
+
+@pytest.mark.parametrize("group", ["dynamic-a", "dynamic-b"])
+def test_each_dynamic_group_is_independently_required(tmp_path, inventory, group):
+    for other in gate.GROUPS:
+        if other != group:
+            _make(tmp_path, inventory, other)
+    with pytest.raises(gate.VisualGateError, match="missing_newest_visual_artifact"):
+        gate.validate_evidence(tmp_path, jobs=_jobs(), source=SOURCE, run_id=42, current_attempt=1,
+            qualification=False, inventory=inventory[0], digest=inventory[1])
+
+
+def test_assembly_rebuilds_both_verified_dynamic_indexes(tmp_path, inventory):
+    for group in gate.GROUPS:
+        _make(tmp_path / "inputs", inventory, group)
+    chosen, proof = gate.validate_evidence(tmp_path / "inputs", jobs=_jobs(), source=SOURCE, run_id=42,
+        current_attempt=1, qualification=False, inventory=inventory[0], digest=inventory[1])
+    output = tmp_path / "complete"
+    result = gate.assemble(chosen, output, inventory[0], proof)
+    index = json.loads((output / "transitions/manifest.json").read_text())
+    assert [row["file"] for row in index] == ["transitions/graph.json", "transitions/home.json"]
+    assert json.loads((output / "manifest.json").read_text())["dynamic"] == index
+    for group, name in (("dynamic-a", "transitions/graph.json"), ("dynamic-b", "transitions/home.json")):
+        assert (output / name).read_bytes() == (chosen[group] / name).read_bytes()
+    assert result["assembled_file_sha256"]["transitions/manifest.json"] == gate.sha((output / "transitions/manifest.json").read_bytes())

@@ -21,7 +21,7 @@ import { captureReviewChecks } from './review-contracts.mjs';
 import { assertNumericTypography } from './appearance-contracts.mjs';
 import { collectObserverDiagnostics } from './observer-diagnostics.mjs';
 import { captureVisionDiagnostics } from './vision-diagnostics.mjs';
-import { ordinaryCases, ordinaryName } from './ci/inventory.mjs';
+import { DYNAMIC_GROUPS_V2, ordinaryCases, ordinaryName } from './ci/inventory.mjs';
 import { assertSafeCaptureOutput, CaptureRecorder, parseCaptureOptions, sourceIdentity } from './ci/recording.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -171,7 +171,7 @@ export async function capture(argv = process.argv.slice(2)) {
   const recorder = new CaptureRecorder({ group: options.group, source, partial: options.partial });
   const only = process.env.VISUAL_CAPTURE_ONLY?.split(',').filter(Boolean);
   const selectedScreens = only?.length ? SCREENS.filter(screen => only.includes(screen.workspace)) : SCREENS;
-  const remaining = options.group !== 'dynamic', dynamicGroup = options.group !== 'remaining';
+  const remaining = ['all', 'remaining'].includes(options.group), dynamicGroup = options.group !== 'remaining';
   const phaseTimings = {};
   let phase = 'prepare', started = performance.now();
   const nextPhase = (next) => {
@@ -327,7 +327,7 @@ export async function capture(argv = process.argv.slice(2)) {
     }
     if (dynamicGroup) {
       nextPhase('dynamic');
-      dynamic = await captureDynamicTransitions(browser, base, outDir, undefined, false, recorder);
+      dynamic = await captureDynamicTransitions(browser, base, outDir, DYNAMIC_GROUPS_V2[options.group], false, recorder);
       failures.push(...dynamic.flatMap(report => report.failures.map(failure => `${report.file}: ${failure}`)));
     }
     if (remaining) {

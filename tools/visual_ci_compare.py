@@ -24,8 +24,7 @@ except ModuleNotFoundError:
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ".github/workflows/visual-capture.yml"
 POLICY = "ci/visual-ci-policy.json"
-JOB_NAMES = {"visual-contracts", "visual-capture-dynamic", "visual-capture-remaining",
-             "visual-capture-serial-control", "visual-capture"}
+JOB_NAMES = {"visual-contracts", "visual-capture", *gate.JOBS.values()}
 
 
 class ComparisonError(ValueError):
@@ -80,12 +79,12 @@ def compare_proof(split):
             and control["retries"] == split["retries"] == 0, "visual_comparison_is_not_clean")
     require(control["selected_ids"] == split["selected_ids"]
             and control["selected_count"] == split["selected_count"], "visual_comparison_coverage_differs")
-    require(set(control["groups"]) == {"all"} and set(split["groups"]) == {"dynamic", "remaining"},
+    require(set(control["groups"]) == {"all"} and set(split["groups"]) == set(gate.GROUPS),
             "visual_comparison_groups_differ")
     legacy = control["groups"]["all"]
     groups = list(split["groups"].values())
     producer_ids = [legacy["job_id"], *(group["job_id"] for group in groups)]
-    require(len(set(producer_ids)) == 3 and all(type(value) is int and value > 0 for value in producer_ids),
+    require(len(set(producer_ids)) == len(gate.GROUPS) + 1 and all(type(value) is int and value > 0 for value in producer_ids),
             "visual_comparison_reuses_producer")
     outcomes = {}
     for group in groups:
