@@ -2,7 +2,10 @@
 
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
+import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -35,8 +38,12 @@ def policy(account=ACCOUNT):
 
 @pytest.fixture(params=["memory", "sqlite"])
 def stored(request, tmp_path):
-    kwargs = {"canonical_path": tmp_path / "canonical.sqlite3"} if request.param == "sqlite" else {}
-    repositories = create_canonical_repositories(request.param, **kwargs)
+    return _seed_repositories(request.param, tmp_path)
+
+
+def _seed_repositories(backend, tmp_path):
+    kwargs = {"canonical_path": tmp_path / "canonical.sqlite3"} if backend == "sqlite" else {}
+    repositories = create_canonical_repositories(backend, **kwargs)
     with repositories.database.transaction() as db:
         for account in (ACCOUNT, OTHER):
             db.execute("INSERT INTO account_heads(creator_account_id,canonical_revision,updated_at) VALUES (?,?,?)",
@@ -55,6 +62,87 @@ def stored(request, tmp_path):
                            (account, f"synthetic-m{index}", chat, TEXT,
                             (NOW - timedelta(hours=1)).isoformat(), NOW.isoformat()))
     return repositories
+
+
+def _test_key_identity():
+    assert os.environ.get("ENVIRONMENT") == "test"
+    return hashlib.sha256(bytes.fromhex(os.environ["OFCA_TEST_DATABASE_MASTER_KEY_HEX"])).digest()
+
+
+def _assert_no_journal(path):
+    for suffix in ("-wal", "-shm", "-journal"):
+        assert not path.with_name(path.name + suffix).exists()
+
+
+@pytest.fixture(scope="session")
+def evidence_schema_template(tmp_path_factory):
+    """Create an empty, verified encrypted schema once in each Windows worker."""
+    from app.persistence.sqlcipher_runtime import qualification_report
+
+    assert qualification_report()["qualified"]
+    key_identity = _test_key_identity()
+    root = tmp_path_factory.mktemp("evidence-schema-template")
+    repositories = create_canonical_repositories("sqlite", canonical_path=root / "canonical.sqlite3")
+    for database in (repositories.database, repositories.projection_database):
+        connection = database.connect()
+        try:
+            assert connection.execute("PRAGMA synchronous").fetchone()[0] == 2
+            assert connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+            assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+            assert not connection.execute("PRAGMA cipher_integrity_check").fetchall()
+            assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+            assert not connection.execute("PRAGMA foreign_key_check").fetchall()
+            assert tuple(connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()) == (0, 0, 0)
+        finally:
+            connection.close()
+        _assert_no_journal(database.path)
+        with database.path.open("rb") as stream:
+            assert stream.read(16) != b"SQLite format 3\x00"
+    return root, key_identity
+
+
+def _clone_evidence_schema(template, destination):
+    root, key_identity = template
+    assert _test_key_identity() == key_identity
+    for name in ("canonical.sqlite3", "projections.sqlite3"):
+        source, target = root / name, destination / name
+        _assert_no_journal(source)
+        _assert_no_journal(target)
+        # Exclusive creation: never replace an existing database or copy sidecars.
+        with source.open("rb") as original, target.open("xb") as copy:
+            shutil.copyfileobj(original, copy)
+
+
+@pytest.fixture(params=["memory", "sqlite"])
+def stored_after_init(request, tmp_path):
+    # Only opt-in behavior tests use clones. Linux and memory retain the original
+    # initialization path; the Windows fixed runtime is independently qualified.
+    if request.param == "sqlite" and os.name == "nt":
+        _clone_evidence_schema(request.getfixturevalue("evidence_schema_template"), tmp_path)
+    return _seed_repositories(request.param, tmp_path)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows encrypted schema fixture")
+def test_evidence_schema_clones_are_independent(tmp_path, evidence_schema_template):
+    root, _ = evidence_schema_template
+    originals = {name: (root / name).read_bytes() for name in ("canonical.sqlite3", "projections.sqlite3")}
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    _clone_evidence_schema(evidence_schema_template, first)
+    _clone_evidence_schema(evidence_schema_template, second)
+    first_repo = _seed_repositories("sqlite", first)
+    second_repo = _seed_repositories("sqlite", second)
+    with first_repo.database.transaction() as connection:
+        connection.execute("DELETE FROM account_messages WHERE creator_account_id=?", (ACCOUNT,))
+    with second_repo.database.transaction() as connection:
+        assert connection.execute("PRAGMA synchronous").fetchone()[0] == 2
+        assert connection.execute("SELECT count(*) FROM account_messages WHERE creator_account_id=?", (ACCOUNT,)).fetchone()[0] == 2
+    for name, content in originals.items():
+        assert (root / name).read_bytes() == content
+        _assert_no_journal(root / name)
+    with pytest.raises(FileExistsError):
+        _clone_evidence_schema(evidence_schema_template, first)
 
 
 def budget():
@@ -101,7 +189,8 @@ def test_text_and_metadata_affect_version_but_account_revision_does_not(stored):
     ("content_hash", "synthetic-changed-hash"),
     ("winning_source_seq", 2), ("winning_stream_epoch", 2),
 ])
-def test_changed_source_never_displays_replacement_text(stored, column, value):
+def test_changed_source_never_displays_replacement_text(stored_after_init, column, value):
+    stored = stored_after_init
     refreshes = []
     resolver, ref, _ = prepared(stored, request_refresh=refreshes.append)
     with stored.database.transaction() as db:
@@ -117,7 +206,8 @@ def test_changed_source_never_displays_replacement_text(stored, column, value):
     ("account", "*"), ("conversation", "synthetic-chat-a"),
     ("message", "synthetic-m1"), ("participant", "synthetic-participant"),
 ])
-def test_deletion_barrier_refuses_a_source_even_when_rows_remain(stored, scope, key):
+def test_deletion_barrier_refuses_a_source_even_when_rows_remain(stored_after_init, scope, key):
+    stored = stored_after_init
     resolver, ref, _ = prepared(stored)
     with stored.database.transaction() as db:
         db.execute("INSERT INTO deletion_barriers VALUES (?,?,?,?,?,?)",
@@ -128,7 +218,8 @@ def test_deletion_barrier_refuses_a_source_even_when_rows_remain(stored, scope, 
 
 
 @pytest.mark.parametrize("kind", ["message", "chat", "hard_message", "hard_account", "revision", "participant_scope"])
-def test_deleted_or_revised_canonical_state_invalidates_evidence(stored, kind):
+def test_deleted_or_revised_canonical_state_invalidates_evidence(stored_after_init, kind):
+    stored = stored_after_init
     resolver, ref, _ = prepared(stored)
     with stored.database.transaction() as db:
         if kind == "revision":
@@ -149,7 +240,8 @@ def test_deleted_or_revised_canonical_state_invalidates_evidence(stored, kind):
 
 
 @pytest.mark.parametrize("fault", ["account", "conversation", "message", "digest", "revision", "time", "span", "raw_text"])
-def test_forged_reference_does_not_reach_storage(stored, fault, monkeypatch):
+def test_forged_reference_does_not_reach_storage(stored_after_init, fault, monkeypatch):
+    stored = stored_after_init
     resolver, ref, source = prepared(stored)
     changes = {
         "account": {"account_ref": ref.account_ref.replace("a1:", "a1:0", 1)},
@@ -193,7 +285,8 @@ def test_same_native_ids_are_isolated_by_account(stored):
 
 
 @pytest.mark.parametrize("days", [90, 91])
-def test_expired_source_cannot_be_bound_even_when_canonical_data_remains(stored, days):
+def test_expired_source_cannot_be_bound_even_when_canonical_data_remains(stored_after_init, days):
+    stored = stored_after_init
     source = HistoryAnalyticsSource(stored.history)
     with stored.database.transaction() as db:
         db.execute("UPDATE account_messages SET sent_at=? WHERE creator_account_id=?",
@@ -254,7 +347,8 @@ def test_eviction_and_restart_require_reissuing_query_references(stored):
 
 
 @pytest.mark.parametrize("fault", ["edit", "delete", "revision", "clear", "expiry"])
-def test_changes_during_resolution_suppress_the_response(stored, fault, monkeypatch):
+def test_changes_during_resolution_suppress_the_response(stored_after_init, fault, monkeypatch):
+    stored = stored_after_init
     clock = [NOW]
     resolver, ref, source = prepared(stored, clock=lambda: clock[0], monotonic=lambda: 0.0)
     read = source.read_evidence_message
@@ -303,7 +397,8 @@ def test_adapter_exception_and_refresh_failure_do_not_disclose_content(stored, m
 
 
 @pytest.mark.parametrize("fault", ["location", "old_version", "span"])
-def test_invalid_binding_cannot_replace_a_source_version(stored, fault):
+def test_invalid_binding_cannot_replace_a_source_version(stored_after_init, fault):
+    stored = stored_after_init
     resolver, ref, _ = prepared(stored)
     location = LOCATION
     if fault == "location":
