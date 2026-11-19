@@ -213,3 +213,72 @@ def test_browser_artifacts_cannot_publish_unvalidated_or_failed_raw_evidence(mut
         next(step for step in aggregate if step.get("name") == "Upload Product #5 Legal evidence bundle")["if"] = "always()"
     with pytest.raises(AssertionError):
         _assert_browser_publication_is_validated(broken)
+
+
+
+def frontend_asset_tree(tmp_path):
+    from tools.ci_frontend_assets import REQUIRED
+    root = tmp_path / "dist"
+    for name in REQUIRED | {"assets/bundle-X.js", "assets/style.css"}:
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(name.encode())
+    return root
+
+
+def test_frontend_assets_exact_source_and_attempt_roundtrip(tmp_path):
+    from tools.ci_frontend_assets import seal, restore, compare
+    source = frontend_asset_tree(tmp_path)
+    bundle = tmp_path / "bundle"
+    target = tmp_path / "consumer" / "dist"
+    args = dict(source="a"*40, run=12, attempt=2)
+    receipt = seal(source, bundle, **args)
+    assert restore(bundle, target, **args) == receipt
+    assert compare(source, target)["equal"] is True
+
+
+@pytest.mark.parametrize("fault", ["bytes", "extra", "missing", "source", "run", "attempt", "receipt-extra", "existing-target"])
+def test_frontend_asset_restore_refuses_ambiguous_or_tampered_inputs(tmp_path, fault):
+    import json
+    from tools.ci_frontend_assets import seal, restore, AssetError
+    source = frontend_asset_tree(tmp_path)
+    bundle = tmp_path / "bundle"
+    target = tmp_path / "consumer"
+    args = dict(source="a"*40, run=12, attempt=2)
+    seal(source, bundle, **args)
+    if fault == "bytes": (bundle / "dist/index.html").write_text("modified")
+    elif fault == "extra": (bundle / "dist/extra.js").write_text("modified")
+    elif fault == "missing": (bundle / "dist/assets/style.css").unlink()
+    elif fault == "source": args["source"] = "b"*40
+    elif fault == "run": args["run"] = 13
+    elif fault == "attempt": args["attempt"] = 3
+    elif fault == "receipt-extra":
+        path = bundle / "receipt.json"
+        receipt = json.loads(path.read_text())
+        receipt["extra"] = True
+        path.write_text(json.dumps(receipt))
+    elif fault == "existing-target": target.mkdir()
+    with pytest.raises(AssetError):
+        restore(bundle, target, **args)
+    if fault != "existing-target": assert not target.exists()
+
+
+def test_frontend_asset_inventory_rejects_hidden_and_unsafe_names(tmp_path):
+    from tools.ci_frontend_assets import inventory, AssetError
+    root = frontend_asset_tree(tmp_path)
+    (root / ".hidden").write_text("hidden")
+    with pytest.raises(AssetError, match="unsafe asset path"):
+        inventory(root)
+
+
+def test_frontend_asset_comparison_reports_exact_differences(tmp_path):
+    from tools.ci_frontend_assets import compare
+    import shutil
+    root = frontend_asset_tree(tmp_path)
+    other = tmp_path / "other"
+    shutil.copytree(root, other)
+    (other / "assets/style.css").write_text("changed")
+    (other / "extra.js").write_text("extra")
+    result = compare(root, other)
+    assert result["equal"] is False
+    assert result["changed"] == ["assets/style.css"] and result["only_second"] == ["extra.js"]

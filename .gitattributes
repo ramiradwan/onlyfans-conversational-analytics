@@ -61,3 +61,9 @@ contracts/grant-profile-v1/*/*/** linguist-generated=true
 native/companion-snow/THIRD_PARTY_NOTICES.txt -whitespace
 extension/vendor/companion-snow/THIRD_PARTY_NOTICES.txt -whitespace
 frontend/shared-setup/providers/OFL.txt -whitespace
+
+# CI frontend asset entry documents must build from identical bytes on Windows and Linux.
+frontend/index.html text eol=lf
+frontend/browser-tasks/index.html text eol=lf
+frontend/onboarding/index.html text eol=lf
+frontend/setup-code/index.html text eol=lf
