@@ -246,6 +246,8 @@
     "tests/test_initial_handoff_read.py": 2,
     "tests/test_insights_pipeline.py": 3,
     "tests/test_insights_snapshot_retention.py": 2,
+    "tests/test_installation_authority_recovery_client.py": 1,
+    "tests/test_installation_authority_recovery_owner.py": 3,
     "tests/test_installation_continuation_client.py": 1,
     "tests/test_installation_continuation_owner.py": 2,
     "tests/test_installation_key.py": 1,
@@ -262,6 +264,7 @@
     "tests/test_light_first_update_io_diagnostic.py": 1,
     "tests/test_live_socket_capture_policy.py": 3,
     "tests/test_local_database_encryption.py": 2,
+    "tests/test_lost_enrollment_evidence.py": 1,
     "tests/test_managed_recovery_publication.py": 1,
     "tests/test_membership_insert_plan.py": 1,
     "tests/test_membership_proof_falsifiers.py": 1,
@@ -348,6 +351,9 @@
     "tests/test_projection_store_contract.py": 3,
     "tests/test_projection_v2.py": 3,
     "tests/test_projection_verification.py": 1,
+    "tests/test_protected_authority_setup.py": 3,
+    "tests/test_protected_browser_recovery_client.py": 1,
+    "tests/test_protected_browser_recovery_owner.py": 3,
     "tests/test_protocol_contract.py": 3,
     "tests/test_proven_currentness.py": 1,
     "tests/test_provisioning_binding_acquisition.py": 1,
@@ -991,9 +997,9 @@
       "tests/test_webauthn_access_events.py": 0.6223025999993297
     },
     "expected_shard_seconds": {
-      "1": 1340.0,
+      "1": 1344.1,
       "2": 1348.4,
-      "3": 1340.0
+      "3": 1344.2
     },
     "unmeasured_files": [
       "tests/test_activation_reconciliation_client.py",
@@ -1005,6 +1011,12 @@
       "tests/test_desktop_idle.py",
       "tests/test_desktop_lifetimes.py",
       "tests/test_desktop_recovery.py",
+      "tests/test_installation_authority_recovery_client.py",
+      "tests/test_installation_authority_recovery_owner.py",
+      "tests/test_lost_enrollment_evidence.py",
+      "tests/test_protected_authority_setup.py",
+      "tests/test_protected_browser_recovery_client.py",
+      "tests/test_protected_browser_recovery_owner.py",
       "tests/test_shared_store_reads.py",
       "tests/test_source_replacement_client.py",
       "tests/test_source_replacement_reservations.py",

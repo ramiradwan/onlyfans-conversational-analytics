@@ -321,6 +321,8 @@
     "tests/test_initial_handoff_read.py": 8,
     "tests/test_insights_pipeline.py": 3,
     "tests/test_insights_snapshot_retention.py": 8,
+    "tests/test_installation_authority_recovery_client.py": 4,
+    "tests/test_installation_authority_recovery_owner.py": 4,
     "tests/test_installation_continuation_client.py": 7,
     "tests/test_installation_continuation_owner.py": 1,
     "tests/test_installation_key.py": 8,
@@ -337,6 +339,7 @@
     "tests/test_light_first_update_io_diagnostic.py": 5,
     "tests/test_live_socket_capture_policy.py": 6,
     "tests/test_local_database_encryption.py": 8,
+    "tests/test_lost_enrollment_evidence.py": 4,
     "tests/test_managed_recovery_publication.py": 1,
     "tests/test_membership_insert_plan.py": 6,
     "tests/test_membership_proof_falsifiers.py": 3,
@@ -423,6 +426,9 @@
     "tests/test_projection_store_contract.py": 1,
     "tests/test_projection_v2.py": 5,
     "tests/test_projection_verification.py": 7,
+    "tests/test_protected_authority_setup.py": 4,
+    "tests/test_protected_browser_recovery_client.py": 4,
+    "tests/test_protected_browser_recovery_owner.py": 4,
     "tests/test_protocol_contract.py": 2,
     "tests/test_proven_currentness.py": 8,
     "tests/test_provisioning_binding_acquisition.py": 8,
@@ -594,9 +600,11 @@
     "tests/test_first_run_configuration.py": 1,
     "tests/test_grant_verifier.py": 2,
     "tests/test_hosted_origin_resolution.py": 2,
+    "tests/test_installation_authority_recovery_owner.py": 2,
     "tests/test_installation_key.py": 2,
     "tests/test_knowledge_contributions.py": 5,
     "tests/test_local_database_encryption.py": 2,
+    "tests/test_lost_enrollment_evidence.py": 1,
     "tests/test_msix_nlp_preparation.py": 5,
     "tests/test_msix_packaging.py": 3,
     "tests/test_nlp_canonical_execution.py": 4,
@@ -612,6 +620,8 @@
     "tests/test_packaging_build_mode.py": 1,
     "tests/test_packaging_smoke.py": 2,
     "tests/test_private_file_memory.py": 4,
+    "tests/test_protected_authority_setup.py": 1,
+    "tests/test_protected_browser_recovery_owner.py": 2,
     "tests/test_provisioning_binding_acquisition.py": 3,
     "tests/test_provisioning_claim_submission.py": 2,
     "tests/test_qualification_host_guard.py": 4,
@@ -684,23 +694,23 @@
   },
   "maintenance": {
     "method": "preserve existing owners; allocate new files by selected node count",
-    "inventory_sha256": "c39452bbcc233db1756deb9d0861d060d754a24fd20bf96a728fdd0493745540",
+    "inventory_sha256": "3ab58ac1cee9e70e1722f7c2e5e37f01121ffe03e2621c291f1ef35c56ecf406",
     "changes": {
       "full": {
         "added": [
-          "tests/test_activation_reconciliation_client.py",
-          "tests/test_activation_reconciliation_owner.py",
-          "tests/test_activation_review_replacement_client.py",
-          "tests/test_activation_review_replacement_owner.py",
-          "tests/test_source_replacement_client.py",
-          "tests/test_source_replacement_reservations.py"
+          "tests/test_installation_authority_recovery_client.py",
+          "tests/test_installation_authority_recovery_owner.py",
+          "tests/test_lost_enrollment_evidence.py",
+          "tests/test_protected_authority_setup.py",
+          "tests/test_protected_browser_recovery_client.py",
+          "tests/test_protected_browser_recovery_owner.py"
         ],
         "removed": [],
         "modeled_load": {
           "1": 1321,
-          "2": 1110,
+          "2": 1113,
           "3": 2406,
-          "4": 932,
+          "4": 1105,
           "5": 2434,
           "6": 1362,
           "7": 3379,
@@ -709,16 +719,17 @@
       },
       "platform": {
         "added": [
-          "tests/test_activation_reconciliation_owner.py",
-          "tests/test_activation_review_replacement_owner.py",
-          "tests/test_source_replacement_reservations.py"
+          "tests/test_installation_authority_recovery_owner.py",
+          "tests/test_lost_enrollment_evidence.py",
+          "tests/test_protected_authority_setup.py",
+          "tests/test_protected_browser_recovery_owner.py"
         ],
         "removed": [],
         "modeled_load": {
-          "1": 296,
-          "2": 325,
+          "1": 419,
+          "2": 408,
           "3": 400,
-          "4": 469,
+          "4": 470,
           "5": 405
         }
       },

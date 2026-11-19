@@ -521,6 +521,7 @@
     "tests/test_initial_handoff_expiry.py": 3,
     "tests/test_initial_handoff_read.py": 4,
     "tests/test_insights_snapshot_retention.py": 1,
+    "tests/test_installation_authority_recovery_owner.py": 4,
     "tests/test_installation_continuation_owner.py": 4,
     "tests/test_integrity_cost_contract.py": 4,
     "tests/test_integrity_fallback_modes.py": 1,
@@ -532,6 +533,7 @@
     "tests/test_licensed_analytics_pipeline.py": 1,
     "tests/test_live_socket_capture_policy.py": 3,
     "tests/test_local_database_encryption.py": 2,
+    "tests/test_lost_enrollment_evidence.py": 4,
     "tests/test_managed_recovery_publication.py": 2,
     "tests/test_membership_insert_plan.py": 4,
     "tests/test_membership_proof_falsifiers.py": 2,
@@ -584,6 +586,8 @@
     "tests/test_projection_store_contract.py": 1,
     "tests/test_projection_v2.py": 4,
     "tests/test_projection_verification.py": 1,
+    "tests/test_protected_authority_setup.py": 4,
+    "tests/test_protected_browser_recovery_owner.py": 4,
     "tests/test_proven_currentness.py": 2,
     "tests/test_published_source_identity.py": 4,
     "tests/test_qualification_host_guard.py": 2,
@@ -1022,6 +1026,22 @@
       {
         "selector": "tests/test_activation_reconciliation_owner.py",
         "reason": "Original commercial activation outcome reconciliation must retain durable claim identity in the Windows encrypted journal."
+      },
+      {
+        "selector": "tests/test_protected_authority_setup.py",
+        "reason": "Protected desktop authority recovery, exact local command admission, and restart reconciliation depend on the encrypted Windows authentication writer."
+      },
+      {
+        "selector": "tests/test_installation_authority_recovery_owner.py",
+        "reason": "Original installation authority recovery, verified grants, and durable withdrawal fencing depend on encrypted Windows authentication persistence."
+      },
+      {
+        "selector": "tests/test_lost_enrollment_evidence.py",
+        "reason": "Original lost-enrollment proof, retained identity, and signed delivery must preserve the Windows encrypted authentication journal across interruption."
+      },
+      {
+        "selector": "tests/test_protected_browser_recovery_owner.py",
+        "reason": "Protected browser recovery and fresh authentication selection use the encrypted Windows authentication journal."
       }
     ],
     "analytics": [
@@ -1377,9 +1397,11 @@
     "tests/test_first_run_configuration.py": 2,
     "tests/test_grant_verifier.py": 2,
     "tests/test_hosted_origin_resolution.py": 3,
+    "tests/test_installation_authority_recovery_owner.py": 2,
     "tests/test_installation_key.py": 1,
     "tests/test_knowledge_contributions.py": 2,
     "tests/test_local_database_encryption.py": 3,
+    "tests/test_lost_enrollment_evidence.py": 1,
     "tests/test_msix_nlp_preparation.py": 1,
     "tests/test_msix_packaging.py": 2,
     "tests/test_nlp_canonical_execution.py": 2,
@@ -1395,6 +1417,8 @@
     "tests/test_packaging_build_mode.py": 2,
     "tests/test_packaging_smoke.py": 1,
     "tests/test_private_file_memory.py": 1,
+    "tests/test_protected_authority_setup.py": 3,
+    "tests/test_protected_browser_recovery_owner.py": 2,
     "tests/test_provisioning_binding_acquisition.py": 3,
     "tests/test_provisioning_claim_submission.py": 1,
     "tests/test_qualification_host_guard.py": 2,
@@ -1530,6 +1554,10 @@
     "unmeasured_files": [
       "tests/test_activation_reconciliation_owner.py",
       "tests/test_activation_review_replacement_owner.py",
+      "tests/test_installation_authority_recovery_owner.py",
+      "tests/test_lost_enrollment_evidence.py",
+      "tests/test_protected_authority_setup.py",
+      "tests/test_protected_browser_recovery_owner.py",
       "tests/test_source_replacement_reservations.py"
     ]
   }
