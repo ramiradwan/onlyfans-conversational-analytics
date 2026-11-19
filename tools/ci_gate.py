@@ -44,9 +44,13 @@ class ReportSpec:
     reference: bool = False
     python: str = "3.11"
     implementation: str | None = None
+    producer_job: str | None = None
+    artifact_job: str | None = None
 
     @property
     def logical_job(self) -> str:
+        if self.producer_job is not None:
+            return self.producer_job
         if self.job.startswith("windows-full-regression-"):
             return "windows-full-shards"
         if self.job.startswith("windows-platform-contract-"):
@@ -190,9 +194,13 @@ def _unique_strings(value: Any, label: str) -> set[str]:
     return set(value)
 
 
-def validate_needs(needs: Any, jobs: dict[str, dict[str, Any]], *, event: str = "push") -> None:
+def validate_needs(needs: Any, jobs: dict[str, dict[str, Any]], *, event: str = "push",
+                   needed_jobs=None, actual_jobs=None, full_jobs=None) -> None:
     required_report_lanes(event)
-    if not isinstance(needs, dict) or set(needs) != NEEDED_JOBS:
+    needed_jobs = NEEDED_JOBS if needed_jobs is None else needed_jobs
+    actual_jobs = ACTUAL_JOBS if actual_jobs is None else actual_jobs
+    full_jobs = WINDOWS_FULL_LANES if full_jobs is None else full_jobs
+    if not isinstance(needs, dict) or set(needs) != needed_jobs:
         raise GateError("gate dependencies do not match the mandatory execution jobs")
     for name, result in needs.items():
         expected = "skipped" if event == "pull_request" and name in {
@@ -200,8 +208,8 @@ def validate_needs(needs: Any, jobs: dict[str, dict[str, Any]], *, event: str = 
         } else "success"
         if not isinstance(result, dict) or result.get("result") != expected:
             raise GateError(f"mandatory dependency {name} did not have required result {expected!r}")
-    for name in sorted(ACTUAL_JOBS):
-        if event == "pull_request" and name in WINDOWS_FULL_LANES:
+    for name in sorted(actual_jobs):
+        if event == "pull_request" and name in full_jobs:
             # A job-level matrix condition can skip before shard expansion.
             # If an actual shard exists, it must still be a completed skip.
             if name not in jobs:
@@ -315,8 +323,10 @@ def validate_report(report: dict[str, Any], spec: ReportSpec) -> dict[str, str]:
 
 
 def load_reports(directory: Path, *, source_commit: str, run_id: int,
-                 jobs: dict[str, dict[str, Any]], event: str = "push") -> dict[str, dict[str, Any]]:
-    expected_lanes = required_report_lanes(event)
+                 jobs: dict[str, dict[str, Any]], event: str = "push",
+                 specs=None, expected_lanes=None) -> dict[str, dict[str, Any]]:
+    specs = SPECS if specs is None else specs
+    expected_lanes = required_report_lanes(event) if expected_lanes is None else expected_lanes
     chosen = {}
     identities = set()
     paths = sorted(directory.rglob("*.json"))
@@ -332,13 +342,13 @@ def load_reports(directory: Path, *, source_commit: str, run_id: int,
         lane = report.get("lane")
         if lane not in expected_lanes:
             raise GateError(f"unexpected report lane {lane!r}")
-        spec = SPECS[lane]
+        spec = specs[lane]
         attempt = _integer(report.get("run_attempt"), "report attempt")
         if (report.get("source_commit") != source_commit
                 or _integer(report.get("workflow_run_id"), "report run") != run_id
                 or report.get("job_id") != spec.logical_job):
             raise GateError(f"{lane}: report source, run, or job identity mismatch")
-        expected_artifact = f"ci-tests-{spec.job}-{source_commit}-{run_id}-{attempt}"
+        expected_artifact = f"ci-tests-{spec.artifact_job or spec.job}-{source_commit}-{run_id}-{attempt}"
         relative = path.relative_to(directory)
         if len(relative.parts) < 2 or relative.parts[0] != expected_artifact:
             raise GateError(f"{lane}: artifact and report job/attempt identity mismatch")
@@ -373,7 +383,7 @@ def _skip_reason(report: dict[str, Any], node: str) -> str | None:
     return None
 
 
-def _validate_python313_loop_coverage(reports, inventories, outcomes) -> set[str]:
+def _validate_python313_loop_coverage(reports, inventories, outcomes, *, owner_lane=None) -> set[str]:
     lane = PYTHON313_LOOP_LANE
     report = reports[lane]
     expected = set(PYTHON313_LOOP_CASES)
@@ -390,7 +400,7 @@ def _validate_python313_loop_coverage(reports, inventories, outcomes) -> set[str
             or report.get("partial") is not False or selection.get("keyword") != ""
             or selection.get("marker") != "" or selection.get("targets") != list(PYTHON313_LOOP_SELECTORS)):
         raise GateError("CPython loop counterpart has a narrowed or changed selection")
-    owner = reports[WINDOWS_PLATFORM_LANES[0]]
+    owner = reports[owner_lane or WINDOWS_PLATFORM_LANES[0]]
     if any(report.get(key) != owner.get(key) for key in
            ("source_commit", "workflow_run_id", "run_attempt", "job_id")):
         raise GateError("CPython loop counterpart must match its current producer execution")
@@ -473,21 +483,8 @@ def _windows_platform_owners(reports: dict[str, dict[str, Any]], expected: set[s
     return owners
 
 
-def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push") -> dict[str, int]:
-    if set(reports) != required_report_lanes(event):
-        raise GateError("execution report set does not match the CI event")
-    references = {
-        "Linux": reports["legacy-linux-reference"],
-        "Windows": reports["legacy-windows-reference"],
-    }
-    inventories = {system: inventory(report) for system, report in references.items()}
-    # PRs omit exhaustive execution, but their independent Windows collection
-    # must still prove that a subsequent main push can select every shard.
-    try:
-        partition = load_windows_full_manifest(Path(__file__).resolve().parents[1])
-        validate_windows_full_inventory(inventories["Windows"].values(), partition, complete=True)
-    except (ValueError, OSError) as exc:
-        raise GateError(f"invalid Windows full regression manifest inventory: {exc}") from exc
+def _common_selection(reports, inventories, specs):
+    references = {"Linux": reports["legacy-linux-reference"], "Windows": reports["legacy-windows-reference"]}
     legacy = {}
     for system, rows in inventories.items():
         expected = {node for node, row in rows.items()
@@ -503,7 +500,7 @@ def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push"
         rows = inventory(reports[lane])
         if _raw_inventory_signature(rows) != _raw_inventory_signature(inventories["Linux"]):
             raise GateError(f"{lane}: collection differs from the independent Linux reference")
-    for lane, spec in SPECS.items():
+    for lane, spec in specs.items():
         if spec.selectors:
             expected = {node for node in inventories[spec.platform]
                         if any(_matches(node, selector) for selector in spec.selectors)}
@@ -516,6 +513,42 @@ def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push"
     boot_expected = {node for node, row in inventories["Windows"].items()
                      if "windows_production" in row["markers"] and not {"slow", "stateful_tier_b"} & set(row["markers"])}
     _exact_selection(reports["windows-production-boot"], boot_expected, "Windows production boot")
+    return legacy, linux_lanes, linux_owners
+
+
+def _validate_profiles_and_scale(reports, inventories, outcomes, specs, event):
+    for lane, spec in specs.items():
+        if spec.selectors and any(value == "skipped" for value in outcomes[lane].values()):
+            raise GateError(f"{lane}: a mandatory explicit profile test was skipped")
+    scale_expected = set()
+    if event != "pull_request":
+        scale_expected = {node for node, row in inventories["Windows"].items()
+                          if "slow" in row["markers"]
+                          and not any(_matches(node, path) for path in SEPARATELY_QUALIFIED_SLOW_FILES)}
+        if not scale_expected:
+            raise GateError("analytics scale qualification no longer collects any independent slow cases")
+        _exact_selection(reports[SCALE_LANE], scale_expected, "analytics scale qualification")
+        if any(value == "skipped" for value in outcomes[SCALE_LANE].values()):
+            raise GateError("analytics scale qualification skipped a mandatory case")
+    return scale_expected
+
+
+def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push") -> dict[str, int]:
+    if set(reports) != required_report_lanes(event):
+        raise GateError("execution report set does not match the CI event")
+    references = {
+        "Linux": reports["legacy-linux-reference"],
+        "Windows": reports["legacy-windows-reference"],
+    }
+    inventories = {system: inventory(report) for system, report in references.items()}
+    # PRs omit exhaustive execution, but their independent Windows collection
+    # must still prove that a subsequent main push can select every shard.
+    try:
+        partition = load_windows_full_manifest(Path(__file__).resolve().parents[1])
+        validate_windows_full_inventory(inventories["Windows"].values(), partition, complete=True)
+    except (ValueError, OSError) as exc:
+        raise GateError(f"invalid Windows full regression manifest inventory: {exc}") from exc
+    legacy, linux_lanes, linux_owners = _common_selection(reports, inventories, SPECS)
     shadow_owners = (_windows_full_owners(reports, inventories["Windows"], legacy["Windows"])
                      if event != "pull_request" else {})
 
@@ -606,37 +639,27 @@ def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push"
                                for lane in lanes if node in outcomes[lane])
             if not observed or shadow.get(node) != "skipped" or not old_reason or not corroborated:
                 raise GateError(f"{node}: selected coverage became skipped or lost its required OS")
-    for lane, spec in SPECS.items():
-        if spec.selectors and any(value == "skipped" for value in outcomes[lane].values()):
-            raise GateError(f"{lane}: a mandatory explicit profile test was skipped")
-    scale_expected = set()
-    if event != "pull_request":
-        scale_expected = {node for node, row in inventories["Windows"].items()
-                          if "slow" in row["markers"]
-                          and not any(_matches(node, path) for path in SEPARATELY_QUALIFIED_SLOW_FILES)}
-        if not scale_expected:
-            raise GateError("analytics scale qualification no longer collects any independent slow cases")
-        _exact_selection(reports[SCALE_LANE], scale_expected, "analytics scale qualification")
-        if any(value == "skipped" for value in outcomes[SCALE_LANE].values()):
-            raise GateError("analytics scale qualification skipped a mandatory case")
+    scale_expected = _validate_profiles_and_scale(reports, inventories, outcomes, SPECS, event)
     return {"legacy_linux": len(legacy["Linux"]), "legacy_windows": len(legacy["Windows"]),
             "required_windows": len(required_windows), "scale": len(scale_expected), "reports": len(reports)}
 
 
 def write_summary(path: str | None, *, jobs: dict[str, dict[str, Any]],
-                  reports: dict[str, dict[str, Any]], message: str) -> None:
+                  reports: dict[str, dict[str, Any]], message: str, specs=None, actual_jobs=None) -> None:
     """A missing optional summary destination never changes the gate result."""
     if not path:
         return
+    specs = SPECS if specs is None else specs
+    actual_jobs = ACTUAL_JOBS if actual_jobs is None else actual_jobs
     lines = ["## Required CI", "", message, "", "| Job | Latest result | Test selections |", "| --- | --- | ---: |"]
-    for name in sorted(ACTUAL_JOBS):
+    for name in sorted(actual_jobs):
         job = jobs.get(name, {})
         url = job.get("html_url", "")
         label = f"[{name}]({url})" if isinstance(url, str) and url.startswith(
             "https://github.com/ramiradwan/onlyfans-conversational-analytics/actions/runs/"
         ) else name
         lane_reports = [report for lane, report in reports.items()
-                        if SPECS[lane].job == name and not SPECS[lane].reference]
+                        if specs[lane].job == name and not specs[lane].reference]
         selections = str(sum(len(report["selected"]) for report in lane_reports)) if lane_reports else "—"
         result = job.get("conclusion") or job.get("status") or "unavailable"
         lines.append(f"| {label} | {result} | {selections} |")
@@ -655,7 +678,18 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     jobs: dict[str, dict[str, Any]] = {}
     reports: dict[str, dict[str, Any]] = {}
+    specs, actual_jobs = SPECS, ACTUAL_JOBS
     try:
+        policy = os.environ.get("CI_POLICY_VERSION", "sharded-v8-pr-cutover")
+        if policy == "sharded-v9-pr-cutover":
+            from tools import ci_gate_v9 as v9
+            # Direct script invocation needs the repository package on sys.path.
+            specs, actual_jobs = v9.SPECS, v9.ACTUAL
+            validate_dependencies, read_reports, validate = v9.validate_needs, v9.load_reports, v9.validate_coverage
+        elif policy == "sharded-v8-pr-cutover":
+            validate_dependencies, read_reports, validate = validate_needs, load_reports, validate_coverage
+        else:
+            raise GateError("unsupported active CI gate policy")
         source = os.environ.get("PRODUCT_SHA", "")
         if not re.fullmatch(r"[0-9a-f]{40}", source):
             raise GateError("PRODUCT_SHA must identify the tested source commit")
@@ -665,18 +699,21 @@ def main(argv: list[str] | None = None) -> int:
         required_report_lanes(event)
         client = GitHubApi(os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN", ""))
         jobs = latest_ci_jobs(client, run_id=run_id, run_attempt=attempt, source_commit=source)
-        validate_needs(load_json_strict(args.needs_json.encode(), label="gate dependencies"), jobs, event=event)
-        reports = load_reports(args.reports_dir, source_commit=source, run_id=run_id, jobs=jobs, event=event)
-        counts = validate_coverage(reports, event=event)
+        validate_dependencies(load_json_strict(args.needs_json.encode(), label="gate dependencies"), jobs, event=event)
+        reports = read_reports(args.reports_dir, source_commit=source, run_id=run_id, jobs=jobs, event=event)
+        counts = validate(reports, event=event)
         message = "Required CI passed: " + ", ".join(f"{name}={value}" for name, value in counts.items())
         result = 0
     except (GateError, ContractError, ValueError, OSError) as exc:
         message = f"Required CI failed: {exc}"
         result = 1
     print(message)
-    write_summary(os.environ.get("GITHUB_STEP_SUMMARY"), jobs=jobs, reports=reports, message=message)
+    write_summary(os.environ.get("GITHUB_STEP_SUMMARY"), jobs=jobs, reports=reports, message=message, specs=specs, actual_jobs=actual_jobs)
     return result
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from tools.ci_gate import main as package_main
+    raise SystemExit(package_main())

@@ -2475,3 +2475,49 @@ def test_handoff_rejects_app_permission_expansion(tmp_path: Path) -> None:
             openssl=_openssl_executable(),
             client_factory=Client,
         )
+
+
+V9_SOURCE = ROOT / "tests/fixtures/product-ci-sharded-v9-pr-cutover.yml"
+V9_POLICY = ROOT / "tests/fixtures/product-ci-sharded-v9-pr-cutover-policy.json"
+
+
+@pytest.mark.parametrize("line_ending", [b"\n", b"\r\n"])
+def test_v9_source_requires_every_rebalanced_producer(line_ending):
+    source = V9_SOURCE.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", line_ending)
+    expected = producer.REQUIRED_SHARDED_V9_PRODUCT_CI_JOB_NAMES
+    assert producer.product_ci_job_policy(source, V9_POLICY.read_bytes()) == expected
+    assert len(expected) == 36
+    assert {"windows-qualification", "candidate-preflight", "web-build-assets",
+            "windows-full-regression-8", "analytics-windows-contract-2", "windows-platform-contract-5"} <= expected
+
+
+@pytest.mark.parametrize("job,old,new", [
+    ("windows-full-shards", "max-parallel: 8", "max-parallel: 7"),
+    ("windows-full-shards", "- 8\n", "- 7\n"),
+    ("windows-platform-contract", "max-parallel: 5", "max-parallel: 4"),
+    ("analytics-windows-contract", "max-parallel: 2", "max-parallel: 1"),
+    ("analytics-windows-contract", "fail-fast: false", "fail-fast: true"),
+    ("windows-platform-contract", "- web-build-assets", "- backend-fast"),
+    ("windows-qualification", "timeout-minutes: 60", "timeout-minutes: 90"),
+    ("candidate-preflight", "runs-on: ubuntu-latest", "runs-on: windows-latest"),
+    ("web-build-assets", "timeout-minutes: 10", "timeout-minutes: 20"),
+    ("analytics-scale-qualification", "github.event_name != 'pull_request'", "true"),
+    ("required-ci-gate", "- windows-qualification", "- browser-reporting-safety"),
+    ("required-ci-gate", "- name: Require complete successful CI evidence", "- name: Require complete successful CI evidence\n        if: false"),
+])
+def test_v9_source_refuses_missing_optional_or_changed_mandatory_jobs(job, old, new):
+    source = V9_SOURCE.read_text(encoding="utf-8")
+    before, body = source.split(f"  {job}:\n", 1)
+    import re
+    pieces = re.split(r"(?m)(?=^  [a-zA-Z0-9_-]+:\n)", body, maxsplit=1)
+    block = pieces[0]
+    assert old in block
+    changed = before + f"  {job}:\n" + block.replace(old, new, 1) + "".join(pieces[1:])
+    with pytest.raises(producer.ContractError):
+        producer.product_ci_job_policy(changed.encode(), V9_POLICY.read_bytes())
+
+
+def test_v9_policy_cannot_be_confused_with_v8():
+    for source, policy in ((V9_SOURCE, V8_POLICY), (V8_SOURCE, V9_POLICY)):
+        with pytest.raises(producer.ContractError):
+            producer.product_ci_job_policy(source.read_bytes(), policy.read_bytes())

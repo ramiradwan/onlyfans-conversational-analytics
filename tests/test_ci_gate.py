@@ -1164,3 +1164,113 @@ def test_added_loop_parameter_requires_explicit_counterpart_inventory_review():
             report["deselected"].append(node)
     with pytest.raises(gate.GateError):
         gate.validate_coverage(reports)
+
+
+# Exercise the v9 production verifier with v8-compatible independent fixtures.
+# A small synthetic allocation is used rather than assuming current node counts.
+def _v9_reports(monkeypatch, *, event="push"):
+    from tools import ci_gate_v9 as v9
+    from tools.ci_windows_shards import candidate_groups, LEGACY_WINDOWS_EXPRESSION
+    reports = _reports()
+    windows = gate.inventory(reports["legacy-windows-reference"])
+    # Keep all eight full shards nonempty, while preserving the focused owner
+    # groups and exact eleven-case Python 3.13 counterpart.
+    full = {row["path"]: 1 for node, row in windows.items()
+            if not set(row["markers"]) & gate.LEGACY_EXCLUDED}
+    platform = {"tests/test_platform.py": 1, "tests/test_boot.py": 2, gate.LOOP_TEST_FILE: 3}
+    analytics = {"tests/test_projection1.py": 1}
+    for number in (4, 5):
+        name = f"tests/test_v9_platform_{number}.py"
+        platform[name] = number
+    analytics["tests/test_v9_analytics_2.py"] = 2
+    extra_focused = {name: "platform" for name in platform if name.startswith("tests/test_v9_")}
+    extra_focused.update({name: "analytics" for name in analytics if name.startswith("tests/test_v9_")})
+    extras = {**extra_focused, **{f"tests/test_v9_full_{n}.py": None for n in range(1, 9)}}
+    for name, contract in extras.items():
+        node = name + "::test_case"
+        row = dict(nodeid=node, path=name, markers=["windows_compat"] if contract else [],
+                   windows_compat=bool(contract), windows_contract=contract, windows_platform_shard=platform.get(name))
+        windows[node] = row
+        full[name] = int(name[-4]) if contract is None else 1
+        for lane in ("legacy-linux-reference", "legacy-windows-reference", "backend-fast", *(f"analytics-integration-{n}" for n in range(1, 5))):
+            report = reports[lane]
+            report["collected"].append(copy.deepcopy(row))
+            if lane in ("legacy-linux-reference", "legacy-windows-reference", "backend-fast"):
+                report["selected"].append(node)
+                if lane == "backend-fast": report["reports"].extend(_phase_reports([node]))
+            else:
+                report["deselected"].append(node)
+    contracts = {"platform": [{"selector": name} for name in platform],
+                 "analytics": [{"selector": name} for name in analytics]}
+    plan = {"schema": 2, "full": full, "platform": platform, "analytics": analytics, "retain_in_full": []}
+    monkeypatch.setattr(gate, "PR_WINDOWS_SKIP_LANES", {})
+    partition = candidate_groups(windows.values(), plan, contracts)
+    selected = {key: reports[key] for key in v9.SPECS if key in reports}
+    for lane, report in selected.items():
+        report["job_id"] = v9.SPECS[lane].logical_job
+        report.update(python_implementation="CPython", pytest="9.1.1")
+    for group, nodes in partition.items():
+        lane = "candidate-" + group
+        spec = v9.SPECS[lane]
+        report = copy.deepcopy(reports["legacy-windows-reference"])
+        report.update(lane=lane, job_id=spec.logical_job, collect_only=False, partial=False,
+                      selection={"keyword": "", "marker": LEGACY_WINDOWS_EXPRESSION, "targets": ["tests"]},
+                      execution={"workers": 4, "dist": "load"})
+        _replace_selection(report, nodes)
+        for node in nodes & set(gate.PYTHON313_LOOP_CASES):
+            _skip(report, node, gate.PYTHON313_LOOP_CASES[node])
+        selected[lane] = report
+    return {key: selected[key] for key in v9.required_lanes(event)}, plan, contracts
+
+
+@pytest.mark.parametrize("event", ["push", "pull_request", "workflow_dispatch"])
+def test_v9_independent_coverage_contract(monkeypatch, event):
+    from tools import ci_gate_v9 as v9
+    reports, plan, contracts = _v9_reports(monkeypatch, event=event)
+    result = v9.validate_coverage(reports, plan=plan, contracts=contracts, event=event)
+    assert result["reports"] == len(v9.required_lanes(event))
+    assert result["legacy_windows"] == 30
+
+
+@pytest.mark.parametrize("fault", ["missing-focused", "skip-focused", "skip-full", "workers", "marker", "missing-loop", "wrong-profile", "extra-report", "retained"])
+def test_v9_refuses_incomplete_or_changed_execution(monkeypatch, fault):
+    from tools import ci_gate_v9 as v9
+    reports, plan, contracts = _v9_reports(monkeypatch)
+    focused = reports["candidate-platform-1"]
+    full = reports["candidate-full-8"]
+    if fault == "missing-focused": _replace_selection(focused, [])
+    elif fault == "skip-focused": _skip(focused, focused["selected"][0])
+    elif fault == "skip-full": _skip(full, full["selected"][0])
+    elif fault == "workers": focused["execution"]["workers"] = 2
+    elif fault == "marker": focused["collected"][0]["markers"].append("changed")
+    elif fault == "missing-loop": del reports[gate.PYTHON313_LOOP_LANE]
+    elif fault == "wrong-profile": reports["windows-persistence-general"]["profile"] = "wrong"
+    elif fault == "extra-report": reports["foreign"] = focused
+    elif fault == "retained": plan["retain_in_full"] = focused["selected"]
+    with pytest.raises(gate.GateError):
+        v9.validate_coverage(reports, plan=plan, contracts=contracts)
+
+
+@pytest.mark.parametrize("event", ["push", "pull_request"])
+def test_v9_requires_all_producers_and_exact_latest_artifacts(tmp_path, monkeypatch, event):
+    from tools import ci_gate_v9 as v9
+    reports, plan, contracts = _v9_reports(monkeypatch, event=event)
+    jobs = {name: {"status": "completed", "conclusion": "success", "run_attempt": 1} for name in v9.ACTUAL}
+    needs = {name: {"result": "success"} for name in v9.NEEDED}
+    if event == "pull_request":
+        for name in (gate.SCALE_LANE, "windows-full-shards"): needs[name]["result"] = "skipped"
+        jobs[gate.SCALE_LANE]["conclusion"] = "skipped"
+        for name in v9.FULL_JOBS: del jobs[name]
+    for lane, report in reports.items():
+        spec = v9.SPECS[lane]
+        path = tmp_path / f"ci-tests-{spec.artifact_job or spec.job}-{SHA}-{RUN}-1" / lane / "report.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(report), encoding="utf-8")
+    v9.validate_needs(needs, jobs, event=event)
+    assert v9.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=jobs, event=event) == reports
+    jobs["windows-platform-contract-5"]["run_attempt"] = 2
+    with pytest.raises(gate.GateError, match="missing evidence"):
+        v9.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=jobs, event=event)
+    jobs["windows-platform-contract-5"]["conclusion"] = "failure"
+    with pytest.raises(gate.GateError, match="latest mandatory"):
+        v9.validate_needs(needs, jobs, event=event)
