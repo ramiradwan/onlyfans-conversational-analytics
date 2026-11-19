@@ -88,6 +88,10 @@
     "tests/test_activation_enforcement.py": 5,
     "tests/test_activation_gate.py": 8,
     "tests/test_activation_read_scope.py": 1,
+    "tests/test_activation_reconciliation_client.py": 4,
+    "tests/test_activation_reconciliation_owner.py": 4,
+    "tests/test_activation_review_replacement_client.py": 4,
+    "tests/test_activation_review_replacement_owner.py": 4,
     "tests/test_admission_confirmation.py": 1,
     "tests/test_agent_bundle.py": 8,
     "tests/test_agent_configuration.py": 4,
@@ -483,6 +487,8 @@
     "tests/test_signing_parameters.py": 5,
     "tests/test_small_conversation_pages.py": 6,
     "tests/test_source_catalog_cache.py": 6,
+    "tests/test_source_replacement_client.py": 4,
+    "tests/test_source_replacement_reservations.py": 4,
     "tests/test_source_token_migration.py": 4,
     "tests/test_sqlcipher_runtime_supply.py": 8,
     "tests/test_sqlite_backup.py": 8,
@@ -549,6 +555,8 @@
   },
   "platform": {
     "tests/test_activation_gate.py": 3,
+    "tests/test_activation_reconciliation_owner.py": 1,
+    "tests/test_activation_review_replacement_owner.py": 1,
     "tests/test_agent_bundle.py": 5,
     "tests/test_analysis_restart_offline.py": 4,
     "tests/test_analytics_qualification_storage.py": 1,
@@ -610,6 +618,7 @@
     "tests/test_redemption_journal_workspace.py": 5,
     "tests/test_release_signing.py": 3,
     "tests/test_resource_paths.py": 3,
+    "tests/test_source_replacement_reservations.py": 1,
     "tests/test_sqlcipher_runtime_supply.py": 5,
     "tests/test_sqlite_backup.py": 3,
     "tests/test_sqlite_canonical_persistence.py": 5,
@@ -675,32 +684,41 @@
   },
   "maintenance": {
     "method": "preserve existing owners; allocate new files by selected node count",
-    "inventory_sha256": "2ad7953f6a960bd369b8d2420da8165d977d2557db785c431b51848b1bb2bb5e",
+    "inventory_sha256": "c39452bbcc233db1756deb9d0861d060d754a24fd20bf96a728fdd0493745540",
     "changes": {
       "full": {
         "added": [
-          "tests/test_analytics_publication_events.py"
+          "tests/test_activation_reconciliation_client.py",
+          "tests/test_activation_reconciliation_owner.py",
+          "tests/test_activation_review_replacement_client.py",
+          "tests/test_activation_review_replacement_owner.py",
+          "tests/test_source_replacement_client.py",
+          "tests/test_source_replacement_reservations.py"
         ],
         "removed": [],
         "modeled_load": {
-          "1": 1314,
-          "2": 1107,
+          "1": 1321,
+          "2": 1110,
           "3": 2406,
-          "4": 855,
-          "5": 2425,
+          "4": 932,
+          "5": 2434,
           "6": 1362,
           "7": 3379,
-          "8": 2931
+          "8": 2939
         }
       },
       "platform": {
-        "added": [],
+        "added": [
+          "tests/test_activation_reconciliation_owner.py",
+          "tests/test_activation_review_replacement_owner.py",
+          "tests/test_source_replacement_reservations.py"
+        ],
         "removed": [],
         "modeled_load": {
-          "1": 229,
+          "1": 296,
           "2": 325,
-          "3": 376,
-          "4": 447,
+          "3": 400,
+          "4": 469,
           "5": 405
         }
       },
