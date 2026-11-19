@@ -29,7 +29,7 @@ def test_visual_capture_keeps_its_separate_stable_check() -> None:
     assert "visual-capture" not in _load(CI_WORKFLOW)["jobs"]
     workflow = _load()
     assert workflow["permissions"] == {"contents": "read"}
-    assert workflow["env"]["VISUAL_CI_POLICY_VERSION"] == "visual-v1"
+    assert workflow["env"]["VISUAL_CI_POLICY_VERSION"] == "visual-v2"
     for key in ("PRODUCT_SHA", "VISUAL_CAPTURE_REVISION"):
         assert workflow["env"][key] == "${{ github.event.pull_request.head.sha || github.sha }}"
     for job in workflow["jobs"].values():
@@ -124,7 +124,7 @@ def _assert_isolated_groups_and_optional_control(workflow: dict[str, Any]) -> No
     jobs = workflow["jobs"]
     capture = jobs["visual-capture-execution"]
     assert capture["name"] == "visual-capture-${{ matrix.group }}"
-    assert capture["strategy"] == {"fail-fast": False, "max-parallel": 2, "matrix": {"group": ["dynamic", "remaining"]}}
+    assert capture["strategy"] == {"fail-fast": False, "max-parallel": 3, "matrix": {"group": ["dynamic-a", "dynamic-b", "remaining"]}}
     for name in PRODUCERS:
         job = jobs[name]
         assert job["runs-on"] == "ubuntu-latest" and job["timeout-minutes"] == 20

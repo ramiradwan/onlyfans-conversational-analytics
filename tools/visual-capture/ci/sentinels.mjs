@@ -72,7 +72,9 @@ async function main() {
     owner = { server, closed };
     activeStage = 'connect';
     browser = await chromium.connect(server.wsEndpoint());
-    const definition = generateInventory().cases.find(value => value.group === 'dynamic');
+    const definition = generateInventory().cases.find(value => value.kind === 'dynamic');
+    assert(definition);
+    const group = definition.group;
     for (const scenario of scenarios) {
       activeScenario = scenario;
       const raw = join(directory, scenario, 'raw'); const published = join(directory, scenario, 'diagnostics');
@@ -118,7 +120,7 @@ async function main() {
       assert(failure?.message.includes(SECRET));
       activeStage = 'recorder';
       let clock = 0;
-      const recorder = new CaptureRecorder({ group: 'dynamic', source, clock: () => clock });
+      const recorder = new CaptureRecorder({ group, source, clock: () => clock });
       if (scenario === 'unknown-id') {
         assert.throws(() => recorder.begin(failure.message, {}), { message: 'visual_ci_invalid_case_start' });
       } else {

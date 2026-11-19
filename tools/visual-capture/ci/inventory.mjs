@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createScreens, FIXED_NOW, MODES, VIEWPORTS } from '../screen-matrix.mjs';
-import { dynamicCases, dynamicSequence } from '../dynamic-matrix.mjs';
+import { DYNAMIC_VIEWS, dynamicCases, dynamicSequence } from '../dynamic-matrix.mjs';
 import { FRESHNESS_TRANSITIONS, FRESHNESS_VERTICES, freshnessCases } from '../freshness-matrix.mjs';
 import { staticCases } from '../static-fixture-matrix.mjs';
 import { VISION_TYPES } from '../vision-diagnostics.mjs';
@@ -37,7 +37,31 @@ export function reviewCases() {
   ].map(value => ({ ...value, mode })));
 }
 
-export function generateInventory() {
+// Candidate partition from the complete dynamic receipt of run 44399595143,
+// source 4515ca758f75db08fbcc06b76a4381472f387152, attempt 1.
+// Summed case timings / four workers: 443.3 s and 435.9 s, respectively.
+// These are workload estimates, not qualified wall-clock measurements.
+export const DYNAMIC_GROUPS_V2 = Object.freeze({
+  'dynamic-a': Object.freeze(['settings', 'production-boot', 'options', 'graph']),
+  'dynamic-b': Object.freeze(['setup', 'inbox', 'home', 'popup', 'analytics', 'passkey']),
+});
+
+export function validateDynamicPartition(groups, views = DYNAMIC_VIEWS) {
+  const names = Object.keys(groups).sort();
+  if (names.join(',') !== 'dynamic-a,dynamic-b' || names.some(name => !Array.isArray(groups[name]) || !groups[name].length)) {
+    throw new Error('visual_ci_invalid_dynamic_partition');
+  }
+  const assigned = names.flatMap(name => groups[name]);
+  if (new Set(views).size !== views.length || assigned.length !== views.length
+    || new Set(assigned).size !== assigned.length || assigned.some(view => !views.includes(view))) {
+    throw new Error('visual_ci_invalid_dynamic_partition');
+  }
+  return new Map(names.flatMap(name => groups[name].map(view => [view, name])));
+}
+
+export function generateInventory({ layout = 'visual-v2' } = {}) {
+  if (!['visual-v1', 'visual-v2'].includes(layout)) throw new Error('visual_ci_invalid_inventory_layout');
+  const partition = layout === 'visual-v2' ? validateDynamicPartition(DYNAMIC_GROUPS_V2) : null;
   const cases = [];
   for (const value of ordinaryCases()) {
     const { screen, mode, viewport } = value; const name = ordinaryName(value);
@@ -51,7 +75,7 @@ export function generateInventory() {
   }
   for (const value of dynamicCases()) {
     const report = `transitions/${dynamicName(value)}.json`;
-    cases.push({ id: `dynamic-${dynamicName(value)}`, group: 'dynamic', kind: 'dynamic', configuration: value,
+    cases.push({ id: `dynamic-${dynamicName(value)}`, group: partition ? partition.get(value.view) : 'dynamic', kind: 'dynamic', configuration: value,
       observations: dynamicSequence(value.view, value.width), report, files: [report] });
   }
   for (const value of freshnessCases()) {
@@ -71,10 +95,12 @@ export function generateInventory() {
   }
   if (new Set(cases.map(value => value.id)).size !== cases.length) throw new Error('visual_ci_duplicate_inventory_identity');
   return { schema: 'visual-ci-inventory/v1', workers: 4, fixed_now: FIXED_NOW,
-    shared_files: { dynamic: ['manifest.json', 'transitions/manifest.json'], remaining: ['manifest.json', 'freshness-transitions.json'] }, cases };
+    shared_files: { ...Object.fromEntries((partition ? Object.keys(DYNAMIC_GROUPS_V2) : ['dynamic'])
+      .map(group => [group, ['manifest.json', 'transitions/manifest.json']])),
+      remaining: ['manifest.json', 'freshness-transitions.json'] }, cases };
 }
 
-export function inventoryBytes() { return JSON.stringify(generateInventory(), null, 2) + '\n'; }
+export function inventoryBytes(options) { return JSON.stringify(generateInventory(options), null, 2) + '\n'; }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   if (args.length && (args.length !== 2 || args[0] !== '--output' || !args[1])) throw new Error('visual_ci_invalid_inventory_arguments');

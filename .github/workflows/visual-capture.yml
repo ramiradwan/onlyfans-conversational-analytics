@@ -25,7 +25,7 @@ concurrency:
 env:
   PRODUCT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
   VISUAL_CAPTURE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
-  VISUAL_CI_POLICY_VERSION: visual-v1
+  VISUAL_CI_POLICY_VERSION: visual-v2
   VISUAL_QUALIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.visual_qualification }}
   VISUAL_SERIAL_CONTROL: ${{ github.event_name == 'workflow_dispatch' && inputs.visual_serial_control }}
 jobs:
@@ -120,9 +120,9 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 3
       matrix:
-        group: [dynamic, remaining]
+        group: [dynamic-a, dynamic-b, remaining]
     env:
       VISUAL_CI_GROUP: ${{ matrix.group }}
     steps:

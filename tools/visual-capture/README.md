@@ -16,11 +16,12 @@ npm run generate:theme --prefix frontend -- --color-report ../artifacts/visual-c
 
 ## Run one CI stage group
 
-CI runs `dynamic` and `remaining` on separate runners. Dynamic owns the existing dynamic-transition population. Remaining owns frontend fold/full captures and diagnostic images, freshness transitions, review checks and static surfaces. Both keep the existing four-worker bound. The `all` group is the complete serial control.
+CI runs `dynamic-a`, `dynamic-b` and `remaining` on separate runners. The two dynamic groups partition the existing complete dynamic-transition population by view. Remaining owns frontend fold/full captures and diagnostic images, freshness transitions, review checks and static surfaces. All keep the existing four-worker bound. The `all` group is the complete serial control.
 
 ```sh
 node tools/visual-capture/ci/inventory.mjs --output artifacts/visual-inventory.json
-VISUAL_CAPTURE_REVISION=$(git rev-parse HEAD) node tools/visual-capture/capture.mjs artifacts/visual-dynamic --stage-group dynamic
+VISUAL_CAPTURE_REVISION=$(git rev-parse HEAD) node tools/visual-capture/capture.mjs artifacts/visual-dynamic --stage-group dynamic-a
+VISUAL_CAPTURE_REVISION=$(git rev-parse HEAD) node tools/visual-capture/capture.mjs artifacts/visual-dynamic-b --stage-group dynamic-b
 VISUAL_CAPTURE_REVISION=$(git rev-parse HEAD) node tools/visual-capture/capture.mjs artifacts/visual-remaining --stage-group remaining
 VISUAL_CAPTURE_REVISION=$(git rev-parse HEAD) node tools/visual-capture/capture.mjs artifacts/visual-control --stage-group all
 ```

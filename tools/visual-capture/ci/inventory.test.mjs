@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, posix, win32 } from 'node:path';
-import { generateInventory } from './inventory.mjs';
+import { DYNAMIC_GROUPS_V2, generateInventory, inventoryBytes, validateDynamicPartition } from './inventory.mjs';
+import { DYNAMIC_VIEWS, dynamicCases } from '../dynamic-matrix.mjs';
 import { assertSafeCaptureOutput, CaptureRecorder, parseCaptureOptions, sourceIdentity } from './recording.mjs';
 
 const source = { source_commit: 'a'.repeat(40), workflow_run_id: 'local', run_attempt: 1 };
@@ -26,7 +27,7 @@ test('output safety admits a separate Windows drive while refusing repository an
 });
 
 test('independent inventory keeps whole page sequences and covers both groups without overlap', () => {
-  const dynamic = inventory.cases.filter(value => value.group === 'dynamic');
+  const dynamic = inventory.cases.filter(value => value.kind === 'dynamic');
   const remaining = inventory.cases.filter(value => value.group === 'remaining');
   assert.equal(new Set([...dynamic, ...remaining].map(value => value.id)).size, inventory.cases.length);
   assert.deepEqual(new Set(dynamic.map(value => value.kind)), new Set(['dynamic']));
@@ -45,7 +46,7 @@ test('independent inventory keeps whole page sequences and covers both groups wi
 });
 
 test('group mode refuses partial filters while bare local reproduction remains available', () => {
-  for (const group of ['all', 'dynamic', 'remaining']) for (const variable of ['VISUAL_CAPTURE_ONLY', 'STATIC_SURFACE_ONLY']) {
+  for (const group of ['all', 'dynamic-a', 'dynamic-b', 'remaining']) for (const variable of ['VISUAL_CAPTURE_ONLY', 'STATIC_SURFACE_ONLY']) {
     assert.throws(() => parseCaptureOptions(['out', '--stage-group', group], { [variable]: 'home' }), /partial_filter_refused/);
   }
   assert.equal(parseCaptureOptions(['out'], { VISUAL_CAPTURE_ONLY: 'home' }).partial, true);
@@ -59,7 +60,7 @@ test('equal counts cannot substitute for exact transitions including duplicates 
     values => { [values[0], values[1]] = [values[1], values[0]]; },
     values => { values[values.indexOf('snapshot:fresh')] = 'snapshot:populated'; },
   ]) {
-    const recorder = new CaptureRecorder({ group: 'dynamic', source });
+    const recorder = new CaptureRecorder({ group: 'dynamic-b', source });
     const finish = recorder.begin(definition.id, definition.configuration);
     const observations = [...definition.observations]; alter(observations);
     finish({ outcome: 'passed', observations, files: definition.files });
@@ -71,8 +72,8 @@ test('only observed starts and terminals enter restricted metadata; private extr
   const directory = await mkdtemp(join(tmpdir(), 'visual-ci-recording-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   let now = 0;
-  const recorder = new CaptureRecorder({ group: 'dynamic', source, clock: () => now });
-  const [first, second] = inventory.cases.filter(value => value.group === 'dynamic');
+  const recorder = new CaptureRecorder({ group: 'dynamic-b', source, clock: () => now });
+  const [first, second] = inventory.cases.filter(value => value.group === 'dynamic-b');
   const finish = recorder.begin(first.id, first.configuration);
   finish({ outcome: 'passed', observations: [...first.observations, 'private-sentinel'], files: ['private-sentinel.txt'] });
   recorder.begin(second.id, second.configuration);
@@ -82,7 +83,7 @@ test('only observed starts and terminals enter restricted metadata; private extr
   now = 60_000;
   // Four three-width and six two-width surfaces, each with 2 themes, font
   // scales and motion modes. The retired provisioning surface adds no cases.
-  assert.match(recorder.progress('dynamic'), /elapsed_seconds=60 selected=192 completed=1$/);
+  assert.match(recorder.progress('dynamic'), /elapsed_seconds=60 selected=120 completed=1$/);
   await recorder.writeInventory(directory);
   const receipt = await recorder.finish(directory, { exitCode: 1, phaseTimings: { dynamic: 60 } });
   assert.equal(receipt.complete, false); assert.equal(receipt.cases.length, 2);
@@ -102,7 +103,7 @@ test('receipt provenance must resolve actual HEAD even with an expected revision
 test('observer diagnostics retain closed failure metadata without changing case outcome rules', () => {
   const definition = inventory.cases.find(value => value.kind === 'dynamic' && value.configuration.view === 'popup');
   const diagnostic = { code: 'required_region_missing_at_first_surface', phase: 'first_surface', region: 'popup-status' };
-  const recorder = new CaptureRecorder({ group: 'dynamic', source });
+  const recorder = new CaptureRecorder({ group: 'dynamic-b', source });
   recorder.begin(definition.id, definition.configuration)({ outcome: 'failed', observations: definition.observations,
     files: definition.files, observerDiagnostics: [diagnostic], error: 'PRIVATE-error' });
   diagnostic.region = 'PRIVATE-mutated';
@@ -110,12 +111,45 @@ test('observer diagnostics retain closed failure metadata without changing case 
   assert.equal(record.outcome, 'failed');
   assert.equal(record.observer_diagnostics[0].region, 'popup-status');
   assert(!JSON.stringify(record).includes('PRIVATE'));
-  const success = new CaptureRecorder({ group: 'dynamic', source });
+  const success = new CaptureRecorder({ group: 'dynamic-b', source });
   success.begin(definition.id, definition.configuration)({ outcome: 'passed', observations: definition.observations, files: definition.files });
   assert.equal(success.records.get(definition.id).outcome, 'passed');
   assert(!('observer_diagnostics' in success.records.get(definition.id)));
-  const invalid = new CaptureRecorder({ group: 'dynamic', source });
+  const invalid = new CaptureRecorder({ group: 'dynamic-b', source });
   assert.throws(() => invalid.begin(definition.id, definition.configuration)({ outcome: 'passed', observations: definition.observations,
     files: definition.files, observerDiagnostics: [{ code: 'observer_read_failed', phase: 'observer_read', region: null }] }), /invalid_observer_diagnostics/);
   assert.equal(invalid.records.get(definition.id).outcome, 'incomplete');
+});
+
+
+test('candidate v2 preserves all existing case identities, observations and files', () => {
+  const candidate = generateInventory({ layout: 'visual-v2' });
+  const { cases, shared_files, ...metadata } = candidate;
+  const { cases: previous, shared_files: previousShared, ...previousMetadata } = generateInventory({ layout: 'visual-v1' });
+  assert.deepEqual(metadata, previousMetadata);
+  assert.deepEqual(cases.map(({ group, ...value }) => value), previous.map(({ group, ...value }) => value));
+  assert.deepEqual(cases.filter(value => value.group === 'remaining'), previous.filter(value => value.group === 'remaining'));
+  assert.deepEqual(shared_files.remaining, previousShared.remaining);
+  for (const [group, views] of Object.entries(DYNAMIC_GROUPS_V2)) {
+    assert.deepEqual(shared_files[group], previousShared.dynamic);
+    const actual = cases.filter(value => value.group === group);
+    assert.deepEqual(actual.map(value => value.configuration), dynamicCases(DYNAMIC_VIEWS.filter(view => views.includes(view))));
+    assert(actual.every(value => value.kind === 'dynamic'));
+  }
+  assert.equal(cases.filter(value => value.group === 'dynamic-a').length, 72);
+  assert.equal(cases.filter(value => value.group === 'dynamic-b').length, 120);
+  assert.equal(inventoryBytes(), inventoryBytes({ layout: 'visual-v2' }));
+  assert.throws(() => generateInventory({ layout: 'unknown' }), /invalid_inventory_layout/);
+});
+
+test('candidate dynamic partition rejects missing, duplicate and unknown views', () => {
+  const a = [...DYNAMIC_GROUPS_V2['dynamic-a']], b = [...DYNAMIC_GROUPS_V2['dynamic-b']];
+  for (const groups of [
+    { 'dynamic-a': a.slice(1), 'dynamic-b': b },
+    { 'dynamic-a': a, 'dynamic-b': [...b, a[0]] },
+    { 'dynamic-a': ['unknown', ...a.slice(1)], 'dynamic-b': b },
+    { 'dynamic-a': [], 'dynamic-b': [...a, ...b] },
+    { 'dynamic-a': a, 'dynamic-b': b, extra: [] },
+  ]) assert.throws(() => validateDynamicPartition(groups), /invalid_dynamic_partition/);
+  assert.throws(() => validateDynamicPartition(DYNAMIC_GROUPS_V2, [...DYNAMIC_VIEWS, 'new-view']), /invalid_dynamic_partition/);
 });

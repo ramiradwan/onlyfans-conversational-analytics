@@ -31,12 +31,12 @@ except ModuleNotFoundError:
         load_json_strict, _ci_literal_mapping, _ci_literal_list)
 
 ROOT = Path(__file__).resolve().parents[1]
-GROUPS = ("dynamic", "remaining")
+GROUPS = ("dynamic-a", "dynamic-b", "remaining")
 JOBS = {group: f"visual-capture-{group}" for group in GROUPS} | {"all": "visual-capture-serial-control"}
 SERIAL_IF = "${{ github.event_name == 'workflow_dispatch' && inputs.visual_serial_control }}"
-POLICY = {"schema": "visual-ci-policy/v1", "policy_version": "visual-v1",
+POLICY = {"schema": "visual-ci-policy/v1", "policy_version": "visual-v2",
     "workflow": ".github/workflows/visual-capture.yml", "groups": list(GROUPS),
-    "workers_per_runner": 4, "max_parallel": 2, "contracts_job": "visual-contracts",
+    "workers_per_runner": 4, "max_parallel": 3, "contracts_job": "visual-contracts",
     "execution_job": "visual-capture-execution", "aggregate_job": "visual-capture",
     "producer_jobs": JOBS, "allowed_skipped_jobs": [JOBS["all"]], "serial_condition": SERIAL_IF}
 RECEIPT_KEYS = {"schema", "source_commit", "workflow_run_id", "run_attempt", "logical_job", "group",
@@ -149,7 +149,7 @@ def validate_policy(workflow_source: bytes, policy_source: bytes) -> dict[str, A
     require(policy == POLICY and type(policy.get("workers_per_runner")) is int
             and type(policy.get("max_parallel")) is int, "unsupported_visual_policy")
     source = workflow_source.decode("utf-8").replace("\r\n", "\n")
-    require(source.count("  VISUAL_CI_POLICY_VERSION: visual-v1\n") == 1
+    require(source.count("  VISUAL_CI_POLICY_VERSION: visual-v2\n") == 1
             and not re.search(r"(?m)^    paths(?:-ignore)?:", source), "visual_policy_declaration")
     blocks = re.split(r"(?m)^jobs:\s*\n", source)
     require(len(blocks) == 2, "visual_job_mapping")
@@ -165,7 +165,7 @@ def validate_policy(workflow_source: bytes, policy_source: bytes) -> dict[str, A
             and "if" not in matrix and matrix.get("continue-on-error", "false") == "false"
             and "needs" not in matrix
             and set(strategy) == {"fail-fast", "max-parallel", "matrix"}
-            and strategy.get("fail-fast") == "false" and strategy.get("max-parallel") == "2"
+            and strategy.get("fail-fast") == "false" and strategy.get("max-parallel") == "3"
             and set(axes) == {"group"} and _ci_literal_list(axes["group"]) == list(GROUPS), "visual_matrix_policy")
     contracts, gate, serial = (fields[name] for name in ("visual-contracts", "visual-capture", JOBS["all"]))
     require("if" not in contracts and contracts.get("continue-on-error", "false") == "false"
@@ -488,7 +488,7 @@ def validate_evidence(directory: Path, *, jobs: dict[str, dict[str, Any]], sourc
         run_id=run_id, attempt=jobs[JOBS[group]]["run_attempt"], group=group) for group, path in chosen.items()}
     expected = {case["id"] for case in inventory["cases"]}
     split = [{row["id"] for row in receipts[group]["cases"]} for group in GROUPS]
-    require(not split[0] & split[1] and split[0] | split[1] == expected, "visual_coverage_union")
+    require(set().union(*split) == expected and sum(map(len, split)) == len(expected), "visual_coverage_union")
     summaries = {}
     for group, receipt in receipts.items():
         cases = selected_cases(inventory, group)
@@ -499,7 +499,7 @@ def validate_evidence(directory: Path, *, jobs: dict[str, dict[str, Any]], sourc
             "receipt_sha256": sha(read(chosen[group] / "capture-ci.json")), "retries": 0, "skips": 0}
     proof = {"schema": "visual-ci-verified/v1", "source_commit": source, "workflow_run_id": run_id,
         "current_attempt": current_attempt, "qualification": qualification, "inventory_sha256": digest,
-        "policy_version": "visual-v1", "selected_ids": sorted(expected), "selected_count": len(expected),
+        "policy_version": "visual-v2", "selected_ids": sorted(expected), "selected_count": len(expected),
         "retries": 0, "skips": 0, "groups": {group: summaries[group] for group in GROUPS},
         "serial_control": False, "paired_control": serial_requested, "control": None}
     if serial_requested:
@@ -619,19 +619,23 @@ def assemble(chosen: dict[str, Path], output: Path, inventory: dict[str, Any], p
         stage.mkdir()
         seen = set()
         for group in GROUPS:
-            for name in sorted(expected_files(inventory, group) - {"manifest.json"}):
+            for name in sorted(expected_files(inventory, group) - {"manifest.json", "transitions/manifest.json"}):
                 require(name not in seen, "overlapping_visual_file")
                 seen.add(name)
                 target = stage / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(read(chosen[group] / name))
-        dynamic, remaining = manifests["dynamic"], manifests["remaining"]
+        remaining = manifests["remaining"]
+        dynamic = sorted([row for group in GROUPS if group != "remaining" for row in manifests[group]["dynamic"]], key=lambda row: row["file"])
+        _rows(dynamic, "file", "duplicate_dynamic_index")
+        (stage / "transitions").mkdir(exist_ok=True)
+        (stage / "transitions/manifest.json").write_text(json.dumps(dynamic, indent=2) + "\n", encoding="utf-8")
         timings = {}
         for manifest in manifests.values():
             for phase, seconds in manifest["phaseTimings"].items():
                 timings[phase] = timings.get(phase, 0) + seconds
         manifest = {"revision": proof["source_commit"], "fixedNow": inventory["fixed_now"], "phaseTimings": timings,
-            "entries": remaining["entries"], "diagnostics": remaining["diagnostics"], "dynamic": dynamic["dynamic"],
+            "entries": remaining["entries"], "diagnostics": remaining["diagnostics"], "dynamic": dynamic,
             "freshness": remaining["freshness"], "static": remaining["static"], "review": remaining["review"], "failures": []}
         (stage / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         # Recheck the assembled full view against the same independently enumerated
@@ -659,7 +663,7 @@ def finalize(output: Path, verified_output: Path) -> dict[str, Any]:
     require(isinstance(document(output / "color-qualification.json"), (dict, list)), "invalid_color_report")
     receipt = {"schema": "visual-ci-artifact/v1", "source_commit": proof["source_commit"],
         "workflow_run_id": proof["workflow_run_id"], "run_attempt": proof["current_attempt"],
-        "inventory_sha256": proof["inventory_sha256"], "policy_version": "visual-v1",
+        "inventory_sha256": proof["inventory_sha256"], "policy_version": "visual-v2",
         "producers": {group: {key: value[key] for key in ("job_id", "producer_attempt", "receipt_sha256")}
                       for group, value in proof["groups"].items()},
         "file_sha256": {name: sha(read(output / name)) for name in sorted(expected)}}
