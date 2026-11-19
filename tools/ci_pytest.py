@@ -24,6 +24,8 @@ def pytest_addoption(parser):
     group.addoption("--ci-shard", type=int, default=None)
     group.addoption("--ci-windows-shard", type=int, choices=(1, 2, 3), default=None)
     group.addoption("--ci-windows-candidate", default=None)
+    group.addoption("--ci-windows-v9", default=None)
+    group.addoption("--ci-windows-v9-manifest", default=None)
     group.addoption("--ci-windows-manifest", default=None)
     group.addoption("--ci-profile", default=None)
     group.addoption("--ci-output-dir", default=os.environ.get("CI_REPORT_DIR"))
@@ -42,7 +44,9 @@ def is_distributed(config):
 
 
 def pytest_configure(config):
-    if config.getoption("ci_windows_candidate") is not None:
+    if config.getoption("ci_windows_candidate") is not None and config.getoption("ci_windows_v9") is not None:
+        raise pytest.UsageError("Cannot combine experimental and production Windows selection")
+    if config.getoption("ci_windows_candidate") is not None or config.getoption("ci_windows_v9") is not None:
         if config.getoption("ci_windows_shard") is not None or config.getoption("ci_lane") or config.getoption("ci_shard") or config.getoption("ci_profile"):
             raise pytest.UsageError("Candidate selection cannot combine with active lane selection")
         from tools.ci_windows_shards import LEGACY_WINDOWS_EXPRESSION
@@ -221,12 +225,18 @@ def pytest_collection_modifyitems(session, config, items):
     lane = config.getoption("ci_lane")
     windows_shard = config.getoption("ci_windows_shard")
     candidate = config.getoption("ci_windows_candidate")
-    if candidate is not None:
+    production = config.getoption("ci_windows_v9")
+    if candidate is not None or production is not None:
         from tools.ci_windows_shards import candidate_groups, WindowsShardError, _unique_pairs
         try:
-            plan = json.loads((config.rootpath / "tools/windows-topology-candidate.json").read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)
             contracts = json.loads((config.rootpath / "ci/backend-test-shards.json").read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)["windows_contracts"]
-            wanted = candidate_groups(evidence.collected, plan, contracts)[candidate]
+            if production is not None:
+                from tools import ci_windows_v9 as v9
+                plan = v9.load_manifest(config.rootpath, config.getoption("ci_windows_v9_manifest"))
+                wanted = v9.groups(evidence.collected, plan, contracts)[production]
+            else:
+                plan = json.loads((config.rootpath / "tools/windows-topology-candidate.json").read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)
+                wanted = candidate_groups(evidence.collected, plan, contracts)[candidate]
         except (WindowsShardError, OSError, ValueError, KeyError) as error:
             raise pytest.UsageError(str(error)) from error
         deselected = [item for item in items if item.nodeid not in wanted]

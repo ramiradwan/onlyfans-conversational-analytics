@@ -1015,7 +1015,7 @@ def _validate_sharded_v3_source(
         raise ContractError("sharded-v3 Product CI serial control must remain an explicit bounded dispatch opt-in")
 
 
-def _validate_cutover_triggers(source: str, *, browser_qualification: bool = False) -> None:
+def _validate_cutover_triggers(source: str, *, browser_qualification: bool = False, allow_cold_control: bool = False) -> None:
     trigger_blocks = re.findall(r"(?m)^(?:'on'|on):[ \t]*\n((?:[ ]+[^\n]*\n|\n)*)", source)
     if len(trigger_blocks) != 1:
         raise ContractError("Windows PR cutover requires one literal trigger declaration")
@@ -1031,6 +1031,8 @@ def _validate_cutover_triggers(source: str, *, browser_qualification: bool = Fal
             "browser_qualification": "Require first-attempt browser passes for rollout comparison",
             "browser_serial_control": "Run the complete serial browser control (requires browser_qualification)",
         }
+        if allow_cold_control and "force_sqlcipher_cold" in inputs:
+            expected_descriptions["force_sqlcipher_cold"] = "Build SQLCipher without restoring either wheel or native dependency cache"
         if set(inputs) != set(expected_descriptions):
             raise ContractError("Browser PR cutover requires exactly its reviewed manual inputs")
         for name, description in expected_descriptions.items():
@@ -1110,7 +1112,7 @@ def product_ci_job_policy(workflow_source: bytes, policy_source: bytes | None = 
                                     platform_shards=version in {"sharded-v7-pr-cutover", "sharded-v8-pr-cutover"},
                                     full_windows_shards=3 if version == "sharded-v8-pr-cutover" else 2)
     if version in {"sharded-v2-pr-cutover", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover", "sharded-v5-pr-cutover", "sharded-v6-pr-cutover", "sharded-v7-pr-cutover", "sharded-v8-pr-cutover", "sharded-v9-pr-cutover"}:
-        _validate_cutover_triggers(blocks[0], browser_qualification=version != "sharded-v2-pr-cutover")
+        _validate_cutover_triggers(blocks[0], browser_qualification=version != "sharded-v2-pr-cutover", allow_cold_control=version == "sharded-v9-pr-cutover")
     return set(required_names)
 
 

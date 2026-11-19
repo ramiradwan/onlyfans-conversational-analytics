@@ -1,0 +1,71 @@
+# Optional cache publication is isolated from the read-only build job.
+name: SQLCipher cache publication
+'on':
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  publish:
+    name: Publish protected-main SQLCipher cache
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_sha == github.sha &&
+      github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Checkout exact protected main source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Retrieve exact upstream wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: fixed-sqlcipher-wheel-${{ github.sha }}
+          path: ${{ runner.temp }}\ofca-upstream-wheel
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Verify successful main CI and stage fresh wheel
+        id: stage
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
+          UPSTREAM_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          UPSTREAM_SOURCE: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          $fingerprint = python tools/ci_sqlcipher_cache.py publish-stage --artifact "$env:RUNNER_TEMP\ofca-upstream-wheel" --cache "$env:RUNNER_TEMP\ofca-fixed-sqlcipher-cache"
+          if ($LASTEXITCODE -eq 0 -and $fingerprint -match '^[a-f0-9]{64}$') {
+            "fingerprint=$fingerprint" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Warning 'No verified fresh wheel eligible for publication.'
+          }
+          exit 0
+      - name: Attest protected main wheel manifest
+        id: attest
+        if: steps.stage.outputs.fingerprint != ''
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d
+        with:
+          subject-path: ${{ runner.temp }}\ofca-fixed-sqlcipher-cache\wheel-cache-manifest.json
+      - name: Save attested fixed wheel cache
+        if: steps.attest.outcome == 'success'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-cache
+          key: ofca-sqlcipher-wheel-v1-${{ steps.stage.outputs.fingerprint }}

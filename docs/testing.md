@@ -14,15 +14,16 @@ Install the dependencies described in [Contributing](../CONTRIBUTING.md). Build 
 | Changed test | `python -m pytest tests/test_reply_source_selection.py -vv` |
 | All backend integration tests | `python tools/test_backend.py integration` |
 | One integration shard | `python tools/test_backend.py integration --shard 2` |
-| One exhaustive Windows shard | `python tools/test_backend.py windows-full-regression --shard 1` |
+| One exhaustive Windows v9 shard | `python tools/test_backend.py windows-full-regression --windows-v9-group full-1 --workers 4` |
 | Full serial Windows default suite | `python tools/test_backend.py windows-full-regression` |
-| Inspect an exhaustive Windows shard | `python tools/test_backend.py list windows-full-regression --shard 1` |
+| Inspect an exhaustive Windows v9 shard | `python tools/test_backend.py list windows-full-regression --windows-v9-group full-1` |
 | Inspect a lane | `python tools/test_backend.py list integration --shard 2` |
 | Validate all classifications and selectors | `python tools/test_backend.py list all --validate` |
 | One stateful profile | `python tools/test_backend.py stateful --profile analytics_convergence_fast` |
 | Windows platform contract | `python tools/test_backend.py windows-platform` |
-| One Windows platform group | `python tools/test_backend.py windows-platform --shard 1` |
+| One Windows v9 platform group | `python tools/test_backend.py windows-full-regression --windows-v9-group platform-1 --workers 4` |
 | Windows analytics contract | `python tools/test_backend.py windows-analytics` |
+| One Windows v9 analytics group | `python tools/test_backend.py windows-full-regression --windows-v9-group analytics-1 --workers 4` |
 | One scale qualification file | `python tools/test_backend.py scale -- tests/test_question_identity_scale.py` |
 
 Arguments after `--` pass through to pytest. For example, `python tools/test_backend.py integration --shard 2 -- -k publication -vv` runs a filtered subset. The runner prints the command and writes reports under `artifacts/ci-tests/`. Profile variables apply only to the child process. `fast` runs the fast tier; CI also runs the named stateful profiles as separate steps in its backend-fast job. That job has a 30-minute limit covering the fast selection and all follow-up checks.
@@ -39,13 +40,13 @@ Add `--baseline-junit C:\test-work\serial\junit.xml` to compare outcomes by node
 
 Windows contract execution requires Windows and the fixed SQLCipher runtime. A Linux collection that skips a Windows-native test does not reproduce that test. Required hosted and packaged-runtime evidence still comes from their respective workflows.
 
-CI runs the Windows platform contract in three groups. Whole files stay together; group 1 also runs the reference collection, production boot, persistence profiles and CPython 3.13 socket-loop checks. The existing Required CI check verifies all three groups. Linux integration keeps four shards, balanced from recorded execution times. Exhaustive Windows has three shards, balanced by expected job time: the seconds of `serial` tests, plus the seconds of other tests times a measured contention factor divided by the worker count. To rebalance exhaustive Windows, pass a raw unsharded Windows collection as `--inventory`, a directory with every shard report from one run as `--timings`, and `--workers 4 --contention <factor>` to `update-windows-manifest --rebalance`. Contention is how much slower a test runs beside the other workers than alone; hosted Windows runners measured 2.0 to 3.0. The manifest records the model and the expected seconds for each shard, and later additions use the same model.
+Production v9 runs five Windows platform groups, two Windows analytics groups and eight exhaustive complement groups. Whole files stay together within each population. The independent raw collection, production boot, persistence profiles and CPython 3.13 socket-loop checks run in `windows-qualification`. Linux integration keeps four shards. The [production Windows manifest](../ci/windows-v9-test-shards.json) is shared by local execution and the production gate. The older `--shard` Windows commands and `ci/windows-full-test-shards.json` are historical v8 controls, not the production v9 allocation.
 
 The fast, integration, Windows platform, Windows analytics and exhaustive Windows lanes run with four pytest-xdist workers, set by `CI_PYTEST_WORKERS` or `--workers`. Each worker receives the same per-process isolation as the local parallel runner. Selected `serial` tests then run in one process after the workers exit. The runner merges both phases into one `report.json` and `junit.xml` with the lane's complete collection, so Required CI validates the same evidence as a single-process run. Stateful profiles, explicit selectors and scale qualification run in one process.
 
 The parallel phase uses the pytest-xdist `load` scheduler unless `CI_PYTEST_DIST` or `--dist` selects `worksteal`. The lane report's `execution` section records the scheduler and, for each worker, its test count, busy seconds and idle tail. Each Windows backend job logs its processor, memory and Defender state, and samples processor, disk and memory counters every five seconds during its lane into `host-counters.csv` in the lane artifact.
 
-To time one exhaustive Windows shard with other settings, push a commit to a branch named `bench/windows-backend/s<shard>-w<workers>-<scheduler>`, optionally followed by `-<label>`, for example `bench/windows-backend/s2-w3-load-r1`. The Windows backend bench workflow then builds the SQLCipher wheel and runs only that shard, with the same steps as Product CI. Shards are 1 to 3, workers 2 to 4, and schedulers `load` or `worksteal`. Delete the branch after the run.
+The `bench/windows-backend/s<shard>-w<workers>-<scheduler>` workflow is a historical v8 worker-count control (three shards). Its results do not qualify v9. Use a manual Product CI run and its complete execution reports for production v9 measurements.
 
 Backend and browser CI jobs use `npm run build:assets --prefix frontend` to generate and compile the same frontend assets without repeating lint and typecheck. The mandatory web job and the normal `npm run build` command retain both checks.
 
@@ -104,6 +105,10 @@ python tools/qualify_persistent_ingestion.py --output docs/architecture/persiste
 
 Windows CI builds and probes the pinned SQLCipher wheel. The release workflow also probes the frozen executable. Checked-in local evidence verifies persistence semantics but is not packaged-runtime evidence.
 
+The normal wheel producer restores only an input-matched, attested cache, otherwise it builds from the fixed sources. For an explicit cold qualification, dispatch `gh workflow run ci.yml --ref <candidate-branch> -f force_sqlcipher_cold=true`. Both the wheel and native dependency cache restores are disabled; all mandatory tests still run. The separate SQLCipher cache publication workflow has attestation privileges only for a successful exact-source protected-main CI push. It checks the newest actual producer and every staged byte before signing; a reused wheel is not republished. A publication failure does not invalidate CI or permit unchecked reuse.
+
+Post-merge acceptance: record the successful main-push CI and publication run, confirm attestation and cache save succeeded, then dispatch ordinary CI with the same build inputs and verify the cache restore and verification steps succeeded and the build step skipped. Record the cold and warm timings, input fingerprint, source revision and run IDs. If the runner image changes or the attestation fails, the build must take the cold path; a cache miss is not qualification of reuse.
+
 ## Deterministic analytics rebuilds
 
 This suite rebuilds one canonical state twice under a frozen `ReproducibilityContext`. The oracle compares semantic output, provenance, identities, graph content, digests, and referential closure.
@@ -144,7 +149,7 @@ CI runs six general histories of fourteen deliveries and four deletion histories
 
 GitHub Actions uses Python 3.11 and Node.js 22. [Product CI](../.github/workflows/ci.yml) runs fast backend checks, four isolated integration shards, Windows platform and analytics contracts, browser acceptance, and frontend/extension checks. Existing stateful profiles remain required. Every Windows consumer verifies the shared SQLCipher artifact's source and workflow run.
 
-The web job starts independently and installs only JavaScript dependencies. It retains frontend and extension tests, architecture checks, the production builds and their existing lint/typecheck, generated-theme checks, provisioning module tests, analytics conformance, build audits and snapshot qualification. Documentation validation, the architecture manifest/declaration and Python import contracts run once in the required backend-fast job. A backend setup failure therefore does not prevent the web job from reporting its own results.
+The web job starts independently and installs only JavaScript dependencies. It retains frontend and extension tests, architecture checks, the production builds and their existing lint/typecheck, generated-theme checks, provisioning module tests, analytics conformance, build audits and snapshot qualification. Documentation validation and architecture manifest/declaration run in mandatory preflight; Python import contracts remain required in backend-fast. A backend setup failure therefore does not prevent the web job from reporting its own results.
 
 Browser acceptance runs on two Windows runners, `browser-e2e-core` and `browser-e2e-catchup`, with at most two active matrix jobs and one Playwright worker each. Every runner builds its own qualification assets. The checked-in browser registry assigns whole files; the runner compares that registry with an independent, unfiltered Playwright collection before executing a lane. The stable `windows-browser-e2e` check requires both lanes and the reporting-safety job, validates complete execution and source/run/producer provenance, and only then assembles the existing Legal evidence bundle. It remains a dependency of Required CI. The backend and full Windows requirements are unchanged.
 
@@ -156,15 +161,15 @@ Main pushes and manual runs also require analytics scale qualification on Window
 
 The Required CI gate validates job results and executed coverage. The older build-and-test and windows-tests check names forward its result during branch-rule migration. Architecture impact remains independently required. Pull requests require the complete Linux default suite, focused Windows platform and analytics contracts, existing stateful profiles, and browser acceptance. Exhaustive Windows execution is required on every main push and manual run.
 
-The exhaustive Windows regression runs in three isolated jobs, `windows-full-regression-1` to `windows-full-regression-3`, with at most three active runners. Files stay intact within one shard. The stable `windows-full-regression` aggregate always runs: it accepts a skipped producer only on a pull request and requires successful producers on main and manual runs. Required CI validates each producer's newest actual execution and complete evidence when exhaustive execution is required. The checked-in [Windows shard manifest](../ci/windows-full-test-shards.json) partitions the original marker expression, independently of analytics tiers and focused Windows contracts. Missing files, overlapping ownership, incomplete execution, mismatched source/run/attempt evidence and uncorroborated skips fail the gate.
+The exhaustive Windows complement runs in eight isolated jobs, `windows-full-regression-1` to `windows-full-regression-8`. The stable `windows-full-regression` aggregate accepts a skipped producer only on pull requests and requires successful producers on main and manual runs. Required CI independently validates the newest execution of each producer against the raw default inventory, five platform groups and two analytics groups. Only the eight reviewed skip identities intentionally overlap. Missing files, overlapping ownership, incomplete execution, mismatched source/run/attempt evidence and uncorroborated skips fail the gate.
 
 Every pull request still collects the independent raw Windows inventory and proves each default case executes in Linux or its required Windows contract. A Linux skip cannot replace required Windows execution. The gate's closed cutover baseline permits only fourteen reviewed test identities with their exact execution platform and skip reason. Windows exceptions stay in their reviewed focused contract lane, and the four Linux process-filesystem cases must execute on Linux. Windows production boot requires actual execution of every selected case. New identities, changed reasons and skipped explicit profiles fail closed. Exhaustive main/manual runs retain same-run skip corroboration.
 
-The Windows platform job validates the exhaustive manifest immediately after its
+The Windows qualification job validates the production v9 manifest immediately after its
 complete raw collection, including on pull requests. Required CI independently
 compares that same raw inventory with the manifest even when exhaustive execution
 is skipped. Added, removed or reclassified default files therefore fail before
-merge. Run `python tools/test_backend.py validate-windows-manifest --inventory <raw-Windows-report.json>`
+merge. Run `python tools/test_backend.py validate-windows-v9-manifest --inventory <raw-Windows-report.json>`
 to repeat the check without recollecting or executing the tests. This inventory
 check does not qualify exhaustive execution; every shard must actually pass for
 main/manual qualification.
@@ -175,7 +180,7 @@ Tests inherit their module's `pytestmark = pytest.mark.ci_tier("fast")` declarat
 
 New tests in an existing integration file inherit that file's shard. For a new integration file, declare its tier and run `python tools/test_backend.py update-manifest`, then inspect the diff. Existing shard assignments stay unchanged. Add `windows_compat` when native behavior requires Windows execution and give it a reviewed Windows contract selector. `serial` describes tests that must not run concurrently on one runner.
 
-New default tests in an existing file also inherit its exhaustive Windows shard. When adding a file, collect the raw inventory with `python tools/test_backend.py list windows-full-regression --output-dir artifacts/windows-inventory`, then run `python tools/test_backend.py update-windows-manifest --inventory artifacts/windows-inventory/report.json --dry-run`. Review the proposed addition and repeat without `--dry-run` to save it. This preserves existing assignments and records unmeasured files. The raw collection remains available even when a new file has no shard assignment or analytics classification.
+New default tests in an existing file also inherit its exhaustive Windows shard. When adding a file, collect the raw inventory with `python tools/test_backend.py list windows-full-regression --output-dir artifacts/windows-inventory`, then run `python tools/test_backend.py update-windows-v9-manifest --inventory artifacts/windows-inventory/report.json --dry-run`. Review the proposed addition and repeat without `--dry-run` to save it. This preserves existing assignments and records additions/removals. New files are allocated by selected node count until measured. The raw collection remains available even when a new file has no shard assignment or analytics classification.
 
 Run `python tools/test_backend.py list all --validate` before submitting classification changes. Unclassified tests, missing assignments, stale selectors and overlaps produce actionable errors. Bare pytest remains available and keeps its previous marker exclusions.
 
@@ -203,9 +208,15 @@ Start each comparison with `gh workflow run ci.yml --ref <candidate-branch> -f b
 
 Integration assignment is checked in. Download complete successful Linux timing artifacts, then run `python tools/test_backend.py update-manifest --rebalance --timings artifacts/ci-evidence --dry-run`. Review the assignments and repeat without `--dry-run` to save them. The importer combines setup, call and teardown times, takes the median across complete samples, and rejects targeted or stateful runs. A file-to-seconds JSON mapping is also accepted. Record the source run, sample count and report digest with each reviewed rebalance. A shard over ten minutes produces a maintenance warning; its thirty-minute timeout protects against runaway execution.
 
-The Windows platform job has a separate 55-minute cap for dependency setup, real SDK packaging contracts, production boot and all three persistence profiles. All profiles and their required evidence remain enabled; the diagnostic traceback timer still does not terminate tests.
+The Windows platform and separate qualification jobs have a 60-minute cap; qualification owns production boot and all three persistence profiles. All profiles and their required evidence remain enabled; the diagnostic traceback timer still does not terminate tests.
 
-The exhaustive Windows manifest is balanced separately from complete Windows timings. Its initial measured files come from PR run 36970647763, with provenance and unmeasured additions recorded in the manifest. Use `update-windows-manifest --inventory <raw-report.json> --timings <complete-windows-report.json> --rebalance --dry-run` to review a rebalance; all current files need measurements. Rerun an individual Windows shard locally with the same command as CI, adding a node ID after `--` for a focused reproduction. Narrow local runs are useful diagnostics but cannot satisfy the complete hosted coverage gate.
+To rebalance production v9, download all fifteen successful Windows partition reports from a single clean run, retaining their original artifact directories, and use the same run's raw `legacy-windows-reference/report.json`:
+
+```powershell
+python tools/test_backend.py update-windows-v9-manifest --inventory <raw-report.json> --timings <complete-report-directory> --rebalance --dry-run
+```
+
+The importer requires exact source, attempt, raw collection, producer, four-worker execution and complete selection. It weights serial seconds fully and parallel seconds at one quarter. Review the proposed assignments and repeat without `--dry-run` to save them. Normal updates preserve existing owners; measured rebalance can change them but cannot change the 8/5/2 counts, coverage, or reviewed overlap. A v9 group command collects the full inventory; use bare pytest for focused reproduction. Narrow runs never qualify hosted coverage.
 
 ## Roll out the parallel lanes
 
@@ -235,6 +246,8 @@ Local checks do not count as hosted acceptance. The original visual-v1 rollout u
 Download each run's `visual-inputs-*` artifacts while preserving their original directories, then run `python tools/visual_ci_compare.py --run <run-1> artifacts/visual-comparison/pair-1 --run <run-2> artifacts/visual-comparison/pair-2 --run <run-3> artifacts/visual-comparison/pair-3 --output artifacts/visual-comparison/coverage.json`. The comparator verifies fresh GitHub execution metadata against the source-versioned policy and independently checks each pair; summaries or screenshot counts alone cannot establish coverage. Keep timing measurements separate: report queue/prerequisite waits, dependency bootstrap, capture preparation (including Vite build), scenario execution, assembly and runner minutes. Three clean pairs demonstrate the planned comparison, not p95 latency.
 
 Save each completed run's `run.json` and full `filter=all` job-attempt history as `jobs.json` in its evidence directory. `python tools/visual_ci_metrics.py artifacts/visual-comparison/pair-1 artifacts/visual-comparison/pair-2 artifacts/visual-comparison/pair-3 --output artifacts/visual-comparison/timings.json` summarizes hosted job/step timings, runner minutes, medians and slowest observations. The capture step includes fixture preparation; use the verified producer phase timings to distinguish Vite build from scenario execution. The timing report makes no qualification claim.
+
+For Product CI and visual operations, run `python tools/product_ci_metrics.py <run-directories> --source-graph --output artifacts/ci-timing.json`. Include complete API metadata for all observed runs, not only passes. The report uses a 30-day window ending at the newest supplied run (or `--as-of`), separates exact-source policy, event, outcome and first attempt/rerun, and reports raw median, nearest-rank p95, sample count, first-attempt rates, runner minutes, queue estimates and the source-defined longest dependency path. Fewer than twenty observations or an unknown policy mark p95 provisional. A skipped matrix is collapsed only when GitHub supplies its exact unexpanded administrative skip and no expanded jobs. Unknown first-attempt outcomes and missing dependencies remain unknown. Manual qualification runs are not normal PR or main samples. Hardware-normalized timing remains unavailable without empirically calibrated phase-specific host controls: do not use a single CPU factor for storage, network or dependency work. The report is diagnostic, never a release gate.
 
 For diagnosis, open the group's job summary and `visual-diagnostics-<group>-<source>-<run>-<attempt>` artifact. Only validated restricted metadata or fixed diagnostic codes are retained from failed producers. Complete `visual-inputs-...` artifacts publish only after validation and remain immutable. The gate assembles approved screenshot/report paths, runs the existing color qualification and binds its output before replacing `visual-states-<source>`. See the [visual harness guide](../tools/visual-capture/README.md) for stage commands and shared-workstation constraints.
 

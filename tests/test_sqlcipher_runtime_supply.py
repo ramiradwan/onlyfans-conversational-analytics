@@ -253,3 +253,30 @@ def test_wheel_attestation_verifier_requires_protected_main_and_exact_signer(mon
     monkeypatch.setattr(cache.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=1))
     with pytest.raises(cache.CacheError):
         cache.verify_attestation(tmp_path / cache.MANIFEST, source)
+
+
+@pytest.mark.parametrize("mutation", [None, "wheel", "extra-file", "envelope", "stale-producer", "input", "manifest"])
+def test_protected_publication_only_stages_fresh_verified_upstream_payload(fixed_wheel_cache_fixture, tmp_path, mutation):
+    from copy import deepcopy
+    cache, directory, inputs, sources, manifest = fixed_wheel_cache_fixture
+    expected = deepcopy(manifest["producer"])
+    envelope = {"schema_version": 1, **expected}
+    (directory / "ci-source.json").write_bytes(cache.canonical(envelope))
+    if mutation == "wheel": next(directory.glob("*.whl")).write_bytes(b"wrong wheel")
+    elif mutation == "extra-file": (directory / "unexpected.txt").write_bytes(b"unexpected")
+    elif mutation == "envelope":
+        envelope["workflow_run_attempt"] = 2
+        (directory / "ci-source.json").write_bytes(cache.canonical(envelope))
+    elif mutation == "stale-producer": manifest["producer"]["workflow_run_id"] = 43
+    elif mutation == "input": manifest["inputs"]["files"][cache.INPUT_FILES[0]] = "f" * 64
+    if mutation in {"stale-producer", "input"}: (directory / cache.MANIFEST).write_bytes(cache.canonical(manifest))
+    elif mutation == "manifest": (directory / cache.MANIFEST).write_bytes(b'{"schema":1,"schema":1}')
+    destination = tmp_path / "publication"
+    if mutation is None:
+        assert cache.stage_publication(directory, destination, sources, expected) == manifest["input_sha256"]
+        assert cache.inventory(destination) == set(manifest["files"]) | {cache.MANIFEST}
+        assert cache.validate_payload(destination, inputs, sources, sealed=True) == manifest["files"]
+    else:
+        with pytest.raises(cache.CacheError):
+            cache.stage_publication(directory, destination, sources, expected)
+        assert not destination.exists()

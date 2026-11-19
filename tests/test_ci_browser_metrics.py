@@ -245,3 +245,91 @@ def test_complete_saved_history_is_paginated_through_the_shared_resolver():
     document["total_count"] = len(document["jobs"])
     result = metrics.summarize(run, document)
     assert result["all_attempts_workflow_runner_minutes"] == round((43 + 102 * 20) / 60, 3)
+
+
+def test_product_timing_occupancy_counts_actual_intervals_and_separates_outcomes():
+    from tools import product_ci_metrics as product
+    run, document = evidence()
+    run.update(status='completed', conclusion='success', event='pull_request', name='CI', head_branch='feature')
+    document['jobs'][0]['labels'] = ['windows-latest']
+    document['jobs'][1]['labels'] = ['ubuntu-latest']
+    result = product.summarize(run, document)
+    assert result['complete'] and result['observed_span_seconds'] == 40
+    assert result['runner_minutes_by_os']['windows'] == round(14/60,3)
+    assert product.overlap([result])['observed_peak_concurrent_jobs'] == 2
+    second = deepcopy(result)
+    second.update(run_id=8, conclusion='failure')
+    summary = product.overlap([result, second])
+    assert summary['peak_across_overlapping_runs'] == 4
+    assert summary['overlapping_run_seconds'] == 34
+    assert len(product.observations([result, second])) == 2
+    with pytest.raises(metrics.TimingError, match='duplicate_run'):
+        product.overlap([result, result])
+
+
+def test_product_timing_reports_incomplete_runs_without_latency_observations():
+    from tools import product_ci_metrics as product
+    run, document = evidence()
+    run.update(status='in_progress', conclusion=None)
+    document['jobs'][-1].update(status='in_progress', conclusion=None, completed_at=None)
+    result = product.summarize(run, document)
+    assert not result['complete'] and result['incomplete_job_ids'] == [12]
+    assert product.observations([result]) == []
+
+
+def test_product_timing_source_graph_expands_matrix_and_preserves_unknown_wait():
+    from tools import product_ci_metrics as product
+    graph = product.workflow_graph({'jobs': {'build': {'name': 'fixed-sqlcipher-wheel'}, 'safety': {'name': 'browser-reporting-safety'}, 'browser': {'name': 'browser-e2e-${{ matrix.lane }}', 'strategy': {'matrix': {'lane': ['core', 'catchup']}}, 'needs': ['build', 'safety']}, 'gate': {'needs': 'browser'}}})
+    assert graph['gate'] == ('browser-e2e-core', 'browser-e2e-catchup')
+    run, document = evidence()
+    result = product.summarize(run, document, graph=graph)
+    core = next(row for row in result['scheduling'] if row['job']=='browser-e2e-core')
+    assert core['prerequisite_seconds'] == 15 and core['queue_after_prerequisites_seconds'] == 5
+    document['jobs'].pop(0); document['total_count'] -= 1
+    core = next(row for row in product.summarize(run, document, graph=graph)['scheduling'] if row['job']=='browser-e2e-core')
+    assert core['queue_after_prerequisites_seconds'] is None
+
+
+
+def test_product_rolling_p95_is_thirty_days_and_policy_separated():
+    from tools import product_ci_metrics as product
+    rows = [dict(run_id=i, created_at=f"2026-10-03T00:00:{i:02}Z", complete=True, workflow="CI", event="pull_request", branch="feature", conclusion="success", attempt=1, policy="v9", observed_span_seconds=i, completed_runner_minutes=100, first_attempt_success=True) for i in range(1,26)]
+    assert product.observations(rows[:19])[0]["p95_provisional"] is True
+    result = product.observations(list(reversed(rows)))[0]
+    assert result["observations"] == 25 and result["empirical_p95_span_seconds"] == 24 and not result["p95_provisional"]
+    assert result["hardware_normalized_median_seconds"] is None
+    older = deepcopy(rows[0]); older.update(run_id=30, created_at="2026-08-01T00:00:00Z")
+    other = deepcopy(rows[0]); other.update(run_id=31, policy="v8")
+    failed = deepcopy(rows[0]); failed.update(run_id=32, conclusion="failure", first_attempt_success=False)
+    rerun = deepcopy(rows[0]); rerun.update(run_id=33, attempt=2, first_attempt_success=None)
+    groups = product.observations(rows+[older,other,failed,rerun])
+    assert sum(row["observations"] for row in groups) == 28
+    assert sum(not row["p95_provisional"] for row in groups) == 1
+    rates = product.first_attempt_rates(rows+[older,other,failed,rerun], as_of=rows[-1]["created_at"])
+    rate = next(r for r in rates if r['policy']=='v9')
+    assert rate['first_attempt_successes']==25 and rate['first_attempt_non_successes']==1 and rate['unknown_first_attempt_outcomes']==1
+    assert rate['known_first_attempt_success_rate']==25/26
+
+
+def test_product_critical_path_excludes_queue_and_requires_complete_graph():
+    from tools import product_ci_metrics as product
+    run, document = evidence()
+    run.update(status='completed', conclusion='success', event='pull_request', name='CI', head_branch='feature')
+    graph = {'fixed-sqlcipher-wheel':(), 'browser-reporting-safety':(), 'browser-e2e-core':('fixed-sqlcipher-wheel','browser-reporting-safety')}
+    result = product.summarize(run,document,graph=graph)
+    assert result['critical_path']['seconds']==34
+    assert result['critical_path']['jobs']==['fixed-sqlcipher-wheel','browser-e2e-core']
+    assert result['first_attempt_success'] is True
+    assert product.summarize(run,document,graph={'browser-e2e-core':()})['critical_path'] is None
+
+
+def test_product_graph_collapses_only_exact_administratively_skipped_matrix():
+    from tools import product_ci_metrics as product
+    template = 'full-${{ matrix.shard }}'
+    workflow = {'jobs': {'wheel': {}, 'full': {'name': template, 'needs': 'wheel', 'strategy': {'matrix': {'shard': [1,2]}}}, 'gate': {'needs': 'full'}}}
+    skip = dict(conclusion='skipped', status='completed', runner_id=0, runner_name=None, started_at=None, completed_at=None, steps=[])
+    expanded = product.workflow_graph(workflow)
+    assert expanded['gate']==('full-1','full-2')
+    assert product.workflow_graph(workflow, latest={template:skip})['gate']==(template,)
+    assert product.workflow_graph(workflow, latest={template:skip,'full-1':{'conclusion':'success'}})==expanded
+    assert product.workflow_graph(workflow, latest={template:{**skip,'conclusion':'failure'}})==expanded

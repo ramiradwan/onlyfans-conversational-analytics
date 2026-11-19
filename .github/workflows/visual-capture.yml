@@ -201,7 +201,8 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.visual_serial_control }}
     needs: visual-contracts
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Full-suite comparison only; production capture groups remain capped at 20.
+    timeout-minutes: 40
     env:
       VISUAL_CI_GROUP: all
     steps:

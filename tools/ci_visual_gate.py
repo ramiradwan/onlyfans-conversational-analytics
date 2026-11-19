@@ -176,7 +176,7 @@ def validate_policy(workflow_source: bytes, policy_source: bytes) -> dict[str, A
                 "visual-contracts", "visual-capture-execution", JOBS["all"]}, "visual_aggregate_policy")
     require(serial.get("if") == SERIAL_IF and serial.get("name", JOBS["all"]) == JOBS["all"]
             and serial.get("needs") == "visual-contracts" and serial.get("runs-on") == "ubuntu-latest"
-            and serial.get("timeout-minutes") == "20" and "strategy" not in serial
+            and serial.get("timeout-minutes") in {"20", "40"} and "strategy" not in serial
             and serial.get("continue-on-error", "false") == "false", "visual_serial_policy")
     return policy
 
