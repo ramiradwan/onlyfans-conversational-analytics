@@ -19,7 +19,10 @@ def render(ci, visual):
     trial["on"] = {"push": {"branches": REFS}}
     trial["concurrency"] = {"group": "${{ github.workflow }}-${{ github.run_id }}", "cancel-in-progress": False}
     trial["env"].update({k: v for k, v in visual["env"].items() if k != "PRODUCT_SHA"})
+    for name in ("BROWSER_QUALIFICATION", "BROWSER_SERIAL_CONTROL", "VISUAL_QUALIFICATION", "VISUAL_SERIAL_CONTROL"):
+        trial["env"][name] = "false"
     jobs = trial["jobs"]
+    jobs["browser-e2e-serial-control"]["if"] = "${{ false }}"
     wheel = jobs["fixed-sqlcipher-wheel"]
     wheel.pop("permissions", None)
     wheel["steps"] = [step for step in wheel["steps"] if step.get("name") not in {
@@ -87,6 +90,7 @@ def render(ci, visual):
         if key in jobs:
             raise ValueError("Unexpected job name collision")
         jobs[key] = deepcopy(job)
+    jobs["visual-capture-serial-control"]["if"] = "${{ false }}"
     return trial
 
 

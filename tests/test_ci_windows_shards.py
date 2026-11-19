@@ -619,7 +619,12 @@ def test_trial_workflow_preserves_main_producers_without_release_authority():
             assert copied.get("run") == step.get("run")
             assert copied.get("if") == ("always()" if step["if"].startswith("always()") else None)
     for key in visual["jobs"]:
-        assert jobs[key] == visual["jobs"][key]
+        expected = dict(visual["jobs"][key])
+        if key == "visual-capture-serial-control":
+            expected["if"] = "${{ false }}"
+        assert jobs[key] == expected
+    assert jobs["browser-e2e-serial-control"]["if"] == "${{ false }}"
+    assert all(trial["env"][key] == "false" for key in ("BROWSER_QUALIFICATION", "BROWSER_SERIAL_CONTROL", "VISUAL_QUALIFICATION", "VISUAL_SERIAL_CONTROL"))
     assert yaml.safe_load(yaml.safe_dump(trial, sort_keys=False)) == trial
 
 
