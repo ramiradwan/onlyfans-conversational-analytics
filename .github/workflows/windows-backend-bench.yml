@@ -41,6 +41,7 @@ jobs:
           printf 'shard=%s\nworkers=%s\ndist=%s\n' "$shard" "$workers" "$dist" >> "$GITHUB_OUTPUT"
           echo "Windows backend bench: shard $shard, $workers workers, $dist"
   fixed-sqlcipher-wheel:
+    name: bench-fixed-sqlcipher-wheel
     needs: plan
     runs-on: windows-latest
     timeout-minutes: 30
@@ -99,7 +100,7 @@ jobs:
           if-no-files-found: error
           overwrite: true
   windows-full-regression:
-    name: windows-full-regression-${{ needs.plan.outputs.shard }}
+    name: bench-windows-full-regression-${{ needs.plan.outputs.shard }}
     needs:
       - plan
       - fixed-sqlcipher-wheel

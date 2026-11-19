@@ -18,6 +18,7 @@ class VirtualTime:
     def __init__(self, monkeypatch, clock):
         self.seconds, self.sleepers = 0, []
         self.clock = clock
+        self.waiting = {}
         monkeypatch.setattr(module, "asyncio", self)
 
     def __getattr__(self, name):
@@ -33,6 +34,8 @@ class VirtualTime:
 
     async def wait_for(self, awaitable, timeout):
         signal, timer = asyncio.create_task(awaitable), asyncio.create_task(self.sleep(timeout))
+        parent = asyncio.current_task()
+        self.waiting[parent] = (signal, timer)
         try:
             done, _ = await asyncio.wait((signal, timer), return_when=asyncio.FIRST_COMPLETED)
             if signal in done:
@@ -42,6 +45,22 @@ class VirtualTime:
             signal.cancel()
             timer.cancel()
             await asyncio.gather(signal, timer, return_exceptions=True)
+            self.waiting.pop(parent)
+
+    async def wait_for_recovery_timer(self, coordinator, previous=None):
+        # A timeout wakes the watcher, not just its child timer. The watcher
+        # reads facts off-loop and can need several passes after worker events.
+        # Do not advance virtual time again until its next wait is armed.
+        def armed():
+            signal, timer = self.waiting.get(coordinator._watcher, (None, None))
+            if (timer is None or timer is previous or signal.done() or timer.done()
+                    or coordinator._workers or coordinator._wake is None or coordinator._wake.is_set()):
+                return False
+            return any(task is timer and due > self.seconds and not future.done()
+                       for due, future, task in self.sleepers)
+
+        await _until(armed, timeout=5)
+        return self.waiting[coordinator._watcher][1]
 
     async def advance(self, seconds, coordinator):
         self.seconds += seconds
@@ -208,11 +227,13 @@ async def test_failed_reconciliation_without_a_wait_uses_bounded_backoff(schedul
     owner.result = OSError("read failed")
     virtual = VirtualTime(monkeypatch, clock)
     coordinator.start()
-    await coordinator.command(native, command(coordinator.read(native), "account.connect"))
-    await coordinator.drain()
     try:
+        await coordinator.command(native, command(coordinator.read(native), "account.connect"))
+        await coordinator.drain()
+        timer = await virtual.wait_for_recovery_timer(coordinator)
         for _ in range(40):
             await virtual.advance(15, coordinator)
+            timer = await virtual.wait_for_recovery_timer(coordinator, previous=timer)
         assert [reconcile for _, reconcile in owner.calls].count(True) == 11
     finally:
         await coordinator.stop()
