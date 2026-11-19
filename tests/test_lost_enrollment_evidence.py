@@ -449,3 +449,44 @@ async def test_protected_owner_refuses_lost_admission_when_evidence_changes_afte
         assert connection.execute("SELECT count(*) FROM installation_authority_recoveries").fetchone()[0]==0
     assert not state["calls"] and not base.admissions
     await owner.stop()
+
+
+@pytest.mark.asyncio
+async def test_lost_enrollment_unreached_retirement_preserves_unconsumed_claim_and_reoffers(case):
+    from test_protected_authority_setup import build, connect, recovery_command, rid
+    past_boundary(case)
+    case.clock[0]=NOW
+    coordinator,owner,base,state=build(case)
+    session=connect(coordinator)
+    with case.store.database.read() as connection:
+        initial_digest=owner._offer(connection)[1]
+    op,fresh=coordinator._accept(session,recovery_command(coordinator,session))
+    assert fresh
+    assert (await owner.execute(op,reconcile=False)).state=="waiting"
+    coordinator._settle(op,__import__("app.onboarding.coordinator",fromlist=["OperationResult"]).OperationResult("waiting"))
+    with case.store.database.read() as connection:
+        created_at=owner.recovery.row(connection,rid(op))["created_at"]
+    assert owner.confirmation_deadline(op)==created_at+1860
+    retired_rid=rid(op)
+    calls_before=len(state["calls"])
+    case.clock[0]+=timedelta(seconds=max(0.0,created_at+1860-case.clock[0].timestamp()))
+    coordinator.start()
+    await coordinator.drain()
+    fresh_session=connect(coordinator)
+    receipt=coordinator.receipt(fresh_session,op["operation_id"])
+    assert receipt["state"]=="refused" and receipt["reason"]=="operation_expired"
+    assert len(state["calls"])==calls_before
+    claim=case.store.claim_submission(case.receipt["claim_id"])
+    assert claim.state.value=="submitted" and claim.enrolled_at is None
+    with case.store.database.read() as connection:
+        for table in ("installation_authority_recoveries","protected_recovery_desktop_admissions",
+                "protected_recovery_ceremonies","protected_recovery_authentication_children"):
+            assert connection.execute("SELECT count(*) FROM "+table).fetchone()[0]==0
+        assert owner.recovery.eligible_lost(connection).claim_id==case.receipt["claim_id"]
+        assert owner._offer(connection)==("lost-enrollment",initial_digest)
+    snap=coordinator.read(fresh_session)
+    assert snap["authority_recovery"]=="available" and snap["allowed_actions"]==["account.connect"]
+    admitted,is_new=coordinator._accept(fresh_session,recovery_command(coordinator,fresh_session))
+    assert is_new and rid(admitted)!=retired_rid and not base.calls
+    await coordinator.stop()
+    await owner.stop()

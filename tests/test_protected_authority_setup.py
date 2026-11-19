@@ -10,7 +10,7 @@ import pytest
 
 from app.onboarding.admission import ScopedAdmissions
 from app.onboarding.coordinator import CommandRefused, DesktopOnboardingCoordinator, OperationResult
-from app.onboarding.protected_authority_setup import ProtectedAuthoritySetupOwner
+from app.onboarding.protected_authority_setup import EXPIRY_READ_MARGIN, ProtectedAuthoritySetupOwner
 from app.onboarding.protected_browser_recovery import ProtectedBrowserRecoveryEffects
 from app.persistence.auth import SQLiteAuthenticationStore, RevocationKey, RevocationScopeType
 from app.persistence.protected_browser_recovery import ProtectedBrowserRecoveries
@@ -61,7 +61,13 @@ def build(case, *, store=None, state=None, stage="setup", enabled=True):
             state["calls"].append(("ceremony",verb,copy.deepcopy(request)))
             if verb=="prepare" and state.pop("lose_ceremony",False):
                 raise HostedGrantUnavailable("Lost ceremony")
-            return ceremony_response(verb,request,domain="committed" if state.get("committed") else "awaiting-authentication")
+            if verb=="read" and state.pop("lose_ceremony_read",False):
+                raise HostedGrantUnavailable("Lost ceremony read")
+            if verb=="read" and state.get("ceremony_unavailable"):
+                return {"profile":request["profile"],"operation_id":request["operation_id"],"status":"unavailable"}
+            domain=state.get("ceremony_domain","committed" if state.get("committed") else "awaiting-authentication")
+            presentation=state.get("ceremony_presentation","active")
+            return ceremony_response(verb,request,domain=domain,presentation=presentation)
     class Auth:
         def execute(self,verb,request,*,before_send,expires_at):
             before_send()
@@ -872,5 +878,342 @@ async def test_missing_child_projection_observes_original_ceremony_within_budget
     assert [request for family,verb,request in state["calls"] if family=="authority" and verb=="deliver"]==[hosted]
     with case.store.database.read() as c:
         assert c.execute("SELECT read_attempts FROM protected_recovery_desktop_admissions").fetchone()[0]<=attempts+3
+    await coordinator.stop()
+    await owner.stop()
+
+
+def _exhaust_reads(store, recovery_id):
+    with store.database.transaction() as c:
+        current=c.execute("SELECT read_attempts FROM protected_recovery_desktop_admissions WHERE recovery_id=?",
+            (recovery_id,)).fetchone()[0]
+        for n in range(current+1,13):
+            c.execute("UPDATE protected_recovery_desktop_admissions SET read_attempts=? WHERE recovery_id=?",
+                (n,recovery_id))
+
+
+def _recovery_counts(store):
+    with store.database.read() as c:
+        return {table:c.execute("SELECT count(*) FROM "+table).fetchone()[0] for table in (
+            "installation_authority_recoveries","protected_recovery_desktop_admissions",
+            "protected_recovery_ceremonies","protected_recovery_authentication_children",
+            "protected_recovery_browser_dispatches")}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode",["reserved","before-launch","pending-child"])
+async def test_unreached_abandonment_retires_past_window_and_allows_fresh_admission(installed,mode):
+    import asyncio
+    from app.provisioning.events import events
+    case=installed
+    if mode=="reserved":
+        coordinator,owner,base,state=build(case)
+        session=connect(coordinator)
+        with case.store.database.read() as c:
+            initial_digest=owner._offer(c)[1]
+        request=recovery_command(coordinator,session)
+        parent,_=coordinator._accept(session,request)
+        with case.store.database.read() as c:
+            created_at=owner.recovery.row(c,rid(parent))["created_at"]
+        case.clock[0]+=timedelta(seconds=1800)
+        assert not owner.automatic_recovery(parent)
+        assert owner.confirmation_deadline(parent)==created_at+1860
+    elif mode=="before-launch":
+        coordinator,owner,base,state,session,parent,_=await selected_parent(case)
+        # Cancel child 1 and select child 2, leaving both unlaunched (open_claimed=0)
+        # to exercise multi-child self-FK deletion as well.
+        await coordinator.command(session,child_command(coordinator,session,"auth.cancel"))
+        await coordinator.drain()
+        await coordinator.command(session,child_command(coordinator,session))
+        await coordinator.drain()
+        with case.store.database.read() as c:
+            created_at=owner.recovery.row(c,rid(parent))["created_at"]
+            initial_digest=owner.recovery.row(c,rid(parent))["scope_digest"]
+            assert c.execute("SELECT count(*) FROM protected_recovery_authentication_children").fetchone()[0]==2
+        assert not owner.automatic_recovery(parent)
+        assert owner.confirmation_deadline(parent)==created_at+1860
+    else:
+        coordinator,owner,base,state,session,parent=await prepared_parent(case)
+        with case.store.database.read() as c:
+            created_at=owner.recovery.row(c,rid(parent))["created_at"]
+            initial_digest=owner.recovery.row(c,rid(parent))["scope_digest"]
+        state["lose_select"]=True
+        child_receipt=await coordinator.command(session,child_command(coordinator,session))
+        await coordinator.drain()
+        child_op=saved(coordinator,child_receipt["operation_id"])
+        assert child_op["state"]=="outcome_unknown"
+        assert owner.confirmation_deadline(parent)==created_at+1860
+    retired_rid=rid(parent)
+    calls_before=len(state["calls"])
+    # Start the real coordinator watcher before the deadline, then cross
+    # created_at+1860 so _watch fires through confirmation_deadline.
+    coordinator.start()
+    for _ in range(50):
+        if parent["operation_id"] in coordinator._confirmation_at:
+            break
+        await asyncio.sleep(0.01)
+    assert coordinator._confirmation_at.get(parent["operation_id"])==created_at+1860
+    assert _recovery_counts(case.store)["installation_authority_recoveries"]==1
+    case.clock[0]=case.clock[0]+timedelta(seconds=max(0.0,created_at+1860-case.clock[0].timestamp()))
+    events.publish()
+    for _ in range(100):
+        if saved(coordinator,parent["operation_id"])["state"]=="refused":
+            break
+        await asyncio.sleep(0.01)
+    await coordinator.drain()
+    fresh_session=connect(coordinator)
+    receipt=coordinator.receipt(fresh_session,parent["operation_id"])
+    assert receipt["state"]=="refused" and receipt["reason"]=="operation_expired"
+    if mode=="pending-child":
+        child_final=coordinator.receipt(fresh_session,child_op["operation_id"])
+        assert child_final["state"]=="refused" and child_final["reason"]=="operation_expired"
+    assert all(count==0 for count in _recovery_counts(case.store).values())
+    assert len(state["calls"])==calls_before
+    # Re-running execute for the retired parent never calls the client.
+    assert await owner.execute(parent,reconcile=True)==OperationResult("refused","operation_expired")
+    assert len(state["calls"])==calls_before
+    with case.store.database.read() as c:
+        assert owner._offer(c)[1]==initial_digest
+    snap=coordinator.read(fresh_session)
+    assert snap["authority_recovery"]=="available" and snap["allowed_actions"]==["account.connect"]
+    admitted,is_new=coordinator._accept(fresh_session,recovery_command(coordinator,fresh_session))
+    assert is_new and rid(admitted)!=retired_rid
+    assert not base.calls
+    await coordinator.stop()
+    await owner.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("variant",["pending-entry","earlier-child-only"])
+async def test_reached_post_expiry_read_without_commit_retires_and_allows_fresh_admission(installed,variant):
+    case=installed
+    coordinator,owner,base,state,session,parent,tasks=await selected_parent(case)
+    first_launch=launch_request(coordinator,session)
+    coordinator.open_protected_browser(session,first_launch,tasks=tasks)
+    if variant=="earlier-child-only":
+        # Child 1 was open-claimed then cancelled; child 2 is selected without
+        # open-claiming, proving retirement inspects every child, not only the latest.
+        await coordinator.command(session,child_command(coordinator,session,"auth.cancel"))
+        await coordinator.drain()
+        await coordinator.command(session,child_command(coordinator,session))
+        await coordinator.drain()
+    with case.store.database.read() as c:
+        row=owner.recovery.row(c,rid(parent))
+        initial_digest=row["scope_digest"]
+        ceremony=owner.browser.journal.row(c,rid(parent))
+        assert c.execute("SELECT count(*) FROM protected_recovery_browser_dispatches").fetchone()[0]==1
+        if variant=="pending-entry":
+            assert c.execute("SELECT count(*) FROM desktop_browser_tasks WHERE state='pending'").fetchone()[0]==1
+        else:
+            assert owner.browser.journal.child(c,rid(parent))["open_claimed"]==0
+    # Exhaust the active 12-read budget before expiry to prove the post-expiry
+    # read sits outside the active budget.
+    _exhaust_reads(case.store,rid(parent))
+    from app.security.initial_handoff import timestamp
+    expiry=timestamp(ceremony["expires_at"])
+    # Advance past the 300s browser entry deadline, still before ceremony expiry.
+    case.clock[0]+=timedelta(seconds=301)
+    assert not owner.automatic_recovery(parent)
+    assert owner.confirmation_deadline(parent)==expiry.timestamp()+EXPIRY_READ_MARGIN
+    if variant=="pending-entry":
+        # Nothing is read before the clock margin past the ceremony expiry.
+        case.clock[0]=expiry
+        assert not owner.automatic_recovery(parent)
+        assert owner.confirmation_deadline(parent)==expiry.timestamp()+EXPIRY_READ_MARGIN
+    # Advance past ceremony expiry (and for earlier-child-only, past created_at+1860
+    # to prove it still requires the post-expiry read rather than unreached retirement).
+    case.clock[0]=(expiry+timedelta(seconds=EXPIRY_READ_MARGIN) if variant=="pending-entry"
+        else case.clock[0]+timedelta(seconds=1860))
+    state["ceremony_presentation"]="expired" if variant=="pending-entry" else "retired"
+    state["ceremony_domain"]="awaiting-authentication"
+    calls_before=len(state["calls"])
+    assert owner.automatic_recovery(parent)
+    coordinator.start()
+    await coordinator.drain()
+    fresh=connect(coordinator)
+    receipt=coordinator.receipt(fresh,parent["operation_id"])
+    assert receipt["state"]=="refused" and receipt["reason"]=="operation_expired"
+    new_calls=[item[:2] for item in state["calls"][calls_before:]]
+    assert new_calls==[("ceremony","read")]
+    assert all(count==0 for count in _recovery_counts(case.store).values())
+    with case.store.database.read() as c:
+        assert c.execute("SELECT count(*) FROM desktop_admission_entries WHERE role='browser_task'").fetchone()[0]==0
+        assert c.execute("SELECT count(*) FROM desktop_browser_tasks WHERE state='pending'").fetchone()[0]==0
+        assert owner._offer(c)[1]==initial_digest
+    retired_rid=rid(parent)
+    assert await owner.execute(parent,reconcile=True)==OperationResult("refused","operation_expired")
+    assert len(state["calls"])==calls_before+1
+    assert coordinator.read(fresh)["authority_recovery"]=="available"
+    admitted,is_new=coordinator._accept(fresh,recovery_command(coordinator,fresh))
+    assert is_new and rid(admitted)!=retired_rid and not base.calls
+    await coordinator.stop()
+    await owner.stop()
+
+
+@pytest.mark.asyncio
+async def test_reached_post_expiry_read_with_commit_continues_to_delivery(installed):
+    from app.security.initial_handoff import timestamp
+    case=installed
+    coordinator,owner,base,state,session,parent,tasks=await selected_parent(case)
+    code=coordinator.open_protected_browser(session,launch_request(coordinator,session),tasks=tasks)
+    assert tasks.consume_protected(code,resolve=owner.resolve_browser_launch)
+    with case.store.database.read() as c:
+        hosted=json.loads(owner.recovery.row(c,rid(parent))["request_json"])
+        ceremony=owner.browser.journal.row(c,rid(parent))
+    _exhaust_reads(case.store,rid(parent))
+    case.clock[0]=timestamp(ceremony["expires_at"])+timedelta(seconds=EXPIRY_READ_MARGIN)
+    state["ceremony_presentation"]="expired"
+    state["committed"]=True
+    state["verifier"],state["result"]=signed_delivery(case,hosted)
+    calls_before=len(state["calls"])
+    assert owner.automatic_recovery(parent)
+    coordinator.start()
+    await coordinator.drain()
+    assert coordinator.receipt(session,parent["operation_id"])["state"]=="completed"
+    assert [item[:2] for item in state["calls"][calls_before:]]==[("ceremony","read"),("authority","deliver")]
+    with case.store.database.read() as c:
+        assert owner.recovery.row(c,rid(parent))["state"]=="admitted"
+        assert c.execute("SELECT count(*) FROM verified_grant_references WHERE revoked_at IS NULL").fetchone()[0]==len(case.grants)
+    assert not base.calls
+    await coordinator.stop()
+    await owner.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome",["error","status-unavailable","domain-unavailable","revoked","active"])
+async def test_reached_post_expiry_read_unavailable_or_uncertain_stays_blocked(installed,outcome):
+    from app.security.initial_handoff import timestamp
+    case=installed
+    coordinator,owner,base,state,session,parent,tasks=await selected_parent(case)
+    code=coordinator.open_protected_browser(session,launch_request(coordinator,session),tasks=tasks)
+    assert tasks.consume_protected(code,resolve=owner.resolve_browser_launch)
+    with case.store.database.read() as c:
+        ceremony=owner.browser.journal.row(c,rid(parent))
+    _exhaust_reads(case.store,rid(parent))
+    case.clock[0]=timestamp(ceremony["expires_at"])+timedelta(seconds=EXPIRY_READ_MARGIN)
+    if outcome=="error":
+        state["lose_ceremony_read"]=True
+    elif outcome=="status-unavailable":
+        state["ceremony_unavailable"]=True
+    elif outcome=="domain-unavailable":
+        state["ceremony_presentation"]="expired"
+        state["ceremony_domain"]="unavailable"
+    elif outcome=="revoked":
+        state["ceremony_presentation"]="expired"
+        state["ceremony_domain"]="revoked"
+    else:
+        state["ceremony_presentation"]="active"
+        state["ceremony_domain"]="unavailable"
+    calls_before=len(state["calls"])
+    coordinator.start()
+    await coordinator.drain()
+    assert [item[:2] for item in state["calls"][calls_before:]]==[("ceremony","read")]
+    assert coordinator.read(session)["authority_recovery"]=="blocked"
+    assert not coordinator.read(session)["allowed_actions"]
+    assert not owner.automatic_recovery(parent)
+    assert owner.confirmation_deadline(parent) is None
+    with case.store.database.read() as c:
+        assert c.execute("SELECT expiry_read_claimed FROM protected_recovery_desktop_admissions WHERE recovery_id=?",
+            (rid(parent),)).fetchone()[0]==1
+        assert owner.recovery.row(c,rid(parent))["state"]=="prepared"
+    await coordinator.stop()
+    await owner.stop()
+    # After restart, the single post-expiry read is not repeated and stays blocked.
+    reopened=SQLiteAuthenticationStore(case.path,clock=lambda:case.clock[0])
+    coordinator,owner,base,state=build(case,store=reopened,state=state)
+    session=connect(coordinator)
+    coordinator.start()
+    await coordinator.drain()
+    assert len(state["calls"])==calls_before+1
+    assert coordinator.read(session)["authority_recovery"]=="blocked"
+    assert _recovery_counts(reopened)["installation_authority_recoveries"]==1
+    await coordinator.stop()
+    await owner.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind",["committed","delivery-attempted","active-work"])
+async def test_committed_and_delivery_attempted_recoveries_are_never_retired(installed,kind):
+    from app.persistence import sqlite_api as sqlite3
+    case=installed
+    if kind=="committed":
+        coordinator,owner,_,state=build(case)
+        state["committed_prepare"]=True
+        state["lose_delivery"]=True
+        session=connect(coordinator)
+        parent,_=coordinator._accept(session,recovery_command(coordinator,session))
+        assert (await owner.execute(parent,reconcile=False)).state=="outcome_unknown"
+        case.clock[0]+=timedelta(hours=2)
+        with case.store.database.read() as c:
+            hosted=json.loads(owner.recovery.row(c,rid(parent))["request_json"])
+            assert owner.recovery.row(c,rid(parent))["state"]=="committed"
+        assert owner._retire(parent) is False
+        with pytest.raises(HostedGrantUnavailable):
+            with case.store.database.transaction() as c:
+                owner.recovery.retire(c,hosted,authorize=lambda **_:None)
+        state["lose_delivery"]=True
+        assert (await owner.execute(parent,reconcile=True)).state=="outcome_unknown"
+        with case.store.database.read() as c:
+            assert owner.recovery.row(c,rid(parent))["state"]=="committed"
+    elif kind=="delivery-attempted":
+        coordinator,owner,_,state,session,parent=await prepared_parent(case)
+        case.clock[0]+=timedelta(seconds=16)
+        with case.store.database.transaction() as c:
+            hosted=json.loads(owner.recovery.row(c,rid(parent))["request_json"])
+            attempt=owner.recovery.claim(c,hosted,"deliver",authorize=lambda **_:None)
+            assert attempt==1
+            owner.recovery.record_refusal(c,hosted,"deliver",attempt,AuthorityRecoveryRefused("not_ready"),authorize=lambda **_:None)
+        case.clock[0]+=timedelta(hours=2)
+        assert owner._retire(parent) is False
+        assert not owner.automatic_recovery(parent)
+        assert owner.confirmation_deadline(parent) is None
+        with pytest.raises(HostedGrantUnavailable):
+            with case.store.database.transaction() as c:
+                owner.recovery.retire(c,hosted,authorize=lambda **_:None)
+        assert (await owner.execute(parent,reconcile=True)).state=="waiting"
+        with case.store.database.read() as c:
+            row=owner.recovery.row(c,rid(parent))
+            assert row["state"]=="prepared" and row["delivery_attempts"]==1
+    else:
+        coordinator,owner,_,state=build(case)
+        session=connect(coordinator)
+        parent,_=coordinator._accept(session,recovery_command(coordinator,session))
+        case.clock[0]+=timedelta(seconds=60)
+        assert owner.automatic_recovery(parent)
+        assert owner.confirmation_deadline(parent) is None
+        assert owner._retire(parent) is False
+        assert _recovery_counts(case.store)["installation_authority_recoveries"]==1
+    await coordinator.stop()
+    await owner.stop()
+
+
+@pytest.mark.asyncio
+async def test_crash_after_retirement_deletion_settles_parent_on_restart(installed):
+    case=installed
+    coordinator,owner,base,state,session,parent=await prepared_parent(case)
+    with case.store.database.read() as c:
+        row=owner.recovery.row(c,rid(parent))
+        created_at,initial_digest=row["created_at"],row["scope_digest"]
+    case.clock[0]+=timedelta(seconds=max(0.0,created_at+1860-case.clock[0].timestamp()))
+    # Commit the deletion transaction directly and skip coordinator._settle to
+    # simulate a crash between retirement deletion and parent settlement.
+    assert owner._retire(parent) is True
+    assert all(count==0 for count in _recovery_counts(case.store).values())
+    assert saved(coordinator,parent["operation_id"])["state"]=="waiting"
+    calls_before=len(state["calls"])
+    await coordinator.stop()
+    await owner.stop()
+    reopened=SQLiteAuthenticationStore(case.path,clock=lambda:case.clock[0])
+    coordinator,owner,base,state=build(case,store=reopened,state=state)
+    session=connect(coordinator)
+    coordinator.start()
+    await coordinator.drain()
+    receipt=coordinator.receipt(session,parent["operation_id"])
+    assert receipt["state"]=="refused" and receipt["reason"]=="operation_expired"
+    assert len(state["calls"])==calls_before
+    snap=coordinator.read(session)
+    assert snap["authority_recovery"]=="available" and snap["allowed_actions"]==["account.connect"]
+    with reopened.database.read() as c:
+        assert owner._offer(c)[1]==initial_digest
+    assert not base.calls
     await coordinator.stop()
     await owner.stop()

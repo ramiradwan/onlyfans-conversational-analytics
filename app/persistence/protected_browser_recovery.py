@@ -39,6 +39,11 @@ class ProtectedBrowserRecoveries:
             "ORDER BY sequence DESC LIMIT 1", (recovery_id,)).fetchone()
         return None if row is None else dict(row)
 
+    def any_open_claimed(self, connection, recovery_id):
+        return connection.execute(
+            "SELECT 1 FROM protected_recovery_authentication_children WHERE recovery_id=? AND open_claimed=1 LIMIT 1",
+            (recovery_id,)).fetchone() is not None
+
     def _exact(self, connection, recovery_id, *, authorize):
         authorize(connection=connection)
         row = self.row(connection, recovery_id)

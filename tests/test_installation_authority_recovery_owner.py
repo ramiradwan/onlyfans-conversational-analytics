@@ -317,3 +317,103 @@ def test_recovery_grant_admission_rejects_changed_evidence_and_rolls_back(instal
     with case.store.database.read() as connection:
         assert owner.row(connection, request["recovery_id"])["state"] == "prepared"
         assert connection.execute("SELECT count(*) FROM verified_grant_references").fetchone()[0] == len(case.grants)
+
+
+@pytest.mark.parametrize("protected_kind", ["refused", "committed", "admitted", "delivery-attempted"])
+def test_narrowed_delete_trigger_protects_audit_rows_and_allows_uncommitted_retirement(installed, protected_kind):
+    case = installed
+    owner = journal(case)
+    # First prove the narrowed trigger permits deleting uncommitted eligible rows.
+    for target in ("reserved", "prepare-claimed", "prepared"):
+        request = reserve(case, owner)
+        with case.store.database.transaction() as connection:
+            if target in {"prepare-claimed", "prepared"}:
+                attempt = owner.claim(connection, request, "prepare", authorize=allow)
+                if target == "prepared":
+                    owner.record_preparation(connection, request, attempt, response_for("prepare", request), authorize=allow)
+            owner.retire(connection, request, authorize=allow)
+            assert owner.row(connection, request["recovery_id"]) is None
+    # Now verify the narrowed trigger still refuses deleting the protected audit row.
+    if protected_kind in {"refused", "committed"}:
+        request = reserve(case, owner)
+        with case.store.database.transaction() as connection:
+            attempt = owner.claim(connection, request, "prepare", authorize=allow)
+            if protected_kind == "refused":
+                owner.record_refusal(connection, request, "prepare", attempt, AuthorityRecoveryRefused("installation_revoked"), authorize=allow)
+            else:
+                committed = response_for("prepare", request)
+                committed.pop("source_reference")
+                committed.pop("expires_at")
+                committed.update(status="committed", committed_at=wire_time(case.clock[0]))
+                owner.record_preparation(connection, request, attempt, committed, authorize=allow)
+    else:
+        request, attempt = prepared_delivery(case, owner)
+        if protected_kind == "admitted":
+            verifier, result = signed_delivery(case, request)
+            owner.adopt_delivery(request, attempt, result, verifier=verifier, authorize=allow)
+    with case.store.database.transaction() as connection:
+        with pytest.raises(HostedGrantUnavailable):
+            owner.retire(connection, request, authorize=allow)
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute("DELETE FROM installation_authority_recoveries WHERE recovery_id=?", (request["recovery_id"],))
+
+
+def test_migration_0053_upgrades_existing_store_preserving_rows_and_guards(tmp_path):
+    import shutil
+    from pathlib import Path
+    from app.persistence import auth
+
+    catalog = Path(auth.__file__).with_name("auth_sql")
+    old_dir = tmp_path / "auth_sql_v52"
+    old_dir.mkdir()
+    old_files = sorted(path for path in catalog.glob("*.sql") if int(path.name[:4]) <= 52)
+    assert len(old_files) == 52
+    for path in old_files:
+        shutil.copyfile(path, old_dir / path.name)
+    db_path = tmp_path / "upgraded.sqlite3"
+    clock = [NOW]
+    legacy = SQLiteAuthenticationStore(db_path, clock=lambda: clock[0], migrations_dir=old_dir)
+    claim_id = "0198a1b2-c3d4-7300-8000-000000000060"
+    legacy.record_claim_submission(ClaimSubmission(claim_id, "tx1", "org1", "inst1", NOW, claim_profile=CLAIM_PROFILE_V2))
+    with legacy.database.transaction() as c:
+        c.execute("INSERT INTO desktop_setup_journeys (journey_id,revision,created_at) VALUES ('j1',0,?)", (NOW.timestamp(),))
+        c.execute("INSERT INTO desktop_setup_journeys (journey_id,revision,created_at) VALUES ('j2',0,?)", (NOW.timestamp(),))
+        # Existing refused recovery row
+        c.execute("INSERT INTO installation_authority_recoveries (recovery_id,installation_id,scope_digest,request_json,"
+            "provider_origin,enrollment_claim_id,created_at,prepare_attempts,retry_at,state,refusal_reason) "
+            "VALUES ('rec-refused','inst-ref','"+("a"*64)+"','{}','https://fixture.invalid',?,?,1,?,'refused','installation_revoked')",
+            (claim_id, NOW.timestamp(), NOW.timestamp()))
+        # Existing prepared recovery + committed_seen ceremony + admission
+        c.execute("INSERT INTO installation_authority_recoveries (recovery_id,installation_id,scope_digest,request_json,"
+            "provider_origin,enrollment_claim_id,created_at,prepare_attempts,retry_at,state,source_reference,source_expires_at) "
+            "VALUES ('rec-comm','inst-comm','"+("b"*64)+"','{}','https://fixture.invalid',?,?,1,?,'prepared','"+("A"*43)+"',?)",
+            (claim_id, NOW.timestamp(), NOW.timestamp(), wire_time(NOW+timedelta(minutes=20))))
+        c.execute("INSERT INTO protected_recovery_ceremonies (recovery_id,operation_id,binding_json,binding_digest,"
+            "created_at,prepare_claimed,ceremony_id,expires_at,revision,presentation_state,domain_status,committed_seen) "
+            "VALUES ('rec-comm','op-cer','{}','"+("c"*64)+"',?,1,'cer-1',?,1,'retired','committed',1)",
+            (NOW.timestamp(), wire_time(NOW+timedelta(minutes=20))))
+        c.execute("INSERT INTO protected_recovery_desktop_admissions (recovery_id,operation_id,journey_id,created_at,read_attempts,next_read_at) "
+            "VALUES ('rec-comm','op-1','j1',?,5,?)", (NOW.timestamp(), NOW.timestamp()))
+        # Existing uncommitted reserved recovery + admission
+        c.execute("INSERT INTO installation_authority_recoveries (recovery_id,installation_id,scope_digest,request_json,"
+            "provider_origin,enrollment_claim_id,created_at,retry_at) "
+            "VALUES ('rec-res','inst-res','"+("d"*64)+"','{}','https://fixture.invalid',?,?,?)",
+            (claim_id, NOW.timestamp(), NOW.timestamp()))
+        c.execute("INSERT INTO protected_recovery_desktop_admissions (recovery_id,operation_id,journey_id,created_at,read_attempts,next_read_at) "
+            "VALUES ('rec-res','op-2','j2',?,0,?)", (NOW.timestamp(), NOW.timestamp()))
+    upgraded = SQLiteAuthenticationStore(db_path, clock=lambda: clock[0])
+    with upgraded.database.transaction() as c:
+        assert c.execute("PRAGMA user_version").fetchone()[0] >= 53
+        assert c.execute("SELECT count(*) FROM installation_authority_recoveries").fetchone()[0] == 3
+        admission = dict(c.execute("SELECT * FROM protected_recovery_desktop_admissions WHERE recovery_id='rec-comm'").fetchone())
+        assert admission["read_attempts"] == 5 and admission["expiry_read_claimed"] == 0
+        c.execute("UPDATE protected_recovery_desktop_admissions SET expiry_read_claimed=1 WHERE recovery_id='rec-comm'")
+        with pytest.raises(sqlite3.IntegrityError):
+            c.execute("UPDATE protected_recovery_desktop_admissions SET expiry_read_claimed=0 WHERE recovery_id='rec-comm'")
+        with pytest.raises(sqlite3.IntegrityError):
+            c.execute("DELETE FROM installation_authority_recoveries WHERE recovery_id='rec-refused'")
+        with pytest.raises(sqlite3.IntegrityError):
+            c.execute("DELETE FROM protected_recovery_ceremonies WHERE recovery_id='rec-comm'")
+        c.execute("DELETE FROM protected_recovery_desktop_admissions WHERE recovery_id='rec-res'")
+        c.execute("DELETE FROM installation_authority_recoveries WHERE recovery_id='rec-res'")
+        assert c.execute("SELECT count(*) FROM installation_authority_recoveries WHERE recovery_id='rec-res'").fetchone()[0] == 0

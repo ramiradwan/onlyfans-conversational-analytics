@@ -24,6 +24,8 @@ from app.security.installation_authority_recovery import AuthorityRecoveryRefuse
 PENDING = ("accepted", "waiting", "outcome_unknown")
 MAX_READS = 12
 READ_DELAYS = (15, 30, 60)
+# The single post-expiry ceremony read starts this many seconds after the ceremony expires.
+EXPIRY_READ_MARGIN = 60
 
 
 class ProtectedAuthoritySetupOwner:
@@ -399,33 +401,82 @@ class ProtectedAuthoritySetupOwner:
         if expected!=intent["request"]:
             raise HostedGrantUnavailable("Protected authentication plan changed")
 
+    @staticmethod
+    def _retirable_base(source, ceremony):
+        return (source["state"] in {"reserved","prepare-claimed","prepared"}
+            and source["delivery_attempts"]==0 and source["committed_at"] is None
+            and (ceremony is None or (not ceremony["committed_seen"] and ceremony["domain_status"]!="revoked")))
+
+    def _proved_uncommitted(self, binding, source, ceremony):
+        return (self._retirable_base(source,ceremony) and bool(binding["expiry_read_claimed"])
+            and ceremony is not None and ceremony["ceremony_id"] is not None
+            and ceremony["presentation_state"] in {"expired","retired"}
+            and ceremony["domain_status"]=="awaiting-authentication")
+
+    def _unreached_retirable(self, connection, source, ceremony, now):
+        return (self._retirable_base(source,ceremony)
+            and not self.browser.journal.any_open_claimed(connection,source["recovery_id"])
+            and now>=source["created_at"]+1860)
+
+    def _post_expiry_read_due(self, connection, binding, source, ceremony, now):
+        return (self._retirable_base(source,ceremony)
+            and self.browser.journal.any_open_claimed(connection,source["recovery_id"])
+            and ceremony is not None and ceremony["ceremony_id"] is not None
+            and not binding["expiry_read_claimed"]
+            and now>=timestamp(ceremony["expires_at"]).timestamp()+EXPIRY_READ_MARGIN)
+
+    def _retirement_actionable(self, connection, binding, source, ceremony, now):
+        return (self._unreached_retirable(connection,source,ceremony,now)
+            or self._post_expiry_read_due(connection,binding,source,ceremony,now)
+            or self._proved_uncommitted(binding,source,ceremony))
+
+    def _active_work_open(self, connection, binding, source, ceremony, child, now):
+        if source["state"] in {"reserved","prepare-claimed"}:
+            return source["prepare_attempts"]<2 and now<source["created_at"]+1800
+        if source["state"]=="committed" or ceremony is not None and ceremony["committed_seen"]:
+            return source["delivery_attempts"]<3
+        if source["state"]!="prepared":
+            return False
+        if ceremony is None or not ceremony["prepare_claimed"]:
+            return now<timestamp(source["source_expires_at"]).timestamp() and now<source["created_at"]+1800
+        if binding["read_attempts"]>=MAX_READS or now>=source["created_at"]+1860:
+            return False
+        if child is not None and child["open_claimed"] and child["state"]=="selected":
+            return now<timestamp(ceremony["expires_at"]).timestamp() and not self._entry_pending(connection,child)
+        return (ceremony["ceremony_id"] is None
+            or ceremony["ceremony_id"] is not None and child is None
+                and ceremony["projection_json"] is None and ceremony["entry_reference"] is not None
+                and now<timestamp(ceremony["expires_at"]).timestamp())
+
     def _observe_child(self,operation):
         if not self.enabled:
             return None
         try:
             with self.store.database.read() as connection:
-                intent,_,_,source,ceremony,child=self._child_state(connection,operation,require_pending=False)
+                intent,_,binding,source,ceremony,child=self._child_state(connection,operation,require_pending=False)
                 if source["state"]=="refused":
                     return OperationResult("refused","authority_unavailable")
                 if source["state"]!="admitted":
                     self.recovery.exact(connection,json.loads(source["request_json"]),authorize=lambda **_: None)
-                if not self._was_claimed(intent,child):
-                    return None
-                state=child["state"]
-                if state=="admitted":
-                    return OperationResult("completed") if intent["verb"]=="select" else OperationResult("refused","operation_refused")
-                # A mutation reply or exact read alone does not establish the
-                # currently actionable child. A matching current read must exist.
-                if ceremony is None or ceremony["projection_json"] is None:
-                    return None
-                projection=json.loads(ceremony["projection_json"])
-                actual=projection["authentication_attempt"]
-                if actual is None or actual["authentication_attempt_id"]!=child["attempt_id"] or projection["state"]!=state:
-                    return None
-                if state=="retired":
-                    return OperationResult("completed") if intent["verb"]=="cancel" else OperationResult("refused","operation_refused")
-                if state=="selected" and intent["verb"]=="select":
-                    return OperationResult("completed")
+                if self._was_claimed(intent,child):
+                    state=child["state"]
+                    if state=="admitted":
+                        return OperationResult("completed") if intent["verb"]=="select" else OperationResult("refused","operation_refused")
+                    # A mutation reply or exact read alone does not establish the
+                    # currently actionable child. A matching current read must exist.
+                    if ceremony is not None and ceremony["projection_json"] is not None:
+                        projection=json.loads(ceremony["projection_json"])
+                        actual=projection["authentication_attempt"]
+                        if actual is not None and actual["authentication_attempt_id"]==child["attempt_id"] and projection["state"]==state:
+                            if state=="retired":
+                                return OperationResult("completed") if intent["verb"]=="cancel" else OperationResult("refused","operation_refused")
+                            if state=="selected" and intent["verb"]=="select":
+                                return OperationResult("completed")
+                current=connection.execute("SELECT state FROM desktop_setup_operations WHERE operation_id=?",
+                    (operation["operation_id"],)).fetchone()
+                if (current is not None and current["state"] in PENDING
+                        and self._retirement_actionable(connection,binding,source,ceremony,self.store._now().timestamp())):
+                    return OperationResult("refused","operation_expired")
         except (HostedGrantUnavailable,ValueError):
             return None
         return None
@@ -503,6 +554,24 @@ class ProtectedAuthoritySetupOwner:
             return self._observe_child(operation)
         try:
             with self.store.database.read() as connection:
+                intent=json.loads(operation["owner_scope_json"]).get("protected_recovery_intent")
+                if (not isinstance(intent,dict) or set(intent)!={"recovery_id","scope_digest","operation_id","journey_id"}
+                        or operation["action"]!="account.connect" or intent["operation_id"]!=operation["operation_id"]
+                        or intent["journey_id"]!=operation["journey_id"]):
+                    raise HostedGrantUnavailable("Protected recovery command changed")
+                row=connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?",
+                    (operation["operation_id"],)).fetchone()
+                if (row is None or row["owner_scope_json"]!=operation["owner_scope_json"]
+                        or row["action"]!=operation["action"] or row["journey_id"]!=operation["journey_id"]):
+                    raise HostedGrantUnavailable("Protected recovery command unavailable")
+                binding=connection.execute("SELECT * FROM protected_recovery_desktop_admissions WHERE recovery_id=?",
+                    (intent["recovery_id"],)).fetchone()
+                source=connection.execute("SELECT * FROM installation_authority_recoveries WHERE recovery_id=?",
+                    (intent["recovery_id"],)).fetchone()
+                if binding is None and source is None:
+                    # Only retirement deletes admissions. A crash between the
+                    # atomic delete and coordinator._settle heals here.
+                    return OperationResult("refused","operation_expired")
                 _,source=self._saved(connection,operation,require_pending=False)
                 if source["state"]=="admitted":
                     return OperationResult("completed")
@@ -563,6 +632,90 @@ class ProtectedAuthoritySetupOwner:
             child=self.browser.journal.child(connection,request["recovery_id"])
             return binding,source,request,ceremony,child
 
+    def _retirement_step(self, operation):
+        authorize=lambda **kw:self._authorize(operation,**kw)
+        with self.store.database.read() as connection:
+            if self._pending_child(connection,operation["operation_id"]):
+                return "pending-child"
+            self._authorize(operation,connection=connection)
+            binding,source=self._saved(connection,operation)
+            request=json.loads(source["request_json"])
+            self.recovery.exact(connection,request,authorize=authorize)
+            rid=binding["recovery_id"]
+            ceremony=self.browser.journal.row(connection,rid)
+            now=self.store._now().timestamp()
+            if (self._unreached_retirable(connection,source,ceremony,now)
+                    or self._proved_uncommitted(binding,source,ceremony)):
+                return "retire"
+            if self._post_expiry_read_due(connection,binding,source,ceremony,now):
+                return "post-expiry-read"
+            if (self.browser.journal.any_open_claimed(connection,rid)
+                    and ceremony is not None and ceremony["ceremony_id"] is not None
+                    and not ceremony["committed_seen"] and source["state"]=="prepared"
+                    and source["delivery_attempts"]==0
+                    and (binding["expiry_read_claimed"] or now>=timestamp(ceremony["expires_at"]).timestamp())):
+                return "blocked"
+            return None
+
+    def _claim_post_expiry_read(self, operation):
+        authorize=lambda **kw:self._authorize(operation,**kw)
+        with self.store.database.transaction() as connection:
+            if self._pending_child(connection,operation["operation_id"]):
+                return False
+            self._authorize(operation,connection=connection)
+            binding,source=self._saved(connection,operation)
+            request=json.loads(source["request_json"])
+            self.recovery.exact(connection,request,authorize=authorize)
+            rid=binding["recovery_id"]
+            ceremony=self.browser.journal.row(connection,rid)
+            now=self.store._now().timestamp()
+            if not self._post_expiry_read_due(connection,binding,source,ceremony,now):
+                return False
+            connection.execute("UPDATE protected_recovery_desktop_admissions SET expiry_read_claimed=1 WHERE recovery_id=?",
+                (rid,))
+            # Clear any pre-expiry presentation/status before sending the single
+            # post-expiry read so an unavailable or failed read cannot inherit a
+            # stale pre-expiry retired/awaiting snapshot.
+            connection.execute("UPDATE protected_recovery_ceremonies SET entry_reference=NULL,projection_json=NULL,"
+                "domain_status='unavailable' WHERE recovery_id=?",(rid,))
+            self._authorize(operation,connection=connection)
+            return True
+
+    def _retire(self, operation):
+        authorize=lambda **kw:self._authorize(operation,**kw)
+        with self.store.database.transaction() as connection:
+            if self._pending_child(connection,operation["operation_id"]):
+                return False
+            self._authorize(operation,connection=connection)
+            binding,source=self._saved(connection,operation)
+            request=json.loads(source["request_json"])
+            self.recovery.exact(connection,request,authorize=authorize)
+            rid=binding["recovery_id"]
+            ceremony=self.browser.journal.row(connection,rid)
+            now=self.store._now().timestamp()
+            unreached=self._unreached_retirable(connection,source,ceremony,now)
+            proved=self._proved_uncommitted(binding,source,ceremony)
+            if not (unreached or proved):
+                return False
+            if unreached:
+                if connection.execute("SELECT 1 FROM protected_recovery_browser_dispatches WHERE recovery_id=? LIMIT 1",
+                        (rid,)).fetchone():
+                    raise HostedGrantUnavailable("Unreached protected recovery has a browser dispatch")
+            else:
+                tasks=[row["task_id"] for row in connection.execute(
+                    "SELECT task_id FROM protected_recovery_browser_dispatches WHERE recovery_id=?",(rid,)).fetchall()]
+                if tasks:
+                    marks=",".join("?"*len(tasks))
+                    connection.execute("DELETE FROM desktop_admission_entries WHERE role='browser_task' AND reference_id IN ("+marks+")",tasks)
+                    connection.execute("DELETE FROM protected_recovery_browser_dispatches WHERE recovery_id=?",(rid,))
+                    connection.execute("DELETE FROM desktop_browser_tasks WHERE state='pending' AND task_id IN ("+marks+")",tasks)
+            connection.execute("DELETE FROM protected_recovery_authentication_children WHERE recovery_id=?",(rid,))
+            connection.execute("DELETE FROM protected_recovery_ceremonies WHERE recovery_id=?",(rid,))
+            connection.execute("DELETE FROM protected_recovery_desktop_admissions WHERE recovery_id=?",(rid,))
+            self.recovery.retire(connection,request,
+                authorize=lambda **kw:self._no_competing_work(kw["connection"],operation_id=operation["operation_id"]))
+            return True
+
     async def execute(self, operation, *, reconcile, actor=None):
         if not self.handles(operation):
             return await self.base.execute(operation,reconcile=reconcile,actor=actor)
@@ -576,9 +729,27 @@ class ProtectedAuthoritySetupOwner:
         journey=operation["journey_id"]
         authorize=lambda **kw:self._authorize(operation,**kw)
         try:
-            with self.store.database.read() as connection:
-                if self._pending_child(connection,operation["operation_id"]):
-                    return OperationResult("waiting")
+            retire_action=await asyncio.to_thread(self._retirement_step,operation)
+            if retire_action=="pending-child":
+                return OperationResult("waiting")
+            if retire_action=="retire":
+                if await asyncio.to_thread(self._retire,operation):
+                    return OperationResult("refused","operation_expired")
+                return OperationResult("waiting")
+            if retire_action=="post-expiry-read":
+                binding,source,request,ceremony,child=await asyncio.to_thread(self._state,operation)
+                rid=request["recovery_id"]
+                if await asyncio.to_thread(self._claim_post_expiry_read,operation):
+                    await self.browser.observe_ceremony(rid,journey_id=journey,authorize=authorize)
+                binding,source,request,ceremony,child=await asyncio.to_thread(self._state,operation)
+                if ceremony is not None and ceremony["committed_seen"]:
+                    await self._effects.run(self._authority_exchange,operation,"deliver",journey_id=journey)
+                    return self.observe(operation) or OperationResult("outcome_unknown","operation_unconfirmed")
+                if await asyncio.to_thread(self._retire,operation):
+                    return OperationResult("refused","operation_expired")
+                return OperationResult("waiting")
+            if retire_action=="blocked":
+                return OperationResult("waiting")
             binding,source,request,ceremony,child=await asyncio.to_thread(self._state,operation)
             if source["state"] in {"reserved","prepare-claimed"}:
                 await self._effects.run(self._authority_exchange,operation,"prepare",journey_id=journey)
@@ -648,24 +819,10 @@ class ProtectedAuthoritySetupOwner:
             binding,source,request,ceremony,child=self._state(operation)
             with self.store.database.read() as connection:
                 self.recovery.exact(connection,request,authorize=lambda **kw:self._authorize(operation,**kw))
-            now=self.store._now().timestamp()
-            if source["state"] in {"reserved","prepare-claimed"}:
-                return source["prepare_attempts"]<2 and now<source["created_at"]+1800
-            if source["state"]=="committed" or ceremony is not None and ceremony["committed_seen"]:
-                return source["delivery_attempts"]<3
-            if source["state"]!="prepared":
-                return False
-            if ceremony is None or not ceremony["prepare_claimed"]:
-                return now<timestamp(source["source_expires_at"]).timestamp() and now<source["created_at"]+1800
-            if binding["read_attempts"]>=MAX_READS or now>=source["created_at"]+1860:
-                return False
-            if child is not None and child["open_claimed"] and child["state"]=="selected":
-                with self.store.database.read() as connection:
-                    return not self._entry_pending(connection,child)
-            return (ceremony["ceremony_id"] is None
-                or ceremony["ceremony_id"] is not None and child is None
-                    and ceremony["projection_json"] is None and ceremony["entry_reference"] is not None
-                    and now<timestamp(ceremony["expires_at"]).timestamp())
+                now=self.store._now().timestamp()
+                if self._retirement_actionable(connection,binding,source,ceremony,now):
+                    return True
+                return self._active_work_open(connection,binding,source,ceremony,child,now)
         except (HostedGrantUnavailable,ValueError):
             return False
 
@@ -681,9 +838,25 @@ class ProtectedAuthoritySetupOwner:
             return None
         try:
             with self.store.database.read() as connection:
-                binding,_=self._saved(connection,operation)
+                binding,source=self._saved(connection,operation)
+                ceremony=self.browser.journal.row(connection,binding["recovery_id"])
                 child=self.browser.journal.child(connection,binding["recovery_id"])
-                return self._entry_deadline(connection,child)
+                entry=self._entry_deadline(connection,child)
+                if entry is not None:
+                    return entry
+                now=self.store._now().timestamp()
+                if not self._retirable_base(source,ceremony):
+                    return None
+                if self.browser.journal.any_open_claimed(connection,binding["recovery_id"]):
+                    if (ceremony is None or ceremony["ceremony_id"] is None
+                            or binding["expiry_read_claimed"]):
+                        return None
+                    deadline=timestamp(ceremony["expires_at"]).timestamp()+EXPIRY_READ_MARGIN
+                    return deadline if deadline>now else None
+                if self._active_work_open(connection,binding,source,ceremony,child,now):
+                    return None
+                deadline=source["created_at"]+1860
+                return deadline if deadline>now else None
         except (HostedGrantUnavailable,ValueError):
             return None
 

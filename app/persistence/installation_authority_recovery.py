@@ -253,6 +253,14 @@ class InstallationAuthorityRecoveries:
             raise HostedGrantUnavailable("Authority recovery browser source expired")
         return {"reference": row["source_reference"], "expires_at": row["source_expires_at"]}
 
+    def retire(self, connection, request, *, authorize):
+        """Delete a provably uncommitted recovery row after its presentation rows."""
+        row, _ = self.exact(connection, request, authorize=authorize)
+        if (row["state"] not in {"reserved", "prepare-claimed", "prepared"}
+                or row["delivery_attempts"] != 0 or row["committed_at"] is not None):
+            raise HostedGrantUnavailable("Authority recovery cannot be retired")
+        connection.execute("DELETE FROM installation_authority_recoveries WHERE recovery_id=?", (row["recovery_id"],))
+
     @capture_authority_change
     def adopt_delivery(self, request, attempt, result, *, verifier, authorize):
         """Admit only the verified original complete bundle in one owner transaction.

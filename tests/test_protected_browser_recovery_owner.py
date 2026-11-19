@@ -340,3 +340,15 @@ def test_cleared_entry_locator_cannot_be_replaced_by_a_different_reference(insta
         response["entry"]["entry_reference"]="A"*43
         with pytest.raises(HostedGrantUnavailable):
             owner.record_ceremony(c,rid,"read",read,response,authorize=allow)
+
+
+def test_ceremony_delete_guard_refuses_committed_seen_ceremony(installed):
+    case=installed
+    rid,aid,owner=selected(case)
+    with case.store.database.transaction() as c:
+        read_current(owner,c,rid,"admitted",aid)
+        assert owner.row(c,rid)["committed_seen"]==1
+        c.execute("DELETE FROM protected_recovery_authentication_children WHERE recovery_id=?",(rid,))
+        with pytest.raises(sqlite3.IntegrityError):
+            c.execute("DELETE FROM protected_recovery_ceremonies WHERE recovery_id=?",(rid,))
+        assert owner.row(c,rid) is not None
