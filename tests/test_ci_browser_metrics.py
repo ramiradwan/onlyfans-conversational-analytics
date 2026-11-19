@@ -275,3 +275,16 @@ def test_product_timing_reports_incomplete_runs_without_latency_observations():
     result = product.summarize(run, document)
     assert not result['complete'] and result['incomplete_job_ids'] == [12]
     assert product.observations([result]) == []
+
+
+def test_product_timing_source_graph_expands_matrix_and_preserves_unknown_wait():
+    from tools import product_ci_metrics as product
+    graph = product.workflow_graph({'jobs': {'build': {'name': 'fixed-sqlcipher-wheel'}, 'safety': {'name': 'browser-reporting-safety'}, 'browser': {'name': 'browser-e2e-${{ matrix.lane }}', 'strategy': {'matrix': {'lane': ['core', 'catchup']}}, 'needs': ['build', 'safety']}, 'gate': {'needs': 'browser'}}})
+    assert graph['gate'] == ('browser-e2e-core', 'browser-e2e-catchup')
+    run, document = evidence()
+    result = product.summarize(run, document, graph=graph)
+    core = next(row for row in result['scheduling'] if row['job']=='browser-e2e-core')
+    assert core['prerequisite_seconds'] == 15 and core['queue_after_prerequisites_seconds'] == 5
+    document['jobs'].pop(0); document['total_count'] -= 1
+    core = next(row for row in product.summarize(run, document, graph=graph)['scheduling'] if row['job']=='browser-e2e-core')
+    assert core['queue_after_prerequisites_seconds'] is None

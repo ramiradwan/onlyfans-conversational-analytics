@@ -1,4 +1,4 @@
-﻿"""Report actual CI runner occupancy and latency, never release qualification.
+"""Report actual CI runner occupancy and latency, never release qualification.
 
 Inputs: complete GitHub run.json and filter=all jobs.json per run. Keep failed,
 retried and successful runs separate. The result describes only supplied runs,
@@ -11,6 +11,9 @@ from collections import Counter, defaultdict
 import json
 from pathlib import Path
 import statistics
+import subprocess
+import re
+from itertools import product
 
 try:
     from tools import browser_ci_metrics as common
@@ -18,7 +21,72 @@ except ModuleNotFoundError:
     import browser_ci_metrics as common
 
 
-def summarize(run, document):
+def workflow_graph(workflow):
+    """Expand the static matrices used by these workflows, refusing ambiguity."""
+    jobs = workflow['jobs']
+    expanded = {}
+    for key, job in jobs.items():
+        matrix = job.get('strategy', {}).get('matrix', {})
+        if not isinstance(matrix, dict) or not all(isinstance(v, list) and v for v in matrix.values()) or {'include', 'exclude'} & matrix.keys():
+            raise common.TimingError('unsupported_workflow_matrix')
+        template = job.get('name', key)
+        names = []
+        for values in product(*matrix.values()):
+            name = template
+            for field, value in zip(matrix, values):
+                name = re.sub(r'\$\{\{\s*matrix\.' + re.escape(field) + r'\s*\}\}', str(value), name)
+            if '${{' in name:
+                raise common.TimingError('unsupported_workflow_job_name')
+            names.append(name)
+        if len(names) != len(set(names)):
+            raise common.TimingError('ambiguous_workflow_job_name')
+        expanded[key] = names
+    graph = {}
+    for key, job in jobs.items():
+        needs = job.get('needs', [])
+        if isinstance(needs, str):
+            needs = [needs]
+        if not isinstance(needs, list) or any(n not in expanded for n in needs):
+            raise common.TimingError('unknown_workflow_dependency')
+        deps = tuple(name for n in needs for name in expanded[n])
+        for name in expanded[key]:
+            if name in graph:
+                raise common.TimingError('ambiguous_workflow_job_name')
+            graph[name] = deps
+    return graph
+
+
+def source_graph(run):
+    import yaml
+    path = run.get('path', '').split('@', 1)[0]
+    source = run.get('head_sha', '')
+    if not re.fullmatch(r'\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml', path) or not re.fullmatch(r'[0-9a-f]{40}', source):
+        raise common.TimingError('invalid_workflow_source_coordinate')
+    raw = subprocess.check_output(['git', 'show', f'{source}:{path}'])
+    return workflow_graph(yaml.safe_load(raw))
+
+
+def scheduling(intervals, graph, created, skipped):
+    # In a partial run, an unseen dependency is not a skipped dependency.
+    # Report unknown rather than assigning missing predecessor time to the queue.
+    rows = []
+    for row in intervals:
+        deps = graph.get(row['job'])
+        ready = created if deps is not None else None
+        predecessors = []
+        for dep in deps or ():
+            available = [v for v in intervals if v['job']==dep and v['end'] <= row['start'] and v['attempt'] <= row['attempt']]
+            if available:
+                predecessors.append(max(available, key=lambda v:(v['attempt'],v['end'])))
+            elif dep not in skipped:
+                ready = None
+        if ready is not None:
+            ready = max([ready, *(v['end'] for v in predecessors)])
+        rows.append(dict(job=row['job'], attempt=row['attempt'], prerequisite_seconds=None if ready is None else round(ready-created,3), queue_after_prerequisites_seconds=None if ready is None else round(row['start']-ready,3)))
+    return rows
+
+
+def summarize(run, document, *, graph=None):
     # The existing validator checks source, run, attempts, pagination and aliases.
     # No dependencies are guessed from job display names.
     base = common.summarize(run, document, dependencies={})
@@ -48,7 +116,8 @@ def summarize(run, document):
     if complete and (run.get('conclusion') not in common.CONCLUSIONS or not run.get('conclusion')):
         raise common.TimingError('invalid_run_conclusion')
     terminal = max((v['end'] for v in intervals), default=created)
-    return dict(schema='product-ci-timing/v1', run_id=run['id'], source=run['head_sha'], workflow=run.get('name'), event=run.get('event'), branch=run.get('head_branch'), attempt=run['run_attempt'], complete=complete, conclusion=run.get('conclusion'), observed_span_seconds=round(terminal-created, 3), completed_runner_minutes=base['all_attempts_workflow_runner_minutes'], runner_minutes_by_os={k: round(v/60, 3) for k,v in sorted(by_os.items())}, actual_job_outcomes=dict(counts), latest_job_outcomes=dict(Counter(v.get('conclusion') or v['status'] for v in latest.values())), incomplete_job_ids=incomplete, intervals=sorted(intervals, key=lambda v:(v['start'],v['id'])), qualification_claim=False)
+    schedule = None if graph is None else scheduling(intervals, graph, created, {j['name'] for j in latest.values() if common.administrative_skip(j)})
+    return dict(schema='product-ci-timing/v1', scheduling=schedule, scheduling_note='Source-defined dependencies; rerun queue includes rerun request delay; unavailable prerequisites are null.', run_id=run['id'], source=run['head_sha'], workflow=run.get('name'), event=run.get('event'), branch=run.get('head_branch'), attempt=run['run_attempt'], complete=complete, conclusion=run.get('conclusion'), observed_span_seconds=round(terminal-created, 3), completed_runner_minutes=base['all_attempts_workflow_runner_minutes'], runner_minutes_by_os={k: round(v/60, 3) for k,v in sorted(by_os.items())}, actual_job_outcomes=dict(counts), latest_job_outcomes=dict(Counter(v.get('conclusion') or v['status'] for v in latest.values())), incomplete_job_ids=incomplete, intervals=sorted(intervals, key=lambda v:(v['start'],v['id'])), qualification_claim=False)
 
 
 def overlap(runs):
@@ -92,9 +161,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('directories', type=Path, nargs='+')
     parser.add_argument('--output', type=Path)
+    parser.add_argument('--source-graph', action='store_true', help='Resolve exact workflow YAML from each source commit in the local Git repository')
     args = parser.parse_args()
     try:
-        runs = [summarize(json.loads((d/'run.json').read_text(encoding='utf-8-sig')), json.loads((d/'jobs.json').read_text(encoding='utf-8-sig'))) for d in args.directories]
+        runs = []
+        for d in args.directories:
+            run = json.loads((d/'run.json').read_text(encoding='utf-8-sig'))
+            jobs = json.loads((d/'jobs.json').read_text(encoding='utf-8-sig'))
+            runs.append(summarize(run, jobs, graph=source_graph(run) if args.source_graph else None))
         output = dict(runs=runs, overlap=overlap(runs), observations=observations(runs), qualification_claim=False)
         encoded = json.dumps(output, indent=2, allow_nan=False)+'\n'
         if args.output:
@@ -103,7 +177,7 @@ def main():
         else:
             print(encoded, end='')
         return 0
-    except (OSError, ValueError, KeyError, TypeError) as error:
+    except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as error:
         print(f'product_ci_timing_invalid_evidence: {error}')
         return 1
 
