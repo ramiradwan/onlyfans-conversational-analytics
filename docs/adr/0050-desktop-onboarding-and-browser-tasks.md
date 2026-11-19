@@ -89,7 +89,7 @@ Qualify the installed native host, Windows Hello, scoped admission and provision
 
 Architecture declarations classify the native host, coordinator and local schemas. The customer journey manifest changes with rendered states, not ahead of executable surfaces. [ADR 0056](0056-msix-packaging-and-managed-updates.md) supersedes the Inno-only packaging choice while preserving the complete frozen Brain distribution and shared WebView2. This decision grants no automatic live deployment authority.
 
-#### Retained lost-enrollment receipt evidence
+## Lost-enrollment recovery
 
 A locally submitted claim or missing grants alone cannot establish lost enrollment.
 The initial owner retains the exact proof-read original consumed receipt, current
@@ -113,8 +113,16 @@ resolves the original enrollment actor and current authority. Existing
 key-only recovery checks the original deadline and retained refusal before
 each protected exchange and cannot issue after the fixed boundary.
 
-This checkpoint retains evidence and classifies a candidate only. It does not
-yet reserve lost-enrollment protected authority recovery, resolve competing
-original enrollment owners, or admit any delivery without previous grant
-identifiers. Those require a separately verified signed-bundle path and
-atomic completion of the original claim. Public boot remains disabled.
+Ownership of the original claim changes hands at the fixed boundary. Before
+it, only the key-only bootstrap owners act. At it, the initial owner refuses
+to send and the replacement owner blocks its journal. After it, the protected
+recovery owner is the only owner. The protected owner offers at most one
+evidence branch, because any prior local authority rules out lost enrollment.
+An explicitly admitted recovery command reserves the offered branch after
+rechecking that branch's evidence digest. The persisted operation then selects
+the branch for every later exchange. A failed branch never falls back to the
+other. Lost-enrollment delivery verifies the signed bundle without previous
+grant identifiers. In the same transaction it completes the original claim and
+records the original pending association if none is retained. It binds no
+creator account.
+Public boot remains disabled.

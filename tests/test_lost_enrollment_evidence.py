@@ -380,3 +380,72 @@ def test_lost_recovery_cannot_change_immutable_scope_or_admit_competing_branch(c
             journal.guard(connection,changed,"deliver",attempt,authorize=allow)
         with pytest.raises(HostedGrantUnavailable):
             journal.guard(connection,request,"deliver",attempt+1,authorize=allow)
+
+
+def past_boundary(case):
+    """Retain a receipt whose key-only bootstrap window closed five minutes before NOW."""
+    case.receipt["consumed_at"]=wire_time(NOW-BOOTSTRAP_WINDOW-timedelta(minutes=5))
+    case.clock[0]=NOW-timedelta(minutes=10)
+    with case.store.database.transaction() as connection:
+        retain(case,connection)
+
+
+@pytest.mark.asyncio
+async def test_protected_owner_admits_lost_enrollment_after_the_boundary_and_completes_the_claim(case):
+    from test_protected_authority_setup import build, connect, recovery_command, rid
+    from test_protected_browser_recovery_client import auth_response
+    past_boundary(case)
+    coordinator,owner,base,state=build(case)
+    # Key-only bootstrap still owns the original enrollment before its boundary.
+    assert "authority_recovery" not in coordinator.read(connect(coordinator))
+    case.clock[0]=NOW
+    session=connect(coordinator)
+    op,fresh=coordinator._accept(session,recovery_command(coordinator,session))
+    assert fresh and not base.admissions
+    with case.store.database.read() as connection:
+        hosted=json.loads(owner.recovery.row(connection,rid(op))["request_json"])
+    assert hosted["scope"]["evidence"]["kind"]=="lost-enrollment"
+    assert (await owner.execute(op,reconcile=False)).state=="waiting"
+    assert [item[:2] for item in state["calls"]]==[("authority","prepare"),("ceremony","prepare"),("auth","read")]
+    with case.store.database.transaction() as connection:
+        guard=lambda **kw:owner._authorize(op,**kw)
+        child=owner.browser.journal.claim_select(connection,rid(op),authorize=guard)
+        aid=child["authentication_attempt_id"]
+        owner.browser.journal.record_authentication(connection,rid(op),"select",child,
+            auth_response(child,"selected",child=aid),authorize=guard)
+        current=owner.browser.journal.auth_read(connection,rid(op),authorize=guard)
+        owner.browser.journal.record_authentication(connection,rid(op),"read",current,
+            auth_response(current,"admitted",child=aid),authorize=guard)
+    case.clock[0]+=timedelta(seconds=16)
+    state["verifier"],state["result"]=lost_delivery(case,hosted)
+    result=await owner.execute(op,reconcile=True)
+    assert result.state=="completed"
+    coordinator._settle(op,result)
+    assert case.store.claim_submission(case.receipt["claim_id"]).state.value=="consumed"
+    assert case.store.provisioning_candidate(case.scope["association_request_id"]).state.value=="pending"
+    with case.store.database.read() as connection:
+        assert owner.recovery.row(connection,rid(op))["state"]=="admitted"
+        assert connection.execute("SELECT count(*) FROM authorized_account_bindings").fetchone()[0]==0
+    assert "authority_recovery" not in coordinator.read(session)
+    assert not base.calls
+    await owner.stop()
+
+
+@pytest.mark.asyncio
+async def test_protected_owner_refuses_lost_admission_when_evidence_changes_after_the_offer(case):
+    from app.onboarding.coordinator import CommandRefused
+    from test_protected_authority_setup import build, connect, recovery_command
+    past_boundary(case)
+    case.clock[0]=NOW
+    coordinator,owner,base,state=build(case)
+    session=connect(coordinator)
+    request=recovery_command(coordinator,session)
+    with case.store.database.transaction() as connection:
+        owner.recovery.lost_enrollment.record_refusal(connection,operation_id=case.receipt["operation_id"],
+            reason="bootstrap_authority_withdrawn",authorize=allow)
+    with pytest.raises(CommandRefused):
+        coordinator._accept(session,request)
+    with case.store.database.read() as connection:
+        assert connection.execute("SELECT count(*) FROM installation_authority_recoveries").fetchone()[0]==0
+    assert not state["calls"] and not base.admissions
+    await owner.stop()

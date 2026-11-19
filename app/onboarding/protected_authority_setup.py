@@ -1,8 +1,10 @@
-"""Protected previous-grant recovery admitted by the desktop coordinator.
+"""Protected authority recovery admitted by the desktop coordinator.
 
 The original local command is not an operator session. It admits only recovery
 of independently retained installation evidence, under the admitted desktop
 presentation and the Provider's separate fresh authentication requirement.
+The evidence is either previous grants or, after the key-only bootstrap boundary,
+the original consumed enrollment receipt. The two branches are exclusive.
 Ordinary enrollment and protected recovery never share an authority owner.
 """
 from __future__ import annotations
@@ -69,15 +71,30 @@ class ProtectedAuthoritySetupOwner:
                 (self.store._now().timestamp(),)).fetchone():
             raise HostedGrantUnavailable("Competing setup transfer")
 
+    def _evidence(self, connection, kind):
+        """The retained evidence of one branch, without recovery lineage checks."""
+        if kind == "lost-enrollment":
+            return self.recovery.lost_enrollment.eligible(connection)
+        from app.persistence.installation_authority_recovery import previous_authority
+        return previous_authority(self.store, connection)
+
     def _offer(self, connection):
+        """Return the eligible evidence kind and scope digest, if any."""
         if not self.enabled:
             return None
         try:
             self._no_competing_work(connection)
-            evidence = self.recovery.eligible(connection)
-            return scope_digest(evidence.scope)
         except (HostedGrantUnavailable, ValueError):
             return None
+        # Any prior local authority rules out lost enrollment, so at most one
+        # branch is eligible. A failed branch never falls back to the other.
+        for eligible in (self.recovery.eligible, self.recovery.eligible_lost):
+            try:
+                evidence = eligible(connection)
+            except (HostedGrantUnavailable, ValueError):
+                continue
+            return evidence.scope["evidence"]["kind"], scope_digest(evidence.scope)
+        return None
 
     def _view(self, connection, journey_id):
         retained = self._admissions(connection)
@@ -158,7 +175,7 @@ class ProtectedAuthoritySetupOwner:
             return {"state":"preparing"}
         offer = self._offer(connection)
         if offer is not None:
-            return {"state":"available","scope_digest":offer}
+            return {"state":"available","scope_digest":offer[1]}
         if retained and retained[0]["source_state"]=="refused":
             return {"state":"blocked"}
         return None
@@ -188,23 +205,25 @@ class ProtectedAuthoritySetupOwner:
             return self._admit_child(connection,journey_id,action=action,scope=scope)
         command_id=scope.get("protected_recovery_command_id")
         offer=scope["protected_recovery"]
+        current=self._offer(connection)
         if (not self.enabled or action!="account.connect" or offer.get("state")!="available"
-                or command_id is None or self._offer(connection)!=offer.get("scope_digest")):
+                or command_id is None or current is None or current[1]!=offer.get("scope_digest")):
             raise CommandRefused("authority_unavailable")
+        kind=current[0]
         require_journey(command_id)
         journey_id=journey_id or str(uuid4())
         require_journey(journey_id)
         def authorize(*,connection):
             self._no_competing_work(connection)
-            # Check the original evidence without requiring a local login which
-            # the expired authority cannot authorize. Reserve checks its own
-            # unresolved/refused lineage separately.
-            from app.persistence.installation_authority_recovery import previous_authority
-            if scope_digest(previous_authority(self.store,connection).scope)!=offer["scope_digest"]:
+            # Check the offered branch's original evidence without requiring a
+            # local login which the expired authority cannot authorize. Reserve
+            # checks its own unresolved/refused lineage separately.
+            if scope_digest(self._evidence(connection,kind).scope)!=offer["scope_digest"]:
                 raise HostedGrantUnavailable("Protected recovery evidence changed")
         try:
             authorize(connection=connection)
-            request=self.recovery.reserve(connection,authorize=authorize)
+            reserve=self.recovery.reserve_lost if kind=="lost-enrollment" else self.recovery.reserve
+            request=reserve(connection,authorize=authorize)
             now=self.store._now().timestamp()
             connection.execute("INSERT OR IGNORE INTO desktop_setup_journeys (journey_id,revision,created_at) VALUES (?,0,?)",
                 (journey_id,now))
