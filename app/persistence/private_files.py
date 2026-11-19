@@ -399,7 +399,12 @@ def private_file_identity(path: str | Path, *, missing_ok: bool = False,
                 if checked != (identity, True):
                     raise OSError('file changed or private DACL repair not verified')
             return identity
-        flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
+        # Linux O_PATH is a metadata-only descriptor. Closing an ordinary
+        # descriptor releases this process's POSIX locks on the inode,
+        # including SQLite's byte-range and WAL shared-memory locks. O_PATH
+        # neither acquires nor releases those locks.
+        metadata_only = hasattr(os, 'O_PATH')
+        flags = (os.O_PATH if metadata_only else os.O_RDONLY) | getattr(os, 'O_NOFOLLOW', 0)
         try:
             handle = os.open(target, flags)
         except FileNotFoundError:
@@ -410,9 +415,21 @@ def private_file_identity(path: str | Path, *, missing_ok: bool = False,
             metadata = os.fstat(handle)
             if not stat.S_ISREG(metadata.st_mode):
                 raise OSError('private file must be a regular file')
-            if repair_permissions:
-                os.fchmod(handle, 0o600)
+            # Unlike O_RDONLY, O_PATH does not require access to file data.
+            # Do not let a foreign-owned 0600 inode pass as our private file.
+            if metadata_only and metadata.st_uid != os.geteuid():
+                raise OSError('private file owner verification failed')
+            if repair_permissions and stat.S_IMODE(metadata.st_mode) != 0o600:
+                if metadata_only:
+                    # fchmod rejects O_PATH. The procfs descriptor link
+                    # addresses the same inode, not the replaceable filename.
+                    # Missing procfs or a failed repair must fail closed.
+                    os.chmod(f'/proc/self/fd/{handle}', 0o600)
+                else:
+                    os.fchmod(handle, 0o600)
             metadata = os.fstat(handle)
+            if metadata_only and metadata.st_uid != os.geteuid():
+                raise OSError('private file owner verification failed')
             if stat.S_IMODE(metadata.st_mode) != 0o600:
                 raise OSError('owner-only mode verification failed')
             return int(metadata.st_dev), int(metadata.st_ino)
