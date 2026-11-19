@@ -203,7 +203,7 @@ async def test_idle_progress_reads_create_no_work_or_polling(setup):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("minutes", [11, 31, 61])
-async def test_confirm_idle_uses_sign_in_choices_without_repeating_browser_access(setup, minutes):
+async def test_confirm_idle_offers_exact_source_replacement_without_repeating_browser_access(setup, minutes):
     coordinator, initial, client, operation, scope, clock, native = await initial_ceremony_case(setup)
     tasks, ceremonies = coordinator.owner.browser_tasks, coordinator.owner.ceremonies
     with coordinator.store.database.read() as connection:
@@ -228,13 +228,15 @@ async def test_confirm_idle_uses_sign_in_choices_without_repeating_browser_acces
     snapshot = coordinator.read(native)
     assert snapshot["next_task"] == "account-connection"
     assert snapshot["decision"] is None and "account.confirm" not in snapshot["allowed_actions"]
-    assert snapshot["authentication"]["actions"]["select"]
-    assert snapshot["authentication"]["operation_id"] is None
-    assert "account.connect" in snapshot["allowed_actions"]
+    # The expired ceremony consumed its prepared initial source, so sign-in waits for the exact replacement.
+    assert snapshot["authentication"] is None
+    assert "account.connect" in snapshot["allowed_actions"] and "browser.access" not in snapshot["allowed_actions"]
     with pytest.raises(CommandRefused):
         coordinator._accept(native, stale_click)
-    selected, fresh = coordinator._accept(native, command(snapshot, "account.connect") | {"provider": "default"})
-    assert fresh and json.loads(selected["owner_scope_json"])["browser"]["creator_account_id"] == scope["creator_account_id"]
+    selected, fresh = coordinator._accept(native, command(snapshot, "account.connect"))
+    replacement = json.loads(selected["owner_scope_json"])["source_replacement"]
+    assert fresh and replacement["creator_account_id"] == scope["creator_account_id"]
+    assert replacement["replacement"]["kind"] == "initial-enrollment"
     assert len(initial.client.preparations) == 1
     assert not any(verb == "submit" for verb, _ in decisions.client.calls)
     coordinator.owner.registered = None

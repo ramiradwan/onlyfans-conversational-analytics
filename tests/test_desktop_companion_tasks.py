@@ -69,7 +69,7 @@ def setup(tmp_path):
 
     app = FastAPI()
     ceremonies = SimpleNamespace(browser_entry=lambda _: ceremony, authentication=None,
-        task_row=lambda _: {"ceremony_id": ceremony["ceremony_id"],
+        task_row=lambda _, connection=None: {"ceremony_id": ceremony["ceremony_id"],
             "binding_json": json.dumps({"attempt_id": ceremony["attempt_id"]})})
     app.include_router(companion_task_router(coordinator, tasks, ceremonies, manager=manager, actor=actor))
     client = TestClient(app, base_url=ORIGIN)
