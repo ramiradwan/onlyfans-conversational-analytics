@@ -960,6 +960,8 @@ def test_source_policy_accepts_normal_git_line_endings(line_ending, version) -> 
 
 V7_SOURCE = ROOT / "tests/fixtures/product-ci-sharded-v7-pr-cutover.yml"
 V7_POLICY = ROOT / "tests/fixtures/product-ci-sharded-v7-pr-cutover-policy.json"
+V8_SOURCE = ROOT / "tests/fixtures/product-ci-sharded-v8-pr-cutover.yml"
+V8_POLICY = ROOT / "tests/fixtures/product-ci-sharded-v8-pr-cutover-policy.json"
 
 
 @pytest.mark.parametrize("line_ending", [b"\n", b"\r\n"])
@@ -973,8 +975,8 @@ def test_v7_source_policy_requires_three_actual_platform_results(line_ending) ->
 
 @pytest.mark.parametrize("line_ending", [b"\n", b"\r\n"])
 def test_v8_source_policy_requires_three_actual_full_windows_results(line_ending) -> None:
-    source = (ROOT / producer.PRODUCT_CI_WORKFLOW).read_bytes().replace(b"\r\n", b"\n").replace(b"\n", line_ending)
-    policy = (ROOT / producer.PRODUCT_CI_POLICY_PATH).read_bytes()
+    source = V8_SOURCE.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", line_ending)
+    policy = V8_POLICY.read_bytes()
     expected = producer.REQUIRED_SHARDED_V7_PRODUCT_CI_JOB_NAMES | {"windows-full-regression-3"}
     assert producer.product_ci_job_policy(source, policy) == expected
     assert {"windows-full-regression-1", "windows-full-regression-2"} <= expected
@@ -994,20 +996,20 @@ def test_v8_source_policy_requires_three_actual_full_windows_results(line_ending
     ("    strategy:\n", "    continue-on-error: true\n    strategy:\n"),
 ])
 def test_v8_source_policy_refuses_incomplete_or_optional_full_windows_matrix(old, new) -> None:
-    source = (ROOT / producer.PRODUCT_CI_WORKFLOW).read_text()
+    source = V8_SOURCE.read_text()
     before, body = source.split("  windows-full-shards:\n", 1)
     matrix, after = body.split("  windows-full-regression:\n", 1)
     assert old in matrix
     source = (before + "  windows-full-shards:\n" + matrix.replace(old, new, 1)
               + "  windows-full-regression:\n" + after).encode()
-    policy = (ROOT / producer.PRODUCT_CI_POLICY_PATH).read_bytes()
+    policy = V8_POLICY.read_bytes()
     with pytest.raises(producer.ContractError):
         producer.product_ci_job_policy(source, policy)
 
 
 def test_v8_and_v7_sources_never_accept_each_others_policy_document() -> None:
-    current_source = (ROOT / producer.PRODUCT_CI_WORKFLOW).read_bytes()
-    current_policy = (ROOT / producer.PRODUCT_CI_POLICY_PATH).read_bytes()
+    current_source = V8_SOURCE.read_bytes()
+    current_policy = V8_POLICY.read_bytes()
     assert b"  CI_POLICY_VERSION: sharded-v8-pr-cutover" in current_source.replace(b"\r\n", b"\n")
     for source, policy in ((current_source, V7_POLICY.read_bytes()), (V7_SOURCE.read_bytes(), current_policy)):
         with pytest.raises(producer.ContractError, match="source policy"):
