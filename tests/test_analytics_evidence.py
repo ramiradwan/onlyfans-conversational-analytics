@@ -76,10 +76,16 @@ def _assert_no_journal(path):
 
 @pytest.fixture(scope="session")
 def evidence_schema_template(tmp_path_factory):
-    """Create an empty, verified encrypted schema once in each Windows worker."""
+    """Create an empty, verified encrypted schema once in each requesting worker."""
     from app.persistence.sqlcipher_runtime import qualification_report
 
-    assert qualification_report()["qualified"]
+    qualification = qualification_report()
+    assert all(qualification["encryption"][name] is True for name in (
+        "encrypted_readback", "stdlib_sqlite_rejected", "wrong_key_rejected"
+    ))
+    assert qualification["encryption"]["cipher_integrity_check"] == "ok"
+    if os.name == "nt":
+        assert qualification["qualified"]
     key_identity = _test_key_identity()
     root = tmp_path_factory.mktemp("evidence-schema-template")
     repositories = create_canonical_repositories("sqlite", canonical_path=root / "canonical.sqlite3")
@@ -122,7 +128,6 @@ def stored_after_init(request, tmp_path):
     return _seed_repositories(request.param, tmp_path)
 
 
-@pytest.mark.skipif(os.name != "nt", reason="Windows encrypted schema fixture")
 def test_evidence_schema_clones_are_independent(tmp_path, evidence_schema_template):
     root, _ = evidence_schema_template
     originals = {name: (root / name).read_bytes() for name in ("canonical.sqlite3", "projections.sqlite3")}
