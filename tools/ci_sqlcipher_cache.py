@@ -21,7 +21,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = "ramiradwan/onlyfans-conversational-analytics"
-SIGNER = REPO + "/.github/workflows/ci.yml"
+SIGNER = REPO + "/.github/workflows/sqlcipher-cache-publish.yml"
 MANIFEST = "wheel-cache-manifest.json"
 SOURCE_FILE = "packaging/sqlcipher/fixed-runtime-sources.json"
 INPUT_FILES = (
@@ -190,14 +190,83 @@ def restore(cache, destination, inputs, sources, *, verifier=verify_attestation)
     return manifest
 
 
+def stage_publication(artifact, destination, sources, expected, *, root=ROOT):
+    """Stage only a fresh, exact-source wheel from a qualified main run.
+
+    A reused wheel has its original producer in the sealed manifest and is
+    deliberately not eligible for publication again. The cache transport
+    excludes the per-run envelope; the signed manifest binds all payload bytes.
+    """
+    require(not destination.exists(), "publication destination already exists")
+    require(read_json(artifact / "ci-source.json") == {"schema_version": 1, **expected}, "artifact producer differs")
+    manifest = read_json(artifact / MANIFEST)
+    require(set(manifest) == {"schema", "inputs", "input_sha256", "producer", "files"}
+            and type(manifest["schema"]) is int and manifest["schema"] == 1
+            and manifest["producer"] == expected, "not a fresh exact-source wheel")
+    inputs = manifest["inputs"]
+    require(set(inputs) == {"schema", "files", "runner", "python_version", "python_tag", "msvc_compiler_version"}
+            and type(inputs["schema"]) is int and inputs["schema"] == 1
+            and inputs["files"] == {name: digest(root / name) for name in INPUT_FILES}
+            and set(inputs["runner"]) == {"ImageOS", "ImageVersion", "RUNNER_OS", "RUNNER_ARCH"}
+            and inputs["runner"]["RUNNER_OS"] == "Windows" and inputs["runner"]["RUNNER_ARCH"] == "X64"
+            and all(isinstance(v, str) and v for v in inputs["runner"].values())
+            and all(isinstance(inputs[k], str) and inputs[k] for k in ("python_version", "msvc_compiler_version"))
+            and manifest["input_sha256"] == fingerprint(inputs), "publication inputs differ")
+    names = payload_names(sources, inputs)
+    require(inventory(artifact) == names | {MANIFEST, "ci-source.json"}, "publication artifact inventory differs")
+    require((artifact / MANIFEST).read_bytes() == canonical(manifest), "publication manifest encoding differs")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="ofca-wheel-publish-", dir=destination.parent) as temporary:
+        stage = Path(temporary) / "wheelhouse"
+        for name in sorted(names | {MANIFEST}):
+            target = stage / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(artifact / name, target)
+        require((stage / MANIFEST).read_bytes() == canonical(manifest)
+                and manifest["files"] == validate_payload(stage, inputs, sources, sealed=True), "publication bytes differ")
+        stage.rename(destination)
+    return manifest["input_sha256"]
+
+
+def publish_from_qualified_ci(artifact, destination):
+    # This entry point is used only by the protected-main workflow_run job.
+    # Re-query the complete source-versioned CI contract and latest actual
+    # producer instead of trusting event payloads or artifact names alone.
+    sys.path.insert(0, str(ROOT))
+    from tools.engineering_attestation import GitHubApi, qualify_product_ci_source, latest_ci_jobs, ContractError
+    try:
+        source = os.environ["GITHUB_SHA"]
+        run_id = int(os.environ["UPSTREAM_RUN_ID"])
+        attempt = int(os.environ["UPSTREAM_RUN_ATTEMPT"])
+        require(os.environ.get("GITHUB_EVENT_NAME") == "workflow_run" and os.environ.get("GITHUB_REF") == "refs/heads/main"
+                and os.environ.get("GITHUB_REF_PROTECTED") == "true"
+                and os.environ.get("GITHUB_REPOSITORY") == REPO and source == os.environ["UPSTREAM_SOURCE"], "publication requires exact protected main source")
+        api = GitHubApi(os.environ["GH_TOKEN"])
+        require(qualify_product_ci_source(api, source_commit=source) == run_id, "publication requires qualified main CI")
+        run = api.get(f"/repos/{REPO}/actions/runs/{run_id}")
+        require(run.get("run_attempt") == attempt and run.get("head_sha") == source, "upstream run changed")
+        producer = latest_ci_jobs(api, run_id=run_id, run_attempt=attempt, source_commit=source)["fixed-sqlcipher-wheel"]
+        require(producer.get("conclusion") == "success", "wheel producer did not pass")
+        expected = {"source_commit": source, "workflow_run_id": run_id, "workflow_run_attempt": producer["run_attempt"]}
+        return stage_publication(artifact, destination, read_json(ROOT / SOURCE_FILE), expected)
+    except ContractError as error:
+        raise CacheError("upstream CI qualification refused") from error
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("inputs", "seal", "restore"))
-    parser.add_argument("--inputs", type=Path, required=True)
+    parser.add_argument("action", choices=("inputs", "seal", "restore", "publish-stage"))
+    parser.add_argument("--inputs", type=Path)
+    parser.add_argument("--artifact", type=Path)
     parser.add_argument("--wheelhouse", type=Path)
     parser.add_argument("--cache", type=Path)
     args = parser.parse_args(argv)
     try:
+        if args.action == "publish-stage":
+            require(args.artifact is not None and args.cache is not None, "publication paths required")
+            print(publish_from_qualified_ci(args.artifact, args.cache))
+            return 0
+        require(args.inputs is not None, "inputs path required")
         if args.action == "inputs":
             inputs = capture_inputs()
             args.inputs.write_bytes(canonical(inputs))

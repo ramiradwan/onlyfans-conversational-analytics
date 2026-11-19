@@ -273,7 +273,7 @@ def test_main_and_manual_qualification_are_explicit_without_duplicate_schedule_o
     assert set(events) == {"push", "pull_request", "workflow_dispatch"}
     dispatch = events["workflow_dispatch"]
     assert set(dispatch) == {"inputs"}
-    assert set(dispatch["inputs"]) == {"browser_qualification", "browser_serial_control"}
+    assert set(dispatch["inputs"]) == {"browser_qualification", "browser_serial_control", "force_sqlcipher_cold"}
     for declaration in dispatch["inputs"].values():
         assert declaration["type"] == "boolean" and declaration["default"] is False
         assert declaration.get("required", False) is False

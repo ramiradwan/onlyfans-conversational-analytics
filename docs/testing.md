@@ -105,6 +105,10 @@ python tools/qualify_persistent_ingestion.py --output docs/architecture/persiste
 
 Windows CI builds and probes the pinned SQLCipher wheel. The release workflow also probes the frozen executable. Checked-in local evidence verifies persistence semantics but is not packaged-runtime evidence.
 
+The normal wheel producer restores only an input-matched, attested cache, otherwise it builds from the fixed sources. For an explicit cold qualification, dispatch `gh workflow run ci.yml --ref <candidate-branch> -f force_sqlcipher_cold=true`. Both the wheel and native dependency cache restores are disabled; all mandatory tests still run. The separate SQLCipher cache publication workflow has attestation privileges only for a successful exact-source protected-main CI push. It checks the newest actual producer and every staged byte before signing; a reused wheel is not republished. A publication failure does not invalidate CI or permit unchecked reuse.
+
+Post-merge acceptance: record the successful main-push CI and publication run, confirm attestation and cache save succeeded, then dispatch ordinary CI with the same build inputs and verify the cache restore and verification steps succeeded and the build step skipped. Record the cold and warm timings, input fingerprint, source revision and run IDs. If the runner image changes or the attestation fails, the build must take the cold path; a cache miss is not qualification of reuse.
+
 ## Deterministic analytics rebuilds
 
 This suite rebuilds one canonical state twice under a frozen `ReproducibilityContext`. The oracle compares semantic output, provenance, identities, graph content, digests, and referential closure.

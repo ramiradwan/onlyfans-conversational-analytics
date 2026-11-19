@@ -22,6 +22,10 @@ name: CI
         description: Run the complete serial browser control (requires browser_qualification)
         type: boolean
         default: false
+      force_sqlcipher_cold:
+        description: Build SQLCipher without restoring either wheel or native dependency cache
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -364,8 +368,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      attestations: write
-      id-token: write
+      attestations: read
     steps:
       - name: Checkout exact Product revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -388,7 +391,7 @@ jobs:
           exit 0
       - name: Restore attested fixed wheel cache
         id: wheel-restore
-        if: steps.wheel-input.outputs.fingerprint != ''
+        if: steps.wheel-input.outputs.fingerprint != '' && (github.event_name != 'workflow_dispatch' || !inputs.force_sqlcipher_cold)
         continue-on-error: true
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
@@ -420,7 +423,7 @@ jobs:
           New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP "ofca-vcpkg-cache") | Out-Null
       - name: Cache native dependencies
         id: vcpkg-cache
-        if: steps.wheel-verified.outputs.reused != 'true'
+        if: steps.wheel-verified.outputs.reused != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.force_sqlcipher_cold)
         continue-on-error: true
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
@@ -447,29 +450,6 @@ jobs:
           if ($LASTEXITCODE -eq 0) { 'sealed=true' >> $env:GITHUB_OUTPUT }
           else { Write-Warning 'Wheel cache sealing unavailable; retaining fresh wheel only.' }
           exit 0
-      - name: Attest protected main wheel manifest
-        id: wheel-attestation
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.wheel-sealed.outputs.sealed == 'true' && steps.wheel-restore.outputs.cache-hit != 'true'
-        continue-on-error: true
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d
-        with:
-          subject-path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse\wheel-cache-manifest.json
-      - name: Stage attested wheel cache
-        id: wheel-stage
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.wheel-attestation.outcome == 'success'
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $cache = Join-Path $env:RUNNER_TEMP 'ofca-fixed-sqlcipher-cache'
-          if (Test-Path $cache) { Remove-Item -Recurse -Force $cache }
-          Copy-Item -Recurse -LiteralPath "$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" -Destination $cache
-      - name: Save attested fixed wheel cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.wheel-stage.outcome == 'success'
-        continue-on-error: true
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        with:
-          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-cache
-          key: ofca-sqlcipher-wheel-v1-${{ steps.wheel-input.outputs.fingerprint }}
       - name: Save native dependencies on protected main
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.wheel-verified.outputs.reused != 'true' && steps.vcpkg-cache.outputs.cache-hit != 'true'
         continue-on-error: true
