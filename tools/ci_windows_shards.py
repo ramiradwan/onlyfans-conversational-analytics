@@ -273,3 +273,43 @@ def updated_manifest(manifest: dict[str, Any] | None, inventory: dict[str, Any],
                + " longest-first allocation; existing owners retained unless --rebalance",
         source=source, timing_seconds=dict(sorted(timings.items())), **phase_fields,
         unmeasured_files=sorted(files - timings.keys())))
+
+
+
+def model_candidate_partitions(report: dict[str, Any], *, workers: int = 4,
+                               contention: float = 1.0,
+                               counts: Iterable[int] = range(3, 13)) -> list[dict[str, Any]]:
+    """Estimate alternative file partitions without modifying the active manifest.
+
+    Timings must be complete Windows execution evidence. The parallel component
+    divides measured test-phase work by the worker count; serial work is never
+    divided. Estimates exclude collection, setup outside pytest and queue time,
+    and are not approval to change the required CI topology.
+    """
+    _check_scope(report, execution=True)
+    model = phase_model(workers, contention)
+    totals = file_timings(report)
+    serial = file_timings(report, only={row["nodeid"] for row in report["collected"]
+                                       if "serial" in row["markers"]})
+    counts = list(counts)
+    if (not counts or any(type(count) is not int or not 3 <= count <= 12 or count > len(totals)
+                          for count in counts) or len(counts) != len(set(counts))):
+        raise WindowsShardError("Candidate counts must be distinct integers from 3 to 12 with sufficient files")
+    weights = {path: serial[path] + (seconds - serial[path]) * model["contention"] / model["workers"]
+               for path, seconds in totals.items()}
+    candidates = []
+    for count in sorted(counts):
+        loads = dict.fromkeys(range(1, count + 1), 0.0)
+        assignments = {}
+        for path in sorted(weights, key=lambda name: (-weights[name], name)):
+            # Prefer an unused shard on ties, including all-zero timing reports.
+            assigned = set(assignments.values())
+            shard = min(loads, key=lambda owner: (loads[owner], owner in assigned, owner))
+            assignments[path] = shard
+            loads[shard] += weights[path]
+        peak = max(loads.values())
+        candidates.append(dict(shards=count, files=dict(sorted(assignments.items())),
+                               expected_work_seconds=loads, peak_work_seconds=peak,
+                               stress_1_5_work_seconds=peak * 1.5,
+                               stress_1_7_work_seconds=peak * 1.7))
+    return candidates

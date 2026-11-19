@@ -388,3 +388,45 @@ def test_contention_belongs_only_to_manifest_updates():
     args = runner.parser().parse_args(["windows-full-regression", "--shard", "1", "--contention", "2.0"])
     with pytest.raises(runner.SelectionError, match="--contention"):
         runner.build_command(args, [], {})
+
+
+
+def test_candidate_model_keeps_complete_files_and_serial_work():
+    report = inventory()
+    models = windows.model_candidate_partitions(report, counts=[3])
+    assert len(models) == 1
+    candidate = models[0]
+    assert set(candidate["files"]) == {"test_one.py", "test_two.py", "test_three.py"}
+    assert set(candidate["files"].values()) == {1, 2, 3}
+    assert candidate["expected_work_seconds"][candidate["files"]["test_three.py"]] == 4.5
+    assert candidate["peak_work_seconds"] == 4.5
+    assert candidate["stress_1_5_work_seconds"] == 6.75
+    assert candidate["stress_1_7_work_seconds"] == pytest.approx(7.65)
+    assert candidate == windows.model_candidate_partitions(report, counts=[3])[0]
+    assert sum(candidate["expected_work_seconds"].values()) == 6.75
+
+
+@pytest.mark.parametrize("counts", [[], [2], [13], [3, 3], [True], [4]])
+def test_candidate_model_rejects_invalid_counts(counts):
+    with pytest.raises(windows.WindowsShardError, match="Candidate counts"):
+        windows.model_candidate_partitions(inventory(), counts=counts)
+
+
+def test_candidate_model_rejects_incomplete_evidence_and_phase_data():
+    report = inventory()
+    report["complete"] = False
+    with pytest.raises(windows.WindowsShardError):
+        windows.model_candidate_partitions(report, counts=[3])
+    report = inventory()
+    report["reports"].pop()
+    with pytest.raises(windows.WindowsShardError, match="Incomplete Windows timing evidence"):
+        windows.model_candidate_partitions(report, counts=[3])
+
+
+def test_candidate_model_handles_zero_weights_without_empty_shards():
+    report = inventory()
+    for phase in report["reports"]:
+        phase["duration"] = 0.0
+    candidate = windows.model_candidate_partitions(report, counts=[3])[0]
+    assert set(candidate["files"].values()) == {1, 2, 3}
+    assert candidate["peak_work_seconds"] == 0.0
