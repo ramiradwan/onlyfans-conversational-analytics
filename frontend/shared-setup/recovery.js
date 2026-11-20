@@ -3,7 +3,8 @@
 export const desktopRecovery = Object.freeze({
   none: null,
   status_unavailable: 'transport_interrupted',
-  session_unavailable: 'authentication_required',
+  connection_unavailable: 'owner_unavailable',
+  session_unavailable: 'invariant_failed',
   authorization_unavailable: 'authorization_refused',
   operation_unconfirmed: 'outcome_unknown',
   operation_pending: 'operation_pending',

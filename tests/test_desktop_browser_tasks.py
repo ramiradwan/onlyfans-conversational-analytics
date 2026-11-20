@@ -1085,3 +1085,74 @@ async def test_original_lost_bootstrap_receipt_survives_source_cleanup(setup):
         assert connection.execute("SELECT count(*) FROM verified_grant_references").fetchone()[0]==0
     assert case.bootstrap_calls==[case.original_id]
     assert not case.store.consumed_claim_submissions()
+
+
+@pytest.mark.asyncio
+async def test_ceremony_replacement_exposes_exact_predecessor_choices_and_falls_back_without_projection(setup):
+    from app.onboarding.coordinator import CommandRefused
+    from test_desktop_decisions import authentication_projection
+    coordinator, _, ceremonies, parent, _, _, native = await replacement_case(setup)
+    row = ceremonies.row(parent["operation_id"])
+    retained = {"google": True, "microsoft-personal": False, "telegram": True, "tiktok": False, "default": True}
+    # Configured providers are default-only, so retained choices can only come from the verified projection.
+    assert ceremonies.authentication.choices == {"google": False, "microsoft-personal": False, "telegram": False, "tiktok": False, "default": True}
+    projection = {**authentication_projection(row, state="expired"), "choices": retained}
+    ceremonies.authentication._save(row, projection)
+    snapshot = coordinator.read(native)
+    assert snapshot["authentication"]["state"] == "replacement-required"
+    assert snapshot["authentication"]["choices"] == retained
+    assert snapshot["allowed_actions"] == ["auth.select"]
+    with pytest.raises(CommandRefused):
+        coordinator._accept(native, {**command(snapshot, "auth.select"), "provider": "google"})
+    # Tampered ceremony reference or missing projection falls back to all-false choices (never configured choices).
+    for mutated in ({**projection, "ceremony_id": "0198a1b2-c3d4-7300-8000-000000000099"}, None):
+        with coordinator.store.database.transaction() as connection:
+            if mutated is None:
+                connection.execute("DELETE FROM desktop_authentication_projections WHERE operation_id=?", (parent["operation_id"],))
+            else:
+                connection.execute("UPDATE desktop_authentication_projections SET projection_json=? WHERE operation_id=?",
+                    (json.dumps(mutated), parent["operation_id"]))
+        fallback = coordinator.read(native)
+        assert fallback["authentication"]["state"] == "replacement-required"
+        assert not any(fallback["authentication"]["choices"].values())
+
+
+@pytest.mark.asyncio
+async def test_expired_prepared_source_exposes_exact_ceremony_choices_only_when_verified_projection_retained(setup):
+    from app.onboarding.authentication import DesktopAuthentication
+    from app.onboarding.coordinator import CommandRefused
+    from test_desktop_decisions import authentication_projection
+    coordinator, _, _, operation, _, clock, native = await initial_ceremony_case(setup)
+    ceremonies = coordinator.owner.ceremonies
+    authentication = DesktopAuthentication(coordinator.store, ceremonies, None, providers=("default",))
+    ceremonies.authentication = authentication
+    row = ceremonies.row(operation["operation_id"])
+    retained = {"google": True, "microsoft-personal": True, "telegram": False, "tiktok": False, "default": True}
+    projection = {**authentication_projection(row, state="selection-required"), "choices": retained}
+    authentication._save(row, projection)
+    clock[0] += timedelta(minutes=11)
+    result = await coordinator.owner.execute(operation, reconcile=True)
+    coordinator._settle(operation, result)
+    snapshot = coordinator.read(native)
+    assert snapshot["continuation_available"] is True
+    assert snapshot["allowed_actions"] == ["account.connect"]
+    assert snapshot["authentication"] == {
+        "operation_id": None, "browser_operation_id": None, "state": "replacement-required",
+        "choices": retained,
+        "actions": {"select": False, "cancel": False, "open_browser": False, "switch_account": False},
+        "authentication_attempt": None,
+    }
+    with pytest.raises(CommandRefused):
+        coordinator._accept(native, {**command(snapshot, "account.connect"), "provider": "google"})
+    # Mismatched binding digest or deleted projection returns authentication=None for the Continue setup fallback.
+    for mutated in ({**projection, "binding_digest": "0" * 64}, None):
+        with coordinator.store.database.transaction() as connection:
+            if mutated is None:
+                connection.execute("DELETE FROM desktop_authentication_projections WHERE operation_id=?", (operation["operation_id"],))
+            else:
+                connection.execute("UPDATE desktop_authentication_projections SET projection_json=? WHERE operation_id=?",
+                    (json.dumps(mutated), operation["operation_id"]))
+        fallback = coordinator.read(native)
+        assert fallback["continuation_available"] is True
+        assert fallback["authentication"] is None
+        assert fallback["allowed_actions"] == ["account.connect"]

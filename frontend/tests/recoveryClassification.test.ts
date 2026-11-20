@@ -79,6 +79,8 @@ describe('recovery classification', () => {
     expect(recovery.recoveryClass(recovery.activationRecovery, 'redemption_mismatch')).toBe('account_mismatch');
     expect(recovery.recoveryClass(recovery.operationRecovery, 'refused')).toBe('authorization_refused');
     expect(recovery.recoveryClass(recovery.findingsRecovery, 'analytics_projection_building')).toBe('operation_pending');
+    expect(recovery.recoveryClass(recovery.desktopRecovery, 'connection_unavailable')).toBe('owner_unavailable');
+    expect(recovery.recoveryClass(recovery.desktopRecovery, 'session_unavailable')).toBe('invariant_failed');
   });
 
   it('renders a refused browser read differently from an unavailable owner without offering another sign-in', () => {

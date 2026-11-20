@@ -190,9 +190,14 @@ class DesktopOnboardingCoordinator:
         authentication = view.scope.get("desktop_authentication")
         replacement = view.scope.get("ceremony_replacement")
         if replacement is not None and task == "account-connection":
+            choices = (dict(authentication["choices"])
+                if (authentication is not None
+                    and authentication.get("operation_id") == replacement["parent_operation_id"]
+                    and authentication.get("state") != "unavailable"
+                    and any(authentication.get("choices", {}).values()))
+                else dict.fromkeys(("google", "microsoft-personal", "telegram", "tiktok", "default"), False))
             authentication = {"operation_id": replacement["parent_operation_id"], "browser_operation_id": None,
-                "state": "replacement-required", "choices": dict.fromkeys(
-                    ("google", "microsoft-personal", "telegram", "tiktok", "default"), False),
+                "state": "replacement-required", "choices": choices,
                 "actions": {"select": True, "cancel": False, "open_browser": False, "switch_account": False},
                 "authentication_attempt": None}
             selected_decision = None

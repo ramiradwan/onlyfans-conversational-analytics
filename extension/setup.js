@@ -144,7 +144,7 @@ function render(model) {
     document.querySelector('main').dataset.presentationReady = 'true';
   }
   for (const id of ['start-choice', 'desktop-entry', 'pre-mode', 'mode-choice', 'access-card', 'journey-card', 'legal-unavailable']) show(id, false);
-  renderLoading(status && legal && !waitingForWorkspace ? status : null, failed);
+  renderLoading(status && legal && !waitingForWorkspace ? status : null, failed, model.connectionRecovery);
   renderLegalLinks(legal);
   if (!status || !legal || waitingForWorkspace) {
     currentTask = failed ? 'unavailable' : null;
@@ -379,6 +379,5 @@ page.bind('pause', () => transition('pause', client.model));
 page.bind('journey-primary', () => runJourneyAction(element('journey-primary').dataset.action));
 page.bind('journey-secondary', () => runJourneyAction(element('journey-secondary').dataset.action));
 page.bind('open-options', () => openSurface('options'));
-page.bind('retry-runtime', () => client.sync());
 for (const heading of document.querySelectorAll('h2')) heading.setAttribute('tabindex', '-1');
 void Promise.all([initialWorkspace, client.start()]).catch(() => undefined);

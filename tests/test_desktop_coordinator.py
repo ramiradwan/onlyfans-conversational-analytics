@@ -1266,3 +1266,37 @@ async def test_drain_completes_when_caller_wakes_directly_from_worker_settlement
         assert coordinator.receipt(session, owner.calls[0][0]["operation_id"])["state"] == "completed"
     finally:
         await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_replacement_required_projects_only_verified_predecessor_choices_and_keeps_admission_closed(setup):
+    coordinator, owner, session, _ = setup
+    owner.facts["browser_access"] = "verified"
+    parent, _ = coordinator._accept(session, command(coordinator.read(session), "account.connect"))
+    parent_id = parent["operation_id"]
+    predecessor = {"parent_operation_id": parent_id, "predecessor": {"predecessor_operation_id": "0198a1b2-c3d4-7300-8000-000000000001"}}
+    verified_choices = {"google": True, "microsoft-personal": False, "telegram": True, "tiktok": False, "default": True}
+    all_false = dict.fromkeys(verified_choices, False)
+    owner.scope["ceremony_replacement"] = predecessor
+    owner.scope["desktop_authentication"] = {"operation_id": parent_id, "browser_operation_id": None,
+        "state": "expired", "choices": verified_choices,
+        "actions": dict.fromkeys(("select", "cancel", "open_browser", "switch_account"), False),
+        "authentication_attempt": None}
+    snapshot = coordinator.read(session)
+    assert snapshot["authentication"]["state"] == "replacement-required"
+    assert snapshot["authentication"]["choices"] == verified_choices
+    assert snapshot["allowed_actions"] == ["auth.select"]
+    with pytest.raises(CommandRefused) as refused:
+        coordinator._accept(session, {**command(snapshot, "auth.select"), "provider": "google"})
+    assert refused.value.reason == "action_unavailable"
+    accepted, fresh = coordinator._accept(session, {**command(snapshot, "auth.select"), "replace_ceremony": True})
+    assert fresh and json.loads(accepted["owner_scope_json"])["ceremony_replacement"] == predecessor
+    with coordinator.store.database.transaction() as connection:
+        connection.execute("UPDATE desktop_setup_operations SET state='completed' WHERE operation_id=?", (accepted["operation_id"],))
+    for stale in (
+        None,
+        {**owner.scope["desktop_authentication"], "operation_id": str(uuid4())},
+        {**owner.scope["desktop_authentication"], "state": "unavailable"},
+    ):
+        owner.scope["desktop_authentication"] = stale
+        assert coordinator.read(session)["authentication"]["choices"] == all_false

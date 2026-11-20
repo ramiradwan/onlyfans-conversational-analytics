@@ -12,7 +12,8 @@ const tasks = {
 const actions = { 'browser.access': 'Set up browser access', 'account.connect': 'Sign in', 'account.confirm': 'Connect account', 'browser.pair': 'Connect extension' };
 const errors = {
   status_unavailable: 'The setup connection was interrupted. Reconnecting…',
-  session_unavailable: 'Dipsy couldn’t restore your session.',
+  connection_unavailable: "Dipsy can't connect right now.",
+  session_unavailable: "Setup couldn't continue.",
   authorization_unavailable: 'Access to setup status was refused. Sign in again.',
   operation_unconfirmed: 'The action’s outcome is not confirmed.',
   operation_refused: 'The action was refused.',
@@ -67,7 +68,7 @@ export function renderSetup(document, state) {
     get('task-description').hidden = !recovery.description;
     setStatus(get('task-status'), recovery.status, recovery.tone);
     for (const id of ['local-access', 'local-authenticate', 'decision-details', 'header-account', 'sign-in-options',
-      'browser-reopen', 'sign-in-switch', 'sign-in-back', 'task-reconnect', 'setup-code-open']) get(id).hidden = true;
+      'browser-reopen', 'sign-in-switch', 'sign-in-back', 'setup-code-open']) get(id).hidden = true;
     const primary = get('task-action'), cancel = get('protected-cancel');
     primary.hidden = !recovery.action;
     primary.disabled = recovery.disabled;
@@ -81,6 +82,11 @@ export function renderSetup(document, state) {
     focusTransition(get('task-title'), state.deliberate);
     return;
   }
+  const operationReason = value?.pending_operations.find(item => item.reason !== 'none')?.reason;
+  const reportedReason = state.error || (value?.reason === 'none' ? null : value?.reason) || operationReason;
+  const reason = reportedReason === 'chrome_unavailable' && state.chromeAvailable === true ? 'browser_unavailable' : reportedReason;
+  const reasonClass = recoveryClass(desktopRecovery, reason);
+  const unavailable = reasonClass === 'invariant_failed' || reason === 'connection_unavailable';
   const authentication = state.authentication;
   const needsAuthentication = Boolean(authentication && !authentication.authenticated);
   const localAccessReady = !authentication || (authentication.checked && authentication.authenticated
@@ -89,7 +95,7 @@ export function renderSetup(document, state) {
   get('local-access').hidden = !needsAuthentication;
   get('local-access').dataset.journeyState = 'desktop.setup_local_access';
   setStatus(get('local-access-description'), lapsed?.[0] || 'Use a passkey to sign in on this computer.');
-  get('local-authenticate').hidden = !needsAuthentication || authentication.enrolled === null;
+  get('local-authenticate').hidden = !needsAuthentication || authentication.enrolled === null || unavailable;
   get('local-authenticate').disabled = !state.connected || authentication?.busy;
   get('local-authenticate').textContent = authentication?.enrolled ? 'Sign in with passkey' : 'Set up passkey';
   setStatus(get('local-auth-status'), lapsed?.[1]
@@ -107,26 +113,37 @@ export function renderSetup(document, state) {
   const signIn = task === 'account-connection' ? value?.authentication : null;
   const allowed = value?.allowed_actions || [];
   const accepted = decisionStatus === 'accepted';
+  const hasChoices = Boolean(signIn && Object.values(signIn.choices || {}).some(Boolean));
+  const activeProvider = state.continuingProvider || state.provider || null;
   // The Provider projection does not identify its authenticated customer. Do
   // not offer ambiguous account switching without that context.
   const canSwitch = !accepted && Boolean(decision) && signIn?.state === 'admitted'
     && signIn.actions.switch_account && allowed.includes('auth.switch');
   const choosingAccount = Boolean(state.choosingAccount && canSwitch);
   const selectAction = signIn?.operation_id ? 'auth.select' : 'account.connect';
-  const canReplace = !accepted && signIn?.state === 'replacement-required' && signIn.actions.select
-    && allowed.includes('auth.select') && (!state.pending || state.pending === signIn.operation_id);
+  const canReplace = !accepted && signIn?.state === 'replacement-required' && Boolean(signIn.operation_id)
+    && signIn.actions.select && allowed.includes('auth.select') && (!state.pending || state.pending === signIn.operation_id);
   const canSelect = signIn?.state !== 'replacement-required' && !accepted && signIn?.actions.select && allowed.includes(selectAction)
-    && (!state.pending || signIn.state === 'selection-required' && state.pending === signIn.operation_id && !state.provider
+    && (!state.pending || signIn.state === 'selection-required' && state.pending === signIn.operation_id && !activeProvider
       || signIn.state === 'reauthentication-required' && state.pending === signIn.browser_operation_id);
-  const sourceContinuation = Boolean(value?.continuation_available && !signIn && allowed.includes('account.connect'));
-  const choosingProvider = Boolean(signIn && (canSelect || choosingAccount));
+  const sourceContinuation = Boolean(value?.continuation_available && allowed.includes('account.connect')
+    && (!signIn || signIn.state === 'replacement-required' && !signIn.operation_id));
+  const canReplaceProviders = canReplace && hasChoices;
+  const sourceContinuationProviders = !accepted && sourceContinuation && signIn?.state === 'replacement-required' && hasChoices && !state.pending;
+  const canReplaceFallback = canReplace && !hasChoices;
+  const sourceContinuationFallback = sourceContinuation && !sourceContinuationProviders;
+  const choosingProvider = Boolean(signIn && (canSelect || choosingAccount || canReplaceProviders || sourceContinuationProviders));
   // The clicked provider stays in place and busy until its sign-in is selected or fails.
   const signInActions = ['account.connect', 'auth.select', 'auth.switch'];
+  const continuingReplacement = Boolean(state.continuingProvider && !state.error && task === 'account-connection');
   // Brain reports no sign-in projection while the accepted command has not selected yet.
-  const opening = Boolean(state.provider && !state.error && task === 'account-connection'
-    && !['selected', 'admitted', 'reauthentication-required', 'replacement-required', 'replacement-pending'].includes(signIn?.state)
-    && (signInActions.includes(state.acting) || state.pending && value?.pending_operations.some(item =>
-      item.operation_id === state.pending && signInActions.includes(item.action))));
+  const opening = Boolean(activeProvider && !state.error && task === 'account-connection'
+    && (continuingReplacement
+      || !['selected', 'admitted', 'reauthentication-required', 'replacement-required', 'replacement-pending'].includes(signIn?.state)
+        && (signInActions.includes(state.acting) || signInActions.includes(state.pendingAction)
+          || state.pending && value?.pending_operations.some(item =>
+            item.operation_id === state.pending && signInActions.includes(item.action)))
+      || signIn?.state === 'replacement-required' && (canReplaceProviders || sourceContinuationProviders) && signInActions.includes(state.acting)));
   const showingProviders = choosingProvider || opening;
   const controlsDisabled = !state.connected || !localAccessReady || Boolean(state.acting);
   const pairingPending = task === 'finish-setup' && (state.acting === 'browser.pair'
@@ -135,8 +152,9 @@ export function renderSetup(document, state) {
     && allowed.includes('browser.pair') && !pairingPending;
   const [title, description, journeyState] = tasks[task] || (state.error
     ? ['Setup unavailable', '', 'setup_unavailable'] : ['Loading setup', 'Reading local setup status…', 'setup_loading']);
-  document.querySelector('main').dataset.journeyState = 'desktop.' + (state.error === 'status_unavailable' || state.error === 'session_unavailable'
-    ? 'setup_unavailable' : journeyState);
+  document.querySelector('main').dataset.journeyState = 'desktop.' + (
+    ['status_unavailable', 'connection_unavailable', 'session_unavailable'].includes(state.error)
+      ? 'setup_unavailable' : journeyState);
   const securing = task === 'finish-setup' && needsAuthentication;
   const waitingForAccess = task === 'finish-setup' && authentication && !needsAuthentication
     && (!localAccessReady || !state.connected);
@@ -177,19 +195,21 @@ export function renderSetup(document, state) {
   const pending = Boolean(state.pending || value?.pending_operations.length);
   get('setup-code-open').hidden = !value || pending || value.facts.installation === 'verified' || Boolean(authentication);
   get('setup-code-open').disabled = !state.connected || pending;
-  const operationReason = value?.pending_operations.find(item => item.reason !== 'none')?.reason;
-  const reportedReason = state.error || (value?.reason === 'none' ? null : value?.reason) || operationReason;
-  const reason = reportedReason === 'chrome_unavailable' && state.chromeAvailable === true ? 'browser_unavailable' : reportedReason;
-  const reasonClass = recoveryClass(desktopRecovery, reason);
-  const reasonMessage = reasonClass === 'invariant_failed' ? "Setup couldn't continue." : reasonClass ? errors[reason] : null;
-  if (reasonClass === 'invariant_failed' || reason === 'chrome_unavailable') get('setup-code-open').hidden = true;
+  const reasonMessage = reasonClass === 'invariant_failed' ? "Setup couldn't continue."
+    : reason === 'connection_unavailable' && value?.journey_id
+      ? "Dipsy can't connect right now. Your setup progress is saved."
+      : reasonClass ? errors[reason] : null;
+  if (unavailable || reason === 'chrome_unavailable') get('setup-code-open').hidden = true;
   if (task === 'browser-access' && reasonMessage) get('task-description').hidden = true;
   const signInMessage = { selected: 'Finish signing in in Chrome.', expired: 'This sign-in request expired.',
     'replacement-required': 'Sign-in ended.',
     retired: 'Sign-in was cancelled.', unavailable: 'The sign-in request could not be confirmed.' }[signIn?.state];
   const finalizing = task === 'finish-setup' && (allowed.includes('setup.finalize')
     || value.pending_operations.some(item => item.action === 'setup.finalize'));
-  const replacing = task === 'account-connection' && (state.replacingCeremony || signIn?.state === 'replacement-pending');
+  const replacing = task === 'account-connection' && (state.replacingCeremony
+    || signIn?.state === 'replacement-pending'
+    || continuingReplacement
+    || opening && signIn?.state === 'replacement-required');
   const replacementUnknown = value?.pending_operations.some(item => ['auth.select', 'account.connect'].includes(item.action)
     && item.state === 'outcome_unknown');
   const progress = task === 'complete' ? state.continuing ? 'Opening dashboard…' : ''
@@ -203,47 +223,51 @@ export function renderSetup(document, state) {
   // The access section explains a lapse. Nothing progresses until access returns,
   // so the task line then names only errors unrelated to it.
   const unfinished = canSelect && signIn?.state === 'reauthentication-required' && !state.acting;
+  const endedPrompt = (canReplace || sourceContinuationProviders) && !opening;
   const taskTone = reasonClass === 'invariant_failed' ? recoveryTone(reasonClass)
-    : replacing ? 'progress' : canReplace || unfinished ? 'warning' : reasonClass ? recoveryTone(reasonClass)
+    : replacing ? 'progress' : endedPrompt || unfinished ? 'warning' : reasonClass ? recoveryTone(reasonClass)
     : progress && (state.continuing || opening || state.acting || finalizing || accepted
       || signIn?.state === 'selected' || pending && !decision) ? 'progress'
       : signIn?.state === 'expired' || signIn?.state === 'unavailable' ? 'warning' : 'neutral';
   setStatus(get('task-status'), (lapsed ? reason !== 'authority_unavailable' && reasonMessage
-    : reasonClass === 'invariant_failed' ? reasonMessage : replacing ? progress : canReplace ? signInMessage : unfinished ? 'Sign-in did not finish.' : reasonMessage || progress) || '', taskTone);
+    : reasonClass === 'invariant_failed' ? reasonMessage : replacing ? progress : endedPrompt ? signInMessage : unfinished ? 'Sign-in did not finish.' : reasonMessage || progress) || '', taskTone);
   document.querySelector('main').dataset.task = task || 'loading';
-  get('sign-in-options').hidden = !showingProviders || reasonClass === 'invariant_failed';
+  get('sign-in-options').hidden = !showingProviders || unavailable;
   for (const button of get('sign-in-options').querySelectorAll('[data-provider]')) {
-    // Without a projection the opening choices keep the visibility they were clicked in.
-    if (signIn || !opening) button.hidden = !signIn?.choices[button.dataset.provider];
-    button.disabled = controlsDisabled || opening || reasonClass === 'invariant_failed';
-    if (opening && button.dataset.provider === state.provider) button.setAttribute('aria-busy', 'true');
+    // Without a projection with choices, the opening choices keep the visibility they were clicked in.
+    if (hasChoices || !opening) button.hidden = !signIn?.choices[button.dataset.provider];
+    button.disabled = controlsDisabled || opening || unavailable;
+    if (opening && button.dataset.provider === activeProvider) button.setAttribute('aria-busy', 'true');
     else button.removeAttribute('aria-busy');
-    button.dataset.action = choosingAccount ? 'auth.switch' : selectAction;
+    button.dataset.action = choosingAccount ? 'auth.switch'
+      : canReplaceProviders ? 'auth.select'
+        : sourceContinuationProviders ? 'account.connect' : selectAction;
+    button.dataset.replaceCeremony = String(canReplaceProviders);
+    button.dataset.sourceContinuation = String(sourceContinuationProviders);
   }
-  const action = canReplace ? 'auth.select' : decision && allowed.includes('account.confirm') ? 'account.confirm'
+  const action = canReplaceFallback ? 'auth.select' : decision && allowed.includes('account.confirm') ? 'account.confirm'
     : allowed.find(item => actions[item] && (item !== 'browser.access' || task === 'browser-access')
-      && (item !== 'account.connect' || signIn?.state === 'admitted' || sourceContinuation));
+      && (item !== 'account.connect' || sourceContinuationFallback));
   const taskAction = get('task-action');
-  taskAction.hidden = reasonClass === 'invariant_failed' || reason === 'chrome_unavailable' || !action || showingProviders || accepted || !localAccessReady
+  taskAction.hidden = unavailable || reason === 'chrome_unavailable' || !action || showingProviders || accepted || !localAccessReady
     || action === 'browser.pair' && (!pairingAvailable || pending);
-  taskAction.disabled = controlsDisabled || replacing || (!canReplace && (decision ? Boolean(state.pending) : pending));
-  taskAction.textContent = canReplace ? 'Sign in again' : value?.continuation_available && action === 'account.connect' ? 'Continue setup'
-    : action === 'account.connect' && signIn?.state === 'admitted' ? 'Continue' : actions[action] || '';
+  taskAction.disabled = controlsDisabled || replacing || (!canReplaceFallback && (decision ? Boolean(state.pending) : pending));
+  taskAction.textContent = canReplaceFallback ? 'Sign in again' : value?.continuation_available && action === 'account.connect' ? 'Continue setup'
+    : actions[action] || '';
   taskAction.dataset.action = taskAction.hidden ? '' : action;
-  taskAction.dataset.replaceCeremony = String(canReplace && !taskAction.hidden);
+  taskAction.dataset.replaceCeremony = String(canReplaceFallback && !taskAction.hidden);
   const recoveryTarget = reason === 'chrome_unavailable' ? null : browserRecoveryTarget(value, reason ?? null);
   const browserReopen = get('browser-reopen');
-  browserReopen.hidden = canReplace || replacing || reasonClass === 'invariant_failed' || !recoveryTarget || accepted || showingProviders || Boolean(decision) || !state.connected
+  browserReopen.hidden = canReplace || replacing || unavailable || !recoveryTarget || accepted || showingProviders || Boolean(decision) || !state.connected
     || Boolean(state.browserLaunchPending || state.acting || !localAccessReady);
   browserReopen.disabled = controlsDisabled;
   browserReopen.dataset.operation = browserReopen.hidden ? '' : recoveryTarget;
   browserReopen.textContent = 'Open Chrome';
-  get('sign-in-switch').hidden = !canSwitch || choosingAccount || reasonClass === 'invariant_failed';
+  get('sign-in-switch').hidden = !canSwitch || choosingAccount || unavailable;
   get('sign-in-switch').textContent = 'Use a different sign-in account';
   get('sign-in-switch').disabled = controlsDisabled;
-  get('sign-in-back').hidden = !choosingAccount;
+  get('sign-in-back').hidden = !choosingAccount || unavailable;
   get('sign-in-back').disabled = controlsDisabled;
-  get('task-reconnect').hidden = state.error !== 'session_unavailable';
   for (const group of document.querySelectorAll('.setup-actions')) {
     group.hidden = [...group.children].every(child => child.hidden);
   }

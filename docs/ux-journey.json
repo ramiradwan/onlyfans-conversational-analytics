@@ -852,6 +852,10 @@
           "to": "extension.full_handoff",
           "by": "user",
           "action": "start-full"
+        },
+        {
+          "to": "extension.runtime_unavailable",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -864,6 +868,37 @@
           "kind": "visual",
           "file": "extension/qualification/surface-states.mjs",
           "name": "start_choice"
+        }
+      ]
+    },
+    {
+      "id": "extension.runtime_unavailable",
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/setup.html",
+        "text": "id=\"runtime-unavailable\""
+      },
+      "transitions": [
+        {
+          "to": "extension.start_choice",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "extension/tests/surface-pending-state.test.mjs",
+          "name": "setup and popup omit #retry-runtime and recover passively through surface-client"
+        },
+        {
+          "kind": "browser",
+          "file": "extension/qualification/surface-interactions.spec.mjs",
+          "name": "losing runtime access hides the desktop handoff and offers recovery"
+        },
+        {
+          "kind": "browser",
+          "file": "extension/qualification/surface-interactions.spec.mjs",
+          "name": "popup reports an unavailable status without claiming reconnection is still running"
         }
       ]
     },
@@ -1095,6 +1130,18 @@
           "to": "extension.pairing_required",
           "by": "user",
           "action": "open_creator_account"
+        },
+        {
+          "to": "extension.pairing_required",
+          "by": "system"
+        },
+        {
+          "to": "extension.desktop_app_needed",
+          "by": "system"
+        },
+        {
+          "to": "extension.desktop_app_unavailable",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -1102,6 +1149,11 @@
           "kind": "unit",
           "file": "extension/tests/customer-journey.test.mjs",
           "name": "running desktop app with no usable creator context explains setup is incomplete"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "a missing pairing status never instructs the customer to sign in to OnlyFans"
         },
         {
           "kind": "visual",
@@ -2469,6 +2521,11 @@
           "action": "browser-reopen"
         },
         {
+          "to": "browser.loading",
+          "by": "user",
+          "action": "sign-in-options"
+        },
+        {
           "to": "desktop.setup_authority_recovery",
           "by": "system"
         }
@@ -2618,6 +2675,41 @@
           "kind": "unit",
           "file": "frontend/tests/desktop-continuation.test.js",
           "name": "opens the exact operation rendered on the current browser recovery button"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "shows no task action for an admitted sign-in with no decision"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "one-click provider sign-in across ceremony and source replacement"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "clicks a verified provider in ceremony replacement and prepared source continuation without putting provider on the replacement command"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_ceremony_replacement_exposes_exact_predecessor_choices_and_falls_back_without_projection"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_expired_prepared_source_exposes_exact_ceremony_choices_only_when_verified_projection_retained"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_coordinator.py",
+          "name": "test_replacement_required_projects_only_verified_predecessor_choices_and_keeps_admission_closed"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_authentication.py",
+          "name": "test_verified_choices_requires_exact_retained_ceremony_projection"
         }
       ]
     },
@@ -2759,6 +2851,31 @@
           "kind": "unit",
           "file": "frontend/tests/recoveryClassification.test.ts",
           "name": "fails closed on an unknown desktop failure even with a previously permitted action"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "recovers transient presentation refresh unavailability through bounded reconnect, exhausts to R13 without controls, and wakes once on focus"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "recovers transient entry consume server failures through bounded reconnect"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "treats terminal presentation refresh failures as R14 without reconnecting or offering Retry"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "wakes setup reconnection on focus and visibility without a Retry button"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "renders R14 without a Retry button when the presentation fragment is missing"
         }
       ]
     },

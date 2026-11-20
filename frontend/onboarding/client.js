@@ -10,6 +10,8 @@ const NOTICE_ERRORS = { extension_unavailable: 'extension_unavailable', profile_
   needs_account: 'browser_needs_account', needs_consent: 'browser_needs_consent', needs_permission: 'browser_needs_permission' };
 // The later steps of one explicit protected sign-in run only within this bound.
 const RECOVERY_SIGN_IN_MS = 120_000;
+const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16_000, 30_000];
+const RECONNECT_SLOW_MS = 30_000;
 
 async function refreshNativePresentation(generation) {
   const invoke = globalThis.__TAURI__?.core?.invoke;
@@ -32,6 +34,7 @@ export class DesktopSetupClient {
     this.protectedOpening = false;
     this.protectedLaunchError = null;
     this.recoverySignIn = null;
+    this.providerContinuation = null;
     this.launchRequested = false;
     this.focusIntent = null;
     this.value = null;
@@ -41,7 +44,10 @@ export class DesktopSetupClient {
     this.controller = null;
     this.intent = null;
     this.reconnectTimer = null;
-    this.reconnectDelay = 1000;
+    this.reconnectAttempt = 0;
+    this.reconnectExhausted = false;
+    this.connecting = false;
+    this.stopped = false;
     this.operationError = null;
     this.browserNotice = null;
     this.key = 'desktop-setup-operation:' + generation;
@@ -56,7 +62,8 @@ export class DesktopSetupClient {
       error: error || this.protectedLaunchError || this.operationError?.reason || this.browserNotice || null, deliberate,
       ...(this.intent?.operationId === this.pending ? { pendingAction: this.intent.action } : {}),
       browserLaunchPending: Boolean(this.launchOperation || this.protectedOpening),
-      recoverySignInPending: Boolean(this.recoverySignIn) });
+      recoverySignInPending: Boolean(this.recoverySignIn),
+      continuingProvider: this.providerContinuation?.provider ?? null });
   }
 
   retireAuthenticationError() {
@@ -176,14 +183,31 @@ export class DesktopSetupClient {
   }
 
   async renewPresentation(signal) {
-    const code = await this.refreshPresentation(this.generation);
+    let code;
+    try {
+      code = await this.refreshPresentation(this.generation);
+    } catch (error) {
+      if (signal.aborted) return;
+      const reason = typeof error === 'string' ? error : error?.message;
+      // Only a transient loopback transport/channel timeout retries through the
+      // bounded reconnect policy; rejected or missing native admission fails closed.
+      if (reason === 'handoff_unavailable') throw new Error('status_unavailable');
+      throw new Error('session_unavailable');
+    }
     if (signal.aborted) return;
     if (!/^[A-Za-z0-9_-]{43}$/u.test(code)) throw Error('session_unavailable');
     const response = await this.request('/api/v1/desktop/entry/consume', {
       credentials: 'same-origin', redirect: 'error', cache: 'no-store', signal,
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }),
     });
-    const session = await response.json();
+    if (signal.aborted) return;
+    if (response.status >= 500) throw new Error('status_unavailable');
+    if (response.status === 403) throw new Error('authorization_unavailable');
+    let session;
+    try { session = await response.json(); }
+    catch {
+      throw new Error(response.ok ? 'session_unavailable' : 'status_unavailable');
+    }
     if (signal.aborted) return;
     if (!response.ok || session.role !== 'desktop' || !UUID.test(session.generation)
       || session.generation === this.generation || !['setup', 'runtime'].includes(session.stage)
@@ -204,9 +228,24 @@ export class DesktopSetupClient {
     this.session = session;
   }
 
-  async connect() {
+  connect() {
+    this.stopped = false;
+    this.reconnectAttempt = 0;
+    this.reconnectExhausted = false;
+    return this._connect();
+  }
+
+  wake() {
+    if (this.stopped || this.connected || this.connecting || !this.reconnectExhausted) return;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    void this._connect();
+  }
+
+  async _connect() {
     this.launchEpoch++;
     this.launchOperation = null;
+    this.providerContinuation = null;
     this.focusIntent = null;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
@@ -214,6 +253,7 @@ export class DesktopSetupClient {
     const controller = new AbortController();
     this.controller = controller;
     this.connected = false;
+    this.connecting = true;
     try {
       let session;
       try { session = await this.json('/api/v1/desktop/session'); }
@@ -250,11 +290,15 @@ export class DesktopSetupClient {
         }
         this.connected = true;
         this.returnFocus();
-        this.reconnectDelay = 1000;
+        this.reconnectAttempt = 0;
+        this.reconnectExhausted = false;
         this.notify(null, deliberate);
         if (this.launchOperation) void this.launchBrowser();
+        const pendingBefore = this.pending;
         this.continueRecoverySignIn();
-        if (this.pending && !value.pending_operations.some(item => item.operation_id === this.pending)) void this.receipt();
+        this.continueProviderSelection();
+        if (this.pending && this.pending === pendingBefore
+          && !value.pending_operations.some(item => item.operation_id === this.pending)) void this.receipt();
       }, text => {
         if (controller.signal.aborted) return;
         const value = parseOnboardingJson(text);
@@ -266,21 +310,39 @@ export class DesktopSetupClient {
         this.notify();
       });
     } catch (error) {
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && !this.stopped) {
         this.connected = false;
         this.intent = null;
         this.launchOperation = null;
         this.recoverySignIn = null;
-        this.notify(error.message === 'stream_expired' ? null
-          : ['session_unavailable', 'authorization_unavailable'].includes(error.message) ? error.message : 'status_unavailable');
-        if (!['session_unavailable', 'authorization_unavailable'].includes(error.message)) {
-          this.reconnectTimer = setTimeout(() => {
-            this.reconnectTimer = null;
-            if (!controller.signal.aborted) void this.connect();
-          }, this.reconnectDelay);
-          this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30_000);
+        this.providerContinuation = null;
+        const message = typeof error === 'string' ? error : error?.message;
+        const terminal = ['session_unavailable', 'authorization_unavailable'].includes(message);
+        if (terminal) {
+          this.reconnectExhausted = false;
+          this.notify(message);
+        } else {
+          const delay = RECONNECT_DELAYS[this.reconnectAttempt];
+          if (delay !== undefined) {
+            this.reconnectAttempt++;
+            this.reconnectExhausted = false;
+            this.notify(message === 'stream_expired' ? null : 'status_unavailable');
+            this.reconnectTimer = setTimeout(() => {
+              this.reconnectTimer = null;
+              if (!controller.signal.aborted && !this.stopped) void this._connect();
+            }, delay);
+          } else {
+            this.reconnectExhausted = true;
+            this.notify('connection_unavailable');
+            this.reconnectTimer = setTimeout(() => {
+              this.reconnectTimer = null;
+              if (!controller.signal.aborted && !this.stopped) void this._connect();
+            }, RECONNECT_SLOW_MS);
+          }
         }
       }
+    } finally {
+      if (this.controller === controller) this.connecting = false;
     }
   }
 
@@ -298,6 +360,7 @@ export class DesktopSetupClient {
     if (!this.connected || snapshot?.authority_recovery_browser !== 'ready' || !snapshot.authentication?.actions.open_browser) throw Error('browser_unavailable');
     this.protectedOpening = true;
     this.protectedLaunchError = null;
+    this.providerContinuation = null;
     this.notify();
     try {
       // Do not spend the one-use launch claim on a missing browser.
@@ -357,6 +420,59 @@ export class DesktopSetupClient {
     }
   }
 
+  /**
+   * Sends the clicked provider selection once after a ceremony replacement or
+   * prepared-source continuation adopts its successor for the same journey and
+   * parent. Any reconnect, other command, changed journey or parent, missing
+   * provider, refusal or two-minute bound ends the sequence.
+   */
+  continueProviderSelection() {
+    const step = this.providerContinuation, value = this.value, auth = value?.authentication;
+    if (!step) return;
+    const sameParentPending = value?.pending_operations.some(item =>
+      item.operation_id === step.parent && item.action === 'account.connect');
+    const foreignPending = value?.pending_operations.some(item =>
+      item.action === 'account.connect' && item.operation_id !== step.parent
+      || ['auth.select', 'auth.switch', 'auth.cancel'].includes(item.action)
+        && item.operation_id !== step.replaceOperation);
+    const replacementPending = value?.pending_operations.some(item => item.operation_id === step.replaceOperation);
+    const awaitingAcceptance = this.pending === step.replaceOperation
+      && (step.kind === 'ceremony'
+        ? auth?.state === 'replacement-required' && auth.operation_id === step.parent
+        : Boolean(value?.continuation_available && (!auth || auth.state === 'replacement-required' && auth.operation_id === null)));
+    const replacing = auth?.state === 'replacement-pending' && auth.operation_id === step.parent;
+    const adopting = auth === null && sameParentPending;
+    const ready = auth?.state === 'selection-required' && auth.operation_id === step.parent
+      && auth.authentication_attempt === null && auth.browser_operation_id === null;
+    const live = this.connected && step.epoch === this.launchEpoch && this.now() <= step.until
+      && value?.journey_id === step.journey && value.next_task === 'account-connection'
+      && value.authority_recovery === undefined && !value.decision && !foreignPending
+      && (awaitingAcceptance || replacing || adopting || ready);
+    if (!live) {
+      this.providerContinuation = null;
+      this.notify();
+      return;
+    }
+    if (!ready) return;
+    if (!auth.choices?.[step.provider]) {
+      this.providerContinuation = null;
+      this.notify();
+      return;
+    }
+    if (!auth.actions.select || !value.allowed_actions.includes('auth.select')) {
+      if (!replacementPending) {
+        this.providerContinuation = null;
+        this.notify();
+      }
+      return;
+    }
+    this.providerContinuation = null;
+    if (this.pending === step.replaceOperation && !replacementPending) this.remember(null);
+    void this.act('auth.select', { provider: step.provider }).catch(() => {
+      this.notify();
+    });
+  }
+
   async act(action, options = {}, continued = null) {
     const clicked = performance.now();
     const observe = phase => {
@@ -399,7 +515,19 @@ export class DesktopSetupClient {
           selected: action === 'auth.select', attempt: authentication?.authentication_attempt?.authentication_attempt_id ?? null,
           until: continued?.until ?? this.now() + RECOVERY_SIGN_IN_MS }
       : null;
-    const sourceContinuation = action === 'account.connect' && this.value.continuation_available && !authentication;
+    const sourceContinuation = action === 'account.connect' && this.value.continuation_available
+      && (!authentication || authentication.state === 'replacement-required');
+    const continueProvider = typeof continued?.continueProvider === 'string' ? continued.continueProvider : null;
+    const canContinueProvider = Boolean(continueProvider && this.value.journey_id !== null
+      && authentication?.state === 'replacement-required' && authentication.choices?.[continueProvider] === true
+      && (action === 'auth.select' && intent.replace_ceremony === true && authentication.operation_id !== null
+        || sourceContinuation && authentication.operation_id === null && intent.provider === undefined));
+    this.providerContinuation = canContinueProvider
+      ? { epoch, journey: this.value.journey_id,
+          parent: action === 'account.connect' ? intent.operation_id : authentication.operation_id,
+          provider: continueProvider, kind: action === 'account.connect' ? 'source' : 'ceremony',
+          replaceOperation: intent.operation_id, until: this.now() + RECOVERY_SIGN_IN_MS }
+      : null;
     if (this.openBrowser && !intent.replace_ceremony && !intent.recover_authority && !sourceContinuation && ['browser.access', 'account.connect', 'browser.pair', 'auth.select', 'auth.switch'].includes(action)) this.launchOperation = intent.operation_id;
     if (action === 'auth.cancel' || action === 'activation.review' || intent.replace_ceremony || intent.recover_authority || sourceContinuation) this.launchOperation = null;
     this.notify();
@@ -412,6 +540,7 @@ export class DesktopSetupClient {
     } catch (error) {
       if (epoch !== this.launchEpoch || !this.connected) return;
       this.recoverySignIn = null;
+      this.providerContinuation = null;
       if (['setup_changed', 'action_unavailable', 'authority_unavailable', 'account_mismatch', 'operation_limit_reached'].includes(error.reason)) {
         this.remember(null);
         this.intent = null;
@@ -443,6 +572,7 @@ export class DesktopSetupClient {
         const deliberate = this.intent?.confirmed === true && this.value?.next_task !== this.intent.task;
         if (deliberate || result.state === 'refused') this.intent = null;
         if (result.state === 'refused') {
+          if (this.providerContinuation?.replaceOperation === operationId) this.providerContinuation = null;
           this.operationFeedback(operationId, result.action, result.reason);
         }
         this.notify(null, deliberate);
@@ -525,9 +655,13 @@ export class DesktopSetupClient {
   }
 
   stop() {
+    this.stopped = true;
+    this.connecting = false;
+    this.reconnectExhausted = false;
     this.launchEpoch++;
     this.launchOperation = null;
     this.recoverySignIn = null;
+    this.providerContinuation = null;
     this.focusIntent = null;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;

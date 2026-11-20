@@ -1449,3 +1449,34 @@ async def test_replacement_fences_predecessor_auth_command_before_first_dispatch
     with coordinator.store.database.read() as connection:
         assert connection.execute("SELECT 1 FROM desktop_authentication_commands WHERE operation_id=?",
             (operation["operation_id"],)).fetchone() is None
+
+
+@pytest.mark.asyncio
+async def test_verified_choices_requires_exact_retained_ceremony_projection(auth):
+    coordinator, ceremonies, authentication, _, parent, _, _ = auth
+    ceremony = ceremonies.row(parent["operation_id"])
+    retained = {"google": True, "microsoft-personal": False, "telegram": True, "tiktok": False, "default": True}
+    # Configured providers differ from the retained Provider projection so fallback to static choices is caught.
+    assert retained != authentication.choices
+    with coordinator.store.database.transaction() as connection:
+        saved = json.loads(connection.execute(
+            "SELECT projection_json FROM desktop_authentication_projections WHERE operation_id=?",
+            (parent["operation_id"],)).fetchone()[0])
+        saved["choices"] = retained
+        connection.execute("UPDATE desktop_authentication_projections SET projection_json=? WHERE operation_id=?",
+            (json.dumps(saved), parent["operation_id"]))
+    assert authentication.verified_choices(parent["operation_id"], ceremony) == retained
+    for field, wrong in (
+        ("operation_id", "0198a1b2-c3d4-7300-8000-000000000091"),
+        ("ceremony_id", "0198a1b2-c3d4-7300-8000-000000000092"),
+        ("binding_digest", "0" * 64),
+        ("state", "unavailable"),
+        ("choices", dict.fromkeys(retained, False)),
+    ):
+        with coordinator.store.database.transaction() as connection:
+            connection.execute("UPDATE desktop_authentication_projections SET projection_json=? WHERE operation_id=?",
+                (json.dumps({**saved, field: wrong}), parent["operation_id"]))
+        assert authentication.verified_choices(parent["operation_id"], ceremony) is None
+    with coordinator.store.database.transaction() as connection:
+        connection.execute("DELETE FROM desktop_authentication_projections WHERE operation_id=?", (parent["operation_id"],))
+    assert authentication.verified_choices(parent["operation_id"], ceremony) is None

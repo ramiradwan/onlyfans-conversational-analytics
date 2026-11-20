@@ -65,7 +65,8 @@ try {
   client = new DesktopSetupClient({ generation: fields.get('presentation'), receive: state => {
     if (current.snapshot?.authentication?.authentication_attempt?.authentication_attempt_id
       !== state.snapshot?.authentication?.authentication_attempt?.authentication_attempt_id) choosingAccount = false;
-    if (!acting && (!state.pending || state.error)) provider = null;
+    if (!acting && !state.continuingProvider && (!state.pending || state.error
+      || current.continuingProvider && state.pending === current.pending)) provider = null;
     const restored = current.snapshot?.authority_recovery && state.connected && !state.snapshot?.authority_recovery;
     current = state;
     if (restored && client.session?.stage === 'runtime') { void enrollment.check(); render(); return; }
@@ -73,10 +74,10 @@ try {
     if (client.session?.stage === 'runtime' && state.connected && !state.snapshot?.authority_recovery
       && !enrollment.state.checked && !enrollment.state.busy) void enrollment.check();
   }, openBrowser: openBrowserTask });
-  const act = async (action, options) => {
+  const act = async (action, options, continued = null) => {
     if (acting) return;
     acting = action; render();
-    try { await client.act(action, options); choosingAccount = false; }
+    try { await (continued ? client.act(action, options, continued) : client.act(action, options)); choosingAccount = false; }
     catch { client.notify('operation_unconfirmed'); }
     finally { acting = null; render(); }
   };
@@ -111,10 +112,26 @@ try {
   for (const button of document.querySelectorAll('#sign-in-options [data-provider]')) {
     button.addEventListener('click', event => {
       const control = event.currentTarget;
-      const { action, provider: selected } = control.dataset;
+      const { action, provider: selected, replaceCeremony, sourceContinuation } = control.dataset;
       if (finished || control.hidden || control.disabled || control.closest('[hidden]') || !current.connected
+        || current.snapshot?.authority_recovery
         || !current.snapshot?.allowed_actions.includes(action)
         || !current.snapshot.authentication?.choices[selected]) return;
+      const auth = current.snapshot.authentication;
+      if (replaceCeremony === 'true') {
+        if (action !== 'auth.select' || auth.state !== 'replacement-required' || !auth.operation_id) return;
+        if (!acting) provider = selected;
+        void act('auth.select', { replace_ceremony: true }, { continueProvider: selected });
+        return;
+      }
+      if (sourceContinuation === 'true') {
+        if (action !== 'account.connect' || !current.snapshot.continuation_available
+          || auth.state !== 'replacement-required' || auth.operation_id) return;
+        if (!acting) provider = selected;
+        void act('account.connect', {}, { continueProvider: selected });
+        return;
+      }
+      if (auth.state === 'replacement-required') return;
       if (!acting) provider = selected;
       void act(action, { provider: selected });
     });
@@ -126,7 +143,6 @@ try {
   document.getElementById('sign-in-back').addEventListener('click', () => {
     choosingAccount = false; render(); document.getElementById('sign-in-switch').focus();
   });
-  document.getElementById('task-reconnect').addEventListener('click', () => { void client.connect(); });
   document.getElementById('browser-reopen').addEventListener('click', async event => {
     const button = event.currentTarget, operation = button.dataset.operation;
     if (acting || button.hidden || button.disabled || !operation) return;
@@ -142,9 +158,22 @@ try {
     finally { render(); }
   });
   document.getElementById('local-authenticate').addEventListener('click', () => { void enrollment.authenticate(); });
-  window.addEventListener('focus', () => { void checkChrome(); });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) void checkChrome(); });
-  window.addEventListener('pagehide', () => { finished = true; chromeCheck++; client.stop(); enrollment.stop(); });
+  const onWake = () => {
+    if (finished) return;
+    void checkChrome();
+    client.wake?.();
+  };
+  const onVisibility = () => { if (!document.hidden) onWake(); };
+  window.addEventListener('focus', onWake);
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('pagehide', () => {
+    finished = true;
+    chromeCheck++;
+    window.removeEventListener('focus', onWake);
+    document.removeEventListener('visibilitychange', onVisibility);
+    client.stop();
+    enrollment.stop();
+  });
   void client.connect();
 } catch {
   renderSetup(document, { snapshot: null, pending: null, connected: false, error: 'session_unavailable', deliberate: false });

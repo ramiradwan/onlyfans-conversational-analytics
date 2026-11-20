@@ -10,8 +10,12 @@ export function authorityRecoveryView(state, acting = null) {
     ({ title, description, status, tone, action, label, cancel, disabled });
   // An explicit sign-in continues by itself, so its next step shows progress instead of a button.
   const continuing = state.recoverySignInPending && recovery === 'sign-in-required';
-  if (!state.connected) return card('Restore access on this computer', 'Sign in to restore access.',
-    'Checking recovery status\u2026', 'progress');
+  if (!state.connected) {
+    if (state.error === 'session_unavailable') return card('Restore access on this computer', '', "Setup couldn't continue.", 'error');
+    if (state.error === 'connection_unavailable') return card('Restore access on this computer', '',
+      value.journey_id ? "Dipsy can't connect right now. Your setup progress is saved." : "Dipsy can't connect right now.", 'error');
+    return card('Restore access on this computer', 'Sign in to restore access.', 'Checking recovery status\u2026', 'progress');
+  }
   const childPending = state.pending && state.pending !== auth?.operation_id && ['account.connect', 'auth.select', 'auth.cancel'].includes(state.pendingAction);
   if (childPending && !acting) {
     if (state.pendingAction === 'auth.cancel') return card('Restore access on this computer', '', 'Checking sign-in\u2026', 'progress');

@@ -159,6 +159,49 @@ class ProvisioningSetupOwner:
                 raise OnboardingJourneyUnavailable("workspace_changed")
             return proposal
 
+    def _source_recovery_choices(self, journey_id, recovery, key, *, connection=None):
+        """Verified provider choices from the exact expired source's retained ceremony projection."""
+        if (journey_id is None or key is None or self.ceremonies is None
+                or self.ceremonies.authentication is None or recovery.get("replacement") is None):
+            return None
+        coords = recovery["replacement"]
+        expected_kind = "initial" if coords["kind"] == "initial-enrollment" else "registered"
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as current:
+            rows = current.execute(
+                "SELECT o.operation_id,o.owner_scope_json,c.hosted_operation_id,c.ceremony_id,c.binding_json "
+                "FROM desktop_setup_operations o "
+                "JOIN desktop_browser_ceremony_current c ON c.operation_id=o.operation_id "
+                "WHERE o.journey_id=? AND o.action='account.connect' AND o.state='refused' "
+                "AND o.reason='operation_expired' ORDER BY o.created_at DESC,o.operation_id DESC",
+                (journey_id,)).fetchall()
+            matches = []
+            for row in rows:
+                try:
+                    op_scope = json.loads(row["owner_scope_json"])
+                    binding = json.loads(row["binding_json"])
+                    effective_source = self.sources.effective(op_scope.get("source_journey_id"), connection=current)
+                except (ValueError, TypeError, OnboardingJourneyUnavailable):
+                    continue
+                source = binding.get("source")
+                if (effective_source != recovery["source_journey_id"]
+                        or op_scope.get("creator_account_id") != recovery["creator_account_id"]
+                        or op_scope.get("installation_id") != coords["installation_id"]
+                        or not isinstance(source, dict)
+                        or binding.get("purpose") != "connect-account"
+                        or source.get("kind") != expected_kind
+                        or source.get("operation_id") != coords["operation_id"]
+                        or source.get("request_digest") != coords["expected_digest"]
+                        or binding.get("installation_id") != coords["installation_id"]
+                        or binding.get("intended_creator_id") != recovery["creator_account_id"]
+                        or binding.get("installation_key_id") != key["installation_key_id"]
+                        or binding.get("installation_key_jkt") != key["installation_key_jkt"]):
+                    continue
+                matches.append(dict(row))
+            if len(matches) != 1:
+                return None
+            return self.ceremonies.authentication.verified_choices(
+                matches[0]["operation_id"], matches[0], connection=current)
+
     def _pending_source_replacement(self, journey_id, *, connection=None):
         with (self.store.database.read() if connection is None else nullcontext(connection)) as current:
             rows = current.execute("SELECT operation_id,owner_scope_json FROM desktop_setup_operations WHERE journey_id=? "
@@ -227,6 +270,14 @@ class ProvisioningSetupOwner:
         if (recovery is not None and recovery.get("replacement") is not None) or pending_replacement is not None:
             # No authentication choice or old decision can bypass prepared-source recovery.
             scope.update(desktop_authentication=None, desktop_decision=None, desktop_decision_status=None)
+        if (recovery is not None and recovery.get("replacement") is not None and pending_replacement is None
+                and reason == "none" and facts["browser_access"] in {"verified", "paused"}):
+            choices = self._source_recovery_choices(journey_id, recovery, scope["key"], connection=connection)
+            if choices is not None:
+                scope["desktop_authentication"] = {"operation_id": None, "browser_operation_id": None,
+                    "state": "replacement-required", "choices": choices,
+                    "actions": dict.fromkeys(("select", "cancel", "open_browser", "switch_account"), False),
+                    "authentication_attempt": None}
         if pending_replacement is not None:
             scope["desktop_authentication"] = {"operation_id": pending_replacement["operation_id"],
                 "browser_operation_id": None, "state": "replacement-pending",
@@ -244,13 +295,23 @@ class ProvisioningSetupOwner:
                     try:
                         self._guard(dict(parent), connection=current)
                         original = json.loads(parent["owner_scope_json"])
-                        binding = json.loads(self.ceremonies.row(parent["operation_id"], connection=current)["binding_json"])
+                        ceremony = self.ceremonies.row(parent["operation_id"], connection=current)
+                        binding = json.loads(ceremony["binding_json"])
                         if (all(original.get(name) == scope.get(name) for name in (
                                 "source_journey_id", "installation_id", "creator_account_id"))
                                 and scope["key"] is not None and all(binding[name] == scope["key"][name] for name in (
                                     "installation_key_id", "installation_key_jkt"))
                                 and binding["intended_creator_id"] == scope["creator_account_id"]):
                             scope["ceremony_replacement"] = offer
+                            choices = (None if self.ceremonies.authentication is None else
+                                self.ceremonies.authentication.verified_choices(
+                                    parent["operation_id"], ceremony, connection=current))
+                            scope["desktop_authentication"] = (None if choices is None else {
+                                "operation_id": parent["operation_id"], "browser_operation_id": None,
+                                "state": "replacement-required", "choices": choices,
+                                "actions": {"select": True, "cancel": False, "open_browser": False, "switch_account": False},
+                                "authentication_attempt": None,
+                            })
                     except (HostedGrantUnavailable, OnboardingJourneyUnavailable, ValueError):
                         pass
         return DomainView(facts, scope, reason)

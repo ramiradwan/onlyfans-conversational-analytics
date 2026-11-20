@@ -101,7 +101,7 @@ test('losing runtime access hides the desktop handoff and offers recovery', asyn
   await expect(page.locator('#runtime-unavailable')).toBeVisible();
   await expect(page.locator('#runtime-title')).toHaveText('Extension status is unavailable');
   await expect(page.locator('#desktop-entry')).toBeHidden();
-  await expect(page.locator('#retry-runtime')).toBeEnabled();
+  await expect(page.locator('#retry-runtime')).toHaveCount(0);
   await page.evaluate(() => window.__surfaceFixture.change({ runtimeUnavailable: false }));
   await expect(page.locator('#runtime-unavailable')).toBeHidden();
 });
@@ -185,7 +185,7 @@ test('popup announces a changed connection status only once', async ({ page }) =
 test('popup reports an unavailable status without claiming reconnection is still running', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.runtime_unavailable, surface: 'popup' });
   await expect(page.locator('#runtime-title')).toHaveText('Extension status is unavailable');
-  await expect(page.locator('#retry-runtime')).toBeEnabled();
+  await expect(page.locator('#retry-runtime')).toHaveCount(0);
 });
 
 test('popup uses pause and resume commands without changing the selected mode', async ({ page }) => {

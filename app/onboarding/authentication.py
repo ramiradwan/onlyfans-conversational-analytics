@@ -11,7 +11,7 @@ from app.onboarding.contract import canonical
 from app.onboarding.coordinator import OperationResult
 from app.provisioning.events import events
 from app.provisioning.owner_effects import OwnerEffects
-from app.security.browser_authentication import PROFILE, BrowserAuthenticationRefused
+from app.security.browser_authentication import PROFILE, BrowserAuthenticationRefused, binding_digest as authentication_binding_digest
 from app.security.browser_ceremony_wait import wait_request
 from app.security.hosted_grants import HostedGrantUnavailable
 from app.security.initial_handoff import timestamp
@@ -78,6 +78,35 @@ class DesktopAuthentication:
             result.update(state="reauthentication-required",
                 actions=dict(select=True, cancel=False, open_browser=False, switch_account=False))
         return {"operation_id": parent, "browser_operation_id": browser_operation, **result}
+
+    def verified_choices(self, operation_id, ceremony, *, connection=None):
+        """Retained verified choices from one exact ceremony's projection, or None."""
+        if ceremony is None or ceremony.get("hosted_operation_id") is None or ceremony.get("ceremony_id") is None:
+            return None
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as current:
+            row = current.execute("SELECT projection_json FROM desktop_authentication_projections WHERE operation_id=?",
+                (operation_id,)).fetchone()
+        if row is None:
+            return None
+        try:
+            value = json.loads(row["projection_json"])
+            binding = json.loads(ceremony["binding_json"])
+        except (ValueError, TypeError, KeyError):
+            return None
+        if (not isinstance(value, dict)
+                or value.get("profile") not in {PROFILE, "urn:bridge-clean:browser-authentication-selection:v1"}
+                or value.get("operation_id") != ceremony["hosted_operation_id"]
+                or value.get("ceremony_id") != ceremony["ceremony_id"]
+                or value.get("binding_digest") != authentication_binding_digest(binding)
+                or value.get("state") not in {
+                    "selection-required", "reauthentication-required", "selected", "admitted", "retired", "expired"}):
+            return None
+        choices = value.get("choices")
+        if (not isinstance(choices, dict) or set(choices) != set(self.choices)
+                or any(type(allowed) is not bool for allowed in choices.values())
+                or not any(choices.values())):
+            return None
+        return dict(choices)
 
     def parent_operation(self, operation_id, *, connection=None):
         with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
