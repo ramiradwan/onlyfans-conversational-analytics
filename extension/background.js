@@ -46,6 +46,9 @@ export const companionClient = createCompanionClient({
   onBrowserTask: (payload, controls) => pairedBrowserTasks.run(payload, controls),
   onBrowserTaskEnd: end => pairedBrowserTasks.end(end),
   onBrowserTaskWaiting: (kind, value) => browserAuth.waiting(kind, value),
+  readFullPresentationIntent: account => onboarding.fullPresentationIntent(account),
+  readCaptureControlStatus: identity => consentController.captureControlStatus(identity),
+  onCaptureControl: (command, identity, guard) => consentController.applyCaptureControl(command, identity, guard),
   detectedAccountId: () => provisioningIdentityBridge.currentAccountId(),
 });
 export const chromeAdapter = companionClient.adapter;

@@ -315,3 +315,86 @@ async def test_repeated_delivery_fences_the_old_waiter_and_disconnect_clears_the
     await session.close()
     assert await asyncio.gather(*pending) == ["unconfirmed"] * 8
     assert transport_manager.browser_task_target(ACCOUNT) is None
+
+def test_full_presentation_intent_is_account_bound_and_cleared_with_the_reporting_session():
+    async def exercise():
+        first, second = link(Channel()), link(Channel(), pairing_id=b"q" * 32)
+        intent = {"request_id": str(uuid4()), "journey_id": str(uuid4()), "disclosure_bundle_id": "a" * 64}
+        with pytest.raises(CompanionRecordError):
+            await first.presentation_intent({"full_intent": intent})
+        await first.report(REPORT)
+        await first.presentation_intent({"full_intent": intent})
+        assert transport_manager.browser_surface(ACCOUNT)["full_intent"] == intent
+        assert transport_manager.browser_surface("other") is None
+        payload = transport_manager.agent_state_payload(ACCOUNT)
+        assert BRAIN_TO_BRIDGE_ADAPTER.validate_json(json.dumps({
+            "type": "agent.state", "protocol_version": "2", "message_id": str(uuid4()), "payload": payload,
+        })) is not None
+        with pytest.raises(CompanionRecordError):
+            await first.presentation_intent({"full_intent": {**intent, "creator_account_id": "other"}})
+        await second.report(REPORT)
+        assert "full_intent" not in transport_manager.browser_surface(ACCOUNT)
+        await second.close()
+        assert transport_manager.browser_surface(ACCOUNT)["full_intent"] == intent
+        await first.report({**REPORT, "legal_review_required": True})
+        assert "full_intent" not in transport_manager.browser_surface(ACCOUNT)
+        await first.presentation_intent({"full_intent": intent})
+        assert "full_intent" not in transport_manager.browser_surface(ACCOUNT)
+        await first.close()
+        assert transport_manager.browser_surface(ACCOUNT) is None
+    asyncio.run(exercise())
+
+@pytest.mark.asyncio
+async def test_scoped_capture_dispatch_and_owner_receipt_survive_session_replacement():
+    first = link(Channel())
+    await first.report({**REPORT, "capture": "active"})
+    epoch, operation = str(uuid4()), str(uuid4())
+    status = {"owner_scope": "a" * 64, "consent_epoch": epoch, "policy_revision": "1", "capture": "active", "receipt": None}
+    command = {"action": "pause", "operation_id": operation, "owner_scope": "a" * 64, "consent_epoch": epoch, "policy_revision": "1"}
+    assert await transport_manager.send_scoped_capture_control(ACCOUNT, command) == 0
+    await first.capture_status({"surface": {**REPORT, "capture": "active"}, "status": status})
+    assert transport_manager.browser_surface(ACCOUNT)["capture_control_supported"] is True
+    assert await transport_manager.send_browser_control(ACCOUNT, "capture.pause") == 0
+    assert await transport_manager.send_scoped_capture_control("other", command) == 0
+    assert await transport_manager.send_scoped_capture_control(ACCOUNT, {**command, "consent_epoch": str(uuid4())}) == 0
+    assert await transport_manager.send_scoped_capture_control(ACCOUNT, command) == 1
+    assert first.channel.sent[-1]["payload"] == command
+    other = link(Channel(), pairing_id=b"q" * 32)
+    await other.report({**REPORT, "capture": "active"})
+    await other.capture_status({"status": {**status, "owner_scope": "b" * 64}})
+    assert await transport_manager.send_scoped_capture_control(ACCOUNT, command) == 0
+    await first.close()
+    assert await transport_manager.send_scoped_capture_control(ACCOUNT, command) == 0
+    await other.close()
+    await first.close()
+    second = link(Channel())
+    await second.report(REPORT)
+    receipt = {"operation_id": operation, "action": "pause", "previous_consent_epoch": epoch, "outcome": "applied"}
+    settled = {**status, "consent_epoch": str(uuid4()), "capture": "paused", "receipt": receipt}
+    await second.capture_status({"status": settled})
+    assert transport_manager.browser_surface(ACCOUNT)["capture_control"] == settled
+    assert await transport_manager.send_scoped_capture_control(ACCOUNT, command) == 0
+    frame = {"type": "agent.state", "protocol_version": "2", "message_id": str(uuid4()),
+             "payload": transport_manager.agent_state_payload(ACCOUNT)}
+    assert BRAIN_TO_BRIDGE_ADAPTER.validate_json(json.dumps(frame)) is not None
+    with pytest.raises(CompanionRecordError):
+        await second.capture_status({"status": {**settled, "consent_epoch": epoch}})
+    with pytest.raises(CompanionRecordError):
+        await second.capture_status({"status": {**settled, "creator_account_id": "other"}})
+    await second.close()
+
+
+def test_scoped_capture_http_accepts_only_complete_revision_bound_command(monkeypatch):
+    sent = []
+    async def deliver(account, command):
+        sent.append((account, command))
+        return 1
+    monkeypatch.setattr(transport_manager, "send_scoped_capture_control", deliver)
+    client, headers = _app(monkeypatch, "creator")
+    command = {"action": "pause", "operation_id": str(uuid4()), "owner_scope": "a" * 64, "consent_epoch": str(uuid4()), "policy_revision": "1"}
+    with client:
+        response = client.post("/api/v1/companion/browser/capture", json=command, headers=headers)
+        assert response.status_code == 202
+        assert client.post("/api/v1/companion/browser/capture", json={"action": "pause", "operation_id": command["operation_id"]}, headers=headers).status_code == 400
+        assert client.post("/api/v1/companion/browser/capture", json={**command, "consent_epoch": "old"}, headers=headers).status_code == 400
+    assert sent == [(ACCOUNT, command)]

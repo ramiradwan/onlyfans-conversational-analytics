@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-desktop-chrome-available"
+description = "Allows the admitted local desktop window to check if Chrome is installed without launching it."
+commands.allow = ["desktop_chrome_available"]

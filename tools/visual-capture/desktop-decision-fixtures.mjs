@@ -30,3 +30,8 @@ export function activationProjection(state) {
 export async function publishActivation(page, state) {
   await page.evaluate(projection => window.__workspaceFixture.desktopSnapshot(projection), activationProjection(state));
 }
+
+export async function openActivationReview(page) {
+  await publishActivation(page, 'review');
+  await page.getByRole('button', { name: 'Review activation offer', exact: true }).click();
+}

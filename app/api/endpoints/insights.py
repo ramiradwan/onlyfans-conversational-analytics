@@ -7,11 +7,15 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
+from fastapi.responses import JSONResponse, StreamingResponse
+import asyncio
+import anyio
 
 from app.analytics.evidence import EvidenceUnavailable
+from app.analytics.publication_events import publication_events
 from app.analytics.evidence_contracts import EvidenceContextRequest, ResolvedEvidence, ResolvedEvidenceContext
 from app.analytics.query_contracts import QuestionEvidence, QuestionPlan, QuestionResult
-from app.api.security import verify_csrf_token, verify_same_origin
+from app.api.security import get_runtime_policy, verify_csrf_token, verify_same_origin
 
 
 from app.analytics.errors import (
@@ -52,6 +56,60 @@ PROTECTED_ERROR_RESPONSES = {
     status: {"model": AnalyticsErrorResponse}
     for status in (404, 422, 503)
 }
+
+
+class AnalyticsPublicationResponse(StreamingResponse):
+    """Send invalidations, never findings, under the current account session."""
+
+    def __init__(self, account, authorize, *, events=publication_events):
+        self.account, self.authorize, self.events = account, authorize, events
+        self.listener = None
+        self.headers_for_stream = {"Cache-Control": "no-store", "X-Accel-Buffering": "no"}
+        super().__init__(self.frames(), media_type="text/event-stream", headers=self.headers_for_stream)
+
+    async def __call__(self, scope, receive, send):
+        self.listener = self.events.subscribe(self.account)
+        if self.listener is None:
+            await JSONResponse({}, status_code=429, headers=self.headers_for_stream)(scope, receive, send)
+            return
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self.events.unsubscribe(self.listener)
+
+    async def frames(self):
+        signal = self.listener[2]
+        try:
+            while True:
+                signal.clear()
+                await anyio.to_thread.run_sync(self.authorize)
+                # Subscription precedes the first frame. Reconnection always
+                # reconciles the latest committed state, including missed events.
+                yield "event: analytics-changed\ndata: {}\n\n"
+                while not signal.is_set():
+                    try:
+                        await asyncio.wait_for(signal.wait(), 15)
+                    except TimeoutError:
+                        await anyio.to_thread.run_sync(self.authorize)
+                        yield ": keepalive\n\n"
+        except HTTPException:
+            return
+
+
+@router.get("/events", include_in_schema=False)
+async def analytics_publications(request: Request,
+        policy: RuntimePolicy = Depends(get_authenticated_account_session)):
+    account = account_bound_to_session(policy, None)
+    if request.url.query or request.headers.get("sec-fetch-site") not in (None, "same-origin"):
+        raise HTTPException(403, "Request is not authorized")
+
+    def authorize():
+        require_activated_runtime()
+        current = get_runtime_policy(request)
+        if current.identity != policy.identity or account_bound_to_session(current, None) != account:
+            raise HTTPException(401, "Session changed")
+
+    return AnalyticsPublicationResponse(account, authorize)
 
 
 def _timestamp(value: str | None) -> datetime | None:

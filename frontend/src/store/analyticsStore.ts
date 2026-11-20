@@ -1,7 +1,6 @@
 import { createStore, type StoreApi, useStore } from 'zustand';
 
 import { bridgeTransportStore, type BridgeTransportStore } from './transportStore';
-
 import {
   AnalyticsClientError,
   AnalyticsContractError,
@@ -13,6 +12,8 @@ import {
   type AnalyticsReadModel,
   type AnalyticsReadState,
 } from '../analytics';
+import { subscribeAnalyticsPublications, type SubscribePublications } from '../analytics/publicationEvents';
+
 
 interface AnalyticsStoreActions {
   activate(): Promise<void>;
@@ -30,6 +31,7 @@ export interface AnalyticsStoreState {
 interface AnalyticsStoreDependencies {
   fetchUpdate?: typeof fetchAnalyticsUpdate;
   source?: Pick<BridgeTransportStore, 'getState' | 'subscribe'>;
+  subscribePublications?: SubscribePublications;
 }
 
 const loadingState = (): AnalyticsReadState => ({
@@ -67,9 +69,14 @@ export function createAnalyticsStore(
   let activeRequest: AbortController | null = null;
   let requestSequence = 0;
   const source = dependencies.source ?? bridgeTransportStore;
+  const subscribePublications = dependencies.subscribePublications ?? subscribeAnalyticsPublications;
+  let closePublications: (() => void) | null = null;
+  let publicationScope = '';
+  let publicationSequence = 0;
   let unsubscribe: (() => void) | null = null;
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingInvalidation = false;
+  let pendingDelay = 1000;
   let retryCount = 0;
   let sourceKey = '';
   const currentSourceKey = () => {
@@ -136,13 +143,15 @@ export function createAnalyticsStore(
     };
 
     const scheduleRefresh = (delay = 1000) => {
+      pendingDelay = pendingInvalidation ? Math.min(pendingDelay, delay) : delay;
       pendingInvalidation = true;
       if (!active || activeRequest || refreshTimer !== null) return;
       refreshTimer = setTimeout(() => {
         refreshTimer = null;
         pendingInvalidation = false;
+        pendingDelay = 1000;
         void refresh();
-      }, delay);
+      }, pendingDelay);
     };
 
     const refresh = async (): Promise<void> => {
@@ -190,10 +199,47 @@ export function createAnalyticsStore(
       } finally {
         if (sequence === requestSequence) {
           activeRequest = null;
-          if (pendingInvalidation) scheduleRefresh();
+          if (pendingInvalidation) scheduleRefresh(pendingDelay);
           else if (get().state.status === 'building' && retryCount < 5) scheduleRefresh(2000 * 2 ** retryCount++);
         }
       }
+    };
+
+    const stopPublications = () => {
+      publicationSequence += 1;
+      closePublications?.();
+      closePublications = null;
+      publicationScope = '';
+    };
+
+    const reconcilePublications = () => {
+      const value = source.getState();
+      const scope = value.connection === 'connected' && value.creatorAccountId
+        ? JSON.stringify([value.creatorAccountId, value.session]) : '';
+      if (scope === publicationScope) return;
+      const previous = publicationScope;
+      stopPublications();
+      if (previous) {
+        if (refreshTimer !== null) clearTimeout(refreshTimer);
+        refreshTimer = null;
+        pendingInvalidation = false;
+        pendingDelay = 1000;
+        invalidate();
+        // Never retain an account's saved frame across a change of session.
+        if (scope) set({ state: loadingState() });
+      }
+      if (!scope) return;
+      publicationScope = scope;
+      const sequence = publicationSequence;
+      closePublications = subscribePublications(() => {
+        if (!active || sequence !== publicationSequence) return;
+        retryCount = 0;
+        // A commit notification supersedes the delayed safety read. Coalesce
+        // events during a read into exactly one following authoritative read.
+        if (refreshTimer !== null) clearTimeout(refreshTimer);
+        refreshTimer = null;
+        scheduleRefresh(0);
+      });
     };
 
     const actions: AnalyticsStoreActions = {
@@ -202,6 +248,7 @@ export function createAnalyticsStore(
         active = true;
         sourceKey = currentSourceKey();
         unsubscribe = source.subscribe(() => {
+          reconcilePublications();
           const next = currentSourceKey();
           if (!next) { sourceKey = ''; return; }
           if (next === sourceKey) return;
@@ -209,15 +256,18 @@ export function createAnalyticsStore(
           retryCount = 0;
           scheduleRefresh();
         });
+        reconcilePublications();
         set({ state: loadingState() });
         await refresh();
       },
       deactivate() {
         active = false;
         unsubscribe?.(); unsubscribe = null;
+        stopPublications();
         if (refreshTimer !== null) clearTimeout(refreshTimer);
         refreshTimer = null;
         pendingInvalidation = false;
+        pendingDelay = 1000;
         retryCount = 0;
         sourceKey = '';
         invalidate();

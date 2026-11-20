@@ -43,6 +43,7 @@
     "tests/test_analytics_packaged_qualification.py": 2,
     "tests/test_analytics_packaged_source_binding.py": 2,
     "tests/test_analytics_pipeline.py": 2,
+    "tests/test_analytics_publication_events.py": 1,
     "tests/test_analytics_qualification_profile.py": 2,
     "tests/test_analytics_qualification_storage.py": 2,
     "tests/test_analytics_query_endpoints.py": 3,
@@ -984,11 +985,12 @@
       "tests/test_webauthn_access_events.py": 0.6223025999993297
     },
     "expected_shard_seconds": {
-      "1": 1331.7,
+      "1": 1333.0,
       "2": 1348.4,
       "3": 1338.7
     },
     "unmeasured_files": [
+      "tests/test_analytics_publication_events.py",
       "tests/test_browser_task_waiting.py",
       "tests/test_desktop_idle.py",
       "tests/test_desktop_lifetimes.py",

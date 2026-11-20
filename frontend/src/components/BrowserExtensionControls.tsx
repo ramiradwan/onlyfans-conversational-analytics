@@ -1,25 +1,23 @@
 import PauseCircleOutlinedIcon from '@mui/icons-material/PauseCircleOutlined';
 import PlayCircleOutlinedIcon from '@mui/icons-material/PlayCircleOutlined';
-import { Box, Button, Stack } from '@mui/material';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Box, Button, Stack, Typography } from '@mui/material';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
-import { SettingRow } from './ui';
+import { Panel, SettingRow } from './ui';
 
+import { captureRecovery, recoveryClass } from '../../shared-setup/recovery.js';
 import type { BrowserSurfacePayload } from '../protocol';
 import {
-  BrowserControlApiError,
   type BrowserControlApi,
   type CaptureAction,
   type BrowserDestination,
 } from '../services/browserControlApi';
-import { desktopOnboardingApi, type DesktopOnboardingApi } from '../services/desktopOnboarding';
+import { captureOperation } from '../services/captureOperation';
+import { desktopOnboardingApi, selectCollectionContinuation, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import type { ExtensionConnection } from '../utils/statusCopy';
 import { StatusLine } from './ui/ReservedRegion';
 
-// How long to wait for the extension's pushed state before reporting no response.
-const RESPONSE_DEADLINE_MS = 10_000;
-
-type Notice = 'unreachable' | 'failed' | 'no_response' | null;
+type Notice = 'unreachable' | 'failed' | null;
 
 /**
  * Bridge owns day-to-day extension controls while an extension session is open
@@ -27,7 +25,7 @@ type Notice = 'unreachable' | 'failed' | 'no_response' | null;
  * changes it locally. Permission prompts open the extension's own page, because
  * the browser requires the click there.
  */
-export function BrowserExtensionControls({ api, browser, canManage, connection, onboarding = desktopOnboardingApi, onFeedback }: {
+export function BrowserExtensionControls({ api, browser, canManage, connection, onboarding = desktopOnboardingApi, onFeedback, continuationCreatorId, creatorAccountId }: {
   api: BrowserControlApi;
   browser: BrowserSurfacePayload | null;
   canManage: boolean;
@@ -36,56 +34,45 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   onboarding?: DesktopOnboardingApi;
   /** Settings combines its control, pairing and connection-list feedback. */
   onFeedback?: (text: string | null) => void;
+  /** A dashboard continuation, scoped to the current authenticated creator. */
+  continuationCreatorId?: string;
+  creatorAccountId?: string;
 }) {
-  useSyncExternalStore(onboarding.subscribe, onboarding.getState, onboarding.getState);
-  const [pending, setPending] = useState<CaptureAction | null>(null);
+  const desktop = useSyncExternalStore(onboarding.subscribe, onboarding.getState, onboarding.getState);
+  const continuation = continuationCreatorId !== undefined;
+  const snapshot = desktop.snapshot;
+  const { current: currentAuthority, reviewNeeded, paused: continuationPaused, reviewOperation, localReviewPending, canReview, canResume } =
+    selectCollectionContinuation(desktop, continuationCreatorId, browser, canManage);
+  const currentPresentation = () => {
+    const current = onboarding.getState();
+    return current.connected && current.snapshot === snapshot && current.pending === desktop.pending
+      && current.browserLaunchPending === desktop.browserLaunchPending;
+  };
+  const reviewInFlight = useRef(false);
+  const [openingReview, setOpeningReview] = useState(false);
+  const capture = useMemo(() => captureOperation(api, continuationCreatorId ?? creatorAccountId),
+    [api, continuationCreatorId, creatorAccountId]);
+  const pending = useSyncExternalStore(capture.subscribe, capture.getState, capture.getState);
+  const captureBlocked = pending !== null || Boolean(browser?.capture_control_supported && browser.capture_control?.capture !== browser.capture);
   const [notice, setNotice] = useState<Notice>(null);
   const operation = useRef<AbortController | null>(null);
   const controlAvailable = browser !== null;
 
   useEffect(() => () => operation.current?.abort(), []);
 
-  // The pushed state settles a pending request; nothing is inferred from delivery.
-  useEffect(() => {
-    if (pending === null || browser === null) return;
-    if ((pending === 'pause' && browser.capture === 'paused')
-      || (pending === 'resume' && browser.capture === 'active')) {
-      setPending(null);
-      setNotice(null);
-    }
-  }, [browser, pending]);
-
-  useEffect(() => {
-    if (pending === null) return;
-    const timer = setTimeout(() => {
-      setPending(null);
-      setNotice('no_response');
-    }, RESPONSE_DEADLINE_MS);
-    return () => clearTimeout(timer);
-  }, [pending]);
+  useEffect(() => { capture.observe(browser); }, [capture, browser]);
 
   const setCapture = async (action: CaptureAction) => {
-    if (!canManage || browser === null || (action === 'resume' && browser.legal_review_required)) return;
-    operation.current?.abort();
-    const controller = new AbortController();
-    operation.current = controller;
+    if (!canManage || browser === null || capture.getState() !== null
+      || (action === 'resume' && browser.legal_review_required)) return;
+    if (continuation && (!canResume || !currentPresentation() || action !== 'resume')) return;
     setNotice(null);
-    setPending(action);
-    try {
-      const delivery = await api.setCapture(action, controller.signal);
-      if (controller.signal.aborted) return;
-      if (delivery === 'unreachable') {
-        setPending(null);
-        setNotice('unreachable');
-      }
-    } catch (error) {
-      if (controller.signal.aborted || (error instanceof BrowserControlApiError && error.code === 'cancelled')) return;
-      setPending(null);
-      setNotice('failed');
-    }
+    await capture.submit(action, browser);
   };
 
   const open = async (destination: BrowserDestination) => {
+    if (continuation && (!canReview || !currentPresentation() || reviewInFlight.current)) return;
+    if (continuation) { reviewInFlight.current = true; setOpeningReview(true); }
     operation.current?.abort();
     const controller = new AbortController(); operation.current = controller;
     setNotice(null);
@@ -97,14 +84,23 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
       const result = await api.open(destination, controller.signal);
       if (!controller.signal.aborted && result === 'unreachable') setNotice('unreachable');
     } catch { if (!controller.signal.aborted) setNotice('failed'); }
+    finally {
+      if (continuation) {
+        reviewInFlight.current = false;
+        if (!controller.signal.aborted) setOpeningReview(false);
+      }
+    }
   };
   const openInExtension = (step: BrowserDestination, label: string) => (controlAvailable && canManage ? (
     <Button onClick={() => void open(step)} size="small" variant="outlined">{label}</Button>
   ) : undefined);
 
-  const feedbackText = browser === null || notice === null ? null : notice === 'unreachable' ? 'The browser extension is not connected right now.'
-            : notice === 'no_response' ? "The browser extension didn't confirm the change. Try again."
-              : 'The change was not confirmed.';
+  const captureFailure = recoveryClass(captureRecovery, pending?.status);
+  const feedbackText = browser === null ? null
+    : captureFailure === 'outcome_unknown' ? "Your change hasn't been confirmed."
+      : captureFailure === 'authorization_refused' ? "Dipsy couldn't change message collection."
+        : captureFailure === 'browser_disconnected' || notice === 'unreachable' ? 'The browser extension is not connected right now.'
+          : notice === 'failed' ? 'The change was not confirmed.' : null;
   useEffect(() => { onFeedback?.(feedbackText); }, [feedbackText, onFeedback]);
   useEffect(() => () => onFeedback?.(null), [onFeedback]);
   const feedback = onFeedback ? null : <StatusLine id="browser-feedback" tone="error" text={feedbackText} />;
@@ -112,6 +108,34 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   // The enclosing section owns one shared feedback region.
   const row = { minHeight: { xs: '6.5rem', sm: '4rem' }, alignItems: { xs: 'flex-start', sm: 'flex-start' }, '& > .MuiBox-root:last-of-type:not(:first-of-type)': { width: { sm: 200 }, '& button': { minHeight: 40 } } };
   const emptyAction = <Box aria-hidden sx={{ height: 40 }} />;
+  if (continuation) {
+    if (browser === null || !currentAuthority) return null;
+    if (!reviewNeeded && !continuationPaused) return null;
+    const title = browser.legal_review_required ? 'Allow message collection'
+      : browser.site_access !== 'granted' ? 'Allow OnlyFans access'
+        : browser.capture === 'off' ? 'Message collection is off' : 'Message collection is paused';
+    const description = browser.legal_review_required ? 'Review how Dipsy uses your messages in Chrome.'
+      : browser.site_access !== 'granted' ? 'Chrome needs your permission before Dipsy can collect messages.'
+        : browser.capture === 'off' ? 'Review collection options in Chrome.' : 'New messages are not being collected.';
+    const waiting = openingReview || desktop.browserLaunchPending || Boolean(reviewOperation) || localReviewPending;
+    const progress = openingReview || desktop.browserLaunchPending ? 'Opening Chrome…'
+      : reviewOperation?.state === 'outcome_unknown' || localReviewPending && desktop.error === 'operation_unconfirmed'
+        ? 'The browser review has not been confirmed.'
+        : reviewOperation ? 'Complete the review in Chrome.'
+          : localReviewPending ? 'Preparing browser review.' : null;
+    return <Panel component="section" emphasis="dominant" aria-labelledby="collection-review-title"
+      data-journey-state="desktop.message_collection_review">
+      <Typography component="h2" id="collection-review-title" variant="h5">{title}</Typography>
+      <Typography variant="body2" sx={{ color: 'text.secondary' }}>{description}</Typography>
+      {reviewNeeded && canReview && !waiting && <Button onClick={() => void open('setup')}
+        variant="contained" sx={{ alignSelf: 'flex-start' }}>Review in Chrome</Button>}
+      {continuationPaused && canResume && !waiting && <Button onClick={() => void setCapture('resume')}
+        disabled={captureBlocked} variant="contained" sx={{ alignSelf: 'flex-start' }}>
+        {pending?.status === 'waiting' && pending.action === 'resume' ? 'Resuming…' : 'Resume collecting'}</Button>}
+      {(progress || feedbackText) && <StatusLine id="collection-review-feedback" essential
+        text={feedbackText ?? progress} tone={feedbackText ? 'error' : 'secondary'} />}
+    </Panel>;
+  }
   if (browser === null) {
     return <Stack spacing={1.5} useFlexGap sx={{ minWidth: 0 }} data-browser-controls="waiting">
       <SettingRow sx={row} title="New messages" description={connection === 'connected'
@@ -127,13 +151,13 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
 
   const captureButton = canManage && captureAction !== null && !resumeNeedsReview ? (
     <Button
-      disabled={pending !== null}
+      disabled={captureBlocked}
       onClick={() => void setCapture(captureAction)}
       size="small"
       startIcon={captureAction === 'pause' ? <PauseCircleOutlinedIcon /> : <PlayCircleOutlinedIcon />}
       variant="outlined"
     >
-      {pending === 'pause' ? 'Pausing…' : pending === 'resume' ? 'Resuming…'
+      {pending?.status === 'waiting' && pending.action === 'pause' ? 'Pausing…' : pending?.status === 'waiting' && pending.action === 'resume' ? 'Resuming…'
         : captureAction === 'pause' ? 'Pause collecting' : 'Resume collecting'}
     </Button>
   ) : resumeNeedsReview ? openInExtension('setup', 'Review terms') : undefined;

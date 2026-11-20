@@ -77,8 +77,8 @@ describe('capability license customer API', () => {
   });
 
   it.each([
-    [410, 'expired'],
-    [404, "wasn't recognized"],
+    [410, "Activation couldn't be confirmed."],
+    [404, "Activation couldn't be confirmed."],
     [403, 'could not be verified'],
     [409, "couldn't be finished with this code"],
     [503, "Activation couldn't be confirmed."],
@@ -107,4 +107,32 @@ describe('capability license customer API', () => {
     await expect(api.redeem(CONTINUATION)).rejects.toThrow(message);
     await expect(api.redeem(CONTINUATION)).rejects.not.toThrow(detail);
   });
+});
+
+it.each([
+  [410, 'redemption_expired', 'refused'],
+  [409, 'redemption_conflict', 'refused'],
+  [403, 'redemption_mismatch', 'refused'],
+  [503, 'hosted_unavailable', 'unknown'],
+  [503, 'installation_key_unavailable', 'unknown'],
+  [409, 'unrecognized', 'unknown'],
+  [404, 'unrecognized', 'unknown'],
+  [410, 'unrecognized', 'unknown'],
+  [403, 'unrecognized', 'unknown'],
+])('classifies code response %i %s without assuming acceptance', async (status, detail, outcome) => {
+  const api = createCapabilityLicenseApi({
+    fetch: vi.fn(async () => jsonResponse({ detail }, status)) as unknown as typeof fetch,
+    getCsrfToken: () => 'csrf-token',
+  });
+  await expect(api.redeem(CONTINUATION)).rejects.toMatchObject({ outcome });
+});
+
+it('classifies a lost reply as unknown and a missing token as not sent', async () => {
+  const request = vi.fn(async () => { throw new TypeError('network'); });
+  const api = createCapabilityLicenseApi({ fetch: request as unknown as typeof fetch, getCsrfToken: () => 'token' });
+  await expect(api.redeem(CONTINUATION)).rejects.toMatchObject({ outcome: 'unknown' });
+  expect(request).toHaveBeenCalledOnce();
+  const unadmitted = createCapabilityLicenseApi({ fetch: request as unknown as typeof fetch, getCsrfToken: () => null });
+  await expect(unadmitted.redeem(CONTINUATION)).rejects.toMatchObject({ outcome: 'not_sent' });
+  expect(request).toHaveBeenCalledOnce();
 });

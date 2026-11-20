@@ -260,6 +260,27 @@ class PresenceStatePayload(StrictModel):
     last_observation: LastPresenceObservation | None
 
 
+class FullPresentationIntent(StrictModel):
+    request_id: UUID
+    journey_id: UUID
+    disclosure_bundle_id: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+
+class CaptureControlReceipt(StrictModel):
+    operation_id: UUID
+    action: Literal["pause", "resume"]
+    previous_consent_epoch: UUID
+    outcome: Literal["applied", "refused"]
+
+
+class CaptureControlStatus(StrictModel):
+    owner_scope: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    consent_epoch: UUID
+    policy_revision: Annotated[str, Field(pattern=r"^[0-9]{1,10}$")]
+    capture: Literal["active", "paused"]
+    receipt: CaptureControlReceipt | None
+
+
 class BrowserSurfacePayload(StrictModel):
     """The browser extension's own state, as its authenticated session last reported it."""
 
@@ -270,6 +291,9 @@ class BrowserSurfacePayload(StrictModel):
     reported_at: Timestamp
     history_error_code: Literal["identity_required", "unsupported_revision", "history_unavailable", "history_dependency_wait", "software_update_required"] | None = Field(
         default=None, exclude_if=lambda value: value is None)
+    full_intent: FullPresentationIntent | None = Field(default=None, exclude_if=lambda value: value is None)
+    capture_control: CaptureControlStatus | None = Field(default=None, exclude_if=lambda value: value is None)
+    capture_control_supported: Literal[True] | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class AgentStatePayload(StrictModel):

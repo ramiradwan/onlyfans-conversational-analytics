@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import re
 from contextlib import suppress
 from uuid import UUID
 
@@ -119,7 +120,7 @@ class SessionRPC:
     METHODS = frozenset({
         "agent.challenge", "agent.authenticate", "capture.state.report",
         "history.check.begin", "agent.analysis.readiness", "agent.config.get",
-        "agent.storage.unseal", "agent.storage.rotate", "agent.surface.report",
+        "agent.storage.unseal", "agent.storage.rotate", "agent.surface.report", "agent.presentation.intent", "agent.capture-control.status",
         "agent.browser-task.report", "agent.browser-task.capabilities",
         "agent.browser-task.waiting", "agent.signing-rule.resolve",
     })
@@ -324,6 +325,53 @@ def browser_surface(params) -> dict:
     return {key: params[key] for key in _SURFACE_FIELDS if key != "schema"}
 
 
+def full_presentation_intent(params) -> dict | None:
+    """Only a presentation request, no account, consent or authorization input."""
+    _exact(params, ("full_intent",))
+    intent = params["full_intent"]
+    if intent is None:
+        return None
+    _exact(intent, ("request_id", "journey_id", "disclosure_bundle_id"))
+    try:
+        for key in ("request_id", "journey_id"):
+            value = intent[key]
+            if not isinstance(value, str) or str(UUID(value, version=4)) != value:
+                raise CompanionRecordError()
+        if not isinstance(intent["disclosure_bundle_id"], str) or not re.fullmatch(
+                r"[a-f0-9]{64}", intent["disclosure_bundle_id"]):
+            raise CompanionRecordError()
+    except (TypeError, ValueError):
+        raise CompanionRecordError() from None
+    return dict(intent)
+
+
+def capture_control_status(params) -> dict | None:
+    _exact(params, ("status",))
+    status = params["status"]
+    if status is None:
+        return None
+    _exact(status, ("owner_scope", "consent_epoch", "policy_revision", "capture", "receipt"))
+    def valid_uuid(value):
+        return isinstance(value, str) and re.fullmatch(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", value) is not None
+    if (not isinstance(status["owner_scope"], str) or not re.fullmatch(r"[0-9a-f]{64}", status["owner_scope"])
+        or not valid_uuid(status["consent_epoch"]) or not isinstance(status["policy_revision"], str)
+        or not re.fullmatch(r"[0-9]{1,10}", status["policy_revision"])
+        or status["capture"] not in ("active", "paused")):
+        raise CompanionRecordError()
+    receipt = status["receipt"]
+    if receipt is not None:
+        _exact(receipt, ("operation_id", "action", "previous_consent_epoch", "outcome"))
+        if (not valid_uuid(receipt["operation_id"]) or not valid_uuid(receipt["previous_consent_epoch"])
+            or receipt["action"] not in ("pause", "resume") or receipt["outcome"] not in ("applied", "refused")):
+            raise CompanionRecordError()
+        applied = receipt["outcome"] == "applied"
+        if (applied == (receipt["previous_consent_epoch"] == status["consent_epoch"])
+            or (applied and status["capture"] != ("paused" if receipt["action"] == "pause" else "active"))):
+            raise CompanionRecordError()
+    return dict(status)
+
+
 class BrowserSessionLink:
     """Admit an authenticated session for browser status reports and controls."""
 
@@ -357,6 +405,33 @@ class BrowserSessionLink:
             or identity.creator_account_id != self.pin.creator_account_id
         ):
             raise CompanionRecordError()
+
+    async def presentation_intent(self, params):
+        await self.authorized()
+        if self.token is None:
+            raise CompanionRecordError()
+        await self.manager.record_browser_intent(
+            self.pin.creator_account_id, self.token, full_presentation_intent(params))
+        return {}
+
+    async def capture_status(self, params):
+        await self.authorized()
+        if isinstance(params, dict) and "surface" in params:
+            _exact(params, ("surface", "status"))
+            surface = browser_surface(params["surface"])
+            status = capture_control_status({"status": params["status"]})
+            if self.token is None:
+                self.token = self.manager.register_browser_session(
+                    self.pin.creator_account_id, encode_pairing_id(self.pin.pairing_id), self.channel.send
+                )
+            await self.manager.record_browser_surface(self.pin.creator_account_id, self.token, surface,
+                capture_control_supported=True, capture_control=status)
+        else:
+            if self.token is None:
+                raise CompanionRecordError()
+            await self.manager.record_capture_control_status(
+                self.pin.creator_account_id, self.token, capture_control_status(params))
+        return {}
 
     async def task_report(self, params):
         await self.authorized()
@@ -429,6 +504,10 @@ async def _serve(channel, pin):
                 async with asyncio.timeout(10):
                     if value["method"] == "agent.surface.report":
                         result = await browser.report(value["params"])
+                    elif value["method"] == "agent.presentation.intent":
+                        result = await browser.presentation_intent(value["params"])
+                    elif value["method"] == "agent.capture-control.status":
+                        result = await browser.capture_status(value["params"])
                     elif value["method"] == "agent.signing-rule.resolve":
                         result = await rpc.resolve_signing_parameters(value["params"])
                     elif value["method"] == "agent.browser-task.report":

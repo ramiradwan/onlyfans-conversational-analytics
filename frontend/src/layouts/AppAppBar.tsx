@@ -7,8 +7,8 @@ import { FreshnessStatus } from '@/components/ui/FreshnessStatus';
 import { componentTokens } from '@/theme';
 import { connectionGrace } from '@/utils/connectionGrace';
 import { coverageProgressLabel } from '@/utils/dataReadiness';
-import { freshnessRows, presentFreshness, viewerTimeZone } from '@/utils/freshnessPresentation';
-import { protocolErrorText } from '@/utils/statusCopy';
+import { collectionRestriction, freshnessRows, presentFreshness, viewerTimeZone, type FreshnessPresentation } from '@/utils/freshnessPresentation';
+import { extensionConnection, protocolErrorText } from '@/utils/statusCopy';
 import { bridgeTransportStore, type BridgeTransportState } from '@store/transportStore';
 
 import { BRAND_INSET, BrandMark } from './BrandMark';
@@ -18,11 +18,34 @@ import { DesktopWindowControls, hasDesktopWindowControls } from './DesktopWindow
 const { dotSize, iconGutter, paddingInline } = componentTokens.FreshnessStatus;
 const STATUS_GLYPH_INSET = paddingInline + (iconGutter - dotSize) / 2;
 
+function appBarFreshness(state: Readonly<BridgeTransportState>): FreshnessPresentation {
+  const input = { freshness: state.catchupFreshness, bridge: state.connection,
+    snapshotUsable: state.viewRevision !== null && state.readModelState === 'realtime', now: new Date(), timeZone: viewerTimeZone() };
+  if (state.protocolError?.fatal) return { label: 'Action needed', title: 'Action needed', sentence: protocolErrorText(state.protocolError),
+    icon: 'dot', tone: 'error', action: { label: 'Reload page', destination: 'reload' } };
+  // A saved catch-up result describes past observation. Current, account-
+  // matched collection restrictions take precedence over a settled result.
+  const agent = state.agent;
+  const browser = input.bridge === 'connected' && input.snapshotUsable && state.creatorAccountId
+    && agent?.creator_account_id === state.creatorAccountId && extensionConnection(agent) === 'connected' ? agent.browser : null;
+  if (browser) {
+    if (browser.legal_review_required) return {
+      label: 'Collection consent needed', title: 'Consent needed', sentence: 'Review the updated terms to resume collection.',
+      icon: 'dot', tone: 'attention', action: { label: 'Open settings', destination: 'settings' },
+    };
+    if (browser.site_access !== 'granted') return {
+      label: 'Needs attention', title: 'Site access', sentence: 'Site access needs attention.',
+      icon: 'dot', tone: 'attention', action: { label: 'Open settings', destination: 'settings' },
+    };
+    const reason = browser.capture === 'off' ? 'capture_off' : browser.capture === 'paused' ? 'user_paused' : null;
+    if (reason) return collectionRestriction(reason);
+  }
+  return presentFreshness(input);
+}
+
 export function getStatusPresentation(state: Readonly<BridgeTransportState>) {
-  if (state.protocolError?.fatal) return { label: 'Action needed', detail: protocolErrorText(state.protocolError), color: 'error' as const };
-  const presentation = presentFreshness({ freshness: state.catchupFreshness, bridge: state.connection,
-    snapshotUsable: state.viewRevision !== null && state.readModelState === 'realtime', now: new Date(), timeZone: viewerTimeZone() });
-  return { label: presentation.label, detail: presentation.sentence, color: presentation.tone === 'settled' ? 'success' as const : 'warning' as const };
+  const presentation = appBarFreshness(state);
+  return { label: presentation.label, detail: presentation.sentence, color: presentation.tone === 'error' ? 'error' as const : presentation.tone === 'settled' ? 'success' as const : 'warning' as const };
 }
 
 export function getStatusRows(state: Readonly<BridgeTransportState>) {
@@ -34,7 +57,7 @@ export function AppAppBar({ headerHeight = componentTokens.shell.headerHeight, o
   const state = useSyncExternalStore(bridgeTransportStore.subscribe, bridgeTransportStore.getState);
   const phase = useSyncExternalStore(connectionGrace.subscribe, connectionGrace.getSnapshot);
   const slot = <FreshnessStatus freshness={state.catchupFreshness} bridge={state.connection} snapshotUsable={state.viewRevision !== null && state.readModelState === 'realtime'}
-    override={state.protocolError?.fatal ? { label: 'Action needed', title: 'Action needed', sentence: protocolErrorText(state.protocolError), icon: 'dot', tone: 'error', action: { label: 'Reload page', destination: 'reload' } } : undefined} />;
+    override={appBarFreshness(state)} />;
   return <>
     <AppBar component="header" position="fixed" color="inherit" elevation={0} sx={(theme) => ({ ...theme.effects.headerBorder(theme), bgcolor: 'background.default', color: 'text.primary',
       height: { xs: headerHeight + componentTokens.FreshnessStatus.narrowRowHeight, [statusBreakpoint]: headerHeight } })}>

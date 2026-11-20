@@ -7,6 +7,7 @@ vi.mock('../onboarding/client.js', () => ({
     session = { stage: 'runtime' };
     connect = vi.fn();
     act = vi.fn();
+    launchBrowser = vi.fn();
     stop = vi.fn();
     constructor(options) { Object.assign(this, options); owners.client = this; }
   },
@@ -20,7 +21,7 @@ vi.mock('../onboarding/enrollment.js', () => ({
     constructor(options) { Object.assign(this, options); owners.enrollment = this; }
   },
 }));
-vi.mock('../onboarding/browser-task.js', () => ({ openBrowserTask: vi.fn(), openSetupCode: vi.fn() }));
+vi.mock('../onboarding/browser-task.js', async importOriginal => ({ ...await importOriginal(), openBrowserTask: vi.fn(), openSetupCode: vi.fn() }));
 
 const ready = () => ({ next_task: 'complete', local_ready: true, full_ready: false,
   facts: { installation: 'verified' }, allowed_actions: [], pending_operations: [], reason: 'none' });
@@ -117,6 +118,51 @@ it('continues with unresolved optional activation without creating or reconcilin
   expect(owners.client.act).not.toHaveBeenCalled();
 });
 
+it('waits for a new authenticated snapshot before offering the explicit extension connection', async () => {
+  const snapshot = { ...ready(), next_task: 'finish-setup', local_ready: false, allowed_actions: ['browser.pair'] };
+  const button = document.getElementById('task-action');
+  publish(snapshot);
+  expect(button.hidden).toBe(true);
+  button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  expect(owners.client.act).not.toHaveBeenCalled();
+  owners.enrollment.refresh();
+  authenticate();
+  expect(button.hidden).toBe(true);
+  button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  expect(owners.client.act).not.toHaveBeenCalled();
+  publish(snapshot);
+  expect(button.hidden).toBe(false);
+  expect(button.textContent).toBe('Connect extension');
+  expect(owners.client.act).not.toHaveBeenCalled();
+  button.click();
+  await Promise.resolve();
+  expect(owners.client.act).toHaveBeenCalledExactlyOnceWith('browser.pair', undefined);
+});
+it('does not navigate from the old setup snapshot while authenticated status is being refreshed', () => {
+  publish();
+  owners.enrollment.refresh();
+  authenticate();
+  expect(replace).not.toHaveBeenCalled();
+  publish();
+  expect(replace).toHaveBeenCalledExactlyOnceWith('/');
+});
+it('opens the exact operation rendered on the current browser recovery button', async () => {
+  owners.client.session.stage = 'setup';
+  const selected = '22222222-2222-4222-8222-222222222222';
+  const other = '33333333-3333-4333-8333-333333333333';
+  publish({ ...ready(), next_task: 'browser-access', local_ready: false, pending_operations: [
+    { operation_id: other, action: 'activation.review', state: 'waiting', reason: 'none' },
+    { operation_id: selected, action: 'browser.access', state: 'waiting', reason: 'none' },
+  ] }, { pending: other });
+  const button = document.getElementById('browser-reopen');
+  expect(button.hidden).toBe(false);
+  button.click();
+  await Promise.resolve();
+  expect(owners.client.launchBrowser).toHaveBeenCalledExactlyOnceWith(true, selected);
+  publish({ ...ready(), next_task: 'browser-access', local_ready: false });
+  button.click();
+  expect(owners.client.launchBrowser).toHaveBeenCalledOnce();
+});
 it('ignores late completion after the setup page has closed', () => {
   publish();
   window.dispatchEvent(new Event('pagehide'));

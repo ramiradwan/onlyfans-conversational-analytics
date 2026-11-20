@@ -86,7 +86,7 @@ export function dynamicSequence(view, width) {
   for (const policy of ['disabled', 'finite', 'indefinite_until_delete']) for (const capable of [false, true]) for (const deletion of [null, 'pending', 'incomplete', 'complete']) add(`fixture-api:vault:${policy}:${capable}:${deletion}`);
   add('archive:open', 'archive:invalid', 'archive:indefinite', 'archive:cancel', 'delete:open', 'delete:pending', 'delete:error');
   for (const state of ['selection', 'waiting', 'review', 'uncertain', 'accepted', 'unavailable']) add('activation:' + state);
-  for (const outcome of ['refusal', 'network', 'success']) for (const stage of ['open', 'pending', 'response', 'readiness']) add(`redemption:${outcome}:${stage}`);
+  for (const outcome of ['unconfirmed', 'network', 'success']) for (const stage of ['open', 'pending', 'response', 'readiness']) add(`redemption:${outcome}:${stage}`);
   for (const outcome of ['failure', 'success']) { add(`export:${outcome}:pending`, `export:${outcome}:response`); for (const stage of ['open', 'pending', 'response']) add(`deletion:${outcome}:${stage}`); }
   add('pairing:open', 'pairing:pending', 'pairing:before-expiry', 'pairing:expired');
   for (const outcome of ['declined', 'cancelled', 'confirmed', 'refused']) add(`pairing:${outcome}:start`, `pairing:${outcome}:comparison`, `pairing:${outcome}:${['confirmed', 'refused'].includes(outcome) ? 'confirmation' : 'action'}`, `pairing:${outcome}:result`);

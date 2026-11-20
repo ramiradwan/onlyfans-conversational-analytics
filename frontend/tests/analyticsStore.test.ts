@@ -67,6 +67,67 @@ it('refreshes after reconnect even when the canonical revision is unchanged', as
   store.getState().actions.deactivate();
 });
 
+it('reloads saved analytics on publication with no conversation revision change and coalesces overlapping notices', async () => {
+  vi.useFakeTimers();
+  const source = createBridgeTransportStore();
+  source.bindAccount('creator-1'); source.setConnection('connected');
+  const close = vi.fn();
+  let changed!: () => void;
+  const subscribePublications = vi.fn((listener: () => void) => { changed = listener; return close; });
+  const pending = deferred<AnalyticsUpdateDocument>();
+  const original = analyticsUpdateFixture();
+  const newer = JSON.parse(JSON.stringify(original), (key, value) =>
+    key === 'projection_generation' ? value + 1 : value) as AnalyticsUpdateDocument;
+  const fetchUpdate = vi.fn().mockResolvedValueOnce(analyticsUpdateFixture()).mockReturnValueOnce(pending.promise)
+    .mockResolvedValue(newer);
+  const store = createAnalyticsStore({ source, fetchUpdate, subscribePublications });
+  await store.getState().actions.activate();
+  const revision = source.getState().projection.canonical_revision;
+  changed(); changed(); changed();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(fetchUpdate).toHaveBeenCalledTimes(2);
+  changed(); changed();
+  pending.resolve(analyticsUpdateFixture());
+  await vi.advanceTimersByTimeAsync(0);
+  // Some fake timers defer a zero-delay task scheduled during a tick to the next millisecond.
+  await vi.advanceTimersByTimeAsync(1);
+  expect(fetchUpdate).toHaveBeenCalledTimes(3);
+  expect(source.getState().projection.canonical_revision).toBe(revision);
+  expect(store.getState().state.data?.projectionGeneration).toBe(newer.projection_generation);
+  store.getState().actions.deactivate();
+  changed();
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(close).toHaveBeenCalledOnce();
+  expect(fetchUpdate).toHaveBeenCalledTimes(3);
+});
+
+it('retires old publication callbacks and reads on disconnect before reopening for the current account', async () => {
+  vi.useFakeTimers();
+  const source = createBridgeTransportStore();
+  source.bindAccount('creator-1'); source.setConnection('connected');
+  const listeners: (() => void)[] = [], closes: ReturnType<typeof vi.fn>[] = [];
+  const subscribePublications = (listener: () => void) => { listeners.push(listener); const close = vi.fn(); closes.push(close); return close; };
+  const pending = deferred<AnalyticsUpdateDocument>();
+  const fetchUpdate = vi.fn().mockResolvedValueOnce(analyticsUpdateFixture()).mockReturnValueOnce(pending.promise)
+    .mockResolvedValue(analyticsUpdateFixture());
+  const store = createAnalyticsStore({ source, fetchUpdate, subscribePublications });
+  await store.getState().actions.activate();
+  listeners[0](); await vi.advanceTimersByTimeAsync(0);
+  expect(fetchUpdate).toHaveBeenCalledTimes(2);
+  source.setConnection('disconnected');
+  expect(closes[0]).toHaveBeenCalledOnce();
+  expect(fetchUpdate.mock.calls[1][0].signal.aborted).toBe(true);
+  source.bindAccount('creator-2'); source.setConnection('connected');
+  listeners[0](); pending.resolve(analyticsUpdateFixture());
+  await vi.advanceTimersByTimeAsync(10);
+  expect(fetchUpdate).toHaveBeenCalledTimes(2);
+  expect(listeners).toHaveLength(2);
+  listeners[1](); await vi.advanceTimersByTimeAsync(0);
+  expect(fetchUpdate).toHaveBeenCalledTimes(3);
+  store.getState().actions.deactivate();
+  expect(closes[1]).toHaveBeenCalledOnce();
+});
+
 function baseline(document: AnalyticsUpdateDocument): AnalyticsUpdateDocument {
   const result = structuredClone(document);
   result.analyzer_provenance.forEach((item) => {

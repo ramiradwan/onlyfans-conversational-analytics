@@ -27,15 +27,17 @@
     <main class="setup-main" data-journey-state="desktop.setup_loading">
       <nav aria-label="Setup progress">
         <ol class="setup-steps">
-          <li data-step="browser-access"><span>1</span>Browser access</li>
-          <li data-step="account-connection"><span>2</span>Account connection</li>
-          <li data-step="finish-setup"><span>3</span>Finish setup</li>
+          <li data-step="browser-access"><span class="setup-step-badge">1</span><span class="setup-step-label" data-label="Browser access">Browser access</span></li>
+          <li data-step="account-connection"><span class="setup-step-badge">2</span><span class="setup-step-label" data-label="Account connection">Account connection</span></li>
+          <li data-step="finish-setup"><span class="setup-step-badge">3</span><span class="setup-step-label" data-label="Finish setup">Finish setup</span></li>
         </ol>
       </nav>
-      <section class="setup-card" aria-labelledby="task-title">
+      <section class="setup-card setup-task-card" aria-labelledby="task-title" data-reserved-region="desktop-task-card">
         <p class="setup-eyebrow" id="task-step">Desktop setup</p>
-        <h1 id="task-title" tabindex="-1">Loading setup</h1>
-        <p id="task-description">Reading local setup status…</p>
+        <h1 data-region-content id="task-title" tabindex="-1">Loading setup</h1>
+        <p data-region-content id="task-description">Reading local setup status…</p>
+        <p data-reserved-region="desktop-task-status" class="task-status" id="task-status" role="status" aria-live="polite"></p>
+        <div class="task-actions-slot" data-reserved-region="desktop-task-actions"><div data-region-content>
         <div id="sign-in-options" class="provider-choices" role="group" aria-label="Sign-in options" hidden>
           <button class="provider-button" type="button" data-provider="google" aria-describedby="task-description task-status">
             <img src="../shared-setup/providers/google.png" alt="" width="20" height="20"><span>Continue with Google</span>
@@ -72,13 +74,11 @@
         <section id="local-access" aria-labelledby="local-access-title" data-journey-state="desktop.setup_local_access" hidden>
           <h2 id="local-access-title">Access on this computer</h2>
           <p id="local-access-description">Use a passkey to sign in on this computer.</p>
-          <p id="local-auth-status" role="status" aria-live="polite"></p>
+          <p class="task-status" id="local-auth-status" role="status" aria-live="polite"></p>
           <div class="setup-actions">
-            <button id="local-authenticate" type="button" aria-describedby="local-auth-status" hidden>Set up access</button>
-            <button id="local-auth-retry" type="button" class="secondary" hidden>Try again</button>
+            <button id="local-authenticate" type="button" aria-describedby="local-access-description local-auth-status" hidden>Set up passkey</button>
           </div>
         </section>
-        <p id="task-status" role="status" aria-live="polite"></p>
         <div class="setup-actions">
           <button id="task-action" type="button" aria-describedby="task-description task-status" hidden></button>
           <button id="browser-reopen" class="secondary" type="button" aria-describedby="task-status" hidden>Open Chrome</button>
@@ -89,6 +89,7 @@
         <div class="setup-actions">
           <button id="setup-code-open" type="button" class="secondary" hidden>I have a setup code</button>
         </div>
+        </div></div>
       </section>
     </main>
     <script type="module" src="./main.js"></script>

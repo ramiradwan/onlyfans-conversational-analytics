@@ -6,27 +6,34 @@ import {
   Typography,
 } from '@mui/material';
 import { useId, useState, useSyncExternalStore } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 
+import { BrowserExtensionControls } from '../components/BrowserExtensionControls';
 import { CommercialActivationControls } from '../components/CommercialActivationControls';
 import { DashboardOverview, type OverviewProgress } from '../components/dashboard/DashboardOverview';
 import { RecentConversations } from '../components/dashboard/RecentConversations';
-import { OnboardingEmptyActivity } from '../components/OnboardingEmptyActivity';
+import { MessageHistoryControls } from '../components/MessageHistoryControls';
+import { DashboardConnection, OnboardingEmptyActivity } from '../components/OnboardingEmptyActivity';
 import { SetupPrompt } from '../components/SetupPrompt';
 import { LoadingFrame, ReservedRegion, StatusLine } from '../components/ui/ReservedRegion';
 import { usePermissions } from '../hooks/usePermissions';
 import type { AnalyticsMetric, HistoricalCoverage } from '../protocol';
+import { browserControlApi, type BrowserControlApi } from '../services/browserControlApi';
 import {
   capabilityLicenseApi,
   type CapabilityLicenseApi,
 } from '../services/capabilityLicenseApi';
-import { desktopOnboardingApi, selectAnalysisReadiness, type DesktopOnboardingApi } from '../services/desktopOnboarding';
+import { desktopOnboardingApi, selectAnalysisReadiness, selectCollectionContinuation, selectFullPresentationIntent, type DesktopOnboardingApi } from '../services/desktopOnboarding';
+import type { HistorySettingsApi } from '../services/historySettingsApi';
 import {
   bridgeTransportStore,
   type BridgeTransportState,
+  type BridgeTransportStore,
 } from '../store/transportStore';
 import { componentTokens, effectTokens } from '../theme/generated/tokens';
 import {
   coverageProgressLabel,
+  coverageProgressPercent,
   formatAdditiveMetric,
   humanizeCoverageReason,
   humanizeProjectionReason,
@@ -98,6 +105,9 @@ interface CreatorDashboardViewProps {
   store?: CreatorDashboardStore;
   activationApi?: CapabilityLicenseApi;
   onboardingApi?: DesktopOnboardingApi;
+  browserApi?: BrowserControlApi;
+  historyApi?: HistorySettingsApi;
+  historyStore?: BridgeTransportStore;
 }
 
 function getIssue(
@@ -194,14 +204,7 @@ function historyProgress(coverage: HistoricalCoverage): OverviewProgress | null 
   if (coverage.status === 'complete') return { label: coverageProgressLabel(coverage), percent: 100, complete: true };
   if (coverage.phase === 'not_started') return null;
   if (coverage.phase === 'paused' || coverage.phase === 'blocked') return null;
-  const discovered = coverage.discovered_conversations;
-  return {
-    label: coverageProgressLabel(coverage),
-    percent:
-      discovered && discovered > 0
-        ? Math.min(100, (coverage.complete_conversations / discovered) * 100)
-        : null,
-  };
+  return { label: coverageProgressLabel(coverage), percent: coverageProgressPercent(coverage) };
 }
 
 function directionSplit(
@@ -210,7 +213,9 @@ function directionSplit(
   readiness: DataReadiness,
 ): { received: number; sent: number } | null {
   if (readiness.projection.status !== 'current') return null;
-  if (typeof inbound?.value !== 'number' || typeof outbound?.value !== 'number') return null;
+  if (typeof inbound?.value !== 'number' || typeof outbound?.value !== 'number'
+    || inbound.projection_revision !== readiness.projection.projected_revision
+    || outbound.projection_revision !== readiness.projection.projected_revision) return null;
   return { received: inbound.value, sent: outbound.value };
 }
 
@@ -320,9 +325,12 @@ export default function CreatorDashboardView({
   store = bridgeTransportStore,
   activationApi = capabilityLicenseApi,
   onboardingApi = desktopOnboardingApi,
+  browserApi = browserControlApi,
+  historyApi,
+  historyStore = bridgeTransportStore,
 }: CreatorDashboardViewProps) {
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
-  const { canViewInbox } = usePermissions();
+  const { canViewInbox, canManageHistorySync } = usePermissions();
   const desktop = useSyncExternalStore(onboardingApi.subscribe, onboardingApi.getState, onboardingApi.getState);
   const analysis = selectAnalysisReadiness(desktop, state.creatorAccountId);
   const fullAnalyticsReady = analysis.checking ? undefined : analysis.value === null ? null
@@ -347,23 +355,67 @@ export default function CreatorDashboardView({
   const format = (metric: AnalyticsMetric | null | undefined) =>
     formatAdditiveMetric(metric, readiness, (value) => Number(value) > 9_999_999 ? '10M+' : NUMBER_FORMAT.format(value)).replace(/\+\+$/, '+');
   const issue = getIssue(state, hasSnapshot && metrics.some((metric) => format(metric) !== '—'));
-  const showSetup = hasSnapshot && fullAnalyticsReady !== undefined
-    && (extensionConnection(state.agent) !== 'connected' || fullAnalyticsReady !== true);
+  const agent = state.agent as BridgeTransportState['agent'];
+  const connection = extensionConnection(agent);
+  const browser = connection === 'connected' && state.connection === 'connected'
+    && agent?.creator_account_id === state.creatorAccountId ? agent?.browser ?? null : null;
+  // The current browser owner can admit collection before commercial activation.
+  // A reported off state is not Full intent or consent; review remains explicit.
+  const collection = selectCollectionContinuation(desktop, state.creatorAccountId, browser, canManageHistorySync);
+  const activationInProgress = analysis.availability === 'current' && Boolean(
+    desktop.pending && (desktop.pendingAction?.startsWith('activation.') || desktop.pendingAction?.startsWith('auth.'))
+    || desktop.snapshot?.pending_operations.some(operation => operation.action.startsWith('activation.')
+      || operation.action.startsWith('auth.'))
+      || desktop.snapshot?.decision?.action === 'activate-complimentary' && analysis.value?.commercial_authority !== 'active'
+      || desktop.snapshot?.decision_status?.state === 'accepted' && analysis.value?.commercial_authority !== 'active');
+  const collectionReview = collection.current && !activationInProgress && state.creatorAccountId && browser
+    && (collection.reviewNeeded || collection.paused) && (collection.actionable || fullAnalyticsReady === true)
+    ? <BrowserExtensionControls key={state.creatorAccountId} browser={browser} api={browserApi}
+      onboarding={onboardingApi} connection={connection} canManage={canManageHistorySync}
+      continuationCreatorId={state.creatorAccountId} /> : null;
+  const fullIntent = canManageHistorySync ? selectFullPresentationIntent(desktop, state.creatorAccountId, browser) : undefined;
+  const activationAdmitted = analysis.availability === 'current' && desktop.snapshot?.local_ready
+    && desktop.snapshot.allowed_actions.includes('activation.review');
+  const showCommercial = fullAnalyticsReady !== true && (connection === 'connected' || activationAdmitted || activationInProgress);
+  const showSetup = !collectionReview && hasSnapshot && fullAnalyticsReady !== undefined
+    && (connection !== 'connected' || fullAnalyticsReady !== true);
 
-  const evidence = summarizeMetricEvidence(metrics);
+  const historyScope = fullAnalyticsReady === true && analysis.availability === 'current'
+    && canManageHistorySync && state.creatorAccountId && browser?.capture === 'active'
+    && browser.site_access === 'granted' && !browser.legal_review_required
+    && desktop.snapshot?.journey_id && desktop.snapshot.generation
+    ? JSON.stringify([state.creatorAccountId, desktop.snapshot.journey_id]) : null;
+  const visibleMetrics = metrics.filter(metric => metric?.value !== null && metric?.value !== undefined
+    && metric.projection_revision === readiness.projection.projected_revision
+    && readiness.projection.status === 'current');
+  const historyEligible = historyScope !== null && !collectionReview && state.conversations.length === 0
+    && !visibleMetrics.some(metric => typeof metric?.value === 'number' && metric.value > 0)
+    && state.coverage.status !== 'complete';
+  const historyPrompt = historyEligible && state.creatorAccountId
+    ? <MessageHistoryControls key={historyScope} reviewCreatorId={state.creatorAccountId} store={historyStore}
+      api={historyApi} browserApi={browserApi} desktopApi={onboardingApi} continuation /> : null;
+
+  const evidence = summarizeMetricEvidence(visibleMetrics);
   const progress = hasSnapshot ? historyProgress(state.coverage) : null;
-  const emptyOnboarding = hasSnapshot
-    && state.conversations.length === 0 && issue === null && fullAnalyticsReady === true
-    && state.connection === 'connected' && metrics.every((metric) => metric?.value === 0 && metric.basis === 'complete');
-  if (emptyOnboarding) return (
-    <Box data-scroll-container sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pb: 3 }}>
-      <Stack spacing={3} sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}>
-        <Typography component="h1" variant="h4">Dashboard</Typography>
-        <OnboardingEmptyActivity browser={(state.agent as BridgeTransportState['agent'])?.browser ?? null}
-          connection={extensionConnection(state.agent)} desktopConnected={state.connection === 'connected'} />
-      </Stack>
-    </Box>
-  );
+  const emptySnapshot = hasSnapshot && state.conversations.length === 0 && issue === null
+    && fullAnalyticsReady === true && state.connection === 'connected' && state.readModelState === 'realtime'
+    && visibleMetrics.length === metrics.length && visibleMetrics.every(metric => metric?.value === 0);
+  const completeEmpty = state.coverage.status === 'complete' && metrics.every(metric => metric?.basis === 'complete');
+  const waitingForMessages = emptySnapshot && !completeEmpty && state.coverage.status !== 'complete'
+    && historyScope !== null;
+  const emptyOnboarding = emptySnapshot && (completeEmpty || waitingForMessages);
+  const connectionSummary = <DashboardConnection browser={browser} connection={connection}
+    desktopConnected={state.connection === 'connected'} />;
+  const continuation = collectionReview ? <Stack spacing={0.5}>
+    {collectionReview}
+    {activationAdmitted && fullAnalyticsReady !== true && !desktop.pending && !collection.reviewOperation && <Button component={RouterLink} to="/settings#full-analytics"
+      sx={{ alignSelf: 'flex-start' }}>Full analytics</Button>}
+  </Stack> : historyPrompt ?? (showSetup
+    ? showCommercial
+      ? <CommercialActivationControls api={activationApi} onboarding={onboardingApi} creatorAccountId={state.creatorAccountId} presentationIntent={fullIntent} />
+      : <SetupPrompt extensionConnected={false} fullAnalyticsReady={fullAnalyticsReady === true} title="Finish setup" compact />
+    : emptyOnboarding ? <OnboardingEmptyActivity waitingForMessages={waitingForMessages} />
+      : hasSnapshot && fullAnalyticsReady === true ? connectionSummary : null);
 
   return (
     <Box data-scroll-container sx={{ flex: 1, minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable', pb: 3 }}>
@@ -376,24 +428,22 @@ export default function CreatorDashboardView({
               : fullAnalyticsReady === undefined ? 'Checking setup…' : null} />
           </Box>
         </Box>
+        {/* One first-frame reservation for every continuation state. Content
+            may scroll inside it, but never changes the following metric geometry. */}
+        <ReservedRegion id="dashboard-setup" size={{ xs: 320, sm: 272 }} regionRole="scroll">
+          <Box data-region-content>{continuation}</Box>
+        </ReservedRegion>
         {/* The overview stacks its counts until md, so the stacked reservation holds until then. */}
         <ReservedRegion id="dashboard-overview" size={{ xs: 450, md: 300 }}>
-          <Box data-region-content><DashboardOverview isLoading={!hasSnapshot} conversations={format(analytics?.total_conversations)} messages={format(analytics?.total_messages)} progress={progress} received={format(analytics?.inbound_messages)} sent={format(analytics?.outbound_messages)} split={directionSplit(analytics?.inbound_messages, analytics?.outbound_messages, readiness)} /></Box>
-          {!hasSnapshot && <Box sx={{ position: 'absolute', inset: 0 }}><LoadingFrame label="Loading dashboard…" /></Box>}
+          <Box data-region-content>{emptyOnboarding ? connectionSummary
+            : <DashboardOverview isLoading={!hasSnapshot} conversations={format(analytics?.total_conversations)} messages={format(analytics?.total_messages)} progress={progress} received={format(analytics?.inbound_messages)} sent={format(analytics?.outbound_messages)} split={directionSplit(analytics?.inbound_messages, analytics?.outbound_messages, readiness)} />}</Box>
         </ReservedRegion>
         <ReservedRegion id="dashboard-basis" size={{ xs: 128, sm: 88 }}>
-          {hasSnapshot && evidence !== null && <Box data-region-content><NumbersBasis evidence={evidence} messagesCounted={analytics?.total_messages?.sample_size ?? null} syncing={progress !== null && !progress.complete} /></Box>}
+          {hasSnapshot && !emptyOnboarding && evidence !== null && <Box data-region-content><NumbersBasis evidence={evidence} messagesCounted={visibleMetrics.includes(analytics?.total_messages) ? analytics?.total_messages?.sample_size ?? null : null} syncing={progress !== null && !progress.complete} /></Box>}
         </ReservedRegion>
         {/* Holds four conversations. Below sm the heading and the inbox link can take extra lines. */}
         <ReservedRegion id="dashboard-recent" size={{ xs: 472, sm: 448 }} regionRole="scroll">
           {hasSnapshot ? <Box data-region-content><RecentConversations conversations={state.conversations} showInboxLink={canViewInbox} /></Box> : <LoadingFrame label="Loading dashboard…" />}
-        </ReservedRegion>
-        <ReservedRegion id="dashboard-setup" size={{ xs: 720, sm: 600 }} regionRole="scroll">
-          {showSetup && <Box data-region-content>
-            {extensionConnection(state.agent) === 'connected'
-              ? <CommercialActivationControls api={activationApi} onboarding={onboardingApi} creatorAccountId={state.creatorAccountId} />
-              : <SetupPrompt extensionConnected={false} fullAnalyticsReady={fullAnalyticsReady === true} title="Finish setup" />}
-          </Box>}
         </ReservedRegion>
       </Stack>
     </Box>

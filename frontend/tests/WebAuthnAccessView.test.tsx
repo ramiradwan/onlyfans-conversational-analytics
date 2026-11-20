@@ -39,8 +39,11 @@ it('retries transient status reads within a bound without inventing enrollment',
   const api = { state, enroll: vi.fn(), login: vi.fn() };
   renderView(api);
   for (let attempt = 0; attempt < 4; attempt++) await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
-  expect(state).toHaveBeenCalledTimes(3);
-  expect(screen.getByRole('alert').textContent).toContain('local service could not be reached');
+  expect(state).toHaveBeenCalledTimes(4);
+  expect(screen.getByRole('alert').textContent).toContain('Dipsy can’t check access on this computer right now.');
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+  expect(state).toHaveBeenCalledTimes(4);
   expect(screen.queryByRole('button', { name: 'Create passkey' })).toBeNull();
   expect(api.enroll).not.toHaveBeenCalled(); expect(api.login).not.toHaveBeenCalled();
 });
@@ -51,7 +54,8 @@ it('reports denied status access without retrying or treating it as absent enrol
   renderView({ state, enroll: vi.fn(), login: vi.fn() });
   await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
   expect(state).toHaveBeenCalledOnce();
-  expect(screen.getByRole('alert').textContent).toContain('refused access to passkey status');
+  expect(screen.getByRole('alert').textContent).toContain('Dipsy isn’t allowed to check access on this computer.');
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Create passkey' })).toBeNull();
 });
 
@@ -239,21 +243,24 @@ describe('WebAuthn access view', () => {
   });
 });
 
-it('an unavailable status offers only a bounded status retry, not invented enrollment facts', async () => {
-  const state = vi.fn().mockRejectedValueOnce(Error('Unavailable')).mockResolvedValueOnce({ enrolled: true, authenticated: false });
+it('recovers transient passkey status automatically without presenting a retry action', async () => {
+  vi.useFakeTimers();
+  const state = vi.fn().mockRejectedValueOnce(new WebAuthnStatusError('unavailable', 503))
+    .mockResolvedValueOnce({ enrolled: true, authenticated: false });
   const api = { state, enroll: vi.fn(), login: vi.fn() };
   renderView(api);
-  const retry = await screen.findByRole('button', { name: 'Try again' });
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Set up a passkey' })).toBeNull();
-  fireEvent.click(retry);
-  await screen.findByRole('button', { name: 'Sign in with passkey' });
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(screen.getByRole('button', { name: 'Sign in with passkey' })).toBeTruthy();
   expect(state).toHaveBeenCalledTimes(2); expect(api.enroll).not.toHaveBeenCalled(); expect(api.login).not.toHaveBeenCalled();
 });
 it('stage-specific begin refusal does not claim the user cancelled a passkey', async () => {
   const view = renderView({ enroll: vi.fn(), login: vi.fn(async () => { throw new LoginOutcomeError('begin'); }) });
   fireEvent.click(view.signIn());
-  expect((await readFailure()).textContent).toBe('Sign-in could not start. Try again.');
+  expect((await readFailure()).textContent).toBe('Sign-in could not start.');
 });
 it('an unmounted sign-in cannot navigate when its stale success resolves', async () => {
   const pending = deferred(); let signal: AbortSignal | undefined;
@@ -359,4 +366,144 @@ it('a confirmed created passkey with no session offers sign-in rather than anoth
   await screen.findByRole('button', { name: 'Sign in with passkey' });
   expect(screen.queryByRole('button', { name: 'Create passkey' })).toBeNull();
   expect(view.onAuthenticated).not.toHaveBeenCalled();
+});
+
+it('reconciles a lost registration finish without another passkey ceremony', async () => {
+  vi.useFakeTimers();
+  const state = vi.fn().mockResolvedValueOnce({ enrolled: false, authenticated: false })
+    .mockRejectedValueOnce(new WebAuthnStatusError('network'))
+    .mockResolvedValueOnce({ enrolled: true, authenticated: true });
+  const enroll = vi.fn().mockRejectedValue(new EnrollmentOutcomeError(null));
+  const login = vi.fn();
+  const view = renderView({ state, enroll, login });
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  fireEvent.click(screen.getByRole('button', { name: 'Create passkey' }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(screen.queryByRole('button', { name: 'Create passkey' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  expect(view.onAuthenticated).not.toHaveBeenCalled();
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(view.onAuthenticated).toHaveBeenCalledOnce();
+  expect(enroll).toHaveBeenCalledOnce();
+  expect(login).not.toHaveBeenCalled();
+});
+
+it('reconciles a lost sign-in finish before offering another ceremony', async () => {
+  vi.useFakeTimers();
+  const state = vi.fn().mockResolvedValueOnce({ enrolled: true, authenticated: false })
+    .mockRejectedValueOnce(new WebAuthnStatusError('network'))
+    .mockResolvedValueOnce({ enrolled: true, authenticated: false });
+  const login = vi.fn().mockRejectedValue(new LoginOutcomeError('finish', true));
+  const enroll = vi.fn();
+  const view = renderView({ state, enroll, login });
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  fireEvent.click(view.signIn());
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(view.signIn().disabled).toBe(false);
+  expect(screen.getByRole('alert').textContent).toBe('Sign-in did not finish.');
+  expect(view.onAuthenticated).not.toHaveBeenCalled();
+  expect(login).toHaveBeenCalledOnce();
+  expect(enroll).not.toHaveBeenCalled();
+});
+
+it('reconciles a later pushed access change after the status recovery budget ends', async () => {
+  vi.useFakeTimers();
+  const stream = pushedStream();
+  const state = vi.fn().mockRejectedValue(new WebAuthnStatusError('network'));
+  const api = { state, watch: stream.watch, enroll: vi.fn(), login: vi.fn() };
+  renderView(api);
+  for (let i = 0; i < 4; i++) await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+  expect(state).toHaveBeenCalledTimes(4);
+  expect(screen.queryAllByRole('button')).toHaveLength(0);
+  state.mockResolvedValue({ enrolled: true, authenticated: false });
+  stream.push('available');
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(state).toHaveBeenCalledTimes(5);
+  expect(screen.getByRole('button', { name: 'Sign in with passkey' })).toBeTruthy();
+  expect(api.enroll).not.toHaveBeenCalled(); expect(api.login).not.toHaveBeenCalled();
+});
+
+it('does not retry malformed status or an unknown status failure', async () => {
+  vi.useFakeTimers();
+  const state = vi.fn().mockRejectedValue(new Error('Unknown status failure'));
+  renderView({ state, enroll: vi.fn(), login: vi.fn() });
+  await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+  expect(state).toHaveBeenCalledOnce();
+  expect(screen.queryAllByRole('button')).toHaveLength(0);
+  expect(screen.getByRole('alert').textContent).toBe('Dipsy can’t confirm passkey status on this computer.');
+});
+
+it('cancels scheduled recovery when the runtime passkey page closes', async () => {
+  vi.useFakeTimers();
+  const state = vi.fn().mockResolvedValueOnce({ enrolled: true, authenticated: false })
+    .mockRejectedValue(new WebAuthnStatusError('network'));
+  const login = vi.fn().mockRejectedValue(new LoginOutcomeError('finish', true));
+  const view = renderView({ state, enroll: vi.fn(), login });
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  fireEvent.click(view.signIn());
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(state).toHaveBeenCalledTimes(2);
+  cleanup();
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+  expect(state).toHaveBeenCalledTimes(2);
+  expect(login).toHaveBeenCalledOnce();
+  expect(view.onAuthenticated).not.toHaveBeenCalled();
+});
+
+it('does not repeat a definite refusal when the same access hint is pushed again', async () => {
+  vi.useFakeTimers();
+  const stream = pushedStream();
+  const state = vi.fn().mockRejectedValue(new WebAuthnStatusError('forbidden', 403));
+  const api = { state, watch: stream.watch, enroll: vi.fn(), login: vi.fn() };
+  renderView(api);
+  stream.push('available');
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(state).toHaveBeenCalledOnce();
+  stream.push('available'); stream.push('available');
+  await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+  expect(state).toHaveBeenCalledOnce();
+  expect(screen.queryAllByRole('button')).toHaveLength(0);
+  state.mockRejectedValue(lapsed('removed'));
+  stream.push('removed');
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(state).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole('heading', { name: 'Access removed from this computer' })).toBeTruthy();
+  expect(api.login).not.toHaveBeenCalled();
+});
+
+it('retires a stalled status read and ignores a late answer after recovery', async () => {
+  vi.useFakeTimers();
+  let late!: (value: { enrolled: boolean; authenticated: boolean }) => void;
+  const state = vi.fn().mockImplementationOnce(() => new Promise(resolve => { late = resolve; }))
+    .mockResolvedValueOnce({ enrolled: true, authenticated: false });
+  const api = { state, enroll: vi.fn(), login: vi.fn() };
+  const view = renderView(api);
+  await act(async () => { await vi.advanceTimersByTimeAsync(8000); });
+  expect(state.mock.calls[0][0].aborted).toBe(true);
+  expect(screen.queryAllByRole('button')).toHaveLength(0);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(view.signIn().disabled).toBe(false);
+  await act(async () => { late({ enrolled: true, authenticated: true }); });
+  expect(view.onAuthenticated).not.toHaveBeenCalled();
+  expect(state).toHaveBeenCalledTimes(2);
+  expect(api.login).not.toHaveBeenCalled();
+});
+
+it('disables sign-in while a pushed access change is being verified', async () => {
+  const stream = pushedStream();
+  let answer!: (value: { enrolled: boolean; authenticated: boolean }) => void;
+  const state = vi.fn().mockResolvedValueOnce({ enrolled: true, authenticated: false })
+    .mockImplementationOnce(() => new Promise(resolve => { answer = resolve; }))
+    .mockRejectedValue(lapsed('removed'));
+  const login = vi.fn();
+  const view = renderView({ state, watch: stream.watch, enroll: vi.fn(), login });
+  await screen.findByRole('button', { name: 'Sign in with passkey' });
+  stream.push('available');
+  stream.push('removed');
+  expect(view.signIn().disabled).toBe(true);
+  fireEvent.click(view.signIn());
+  expect(login).not.toHaveBeenCalled();
+  await act(async () => { answer({ enrolled: true, authenticated: false }); });
 });

@@ -41,6 +41,7 @@ const paused: Record<string, FreshnessPresentation> = {
   capture_off: { label: 'Collection off', title: 'Collection is off', sentence: 'New messages are off in the browser extension.', icon: 'pause', tone: 'user', action: settings },
   extension_outdated: { label: 'Message checks unavailable', title: 'Message checks unavailable', sentence: 'The extension has not reported support for automatic message checks.', icon: 'dot', tone: 'attention' },
 };
+export const collectionRestriction = (reason: 'capture_off' | 'user_paused'): FreshnessPresentation => paused[reason]!;
 const unknown: FreshnessPresentation = { label: 'History not verified', title: 'History not verified', sentence: 'A complete history check has not been confirmed.', icon: 'ring', tone: 'unknown' };
 const behind: Record<string, string> = {
   awaiting_check: 'A check is scheduled and starts automatically.',

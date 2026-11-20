@@ -1,4 +1,4 @@
-import { publishActivation } from './desktop-decision-fixtures.mjs';
+import { openActivationReview, publishActivation } from './desktop-decision-fixtures.mjs';
 
 export const FIXED_NOW = '2026-06-30T12:05:00.000Z';
 export const MODES = ['light', 'dark'];
@@ -34,6 +34,80 @@ return [
   },
   { workspace: 'home', state: 'syncing', ready: (page) => page.getByRole('progressbar', { name: /History \d+% synced/ }) },
   { workspace: 'home', state: 'populated', ready: (page) => page.getByRole('region', { name: 'Overview' }) },
+  {
+    workspace: 'dashboard-continuation',
+    state: 'waiting-for-messages',
+    act: (page) => page.getByRole('button', { name: 'Not now', exact: true }).click(),
+    ready: (page) => page.getByRole('heading', { name: 'Waiting for messages', exact: true }),
+    assert: async (page) => {
+      if (await page.getByRole('heading', { name: 'Add older conversations', exact: true }).count()) {
+        throw new Error('Dismissed message history prompt remained visible');
+      }
+    },
+  },
+  {
+    workspace: 'dashboard-continuation',
+    state: 'allow-message-collection',
+    ready: (page) => page.getByRole('heading', { name: 'Allow message collection', exact: true }),
+    assert: async (page) => {
+      await page.getByRole('button', { name: 'Review in Chrome', exact: true }).waitFor({ state: 'visible' });
+    },
+  },
+  {
+    workspace: 'dashboard-continuation',
+    state: 'allow-onlyfans-access',
+    ready: (page) => page.getByRole('heading', { name: 'Allow OnlyFans access', exact: true }),
+    assert: async (page) => {
+      await page.getByRole('button', { name: 'Review in Chrome', exact: true }).waitFor({ state: 'visible' });
+      await page.getByRole('region', { name: 'Overview' }).waitFor({ state: 'visible' });
+    },
+  },
+  {
+    workspace: 'dashboard-continuation',
+    state: 'message-collection-off',
+    ready: (page) => page.getByRole('heading', { name: 'Message collection is off', exact: true }),
+    assert: async (page) => {
+      await page.getByRole('button', { name: 'Review in Chrome', exact: true }).waitFor({ state: 'visible' });
+    },
+  },
+  {
+    workspace: 'dashboard-continuation',
+    state: 'message-collection-paused',
+    ready: (page) => page.getByRole('heading', { name: 'Message collection is paused', exact: true }),
+    assert: async (page) => {
+      await page.getByRole('button', { name: 'Resume collecting', exact: true }).waitFor({ state: 'visible' });
+    },
+  },
+  {
+    workspace: 'dashboard-continuation',
+    state: 'add-older-conversations',
+    ready: (page) => page.getByRole('heading', { name: 'See your first conversations', exact: true }),
+    assert: async (page) => {
+      await page.getByRole('button', { name: 'Review message history', exact: true }).waitFor({ state: 'visible' });
+    },
+  },
+  {
+    workspace: 'dashboard-continuation',
+    state: 'add-older-conversations',
+    variant: 'review-dialog',
+    act: (page) => page.getByRole('button', { name: 'Review message history', exact: true }).click(),
+    ready: (page) => page.getByRole('dialog', { name: 'Add older conversations' }).getByRole('button', { name: 'Allow message history', exact: true }),
+  },
+  {
+    workspace: 'dashboard-continuation',
+    state: 'activating-full-analytics',
+    ready: text('Activation accepted. Checking Full analytics…'),
+  },
+  {
+    workspace: 'dashboard-continuation',
+    state: 'full-analytics-unavailable',
+    ready: text("New messages aren't being analyzed"),
+  },
+  {
+    workspace: 'dashboard-continuation',
+    state: 'activation-unavailable',
+    ready: text('Full analytics activation could not be prepared.'),
+  },
   {
     workspace: 'analytics',
     state: 'loading',
@@ -120,7 +194,7 @@ return [
   },
   {
     workspace: 'settings', state: 'fresh', variant: 'activation-review', viewports: ['narrow'], modes: ['light', 'dark'],
-    act: page => publishActivation(page, 'review'),
+    act: page => openActivationReview(page),
     ready: page => page.getByRole('button', { name: 'Activate for free' }),
   },
   {
@@ -138,7 +212,7 @@ return [
   {
     workspace: 'settings', state: 'fresh', variant: 'activation-error', viewports: ['narrow'], modes: ['light'],
     act: async (page) => {
-      await publishActivation(page, 'review');
+      await openActivationReview(page);
       await page.evaluate(() => window.__workspaceFixture.desktopActionError('reply_lost'));
       await page.getByRole('button', { name: 'Activate for free' }).click();
     },

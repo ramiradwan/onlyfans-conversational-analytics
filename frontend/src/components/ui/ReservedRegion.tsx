@@ -78,16 +78,27 @@ export function ReservedNotice({ id, notice, essential = false }: { id: string; 
   </ReservedRegion>;
 }
 
-export function StatusLine({ id, text, tone = 'secondary', essential = false, size, summary, detailsOnly = false }: { id: string; text: string | null; tone?: 'secondary' | 'error'; essential?: boolean; size?: Size; summary?: string; detailsOnly?: boolean }) {
+export function StatusLine({ id, text, tone = 'secondary', essential = false, size, summary, detailsOnly = false, reserveTexts }: { id: string; text: string | null; tone?: 'secondary' | 'error'; essential?: boolean; size?: Size; summary?: string; detailsOnly?: boolean; reserveTexts?: readonly string[] }) {
   const [expandedText, setExpandedText] = useState<string | null>(null);
   const open = text !== null && expandedText === text;
   if (expandedText !== null && expandedText !== text) setExpandedText(null);
   const { probe, overflow } = useContentFit(text);
   const details = detailsOnly || overflow;
   const minimum = size ?? { xs: sizes.essentialStatusLine.narrow, sm: sizes.essentialStatusLine.wide };
-  if (essential) return <Box data-reserved-region={id} sx={{ minHeight: Object.fromEntries(Object.entries(minimum).map(([key, value]) => [key, `${value / 16}rem`])), minWidth: 0 }}>
+  if (essential) return <Box data-reserved-region={id} sx={{
+    minHeight: Object.fromEntries(Object.entries(minimum).map(([key, value]) => [key, `${value / 16}rem`])),
+    minWidth: 0,
+    ...(reserveTexts?.length ? { display: 'grid' } : {}),
+  }}>
+    {reserveTexts?.map((copy) => (
+      <Typography key={copy} component="span" aria-hidden="true" variant="body2"
+        sx={{
+          gridArea: '1 / 1', lineHeight: '1.25rem', overflowWrap: 'anywhere', visibility: 'hidden', pointerEvents: 'none',
+          '&::before': { content: `${JSON.stringify(copy)} / ""` },
+        }} />
+    ))}
     <Typography data-region-content variant="body2" role={tone === 'error' ? 'alert' : 'status'}
-      sx={{ lineHeight: '1.25rem', overflowWrap: 'anywhere', visibility: text ? 'visible' : 'hidden', color: tone === 'error' ? 'error.main' : 'text.secondary' }}>
+      sx={{ ...(reserveTexts?.length ? { gridArea: '1 / 1' } : {}), lineHeight: '1.25rem', overflowWrap: 'anywhere', visibility: text ? 'visible' : 'hidden', color: tone === 'error' ? 'error.main' : 'text.secondary' }}>
       {text || '\u00a0'}
     </Typography>
   </Box>;

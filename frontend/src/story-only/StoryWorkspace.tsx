@@ -35,11 +35,22 @@ import OperatorInboxView from '../views/OperatorInboxView';
 import SettingsWithVaultView from '../views/SettingsWithVaultView';
 import { WebAuthnAccessView } from '../views/WebAuthnAccessView';
 
-export type StoryWorkspaceName = 'home' | 'analytics' | 'inbox' | 'settings' | 'passkey' | 'graph';
+export type StoryWorkspaceName = 'home' | 'dashboard-continuation' | 'analytics' | 'inbox' | 'settings' | 'passkey' | 'graph';
 export type StoryJourneyName = 'loading' | 'fresh' | 'syncing' | 'populated';
+export type DashboardContinuationState =
+  | 'waiting-for-messages'
+  | 'allow-message-collection'
+  | 'allow-onlyfans-access'
+  | 'message-collection-off'
+  | 'message-collection-paused'
+  | 'add-older-conversations'
+  | 'activating-full-analytics'
+  | 'full-analytics-unavailable'
+  | 'activation-unavailable';
 
 export const storyWorkspaceOptions: readonly { key: StoryWorkspaceName; label: string }[] = [
   { key: 'home', label: 'Dashboard' },
+  { key: 'dashboard-continuation', label: 'Dashboard continuation' },
   { key: 'analytics', label: 'Analytics' },
   { key: 'inbox', label: 'Inbox' },
   { key: 'settings', label: 'Settings' },
@@ -52,6 +63,18 @@ export const storyJourneyOptions: readonly { key: StoryJourneyName; label: strin
   { key: 'fresh', label: 'Fresh install' },
   { key: 'syncing', label: 'History syncing' },
   { key: 'populated', label: 'Populated' },
+];
+
+export const dashboardContinuationOptions: readonly { key: DashboardContinuationState; label: string }[] = [
+  { key: 'waiting-for-messages', label: 'Waiting for messages' },
+  { key: 'allow-message-collection', label: 'Allow message collection' },
+  { key: 'allow-onlyfans-access', label: 'Allow OnlyFans access' },
+  { key: 'message-collection-off', label: 'Message collection off' },
+  { key: 'message-collection-paused', label: 'Message collection paused' },
+  { key: 'add-older-conversations', label: 'Add older conversations' },
+  { key: 'activating-full-analytics', label: 'Activating Full analytics' },
+  { key: 'full-analytics-unavailable', label: 'Full analytics unavailable' },
+  { key: 'activation-unavailable', label: 'Activation unavailable' },
 ];
 
 const ACCOUNT = 'story-only-account';
@@ -168,6 +191,212 @@ const connectedAgent: AgentStatePayload = {
     reported_at: AS_OF,
   },
 };
+
+const CONTINUATION_JOURNEY_ID = '90000000-0000-4000-8000-000000000010';
+const CONTINUATION_GENERATION = '11111111-1111-4111-8111-111111111111';
+
+function continuationSnapshot(state: DashboardContinuationState): StateSnapshotPayload {
+  const base = snapshot('populated');
+  const zeroComplete = {
+    total_conversations: metric(0, false),
+    total_messages: metric(0, false),
+    inbound_messages: metric(0, false),
+    outbound_messages: metric(0, false),
+  };
+  const zeroPartial = {
+    total_conversations: metric(0, true),
+    total_messages: metric(0, true),
+    inbound_messages: metric(0, true),
+    outbound_messages: metric(0, true),
+  };
+  switch (state) {
+    case 'waiting-for-messages':
+      return {
+        ...base,
+        conversations: [],
+        analytics: zeroPartial,
+        coverage: {
+          status: 'unknown',
+          phase: 'not_started',
+          generation_id: null,
+          as_of: null,
+          discovered_conversations: null,
+          complete_conversations: 0,
+          complete_as_of: null,
+          reason: null,
+        },
+        catchup_freshness: {
+          ...base.catchup_freshness!,
+          status: 'never_checked',
+          last_closed_at: null,
+          observing_since: null,
+        },
+      };
+    case 'add-older-conversations':
+      return {
+        ...base,
+        conversations: [],
+        analytics: zeroPartial,
+        coverage: {
+          status: 'partial',
+          phase: 'not_started',
+          generation_id: '90000000-0000-4000-8000-000000000001',
+          as_of: AS_OF,
+          discovered_conversations: null,
+          complete_conversations: 0,
+          complete_as_of: null,
+          reason: null,
+        },
+        catchup_freshness: {
+          ...base.catchup_freshness!,
+          status: 'never_checked',
+          last_closed_at: null,
+          observing_since: null,
+        },
+      };
+    case 'allow-message-collection':
+    case 'message-collection-off':
+    case 'message-collection-paused':
+      return {
+        ...base,
+        conversations: [],
+        analytics: zeroComplete,
+        coverage: {
+          ...base.coverage,
+          discovered_conversations: 0,
+          complete_conversations: 0,
+        },
+      };
+    default:
+      return base;
+  }
+}
+
+function continuationDesktop(state: DashboardContinuationState): DesktopSnapshot {
+  const ready: DesktopSnapshot = {
+    journey_id: CONTINUATION_JOURNEY_ID,
+    generation: CONTINUATION_GENERATION,
+    revision: 1,
+    facts: {},
+    local_ready: true,
+    full_ready: true,
+    next_task: 'complete',
+    pending_operations: [],
+    analysis_readiness: {
+      availability: 'current',
+      creator_account_id: ACCOUNT,
+      value: {
+        schema: 'ofca-analysis-readiness/v1',
+        commercial_authority: 'active',
+        analysis_admission: 'admitted',
+      },
+    },
+    allowed_actions: [],
+  };
+  switch (state) {
+    case 'allow-message-collection':
+    case 'allow-onlyfans-access':
+    case 'message-collection-off':
+      return { ...ready, allowed_actions: ['browser.access'] };
+    case 'activating-full-analytics':
+      return {
+        ...ready,
+        full_ready: false,
+        analysis_readiness: {
+          availability: 'current',
+          creator_account_id: ACCOUNT,
+          value: {
+            schema: 'ofca-analysis-readiness/v1',
+            commercial_authority: 'required',
+            analysis_admission: 'blocked',
+          },
+        },
+        decision_status: {
+          operation_id: '90000000-0000-4000-8000-000000000021',
+          state: 'accepted',
+        },
+        pending_operations: [{
+          operation_id: '90000000-0000-4000-8000-000000000021',
+          action: 'activation.review',
+          state: 'accepted',
+          reason: 'none',
+        }],
+      };
+    case 'full-analytics-unavailable':
+      return {
+        ...ready,
+        full_ready: false,
+        analysis_readiness: {
+          availability: 'current',
+          creator_account_id: ACCOUNT,
+          value: {
+            schema: 'ofca-analysis-readiness/v1',
+            commercial_authority: 'active',
+            analysis_admission: 'blocked',
+          },
+        },
+      };
+    case 'activation-unavailable':
+      return {
+        ...ready,
+        full_ready: false,
+        analysis_readiness: {
+          availability: 'current',
+          creator_account_id: ACCOUNT,
+          value: {
+            schema: 'ofca-analysis-readiness/v1',
+            commercial_authority: 'required',
+            analysis_admission: 'blocked',
+          },
+        },
+        decision_status: {
+          operation_id: '90000000-0000-4000-8000-000000000022',
+          state: 'unavailable',
+        },
+        allowed_actions: ['activation.review'],
+      };
+    default:
+      return ready;
+  }
+}
+
+function seedContinuationStores(state: DashboardContinuationState) {
+  useUserStore.getState().actions.setUserRole('creator-ceo');
+  bridgeTransportStore.reset();
+  bridgeTransportStore.bindAccount(ACCOUNT);
+  bridgeTransportStore.acceptSession({
+    connection_id: '90000000-0000-4000-8000-000000000004',
+    bridge_session_id: '90000000-0000-4000-8000-000000000005',
+    creator_account_id: ACCOUNT,
+    negotiated_protocol_version: '2',
+    server_version: 'story',
+  });
+  bridgeTransportStore.applySnapshot(continuationSnapshot(state));
+  bridgeTransportStore.setSystem({
+    creator_account_id: ACCOUNT,
+    processing_mode: 'realtime',
+    readiness: 'ready',
+    updated_at: AS_OF,
+    detail: null,
+  });
+  const baseBrowser = {
+    capture: 'active' as const,
+    site_access: 'granted' as const,
+    history_permission: 'missing' as const,
+    legal_review_required: false,
+    reported_at: AS_OF,
+  };
+  const browser = state === 'allow-message-collection'
+    ? { ...baseBrowser, legal_review_required: true }
+    : state === 'allow-onlyfans-access'
+      ? { ...baseBrowser, site_access: 'needs_approval' as const }
+      : state === 'message-collection-off'
+        ? { ...baseBrowser, capture: 'off' as const }
+        : state === 'message-collection-paused'
+          ? { ...baseBrowser, capture: 'paused' as const }
+          : baseBrowser;
+  bridgeTransportStore.setAgent({ ...connectedAgent, browser });
+}
 
 function seedStores(journey: StoryJourneyName) {
   useUserStore.getState().actions.setUserRole('creator-ceo');
@@ -359,6 +588,7 @@ const storyPasskeyApi: WebAuthnApi = {
 
 const WORKSPACE_PATHS: Record<Exclude<StoryWorkspaceName, 'passkey'>, string> = {
   home: '/',
+  'dashboard-continuation': '/',
   analytics: '/analytics',
   inbox: '/inbox',
   settings: '/settings',
@@ -376,17 +606,22 @@ function textAnalysisApi(journey: StoryJourneyName): NlpDependenciesApi {
   };
 }
 
-function createDriver(journey: StoryJourneyName) {
-  let currentJourney = journey;
-  let desktop: DesktopState = { connected: journey !== 'loading', pending: null, error: null, snapshot: {
-    journey_id: null, generation: '11111111-1111-4111-8111-111111111111', revision: 0, facts: {},
-    local_ready: true, full_ready: journey === 'populated', next_task: 'ready', pending_operations: [],
-    analysis_readiness: journey === 'loading' ? { availability: 'unknown', creator_account_id: ACCOUNT, value: null }
-      : { availability: 'current', creator_account_id: ACCOUNT, value: { schema: 'ofca-analysis-readiness/v1',
-        commercial_authority: journey === 'populated' ? 'active' : 'required',
-        analysis_admission: journey === 'populated' ? 'admitted' : 'blocked' } },
-    allowed_actions: journey === 'populated' ? [] : ['activation.review'],
-  } };
+function createDriver(journey: StoryJourneyName, continuation?: DashboardContinuationState, workspace?: StoryWorkspaceName) {
+  let currentJourney = continuation ? 'fresh' as StoryJourneyName : journey;
+  const initialSnapshot: DesktopSnapshot = continuation
+    ? continuationDesktop(continuation)
+    : {
+      journey_id: null, generation: '11111111-1111-4111-8111-111111111111', revision: 0, facts: {},
+      local_ready: true, full_ready: journey === 'populated', next_task: 'ready', pending_operations: [],
+      analysis_readiness: journey === 'loading' ? { availability: 'unknown', creator_account_id: ACCOUNT, value: null }
+        : { availability: 'current', creator_account_id: ACCOUNT, value: { schema: 'ofca-analysis-readiness/v1',
+          commercial_authority: journey === 'populated' ? 'active' : 'required',
+          analysis_admission: journey === 'populated' ? 'admitted' : 'blocked' } },
+      // The fresh Home case represents browser setup before commercial admission.
+      // Settings retains its independently admitted activation fixture.
+      allowed_actions: journey === 'populated' || workspace === 'home' && journey === 'fresh' ? [] : ['activation.review'],
+    };
+  let desktop: DesktopState = { connected: continuation ? true : journey !== 'loading', pending: null, error: null, snapshot: initialSnapshot };
   const desktopListeners = new Set<() => void>();
   const publishDesktop = (connected = desktop.connected) => {
     desktop = { ...desktop, connected, snapshot: desktop.snapshot && { ...desktop.snapshot, revision: desktop.snapshot.revision + 1 } };
@@ -404,7 +639,7 @@ function createDriver(journey: StoryJourneyName) {
   let hold = new URLSearchParams(location.search).has('transitions');
   let readinessHeld = hold;
   const initialDesktop = desktop.snapshot!;
-  if (readinessHeld || journey === 'loading') desktop = { ...desktop, snapshot: null };
+  if (readinessHeld || (!continuation && journey === 'loading')) desktop = { ...desktop, snapshot: null };
   function receiveReadiness(value: unknown, error = false) {
     readinessHeld = false;
     const readiness = { availability: 'current' as const, creator_account_id: ACCOUNT, value };
@@ -514,10 +749,12 @@ declare global { interface Window { __workspaceFixture?: ReturnType<typeof creat
 
 export function StoryWorkspace({
   analyticsState = storyAnalyticsState('model'),
+  continuation,
   journey,
   workspace,
 }: {
   analyticsState?: AnalyticsReadState;
+  continuation?: DashboardContinuationState;
   journey: StoryJourneyName;
   workspace: StoryWorkspaceName;
 }) {
@@ -525,8 +762,13 @@ export function StoryWorkspace({
   const [revision, setRevision] = useState(0);
   const [settingsRevision, setSettingsRevision] = useState(0);
   const [driver] = useState(() => {
+    if (workspace === 'dashboard-continuation') {
+      const target = continuation ?? 'waiting-for-messages';
+      seedContinuationStores(target);
+      return createDriver(journey, target);
+    }
     seedStores(workspace === 'analytics' ? 'populated' : journey);
-    return createDriver(journey);
+    return createDriver(journey, undefined, workspace);
   });
   useEffect(() => {
     driver.analytics = (key) => setAnalysis(storyAnalyticsState(key));
@@ -546,7 +788,17 @@ export function StoryWorkspace({
     <MemoryRouter initialEntries={[WORKSPACE_PATHS[workspace]]}>
       <Routes>
         <Route element={<AppShell />}>
-          <Route index element={<CreatorDashboardView activationApi={apis.activation} onboardingApi={driver.onboarding} />} />
+          <Route
+            index
+            element={(
+              <CreatorDashboardView
+                activationApi={apis.activation}
+                browserApi={driver.apis.browser}
+                historyApi={apis.history}
+                onboardingApi={driver.onboarding}
+              />
+            )}
+          />
           <Route path="graph-explorer" element={<GraphExplorerView />} />
           <Route
             path="analytics"

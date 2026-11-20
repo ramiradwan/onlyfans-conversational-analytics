@@ -7,10 +7,11 @@ import random
 import time
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Callable, Protocol
+from uuid import uuid4
 
 from app.onboarding import timing
 from app.onboarding.admission import AdmittedSession, ScopedAdmissions
-from app.onboarding.contract import SNAPSHOT_PROFILE, REASONS, canonical, digest, validate
+from app.onboarding.contract import PROFILE, SNAPSHOT_PROFILE, REASONS, canonical, digest, validate
 from app.onboarding.readiness import DesktopAnalysisReadiness
 from app.onboarding.browser_tasks import creator_label
 from app.persistence.onboarding import require_journey
@@ -97,6 +98,15 @@ class ProbingSetupOwner(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class SetupPresentation:
+    """The local presentation coordinates, not an HTTP session credential."""
+    generation: str
+    journey_id: str | None
+    stage: str
+    expires_at: float
+
+
 class DesktopOnboardingCoordinator:
     def __init__(self, admissions: ScopedAdmissions, owner: SetupOwner):
         self.admissions, self.owner = admissions, owner
@@ -171,6 +181,11 @@ class DesktopOnboardingCoordinator:
         else:
             task = "finish-setup"
         actions = []
+        reason = view.reason
+        if task == "finish-setup" and facts["configuration"] != "verified" and self._automatic_finalization_enabled():
+            refusal = self._finalization_receipt(connection, journey_id, view)
+            if refusal is not None and refusal["state"] == "refused" and reason == "none":
+                reason = refusal["reason"]
         selected_decision = view.scope.get("desktop_decision")
         authentication = view.scope.get("desktop_authentication")
         if authentication is not None and (authentication["state"] in {
@@ -184,7 +199,7 @@ class DesktopOnboardingCoordinator:
             "operation_id": selected_decision["operation_id"],
             **selected_decision["projection"]["decision"],
         }
-        if view.reason == "none":
+        if reason == "none":
             if task == "browser-access":
                 actions.append("browser.access")
             elif task == "account-connection" and facts["browser_access"] in {"verified", "paused"}:
@@ -213,11 +228,11 @@ class DesktopOnboardingCoordinator:
         return validate({"profile": SNAPSHOT_PROFILE, "kind": "snapshot", "journey_id": journey_id,
             "generation": session.generation, "revision": revision, "expires_at": session.expires_at,
             "scope_digest": digest({"journey_id": journey_id, "generation": session.generation,
-                "revision": revision, "stage": session.stage, "facts": facts, "scope": view.scope, "reason": view.reason,
+                "revision": revision, "stage": session.stage, "facts": facts, "scope": view.scope, "reason": reason,
                 "permitted_actions": None if view.permitted_actions is None else sorted(view.permitted_actions)}),
             "next_task": task, "facts": facts, "local_ready": local_ready,
             "full_ready": local_ready and facts["activation"] == "verified" and facts["analysis"] == "verified",
-            "pending_operations": pending, "allowed_actions": actions, "reason": view.reason,
+            "pending_operations": pending, "allowed_actions": actions, "reason": reason,
             "decision": decision, "decision_status": view.scope.get("desktop_decision_status"),
             "continuation_available": view.scope.get("source_recovery") is not None,
             "creator_label": creator_label(view.scope.get("browser"), view.scope.get("creator_account_id")),
@@ -250,61 +265,149 @@ class DesktopOnboardingCoordinator:
                 return dict(previous), False
             view = self.owner.read(self._selected(connection, current), actor=actor, connection=connection)
             snapshot = self._snapshot(connection, current, actor=actor, view=view)
-            expected = command["expected"]
-            if (command["journey_id"] != snapshot["journey_id"]
-                    or any(expected[name] != snapshot[name] for name in ("generation", "revision", "scope_digest"))):
-                raise CommandRefused("setup_changed")
-            if command["action"] not in snapshot["allowed_actions"]:
-                raise CommandRefused("action_unavailable")
-            scope = dict(view.scope)
-            action = command["action"]
-            if action.startswith("auth.") or action == "account.connect" and "provider" in command:
-                from app.persistence.auth import _new_uuid7
-                authentication = snapshot["authentication"]
-                provider = command.get("provider")
-                if authentication is None or provider is not None and not authentication["choices"].get(provider, False):
-                    raise CommandRefused("action_unavailable")
-                attempt = authentication["authentication_attempt"]
-                if action == "auth.cancel" and attempt is None:
-                    raise CommandRefused("action_unavailable")
-                scope["authentication_intent"] = {
-                    "parent_operation_id": command["operation_id"] if action == "account.connect" else authentication["operation_id"],
-                    "verb": "select" if action == "account.connect" else action.removeprefix("auth."),
-                    "authentication_attempt_id": attempt["authentication_attempt_id"] if action == "auth.cancel" else _new_uuid7(self.store._now()),
-                    "expected_previous_attempt_id": None if attempt is None else attempt["authentication_attempt_id"],
-                    "provider": provider,
-                }
-            accepted = self.owner.admit(connection, snapshot["journey_id"], action=action, scope=scope, actor=actor)
-            journey = accepted.journey_id
-            if snapshot["journey_id"] is not None and journey != snapshot["journey_id"]:
-                raise CommandRefused("setup_changed")
-            require_journey(journey)
-            now = self.admissions._now()
-            # Retain unresolved work independently of presentation expiry. Bound
-            # new commands without preventing reads or native reattachment.
-            connection.execute("DELETE FROM desktop_setup_operations WHERE state IN ('completed','refused') AND expires_at<=?", (now,))
-            if connection.execute("SELECT count(*) FROM desktop_setup_operations").fetchone()[0] >= 128:
-                raise CommandRefused("operation_limit_reached")
-            connection.execute("INSERT OR IGNORE INTO desktop_setup_journeys (journey_id,revision,created_at) VALUES (?,0,?)", (journey, now))
-            connection.execute("UPDATE desktop_setup_journeys SET entry_source=(SELECT entry_source FROM desktop_presentations "
-                "WHERE generation=?) WHERE journey_id=?", (current.generation, journey))
-            # The journal cannot silently jump from one selected workspace to another.
-            connection.execute("UPDATE desktop_presentations SET journey_id=? WHERE generation=?",
-                               (journey, current.generation))
-            if (action == "auth.select" and authentication["state"] == "reauthentication-required"
-                    and authentication["actions"]["select"]):
-                # The replacement click retires only the ended selection's local receipt.
-                connection.execute("UPDATE desktop_setup_operations SET state='refused',reason='operation_unconfirmed' "
-                    "WHERE operation_id=? AND journey_id=? AND action='auth.select' "
-                    "AND state IN ('accepted','waiting','outcome_unknown')",
-                    (authentication["browser_operation_id"], journey))
-            connection.execute("INSERT INTO desktop_setup_operations VALUES (?,?,?,?,?,?,?,?,'accepted','none',?,?)",
-                (command["operation_id"], journey, command["action"], request_digest, current.generation,
-                 expected["scope_digest"], expected["revision"], canonical(accepted.scope).decode(), now, current.expires_at))
-            connection.execute("UPDATE desktop_setup_journeys SET revision=revision+1 WHERE journey_id=?", (journey,))
+            row = self._record_command(connection, current, command, view, snapshot, actor=actor)
             self._current(connection, session)
-            row = connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?", (command["operation_id"],)).fetchone()
-            return dict(row), True
+            return row, True
+
+    def _record_command(self, connection, current, command, view, snapshot, *, actor=None):
+        request_digest = digest(command)
+        expected = command["expected"]
+        if (command["journey_id"] != snapshot["journey_id"]
+                or any(expected[name] != snapshot[name] for name in ("generation", "revision", "scope_digest"))):
+            raise CommandRefused("setup_changed")
+        if command["action"] not in snapshot["allowed_actions"]:
+            raise CommandRefused("action_unavailable")
+        scope = dict(view.scope)
+        action = command["action"]
+        authentication = snapshot["authentication"]
+        if action.startswith("auth.") or action == "account.connect" and "provider" in command:
+            from app.persistence.auth import _new_uuid7
+            provider = command.get("provider")
+            if authentication is None or provider is not None and not authentication["choices"].get(provider, False):
+                raise CommandRefused("action_unavailable")
+            attempt = authentication["authentication_attempt"]
+            if action == "auth.cancel" and attempt is None:
+                raise CommandRefused("action_unavailable")
+            scope["authentication_intent"] = {
+                "parent_operation_id": command["operation_id"] if action == "account.connect" else authentication["operation_id"],
+                "verb": "select" if action == "account.connect" else action.removeprefix("auth."),
+                "authentication_attempt_id": attempt["authentication_attempt_id"] if action == "auth.cancel" else _new_uuid7(self.store._now()),
+                "expected_previous_attempt_id": None if attempt is None else attempt["authentication_attempt_id"],
+                "provider": provider,
+            }
+        accepted = self.owner.admit(connection, snapshot["journey_id"], action=action, scope=scope, actor=actor)
+        journey = accepted.journey_id
+        if snapshot["journey_id"] is not None and journey != snapshot["journey_id"]:
+            raise CommandRefused("setup_changed")
+        require_journey(journey)
+        now = self.admissions._now()
+        if now >= current.expires_at:
+            raise CommandRefused("setup_changed")
+        # Retain unresolved work independently of presentation expiry. Bound
+        # new commands without preventing reads or native reattachment.
+        connection.execute("DELETE FROM desktop_setup_operations WHERE state IN ('completed','refused') AND expires_at<=? AND NOT (action='setup.finalize' AND state='refused')", (now,))
+        if connection.execute("SELECT count(*) FROM desktop_setup_operations").fetchone()[0] >= 128:
+            raise CommandRefused("operation_limit_reached")
+        connection.execute("INSERT OR IGNORE INTO desktop_setup_journeys (journey_id,revision,created_at) VALUES (?,0,?)", (journey, now))
+        connection.execute("UPDATE desktop_setup_journeys SET entry_source=(SELECT entry_source FROM desktop_presentations "
+            "WHERE generation=?) WHERE journey_id=?", (current.generation, journey))
+        # The journal cannot silently jump from one selected workspace to another.
+        connection.execute("UPDATE desktop_presentations SET journey_id=? WHERE generation=?",
+                           (journey, current.generation))
+        if (action == "auth.select" and authentication["state"] == "reauthentication-required"
+                and authentication["actions"]["select"]):
+            # The replacement click retires only the ended selection's local receipt.
+            connection.execute("UPDATE desktop_setup_operations SET state='refused',reason='operation_unconfirmed' "
+                "WHERE operation_id=? AND journey_id=? AND action='auth.select' "
+                "AND state IN ('accepted','waiting','outcome_unknown')",
+                (authentication["browser_operation_id"], journey))
+        connection.execute("INSERT INTO desktop_setup_operations VALUES (?,?,?,?,?,?,?,?,'accepted','none',?,?)",
+            (command["operation_id"], journey, command["action"], request_digest, current.generation,
+             expected["scope_digest"], expected["revision"], canonical(accepted.scope).decode(), now, current.expires_at))
+        connection.execute("UPDATE desktop_setup_journeys SET revision=revision+1 WHERE journey_id=?", (journey,))
+        row = connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?", (command["operation_id"],)).fetchone()
+        return dict(row)
+
+    def _automatic_finalization_enabled(self):
+        return self.admissions.stage == "setup" and getattr(self.owner, "automatic_finalization", False)
+
+    @staticmethod
+    def _finalization_receipt(connection, journey_id, view):
+        if journey_id is None:
+            return None
+        # The immutable installation/account tuple is independent of presentation
+        # expiry, browser observation revisions and status-only invalidations.
+        keys = ("source_journey_id", "journey_kind", "installation_id", "association_request_id", "creator_account_id", "key")
+        rows = connection.execute("SELECT * FROM desktop_setup_operations WHERE journey_id=? AND action='setup.finalize' "
+            "ORDER BY created_at DESC,operation_id", (journey_id,)).fetchall()
+        for row in rows:
+            scope = json.loads(row["owner_scope_json"])
+            if all(scope.get(key) == view.scope.get(key) for key in keys):
+                return row
+        return None
+
+    def _finalization_candidate(self, connection):
+        # Reuse the live, consumed native presentation's exact coordinates.
+        # No request credential is manufactured and no renderer read starts work.
+        now = self.admissions._now()
+        presentations = connection.execute(
+            "SELECT p.* FROM desktop_presentations p JOIN desktop_admission_sessions s "
+            "ON s.reference_id=p.generation AND s.generation=p.generation "
+            "WHERE p.stage='setup' AND p.state='active' AND p.expires_at>? "
+            "AND s.role='desktop' AND s.stage='setup' AND s.expires_at>? LIMIT 2", (now, now)).fetchall()
+        if len(presentations) != 1:
+            return None
+        row = presentations[0]
+        current = SetupPresentation(row["generation"], row["journey_id"], row["stage"], row["expires_at"])
+        journey_id = self._selected(connection, current)
+        if journey_id is None:
+            return None
+        view = self.owner.read(journey_id, connection=connection)
+        snapshot = self._snapshot(connection, current, view=view)
+        if ("setup.finalize" not in snapshot["allowed_actions"] or snapshot["pending_operations"]
+                or snapshot["decision"] is not None or view.scope.get("source_recovery") is not None
+                or self._finalization_receipt(connection, journey_id, view) is not None
+                or not all(view.scope.get(name) for name in ("source_journey_id", "journey_kind",
+                    "installation_id", "association_request_id", "creator_account_id", "key"))):
+            return None
+        # An outstanding confirmation or sign-in cannot be accepted by local work.
+        status = snapshot["decision_status"]
+        authentication = snapshot["authentication"]
+        if (status is not None and status["state"] != "accepted"
+                or authentication is not None and authentication["state"] != "admitted"):
+            return None
+        return current, view, snapshot
+
+    def _admit_automatic_finalization(self):
+        if self._closed or not self._automatic_finalization_enabled():
+            return None
+        try:
+            # Most wakeups have no work. Do not open a write transaction for them.
+            with self.store.database.read() as connection:
+                candidate = self._finalization_candidate(connection)
+            if candidate is None:
+                return None
+            expected = candidate[2]["scope_digest"]
+            with self.store.database.transaction() as connection:
+                candidate = self._finalization_candidate(connection)
+                if candidate is None or candidate[2]["scope_digest"] != expected:
+                    return None
+                current, view, snapshot = candidate
+                command = validate({"profile": PROFILE, "kind": "command", "action": "setup.finalize",
+                    "operation_id": str(uuid4()), "journey_id": snapshot["journey_id"],
+                    "expected": {name: snapshot[name] for name in ("generation", "revision", "scope_digest")}},
+                    kind="command")
+                return self._record_command(connection, current, command, view, snapshot)
+        except Exception:
+            # Admission is refused without creating an operation. The next owner
+            # invalidation can re-evaluate changed authority, not replay a command.
+            return None
+
+    def _continue_finalization(self):
+        operation = self._admit_automatic_finalization()
+        if operation is not None:
+            events.publish()
+            self._start(operation, reconcile=False, actor=None)
 
     async def command(self, session, command, *, actor=None):
         validate(command, kind="command")
@@ -341,6 +444,25 @@ class DesktopOnboardingCoordinator:
             self._start(operation, reconcile=True, actor=actor)
         return self._public(operation)
 
+    def _finish_worker(self, operation_id, worker, result):
+        if self._workers.get(operation_id) is not worker:
+            return
+        self._workers.pop(operation_id, None)
+        failures = self._retry_failures.get(operation_id, 0) if result is not None and result.state == "outcome_unknown" else 0
+        self._retry_at[operation_id] = asyncio.get_running_loop().time() + min(
+            CONFIRMATION_BACKOFF_CAP_SECONDS, RECOVERY_INTERVAL_SECONDS * 2 ** min(failures, 2))
+        if result is not None and result.state == "outcome_unknown":
+            self._retry_failures[operation_id] = min(failures + 1, 2)
+        else:
+            self._retry_failures.pop(operation_id, None)
+        if operation_id in self._dirty:
+            dirty_hint = self._dirty.pop(operation_id)
+            if not self._closed:
+                current = next((row for row in self._pending() if row["operation_id"] == operation_id), None)
+                if current is not None:
+                    self._start(current, reconcile=True, actor=None, hint=dirty_hint)
+        events.publish()
+
     def _start(self, operation, *, reconcile, actor, hint=False):
         operation_id = operation["operation_id"]
         running = self._workers.get(operation_id)
@@ -352,26 +474,11 @@ class DesktopOnboardingCoordinator:
         self._workers[operation_id] = task
 
         def finished(worker):
-            if self._workers.get(operation_id) is worker:
-                self._workers.pop(operation_id, None)
-                try:
-                    result = worker.result()
-                except (Exception, asyncio.CancelledError):
-                    result = OperationResult("outcome_unknown", "operation_unconfirmed")
-                failures = self._retry_failures.get(operation_id, 0) if result is not None and result.state == "outcome_unknown" else 0
-                self._retry_at[operation_id] = asyncio.get_running_loop().time() + min(
-                    CONFIRMATION_BACKOFF_CAP_SECONDS, RECOVERY_INTERVAL_SECONDS * 2 ** min(failures, 2))
-                if result is not None and result.state == "outcome_unknown":
-                    self._retry_failures[operation_id] = min(failures + 1, 2)
-                else:
-                    self._retry_failures.pop(operation_id, None)
-                if operation_id in self._dirty:
-                    dirty_hint = self._dirty.pop(operation_id)
-                    if not self._closed:
-                        current = next((row for row in self._pending() if row["operation_id"] == operation_id), None)
-                        if current is not None:
-                            self._start(current, reconcile=True, actor=None, hint=dirty_hint)
-                events.publish()
+            try:
+                result = worker.result()
+            except (Exception, asyncio.CancelledError):
+                result = OperationResult("outcome_unknown", "operation_unconfirmed")
+            self._finish_worker(operation_id, worker, result)
 
         task.add_done_callback(finished)
 
@@ -380,34 +487,41 @@ class DesktopOnboardingCoordinator:
         operation_id = operation["operation_id"]
         frame = self._hint_frames.pop(operation_id, None) if hint else None
         result = None
+        outcome = OperationResult("outcome_unknown", "operation_unconfirmed")
         try:
-            if hint and getattr(self.owner, "reconcile_hint", None) is not None:
-                if (frame is not None and operation_id in self._closed_on and self._closed_on[operation_id] == frame[2]
-                        and self._probe_interval(operation) is None):
-                    # A hinted read already closed this task on the same outcome. Nothing is left to read.
-                    return
-                closed = await self.owner.reconcile_hint(operation)
-                if closed is False:
-                    self._prefetch(operation)
-                    return
-                if closed is True:
-                    self._closed_on[operation_id] = None if frame is None else frame[2]
-                    if operation["action"] in {"auth.select", "auth.switch"}:
-                        # The read that closed the task admitted this child's own attempt, which completes it.
-                        result = OperationResult("completed")
-                # A completed task is published before the remaining owner reads.
-            if result is None:
-                result = await self.owner.execute(operation, reconcile=reconcile, actor=actor)
-        except asyncio.CancelledError:
-            self._settle(operation, OperationResult("outcome_unknown", "operation_unconfirmed"))
-            raise
-        except Exception:
-            # No transport exception proves that a protected operation rolled back.
-            result = OperationResult("outcome_unknown", "operation_unconfirmed")
-        self._settle(operation, result)
-        if result.state != "outcome_unknown":
-            await self._refresh_authentication_parent(operation)
-        return result
+            try:
+                if hint and getattr(self.owner, "reconcile_hint", None) is not None:
+                    if (frame is not None and operation_id in self._closed_on and self._closed_on[operation_id] == frame[2]
+                            and self._probe_interval(operation) is None):
+                        # A hinted read already closed this task on the same outcome. Nothing is left to read.
+                        outcome = None
+                        return None
+                    closed = await self.owner.reconcile_hint(operation)
+                    if closed is False:
+                        self._prefetch(operation)
+                        outcome = None
+                        return None
+                    if closed is True:
+                        self._closed_on[operation_id] = None if frame is None else frame[2]
+                        if operation["action"] in {"auth.select", "auth.switch"}:
+                            # The read that closed the task admitted this child's own attempt, which completes it.
+                            result = OperationResult("completed")
+                    # A completed task is published before the remaining owner reads.
+                if result is None:
+                    result = await self.owner.execute(operation, reconcile=reconcile, actor=actor)
+            except asyncio.CancelledError:
+                self._settle(operation, OperationResult("outcome_unknown", "operation_unconfirmed"))
+                raise
+            except Exception:
+                # No transport exception proves that a protected operation rolled back.
+                result = OperationResult("outcome_unknown", "operation_unconfirmed")
+            outcome = result
+            self._settle(operation, result)
+            if result.state != "outcome_unknown":
+                await self._refresh_authentication_parent(operation)
+            return result
+        finally:
+            self._finish_worker(operation_id, asyncio.current_task(), outcome)
 
     def _authentication_parent(self, operation):
         if self._closed or operation["action"] not in {"auth.select", "auth.cancel", "auth.switch"}:
@@ -507,7 +621,11 @@ class DesktopOnboardingCoordinator:
             while not self._closed:
                 signal.clear()
                 started = time.monotonic()
-                # The pass reads off the event loop. A commit during the read wakes the next pass.
+                # Finalization admission and pass reads run off the event loop. A commit during the read wakes the next pass.
+                finalized = await asyncio.to_thread(self._admit_automatic_finalization)
+                if finalized is not None and not self._closed:
+                    events.publish()
+                    self._start(finalized, reconcile=False, actor=None)
                 facts = await asyncio.to_thread(self._pass_facts)
                 if self._closed:
                     break

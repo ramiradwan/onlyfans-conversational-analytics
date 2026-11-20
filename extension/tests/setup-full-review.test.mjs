@@ -97,8 +97,11 @@ async function initialize(saved, admitted = record, intent = null, options = {})
 for (const id of ['pairing_required', 'activation_required', 'full_ready', 'desktop_app_needed']) {
   test(`Full ${id} has one desktop handoff instead of a competing setup workflow`, async () => {
     const full = structuredClone(model); full.status.consent.mode = 'full';
-    const run = await initialize(storage(), record, null, { model: full, journey: { id, title: 'Full' } });
+    const run = await initialize(storage(), record, null, { model: full, journey: { id, title: id, body: 'State-specific description', primaryLabel: 'Open analysis', tone: id === 'full_ready' ? 'success' : 'warning' } });
     assert.equal(run.element('desktop-entry').hidden, false);
+    assert.equal(run.element('desktop-entry-title').textContent, id);
+    assert.equal(run.element('desktop-entry').dataset.tone, id === 'full_ready' ? 'success' : 'warning');
+    if (id === 'full_ready') assert.equal(run.element('desktop-setup-code').hidden, true);
     for (const section of ['pre-mode', 'mode-choice', 'access-card', 'journey-card']) assert.equal(run.element(section).hidden, true);
     assert.ok(run.calls.every(call => ['read', 'browser_task', 'desktop_adoption', 'context'].includes(call.action)));
   });

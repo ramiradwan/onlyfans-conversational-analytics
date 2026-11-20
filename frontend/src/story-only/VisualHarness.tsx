@@ -21,8 +21,10 @@ import {
 import { StoryView, type StoryViewName } from './StoryViews';
 import {
   StoryWorkspace,
+  dashboardContinuationOptions,
   storyJourneyOptions,
   storyWorkspaceOptions,
+  type DashboardContinuationState,
   type StoryJourneyName,
   type StoryWorkspaceName,
 } from './StoryWorkspace';
@@ -104,6 +106,12 @@ function parseJourney(value: string | null): StoryJourneyName {
     : 'populated';
 }
 
+function parseContinuation(value: string | null): DashboardContinuationState {
+  return dashboardContinuationOptions.some((option) => option.key === value)
+    ? (value as DashboardContinuationState)
+    : 'waiting-for-messages';
+}
+
 function replaceQuery(name: string, value: string) {
   const next = new URLSearchParams(window.location.search);
   next.set(name, value);
@@ -164,6 +172,7 @@ const view = parseView(params.get('view'));
 const stateKey = parseState(params.get('state'));
 const workspace = parseWorkspace(params.get('workspace'));
 const journey = parseJourney(params.get('state'));
+const continuation = workspace === 'dashboard-continuation' ? parseContinuation(params.get('state')) : undefined;
 document.documentElement.setAttribute('data-mui-color-scheme', mode);
 
 export function VisualHarness() {
@@ -178,6 +187,7 @@ export function VisualHarness() {
         <CssBaseline />
         <StoryWorkspace
           analyticsState={storyAnalyticsState(stateKey)}
+          continuation={continuation}
           journey={journey}
           workspace={workspace}
         />

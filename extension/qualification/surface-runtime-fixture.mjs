@@ -78,6 +78,7 @@ export function installSurfaceFixture(input) {
           if (message.action === 'dismiss_browser_task') { state.browserTask = false; return { ok: true, result: { dismissed: true } }; }
           if (message.action === 'desktop_adoption') return { ok: true, result: { adopted: state.adopted === true } };
           if (message.action === 'prepare_launch') return { ok: true, result: { journey_id: journey, app_link: `ofca://onboarding/?journey=${journey}` } };
+          if (message.action === 'full_presentation_intent') return { ok: true, result: message.requested ? '33333333-3333-4333-8333-333333333333' : null };
           throw Error('unknown_fixture_workspace_action');
         }
         if (message.type === 'ofca.legal-activation.accept-terms') state.terms = true;

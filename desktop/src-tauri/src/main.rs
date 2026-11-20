@@ -49,6 +49,16 @@ fn desktop_state(
 }
 
 #[cfg(windows)]
+#[tauri::command]
+fn desktop_chrome_available(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, std::sync::Arc<host::Host>>,
+) -> Result<bool, &'static str> {
+    desktop_state(window, state)?;
+    Ok(browser::chrome_path().is_ok())
+}
+
+#[cfg(windows)]
 struct UpdateCheckGuard(std::sync::Arc<host::Host>);
 #[cfg(windows)]
 impl Drop for UpdateCheckGuard {
@@ -345,6 +355,7 @@ fn main() {
         .manage(state.clone())
         .invoke_handler(tauri::generate_handler![
             desktop_state,
+            desktop_chrome_available,
             desktop_update_status,
             desktop_engine_acquisition_review,
             desktop_engine_acquisition_start,

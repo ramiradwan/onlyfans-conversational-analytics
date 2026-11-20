@@ -1134,3 +1134,135 @@ async def test_a_watch_pass_reads_the_store_off_the_event_loop_and_keeps_a_wake_
     finally:
         database.connect = connect
         await coordinator.stop()
+
+
+def ready_for_finalization(coordinator, owner, session):
+    owner.automatic_finalization = True
+    owner.facts.update(installation="verified", account="verified", browser_access="verified")
+    owner.scope.update(source_journey_id=str(uuid4()), journey_kind="initial-enrollment",
+        installation_id="installation", association_request_id="association", creator_account_id="creator",
+        key={"installation_key_id": "key", "installation_key_jkt": "thumbprint"})
+    journey = str(uuid4())
+    with coordinator.store.database.transaction() as connection:
+        connection.execute("INSERT INTO desktop_setup_journeys (journey_id,created_at) VALUES (?,?)",
+            (journey, coordinator.admissions._now()))
+        connection.execute("UPDATE desktop_presentations SET journey_id=? WHERE generation=?",
+            (journey, session.generation))
+    return journey
+
+
+@pytest.mark.asyncio
+async def test_automatically_finalizes_verified_account_once_without_renderer_action(setup):
+    from app.provisioning.events import events
+    coordinator, owner, session, _ = setup
+    ready_for_finalization(coordinator, owner, session)
+    owner.release = asyncio.Event()
+    snapshot = coordinator.read(session)
+    assert "setup.finalize" in snapshot["allowed_actions"]
+    assert not owner.calls and not owner.admissions
+    coordinator.start()
+    try:
+        async with asyncio.timeout(10):
+            await owner.started.wait()
+        operation = owner.calls[0][0]
+        assert operation["action"] == "setup.finalize"
+        assert coordinator.receipt(session, operation["operation_id"])["state"] == "accepted"
+        for _ in range(3):
+            events.publish()
+            await asyncio.sleep(0)
+        assert len(owner.calls) == len(owner.admissions) == 1
+        owner.facts["configuration"] = "verified"
+        owner.release.set()
+        await coordinator.drain()
+        assert coordinator.receipt(session, operation["operation_id"])["state"] == "completed"
+        assert not coordinator.read(session)["pending_operations"]
+        assert len(owner.calls) == 1
+    finally:
+        owner.release.set()
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("block", ["no-account", "no-key", "recovery", "expired", "pending", "confirmation", "runtime"])
+async def test_automatic_finalization_never_creates_new_authority(setup, block):
+    coordinator, owner, session, now = setup
+    ready_for_finalization(coordinator, owner, session)
+    if block == "no-account":
+        owner.facts["account"] = "missing"
+    elif block == "no-key":
+        owner.scope["key"] = None
+    elif block == "recovery":
+        owner.scope["source_recovery"] = {"source": "unconfirmed"}
+    elif block == "expired":
+        now[0] += timedelta(hours=1)
+    elif block == "pending":
+        owner.facts["account"] = "missing"
+        request = command(coordinator.read(session), "account.connect")
+        coordinator._accept(session, request)
+        owner.facts["account"] = "verified"
+    elif block == "confirmation":
+        owner.scope["desktop_decision_status"] = {"operation_id": str(uuid4()), "state": "confirmation-required"}
+    elif block == "runtime":
+        coordinator = DesktopOnboardingCoordinator(ScopedAdmissions(coordinator.store, stage="runtime"), owner)
+    before = table_counts(coordinator)
+    coordinator._continue_finalization()
+    assert table_counts(coordinator) == before
+    assert not owner.calls
+
+
+@pytest.mark.asyncio
+async def test_finalization_refusal_survives_reopening_without_a_new_operation(setup):
+    coordinator, owner, session, now = setup
+    ready_for_finalization(coordinator, owner, session)
+    owner.result = OperationResult("refused", "authority_unavailable")
+    coordinator._continue_finalization()
+    await coordinator.drain()
+    operation = owner.calls[0][0]
+    assert coordinator.receipt(session, operation["operation_id"])["state"] == "refused"
+    assert coordinator.read(session)["reason"] == "authority_unavailable"
+    assert "setup.finalize" not in coordinator.read(session)["allowed_actions"]
+    now[0] += timedelta(hours=1)
+    replacement = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(), role="desktop")
+    reopened = DesktopOnboardingCoordinator(coordinator.admissions, owner)
+    reopened._continue_finalization()
+    assert reopened.read(replacement)["reason"] == "authority_unavailable"
+    assert len(owner.calls) == len(owner.admissions) == 1
+
+
+@pytest.mark.asyncio
+async def test_restart_reconciles_original_automatic_finalization(setup):
+    coordinator, owner, session, _ = setup
+    ready_for_finalization(coordinator, owner, session)
+    owner.result = OSError("lost result")
+    coordinator._continue_finalization()
+    await coordinator.drain()
+    first = owner.calls[0][0]["operation_id"]
+    assert coordinator.receipt(session, first)["state"] == "outcome_unknown"
+    owner.result = OperationResult("completed")
+    reopened = DesktopOnboardingCoordinator(coordinator.admissions, owner)
+    reopened.start()
+    try:
+        await reopened.drain()
+        assert reopened.receipt(session, first)["state"] == "completed"
+        assert [(op["operation_id"], reconcile) for op, reconcile in owner.calls] == [(first, False), (first, True)]
+        assert len(owner.admissions) == 1
+    finally:
+        await reopened.stop()
+
+
+@pytest.mark.asyncio
+async def test_drain_completes_when_caller_wakes_directly_from_worker_settlement(setup):
+    coordinator, owner, session, _ = setup
+    ready_for_finalization(coordinator, owner, session)
+    settled = asyncio.Event()
+    owner.settled = lambda operation, result: settled.set()
+    coordinator.start()
+    try:
+        async with asyncio.timeout(5):
+            await settled.wait()
+            await coordinator.drain()
+        assert not coordinator._workers
+        assert len(owner.calls) == 1
+        assert coordinator.receipt(session, owner.calls[0][0]["operation_id"])["state"] == "completed"
+    finally:
+        await coordinator.stop()

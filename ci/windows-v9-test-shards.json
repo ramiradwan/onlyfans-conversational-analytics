@@ -118,6 +118,7 @@
     "tests/test_analytics_packaged_qualification.py": 2,
     "tests/test_analytics_packaged_source_binding.py": 6,
     "tests/test_analytics_pipeline.py": 8,
+    "tests/test_analytics_publication_events.py": 4,
     "tests/test_analytics_qualification_profile.py": 7,
     "tests/test_analytics_qualification_storage.py": 7,
     "tests/test_analytics_query_endpoints.py": 8,
@@ -671,5 +672,47 @@
     "tests/test_text_analysis_retention_lifecycle.py": 2,
     "tests/test_tied_insertion_safety.py": 1,
     "tests/test_tied_insertion_scheduler.py": 1
+  },
+  "maintenance": {
+    "method": "preserve existing owners; allocate new files by selected node count",
+    "inventory_sha256": "2ad7953f6a960bd369b8d2420da8165d977d2557db785c431b51848b1bb2bb5e",
+    "changes": {
+      "full": {
+        "added": [
+          "tests/test_analytics_publication_events.py"
+        ],
+        "removed": [],
+        "modeled_load": {
+          "1": 1314,
+          "2": 1107,
+          "3": 2406,
+          "4": 855,
+          "5": 2425,
+          "6": 1362,
+          "7": 3379,
+          "8": 2931
+        }
+      },
+      "platform": {
+        "added": [],
+        "removed": [],
+        "modeled_load": {
+          "1": 229,
+          "2": 325,
+          "3": 376,
+          "4": 447,
+          "5": 405
+        }
+      },
+      "analytics": {
+        "added": [],
+        "removed": [],
+        "modeled_load": {
+          "1": 327,
+          "2": 307
+        }
+      }
+    },
+    "timing_source": null
   }
 }

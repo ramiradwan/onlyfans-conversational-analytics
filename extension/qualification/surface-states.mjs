@@ -25,7 +25,7 @@ export const SURFACE_STATES = Object.freeze({
   desktop_app_unavailable: Object.freeze(make('setup', 'full', { paired: true, reachable: false })),
   extension_connection_unknown: Object.freeze(make('setup', 'full', { pairing: 'unavailable', reachable: false })),
   full_tab_sleeping: Object.freeze(make('setup', 'full', { paired: true, ready: true, sleeping: true })),
-  full_access_revoked: Object.freeze(make('setup', 'revoked', { paired: true, ready: true, phase: 'revoked' })),
+  full_access_revoked: Object.freeze(make('setup', 'revoked', { paired: true, ready: true, phase: 'revoked', choice: true })),
   setup_incomplete: Object.freeze(make('setup', 'full', { pairing: 'setup_incomplete' })),
   pairing_required: Object.freeze(make('setup')),
   pairing_waiting: Object.freeze(make('setup', 'full', { pairing: 'pairing' })),

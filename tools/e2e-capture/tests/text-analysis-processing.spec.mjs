@@ -1,7 +1,52 @@
+import { performance } from 'node:perf_hooks';
 import { expect, test } from '@playwright/test';
 
 import { assertJournalOrder, check, dropNextReply, fixture, prepareProfile, processingCommand, readJson, ready, sameMeaning,
   selectProfile, stats, withTextAnalysis, observeSavedRead } from '../lib/text-analysis-browser.mjs';
+
+test('first saved finding is visible after explicit processing enablement', async ({}, testInfo) => {
+  await withTextAnalysis('joint', async (x) => {
+    await prepareProfile(x);
+    await selectProfile(x.page, 'Approved processing profile', 'joint');
+    const before = await stats(x.page);
+    check(before.canonical.committed_jobs === 0 && before.engine.analyze_count === 0, 'no_early_processing');
+    const started = performance.now();
+    let confirmed = null;
+    await processingCommand(x.page, 'enable', { beforeConfirm: () => { confirmed = performance.now(); } });
+    const acknowledged = performance.now();
+
+    // Do not wait for all jobs, request a refresh, or insert new source data.
+    const navigationStarted = performance.now();
+    await ready(x.page, x.log, '/analytics', x.conversationCount);
+    const results = x.page.locator('[data-journey-state="findings.results"]');
+    const firstFinding = results.getByRole('table', { name: 'Topics findings', exact: true })
+      .getByRole('row').filter({ hasText: /^topic\.synthetic/ });
+    await expect(firstFinding).toBeVisible();
+    await expect(firstFinding.getByRole('cell').nth(1)).toHaveText(/^[1-9]\d*$/);
+    const visible = performance.now();
+
+    const after = await stats(x.page);
+    check(after.canonical.committed_jobs > 0 && after.source_count === before.source_count
+      && after.canonical.preview_spent === 0, 'first_saved_finding');
+    check(x.log.projections.every(item => item.canonical_revision === 1), 'unchanged_conversation_data');
+    const execution = x.log.requests.filter(item => item.path === '/api/v1/nlp/execution');
+    check(execution.length === 1 && execution[0].body.action === 'enable', 'single_enable');
+    check(confirmed !== null && started <= confirmed && confirmed <= acknowledged
+      && acknowledged <= navigationStarted && navigationStarted <= visible, 'timing_order');
+
+    // One monotonic test-driver clock across navigation. No identifiers, messages,
+    // raw requests, model labels or absolute timestamps are included in the attachment.
+    await testInfo.attach('first-saved-finding-timing', { contentType: 'application/json',
+      body: JSON.stringify({ schema: 'first-saved-finding-timing.v1',
+        scope: 'synthetic-source-browser',
+        initial_data: 'already_saved',
+        review_to_confirmation_ms: Math.round(confirmed - started),
+        confirmation_to_acknowledgment_ms: Math.round(acknowledged - confirmed),
+        navigation_to_visible_finding_ms: Math.round(visible - navigationStarted),
+        confirmation_to_visible_finding_ms: Math.round(visible - confirmed),
+      }) });
+  });
+});
 
 test('processing commands preserve durable enrollment and canonical findings', async () => {
   await withTextAnalysis('joint', async (x) => {

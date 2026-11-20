@@ -65,7 +65,7 @@ function render(model) {
 page.bind('journey-primary', () => {
   if (primaryAction === 'resume') return transition('resume', client.model);
   if (primaryAction === 'creator') return openCreatorAccount();
-  return openSurface('setup', setupSection);
+  return openSurface('setup', setupSection, setupSection === 'full' && client.model.status?.consent.mode === 'preview');
 });
 page.bind('pause', () => transition('pause', client.model));
 page.bind('continue-setup', () => openSurface('setup'));

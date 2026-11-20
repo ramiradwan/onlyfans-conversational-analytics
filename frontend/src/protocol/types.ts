@@ -438,12 +438,33 @@ export interface AgentStatePayload {
   browser: BrowserSurfacePayload | null;
 }
 
+export interface FullPresentationIntent {
+  request_id: string;
+  journey_id: string;
+  disclosure_bundle_id: string;
+}
+export interface CaptureControlStatus {
+  owner_scope: string;
+  consent_epoch: string;
+  policy_revision: string;
+  capture: 'active' | 'paused';
+  receipt: {
+    operation_id: string;
+    action: 'pause' | 'resume';
+    previous_consent_epoch: string;
+    outcome: 'applied' | 'refused';
+  } | null;
+}
+
 export interface BrowserSurfacePayload {
   capture: 'active' | 'paused' | 'off';
   site_access: 'granted' | 'needs_approval' | 'reload_required';
   history_permission: 'granted' | 'missing';
   legal_review_required: boolean;
   reported_at: IsoDateTime;
+  full_intent?: FullPresentationIntent;
+  capture_control?: CaptureControlStatus | null;
+  capture_control_supported?: true | null;
   history_error_code?: 'identity_required' | 'unsupported_revision' | 'history_unavailable' | 'history_dependency_wait' | 'software_update_required' | null;
 }
 

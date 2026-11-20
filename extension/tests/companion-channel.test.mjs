@@ -824,3 +824,21 @@ test('a malformed waiting control closes the channel and an older Brain leaves w
     assert.equal(channel.waitingControl, false); assert.equal(channel.closed, false);
   } finally { channel.close(); }
 });
+
+test('scoped encrypted capture commands carry no authority to change another scope', async () => {
+  const payload = { action: 'pause', operation_id: crypto.randomUUID(), owner_scope: 'a'.repeat(64),
+    consent_epoch: crypto.randomUUID(), policy_revision: '1' };
+  const good = { type: 'session.control', id: crypto.randomUUID(), action: 'capture.control', payload };
+  for (const control of [good, { ...good, payload: { ...payload, creator_account_id: 'another' } },
+    { ...good, payload: { ...payload, action: 'full' } },
+    { ...good, payload: { ...payload, owner_scope: 'wrong' } },
+    { ...good, payload: { ...payload, consent_epoch: 'old' } }]) {
+    const peer = fixture(), channel = await peer.open(), controls = [];
+    channel.onControl(value => controls.push(value)); peer.application(control);
+    await waitFor(() => channel.closed || controls.length > 0);
+    assert.equal(channel.closed, control !== good);
+    if (control === good) assert.deepEqual(controls, [{ id: good.id, action: good.action, payload }]);
+    else assert.deepEqual(controls, []);
+    channel.close();
+  }
+});

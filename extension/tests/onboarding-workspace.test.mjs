@@ -242,3 +242,39 @@ test('absent current envelope never imports legacy draft keys', async () => {
   assert.equal(f.values[WORKSPACE_STATE_KEY].version, 3);
   assert.equal(f.values.onboarding_workspace_state_v2.version, 2);
 });
+
+test('explicit Full presentation intent is not a draft or a grant and binds once to the paired account', async () => {
+  const f = fixture(); await f.open();
+  await f.workspace.saveDraft(f.sender(), { scope_id: scope.scope_id, draft: checked });
+  assert.equal(await f.workspace.fullPresentationIntent('creator-a'), null);
+  const request_id = await f.workspace.setFullPresentationIntent(f.sender(), { scope_id: scope.scope_id, requested: true });
+  const report = await f.workspace.fullPresentationIntent('creator-a');
+  assert.deepEqual(report, { request_id, journey_id: journey, disclosure_bundle_id: scope.disclosure_bundle_id });
+  assert.equal(await f.workspace.fullPresentationIntent('creator-b'), null);
+  assert.deepEqual((await f.workspace.read()).draft, checked);
+  const restored = createOnboardingWorkspace({ chromeApi: f.chromeApi, routes });
+  assert.deepEqual(await restored.fullPresentationIntent('creator-a'), report);
+  await restored.setFullPresentationIntent(f.sender(), { scope_id: scope.scope_id, requested: false });
+  assert.equal(await restored.fullPresentationIntent('creator-a'), null);
+  assert.equal(f.calls.filter(call => call[0] === 'create').length, 1);
+});
+
+test('Full presentation intent survives absent page identity but not replacement or disclosure change', async () => {
+  const f = fixture(); await f.open();
+  const digest = async account => [...new Uint8Array(await crypto.subtle.digest('SHA-256',
+    new TextEncoder().encode(JSON.stringify(['onboarding-draft-account.v1', account]))))]
+    .map(value => value.toString(16).padStart(2, '0')).join('');
+  await f.workspace.setFullPresentationIntent(f.sender(), { scope_id: scope.scope_id, requested: true });
+  const original = await f.workspace.fullPresentationIntent('creator-a');
+  await f.workspace.reconcileIdentity({ account_digest: await digest('creator-a') });
+  await f.workspace.reconcileIdentity({ account_digest: null });
+  assert.deepEqual(await f.workspace.fullPresentationIntent('creator-a'), original);
+  await f.workspace.reconcileIdentity({ account_digest: await digest('creator-b') });
+  assert.equal(await f.workspace.fullPresentationIntent('creator-a'), null);
+  assert.equal(await f.workspace.fullPresentationIntent('creator-b'), null);
+  const current = await f.workspace.read();
+  await f.workspace.setFullPresentationIntent(f.sender(), { scope_id: current.draft_scope.scope_id, requested: true });
+  await f.workspace.refreshScope({ ...scope, disclosure_bundle_id: 'b'.repeat(64) });
+  assert.equal(await f.workspace.fullPresentationIntent('creator-b'), null);
+  await assert.rejects(f.workspace.setFullPresentationIntent(f.sender(), { scope_id: current.draft_scope.scope_id, requested: true }));
+});

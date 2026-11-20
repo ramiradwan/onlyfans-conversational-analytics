@@ -9,15 +9,17 @@ import { z } from 'zod';
  */
 export type CaptureAction = 'pause' | 'resume';
 export type CaptureDelivery = 'delivered' | 'unreachable';
+export interface CaptureRequestScope { operation_id: string; owner_scope: string; consent_epoch: string; policy_revision: string }
 export type BrowserDestination = 'setup' | 'access' | 'history' | 'creator';
 
 export interface BrowserControlApi {
-  setCapture(action: CaptureAction, signal?: AbortSignal): Promise<CaptureDelivery>;
+  setCapture(action: CaptureAction, signal?: AbortSignal, scope?: CaptureRequestScope): Promise<CaptureDelivery>;
   open(destination: BrowserDestination, signal?: AbortSignal): Promise<CaptureDelivery>;
 }
 
 export class BrowserControlApiError extends Error {
-  constructor(readonly code: 'csrf' | 'request' | 'response' | 'timeout' | 'cancelled') {
+  constructor(readonly code: 'csrf' | 'request' | 'response' | 'timeout' | 'cancelled',
+    readonly outcome: 'unknown' | 'refused' | 'not_sent' = code === 'csrf' ? 'not_sent' : 'unknown') {
     super('The browser extension request could not be completed.');
     this.name = 'BrowserControlApiError';
   }
@@ -32,7 +34,7 @@ export function createBrowserControlApi({
   fetch: request = (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
   getCsrfToken = () => document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content || null,
 }: { fetch?: typeof fetch; getCsrfToken?: () => string | null } = {}): BrowserControlApi {
-  async function deliver(path: 'capture' | 'open', action: CaptureAction | BrowserDestination, signal?: AbortSignal): Promise<CaptureDelivery> {
+  async function deliver(path: 'capture' | 'open', action: CaptureAction | BrowserDestination, signal?: AbortSignal, scope?: CaptureRequestScope): Promise<CaptureDelivery> {
       const csrf = getCsrfToken();
       if (!csrf) throw new BrowserControlApiError('csrf');
       const controller = new AbortController();
@@ -48,13 +50,17 @@ export function createBrowserControlApi({
           redirect: 'error',
           cache: 'no-store',
           headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-          body: JSON.stringify({ action }),
+          body: JSON.stringify({ action, ...scope }),
           signal: controller.signal,
         });
         const body = await response.json().catch(() => null) as unknown;
         if (response.status === 202 && deliveredSchema.safeParse(body).success) return 'delivered';
         if (response.status === 409 && unreachableSchema.safeParse(body).success) return 'unreachable';
-        throw new BrowserControlApiError(response.ok ? 'response' : 'request');
+        // These responses precede dispatch in the existing capture/open route.
+        const refused = [400, 401, 403].includes(response.status) && body !== null
+          && typeof body === 'object' && 'detail' in body
+          && ['pairing_account_refused', 'pairing_message_invalid'].includes(String(body.detail));
+        throw new BrowserControlApiError(response.ok ? 'response' : 'request', refused ? 'refused' : 'unknown');
       } catch (error) {
         if (timedOut) throw new BrowserControlApiError('timeout');
         if (signal?.aborted) throw new BrowserControlApiError('cancelled');
@@ -66,7 +72,7 @@ export function createBrowserControlApi({
       }
   }
   return {
-    setCapture: (action, signal) => deliver('capture', action, signal),
+    setCapture: (action, signal, scope) => deliver('capture', action, signal, scope),
     open: (destination, signal) => deliver('open', destination, signal),
   };
 }

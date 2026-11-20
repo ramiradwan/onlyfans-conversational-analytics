@@ -198,6 +198,7 @@ export class HistoryAcquisitionCoordinator {
     clearTimeoutImpl = (handle) => clearTimeout(handle),
     runDeadlineMs = HISTORY_RUN_DEADLINE_MS,
     onStateChanged = () => {},
+    onPageCommitted = () => {},
   }) {
     if (
       !outbox?.commitPage
@@ -223,6 +224,7 @@ export class HistoryAcquisitionCoordinator {
     this.clearTimeoutImpl = clearTimeoutImpl;
     this.runDeadlineMs = runDeadlineMs;
     this.onStateChanged = onStateChanged;
+    this.onPageCommitted = onPageCommitted;
     this.leaseToken = idFactory();
     this.running = null;
     this.runController = null;
@@ -680,7 +682,7 @@ export class HistoryAcquisitionCoordinator {
       ? job
       : await this.#claim(job, authorization, signal);
     this.#assertActive(signal, authorization, claimed);
-    return this.outbox.commitPage({
+    const result = await this.outbox.commitPage({
       jobId: claimed.job_id,
       expectedAccountEpoch: claimed.account_epoch,
       expectedLeaseToken: this.leaseToken,
@@ -693,6 +695,14 @@ export class HistoryAcquisitionCoordinator {
       validateAuthorization: () => this.#assertActive(signal, authorization, claimed),
       signal, assertCurrent: () => this.#assertActive(signal, authorization, claimed),
     });
+    // A failed delivery hint must never turn a committed page into a retry.
+    // The transport retains its normal ACK, snapshot and heartbeat recovery.
+    if (result.items.length > 0 && !signal.aborted) {
+      void Promise.resolve().then(() => {
+        if (!signal.aborted) return this.onPageCommitted();
+      }).catch(() => undefined);
+    }
+    return result;
   }
 
   async #readInventoryPage(job, authorization, signal, attempt) {

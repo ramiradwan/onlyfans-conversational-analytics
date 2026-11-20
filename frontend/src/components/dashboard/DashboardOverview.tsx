@@ -1,7 +1,14 @@
+import { keyframes } from '@emotion/react';
 import { Box, LinearProgress, Skeleton, Stack, Typography } from '@mui/material';
 import { Children, useId } from 'react';
 
 import { Panel } from '../ui/Panel';
+
+const indeterminateBar = keyframes({
+  '0%': { transform: 'translateX(-100%) scaleX(0.35)' },
+  '50%': { transform: 'translateX(35%) scaleX(0.5)' },
+  '100%': { transform: 'translateX(100%) scaleX(0.35)' },
+});
 
 export interface OverviewProgress {
   complete?: boolean;
@@ -92,8 +99,17 @@ export function DashboardOverview({
             <LinearProgress
               data-journey-state="desktop.history_syncing"
               sx={{ visibility: progress.complete ? 'hidden' : 'visible',
-                '& .MuiLinearProgress-bar': { animation: 'none', transform: 'none !important', clipPath: `inset(0 ${100 - (progress.percent ?? 35)}% 0 0)` },
-                '& .MuiLinearProgress-bar2': { display: 'none' } }}
+                ...(progress.percent === null ? {
+                  '& .MuiLinearProgress-bar1': {
+                    left: 0, right: 0, width: '100%', transformOrigin: 'left center',
+                    animation: `${indeterminateBar} 1.8s ease-in-out infinite`,
+                  },
+                  '& .MuiLinearProgress-bar2': { display: 'none' },
+                  '@media (prefers-reduced-motion: reduce)': { '& .MuiLinearProgress-bar': { display: 'none', animation: 'none' } },
+                } : {
+                  '& .MuiLinearProgress-bar': { animation: 'none', transform: 'none !important', clipPath: `inset(0 ${100 - progress.percent}% 0 0)` },
+                  '& .MuiLinearProgress-bar2': { display: 'none' },
+                }) }}
               aria-label={progress.label}
               variant={progress.percent === null ? 'indeterminate' : 'determinate'}
               value={progress.percent ?? undefined}

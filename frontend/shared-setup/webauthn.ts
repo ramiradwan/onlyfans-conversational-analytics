@@ -29,6 +29,7 @@ type RefusedAccess = Exclude<PushedAccess, 'available'>;
 const REFUSED_ACCESS: readonly RefusedAccess[] = ['renewing', 'expired', 'removed', 'unavailable'];
 const PUSHED_ACCESS: readonly PushedAccess[] = ['available', ...REFUSED_ACCESS];
 const ACCESS_EVENTS = '/api/v1/webauthn/session-state/events';
+export const PASSKEY_STATUS_RETRY_DELAYS = [1000, 2000, 4000] as const;
 
 function oneOf<T extends string>(values: readonly T[], value: unknown): value is T {
   return typeof value === 'string' && (values as readonly string[]).includes(value);
@@ -113,7 +114,7 @@ function loginCredential(credential: PublicKeyCredential) {
 }
 
 export class LoginOutcomeError extends Error {
-  constructor(readonly stage: 'begin' | 'credential' | 'finish') {
+  constructor(readonly stage: 'begin' | 'credential' | 'finish', readonly outcomeUnknown = false) {
     super('Sign-in did not finish.');
     this.name = 'LoginOutcomeError';
   }
@@ -144,7 +145,7 @@ async function refusal(response: Response): Promise<WebAuthnStatusError> {
     const access = value.access;
     if (oneOf(REFUSED_ACCESS, access)) return new WebAuthnStatusError(access === 'unavailable' ? 'unavailable' : 'access', 409, access);
   }
-  return new WebAuthnStatusError('unavailable', 409);
+  return new WebAuthnStatusError('invalid', 409);
 }
 
 /** The lapsed state a failed status read reported, or null. */
@@ -174,6 +175,13 @@ export class AccessFollower {
     if (outcome === undefined) this.pending = true;
     else this.observed = outcome;
     this.settle();
+  }
+
+  /** A definite refusal cannot be retried just because the same access hint is pushed again. */
+  releaseRefused() {
+    this.holds = Math.max(0, this.holds - 1);
+    this.observed = this.pushed;
+    this.pending = false;
   }
 
   /** Ends a hold whose read was retired before it observed anything. */
@@ -287,7 +295,7 @@ export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi
     });
     if (response.status === 409) throw await refusal(response);
     if (!response.ok) throw new WebAuthnStatusError(response.status === 401 ? 'session'
-      : response.status === 403 ? 'forbidden' : 'unavailable', response.status);
+      : response.status === 403 ? 'forbidden' : response.status >= 500 ? 'unavailable' : 'invalid', response.status);
     let value: unknown;
     try { value = parseOnboardingJson(await response.text()); }
     catch { throw new WebAuthnStatusError('invalid'); }
@@ -351,8 +359,10 @@ export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi
       if (signal?.aborted || error instanceof RequestRefused && error.status < 500) throw new LoginOutcomeError('finish');
       // Finish can commit before its reply is lost. Reconcile once by read,
       // never replay the assertion or start another browser ceremony.
-      try { if ((await state(signal)).authenticated) return; } catch { /* Keep the outcome unconfirmed. */ }
-      throw new LoginOutcomeError('finish');
+      let outcomeUnknown = false;
+      try { if ((await state(signal)).authenticated) return; }
+      catch { outcomeUnknown = true; }
+      throw new LoginOutcomeError('finish', outcomeUnknown);
     }
   };
 

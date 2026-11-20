@@ -10,7 +10,7 @@ const contentChanges = new Map([
   ['archive:open', 'Explicit archive form expansion.'],
   ['archive:cancel', 'Explicit archive form closure.'],
   ...['selection', 'waiting', 'review', 'accepted', 'unavailable'].map(state => ['activation:' + state, 'Confirmed activation task changes its available decisions.']),
-  ...['refusal', 'network', 'success'].map(outcome => ['redemption:' + outcome + ':open', 'Explicit activation-code form expansion.']),
+  ...['unconfirmed', 'network', 'success'].map(outcome => ['redemption:' + outcome + ':open', 'Explicit activation-code form expansion.']),
   ['redemption:success:readiness', 'Confirmed activation completes and closes the code form.'],
   ['pairing:open', 'Explicit manual comparison task expansion.'],
   ['pairing:pending', 'Accepted manual connection window presents its waiting task.'],

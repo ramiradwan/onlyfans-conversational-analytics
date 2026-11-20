@@ -19,7 +19,7 @@
         "frontend/src/components/OnboardingPasskeyTask.tsx",
         "frontend/src/components/SetupPrompt.tsx",
         "frontend/src/components/CompanionPairingControls.tsx",
-        "frontend/src/views/SettingsView.tsx",
+        "frontend/src/components/MessageHistoryControls.tsx",
         "frontend/src/components/dashboard/DashboardOverview.tsx",
         "frontend/src/components/CommercialActivationControls.tsx",
         "frontend/src/components/CreatorVaultControls.tsx",
@@ -652,6 +652,31 @@
           "kind": "browser",
           "file": "tools/e2e-capture/tests/text-analysis-processing.spec.mjs",
           "name": "processing commands preserve durable enrollment and canonical findings"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TaskFindings.test.tsx",
+          "name": "displays a newly published saved finding without another message or refresh click"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/analyticsStore.test.ts",
+          "name": "reloads saved analytics on publication with no conversation revision change and coalesces overlapping notices"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_nlp_runtime.py",
+          "name": "test_saved_findings_publication_notifies_without_new_canonical_data"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_analytics_publication_events.py",
+          "name": "test_publication_stream_is_account_scoped_and_reconciles_on_connect"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-processing.spec.mjs",
+          "name": "first saved finding is visible after explicit processing enablement"
         }
       ]
     },
@@ -1427,6 +1452,10 @@
           "to": "desktop.setup_prompt",
           "by": "user",
           "action": "sign-in-with-passkey"
+        },
+        {
+          "to": "desktop.setup_prompt",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -1449,6 +1478,41 @@
           "kind": "visual",
           "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "passkey"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "recovers transient passkey status automatically without presenting a retry action"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "reconciles a lost registration finish without another passkey ceremony"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "reconciles a lost sign-in finish before offering another ceremony"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "reconciles a later pushed access change after the status recovery budget ends"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "does not repeat a definite refusal when the same access hint is pushed again"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "retires a stalled status read and ignores a late answer after recovery"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "disables sign-in while a pushed access change is being verified"
         }
       ]
     },
@@ -1617,6 +1681,51 @@
           "kind": "unit",
           "file": "frontend/tests/BrowserExtensionControls.test.tsx",
           "name": "retains the compact facts rows while the connection is missing without offering stale controls"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/BrowserExtensionControls.test.tsx",
+          "name": "retains a lost capture response across views until a pushed effect settles it"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/BrowserExtensionControls.test.tsx",
+          "name": "does not carry an uncertain capture request into another creator account"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/BrowserExtensionControls.test.tsx",
+          "name": "allows a new explicit capture action only after a fresh browser report following unreachable delivery"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/consent-controller.test.mjs",
+          "name": "scoped capture receipt survives restart and admits only the exact consent epoch and owner"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/consent-controller.test.mjs",
+          "name": "a capture receipt candidate is not proof if the consent write did not commit"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/consent-controller.test.mjs",
+          "name": "a scoped resume denied by Legal records refusal without changing consent"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_companion_browser_controls.py",
+          "name": "test_scoped_capture_dispatch_and_owner_receipt_survive_session_replacement"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/BrowserExtensionControls.test.tsx",
+          "name": "binds capture to the reported owner revision and confirms only its matching receipt or a retired scope"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/BrowserExtensionControls.test.tsx",
+          "name": "does not dispatch an unscoped action when a modern browser cannot report its current consent scope"
         }
       ]
     },
@@ -1624,7 +1733,7 @@
       "id": "desktop.message_history",
       "surface": "desktop.app",
       "anchor": {
-        "file": "frontend/src/views/SettingsView.tsx",
+        "file": "frontend/src/components/MessageHistoryControls.tsx",
         "text": "data-journey-state=\"desktop.message_history\""
       },
       "transitions": [
@@ -1674,6 +1783,91 @@
           "kind": "unit",
           "file": "frontend/tests/SettingsView.test.tsx",
           "name": "single-flights duplicate clicks while the browser request is unresolved"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "reviews history in the dashboard, then requests Chrome permission only after explicit consent"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "requires new consent for the current policy and preserves the current configuration"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "keeps an unconfirmed write disabled until a later authoritative revision is available"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "reconciles an already revoked receipt without issuing a second revocation"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "discards an interrupted change when the creator account changes"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "does not lock a definitely refused history change as an unknown write"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "does not offer history for a different creator"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "keeps a dismissed optional history offer quiet across session renewal"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "resumes paused history using the existing consent without manufacturing a new receipt"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "shows existing authorized history as starting or adding without offering consent again"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "keeps the history continuation visible during acquisition and does not offer consent again"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "offers an explicit resume when coverage is already paused"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/recoveryClassification.test.ts",
+          "name": "covers the current capture, history and protocol reason unions"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "reads current history after restart without replaying an interrupted consent request or opening Chrome"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "does not repeat accepted consent when the first owner read after restart confirms it"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "settles a committed revocation from the initial owner read after restart"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "does not send a consent request if its recovery record cannot be saved"
         }
       ]
     },
@@ -1725,6 +1919,15 @@
           "to": "desktop.message_history",
           "by": "user",
           "action": "open-settings"
+        },
+        {
+          "to": "desktop.message_collection_review",
+          "by": "system"
+        },
+        {
+          "to": "desktop.message_history",
+          "by": "user",
+          "action": "review-message-history"
         }
       ],
       "evidence": [
@@ -1737,6 +1940,31 @@
           "kind": "visual",
           "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "populated"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "shows the first saved message without waiting for history or asking for another action"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "does not show an unverified metric as first activity"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "does not show a percentage before discovery closes or before history is verified complete"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_projection_v2.py",
+          "name": "test_first_passive_message_is_visible_without_completed_history"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/capture.spec.mjs",
+          "name": "first captured activity becomes visible before history is complete"
         }
       ]
     },
@@ -1754,6 +1982,10 @@
         },
         {
           "to": "extension.full_ready",
+          "by": "system"
+        },
+        {
+          "to": "desktop.message_collection_review",
           "by": "system"
         }
       ],
@@ -1827,6 +2059,81 @@
           "kind": "unit",
           "file": "tests/test_desktop_activation.py",
           "name": "test_accepted_activation_delivery_recovers_after_presentation_expiry"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "opens a newly prepared offer after an explicit review without another click"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "does not expose or confirm an offer for the previously displayed creator"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "rejects a click from an outdated rendered offer before sending a command"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "blocks competing activation paths while the original desktop command is unconfirmed"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "does not reopen acceptance of the same unconfirmed offer after presentation renewal"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "preserves accepted code recovery across disconnect and renewal without resubmitting"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "allows only a different code after a definite code refusal"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "never carries an uncertain code into a different creator account"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "retires a pending code response on presentation replacement and resumes only the original code"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/recoveryClassification.test.ts",
+          "name": "covers all customer-facing desktop, browser, passkey and activation codes"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "keeps a currently admissible commercial review available independently of the extension connection"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "does not promote a separate activation code while a current commercial offer is available"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "presents a current explicit Full intent only as review, never activation, and remembers dismissal"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "does not prepare an activation or open a new ceremony solely from an unprepared Full intent"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktopOnboarding.test.ts",
+          "name": "admits presentation intent only from the current account, journey and legal state"
         }
       ]
     },
@@ -2085,6 +2392,11 @@
           "to": "browser.loading",
           "by": "user",
           "action": "task-action"
+        },
+        {
+          "to": "browser.loading",
+          "by": "user",
+          "action": "browser-reopen"
         }
       ],
       "evidence": [
@@ -2092,6 +2404,16 @@
           "kind": "unit",
           "file": "frontend/tests/desktop-setup.test.js",
           "name": "renders the three local setup tasks and optional activation from one projection"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "does not offer browser recovery while the desktop status is uncertain"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "opens the exact operation rendered on the current browser recovery button"
         }
       ]
     },
@@ -2110,6 +2432,11 @@
         {
           "to": "desktop.setup_unavailable",
           "by": "system"
+        },
+        {
+          "to": "browser.loading",
+          "by": "user",
+          "action": "browser-reopen"
         }
       ],
       "evidence": [
@@ -2182,6 +2509,16 @@
           "kind": "unit",
           "file": "tests/test_registered_continuation_context.py",
           "name": "test_native_account_command_resumes_only_the_explicit_classified_source"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "does not offer browser recovery while the desktop status is uncertain"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "opens the exact operation rendered on the current browser recovery button"
         }
       ]
     },
@@ -2204,6 +2541,11 @@
         {
           "to": "desktop.setup_local_access",
           "by": "system"
+        },
+        {
+          "to": "browser.loading",
+          "by": "user",
+          "action": "browser-reopen"
         }
       ],
       "evidence": [
@@ -2211,6 +2553,46 @@
           "kind": "unit",
           "file": "frontend/tests/desktop-setup.test.js",
           "name": "renders the three local setup tasks and optional activation from one projection"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "does not offer browser recovery while the desktop status is uncertain"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "opens the exact operation rendered on the current browser recovery button"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "shows automatic local configuration without a Continue action"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_coordinator.py",
+          "name": "test_automatically_finalizes_verified_account_once_without_renderer_action"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_coordinator.py",
+          "name": "test_restart_reconciles_original_automatic_finalization"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_continuation_finalization.py",
+          "name": "test_automatic_setup_finalization_uses_real_verified_grant_and_configuration_writes"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "shows pairing as a single explicit action only after fresh local access and suppresses it during connection"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "waits for a new authenticated snapshot before offering the explicit extension connection"
         }
       ]
     },
@@ -2273,6 +2655,11 @@
           "kind": "unit",
           "file": "frontend/tests/desktop-setup.test.js",
           "name": "reconnects after a local service interruption without resending commands or opening Chrome"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/recoveryClassification.test.ts",
+          "name": "fails closed on an unknown desktop failure even with a previously permitted action"
         }
       ]
     },
@@ -2367,6 +2754,14 @@
         {
           "to": "browser.pairing_saved",
           "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2386,13 +2781,17 @@
       },
       "transitions": [
         {
-          "to": "browser.loading",
-          "by": "user",
-          "action": "task-retry"
-        },
-        {
           "to": "browser.task_completed",
           "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "desktop.setup_loading",
+          "by": "user",
+          "action": "desktop-return"
         }
       ],
       "evidence": [
@@ -2400,6 +2799,51 @@
           "kind": "unit",
           "file": "frontend/tests/browser-tasks.test.js",
           "name": "renders task status and recovery without a second setup wizard"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "returns blocked browser setup to its desktop owner without restarting the helper"
+        }
+      ]
+    },
+    {
+      "id": "browser.extension_disconnected",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'extension_disconnected'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_loading",
+          "by": "user",
+          "action": "desktop-return"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "reports extension disconnection after a verified port drops without reopening a second port or repeating sign-in"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "does not restart pairing or reattach after an invalid response or explicit refusal"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "distinguishes an extension refusal from initial discovery failure on the actual port adapter"
         }
       ]
     },
@@ -2415,6 +2859,10 @@
           "to": "desktop.setup_browser_access",
           "by": "user",
           "action": "desktop-return"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2478,13 +2926,13 @@
       },
       "transitions": [
         {
-          "to": "browser.loading",
-          "by": "user",
-          "action": "task-retry"
-        },
-        {
           "to": "browser.task_completed",
           "by": "system"
+        },
+        {
+          "to": "desktop.setup_loading",
+          "by": "user",
+          "action": "desktop-return"
         }
       ],
       "evidence": [
@@ -2492,6 +2940,197 @@
           "kind": "unit",
           "file": "frontend/tests/browser-tasks.test.js",
           "name": "renders task status and recovery without a second setup wizard"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "returns blocked browser setup to its desktop owner without restarting the helper"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "fails closed for an unknown browser presentation rather than recommending installation"
+        }
+      ]
+    },
+    {
+      "id": "browser.status_reconnecting",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'status_reconnecting'"
+      },
+      "transitions": [
+        {
+          "to": "browser.loading",
+          "by": "system"
+        },
+        {
+          "to": "browser.unavailable",
+          "by": "system"
+        },
+        {
+          "to": "browser.profile_mismatch",
+          "by": "system"
+        },
+        {
+          "to": "browser.account_mismatch",
+          "by": "system"
+        },
+        {
+          "to": "browser.needs_consent",
+          "by": "system"
+        },
+        {
+          "to": "browser.needs_permission",
+          "by": "system"
+        },
+        {
+          "to": "browser.needs_account",
+          "by": "system"
+        },
+        {
+          "to": "browser.ready",
+          "by": "system"
+        },
+        {
+          "to": "browser.paused",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_idle",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_opening",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_checking",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_unconfirmed",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_access_required",
+          "by": "system"
+        },
+        {
+          "to": "browser.pairing_connecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.pairing_checking",
+          "by": "system"
+        },
+        {
+          "to": "browser.pairing_unconfirmed",
+          "by": "system"
+        },
+        {
+          "to": "browser.pairing_access_required",
+          "by": "system"
+        },
+        {
+          "to": "browser.pairing_saved",
+          "by": "system"
+        },
+        {
+          "to": "browser.task_changed",
+          "by": "system"
+        },
+        {
+          "to": "browser.task_expired",
+          "by": "system"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.reported",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_closed",
+          "by": "system"
+        },
+        {
+          "to": "browser.service_unavailable",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders automatic status recovery without a retry action"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-task-push.test.js",
+          "name": "recovers status immediately on a pushed invalidation without restarting the task"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-task-push.test.js",
+          "name": "reconciles a failed pushed status read without waiting for the healthy-stream watchdog"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "bounds initial connection recovery and never attaches after its budget is exhausted"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "reconciles a completed task when a verified port drops without reopening a second port"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "does not reattach when a fresh admission read refuses access after connection loss"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "does not report disconnection after the helper closes during the fresh admission read"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-task-push.test.js",
+          "name": "recovers a temporary preparation read without reopening the port or repeating sign-in"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-task-push.test.js",
+          "name": "retires a stalled preparation read before accepting a later valid payload"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-task-push.test.js",
+          "name": "expires a preparation task while its payload request is stalled"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-task-push.test.js",
+          "name": "finishes the retired start when the desktop ends a waiting preparation"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-task-push.test.js",
+          "name": "stops after the existing bounded preparation read recovery budget"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/recoveryClassification.test.ts",
+          "name": "renders a refused browser read differently from an unavailable owner without offering another sign-in"
         }
       ]
     },
@@ -2509,6 +3148,14 @@
         },
         {
           "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
           "by": "system"
         }
       ],
@@ -2535,6 +3182,14 @@
         {
           "to": "browser.task_completed",
           "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2559,6 +3214,14 @@
         },
         {
           "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
           "by": "system"
         }
       ],
@@ -2585,6 +3248,14 @@
         {
           "to": "browser.task_completed",
           "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2609,6 +3280,14 @@
         },
         {
           "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
           "by": "system"
         }
       ],
@@ -2660,14 +3339,13 @@
       },
       "transitions": [
         {
-          "to": "browser.loading",
-          "by": "user",
-          "action": "task-retry"
-        },
-        {
           "to": "desktop.setup_browser_access",
           "by": "user",
           "action": "desktop-return"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2675,6 +3353,11 @@
           "kind": "unit",
           "file": "frontend/tests/browser-tasks.test.js",
           "name": "renders task status and recovery without a second setup wizard"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "returns blocked browser setup to its desktop owner without restarting the helper"
         }
       ]
     },
@@ -2697,6 +3380,14 @@
         },
         {
           "to": "browser.auth_opening",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
           "by": "system"
         }
       ],
@@ -2732,6 +3423,14 @@
         {
           "to": "browser.task_completed",
           "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2761,6 +3460,14 @@
         },
         {
           "to": "browser.auth_closed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
           "by": "system"
         }
       ],
@@ -2812,17 +3519,20 @@
       },
       "transitions": [
         {
-          "to": "browser.auth_opening",
-          "by": "user",
-          "action": "authentication-open"
-        },
-        {
           "to": "desktop.setup_account_connection",
           "by": "user",
           "action": "desktop-return"
         },
         {
           "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
           "by": "system"
         }
       ],
@@ -2831,6 +3541,11 @@
           "kind": "unit",
           "file": "frontend/tests/browser-tasks.test.js",
           "name": "renders focused authentication and ordinary Chrome recovery without declaring success"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "notifies Brain to read an uncertain authentication outcome without retrying its operation"
         }
       ]
     },
@@ -2849,6 +3564,10 @@
         },
         {
           "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
           "by": "system"
         }
       ],
@@ -2894,6 +3613,10 @@
           "to": "desktop.setup_finish",
           "by": "user",
           "action": "local-authenticate"
+        },
+        {
+          "to": "desktop.setup_finish",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2901,6 +3624,41 @@
           "kind": "unit",
           "file": "frontend/tests/desktop-setup.test.js",
           "name": "requires explicit local authentication before pairing or opening the dashboard"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "shows automatic passkey status recovery without asking the user to retry"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-enrollment.test.js",
+          "name": "automatically reads the committed registration outcome without another ceremony"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-enrollment.test.js",
+          "name": "bounds automatic status reads and recovers from a later pushed access change"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "shows pairing as a single explicit action only after fresh local access and suppresses it during connection"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "waits for a new authenticated snapshot before offering the explicit extension connection"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-enrollment.test.js",
+          "name": "reconciles an unconfirmed sign-in finish without a second ceremony"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-enrollment.test.js",
+          "name": "does not repeat a deterministic refusal on an unchanged pushed access value"
         }
       ]
     },
@@ -2926,6 +3684,14 @@
         },
         {
           "to": "browser.pairing_saved",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
           "by": "system"
         }
       ],
@@ -2953,6 +3719,14 @@
         {
           "to": "browser.task_completed",
           "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -2979,6 +3753,10 @@
         {
           "to": "browser.task_completed",
           "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -3004,6 +3782,10 @@
         },
         {
           "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
           "by": "system"
         }
       ],
@@ -3083,6 +3865,14 @@
         },
         {
           "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.status_reconnecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.extension_disconnected",
           "by": "system"
         }
       ],
@@ -3281,6 +4071,67 @@
           "kind": "unit",
           "file": "frontend/tests/TextAnalysisReissueControls.test.tsx",
           "name": "discovers the original request after remount without starting a replacement"
+        }
+      ]
+    },
+    {
+      "id": "desktop.message_collection_review",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/BrowserExtensionControls.tsx",
+        "text": "data-journey-state=\"desktop.message_collection_review\""
+      },
+      "transitions": [
+        {
+          "to": "browser.loading",
+          "by": "user",
+          "action": "review-collection"
+        },
+        {
+          "to": "desktop.numbers_ready",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "opens the current browser review directly and never accepts collection from the dashboard"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "does not offer browser review without matching current authority or hide existing activity"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "leaves paused collection untouched until an explicit resume and waits for pushed confirmation"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "offers admitted browser review before commercial activation without treating collection as activation"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "does not force browser review before activation if the owner has not admitted it"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "can resume previously authorized collection before commercial activation"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "retains the admitted commercial operation instead of opening a competing capture review"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "names only the current deliberate desktop action while the owner receipt is outstanding"
         }
       ]
     }

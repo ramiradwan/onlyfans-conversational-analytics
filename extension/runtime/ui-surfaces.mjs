@@ -90,10 +90,13 @@ export function createSurfaceOpener(chromeApi = globalThis.chrome) {
 export function registerSurfaceNavigation(chromeApi = globalThis.chrome, open = createSurfaceOpener(chromeApi)) {
   chromeApi.runtime.onMessage.addListener((message, sender, reply) => {
     if (message?.type !== UI_OPEN_SURFACE_MESSAGE_TYPE || !uiSurface(sender, chromeApi)) return false;
-    if (Object.keys(message).sort().join(',') !== 'section,surface,type'
+    const requestedFull = Object.keys(message).sort().join(',') === 'requestedFull,section,surface,type'
+      && message.requestedFull === true && message.surface === 'setup' && message.section === 'full'
+      && uiSurface(sender, chromeApi) === 'popup';
+    if (!requestedFull && Object.keys(message).sort().join(',') !== 'section,surface,type'
       || !['setup', 'options'].includes(message.surface)
       || !(message.surface === 'setup' ? ['', 'full'] : ['', 'connection', 'data']).includes(message.section)) return false;
-    void open({ surface: message.surface, section: message.section })
+    void open({ surface: message.surface, section: message.section, ...(requestedFull ? { requestedFull: true } : {}) })
       .then(() => reply({ ok: true }), () => reply({ ok: false, code: 'page_unavailable' }));
     return true;
   });

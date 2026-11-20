@@ -91,3 +91,17 @@ test('history handoff updates its owned popup scope without claiming a customer 
     assert.equal(saved[DESKTOP_HANDOFF_WINDOW_KEY].url, owned ? runtime.getURL('options.html#history') : priorUrl);
   }
 });
+
+test('only the explicit popup Full review carries a commercial presentation choice', async () => {
+  let listener;
+  const calls = [];
+  const api = { runtime: { ...runtime, onMessage: { addListener(fn) { listener = fn; } } } };
+  registerSurfaceNavigation(api, async request => { calls.push(request); });
+  const message = { type: UI_OPEN_SURFACE_MESSAGE_TYPE, surface: 'setup', section: 'full', requestedFull: true };
+  assert.equal(listener(message, sender('setup.html'), () => {}), false);
+  assert.equal(listener(message, sender('options.html'), () => {}), false);
+  await new Promise(resolve => assert.equal(listener(message, sender('popup.html'), resolve), true));
+  assert.deepEqual(calls, [{ surface: 'setup', section: 'full', requestedFull: true }]);
+  await new Promise(resolve => assert.equal(listener({ type: message.type, surface: 'setup', section: 'full' }, sender('popup.html'), resolve), true));
+  assert.deepEqual(calls[1], { surface: 'setup', section: 'full' });
+});

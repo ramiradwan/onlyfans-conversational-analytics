@@ -67,5 +67,78 @@ export async function inspectTaskCopy(page, fixture) {
     assert((await page.locator('#data').innerText()).includes('Messages already stored by the desktop app stay there.'));
     return result;
   }
+  if (fixture.surface === 'desktop-onboarding' || fixture.surface === 'browser-task') {
+    const summary = await page.evaluate((surface) => {
+      const main = document.querySelector('main');
+      const card = document.querySelector('.setup-card');
+      const title = document.querySelector('#task-title');
+      const visible = node => node && node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden' && getComputedStyle(node).display !== 'none';
+      const documentHeight = document.scrollingElement.scrollHeight;
+      const withinPage = node => {
+        const box = node.getBoundingClientRect();
+        const left = box.left + scrollX, top = box.top + scrollY;
+        return box.width > 0 && box.height > 0 && left >= -1 && left + box.width <= innerWidth + 1 && top >= 0 && top + box.height <= documentHeight + 1;
+      };
+      const controls = [...main.querySelectorAll('button, a[href]')].filter(visible);
+      const overlappingControls = [];
+      for (let i = 0; i < controls.length; i++) for (const other of controls.slice(i + 1)) {
+        const a = controls[i].getBoundingClientRect(), b = other.getBoundingClientRect();
+        if (Math.min(a.right, b.right) > Math.max(a.left, b.left) + 0.5 && Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top) + 0.5) {
+          overlappingControls.push([controls[i].id || controls[i].textContent.trim(), other.id || other.textContent.trim()]);
+        }
+      }
+      const clippedText = [];
+      const walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const text = walker.currentNode;
+        if (!text.textContent.trim() || !visible(text.parentElement)) continue;
+        const range = document.createRange();
+        range.selectNodeContents(text);
+        for (const box of range.getClientRects()) {
+          if (box.left < -1 || box.right > innerWidth + 1) clippedText.push(text.textContent.trim().slice(0, 40));
+          for (let ancestor = text.parentElement; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) {
+            const css = getComputedStyle(ancestor);
+            const bounds = ancestor.getBoundingClientRect();
+            if ((/(hidden|clip)/u.test(css.overflowX) && (box.left < bounds.left - 1 || box.right > bounds.right + 1))
+              || (/(hidden|clip)/u.test(css.overflowY) && (box.top < bounds.top - 1 || box.bottom > bounds.bottom + 1))) {
+              clippedText.push(text.textContent.trim().slice(0, 40));
+            }
+          }
+        }
+      }
+      const brokenImages = [...document.querySelectorAll('img')].filter(img => visible(img) && (!img.complete || img.naturalWidth === 0)).length;
+      return {
+        journeyState: main?.dataset.journeyState ?? null,
+        titleText: title?.textContent?.trim() ?? '',
+        titleVisible: visible(title) && withinPage(title),
+        statusText: document.querySelector('#task-status')?.textContent?.trim() ?? '',
+        controlsReachable: controls.every(withinPage),
+        overlappingControls,
+        clippedText,
+        brokenImages,
+        horizontalOverflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) > innerWidth + 1,
+        steps: document.querySelectorAll('[data-step]').length,
+        hasNav: Boolean(document.querySelector('nav')),
+        hasRecoveryInput: Boolean(document.querySelector('#recovery-package, textarea')),
+        surface,
+      };
+    }, fixture.surface);
+    assert(summary.titleVisible && summary.titleText.length > 0, 'Task title must be visible and readable');
+    assert(summary.controlsReachable, 'Visible controls must fit within the page bounds');
+    assert.deepEqual(summary.overlappingControls, [], 'Visible controls must not overlap');
+    assert.deepEqual(summary.clippedText, [], 'Readable task copy must not be clipped');
+    assert.equal(summary.brokenImages, 0, 'Provider images must load cleanly');
+    assert(!summary.horizontalOverflow, 'Static onboarding surface must not overflow horizontally');
+    if (fixture.surface === 'desktop-onboarding') {
+      assert(summary.journeyState?.startsWith('desktop.'), 'Desktop onboarding must declare a desktop journey state');
+      assert.equal(summary.steps, 3, 'Desktop onboarding must keep its three-step progress list');
+      assert.equal(summary.hasRecoveryInput, false, 'Desktop onboarding must not reintroduce recovery inputs');
+    } else {
+      assert.equal(summary.journeyState, 'browser.' + fixture.state.state.replaceAll('-', '_'), 'Browser task must declare its exact journey state');
+      assert(summary.statusText.length > 10, 'Browser task must render readable status copy');
+      assert.equal(summary.hasNav, false, 'Browser task must not render a second setup wizard');
+    }
+    return summary;
+  }
   throw new Error('Unknown static task surface: ' + fixture.surface);
 }

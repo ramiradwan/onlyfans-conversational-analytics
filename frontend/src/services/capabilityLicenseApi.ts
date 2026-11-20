@@ -1,4 +1,5 @@
 import type { AnalysisReadiness } from '../../onboarding/client.js';
+import { activationRecovery, recoveryClass } from '../../shared-setup/recovery.js';
 
 export const CAPABILITY_LICENSE_CONTINUATION_PATTERN = /^clr1\.[A-Za-z0-9_-]{43}$/u;
 
@@ -15,6 +16,7 @@ export class CapabilityLicenseApiError extends Error {
   constructor(
     message: string,
     readonly status: number | null = null,
+    readonly outcome: 'not_sent' | 'refused' | 'unknown' = 'unknown',
   ) {
     super(message);
     this.name = 'CapabilityLicenseApiError';
@@ -63,7 +65,7 @@ const UNREACHABLE = "Activation couldn't be confirmed.";
 
 const REFUSAL_MESSAGES: Record<string, string> = {
   redemption_expired: 'This code has expired.',
-  redemption_invalid: "This code wasn't recognized. Check the full code and try again.",
+  redemption_invalid: "This code wasn't recognized. Enter a valid activation code.",
   redemption_conflict: 'This code has already been used.',
   redemption_unauthorized: WRONG_SETUP,
   redemption_mismatch: WRONG_SETUP,
@@ -76,11 +78,13 @@ const REFUSAL_MESSAGES: Record<string, string> = {
 
 function redemptionFailure(status: number, detail: unknown): CapabilityLicenseApiError {
   if (typeof detail === 'string' && Object.hasOwn(REFUSAL_MESSAGES, detail)) {
-    return new CapabilityLicenseApiError(REFUSAL_MESSAGES[detail], status);
+    const classification = recoveryClass(activationRecovery, detail);
+    const refused = classification === 'authorization_refused' || classification === 'account_mismatch';
+    return new CapabilityLicenseApiError(REFUSAL_MESSAGES[detail], status, refused ? 'refused' : 'unknown');
   }
-  if (status === 410) return new CapabilityLicenseApiError(REFUSAL_MESSAGES.redemption_expired, status);
-  if (status === 404 || status === 422) {
-    return new CapabilityLicenseApiError(REFUSAL_MESSAGES.redemption_invalid, status);
+  // A generic HTTP failure cannot establish the original redemption's outcome.
+  if (status === 404 || status === 410 || status === 422) {
+    return new CapabilityLicenseApiError(UNREACHABLE, status);
   }
   if (status === 401 || status === 403) {
     return new CapabilityLicenseApiError('The activation request could not be verified.', status);
@@ -112,11 +116,11 @@ export function createCapabilityLicenseApi(
   return {
     async redeem(continuation, signal) {
       if (!CAPABILITY_LICENSE_CONTINUATION_PATTERN.test(continuation)) {
-        throw new CapabilityLicenseApiError('Enter the full activation code and try again.');
+        throw new CapabilityLicenseApiError('Enter the full activation code.', null, 'not_sent');
       }
       const csrf = await getCsrfToken();
       if (!csrf) {
-        throw new CapabilityLicenseApiError("Activation couldn't start on this page.");
+        throw new CapabilityLicenseApiError("Activation couldn't start on this page.", null, 'not_sent');
       }
       let response: Response;
       try {

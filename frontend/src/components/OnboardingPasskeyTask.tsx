@@ -14,16 +14,34 @@ const accessCopy: Record<AccessState, { heading: string; body: string; guidance:
   removed: { heading: 'Access removed from this computer', body: 'This computer can no longer open analytics.', guidance: 'Contact support if you did not expect this.' },
 };
 const accessCopies = Object.values(accessCopy);
+const headingSizingTexts = [
+  'Checking this computer…',
+  'Can’t check passkey access',
+  'Create a passkey on this computer',
+  'Sign in on this computer',
+  ...accessCopies.map(copy => copy.heading),
+];
+const feedbackSizingTexts = [
+  'Dipsy can’t check access on this computer right now.',
+  'Dipsy isn’t allowed to check access on this computer.',
+  'Dipsy can’t confirm passkey status on this computer.',
+  'This app session is no longer authorized.',
+  'Passkey setup could not be confirmed.',
+  'Passkey created. Sign in to continue.',
+  'Sign-in could not start.',
+  'Sign-in did not finish.',
+  ...accessCopies.map(copy => copy.guidance),
+];
 
 function Sizing({ texts }: { texts: string[] }) {
   return <>{texts.map(text => <Box component="span" key={text} aria-hidden="true" sx={{ visibility: 'hidden', gridArea: '1 / 1' }}>{text}</Box>)}</>;
 }
 
-export function OnboardingPasskeyTask({ busy, checking, enrolled, error, authenticate, statusUnavailable = false, recheck, access = null }: {
-  statusUnavailable?: boolean; recheck?(): void; access?: AccessState | null;
+export function OnboardingPasskeyTask({ busy, checking, enrolled, error, authenticate, statusUnavailable = false, readingStatus = false, access = null }: {
+  statusUnavailable?: boolean; readingStatus?: boolean; access?: AccessState | null;
   busy: boolean; checking: boolean; enrolled: boolean | null; error: string | null; authenticate(enroll: boolean): Promise<void>;
 }) {
-  const actionLabel = statusUnavailable ? 'Try again' : enrolled === false ? 'Create passkey' : 'Sign in with passkey';
+  const actionLabel = enrolled === false ? 'Create passkey' : 'Sign in with passkey';
   const lapsed = checking || access === null ? null : accessCopy[access];
   const [fontState, setFontState] = useState<'loading' | 'ready' | 'fallback'>(() => typeof document.fonts?.load === 'function' ? 'loading' : 'fallback');
   useEffect(() => {
@@ -49,30 +67,30 @@ export function OnboardingPasskeyTask({ busy, checking, enrolled, error, authent
       sx={{ visibility: fontState === 'loading' ? 'hidden' : 'visible', opacity: fontState === 'loading' ? 0 : 1,
         ...(fontState === 'fallback' && { '& *': { fontFamily: 'Arial, sans-serif !important' } }) }}>
       <OnboardingWorkspace>
-        <Stack spacing={2.5} data-journey-state="desktop.passkey_sign_in" data-visual="passkey-card" data-reserved-region="passkey-card" aria-busy={busy}>
+        <Stack spacing={2.5} data-journey-state="desktop.passkey_sign_in" data-visual="passkey-card" data-reserved-region="passkey-card" aria-busy={busy || checking || readingStatus}>
           <Box data-visual="passkey-lock" aria-hidden="true" sx={{ color: 'primary.main', alignSelf: 'flex-start', p: 1.5, width: 48, height: 48, display: 'grid', placeItems: 'center', borderRadius: '12px', bgcolor: 'surface.trust.fill' }}>
             <LockOutlinedIcon sx={{ fontSize: 24 }} />
           </Box>
           <Typography component="h1" variant="h4" sx={{ minHeight: '2.6em', display: 'grid' }}>
-            <Sizing texts={['Create a passkey on this computer', ...accessCopies.map(copy => copy.heading)]} />
-            <Box component="span" sx={{ gridArea: '1 / 1' }}>{checking ? 'Checking this computer…' : lapsed ? lapsed.heading : statusUnavailable ? 'Passkey setup could not be checked' : enrolled === false ? 'Create a passkey on this computer' : 'Sign in on this computer'}</Box>
+            <Sizing texts={headingSizingTexts} />
+            <Box component="span" sx={{ gridArea: '1 / 1' }}>{checking ? 'Checking this computer…' : lapsed ? lapsed.heading : statusUnavailable ? 'Can’t check passkey access' : enrolled === false ? 'Create a passkey on this computer' : 'Sign in on this computer'}</Box>
           </Typography>
           <Typography color="text.secondary" sx={{ display: 'grid' }}>
             <Sizing texts={['Use the passkey you created for this app.', 'Use it to open analytics on this computer.', ...accessCopies.map(copy => copy.body)]} />
             <Box component="span" sx={{ gridArea: '1 / 1', visibility: checking || statusUnavailable && !lapsed ? 'hidden' : 'visible' }}>{lapsed ? lapsed.body : enrolled === false ? 'Use it to open analytics on this computer.' : 'Use the passkey you created for this app.'}</Box>
           </Typography>
-          <Button disabled={busy || checking || Boolean(lapsed)} onClick={() => statusUnavailable ? recheck?.() : void authenticate(enrolled === false)} size="large" variant="contained" sx={{ alignSelf: 'flex-start', display: 'grid', alignItems: 'start', maxWidth: '100%', visibility: lapsed ? 'hidden' : 'visible' }}>
-            <Box component="span" aria-hidden="true" sx={{ visibility: 'hidden', gridArea: '1 / 1' }}>Sign in with passkey</Box>
+          <Button disabled={busy || checking || readingStatus || statusUnavailable || Boolean(lapsed)} onClick={() => void authenticate(enrolled === false)} size="large" variant="contained" sx={{ alignSelf: 'flex-start', display: 'grid', alignItems: 'start', maxWidth: '100%', visibility: lapsed || checking || statusUnavailable ? 'hidden' : 'visible' }}>
+            <Sizing texts={['Sign in with passkey', 'Create passkey']} />
             <Box component="span" key={actionLabel} sx={{ gridArea: '1 / 1' }}>{actionLabel}</Box>
           </Button>
           <Typography variant="body2" color="text.secondary" sx={{ visibility: !checking && !statusUnavailable && !lapsed && enrolled === null ? 'visible' : 'hidden' }}>First time on this computer?{' '}
-            <Link component="button" type="button" disabled={busy} onClick={() => void authenticate(true)} sx={{ font: 'inherit', verticalAlign: 'baseline',
+            <Link component="button" type="button" disabled={busy || readingStatus} onClick={() => void authenticate(true)} sx={{ font: 'inherit', verticalAlign: 'baseline',
               '&:focus-visible': { outline: `${effectTokens.focus.width} solid`, outlineColor: 'primary.main', outlineOffset: effectTokens.focus.offset } }}>
               Set up a passkey
             </Link>
           </Typography>
           <Typography role="status" sx={{ minHeight: '1.5rem', visibility: busy ? 'visible' : 'hidden' }}>Waiting for your passkey…</Typography>
-          <StatusLine essential id="passkey-feedback" text={lapsed ? lapsed.guidance : error} tone={lapsed ? 'secondary' : 'error'} />
+          <StatusLine essential id="passkey-feedback" text={lapsed ? lapsed.guidance : error} tone={lapsed ? 'secondary' : 'error'} reserveTexts={feedbackSizingTexts} />
         </Stack>
       </OnboardingWorkspace>
     </Box>

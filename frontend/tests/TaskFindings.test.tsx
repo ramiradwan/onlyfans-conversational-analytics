@@ -49,6 +49,26 @@ function setup(overrides: Partial<FindingsClient> = {}, view: 'grouped' | null =
 }
 
 describe('TaskFindings', () => {
+  it('displays a newly published saved finding without another message or refresh click', async () => {
+    const nextBaseline = { ...baseline, projection_generation: baseline.projection_generation + 1,
+      projection_digest: `sha256:${'2'.repeat(64)}` };
+    const refresh = vi.fn(async () => {});
+    const read = vi.fn<FindingsClient['read']>(async request => {
+      if (request.baseline.projection_generation === baseline.projection_generation) {
+        throw new FindingsClientError('building', 'The saved analysis is being updated.');
+      }
+      return parseFindings(findingsResponse(request), request);
+    });
+    const h = setup({ read }, null, refresh);
+    await screen.findByText('The saved analysis is being updated.');
+    expect(screen.queryByRole('table', { name: 'Topics findings' })).toBeNull();
+    h.rerender(nextBaseline);
+    const table = await screen.findByRole('table', { name: 'Topics findings' });
+    expect(within(table).getByText('Example topic')).toBeTruthy();
+    expect(store.getState().result?.projection_generation).toBe(nextBaseline.projection_generation);
+    expect(read).toHaveBeenLastCalledWith(expect.objectContaining({ baseline: nextBaseline }), expect.any(AbortSignal));
+    expect(refresh).not.toHaveBeenCalled();
+  });
   it('refreshes the accepted baseline before reading a newly published paused generation', async () => {
     const nextBaseline = { ...baseline, projection_generation: baseline.projection_generation + 1,
       projection_digest: `sha256:${'2'.repeat(64)}` };

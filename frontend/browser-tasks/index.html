@@ -16,18 +16,19 @@
       </span>
     </header>
     <main class="setup-main" data-journey-state="browser.loading">
-      <section class="setup-card" aria-labelledby="task-title">
+      <section class="setup-card setup-task-card" aria-labelledby="task-title" data-reserved-region="browser-task-card">
         <p class="setup-eyebrow">Chrome browser task</p>
-        <h1 id="task-title" tabindex="-1">Browser access</h1>
-        <p id="task-status" role="status" aria-live="polite">Reading the current task…</p>
+        <h1 data-region-content id="task-title" tabindex="-1">Browser access</h1>
+        <p data-reserved-region="browser-task-status" class="task-status" id="task-status" role="status" aria-live="polite">Reading the current task…</p>
+        <div class="task-actions-slot" data-reserved-region="browser-task-actions"><div data-region-content>
         <div class="setup-actions">
           <button id="pairing-replace" type="button" aria-describedby="task-status" hidden>Replace saved connection</button>
           <button id="extension-open" type="button" aria-describedby="task-status" hidden>Open extension</button>
           <button id="authentication-open" type="button" aria-describedby="task-status" hidden>Continue sign-in</button>
           <a id="extension-install" class="button" rel="noreferrer" target="_self" hidden>Get the extension</a>
-          <button id="task-retry" class="secondary" type="button" aria-describedby="task-status" hidden>Retry</button>
           <a id="desktop-return" class="button secondary" hidden>Return to desktop</a>
         </div>
+        </div></div>
       </section>
     </main>
     <script type="module" src="./main.js"></script>

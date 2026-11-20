@@ -164,7 +164,7 @@ it.each([true, false])('reconciles lost login finish once without another assert
   });
   const attempt = createWebAuthnApi({ fetch: request as typeof fetch }).login();
   if (authenticated) await expect(attempt).resolves.toBeUndefined();
-  else await expect(attempt).rejects.toMatchObject({ name: 'LoginOutcomeError', stage: 'finish' });
+  else await expect(attempt).rejects.toMatchObject({ name: 'LoginOutcomeError', stage: 'finish', outcomeUnknown: false });
   expect(request.mock.calls.map(([path]) => path)).toEqual([
     '/api/v1/webauthn/login/begin', '/api/v1/webauthn/login/finish', '/api/v1/webauthn/session-state',
   ]);
@@ -173,7 +173,7 @@ it.each([true, false])('reconciles lost login finish once without another assert
 it('does not reconcile a definite assertion refusal or begin a replacement enrollment', async () => {
   vi.stubGlobal('navigator', { credentials: { get: vi.fn(async () => assertion()) } });
   const request = vi.fn(async (path: string) => path.endsWith('/begin') ? json(loginOptions) : new Response('', { status: 403 }));
-  await expect(createWebAuthnApi({ fetch: request as typeof fetch }).login()).rejects.toMatchObject({ stage: 'finish' });
+  await expect(createWebAuthnApi({ fetch: request as typeof fetch }).login()).rejects.toMatchObject({ stage: 'finish', outcomeUnknown: false });
   expect(request).toHaveBeenCalledTimes(2);
 });
 it.each([null, 'NotAllowedError'])('keeps the browser refusal ambiguous without submitting finish (%s)', async (failure) => {
@@ -206,7 +206,7 @@ it('retiring a ceremony aborts credential acquisition and prevents finish', asyn
 });
 
 
-it.each([[401, 'session'], [403, 'forbidden'], [503, 'unavailable']] as const)(
+it.each([[401, 'session'], [403, 'forbidden'], [404, 'invalid'], [503, 'unavailable']] as const)(
   'classifies passkey status HTTP %s without inventing enrollment', async (status, kind) => {
     const api = createWebAuthnApi({ fetch: vi.fn(async () => new Response('', { status })) as typeof fetch });
     await expect(api.state!(new AbortController().signal)).rejects.toMatchObject({ name: 'WebAuthnStatusError', kind, status });
@@ -235,15 +235,14 @@ describe('pushed access', () => {
   });
 
   it.each([
-    JSON.stringify({ detail: 'Enrollment state is unavailable', access: 'unavailable' }),
     JSON.stringify({ detail: 'Enrollment state is unavailable', access: 'paused' }),
     JSON.stringify({ detail: 'Enrollment state is unavailable', access: 'renewing', reason: 'membership' }),
     JSON.stringify({ access: 'renewing' }),
     '{"detail":"Enrollment state is unavailable","access":"renewing","access":"removed"}',
     'Enrollment state is unavailable',
-  ])('keeps any other refusal unavailable: %s', async (body) => {
+  ])('fails closed for an unrecognized refusal: %s', async (body) => {
     const failure = await refused(body);
-    expect(failure).toMatchObject({ name: 'WebAuthnStatusError', kind: 'unavailable', status: 409 });
+    expect(failure).toMatchObject({ name: 'WebAuthnStatusError', kind: 'invalid', status: 409 });
     expect(lapsedAccess(failure)).toBeNull();
   });
 
@@ -410,4 +409,24 @@ describe('access follower', () => {
     follower.release();
     expect(reread).toHaveBeenCalledTimes(2);
   });
+});
+
+it('distinguishes an unconfirmed sign-in finish from a definite refusal', async () => {
+  const get = vi.fn(async () => assertion());
+  vi.stubGlobal('navigator', { credentials: { get } });
+  const request = vi.fn(async (path: string) => {
+    if (path.endsWith('/begin')) return json(loginOptions);
+    if (path.endsWith('/finish')) throw new TypeError('Lost reply');
+    throw new TypeError('Status connection interrupted');
+  });
+  await expect(createWebAuthnApi({ fetch: request as typeof fetch }).login()).rejects.toMatchObject({
+    stage: 'finish', outcomeUnknown: true,
+  });
+  expect(get).toHaveBeenCalledOnce();
+  expect(request).toHaveBeenCalledTimes(3);
+});
+
+it('recognizes explicitly unavailable access as a recoverable status', async () => {
+  const failure = await refused(JSON.stringify({ detail: 'Enrollment state is unavailable', access: 'unavailable' }));
+  expect(failure).toMatchObject({ name: 'WebAuthnStatusError', kind: 'unavailable', status: 409, access: 'unavailable' });
 });

@@ -1,13 +1,15 @@
 import { ThemeProvider } from '@mui/material/styles';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   AnalyticsMetric,
   AnalyticsView,
+  BrowserSurfacePayload,
   ConversationSummary,
   HistoricalCoverage,
+  HistorySettings,
   ProjectionState,
   StateSnapshotPayload,
 } from '../src/protocol';
@@ -17,6 +19,8 @@ import { useUserStore } from '../src/store/userStore';
 import { theme } from '../src/theme';
 import CreatorDashboardView from '../src/views/CreatorDashboardView';
 import { desktopFixture } from './desktopOnboardingFixture';
+import type { BrowserControlApi } from '../src/services/browserControlApi';
+import type { HistorySettingsApi } from '../src/services/historySettingsApi';
 
 const ACCOUNT_ID = 'creator-account';
 const AS_OF = '2026-07-19T12:00:00Z';
@@ -157,10 +161,11 @@ function readinessSource(ready: boolean | null) {
   return fixture;
 }
 
-function mountDashboard(store: ReturnType<typeof createBridgeTransportStore>, source: ReturnType<typeof desktopFixture>) {
+function mountDashboard(store: ReturnType<typeof createBridgeTransportStore>, source: ReturnType<typeof desktopFixture>,
+  browserApi?: BrowserControlApi, historyApi?: HistorySettingsApi) {
   return render(<ThemeProvider theme={theme} defaultMode="light"><MemoryRouter>
     <CreatorDashboardView activationApi={{ redeem: vi.fn(async () => ({ state: 'checking' as const })) }}
-      store={store} onboardingApi={source.api} />
+      store={store} onboardingApi={source.api} browserApi={browserApi} historyApi={historyApi} historyStore={store} />
   </MemoryRouter></ThemeProvider>);
 }
 
@@ -200,7 +205,7 @@ describe('CreatorDashboardView', () => {
     expect(screen.getByRole('heading', { name: 'No new activity yet' })).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Overview' })).toBeNull();
     expect(screen.getByText('Not checked', { exact: true })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Review' }).getAttribute('href')).toBe('/settings#message-history');
+    expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
     await act(async () => { store.applySnapshot(snapshot({ viewRevision: 2 })); });
     expect(screen.queryByRole('heading', { name: 'No new activity yet' })).toBeNull();
     expectStat('Messages', '19');
@@ -217,9 +222,321 @@ describe('CreatorDashboardView', () => {
     store.setAgent({ ...store.getState().agent!, browser: { capture: 'paused', site_access: 'granted',
       history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
     await renderDashboard(store);
-    expect(screen.getByText('Paused', { exact: true })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Message collection is paused' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
     expect(screen.queryByText("You're all set")).toBeNull();
   });
+  it('opens the current browser review directly and never accepts collection from the dashboard', async () => {
+    const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]) }), conversations: [] });
+    const browser: BrowserSurfacePayload = { capture: 'active', site_access: 'granted',
+      history_permission: 'missing', legal_review_required: true, reported_at: AS_OF };
+    store.setAgent({ ...store.getState().agent!, browser });
+    const source = readinessSource(true);
+    source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['browser.access'] } });
+    const api: BrowserControlApi = { setCapture: vi.fn(async () => 'delivered'), open: vi.fn(async () => 'delivered') };
+    mountDashboard(store, source, api);
+    expect(screen.getByRole('heading', { name: 'Allow message collection' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
+    expect(source.api.begin).not.toHaveBeenCalled();
+    const review = screen.getByRole('button', { name: 'Review in Chrome' });
+    await act(async () => { fireEvent.click(review); fireEvent.click(review); });
+    expect(source.api.begin).toHaveBeenCalledExactlyOnceWith('browser.access');
+    expect(api.setCapture).not.toHaveBeenCalled();
+    expect(api.open).not.toHaveBeenCalled();
+    await act(async () => source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: [],
+      pending_operations: [{ operation_id: '22222222-2222-4222-8222-222222222222', action: 'browser.access', state: 'waiting', reason: 'none' }] } }));
+    expect(screen.queryByRole('button', { name: 'Review in Chrome' })).toBeNull();
+    expect(screen.getByText('Complete the review in Chrome.')).toBeTruthy();
+    await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, legal_review_required: false } }));
+    expect(screen.queryByRole('heading', { name: 'Allow message collection' })).toBeNull();
+    // Complete history is not offered again, even with no visible messages.
+    expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
+    expect(source.api.begin).toHaveBeenCalledOnce();
+  });
+
+  it('does not offer browser review without matching current authority or hide existing activity', async () => {
+    const store = readyStore();
+    store.setAgent({ ...store.getState().agent!, browser: { capture: 'active', site_access: 'needs_approval',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
+    const source = readinessSource(true);
+    mountDashboard(store, source);
+    expectStat('Messages', '19');
+    expect(screen.getByRole('heading', { name: 'Allow OnlyFans access' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Review in Chrome' })).toBeNull();
+    await act(async () => source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['browser.access'] } }));
+    expect(screen.getByRole('button', { name: 'Review in Chrome' })).toBeTruthy();
+    await act(async () => source.readiness({ schema: 'ofca-analysis-readiness/v1', commercial_authority: 'active',
+      analysis_admission: 'admitted' }, 'different-creator'));
+    expect(screen.queryByRole('button', { name: 'Review in Chrome' })).toBeNull();
+    expectStat('Messages', '19');
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
+  it('leaves paused collection untouched until an explicit resume and waits for pushed confirmation', async () => {
+    const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]) }), conversations: [] });
+    const browser: BrowserSurfacePayload = { capture: 'paused', site_access: 'granted',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF };
+    store.setAgent({ ...store.getState().agent!, browser });
+    const api: BrowserControlApi = { setCapture: vi.fn(async () => 'delivered'), open: vi.fn(async () => 'delivered') };
+    const source = readinessSource(true);
+    mountDashboard(store, source, api);
+    expect(api.setCapture).not.toHaveBeenCalled();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Resume collecting' })));
+    expect(api.setCapture).toHaveBeenCalledExactlyOnceWith('resume', expect.any(AbortSignal));
+    expect(screen.getByRole('heading', { name: 'Message collection is paused' })).toBeTruthy();
+    await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, capture: 'active' } }));
+    expect(screen.queryByRole('heading', { name: 'Message collection is paused' })).toBeNull();
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
+  it('offers admitted browser review before commercial activation without treating collection as activation', async () => {
+    const store = readyStore();
+    const browser: BrowserSurfacePayload = { capture: 'off', site_access: 'needs_approval',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF };
+    store.setAgent({ ...store.getState().agent!, browser });
+    const source = readinessSource(false);
+    source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['browser.access', 'activation.review'] } });
+    const api: BrowserControlApi = { setCapture: vi.fn(async () => 'delivered'), open: vi.fn(async () => 'delivered') };
+    mountDashboard(store, source, api);
+    expect(screen.getByRole('heading', { name: 'Allow OnlyFans access' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Full analytics' }).getAttribute('href')).toBe('/settings#full-analytics');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(source.api.begin).not.toHaveBeenCalled();
+    expectStat('Messages', '19');
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Review in Chrome' })));
+    expect(source.api.begin).toHaveBeenCalledExactlyOnceWith('browser.access');
+    expect(api.setCapture).not.toHaveBeenCalled();
+    expect(api.open).not.toHaveBeenCalled();
+    const operationId = '22222222-2222-4222-8222-222222222222';
+    await act(async () => source.publish({ pending: operationId, pendingAction: 'browser.access', error: 'operation_unconfirmed' }));
+    expect(screen.getByRole('heading', { name: 'Allow OnlyFans access' })).toBeTruthy();
+    expect(screen.getByText('The browser review has not been confirmed.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Review in Chrome' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Full analytics' })).toBeNull();
+    await act(async () => source.publish({ pending: null, pendingAction: undefined, error: null }));
+    await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, capture: 'active', site_access: 'granted' } }));
+    expect(screen.queryByRole('heading', { name: 'Allow OnlyFans access' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Full analytics' })).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(source.api.begin).toHaveBeenCalledOnce();
+  });
+
+  it('does not force browser review before activation if the owner has not admitted it', () => {
+    const store = readyStore();
+    store.setAgent({ ...store.getState().agent!, browser: { capture: 'off', site_access: 'needs_approval',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
+    const source = readinessSource(false);
+    source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['activation.review'] } });
+    mountDashboard(store, source);
+    expect(screen.queryByRole('button', { name: 'Review in Chrome' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Set up Full analytics' })).toBeTruthy();
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
+  it('can resume previously authorized collection before commercial activation', async () => {
+    const store = readyStore();
+    store.setAgent({ ...store.getState().agent!, browser: { capture: 'paused', site_access: 'granted',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
+    const source = readinessSource(false);
+    const api: BrowserControlApi = { setCapture: vi.fn(async () => 'delivered'), open: vi.fn(async () => 'delivered') };
+    mountDashboard(store, source, api);
+    expect(screen.getByRole('heading', { name: 'Message collection is paused' })).toBeTruthy();
+    expect(api.setCapture).not.toHaveBeenCalled();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Resume collecting' })));
+    expect(api.setCapture).toHaveBeenCalledExactlyOnceWith('resume', expect.any(AbortSignal));
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
+  it('retains the admitted commercial operation instead of opening a competing capture review', async () => {
+    const store = readyStore();
+    store.setAgent({ ...store.getState().agent!, browser: { capture: 'off', site_access: 'needs_approval',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
+    const source = readinessSource(false);
+    source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['browser.access'],
+      pending_operations: [{ operation_id: '22222222-2222-4222-8222-222222222222',
+        action: 'activation.review', state: 'outcome_unknown', reason: 'operation_unconfirmed' }] } });
+    mountDashboard(store, source);
+    expect(screen.queryByRole('button', { name: 'Review in Chrome' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Full analytics' })).toBeTruthy();
+    expect(screen.getByText('Activation has not been confirmed.')).toBeTruthy();
+    expect(source.api.begin).not.toHaveBeenCalled();
+    await act(async () => source.publish({ snapshot: { ...source.api.getState().snapshot!, pending_operations: [],
+      allowed_actions: ['browser.access'] } }));
+    expect(screen.getByRole('button', { name: 'Review in Chrome' })).toBeTruthy();
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
+  it('keeps a currently admissible commercial review available independently of the extension connection', () => {
+    const store = readyStore();
+    store.setAgent({ ...store.getState().agent!, status: 'disconnected' });
+    const source = readinessSource(false);
+    source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['activation.review'] } });
+    mountDashboard(store, source);
+    expect(screen.getByRole('button', { name: 'Set up Full analytics' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Finish setup' })).toBeNull();
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
+  function historyReviewFixture(creator = ACCOUNT_ID, saved: Partial<HistorySettings> = {}, permission: BrowserSurfacePayload['history_permission'] = 'missing', phase: HistoricalCoverage['phase'] = 'not_started') {
+    const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]),
+      coverage: { ...COMPLETE_COVERAGE, status: 'partial', phase, complete_as_of: null } }), conversations: [] });
+    const browser: BrowserSurfacePayload = { capture: 'active', site_access: 'granted',
+      history_permission: permission, legal_review_required: false, reported_at: AS_OF };
+    store.setAgent({ ...store.getState().agent!, browser, required_history_settings_revision: 1, applied_history_settings_revision: 1 });
+    const settings: HistorySettings = { creator_account_id: creator, settings_revision: 1,
+      consent_policy_version: 'history-consent-v1', consent_revision: null, authorized_platform_creator_id: null,
+      desired_state: 'not_started', effective_state: 'not_applied', effective_config_revision: null,
+      recent_window_days: 30, page_size: 50, pages_per_wake: 2, request_interval_ms: 1000, retry_limit: 3, updated_at: AS_OF, ...saved };
+    const running: HistorySettings = { ...settings, settings_revision: 2, consent_revision: 'consent-1',
+      authorized_platform_creator_id: 'platform-creator-1', desired_state: 'running', effective_state: 'running' };
+    const api = { get: vi.fn(async () => settings), update: vi.fn(async () => running), revoke: vi.fn() };
+    const browserApi = { open: vi.fn(async () => 'delivered' as const), setCapture: vi.fn() };
+    const source = readinessSource(true);
+    mountDashboard(store, source, browserApi, api);
+    return { store, browser, api, browserApi, source, settings };
+  }
+
+  it('reviews history in the dashboard, then requests Chrome permission only after explicit consent', async () => {
+    const { store, browser, api, browserApi } = historyReviewFixture();
+    fireEvent.click(await screen.findByRole('button', { name: 'Review message history' }));
+    expect(api.get).toHaveBeenCalledOnce();
+    const dialog = screen.getByRole('dialog', { name: 'Add older conversations' });
+    const allow = await within(dialog).findByRole('button', { name: 'Allow message history' });
+    expect(allow.hasAttribute('disabled')).toBe(true);
+    expect(api.update).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+    await act(async () => { fireEvent.click(allow); fireEvent.click(allow); });
+    await waitFor(() => expect(api.update).toHaveBeenCalledExactlyOnceWith(1, expect.objectContaining({
+      desired_state: 'running', accept_consent: true, consent_policy_version: 'history-consent-v1',
+      recent_window_days: 30, page_size: 50,
+    }), expect.any(AbortSignal)));
+    expect(browserApi.open).not.toHaveBeenCalled();
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Allow Chrome access' }));
+    await waitFor(() => expect(browserApi.open).toHaveBeenCalledExactlyOnceWith('history', expect.any(AbortSignal)));
+    await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, history_permission: 'granted' } }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add older conversations' })).toBeNull());
+    expect(screen.getByRole('heading', { name: 'Starting message history' })).toBeTruthy();
+    expect(api.update).toHaveBeenCalledOnce();
+  });
+
+  it('does not offer history for a different creator', async () => {
+    const { api, browserApi } = historyReviewFixture('other-creator');
+    await screen.findByText('Message history settings are unavailable for this account.');
+    expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(api.update).not.toHaveBeenCalled();
+    expect(browserApi.open).not.toHaveBeenCalled();
+  });
+
+  it('keeps a dismissed optional history offer quiet across session renewal', async () => {
+    const { api, source } = historyReviewFixture();
+    fireEvent.click(await screen.findByRole('button', { name: 'Not now' }));
+    expect(screen.getByRole('heading', { name: 'Waiting for messages' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Message history' })).toBeTruthy();
+    await act(async () => source.publish({ snapshot: { ...source.api.getState().snapshot!,
+      generation: '33333333-3333-4333-8333-333333333333' } }));
+    expect(screen.queryByRole('button', { name: 'Not now' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Message history' })).toBeTruthy();
+    expect(api.get).toHaveBeenCalledOnce();
+    expect(api.update).not.toHaveBeenCalled();
+  });
+
+  it('resumes paused history using the existing consent without manufacturing a new receipt', async () => {
+    const { api, browserApi } = historyReviewFixture(ACCOUNT_ID, {
+      consent_revision: 'consent-1', authorized_platform_creator_id: 'platform-creator-1',
+      desired_state: 'paused', effective_state: 'paused',
+    }, 'granted');
+    expect(await screen.findByRole('heading', { name: 'Message history is paused' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Review message history' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add older conversations' });
+    expect(within(dialog).queryByRole('checkbox')).toBeNull();
+    await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Resume' })));
+    expect(api.update).toHaveBeenCalledExactlyOnceWith(1, expect.objectContaining({
+      desired_state: 'running', accept_consent: false, consent_policy_version: null,
+    }), expect.any(AbortSignal));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add older conversations' })).toBeNull());
+    expect(screen.getByRole('heading', { name: 'Starting message history' })).toBeTruthy();
+    expect(browserApi.open).not.toHaveBeenCalled();
+  });
+
+  it('shows existing authorized history as starting or adding without offering consent again', async () => {
+    const { api } = historyReviewFixture(ACCOUNT_ID, {
+      consent_revision: 'consent-1', authorized_platform_creator_id: 'platform-creator-1',
+      desired_state: 'running', effective_state: 'not_applied',
+    }, 'granted');
+    expect(await screen.findByRole('heading', { name: 'Starting message history' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(api.update).not.toHaveBeenCalled();
+  });
+
+  it('keeps the history continuation visible during acquisition and does not offer consent again', async () => {
+    const { api } = historyReviewFixture(ACCOUNT_ID, {
+      consent_revision: 'consent-1', authorized_platform_creator_id: 'platform-creator-1',
+      desired_state: 'running', effective_state: 'running',
+    }, 'granted', 'backfilling');
+    expect(await screen.findByRole('heading', { name: 'Adding messages' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
+    expect(api.update).not.toHaveBeenCalled();
+  });
+
+  it('offers an explicit resume when coverage is already paused', async () => {
+    const { api } = historyReviewFixture(ACCOUNT_ID, {
+      consent_revision: 'consent-1', authorized_platform_creator_id: 'platform-creator-1',
+      desired_state: 'paused', effective_state: 'paused',
+    }, 'granted', 'paused');
+    expect(await screen.findByRole('heading', { name: 'Message history is paused' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Review message history' })).toBeTruthy();
+    expect(api.update).not.toHaveBeenCalled();
+  });
+
+  it('shows the first saved message without waiting for history or asking for another action', async () => {
+    const coverage: HistoricalCoverage = { ...COMPLETE_COVERAGE, status: 'unknown', phase: 'not_started',
+      generation_id: null, as_of: null, discovered_conversations: null, complete_conversations: 0, complete_as_of: null };
+    const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0], 'synced_subset'), coverage }), conversations: [] });
+    store.setAgent({ ...store.getState().agent!, browser: { capture: 'active', site_access: 'granted',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
+    const source = readinessSource(true);
+    const historyApi = { get: vi.fn(() => new Promise<HistorySettings>(() => {})), update: vi.fn(), revoke: vi.fn() };
+    mountDashboard(store, source, undefined, historyApi);
+    expect(screen.getByRole('heading', { name: 'Waiting for messages' })).toBeTruthy();
+    expect(historyApi.get).toHaveBeenCalledOnce();
+    expect(historyApi.update).not.toHaveBeenCalled();
+    await act(async () => {
+      store.applySnapshot(snapshot({ analyticsView: analytics([1, 1, 1, 0], 'synced_subset', 5),
+        coverage, projection: { ...CURRENT_PROJECTION, canonical_revision: 5, projected_revision: 5 }, viewRevision: 2 }));
+    });
+    expect(screen.queryByRole('heading', { name: 'Waiting for messages' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
+    expectStat('Messages', '1+');
+    expectSplit('Received', '1+');
+    expect(screen.getByText(/Counts include messages synced so far/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open inbox' }).getAttribute('href')).toBe('/inbox');
+    expect(source.api.begin).not.toHaveBeenCalled();
+    expect(historyApi.update).not.toHaveBeenCalled();
+  });
+
+  it('does not show an unverified metric as first activity', async () => {
+    const store = readyStore({ ...snapshot({ analyticsView: analytics([1, 1, 1, 0], 'synced_subset', 3) }) });
+    await renderDashboard(store);
+    expectStat('Messages', '\u2014');
+    expect(screen.queryByText(/Counts include messages synced so far/)).toBeNull();
+  });
+
+  it('does not show a percentage before discovery closes or before history is verified complete', async () => {
+    const coverage: HistoricalCoverage = { ...COMPLETE_COVERAGE, status: 'partial', phase: 'discovering',
+      discovered_conversations: 4, complete_conversations: 0, complete_as_of: null };
+    const store = readyStore(snapshot({ analyticsView: analytics([1, 1, 1, 0], 'synced_subset'), coverage }));
+    await renderDashboard(store);
+    expect(overview().getByRole('progressbar', { name: 'Finding conversations' }).getAttribute('aria-valuenow')).toBeNull();
+    expect(store.getState().snapshotProgress.percentage).toBeNull();
+    await act(async () => store.applySnapshot(snapshot({ analyticsView: analytics([1, 1, 1, 0], 'synced_subset'),
+      coverage: { ...coverage, phase: 'backfilling', complete_conversations: 4 }, viewRevision: 2 })));
+    expect(overview().getByRole('progressbar', { name: 'Checking saved history' }).getAttribute('aria-valuenow')).toBeNull();
+    expect(store.getState().snapshotProgress.percentage).toBeNull();
+    expect(screen.queryByText('History 100% synced')).toBeNull();
+  });
+
   it('shows the saved chat count after history completes', async () => {
     await renderDashboard(readyStore());
     expect(overview().getByText('History saved for 1 chats')).toBeTruthy();
@@ -543,7 +860,8 @@ describe('CreatorDashboardView', () => {
     await act(async () => source.publish(current));
     const prompt = screen.getByRole('heading', { name: 'Full analytics' });
     const overview = screen.getByRole('region', { name: 'Overview' });
-    expect(overview.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(prompt.compareDocumentPosition(overview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(prompt.closest('[data-reserved-region="dashboard-setup"]')).toBeTruthy();
     expect(screen.queryByText('Loading dashboard…')).toBeNull();
     expectStat('Messages', '19');
   });

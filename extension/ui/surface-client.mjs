@@ -33,8 +33,8 @@ export async function send(message) {
   } finally { clearTimeout(timer); }
 }
 
-export function openSurface(surface, section = '') {
-  return send({ type: UI_OPEN_SURFACE_MESSAGE_TYPE, surface, section });
+export function openSurface(surface, section = '', requestedFull = false) {
+  return send({ type: UI_OPEN_SURFACE_MESSAGE_TYPE, surface, section, ...(requestedFull ? { requestedFull: true } : {}) });
 }
 
 // Only presentation lives here. Credentials, evidence and capture stay in the worker.

@@ -1,4 +1,4 @@
-import { publishActivation } from './desktop-decision-fixtures.mjs';
+import { openActivationReview, publishActivation } from './desktop-decision-fixtures.mjs';
 import { waitForPairingResultPresentation } from './pairing-result-completion.mjs';
 
 const settle = (page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
@@ -167,7 +167,8 @@ export async function driveWorkspaceDetails(page, view, step, unseen) {
   await step('delete:pending', () => page.getByRole('button', { name: 'Delete all', exact: true }).click());
   await step('delete:error', () => push('reject', 'vault.command', 'Error'));
   await step.fixture('fixture:refresh:onboarding.readiness', () => refresh('onboarding.readiness', { schema: 'ofca-analysis-readiness/v1', commercial_authority: 'required', analysis_admission: 'blocked' }));
-  for (const state of ['selection', 'waiting', 'review']) await step('activation:' + state, () => publishActivation(page, state));
+  for (const state of ['selection', 'waiting']) await step('activation:' + state, () => publishActivation(page, state));
+  await step('activation:review', () => openActivationReview(page));
   await step('activation:uncertain', async () => {
     await push('desktopActionError', 'reply_lost');
     await page.getByRole('button', { name: 'Activate for free' }).click();
@@ -178,12 +179,14 @@ export async function driveWorkspaceDetails(page, view, step, unseen) {
     await push('desktopActionError', null);
     await push('desktopSnapshot', { decision: null, decision_status: null, authentication: null, allowed_actions: ['activation.review'], pending_operations: [] });
   });
-  for (const outcome of ['refusal', 'network', 'success']) {
+  for (const outcome of ['unconfirmed', 'network', 'success']) {
     await step.fixture('fixture:refresh:onboarding.readiness', () => refresh('onboarding.readiness', { schema: 'ofca-analysis-readiness/v1', commercial_authority: 'required', analysis_admission: 'blocked' }));
     const toggle = page.getByRole('button', { name: 'Use an activation code', exact: true });
     if (await toggle.getAttribute('aria-expanded') !== 'true') await step('redemption:' + outcome + ':open', () => toggle.click());
-    await step.fixture('fixture:activation-code-input', () => page.getByRole('textbox', { name: 'Activation code' }).fill('clr1.' + 'a'.repeat(43)));
-    await step('redemption:' + outcome + ':pending', () => page.getByRole('button', { name: 'Activate', exact: true }).click());
+    // An unconfirmed redemption keeps its code, so later outcomes resume it.
+    const input = page.getByRole('textbox', { name: 'Activation code' });
+    if (await input.isEnabled()) await step.fixture('fixture:activation-code-input', () => input.fill('clr1.' + 'a'.repeat(43)));
+    await step('redemption:' + outcome + ':pending', () => page.getByRole('button', { name: /^(Activate|Resume activation)$/ }).click());
     await step('redemption:' + outcome + ':response', () => outcome === 'success' ? push('resolve', 'activation.redeem', { state: 'checking' }) : push('reject', 'activation.redeem', 'Error'));
     await step('redemption:' + outcome + ':readiness', () => outcome === 'network' ? push('reject', 'onboarding.readiness', 'Error') : push('resolve', 'onboarding.readiness', { schema: 'ofca-analysis-readiness/v1', commercial_authority: outcome === 'success' ? 'active' : 'required', analysis_admission: outcome === 'success' ? 'admitted' : 'blocked' }));
     if (outcome !== 'success') await step.fixture('fixture:activation-code-close', () => toggle.click());

@@ -43,7 +43,8 @@ export function createCompanionClient({
   chromeApi = globalThis.chrome, allowsFull, detectedAccountId,
   // Paused Full keeps a control-only session so the desktop app can resume it.
   allowsControl = () => false, onControl = async () => {}, onBrowserTask = null, onBrowserTaskEnd = null,
-  onBrowserTaskWaiting = null,
+  onBrowserTaskWaiting = null, readFullPresentationIntent = null,
+  readCaptureControlStatus = null, onCaptureControl = null,
   accountDatabaseName,
   storeFactory = openPairingStore, loadSnow = loadPackagedSnow,
   channelFactory = openCompanionChannel, wireFactory = openLoopbackSocket,
@@ -263,6 +264,16 @@ export function createCompanionClient({
         }).catch(() => undefined);
         return;
       }
+      if (action === 'capture.control') {
+        const guard = () => {
+          if (lifetime.signal.aborted || channel !== controlChannel() || !(allowsFull?.() || allowsControl())) throw failure();
+        };
+        void Promise.resolve().then(() => {
+          guard();
+          return onCaptureControl?.(payload, channel.identity, guard);
+        }).catch(() => undefined).finally(() => notifySurfaces());
+        return;
+      }
       if (seenControls.has(id)) return;
       seenControls.add(id);
       if (seenControls.size > 256) seenControls.delete(seenControls.values().next().value);
@@ -288,14 +299,94 @@ export function createCompanionClient({
   }
   function controlReady() {
     const channel = controlChannel();
-    return channel !== null && lastSurface !== null && reportedSurfaceChannel === channel;
+    return channel !== null && lastSurface !== null && reportedSurfaceChannel === channel
+      && (!readCaptureControlStatus || unsupportedCaptureStatus.has(channel)
+        || sentCaptureStatus.get(channel) !== 'null');
+  }
+  // Presentation travels separately from the identifier-free status report.
+  // Old local runtimes can reject the optional method without losing controls.
+  let intentPublishing = false, nextIntentChannel = null;
+  const sentIntents = new WeakMap();
+  const unsupportedIntent = new WeakSet();
+  function sendIntent(channel) {
+    if ((!readFullPresentationIntent && !readCaptureControlStatus) || !channel) return;
+    nextIntentChannel = channel;
+    if (intentPublishing) return;
+    intentPublishing = true;
+    void (async () => {
+      while (nextIntentChannel !== null) {
+        const next = nextIntentChannel;
+        nextIntentChannel = null;
+        await publishCaptureStatus(next);
+        await publishIntent(next);
+      }
+    })().catch(() => undefined).finally(() => {
+      intentPublishing = false;
+      if (nextIntentChannel !== null) sendIntent(nextIntentChannel);
+    });
+  }
+  const sentCaptureStatus = new WeakMap();
+  const unsupportedCaptureStatus = new WeakSet();
+  async function publishCaptureStatus(channel) {
+    if (!readCaptureControlStatus || channel !== controlChannel() || reportedSurfaceChannel !== channel
+      || unsupportedCaptureStatus.has(channel)) return;
+    const surface = lastSurface;
+    const status = await captureStatusFor(channel, surface);
+    if (channel !== controlChannel() || reportedSurfaceChannel !== channel || surface !== lastSurface) return;
+    const encoded = JSON.stringify(status);
+    if (sentCaptureStatus.get(channel) === encoded) return;
+    try {
+      await channel.rpc('agent.capture-control.status', { status });
+      const wasReady = controlReady();
+      sentCaptureStatus.set(channel, encoded);
+      if (wasReady !== controlReady()) notifySurfaces();
+    } catch (error) {
+      if (error?.code === 'unknown_method') unsupportedCaptureStatus.add(channel);
+    }
+  }
+  async function captureStatusFor(channel, surface) {
+    let status;
+    try { status = await readCaptureControlStatus(channel.identity); } catch { status = null; }
+    return status?.capture === surface?.capture ? status : null;
+  }
+  async function publishIntent(channel) {
+      if (!readFullPresentationIntent || channel !== controlChannel() || reportedSurfaceChannel !== channel || unsupportedIntent.has(channel)) return;
+      let intent = null;
+      try {
+        if (!lastSurface?.legal_review_required)
+          intent = await readFullPresentationIntent(channel.identity.creator_account_id);
+      } catch { /* An unavailable scope is not intent. */ }
+      if (channel !== controlChannel() || reportedSurfaceChannel !== channel) return;
+      // A changed legal report supersedes any choice read before it.
+      if (lastSurface?.legal_review_required) intent = null;
+      const encoded = JSON.stringify(intent);
+      if ((sentIntents.get(channel) ?? 'null') === encoded) return;
+      try {
+        await channel.rpc('agent.presentation.intent', { full_intent: intent });
+        sentIntents.set(channel, encoded);
+      } catch (error) {
+        if (error?.code === 'unknown_method') unsupportedIntent.add(channel);
+      }
   }
   async function sendSurface() {
     const channel = controlChannel();
     if (channel === null || lastSurface === null) return false;
     const surface = lastSurface, encoded = lastSurfaceEncoded, meaning = surfaceMeaning;
     try {
-      await channel.rpc('agent.surface.report', surface);
+      if (readCaptureControlStatus && !unsupportedCaptureStatus.has(channel)) {
+        const status = await captureStatusFor(channel, surface);
+        if (channel !== controlChannel() || encoded !== lastSurfaceEncoded || meaning !== surfaceMeaning) return false;
+        try {
+          await channel.rpc('agent.capture-control.status', { surface, status });
+          sentCaptureStatus.set(channel, JSON.stringify(status));
+        } catch (error) {
+          if (error?.code !== 'unknown_method') throw error;
+          unsupportedCaptureStatus.add(channel);
+          await channel.rpc('agent.surface.report', surface);
+        }
+      } else {
+        await channel.rpc('agent.surface.report', surface);
+      }
       if (onBrowserTaskEnd && channel.advertiseBrowserTasks && !advertised.has(channel)) {
         advertised.add(channel);
         void Promise.resolve(channel.advertiseBrowserTasks([])).then(ended => {
@@ -307,6 +398,7 @@ export function createCompanionClient({
         const wasReady = controlReady();
         reportedSurfaceChannel = channel;
         if (!wasReady) notifySurfaces();
+        sendIntent(channel);
       }
       return true;
     } catch {
@@ -329,7 +421,7 @@ export function createCompanionClient({
       reportedSurfaceChannel = null;
       if (wasReady) notifySurfaces();
     }
-    if (!changed && channel !== null && reportedSurfaceChannel === channel) return;
+    if (!changed && channel !== null && reportedSurfaceChannel === channel) { sendIntent(channel); return; }
     void sendSurface();
   }
   let control = null, controlOpening = null, controlRetryTimer = null;

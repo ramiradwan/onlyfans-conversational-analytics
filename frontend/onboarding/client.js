@@ -47,7 +47,9 @@ export class DesktopSetupClient {
 
   notify(error = null, deliberate = false) {
     this.receive({ snapshot: this.value, pending: this.pending, connected: this.connected,
-      error: error || this.operationError?.reason || this.browserNotice || null, deliberate });
+      error: error || this.operationError?.reason || this.browserNotice || null, deliberate,
+      ...(this.intent?.operationId === this.pending ? { pendingAction: this.intent.action } : {}),
+      browserLaunchPending: Boolean(this.launchOperation) });
   }
 
   retireAuthenticationError() {
@@ -286,9 +288,11 @@ export class DesktopSetupClient {
         elapsed_ms: Math.max(0, Math.round(performance.now() - clicked)) }).catch(() => {});
     };
     const authentication = this.value?.authentication;
-    const replacesCurrentAuthentication = ['auth.cancel', 'auth.switch'].includes(action)
-      && this.value?.allowed_actions.includes(action)
-      && [authentication?.operation_id, authentication?.browser_operation_id].includes(this.pending);
+    const replacesCurrentAuthentication = this.value?.allowed_actions.includes(action)
+      && (['auth.cancel', 'auth.switch'].includes(action)
+        && [authentication?.operation_id, authentication?.browser_operation_id].includes(this.pending)
+        || action === 'auth.select' && authentication?.state === 'reauthentication-required'
+        && authentication.actions.select && authentication.browser_operation_id === this.pending);
     if (!this.connected || !this.value || (this.pending && !replacesCurrentAuthentication)) return;
     observe('click');
     const intent = command(this.value, action, this.uuid(), options);
@@ -372,12 +376,17 @@ export class DesktopSetupClient {
       if (!explicit && this.launchOperation) this.launchRequested = true;
       return;
     }
-    if (selectedOperation !== null && (!explicit || !UUID.test(selectedOperation)
-      || !this.value?.pending_operations.some(value => value.operation_id === selectedOperation))) throw Error('browser_unavailable');
-    const operationId = selectedOperation ?? (explicit ? this.pending || this.value?.pending_operations[0]?.operation_id : this.launchOperation);
+    const selected = explicit && this.value?.pending_operations.find(item => item.operation_id === selectedOperation);
+    if (explicit && (!UUID.test(selectedOperation ?? '') || !selected) || !explicit && selectedOperation !== null) throw Error('browser_unavailable');
+    const operationId = explicit ? selectedOperation : this.launchOperation;
     if (!operationId) return;
-    const epoch = this.launchEpoch;
-    const current = () => this.connected && this.launchEpoch === epoch && (explicit || this.launchOperation === operationId);
+    const epoch = this.launchEpoch, journey = this.value?.journey_id, generation = this.generation;
+    const authChild = explicit && this.value?.authentication?.browser_operation_id === operationId;
+    const stillSelected = () => this.value?.journey_id === journey && this.generation === generation
+      && this.value?.pending_operations.some(item => item.operation_id === operationId && item.action === selected.action)
+      && (!authChild || this.value?.authentication?.browser_operation_id === operationId && this.value.authentication.actions.open_browser);
+    const current = () => this.connected && this.launchEpoch === epoch
+      && (explicit ? stillSelected() : this.launchOperation === operationId);
     this.launching = true;
     this.launchRequested = false;
     if (explicit || !this.focusIntent || this.focusIntent.operationId !== operationId || this.focusIntent.epoch !== epoch) {
@@ -396,7 +405,7 @@ export class DesktopSetupClient {
       }
       if (!current()) return;
       if (opened) {
-        if (this.launchOperation === operationId) this.launchOperation = null;
+        if (this.launchOperation === operationId) { this.launchOperation = null; this.notify(); }
       }
       else if (explicit) this.notify('browser_preparing');
     } catch (error) {

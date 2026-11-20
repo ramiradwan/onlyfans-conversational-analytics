@@ -1,4 +1,5 @@
 import { SURFACE_STATES, surfaceDocument, surfaceBundle } from '../../extension/qualification/surface-fixtures.mjs';
+import { onboardingStaticFixtures } from './onboarding-static-fixtures.mjs';
 
 export async function staticFixtures() {
   const fixtures = [];
@@ -8,5 +9,6 @@ export async function staticFixtures() {
       html: await surfaceDocument(state), script: await surfaceBundle(state.surface),
       widths: state.surface === 'popup' ? [390, 320] : [1440, 390] });
   }
+  fixtures.push(...await onboardingStaticFixtures());
   return fixtures;
 }

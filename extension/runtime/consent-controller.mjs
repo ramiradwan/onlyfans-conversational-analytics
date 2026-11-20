@@ -15,6 +15,7 @@ import {
 export const CONSENT_STORAGE_KEY = 'ofca_consent_v1';
 export const ACTIVE_ACCOUNT_PARTITION_KEY = 'active_account_partition_v5';
 export const CONSENT_POLICY_REVISION = '1';
+export const CAPTURE_RECEIPT_KEY = 'ofca_capture_receipt_v1';
 export const UI_STATUS_MESSAGE_TYPE = 'ofca.ui.status';
 export const UI_TRANSITION_MESSAGE_TYPE = 'ofca.ui.transition';
 export const UI_CLEAR_PREVIEW_MESSAGE_TYPE = 'ofca.ui.clear-preview';
@@ -42,6 +43,25 @@ export function defaultConsentState() {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+function fullCaptureMode(state) {
+  return state?.mode === 'full' ? 'active'
+    : state?.mode === 'paused' && state.resume_mode === 'full' ? 'paused' : null;
+}
+
+async function captureOwner(identity) {
+  if (typeof identity?.creator_account_id !== 'string' || !identity.creator_account_id
+    || typeof identity?.pairing_id !== 'string' || !identity.pairing_id) throw new Error('capture_owner_unavailable');
+  const bytes = new TextEncoder().encode(JSON.stringify([identity.creator_account_id, identity.pairing_id]));
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), n => n.toString(16).padStart(2, '0')).join('');
+}
+
+function validCaptureCommand(value) {
+  return value && Object.keys(value).length === 5 && UUID.test(value.operation_id)
+    && typeof value.owner_scope === 'string' && /^[0-9a-f]{64}$/.test(value.owner_scope)
+    && UUID.test(value.consent_epoch) && value.policy_revision === CONSENT_POLICY_REVISION
+    && ['pause', 'resume'].includes(value.action);
+}
 
 function validatedState(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -601,7 +621,62 @@ export class ConsentController {
     });
   }
 
-  async #setModeLocked(mode, { evidenceEventId = null } = {}, generation) {
+  // The receipt candidate is written before the consent commit. Only the exact
+  // resulting durable epoch can make it visible. A crash between the writes is
+  // not an applied outcome; an unrelated transition can never match the epoch.
+  async captureControlStatus(identity) {
+    const owner = await captureOwner(identity);
+    const stored = await this.chromeApi.storage.local.get([CONSENT_STORAGE_KEY, CAPTURE_RECEIPT_KEY]);
+    const consent = stored[CONSENT_STORAGE_KEY];
+    const capture = fullCaptureMode(consent);
+    if (!capture || !UUID.test(consent.consent_epoch) || consent.policy_revision !== CONSENT_POLICY_REVISION
+      || consent.consent_epoch !== this.state.consent_epoch || this.deletionPending) return null;
+    const candidate = stored[CAPTURE_RECEIPT_KEY];
+    const receipt = candidate?.owner === owner && candidate.policy_revision === consent.policy_revision
+      && candidate.result_consent_epoch === consent.consent_epoch
+      && UUID.test(candidate.operation_id) && UUID.test(candidate.previous_consent_epoch)
+      && ['pause', 'resume'].includes(candidate.action)
+      && (candidate.outcome === 'applied' && candidate.previous_consent_epoch !== consent.consent_epoch
+          && capture === (candidate.action === 'pause' ? 'paused' : 'active')
+        || candidate.outcome === 'refused' && candidate.previous_consent_epoch === consent.consent_epoch)
+      ? { operation_id: candidate.operation_id, action: candidate.action,
+        previous_consent_epoch: candidate.previous_consent_epoch, outcome: candidate.outcome } : null;
+    return { owner_scope: owner, consent_epoch: consent.consent_epoch, policy_revision: consent.policy_revision, capture, receipt };
+  }
+
+  async applyCaptureControl(command, identity, guard) {
+    if (!validCaptureCommand(command) || typeof guard !== 'function') return;
+    const owner = await captureOwner(identity);
+    await this.initialize();
+    return this.controlQueue.run(async () => {
+      guard();
+      const status = await this.captureControlStatus(identity);
+      guard();
+      if (!status || command.owner_scope !== owner || status.consent_epoch !== command.consent_epoch
+        || status.policy_revision !== command.policy_revision
+        || status.capture !== (command.action === 'pause' ? 'active' : 'paused')
+        || status.receipt?.operation_id === command.operation_id) return;
+      const generation = this.#invalidate('consent_scoped_capture');
+      try {
+        await this.#setModeLocked(command.action, { captureCommand: { ...command, owner } }, generation);
+      } catch (error) {
+        // Only an explicit Legal/permission rejection, before a consent commit,
+        // is a refusal. Storage, shutdown and other uncertain errors stay unknown.
+        if (error?.code === 'capture_control_refused' && generation === this.controlGeneration
+          && this.state.consent_epoch === command.consent_epoch) {
+          await this.chromeApi.storage.local.set({ [CAPTURE_RECEIPT_KEY]: {
+            owner, operation_id: command.operation_id, action: command.action,
+            policy_revision: command.policy_revision, previous_consent_epoch: command.consent_epoch,
+            result_consent_epoch: command.consent_epoch, outcome: 'refused',
+          } });
+          this.changed();
+        }
+        throw error;
+      }
+    });
+  }
+
+  async #setModeLocked(mode, { evidenceEventId = null, captureCommand = null } = {}, generation) {
     this.#assertGeneration(generation);
     const currentState = structuredClone(this.state);
     let nextMode = mode;
@@ -621,7 +696,8 @@ export class ConsentController {
         resumeMode: nextMode,
         currentState,
       });
-      if (!authorized) throw new Error('Active analytics resume requires Legal mode-choice evidence');
+      if (!authorized) throw Object.assign(new Error('Active analytics resume requires Legal mode-choice evidence'),
+        captureCommand ? { code: 'capture_control_refused' } : {});
     } else if (!['preview', 'full', 'revoked'].includes(mode)) {
       throw new Error('Unsupported consent transition');
     }
@@ -636,10 +712,12 @@ export class ConsentController {
     }
 
     if (ACTIVE_CONSENT_MODES.has(nextMode) && !await this.#hasOnlyFansPermission()) {
-      throw new Error('OnlyFans access must be granted from setup');
+      throw Object.assign(new Error('OnlyFans access must be granted from setup'),
+        captureCommand ? { code: 'capture_control_refused' } : {});
     }
     if (nextMode === 'full' && !await this.#hasLocalAnalyticsPermission()) {
-      throw new Error('Local analytics service access must be granted from setup');
+      throw Object.assign(new Error('Local analytics service access must be granted from setup'),
+        captureCommand ? { code: 'capture_control_refused' } : {});
     }
     this.#assertGeneration(generation);
     this.captureScope.close('consent_transition');
@@ -650,7 +728,7 @@ export class ConsentController {
       : evidenceEventId ?? this.state.authorization_event_id;
     const epochChanged = this.state.mode !== nextMode
       || this.state.authorization_event_id !== authorizationEventId;
-    this.state = {
+    const nextState = {
       schema: 'ofca-consent/v2',
       mode: nextMode,
       resume_mode: resumeMode,
@@ -659,6 +737,15 @@ export class ConsentController {
       authorization_event_id: authorizationEventId,
       consent_epoch: epochChanged ? crypto.randomUUID() : this.state.consent_epoch,
     };
+    if (captureCommand) {
+      await this.chromeApi.storage.local.set({ [CAPTURE_RECEIPT_KEY]: {
+        owner: captureCommand.owner, operation_id: captureCommand.operation_id, action: captureCommand.action,
+        policy_revision: captureCommand.policy_revision, previous_consent_epoch: captureCommand.consent_epoch,
+        result_consent_epoch: nextState.consent_epoch, outcome: 'applied',
+      } });
+      this.#assertGeneration(generation);
+    }
+    this.state = nextState;
     await this.chromeApi.storage.local.set({ [CONSENT_STORAGE_KEY]: this.state });
     if (epochChanged) {
       const fullFamily = (state) => state.mode === 'full'

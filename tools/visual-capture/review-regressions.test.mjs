@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 import { FIXED_NOW, startHarness } from './capture.mjs';
 import { auditScrolling, installWatcher, readWatcher } from './shift-watcher.mjs';
 import { renderSurfaceState, SURFACE_STATES } from '../../extension/qualification/surface-fixtures.mjs';
-import { publishActivation } from './desktop-decision-fixtures.mjs';
+import { openActivationReview } from './desktop-decision-fixtures.mjs';
 
 let browser, harness;
 before(async () => { browser = await chromium.launch(); harness = await startHarness(); });
@@ -644,7 +644,7 @@ for (const width of [320, 390, 600]) test(`supported activation recovery grows b
     const push = (method, ...args) => page.evaluate(({ method, args }) => window.__workspaceFixture[method](...args), { method, args });
     await push('snapshot', 'fresh'); await push('connection', 'connected');
     for (const key of await push('pending')) await push('release', key, 'fresh');
-    await publishActivation(page, 'review');
+    await openActivationReview(page);
     await push('desktopActionError', 'reply_lost');
     await page.getByRole('button', { name: 'Activate for free' }).click();
     const expected = 'Activation could not be confirmed.';
@@ -735,20 +735,23 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) for (const
       await page.goto('http://production-status.localhost/', { waitUntil: 'domcontentloaded' });
       await page.getByRole('heading', { name: 'Checking this computer…', exact: true }).waitFor();
       await page.evaluate(() => document.fonts.ready); await settle(page);
-      const boxes = () => Promise.all([page.getByRole('heading', { level: 1 }), page.getByRole('button'),
+      const action = page.locator('button.MuiButton-contained');
+      const boxes = () => Promise.all([page.getByRole('heading', { level: 1 }), action,
         page.locator('[data-reserved-region="passkey-feedback"]')].map(node => node.boundingBox()));
       const before = await boxes();
-      assert(await page.getByRole('button').isDisabled(), 'Unknown status cannot start a passkey ceremony');
+      assert.equal(await page.getByRole('button').count(), 0, 'Unknown status cannot expose a passkey ceremony');
+      assert(await action.isDisabled(), 'Unknown status cannot start a passkey ceremony');
       release();
       await page.getByRole('heading', { name: outcome === false ? 'Create a passkey on this computer'
-        : outcome === true ? 'Sign in on this computer' : 'Passkey setup could not be checked', exact: true }).waitFor();
+        : outcome === true ? 'Sign in on this computer' : 'Can’t check passkey access', exact: true }).waitFor();
       if (outcome === 'unavailable') {
-        await page.waitForTimeout(3250);
-        await page.getByRole('heading', { name: 'Passkey setup could not be checked', exact: true }).waitFor();
+        await page.waitForTimeout(1000);
+        await page.getByRole('heading', { name: 'Can’t check passkey access', exact: true }).waitFor();
       }
       await settle(page);
       assert.deepEqual(await boxes(), before, 'A delayed status result must not move the heading, action or feedback');
-      assert.equal(await page.getByRole('button').count(), 1, 'Only one passkey action is focusable');
+      assert.equal(await page.getByRole('button').count(), outcome === 'unavailable' ? 0 : 1,
+        outcome === 'unavailable' ? 'Unavailable status must not expose a ceremony or manual retry button' : 'Only one passkey action is focusable');
       const geometry = await page.locator('[data-reserved-region="passkey-card"]').evaluate(node => {
         const bounds = node.getBoundingClientRect();
         const range = document.createRange(); range.selectNodeContents(node);
@@ -757,7 +760,7 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) for (const
       });
       assert(geometry.fits && geometry.pageFits, 'All passkey text must fit naturally without horizontal scrolling');
       assert.equal(protectedRequests, 0, 'A status read cannot start enrollment or sign-in');
-      assert.equal(statusReads, outcome === 'unavailable' ? 3 : 1);
+      assert.equal(statusReads, outcome === 'unavailable' ? 4 : 1);
       assert.deepEqual((await readWatcher(page)).failures, []);
     } finally { release(); await page.close(); }
   });

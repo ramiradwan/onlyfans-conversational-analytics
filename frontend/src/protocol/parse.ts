@@ -331,7 +331,28 @@ const messagePayloadValidators: Record<string, Validator> = {
       history_permission: literal('granted', 'missing'),
       legal_review_required: boolean,
       reported_at: isoDateTime,
-    }, { history_error_code: nullable(literal('identity_required', 'unsupported_revision', 'history_unavailable', 'history_dependency_wait', 'software_update_required')) })),
+    }, { history_error_code: nullable(literal('identity_required', 'unsupported_revision', 'history_unavailable', 'history_dependency_wait', 'software_update_required')),
+      full_intent: object({ request_id: uuid, journey_id: uuid, disclosure_bundle_id: (value, path) => {
+        if (typeof value !== 'string' || !/^[a-f0-9]{64}$/u.test(value))
+          throw new ProtocolValidationError(path, 'expected disclosure bundle id');
+      } }),
+      capture_control_supported: nullable(literal(true)),
+      capture_control: nullable(object({
+        owner_scope: (value, path) => {
+          if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value))
+            throw new ProtocolValidationError(path, 'expected owner scope');
+        },
+        consent_epoch: uuid,
+        policy_revision: (value, path) => {
+          if (typeof value !== 'string' || !/^[0-9]{1,10}$/.test(value))
+            throw new ProtocolValidationError(path, 'expected policy revision');
+        },
+        capture: literal('active', 'paused'),
+        receipt: nullable(object({
+          operation_id: uuid, action: literal('pause', 'resume'),
+          previous_consent_epoch: uuid, outcome: literal('applied', 'refused'),
+        })),
+      })) })),
   }),
   'system.state': object({
     creator_account_id: nonEmptyString,

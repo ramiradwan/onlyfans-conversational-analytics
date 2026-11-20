@@ -206,7 +206,7 @@ async function driveProduction(page, step) {
   await step('delayed-renderer-and-fonts', () => stable(page));
   await step('request-error:Sign in with passkey', async () => {
     await page.getByRole('button', { name: 'Sign in with passkey', exact: true }).click();
-    await page.getByRole('alert').filter({ hasText: 'Sign-in could not start. Try again.' }).waitFor();
+    await page.getByRole('alert').filter({ hasText: 'Sign-in could not start.' }).waitFor();
   });
   segments.push({ state: 'enrolled', ...await readWatcher(page) });
   assert.deepEqual(segments.at(-1).failures, []);
@@ -222,9 +222,8 @@ async function driveProduction(page, step) {
   await step('session-status-unavailable', async () => {
     stateAvailable = false;
     await page.reload();
-    await page.getByRole('heading', { name: 'Passkey setup could not be checked' }).waitFor();
-    await page.getByRole('button', { name: 'Try again', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
-    assert(await page.getByRole('button', { name: 'Try again', exact: true }).isVisible());
+    await page.getByRole('heading', { name: 'Can’t check passkey access', exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Try again', exact: true }).count(), 0, 'Unavailable status offers no manual retry');
     assert.equal(await page.getByRole('button', { name: /Sign in with passkey|Create passkey/ }).count(), 0);
     assert.equal(requests.length, 2, 'Each known profile gets one ceremony attempt; unavailable status cannot start one');
   });

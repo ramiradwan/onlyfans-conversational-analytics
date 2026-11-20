@@ -15,7 +15,6 @@ try {
   document.getElementById('pairing-replace').addEventListener('click', () => { void client.replacePairing(); });
   document.getElementById('extension-open').addEventListener('click', () => { void client.open(); });
   document.getElementById('authentication-open').addEventListener('click', () => { void client.authenticate(); });
-  document.getElementById('task-retry').addEventListener('click', () => { void client.start(); });
   window.addEventListener('pagehide', () => client.stop());
   void client.start();
 } catch { renderBrowserTask(document, { state: 'task_changed' }); }

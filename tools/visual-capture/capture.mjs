@@ -160,6 +160,137 @@ async function screenshot(page, file, fullPage) {
   await page.screenshot({ path: file, animations: 'disabled', caret: 'hide', fullPage });
 }
 
+export async function captureOrdinaryScreens(browser, base, outDir, selectedScreens = SCREENS, recorder = null) {
+  const entries = [], diagnostics = [], failures = [];
+  const cases = ordinaryCases(selectedScreens);
+  await runCaptureJobs(cases, async ({ viewport, mode, screen }) => {
+    const name = ordinaryName({ viewport, mode, screen });
+    const finish = recorder?.begin(`ordinary-${name}`, { workspace: screen.workspace, state: screen.state, variant: screen.variant ?? null, mode, viewport: viewport.name, width: viewport.width, height: viewport.height });
+    const observations = [], files = []; let caseFailed = false;
+    let observerDiagnostics = [], observerReadFailed = false;
+    const context = await browser.newContext({
+      colorScheme: mode,
+      deviceScaleFactor: 1,
+      locale: 'en-US',
+      reducedMotion: 'reduce',
+      timezoneId: 'UTC',
+      viewport: { width: viewport.width, height: viewport.height },
+    });
+
+    const page = await context.newPage();
+    const settings = screen.workspace === 'settings';
+    const transitions = [];
+    await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[screen.workspace], nativeTimeline: settings });
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(String(error)));
+    await page.clock.setFixedTime(FIXED_NOW);
+    const url = `${base}?workspace=${screen.workspace}&state=${screen.state}&mode=${mode}`;
+    try {
+      await page.goto(url, { waitUntil: 'networkidle' });
+      await page.evaluate(() => document.fonts.ready);
+      if (settings) {
+        const before = await page.evaluate(() => ({ at: 0, frame: 0,
+          nativeAt: window.__regionWatcher.nativeTimeline.capturedAt }));
+        if (screen.state === 'loading') await screen.ready(page).waitFor({ state: 'visible', timeout: 15_000 });
+        else for (const headingName of ['Browser extension', 'Full analytics', 'Message history', 'Stored messages']) {
+          await page.getByRole('heading', { name: headingName, exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
+        }
+        await settleNativeWatcher(page);
+        transitions.push({ id: 'loading', before, after: await nativeBoundary(page) });
+      }
+      if (screen.act) {
+        const before = settings ? await nativeBoundary(page) : null;
+        await screen.act(page);
+        if (settings) {
+          await screen.ready(page).waitFor({ state: 'visible', timeout: 15_000 });
+          await settleNativeWatcher(page);
+          transitions.push({ id: ordinarySettingsTransition(screen.variant), before, after: await nativeBoundary(page) });
+        }
+      }
+      await screen.ready(page).waitFor({ state: 'visible', timeout: 15_000 });
+      await page.waitForLoadState('networkidle');
+      await assertBrandMarkIfPresent(page);
+      await assertNumericTypography(page, viewport);
+      if (screen.assert) await screen.assert(page, viewport);
+      const watcher = await readWatcher(page).catch(error => { observerReadFailed = true; throw error; });
+      if (settings) {
+        const tail = { id: 'fixture:scroll-audit', before: transitions.at(-1).after,
+          after: { at: watcher.frames.at(-1).at, frame: watcher.frames.length, nativeAt: watcher.nativeTimeline.endAt } };
+        const geometry = inspectSettingsFrames(watcher.frames, transitions, REQUIRED_REGIONS.settings, { ...watcher, auxiliary: [tail] });
+        watcher.failures = geometry.failures;
+        watcher.transitions = transitions;
+        watcher.transitionGeometry = geometry.policies;
+        watcher.shiftAttribution = geometry.shiftAttribution;
+        watcher.auxiliary = [tail];
+      }
+      observerDiagnostics = collectObserverDiagnostics(screen.workspace, watcher.failures, observerReadFailed);
+      await writeFile(join(outDir, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: screen.workspace, transition: `boot:${screen.state}`, viewport, mode, ...watcher }) + '\n');
+      files.push(`${name}-geometry.json`);
+      if (watcher.failures.length) throw new Error(watcher.failures.join('\n'));
+
+      const overflow = await horizontalOverflow(page);
+      if (overflow > 0) errors.push(`${overflow}px of unintended horizontal page overflow`);
+
+      const foldFile = join(outDir, screen.workspace, `${name}-fold.png`);
+      await screenshot(page, foldFile, false);
+      observations.push('fold'); files.push(relative(outDir, foldFile).replaceAll('\\', '/'));
+      entries.push({
+        file: relative(outDir, foldFile).replaceAll('\\', '/'),
+        capture: 'fold',
+        workspace: screen.workspace,
+        state: screen.state,
+        variant: screen.variant ?? null,
+        mode,
+        viewport: viewport.name,
+        width: viewport.width,
+        height: viewport.height,
+      });
+
+      const height = await fitContent(page, viewport);
+      const clipped = await shellClipping(page);
+      if (clipped > 0) errors.push(`${clipped}px of content is clipped and cannot be scrolled to`);
+      const fullFile = join(outDir, screen.workspace, `${name}-full.png`);
+      await screenshot(page, fullFile, true);
+      observations.push('full'); files.push(relative(outDir, fullFile).replaceAll('\\', '/'));
+      entries.push({
+        file: relative(outDir, fullFile).replaceAll('\\', '/'),
+        capture: 'full',
+        workspace: screen.workspace,
+        state: screen.state,
+        variant: screen.variant ?? null,
+        mode,
+        viewport: viewport.name,
+        width: viewport.width,
+        foldHeight: viewport.height,
+        capturedHeight: height,
+      });
+
+      if (screen.workspace === 'analytics' && screen.state === 'model' && !screen.variant) {
+        const captures = await captureVisionDiagnostics(page, outDir, name);
+        observations.push(...captures.map(value => `vision:${value.type}`)); files.push(...captures.map(value => value.file));
+        diagnostics.push(...captures.map((item) => ({ ...item, mode, viewport: viewport.name })));
+      }
+      if (errors.length) throw new Error(errors.join('\n'));
+      console.log(`captured ${name} fold + full`);
+    } catch (error) {
+      caseFailed = true;
+      await page.screenshot({ path: join(outDir, `${name}-failure.png`) });
+      const watcher = await readWatcher(page).catch(readError => { observerReadFailed = true; return { failures: [readError.message] }; });
+      observerDiagnostics = collectObserverDiagnostics(screen.workspace, watcher.failures, observerReadFailed);
+      await writeFile(join(outDir, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: screen.workspace, transition: `boot:${screen.state}`, viewport, mode, error: error.message, ...watcher }) + '\n');
+      failures.push(`${name}: ${error.message.split('\n')[0]}`);
+      console.error(`failed ${name}: visual_capture_failed`);
+      if (observerDiagnostics.length) console.log(`observer-diagnostics ordinary-${name}: ${JSON.stringify(observerDiagnostics)}`);
+    } finally {
+      finish?.({ outcome: caseFailed ? 'failed' : 'passed', observations, files, observerDiagnostics });
+      await page.close();
+    }
+    await context.close();
+  });
+  entries.sort((a, b) => a.file.localeCompare(b.file));
+  return { entries, diagnostics, failures };
+}
+
 export async function capture(argv = process.argv.slice(2)) {
   const options = parseCaptureOptions(argv, process.env, join(here, 'output'));
   const outDir = options.output;
@@ -197,133 +328,11 @@ export async function capture(argv = process.argv.slice(2)) {
     ({ base, vite } = await startHarness());
     browser = await chromium.launch();
     if (remaining) {
-    nextPhase('frontend');
-    const cases = ordinaryCases(selectedScreens);
-    await runCaptureJobs(cases, async ({ viewport, mode, screen }) => {
-        const name = ordinaryName({ viewport, mode, screen });
-        const finish = recorder.begin(`ordinary-${name}`, { workspace: screen.workspace, state: screen.state, variant: screen.variant ?? null, mode, viewport: viewport.name, width: viewport.width, height: viewport.height });
-        const observations = [], files = []; let caseFailed = false;
-        let observerDiagnostics = [], observerReadFailed = false;
-        const context = await browser.newContext({
-          colorScheme: mode,
-          deviceScaleFactor: 1,
-          locale: 'en-US',
-          reducedMotion: 'reduce',
-          timezoneId: 'UTC',
-          viewport: { width: viewport.width, height: viewport.height },
-        });
-
-          const page = await context.newPage();
-          const settings = screen.workspace === 'settings';
-          const transitions = [];
-          await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[screen.workspace], nativeTimeline: settings });
-          const errors = [];
-          page.on('pageerror', (error) => errors.push(String(error)));
-          await page.clock.setFixedTime(FIXED_NOW);
-          const url = `${base}?workspace=${screen.workspace}&state=${screen.state}&mode=${mode}`;
-          try {
-            await page.goto(url, { waitUntil: 'networkidle' });
-            await page.evaluate(() => document.fonts.ready);
-            if (settings) {
-              const before = await page.evaluate(() => ({ at: 0, frame: 0,
-                nativeAt: window.__regionWatcher.nativeTimeline.capturedAt }));
-              if (screen.state === 'loading') await screen.ready(page).waitFor({ state: 'visible', timeout: 15_000 });
-              else for (const name of ['Browser extension', 'Full analytics', 'Message history', 'Stored messages']) {
-                await page.getByRole('heading', { name, exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
-              }
-              await settleNativeWatcher(page);
-              transitions.push({ id: 'loading', before, after: await nativeBoundary(page) });
-            }
-            if (screen.act) {
-              const before = settings ? await nativeBoundary(page) : null;
-              await screen.act(page);
-              if (settings) {
-                await screen.ready(page).waitFor({ state: 'visible', timeout: 15_000 });
-                await settleNativeWatcher(page);
-                transitions.push({ id: ordinarySettingsTransition(screen.variant), before, after: await nativeBoundary(page) });
-              }
-            }
-            await screen.ready(page).waitFor({ state: 'visible', timeout: 15_000 });
-            await page.waitForLoadState('networkidle');
-            await assertBrandMarkIfPresent(page);
-            await assertNumericTypography(page, viewport);
-            if (screen.assert) await screen.assert(page, viewport);
-            const watcher = await readWatcher(page).catch(error => { observerReadFailed = true; throw error; });
-            if (settings) {
-              const tail = { id: 'fixture:scroll-audit', before: transitions.at(-1).after,
-                after: { at: watcher.frames.at(-1).at, frame: watcher.frames.length, nativeAt: watcher.nativeTimeline.endAt } };
-              const geometry = inspectSettingsFrames(watcher.frames, transitions, REQUIRED_REGIONS.settings, { ...watcher, auxiliary: [tail] });
-              watcher.failures = geometry.failures;
-              watcher.transitions = transitions;
-              watcher.transitionGeometry = geometry.policies;
-              watcher.shiftAttribution = geometry.shiftAttribution;
-              watcher.auxiliary = [tail];
-            }
-            observerDiagnostics = collectObserverDiagnostics(screen.workspace, watcher.failures, observerReadFailed);
-            await writeFile(join(outDir, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: screen.workspace, transition: `boot:${screen.state}`, viewport, mode, ...watcher }) + '\n');
-            files.push(`${name}-geometry.json`);
-            if (watcher.failures.length) throw new Error(watcher.failures.join('\n'));
-
-            const overflow = await horizontalOverflow(page);
-            if (overflow > 0) errors.push(`${overflow}px of unintended horizontal page overflow`);
-
-            const foldFile = join(outDir, screen.workspace, `${name}-fold.png`);
-            await screenshot(page, foldFile, false);
-            observations.push('fold'); files.push(relative(outDir, foldFile).replaceAll('\\', '/'));
-            entries.push({
-              file: relative(outDir, foldFile).replaceAll('\\', '/'),
-              capture: 'fold',
-              workspace: screen.workspace,
-              state: screen.state,
-              variant: screen.variant ?? null,
-              mode,
-              viewport: viewport.name,
-              width: viewport.width,
-              height: viewport.height,
-            });
-
-            const height = await fitContent(page, viewport);
-            const clipped = await shellClipping(page);
-            if (clipped > 0) errors.push(`${clipped}px of content is clipped and cannot be scrolled to`);
-            const fullFile = join(outDir, screen.workspace, `${name}-full.png`);
-            await screenshot(page, fullFile, true);
-            observations.push('full'); files.push(relative(outDir, fullFile).replaceAll('\\', '/'));
-            entries.push({
-              file: relative(outDir, fullFile).replaceAll('\\', '/'),
-              capture: 'full',
-              workspace: screen.workspace,
-              state: screen.state,
-              variant: screen.variant ?? null,
-              mode,
-              viewport: viewport.name,
-              width: viewport.width,
-              foldHeight: viewport.height,
-              capturedHeight: height,
-            });
-
-            if (screen.workspace === 'analytics' && screen.state === 'model' && !screen.variant) {
-              const captures = await captureVisionDiagnostics(page, outDir, name);
-              observations.push(...captures.map(value => `vision:${value.type}`)); files.push(...captures.map(value => value.file));
-              diagnostics.push(...captures.map((capture) => ({ ...capture, mode, viewport: viewport.name })));
-            }
-            if (errors.length) throw new Error(errors.join('\n'));
-            console.log(`captured ${name} fold + full`);
-          } catch (error) {
-            caseFailed = true;
-            await page.screenshot({ path: join(outDir, `${name}-failure.png`) });
-            const watcher = await readWatcher(page).catch(readError => { observerReadFailed = true; return { failures: [readError.message] }; });
-            observerDiagnostics = collectObserverDiagnostics(screen.workspace, watcher.failures, observerReadFailed);
-            await writeFile(join(outDir, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: screen.workspace, transition: `boot:${screen.state}`, viewport, mode, error: error.message, ...watcher }) + '\n');
-            failures.push(`${name}: ${error.message.split('\n')[0]}`);
-            console.error(`failed ${name}: visual_capture_failed`);
-            if (observerDiagnostics.length) console.log(`observer-diagnostics ordinary-${name}: ${JSON.stringify(observerDiagnostics)}`);
-          } finally {
-            finish({ outcome: caseFailed ? 'failed' : 'passed', observations, files, observerDiagnostics });
-            await page.close();
-          }
-        await context.close();
-    });
-    entries.sort((a, b) => a.file.localeCompare(b.file));
+      nextPhase('frontend');
+      const ordinary = await captureOrdinaryScreens(browser, base, outDir, selectedScreens, recorder);
+      entries.push(...ordinary.entries);
+      diagnostics.push(...ordinary.diagnostics);
+      failures.push(...ordinary.failures);
     }
     if (dynamicGroup) {
       nextPhase('dynamic');

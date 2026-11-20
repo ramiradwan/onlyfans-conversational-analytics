@@ -16,19 +16,50 @@ try {
   let acting = null;
   let provider = null;
   let finished = false;
+  let chromeAvailable = false, chromeScope = null, chromeCheck = 0;
+  const missingChrome = () => current.error === 'chrome_unavailable'
+    || current.snapshot?.reason === 'chrome_unavailable'
+    || current.snapshot?.pending_operations.some(item => item.reason === 'chrome_unavailable');
+  const scope = () => current.connected && missingChrome() && current.snapshot
+    ? JSON.stringify([client?.generation, current.snapshot.journey_id, current.snapshot.next_task,
+      current.pending, current.snapshot.pending_operations.map(item => item.operation_id)]) : null;
+  const checkChrome = async () => {
+    const owner = scope();
+    if (finished || !owner) return;
+    const generation = ++chromeCheck;
+    try {
+      const available = await globalThis.__TAURI__.core.invoke('desktop_chrome_available');
+      if (!finished && generation === chromeCheck && scope() === owner) {
+        chromeAvailable = available === true;
+        render();
+      }
+    } catch { /* A failed read cannot admit a browser launch. */ }
+  };
   const render = () => {
+    const owner = scope();
+    if (chromeScope !== owner) {
+      chromeCheck++; chromeAvailable = false; chromeScope = owner;
+      if (owner) void checkChrome();
+    }
     const authentication = client?.session?.stage === 'runtime' ? enrollment.state : null;
     const continuing = !finished && current.connected && !current.error
       && current.snapshot?.next_task === 'complete' && current.snapshot.local_ready === true
       && authentication?.checked === true && authentication.authenticated === true
       && !authentication.busy && !authentication.error;
-    renderSetup(document, { ...current, choosingAccount, acting, provider, authentication, continuing });
+    renderSetup(document, { ...current, choosingAccount, acting, provider, authentication, continuing, chromeAvailable });
     if (continuing) {
       finished = true;
       location.replace('/');
     }
   };
-  const enrollment = new DesktopEnrollment({ receive: render, refresh: () => client.connect() });
+  const enrollment = new DesktopEnrollment({ receive: render, refresh: () => {
+    if (finished) return;
+    // No action or navigation may use the snapshot from the previous operator
+    // session. Only the first fresh setup event can restore connected state.
+    current = { ...current, connected: false };
+    render();
+    return client.connect();
+  } });
   client = new DesktopSetupClient({ generation: fields.get('presentation'), receive: state => {
     if (current.snapshot?.authentication?.authentication_attempt?.authentication_attempt_id
       !== state.snapshot?.authentication?.authentication_attempt?.authentication_attempt_id) choosingAccount = false;
@@ -43,10 +74,19 @@ try {
     catch { client.notify('operation_unconfirmed'); }
     finally { acting = null; render(); }
   };
-  document.getElementById('task-action').addEventListener('click', event => { void act(event.currentTarget.dataset.action); });
+  document.getElementById('task-action').addEventListener('click', event => {
+    const button = event.currentTarget;
+    if (finished || button.hidden || button.disabled || !button.dataset.action || !current.connected
+      || !current.snapshot?.allowed_actions.includes(button.dataset.action)) return;
+    void act(button.dataset.action);
+  });
   for (const button of document.querySelectorAll('#sign-in-options [data-provider]')) {
     button.addEventListener('click', event => {
-      const { action, provider: selected } = event.currentTarget.dataset;
+      const control = event.currentTarget;
+      const { action, provider: selected } = control.dataset;
+      if (finished || control.hidden || control.disabled || control.closest('[hidden]') || !current.connected
+        || !current.snapshot?.allowed_actions.includes(action)
+        || !current.snapshot.authentication?.choices[selected]) return;
       if (!acting) provider = selected;
       void act(action, { provider: selected });
     });
@@ -59,10 +99,11 @@ try {
     choosingAccount = false; render(); document.getElementById('sign-in-switch').focus();
   });
   document.getElementById('task-reconnect').addEventListener('click', () => { void client.connect(); });
-  document.getElementById('browser-reopen').addEventListener('click', async () => {
-    if (acting) return;
+  document.getElementById('browser-reopen').addEventListener('click', async event => {
+    const button = event.currentTarget, operation = button.dataset.operation;
+    if (acting || button.hidden || button.disabled || !operation) return;
     acting = 'browser.open'; render();
-    try { await client.launchBrowser(true, current.snapshot?.authentication?.browser_operation_id || undefined); }
+    try { await client.launchBrowser(true, operation); }
     catch { client.notify('browser_unavailable'); }
     finally { acting = null; render(); }
   });
@@ -73,8 +114,9 @@ try {
     finally { render(); }
   });
   document.getElementById('local-authenticate').addEventListener('click', () => { void enrollment.authenticate(); });
-  document.getElementById('local-auth-retry').addEventListener('click', () => { void enrollment.check(); });
-  window.addEventListener('pagehide', () => { finished = true; client.stop(); enrollment.stop(); });
+  window.addEventListener('focus', () => { void checkChrome(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) void checkChrome(); });
+  window.addEventListener('pagehide', () => { finished = true; chromeCheck++; client.stop(); enrollment.stop(); });
   void client.connect();
 } catch {
   renderSetup(document, { snapshot: null, pending: null, connected: false, error: 'session_unavailable', deliberate: false });

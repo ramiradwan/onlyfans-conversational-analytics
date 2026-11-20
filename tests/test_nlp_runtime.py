@@ -509,6 +509,39 @@ async def test_selected_accounts_rotate_between_bounded_jobs(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_saved_findings_publication_notifies_without_new_canonical_data(tmp_path):
+    from app.analytics.publication_events import publication_events
+    from app.analytics.identity import source_identity
+
+    async with configured(tmp_path) as e:
+        await eventually(lambda: e.findings.state(ACCOUNT)['completion_revision'] == 2 and
+            e.findings.state(ACCOUNT)['acknowledged_revision'] == e.findings.state(ACCOUNT)['notification_revision'])
+        await e.owned.scheduler.wait(ACCOUNT)
+        revision = source_identity(e.fixture.source, ACCOUNT).revision
+        before = list(e.calls)
+        e.engine.present = False
+        e.owned.findings.wake()
+        await eventually(lambda: e.owned.findings._published.get(ACCOUNT, (None,)*4)[3] is False)
+        await e.owned.scheduler.wait(ACCOUNT)
+        listener = publication_events.subscribe(ACCOUNT)
+        other = publication_events.subscribe("unrelated-account")
+        assert listener is not None and other is not None
+        try:
+            e.engine.present = True
+            e.owned.findings.wake()
+            await asyncio.wait_for(listener[2].wait(), 15)
+            await e.owned.scheduler.wait(ACCOUNT)
+            projection = e.owned.pipeline.projections.get(ACCOUNT)
+            assert '+nlp.snapshot.v1' in projection.pipeline_revision
+            assert source_identity(e.fixture.source, ACCOUNT).revision == revision
+            assert not other[2].is_set()
+            assert e.calls == before
+        finally:
+            publication_events.unsubscribe(listener)
+            publication_events.unsubscribe(other)
+
+
+@pytest.mark.asyncio
 async def test_readiness_change_republishes_baseline_and_saved_findings(tmp_path):
     async with configured(tmp_path) as e:
         await eventually(lambda: e.findings.state(ACCOUNT)['completion_revision'] == 2 and

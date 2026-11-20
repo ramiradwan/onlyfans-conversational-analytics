@@ -287,6 +287,18 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
               for (const listener of controlObservers) listener({ id: document.id, action: document.action, waiting });
               continue;
             }
+            if (document.action === 'capture.control') {
+              const payload = document.payload;
+              const uuid = value => typeof value === 'string'
+                && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
+              if (Object.keys(document).length !== 4 || !uuid(document.id)
+                || !payload || Object.keys(payload).length !== 5 || !uuid(payload.operation_id)
+                || typeof payload.owner_scope !== 'string' || !/^[0-9a-f]{64}$/.test(payload.owner_scope)
+                || !uuid(payload.consent_epoch) || !['pause', 'resume'].includes(payload.action)
+                || typeof payload.policy_revision !== 'string' || !/^[0-9]{1,10}$/.test(payload.policy_revision)) throw refused();
+              for (const listener of controlObservers) listener({ id: document.id, action: document.action, payload });
+              continue;
+            }
             // A session-level control from Brain (ADR 0045). It is closed and
             // carries no data; the receiver applies it through its own controllers.
             const keys = Object.keys(document);

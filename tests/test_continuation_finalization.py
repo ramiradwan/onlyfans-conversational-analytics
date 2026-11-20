@@ -159,3 +159,47 @@ def test_expired_membership_can_still_enter_automatic_finalization_refresh(owner
                            ((owner.clock[0] + timedelta(seconds=5)).isoformat(),))
     owner.clock[0] += timedelta(seconds=10)
     assert scoped_durable_provisioning_progress(lambda: owner.store)(journey)["stage"] == "finalization_ready"
+
+
+@pytest.mark.asyncio
+async def test_automatic_setup_finalization_uses_real_verified_grant_and_configuration_writes(owner, tmp_path):
+    import asyncio
+    from uuid import uuid4
+    from app.onboarding.admission import ScopedAdmissions
+    from app.onboarding.browser_tasks import BrowserTasks
+    from app.onboarding.coordinator import DesktopOnboardingCoordinator
+    from app.provisioning.completion import durable_completion_reader, durable_finalize_action
+    from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
+
+    source = completed(owner)
+    root = str(uuid4())
+    with owner.store.database.transaction() as connection:
+        connection.execute("INSERT INTO desktop_setup_journeys (journey_id,created_at,source_journey_id) VALUES (?,?,?)",
+            (root, owner.clock[0].timestamp(), source))
+    admissions = ScopedAdmissions(owner.store, stage="setup")
+    native = admissions.consume(admissions.prepare_desktop(), role="desktop")
+    tasks = BrowserTasks(admissions, extension_id="abcdefghijklmnopabcdefghijklmnop")
+    completion = durable_completion_reader(lambda: owner.store, data_directory=tmp_path)
+    finalized = asyncio.Event()
+    setup_owner = ProvisioningSetupOwner(owner.store, browser_tasks=tasks, ceremonies=None,
+        initial=None, registered=None, key=owner.key,
+        finalize=durable_finalize_action(lambda: owner.store, extension_id=tasks.extension_id,
+            data_directory=tmp_path, now=lambda: owner.clock[0]),
+        completion_ready=completion, completed=finalized.set)
+    coordinator = DesktopOnboardingCoordinator(admissions, setup_owner)
+    assert coordinator.read(native)["facts"]["account"] == "verified"
+    assert not completion()
+    coordinator.start()
+    try:
+        async with asyncio.timeout(15):
+            await finalized.wait()
+        await coordinator.drain()
+        assert completion()
+        bindings = owner.store.authorized_account_bindings()
+        assert len(bindings) == 1 and bindings[0].creator_account_id == "creator-1"
+        with owner.store.database.read() as connection:
+            rows = connection.execute("SELECT action,state FROM desktop_setup_operations").fetchall()
+            assert [(row["action"], row["state"]) for row in rows] == [("setup.finalize", "completed")]
+    finally:
+        await coordinator.stop()
+        await setup_owner.stop()

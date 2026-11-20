@@ -5,6 +5,7 @@
   "repeat_index": 0,
   "tests": [
     {"id":"capture-replay","file":"tests/capture.spec.mjs","title_path":["real MV3 capture proves exact ordering, durable replay, and alarm recovery"],"shard":"core","retry_override":null},
+    {"id":"first-captured-activity","file":"tests/capture.spec.mjs","title_path":["first captured activity becomes visible before history is complete"],"shard":"core","retry_override":null},
     {"id":"catchup-enabled","file":"tests/catchup.spec.mjs","title_path":["unopened chats recover after downtime with catchup_enabled=true"],"shard":"catchup","retry_override":0},
     {"id":"catchup-disabled","file":"tests/catchup.spec.mjs","title_path":["unopened chats recover after downtime with catchup_enabled=false"],"shard":"catchup","retry_override":0},
     {"id":"heartbeat-liveness","file":"tests/heartbeat-liveness.spec.mjs","title_path":["paired Agent heartbeat advances without capture traffic"],"shard":"core","retry_override":null},
@@ -18,6 +19,7 @@
     {"id":"popup-confirmed-readiness","file":"tests/popup-lifecycle.spec.mjs","title_path":["companion client confirmation preserves setup and readiness comes from the desktop result"],"shard":"core","retry_override":null},
     {"id":"standalone-preview","file":"tests/standalone-preview.spec.mjs","title_path":["standalone preview survives pause, deletion, and restart without a local service"],"shard":"core","retry_override":null},
     {"id":"text-analysis-processing","file":"tests/text-analysis-processing.spec.mjs","title_path":["processing commands preserve durable enrollment and canonical findings"],"shard":"core","retry_override":null},
+    {"id":"first-saved-finding","file":"tests/text-analysis-processing.spec.mjs","title_path":["first saved finding is visible after explicit processing enablement"],"shard":"core","retry_override":null},
     {"id":"text-analysis-preview-joint","file":"tests/text-analysis-preview.spec.mjs","title_path":["joint preview preserves reviewed scope and exact saved evidence"],"shard":"core","retry_override":null},
     {"id":"text-analysis-preview-partial","file":"tests/text-analysis-preview.spec.mjs","title_path":["split preview qualifies partial coverage without inventing totals"],"shard":"core","retry_override":null},
     {"id":"text-analysis-preview-empty","file":"tests/text-analysis-preview.spec.mjs","title_path":["empty preview retains its outcome without spending admission"],"shard":"core","retry_override":null},

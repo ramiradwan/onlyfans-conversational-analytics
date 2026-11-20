@@ -6,12 +6,16 @@ export const WORKSPACE_RECORD_KEY = 'onboarding_workspace_v1';
 export const WORKSPACE_TAB_KEY = 'onboarding_workspace_tab_v1';
 export const WORKSPACE_ACTIVITY_KEY = 'onboarding_workspace_activity_v1';
 export const WORKSPACE_IDENTITY_KEY = 'onboarding_workspace_identity_v1';
+export const FULL_PRESENTATION_INTENT_KEY = 'onboarding_full_presentation_intent_v1';
 const MAX_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const ROUTES = ['extension'];
 const DRAFT_FIELDS = ['terms_checked', 'risk_checked', 'full_checked'];
 const validScope = (scope) => exact(scope, ['scope_id', 'disclosure_bundle_id']) && UUID.test(scope.scope_id)
   && /^[0-9a-f]{64}$/u.test(scope.disclosure_bundle_id);
+const accountDigest = async account => [...new Uint8Array(await crypto.subtle.digest('SHA-256',
+  new TextEncoder().encode(JSON.stringify(['onboarding-draft-account.v1', account]))))]
+  .map(value => value.toString(16).padStart(2, '0')).join('');
 const blankDraft = () => Object.fromEntries(DRAFT_FIELDS.map((key) => [key, false]));
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const exact = (value, keys) => isObject(value) && Object.keys(value).length === keys.length
@@ -67,6 +71,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
     const touched = (await localStorage.get(WORKSPACE_ACTIVITY_KEY))[WORKSPACE_ACTIVITY_KEY];
     if (Number.isFinite(touched) && (now() - touched > MAX_IDLE_MS || touched > now())) {
       await localStorage.remove([WORKSPACE_RECORD_KEY, WORKSPACE_ACTIVITY_KEY, WORKSPACE_IDENTITY_KEY]);
+      await chromeApi.storage.local.remove([FULL_PRESENTATION_INTENT_KEY]);
       return null;
     }
     const record = (await localStorage.get(WORKSPACE_RECORD_KEY))[WORKSPACE_RECORD_KEY];
@@ -75,6 +80,28 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       || !validScope(record.draft_scope)
       || !exact(record.draft, DRAFT_FIELDS) || DRAFT_FIELDS.some((key) => typeof record.draft[key] !== 'boolean')) return null;
     return record;
+  };
+  const intentStorage = chromeApi.storage.local;
+  const readIntent = async record => {
+    const value = (await intentStorage.get(FULL_PRESENTATION_INTENT_KEY))[FULL_PRESENTATION_INTENT_KEY];
+    if (!record || !exact(value, ['version', 'request_id', 'journey_id', 'draft_scope', 'account_digest'])
+      || value.version !== 1 || !UUID.test(value.request_id) || value.journey_id !== record.journey_id
+      || !validScope(value.draft_scope) || value.draft_scope.scope_id !== record.draft_scope.scope_id
+      || value.draft_scope.disclosure_bundle_id !== record.draft_scope.disclosure_bundle_id
+      || !(value.account_digest === null || /^[a-f0-9]{64}$/u.test(value.account_digest))) return null;
+    return value;
+  };
+  const writeIntent = async (record, requested) => {
+    if (!requested) {
+      await intentStorage.remove([FULL_PRESENTATION_INTENT_KEY]);
+      return null;
+    }
+    const identity = (await localStorage.get(WORKSPACE_IDENTITY_KEY))[WORKSPACE_IDENTITY_KEY];
+    if (!validIdentity(identity, record)) fail('workspace_identity_invalid');
+    const intent = { version: 1, request_id: crypto.randomUUID(), journey_id: record.journey_id,
+      draft_scope: { ...record.draft_scope }, account_digest: identity.account_digest };
+    await intentStorage.set({ [FULL_PRESENTATION_INTENT_KEY]: intent });
+    return intent.request_id;
   };
   const storeTab = (tab, journeyId) => chromeApi.storage.session.set({
     [WORKSPACE_TAB_KEY]: { version: 1, journey_id: journeyId, tab_id: tab.id, window_id: tab.windowId,
@@ -188,7 +215,10 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
         : existing;
       // The canonical record commits first. If cleanup fails, an exact retry
       // finishes only obsolete presentation cleanup without rotating its scope.
-      if (rebind) await saveRecord(record);
+      if (rebind) {
+        await saveRecord(record);
+        await intentStorage.remove([FULL_PRESENTATION_INTENT_KEY]);
+      }
       await authorize();
       if (canAdopt() !== true) fail('task_changed');
       const retire = [...(retireLaunch ? [NATIVE_LAUNCH_KEY] : []), ...(retireTab ? [WORKSPACE_TAB_KEY] : [])];
@@ -215,6 +245,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       else if (record.draft_scope.scope_id !== scope.scope_id) record.draft.full_checked = false;
       record.draft_scope = { ...scope };
       await saveRecord(record);
+      await intentStorage.remove([FULL_PRESENTATION_INTENT_KEY]);
       return record;
     }),
     // Presentation only. Linking the marker to a fresh scope makes either
@@ -230,12 +261,23 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
         && previous.scope_id === record.draft_scope.scope_id
         && previous.disclosure_bundle_id === record.draft_scope.disclosure_bundle_id
         && previous.account_digest === request.account_digest) return record;
+      const intent = await readIntent(record);
+      // A missing page is not a new account. Preserve an explicit choice
+      // across identity discovery/loss, never across a known replacement.
+      const retainIntent = intent && (request.account_digest === null
+        || (intent.account_digest === null || intent.account_digest === request.account_digest)
+          && (previous?.account_digest == null || previous.account_digest === request.account_digest));
       record.draft.full_checked = false;
       record.draft_scope.scope_id = crypto.randomUUID();
       const identity = { version: 1, journey_id: record.journey_id, ...record.draft_scope,
         account_digest: request.account_digest };
       await localStorage.set({ [WORKSPACE_RECORD_KEY]: record,
         [WORKSPACE_ACTIVITY_KEY]: now(), [WORKSPACE_IDENTITY_KEY]: identity });
+      if (retainIntent) await intentStorage.set({ [FULL_PRESENTATION_INTENT_KEY]: {
+        ...intent, draft_scope: { ...record.draft_scope },
+        account_digest: intent.account_digest ?? request.account_digest,
+      } });
+      else if (intent) await intentStorage.remove([FULL_PRESENTATION_INTENT_KEY]);
       return record;
     }),
     // A worker-only install continuation. Adopts a uniquely identified existing
@@ -287,6 +329,39 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       await saveRecord(record);
       return { journey_id: record.journey_id, tab_id: tab.id, route: record.route };
     }),
+    // Only an explicit choice from the admitted extension document can
+    // create this marker. Draft checkboxes and helper navigation cannot.
+    setFullPresentationIntent: (sender, request) => serialize(async () => {
+      if (!exact(request, ['scope_id', 'requested']) || typeof request.requested !== 'boolean') fail('workspace_request_invalid');
+      const { record } = await admitted(sender);
+      if (request.scope_id !== record.draft_scope.scope_id) fail('workspace_draft_stale');
+      return writeIntent(record, request.requested);
+    }),
+    // A trusted UI navigation handler may record the same explicit choice
+    // before the setup document is ready. No browser task uses this entry.
+    requestFullPresentationIntent: (reference) => serialize(async () => {
+      const record = await readRecord();
+      if (!record || reference.journey_id !== record.journey_id
+        || reference.draft_scope.scope_id !== record.draft_scope.scope_id
+        || reference.draft_scope.disclosure_bundle_id !== record.draft_scope.disclosure_bundle_id) fail('workspace_draft_stale');
+      return writeIntent(record, true);
+    }),
+    // The caller supplies only the authenticated local companion's pinned
+    // account, never a page-derived identity. Bind an unbound choice once.
+    fullPresentationIntent: (account) => serialize(async () => {
+      if (typeof account !== 'string' || !account) return null;
+      const record = await readRecord();
+      const intent = await readIntent(record);
+      if (!intent) return null;
+      const digest = await accountDigest(account);
+      if (intent.account_digest !== null && intent.account_digest !== digest) return null;
+      if (intent.account_digest === null) {
+        intent.account_digest = digest;
+        await intentStorage.set({ [FULL_PRESENTATION_INTENT_KEY]: intent });
+      }
+      return { request_id: intent.request_id, journey_id: intent.journey_id,
+        disclosure_bundle_id: intent.draft_scope.disclosure_bundle_id };
+    }),
     saveDraft: (sender, request) => serialize(async () => {
       if (!exact(request, ['scope_id', 'draft'])) fail('workspace_draft_invalid');
       const { draft } = request;
@@ -308,6 +383,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       else record.draft.full_checked = false;
       record.draft_scope = { ...request.draft_scope };
       await saveRecord(record);
+      await intentStorage.remove([FULL_PRESENTATION_INTENT_KEY]);
       return { draft_scope: { ...record.draft_scope }, draft: { ...record.draft } };
     }),
   });

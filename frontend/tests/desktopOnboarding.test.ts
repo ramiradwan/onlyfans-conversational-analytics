@@ -93,3 +93,19 @@ describe('native coordinator adapter', () => {
     unsubscribe();
   });
 });
+
+it('admits presentation intent only from the current account, journey and legal state', async () => {
+  const { selectFullPresentationIntent } = await import('../src/services/desktopOnboarding');
+  const state = desktopFixture().api.getState();
+  const intent = { request_id: '77777777-7777-4777-8777-777777777777', journey_id: state.snapshot!.journey_id,
+    disclosure_bundle_id: 'a'.repeat(64) };
+  const browser = { capture: 'active' as const, site_access: 'granted' as const, history_permission: 'missing' as const,
+    legal_review_required: false, reported_at: '2026-11-18T00:00:00Z', full_intent: intent };
+  expect(selectFullPresentationIntent(state, 'creator-account', browser)).toEqual(intent);
+  expect(selectFullPresentationIntent(state, 'other-creator', browser)).toBeUndefined();
+  expect(selectFullPresentationIntent({ ...state, connected: false }, 'creator-account', browser)).toBeUndefined();
+  expect(selectFullPresentationIntent(state, 'creator-account', { ...browser, legal_review_required: true })).toBeUndefined();
+  expect(selectFullPresentationIntent(state, 'creator-account', { ...browser, full_intent: { ...intent, journey_id: 'other' } })).toBeUndefined();
+  expect(selectFullPresentationIntent(state, 'creator-account', { ...browser, capture: 'off' })).toBeUndefined();
+  expect(selectFullPresentationIntent({ ...state, snapshot: { ...state.snapshot!, allowed_actions: [] } }, 'creator-account', browser)).toBeUndefined();
+});
