@@ -322,10 +322,10 @@ def test_second_exact_reconciliation_is_not_admitted(retained):
         assert connection.execute("SELECT count(*) FROM onboarding_source_replacement_reservations").fetchone()[0] == 1
 
 @pytest.mark.parametrize("new_customer", [None, "customer-different", "customer-original"])
+@pytest.mark.parametrize("fixture", [INITIAL], indirect=True)
 def test_initial_replacement_identity_is_retained_and_cannot_change(retained, new_customer):
     store, path, clock, journey, _, saved, _ = retained
-    if journey["kind"] != "initial-enrollment":
-        pytest.skip("Initial handoff only")
+    assert journey["kind"] == "initial-enrollment"
     reservations, replacement = claimed(retained)
     identity = str(uuid4())
     result = prepared_result(replacement, clock) | {"expected_customer_id": "customer-original"}
