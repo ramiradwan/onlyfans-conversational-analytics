@@ -151,10 +151,11 @@ def test_duplicate_reply_members_are_rejected(exchange):
         send(exchange)
 
 
+@pytest.mark.parametrize("exchange", [vector for vector in VECTORS["proof_cases"]
+    if vector["operation"].removeprefix("authority-recovery-") == "deliver"], ids=lambda v: v["case_id"], indirect=True)
 def test_delivery_cannot_change_creator_or_installation(exchange):
     verb, _, transport, _, _ = exchange
-    if verb != "deliver":
-        pytest.skip("Delivery only")
+    assert verb == "deliver"
     result = copy.deepcopy(transport.result)
     for field in ("installation_id", "enrollment_transaction_id", "organization_id", "installation_key_id"):
         transport.result = {**result, field: "different"}
