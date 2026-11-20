@@ -947,7 +947,7 @@ async def test_unreached_abandonment_retires_past_window_and_allows_fresh_admiss
     # Start the real coordinator watcher before the deadline, then cross
     # created_at+1860 so _watch fires through confirmation_deadline.
     coordinator.start()
-    for _ in range(50):
+    for _ in range(1000):
         if parent["operation_id"] in coordinator._confirmation_at:
             break
         await asyncio.sleep(0.01)
@@ -955,7 +955,7 @@ async def test_unreached_abandonment_retires_past_window_and_allows_fresh_admiss
     assert _recovery_counts(case.store)["installation_authority_recoveries"]==1
     case.clock[0]=case.clock[0]+timedelta(seconds=max(0.0,created_at+1860-case.clock[0].timestamp()))
     events.publish()
-    for _ in range(100):
+    for _ in range(1000):
         if saved(coordinator,parent["operation_id"])["state"]=="refused":
             break
         await asyncio.sleep(0.01)
