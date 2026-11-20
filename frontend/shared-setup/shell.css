@@ -21,11 +21,13 @@ body { margin: 0; background: var(--dipsy-color-background); color: var(--dipsy-
 .setup-main { max-width: 880px; margin: 0 auto; padding: 56px 32px; }
 .setup-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; list-style: none; padding: 0; margin: 0 0 40px; color: var(--dipsy-color-text-secondary); font-size: .875rem; }
 .setup-steps li { display: flex; align-items: center; gap: 10px; }
-.setup-steps span { display: grid; place-items: center; flex: 0 0 28px; height: 28px; border: 1px solid var(--dipsy-intent-surface-control-border); border-radius: 50%; }
+.setup-steps .setup-step-badge { display: grid; place-items: center; flex: 0 0 28px; height: 28px; border: 1px solid var(--dipsy-intent-surface-control-border); border-radius: 50%; }
+.setup-steps .setup-step-label { display: inline-flex; flex-direction: column; }
+.setup-steps .setup-step-label::after { content: attr(data-label) / ""; height: 0; overflow: hidden; visibility: hidden; user-select: none; pointer-events: none; font-weight: 600; }
 .setup-steps [aria-current="step"] { color: var(--dipsy-color-text); font-weight: 600; }
-.setup-steps [aria-current="step"] span { color: var(--dipsy-color-on-primary); background: var(--dipsy-color-primary); border-color: var(--dipsy-color-primary); }
-.setup-steps [data-complete="true"] span { position: relative; font-size: 0; color: var(--dipsy-intent-action-state-selected-foreground); background: var(--dipsy-color-selected); border-color: var(--dipsy-color-primary); }
-.setup-steps [data-complete="true"] span::after { content: ""; inline-size: 6px; block-size: 11px; border: solid currentColor; border-width: 0 2px 2px 0; transform: translateY(-1px) rotate(45deg); }
+.setup-steps [aria-current="step"] .setup-step-badge { color: var(--dipsy-color-on-primary); background: var(--dipsy-color-primary); border-color: var(--dipsy-color-primary); }
+.setup-steps [data-complete="true"] .setup-step-badge { position: relative; font-size: 0; color: var(--dipsy-intent-action-state-selected-foreground); background: var(--dipsy-color-selected); border-color: var(--dipsy-color-primary); }
+.setup-steps [data-complete="true"] .setup-step-badge::after { content: ""; inline-size: 6px; block-size: 11px; border: solid currentColor; border-width: 0 2px 2px 0; transform: translateY(-1px) rotate(45deg); }
 @media (width > 600px) {
   .setup-steps li:nth-child(2) { justify-content: center; }
   .setup-steps li:last-child { justify-content: flex-end; }
