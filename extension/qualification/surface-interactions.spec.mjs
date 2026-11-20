@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { SURFACE_STATES, renderSurfaceState } from './surface-fixtures.mjs';
 import { readFileSync } from 'node:fs';
-const calls = (page) => page.evaluate(() => window.__surfaceFixture.calls.filter(call => !(call.type === 'ofca.workspace.v1' && ['read', 'draft', 'browser_task', 'desktop_adoption', 'dismiss_browser_task'].includes(call.action)) && !(call.type === 'ofca.setup-transfer.v1' && call.action === 'context')));
+const calls = (page) => page.evaluate(() => window.__surfaceFixture.calls.filter(call => !(call.type === 'ofca.workspace.v1' && ['read', 'draft', 'browser_task', 'desktop_adoption', 'dismiss_browser_task', 'full_presentation_intent'].includes(call.action)) && !(call.type === 'ofca.setup-transfer.v1' && call.action === 'context')));
 
 test('Preview keeps its status and Full review action visible in the reserved frames', async ({ page }) => {
   await renderSurfaceState(page, SURFACE_STATES.preview);
@@ -10,17 +10,19 @@ test('Preview keeps its status and Full review action visible in the reserved fr
   await expect(page.locator('#journey-primary')).toBeVisible();
   await page.locator('#journey-primary').click();
   expect((await calls(page)).filter((call) => call.type === 'ofca.ui.open-surface'))
-    .toEqual([{ type: 'ofca.ui.open-surface', surface: 'setup', section: 'full' }]);
+    .toEqual([{ type: 'ofca.ui.open-surface', surface: 'setup', section: 'full', requestedFull: true }]);
 });
 
 test('loading setup never records approvals or requests browser access', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.software_activation, permissionGranted: false });
   await expect(page.locator('#start-choice')).toBeVisible();
+  expect(await page.evaluate(() => window.__surfaceFixture.calls.some(call => call.type === 'ofca.workspace.v1' && call.action === 'full_presentation_intent'))).toBe(false);
   await page.locator('#start-preview').click();
   await expect(page.locator('#terms-accepted')).not.toBeChecked();
   await expect(page.locator('#risk-acknowledged')).not.toBeChecked();
   await expect(page.locator('#activate-software')).toBeEnabled();
   expect((await calls(page)).every((call) => call.type.endsWith('.status'))).toBe(true);
+  expect(await page.evaluate(() => window.__surfaceFixture.calls.filter(call => call.type === 'ofca.workspace.v1' && call.action === 'full_presentation_intent').every(call => call.requested === false))).toBe(true);
   await page.locator('#activate-software').click();
   await expect(page.locator('#feedback')).toBeVisible();
   await expect(page.locator('#terms-accepted')).toBeFocused();
@@ -123,9 +125,11 @@ test('unknown extension connection does not ask for another creator sign-in', as
 test('consent revocation shows analytics off without restoring it automatically', async ({ page }) => {
   await renderSurfaceState(page, SURFACE_STATES.full_access_revoked);
   await expect(page.locator('#journey-title')).toHaveText('Analytics off');
-  await expect(page.locator('#journey-badge')).toHaveText('Off');
-  await expect(page.locator('#journey-icon')).not.toHaveText('✓');
-  await expect(page.locator('#journey-primary')).toBeHidden();
+  await expect(page.locator('#journey-badge')).toHaveText('');
+  await expect(page.locator('#journey-icon')).toHaveText('Ⅱ');
+  await expect(page.locator('#mode-choice')).toBeHidden();
+  await expect(page.locator('#journey-primary')).toHaveText('Choose analytics mode');
+  await expect(page.locator('#journey-primary')).toHaveAttribute('data-action', 'choose_mode');
   expect((await calls(page)).some(call => call.type === 'permission')).toBe(false);
 });
 
