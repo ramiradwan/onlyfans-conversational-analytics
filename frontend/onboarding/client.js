@@ -1,5 +1,6 @@
 import { command, operation, snapshot, UUID } from './contract.js';
 import { setupEvents } from './events.js';
+import { openProtectedBrowser } from './browser-task.js';
 import { exact } from '../../shared/browser-tasks/wire.mjs';
 import { parseOnboardingJson } from '../../shared/onboarding/json.mjs';
 
@@ -7,6 +8,8 @@ import { parseOnboardingJson } from '../../shared/onboarding/json.mjs';
 const NOTICE_ERRORS = { extension_unavailable: 'extension_unavailable', profile_mismatch: 'profile_mismatch',
   account_mismatch: 'account_mismatch', task_expired: 'operation_expired', unavailable: 'browser_unavailable',
   needs_account: 'browser_needs_account', needs_consent: 'browser_needs_consent', needs_permission: 'browser_needs_permission' };
+// The later steps of one explicit protected sign-in run only within this bound.
+const RECOVERY_SIGN_IN_MS = 120_000;
 
 async function refreshNativePresentation(generation) {
   const invoke = globalThis.__TAURI__?.core?.invoke;
@@ -26,6 +29,9 @@ export class DesktopSetupClient {
     this.launchOperation = null;
     this.launchEpoch = 0;
     this.launching = false;
+    this.protectedOpening = false;
+    this.protectedLaunchError = null;
+    this.recoverySignIn = null;
     this.launchRequested = false;
     this.focusIntent = null;
     this.value = null;
@@ -47,9 +53,10 @@ export class DesktopSetupClient {
 
   notify(error = null, deliberate = false) {
     this.receive({ snapshot: this.value, pending: this.pending, connected: this.connected,
-      error: error || this.operationError?.reason || this.browserNotice || null, deliberate,
+      error: error || this.protectedLaunchError || this.operationError?.reason || this.browserNotice || null, deliberate,
       ...(this.intent?.operationId === this.pending ? { pendingAction: this.intent.action } : {}),
-      browserLaunchPending: Boolean(this.launchOperation) });
+      browserLaunchPending: Boolean(this.launchOperation || this.protectedOpening),
+      recoverySignInPending: Boolean(this.recoverySignIn) });
   }
 
   retireAuthenticationError() {
@@ -226,6 +233,8 @@ export class DesktopSetupClient {
         if (this.value && value.revision < this.value.revision) throw new Error('invalid_snapshot');
         const deliberate = this.intent?.confirmed === true && this.intent.task !== value.next_task;
         if (deliberate) this.intent = null;
+        if (this.value?.authentication?.authentication_attempt?.authentication_attempt_id !== value.authentication?.authentication_attempt?.authentication_attempt_id
+          || value.authority_recovery_browser !== 'ready') this.protectedLaunchError = null;
         this.value = value;
         this.retireAuthenticationError();
         const preparingSelection = this.intent?.initialAuthentication === true
@@ -244,6 +253,7 @@ export class DesktopSetupClient {
         this.reconnectDelay = 1000;
         this.notify(null, deliberate);
         if (this.launchOperation) void this.launchBrowser();
+        this.continueRecoverySignIn();
         if (this.pending && !value.pending_operations.some(item => item.operation_id === this.pending)) void this.receipt();
       }, text => {
         if (controller.signal.aborted) return;
@@ -260,6 +270,7 @@ export class DesktopSetupClient {
         this.connected = false;
         this.intent = null;
         this.launchOperation = null;
+        this.recoverySignIn = null;
         this.notify(error.message === 'stream_expired' ? null
           : ['session_unavailable', 'authorization_unavailable'].includes(error.message) ? error.message : 'status_unavailable');
         if (!['session_unavailable', 'authorization_unavailable'].includes(error.message)) {
@@ -281,7 +292,72 @@ export class DesktopSetupClient {
     } catch { /* A replacement presentation recovers accepted work from Brain. */ }
   }
 
-  async act(action, options = {}) {
+  async launchProtectedBrowser() {
+    if (this.protectedOpening) return;
+    const snapshot = this.value, epoch = this.launchEpoch;
+    if (!this.connected || snapshot?.authority_recovery_browser !== 'ready' || !snapshot.authentication?.actions.open_browser) throw Error('browser_unavailable');
+    this.protectedOpening = true;
+    this.protectedLaunchError = null;
+    this.notify();
+    try {
+      // Do not spend the one-use launch claim on a missing browser.
+      const invoke = globalThis.__TAURI__?.core?.invoke;
+      if (!invoke || await invoke('desktop_chrome_available') !== true) {
+        this.protectedLaunchError = 'chrome_unavailable';
+        throw Error('chrome_unavailable');
+      }
+      if (!this.connected || this.launchEpoch !== epoch || this.value !== snapshot) throw Error('browser_unavailable');
+      if (!await openProtectedBrowser(this)) throw Error('browser_unavailable');
+    } finally {
+      this.protectedOpening = false;
+      if (this.connected && this.launchEpoch === epoch && !this.protectedLaunchError && this.value === snapshot) {
+        // A stale snapshot must not reoffer the spent launch before its
+        // authoritative update. Reattach for read-only status, never resend.
+        void this.connect();
+      }
+      this.notify();
+    }
+  }
+
+  /**
+   * Runs the next step of an explicit protected sign-in once its owner offers it.
+   * Each step runs once for its own parent and attempt. A retired, cancelled or
+   * claimed sign-in, a reconnect, another action or the time bound ends the
+   * sequence, and the customer then acts again.
+   */
+  continueRecoverySignIn() {
+    const step = this.recoverySignIn, value = this.value, auth = value?.authentication;
+    if (!step) return;
+    const attempt = auth?.authentication_attempt?.authentication_attempt_id ?? null;
+    const recovery = value?.authority_recovery;
+    const live = this.connected && step.epoch === this.launchEpoch && this.now() <= step.until
+      && (['preparing', 'checking', 'sign-in-required'].includes(recovery)
+        || recovery === 'available' && !step.selected && this.pending === step.parent)
+      && (!auth || auth.operation_id === step.parent)
+      && !(auth?.state === 'retired' && attempt !== step.attempt)
+      && !(auth?.state === 'selected' && (!step.selected || value.authority_recovery_browser !== 'ready'));
+    if (!live) {
+      this.recoverySignIn = null;
+      this.notify();
+      return;
+    }
+    if (recovery !== 'sign-in-required' || !auth) return;
+    if (!step.selected) {
+      if (auth.state === 'selection-required' && attempt === null && auth.actions.select && auth.choices.default
+          && value.allowed_actions.includes('auth.select')) {
+        void this.act('auth.select', { recover_authority: true, provider: 'default' }, step).catch(() => {
+          if (this.recoverySignIn === step) { this.recoverySignIn = null; this.notify(); }
+        });
+      }
+      return;
+    }
+    if (auth.state === 'selected' && attempt !== step.attempt && auth.actions.open_browser && !this.protectedOpening) {
+      this.recoverySignIn = null;
+      void this.launchProtectedBrowser().catch(() => {});
+    }
+  }
+
+  async act(action, options = {}, continued = null) {
     const clicked = performance.now();
     const observe = phase => {
       void this.json('/api/v1/desktop/setup/timing', { operation: 'frontend', phase, status: 'ok',
@@ -289,7 +365,9 @@ export class DesktopSetupClient {
     };
     const authentication = this.value?.authentication;
     const replacesCurrentAuthentication = this.value?.allowed_actions.includes(action)
-      && (action === 'auth.select' && options.replace_ceremony === true
+      && (options.recover_authority === true && this.value.authority_recovery === 'sign-in-required'
+          && ['auth.select', 'auth.cancel'].includes(action) && authentication?.operation_id === this.pending
+        || action === 'auth.select' && options.replace_ceremony === true
         && authentication?.state === 'replacement-required' && authentication.operation_id === this.pending
         || ['auth.cancel', 'auth.switch'].includes(action)
         && [authentication?.operation_id, authentication?.browser_operation_id].includes(this.pending)
@@ -301,21 +379,29 @@ export class DesktopSetupClient {
       && this.value.pending_operations.some(item => item.action === action)
       && this.value.pending_operations.some(item => item.operation_id === this.pending
         && ['activation.review', 'activation.confirm', 'auth.select', 'auth.switch', 'auth.cancel'].includes(item.action));
-    if (!this.connected || !this.value || (this.pending && !replacesCurrentAuthentication && !replacesReview)) return;
+    if (!this.connected || !this.value || this.protectedOpening || (this.pending && !replacesCurrentAuthentication && !replacesReview)) return;
     observe('click');
     const intent = command(this.value, action, this.uuid(), options);
     // Later launch steps of this click are recorded once each.
     this.clickTiming = { operationId: intent.operation_id, observe, marked: new Set() };
     this.operationError = null;
+    this.protectedLaunchError = null;
     this.launchEpoch++;
     this.focusIntent = null;
     const epoch = this.launchEpoch;
     this.intent = { task: this.value.next_task, action, operationId: intent.operation_id, confirmed: false,
       initialAuthentication: action === 'account.connect' && intent.provider !== undefined };
     this.remember(intent.operation_id);
+    // An explicit protected sign-in continues through the default selection and
+    // the Chrome launch. Neither later step needs its own click.
+    this.recoverySignIn = intent.recover_authority && ['account.connect', 'auth.select'].includes(action)
+      ? { epoch, parent: action === 'account.connect' ? intent.operation_id : authentication.operation_id,
+          selected: action === 'auth.select', attempt: authentication?.authentication_attempt?.authentication_attempt_id ?? null,
+          until: continued?.until ?? this.now() + RECOVERY_SIGN_IN_MS }
+      : null;
     const sourceContinuation = action === 'account.connect' && this.value.continuation_available && !authentication;
-    if (this.openBrowser && !intent.replace_ceremony && !sourceContinuation && ['browser.access', 'account.connect', 'browser.pair', 'auth.select', 'auth.switch'].includes(action)) this.launchOperation = intent.operation_id;
-    if (action === 'auth.cancel' || action === 'activation.review' || intent.replace_ceremony || sourceContinuation) this.launchOperation = null;
+    if (this.openBrowser && !intent.replace_ceremony && !intent.recover_authority && !sourceContinuation && ['browser.access', 'account.connect', 'browser.pair', 'auth.select', 'auth.switch'].includes(action)) this.launchOperation = intent.operation_id;
+    if (action === 'auth.cancel' || action === 'activation.review' || intent.replace_ceremony || intent.recover_authority || sourceContinuation) this.launchOperation = null;
     this.notify();
     try {
       observe('command-send');
@@ -325,6 +411,7 @@ export class DesktopSetupClient {
       await Promise.all([this.receipt(), this.launchOperation ? this.launchBrowser() : null]);
     } catch (error) {
       if (epoch !== this.launchEpoch || !this.connected) return;
+      this.recoverySignIn = null;
       if (['setup_changed', 'action_unavailable', 'authority_unavailable', 'account_mismatch', 'operation_limit_reached'].includes(error.reason)) {
         this.remember(null);
         this.intent = null;
@@ -381,6 +468,11 @@ export class DesktopSetupClient {
 
   async launchBrowser(explicit = false, selectedOperation = null) {
     if (!this.openBrowser || !this.connected) return;
+    if (this.value?.authority_recovery !== undefined) {
+      this.launchOperation = null;
+      if (explicit) throw Error('browser_unavailable');
+      return;
+    }
     if (this.launching) {
       if (!explicit && this.launchOperation) this.launchRequested = true;
       return;
@@ -395,6 +487,7 @@ export class DesktopSetupClient {
       && this.value?.pending_operations.some(item => item.operation_id === operationId && item.action === selected.action)
       && (!authChild || this.value?.authentication?.browser_operation_id === operationId && this.value.authentication.actions.open_browser);
     const current = () => this.connected && this.launchEpoch === epoch
+      && this.value?.authority_recovery === undefined
       && (explicit ? stillSelected() : this.launchOperation === operationId);
     this.launching = true;
     this.launchRequested = false;
@@ -434,6 +527,7 @@ export class DesktopSetupClient {
   stop() {
     this.launchEpoch++;
     this.launchOperation = null;
+    this.recoverySignIn = null;
     this.focusIntent = null;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;

@@ -38,6 +38,8 @@ export interface DesktopSnapshot {
   decision_status?: { operation_id: string; state: 'awaiting-authentication' | 'confirmation-required' | 'accepted' | 'unavailable' } | null;
   authentication?: DesktopAuthentication | null;
   continuation_available?: boolean;
+  authority_recovery?: 'available' | 'preparing' | 'sign-in-required' | 'checking' | 'restoring' | 'blocked';
+  authority_recovery_browser?: 'ready' | 'launch-claimed' | 'handed-off' | 'unconfirmed';
   creator_label?: { creator_id: string; display_name: string | null; username: string | null } | null;
 }
 export interface DesktopState {
@@ -48,6 +50,7 @@ export interface DesktopState {
   error: string | null;
   deliberate?: boolean;
   browserLaunchPending?: boolean;
+  recoverySignInPending?: boolean;
 }
 export class DesktopSetupClient {
   constructor(options: { generation: string; receive(state: DesktopState): void;
@@ -59,8 +62,9 @@ export class DesktopSetupClient {
   json(path: string, body?: unknown): Promise<unknown>;
   browserTaskPrepared(task: { operation_id: string; journey_id: string; expires_at: number }): void;
   connect(): Promise<void>;
-  act(action: string, options?: { provider?: SignInProvider; replace_ceremony?: true }): Promise<void>;
+  act(action: string, options?: { provider?: SignInProvider; replace_ceremony?: true; recover_authority?: true }): Promise<void>;
   reconcile(selectedOperation?: string): Promise<void>;
   launchBrowser(explicit?: boolean, selectedOperation?: string): Promise<void>;
+  launchProtectedBrowser(): Promise<void>;
   stop(): void;
 }

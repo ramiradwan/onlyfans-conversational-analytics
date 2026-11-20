@@ -9,6 +9,7 @@ import { analyticsStoreActions } from '@store/analyticsStore';
 import { useUserStore } from '@store/userStore';
 
 import { AppRouter } from './routing/AppRouter';
+import { authorityRecoveryApi } from './services/desktopOnboarding';
 import { colorSchemeProps, theme } from './theme';
 import { WebAuthnAccessView } from './views/WebAuthnAccessView';
 
@@ -64,6 +65,9 @@ export function App() {
     };
   }, []);
 
+  let nativePresentation = false;
+  try { nativePresentation = Boolean(sessionStorage.getItem('desktop-presentation')); } catch { /* No native presentation. */ }
+
   return (
     <ThemeProvider theme={theme} {...colorSchemeProps} disableTransitionOnChange>
       <CssBaseline />
@@ -72,7 +76,7 @@ export function App() {
         <BrowserRouter>
           <AppRouter />
         </BrowserRouter>
-      ) : <WebAuthnAccessView />}
+      ) : <WebAuthnAccessView recoveryApi={nativePresentation ? authorityRecoveryApi : undefined} />}
     </ThemeProvider>
   );
 }

@@ -3633,59 +3633,62 @@ class SQLiteAuthenticationStore:
         is an authorization input, so the authorization epoch is not touched.
         """
 
-        _require_claim_submission(submission)
         with self.database.transaction() as connection:
-            existing = connection.execute(
-                "SELECT * FROM provisioning_claim_submissions WHERE claim_id = ?",
-                (submission.claim_id,),
-            ).fetchone()
-            if existing is None:
-                connection.execute(
-                    """
-                    INSERT INTO provisioning_claim_submissions (
-                        claim_id, onboarding_transaction_id, organization_id,
-                        installation_id, state, outcome, submitted_at, resolved_at,
-                        claim_profile, enrolled_at
-                    ) VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, ?, NULL)
-                    """,
-                    (
-                        submission.claim_id,
-                        submission.onboarding_transaction_id,
-                        submission.organization_id,
-                        submission.installation_id,
-                        ClaimSubmissionState.SUBMITTED.value,
-                        _time_text(submission.submitted_at),
-                        submission.claim_profile,
-                    ),
-                )
-                self._enqueue_onboarding_progress_in_transaction(
-                    connection,
-                    "installed",
-                    event_id=_new_uuid7(submission.submitted_at),
-                    correlation_id=_new_uuid7(submission.submitted_at),
-                    occurred_at=submission.submitted_at,
-                    claim=submission,
-                )
-                return
-            recorded = _claim_submission(existing)
-            if _claim_coordinates(recorded) != _claim_coordinates(submission):
-                raise AuthenticationStateError(
-                    "Claim submission coordinates do not match the recorded claim"
-                )
-            if recorded.state is ClaimSubmissionState.CONSUMED:
-                return
+            self._record_claim_submission_in_transaction(connection, submission)
+
+    def _record_claim_submission_in_transaction(self, connection, submission):
+        _require_claim_submission(submission)
+        existing = connection.execute(
+            "SELECT * FROM provisioning_claim_submissions WHERE claim_id = ?",
+            (submission.claim_id,),
+        ).fetchone()
+        if existing is None:
             connection.execute(
                 """
-                UPDATE provisioning_claim_submissions
-                SET state = ?, outcome = NULL, submitted_at = ?, resolved_at = NULL
-                WHERE claim_id = ?
+                INSERT INTO provisioning_claim_submissions (
+                    claim_id, onboarding_transaction_id, organization_id,
+                    installation_id, state, outcome, submitted_at, resolved_at,
+                    claim_profile, enrolled_at
+                ) VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, ?, NULL)
                 """,
                 (
+                    submission.claim_id,
+                    submission.onboarding_transaction_id,
+                    submission.organization_id,
+                    submission.installation_id,
                     ClaimSubmissionState.SUBMITTED.value,
                     _time_text(submission.submitted_at),
-                    submission.claim_id,
+                    submission.claim_profile,
                 ),
             )
+            self._enqueue_onboarding_progress_in_transaction(
+                connection,
+                "installed",
+                event_id=_new_uuid7(submission.submitted_at),
+                correlation_id=_new_uuid7(submission.submitted_at),
+                occurred_at=submission.submitted_at,
+                claim=submission,
+            )
+            return
+        recorded = _claim_submission(existing)
+        if _claim_coordinates(recorded) != _claim_coordinates(submission):
+            raise AuthenticationStateError(
+                "Claim submission coordinates do not match the recorded claim"
+            )
+        if recorded.state is ClaimSubmissionState.CONSUMED:
+            return
+        connection.execute(
+            """
+            UPDATE provisioning_claim_submissions
+            SET state = ?, outcome = NULL, submitted_at = ?, resolved_at = NULL
+            WHERE claim_id = ?
+            """,
+            (
+                ClaimSubmissionState.SUBMITTED.value,
+                _time_text(submission.submitted_at),
+                submission.claim_id,
+            ),
+        )
 
     def resolve_claim_submission(
         self, claim_id: str, *, outcome: str | None, resolved_at: datetime,

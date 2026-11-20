@@ -1,5 +1,6 @@
 import { focusTransition, recoveryTone, setStatus } from '../shared-setup/presentation.js';
 import { browserRecoveryTarget } from './browser-task.js';
+import { authorityRecoveryView } from '../shared-setup/authority-recovery.js';
 import { desktopRecovery, passkeyRecovery, recoveryClass } from '../shared-setup/recovery.js';
 
 const tasks = {
@@ -52,6 +53,34 @@ const initial = label => [...new Intl.Segmenter(undefined, { granularity: 'graph
 export function renderSetup(document, state) {
   const get = id => document.getElementById(id);
   const value = state.snapshot;
+  const recovery = authorityRecoveryView(state, state.acting);
+  const main = document.querySelector('main');
+  main.querySelector('nav').hidden = Boolean(recovery);
+  get('protected-cancel').hidden = true;
+  get('task-action').dataset.protectedRecovery = '';
+  if (recovery) {
+    main.dataset.journeyState = 'desktop.' + 'setup_authority_recovery';
+    main.dataset.task = 'authority-recovery';
+    get('task-step').textContent = 'Account access';
+    get('task-title').textContent = recovery.title;
+    get('task-description').textContent = recovery.description;
+    get('task-description').hidden = !recovery.description;
+    setStatus(get('task-status'), recovery.status, recovery.tone);
+    for (const id of ['local-access', 'local-authenticate', 'decision-details', 'header-account', 'sign-in-options',
+      'browser-reopen', 'sign-in-switch', 'sign-in-back', 'task-reconnect', 'setup-code-open']) get(id).hidden = true;
+    const primary = get('task-action'), cancel = get('protected-cancel');
+    primary.hidden = !recovery.action;
+    primary.disabled = recovery.disabled;
+    primary.textContent = recovery.label || '';
+    primary.dataset.action = recovery.action || '';
+    primary.dataset.protectedRecovery = 'true';
+    primary.dataset.replaceCeremony = 'false';
+    cancel.hidden = !recovery.cancel;
+    cancel.disabled = recovery.disabled;
+    for (const group of document.querySelectorAll('.setup-actions')) group.hidden = [...group.children].every(child => child.hidden);
+    focusTransition(get('task-title'), state.deliberate);
+    return;
+  }
   const authentication = state.authentication;
   const needsAuthentication = Boolean(authentication && !authentication.authenticated);
   const localAccessReady = !authentication || (authentication.checked && authentication.authenticated

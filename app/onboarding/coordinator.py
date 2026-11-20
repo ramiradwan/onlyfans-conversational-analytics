@@ -237,6 +237,18 @@ class DesktopOnboardingCoordinator:
                 for action, permitted in (("auth.select", "select"), ("auth.cancel", "cancel"), ("auth.switch", "switch_account")):
                     if authentication["actions"][permitted]:
                         actions.append(action)
+        protected_recovery = view.scope.get("protected_recovery")
+        if protected_recovery is not None:
+            # A recovery presentation has an independent owner. Neither
+            # ordinary enrollment nor activation may interpret it as their own.
+            task = "account-connection"
+            decision = None
+            authentication = protected_recovery.get("authentication")
+            local_ready = False
+            actions = ["account.connect"] if protected_recovery["state"] == "available" else []
+            if authentication is not None:
+                actions.extend(action for action, key in (("auth.select","select"), ("auth.cancel","cancel"))
+                    if authentication["actions"][key])
         review_replacement = view.scope.get("activation_replacement")
         actions = [name for name in actions if all(item["action"] != name or (
             name == "activation.review" and review_replacement is not None
@@ -257,11 +269,49 @@ class DesktopOnboardingCoordinator:
             "decision": decision, "decision_status": view.scope.get("desktop_decision_status"),
             "continuation_available": view.scope.get("source_recovery") is not None,
             "creator_label": creator_label(view.scope.get("browser"), view.scope.get("creator_account_id")),
-            "authentication": authentication, "analysis_readiness": view.analysis_readiness.projection()}, kind="snapshot")
+            "authentication": authentication, "analysis_readiness": view.analysis_readiness.projection(),
+            **({"authority_recovery": protected_recovery["state"]} if protected_recovery is not None else {}),
+            **({"authority_recovery_browser": protected_recovery["browser_phase"]}
+                if protected_recovery is not None and "browser_phase" in protected_recovery else {})}, kind="snapshot")
 
     @staticmethod
     def _public(row):
         return {name: row[name] for name in ("operation_id", "action", "state", "reason")}
+
+    def open_protected_browser(self,session,request,*,tasks):
+        """Admit exactly one native browser entry for the current protected child."""
+        from app.security.hosted_grants import HostedGrantUnavailable
+        if self._closed:
+            raise CommandRefused("setup_unavailable")
+        if (not isinstance(request,dict) or set(request)!={"parent_operation_id","attempt_id","expected"}
+                or not isinstance(request["expected"],dict) or set(request["expected"])!={"generation","revision","scope_digest"}
+                or type(request["expected"]["revision"]) is not int):
+            raise ValueError("Invalid protected browser request")
+        require_journey(request["parent_operation_id"])
+        from app.security.initial_handoff import valid_uuid7
+        if not valid_uuid7(request["attempt_id"]):
+            raise ValueError("Invalid protected authentication attempt")
+        admit=getattr(self.owner,"admit_browser_launch",None)
+        if admit is None:
+            raise CommandRefused("action_unavailable")
+        with self.store.database.transaction() as connection:
+            current=self._current(connection,session)
+            snapshot=self._snapshot(connection,current)
+            if any(request["expected"][key]!=snapshot[key] for key in ("generation","revision","scope_digest")):
+                raise CommandRefused("setup_changed")
+            auth=snapshot["authentication"]
+            if (snapshot.get("authority_recovery")!="sign-in-required" or auth is None or not auth["actions"]["open_browser"]
+                    or auth["operation_id"]!=request["parent_operation_id"] or auth["authentication_attempt"] is None
+                    or auth["authentication_attempt"]["authentication_attempt_id"]!=request["attempt_id"]):
+                raise CommandRefused("action_unavailable")
+            try:
+                code=admit(connection,current,tasks=tasks,parent_id=request["parent_operation_id"],attempt_id=request["attempt_id"])
+            except HostedGrantUnavailable:
+                raise CommandRefused("authority_unavailable") from None
+            self._current(connection,session)
+            connection.execute("UPDATE desktop_setup_journeys SET revision=revision+1 WHERE journey_id=?",(current.journey_id,))
+        events.publish()
+        return code
 
     def receipt(self, session, operation_id):
         require_journey(operation_id)
@@ -301,6 +351,20 @@ class DesktopOnboardingCoordinator:
         scope = dict(view.scope)
         action = command["action"]
         authentication = snapshot["authentication"]
+        protected_recovery = scope.get("protected_recovery")
+        if protected_recovery is not None:
+            if command.get("recover_authority") is not True or "replace_ceremony" in command:
+                raise CommandRefused("action_unavailable")
+            if action == "account.connect":
+                if protected_recovery["state"] != "available" or "provider" in command:
+                    raise CommandRefused("action_unavailable")
+            elif (action not in {"auth.select", "auth.cancel"} or authentication is None
+                    or not authentication["actions"][action.removeprefix("auth.")]
+                    or (command.get("provider") != "default" if action == "auth.select" else "provider" in command)):
+                raise CommandRefused("action_unavailable")
+            scope["protected_recovery_command_id"] = command["operation_id"]
+        elif "recover_authority" in command:
+            raise CommandRefused("action_unavailable")
         replacement = scope.pop("ceremony_replacement", None)
         review_replacement = scope.pop("activation_replacement", None)
         if action == "activation.review" and review_replacement is not None:
@@ -312,7 +376,7 @@ class DesktopOnboardingCoordinator:
                     or authentication["operation_id"] != replacement["parent_operation_id"]):
                 raise CommandRefused("action_unavailable")
             scope["ceremony_replacement"] = replacement
-        elif action.startswith("auth.") or action == "account.connect" and "provider" in command:
+        elif protected_recovery is None and (action.startswith("auth.") or action == "account.connect" and "provider" in command):
             if authentication is not None and authentication["state"] == "replacement-required":
                 raise CommandRefused("action_unavailable")
             from app.persistence.auth import _new_uuid7
@@ -570,7 +634,8 @@ class DesktopOnboardingCoordinator:
         if self._closed or operation["action"] not in {"auth.select", "auth.cancel", "auth.switch"}:
             return None
         selected = json.loads(operation["owner_scope_json"])
-        intent = selected.get("authentication_intent") or selected.get("ceremony_replacement")
+        intent = (selected.get("authentication_intent") or selected.get("ceremony_replacement")
+            or selected.get("protected_recovery_child"))
         if not isinstance(intent, dict):
             return None
         parent_id = intent.get("parent_operation_id")

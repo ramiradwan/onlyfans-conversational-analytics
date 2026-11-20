@@ -7,6 +7,8 @@ import markup from '../onboarding/index.html?raw';
 import { DesktopSetupClient } from '../onboarding/client.js';
 import { snapshot } from '../onboarding/contract.js';
 import { setupEvents } from '../onboarding/events.js';
+import { openProtectedBrowser } from '../onboarding/browser-task.js';
+import { authorityRecoveryView, authorityRecoveryOptions } from '../shared-setup/authority-recovery.js';
 import { renderSetup } from '../onboarding/view.js';
 import { assertSetupIsolation, assertDashboardIsolation, assertReceivingIsolation } from '../scripts/setup-isolation.js';
 import { applyTheme } from '../shared-setup/presentation.js';
@@ -1310,4 +1312,347 @@ it.each(['activation.review', 'activation.confirm'])('submits a fresh explicit r
   expect(commands).toHaveLength(1);
   expect(commands[0][1]).toMatchObject({ action: 'activation.review', operation_id: successorId });
   expect(openBrowser).not.toHaveBeenCalled();
+});
+
+it('requires the explicit protected recovery discriminator and never opens an ordinary browser task', async () => {
+  const calls = [];
+  const openBrowser = vi.fn();
+  const parent = { ...record, action: 'account.connect', state: 'waiting' };
+  const subject = new DesktopSetupClient({ generation, storage: storage(), receive() {},
+    uuid: () => operationId, stream: () => () => {}, openBrowser,
+    request: async (url, options) => {
+      calls.push([url, options?.body && JSON.parse(options.body)]);
+      return response(parent, url.endsWith('/commands') ? 202 : 200);
+    } });
+  subject.value = { ...initial(), next_task: 'account-connection', authority_recovery: 'available',
+    allowed_actions: ['account.connect'] };
+  subject.session = session;
+  subject.connected = true;
+  await expect(subject.act('account.connect')).rejects.toThrow('action_unavailable');
+  await expect(subject.act('account.connect', { provider: 'default', recover_authority: true })).rejects.toThrow('action_unavailable');
+  await subject.act('account.connect', { recover_authority: true });
+  const commands = calls.filter(([url]) => url.endsWith('/commands'));
+  expect(commands).toHaveLength(1);
+  expect(commands[0][1]).toMatchObject({ action: 'account.connect', recover_authority: true });
+  expect(openBrowser).not.toHaveBeenCalled();
+  subject.value = { ...subject.value, authority_recovery: 'sign-in-required', pending_operations: [parent], allowed_actions: [] };
+  await expect(subject.launchBrowser(true, operationId)).rejects.toThrow('browser_unavailable');
+  expect(openBrowser).not.toHaveBeenCalled();
+});
+
+it('admits protected child commands only with the explicit marker and never launches the ordinary browser', async () => {
+  const calls = [];
+  const parent = { ...record, action: 'account.connect', state: 'waiting' };
+  const child = { ...record, operation_id: '33333333-3333-4333-8333-333333333333', action: 'auth.select', state: 'accepted' };
+  const openBrowser = vi.fn();
+  const subject = new DesktopSetupClient({ generation, storage: storage(), receive() {},
+    uuid: () => child.operation_id, stream: () => () => {}, openBrowser,
+    request: async (url, options) => {
+      calls.push([url, options?.body && JSON.parse(options.body)]);
+      return response(child, url.endsWith('/commands') ? 202 : 200);
+    } });
+  subject.value = { ...initial(), next_task: 'account-connection', authority_recovery: 'sign-in-required',
+    pending_operations: [parent], allowed_actions: ['auth.select'],
+    authentication: { operation_id: parent.operation_id, browser_operation_id: null, state: 'selection-required',
+      choices: { default: true, google: false, 'microsoft-personal': false, telegram: false, tiktok: false },
+      actions: { select: true, cancel: false, open_browser: false, switch_account: false }, authentication_attempt: null } };
+  subject.session = session;
+  subject.connected = true;
+  subject.remember(parent.operation_id);
+  await expect(subject.act('auth.select', { provider: 'default' })).rejects.toThrow('action_unavailable');
+  await expect(subject.act('auth.select', { provider: 'google', recover_authority: true })).rejects.toThrow('action_unavailable');
+  await subject.act('auth.select', { provider: 'default', recover_authority: true });
+  const commands = calls.filter(([url]) => url.endsWith('/commands'));
+  expect(commands).toHaveLength(1);
+  expect(commands[0][1]).toMatchObject({ action: 'auth.select', provider: 'default', recover_authority: true });
+  expect(openBrowser).not.toHaveBeenCalled();
+  subject.value = { ...subject.value, pending_operations: [parent, child], authority_recovery: 'checking', allowed_actions: [] };
+  await expect(subject.launchBrowser(true, child.operation_id)).rejects.toThrow('browser_unavailable');
+  expect(openBrowser).not.toHaveBeenCalled();
+});
+
+it('allows an explicit protected successor or cancellation while its exact parent remains pending', async () => {
+  for (const [state, action, options] of [
+    ['retired', 'auth.select', { provider: 'default', recover_authority: true }],
+    ['selected', 'auth.cancel', { recover_authority: true }],
+  ]) {
+    const calls = [];
+    const parent = { ...record, action: 'account.connect', state: 'waiting' };
+    const child = { ...record, operation_id: '33333333-3333-4333-8333-333333333333', action, state: 'accepted' };
+    const openBrowser = vi.fn();
+    const subject = new DesktopSetupClient({ generation, storage: storage(), receive() {},
+      uuid: () => child.operation_id, stream: () => () => {}, openBrowser,
+      request: async (url, options) => {
+        calls.push([url, options?.body && JSON.parse(options.body)]);
+        return response(child, url.endsWith('/commands') ? 202 : 200);
+      } });
+    subject.value = { ...initial(), next_task: 'account-connection', authority_recovery: 'sign-in-required',
+      pending_operations: [parent], allowed_actions: [action],
+      authentication: { operation_id: parent.operation_id, browser_operation_id: null, state,
+        choices: { default: true, google: false, 'microsoft-personal': false, telegram: false, tiktok: false },
+        actions: { select: state === 'retired', cancel: state === 'selected', open_browser: false, switch_account: false },
+        authentication_attempt: { authentication_attempt_id: '0198a1b2-c3d4-7300-8000-000000000063', provider: 'default', mode: 'sign-in' } } };
+    subject.session = session;
+    subject.connected = true;
+    subject.remember(parent.operation_id);
+    await subject.act(action, options);
+    expect(calls.filter(([url]) => url.endsWith('/commands'))[0][1]).toMatchObject({ action, recover_authority: true });
+    expect(openBrowser).not.toHaveBeenCalled();
+  }
+});
+
+it('consumes a protected browser entry directly without creating helper storage', async () => {
+  const destination = 'https://provider.example/onboarding/browser-ceremonies/' + 'B'.repeat(43);
+  const replace = vi.fn(), scrub = vi.fn(), local = { setItem: vi.fn() };
+  const request = vi.fn(async () => response({ protected_browser_url: destination }));
+  await runInNewContext(entryScript, { URL, URLSearchParams,
+    location: { pathname: '/browser-tasks/entry', hash: '#code=' + 'A'.repeat(43), replace },
+    history: { replaceState: scrub }, document: { getElementById: () => ({}) }, sessionStorage: local, fetch: request });
+  expect(scrub).toHaveBeenCalledBefore(request);
+  expect(replace).toHaveBeenCalledExactlyOnceWith(destination);
+  expect(local.setItem).not.toHaveBeenCalled();
+  expect(request).toHaveBeenCalledOnce();
+});
+
+it.each(['http://provider.example/onboarding/browser-ceremonies/' + 'B'.repeat(43),
+  'https://provider.example/other', 'https://provider.example/onboarding/browser-ceremonies/' + 'B'.repeat(43) + '?other=x',
+  'https://username@provider.example/onboarding/browser-ceremonies/' + 'B'.repeat(43)])(
+  'does not navigate an invalid protected entry response %s', async destination => {
+    const replace = vi.fn(), local = { setItem: vi.fn() };
+    await runInNewContext(entryScript, { URL, URLSearchParams,
+      location: { pathname: '/browser-tasks/entry', hash: '#code=' + 'A'.repeat(43), replace },
+      history: { replaceState: vi.fn() }, document: { getElementById: () => ({}) }, sessionStorage: local,
+      fetch: vi.fn(async () => response({ protected_browser_url: destination })) });
+    expect(replace).not.toHaveBeenCalled();
+    expect(local.setItem).not.toHaveBeenCalled();
+  });
+
+const protectedSelected = () => ({ ...initial(), journey_id: operationId, next_task: 'account-connection',
+  authority_recovery: 'sign-in-required', authentication: { operation_id: operationId, browser_operation_id: null,
+    state: 'selected', actions: { select: false, cancel: true, open_browser: true, switch_account: false },
+    authentication_attempt: { authentication_attempt_id: '0198a1b2-c3d4-7300-8000-000000000063', provider: 'default', mode: 'sign-in' } } });
+
+it('protected launch requests only a one-use code for the exact selected child', async () => {
+  const invoke = vi.fn(), value = protectedSelected();
+  const client = { value, connected: true, json: vi.fn(async () => ({ entry_code: 'A'.repeat(43) })) };
+  expect(await openProtectedBrowser(client, invoke)).toBe(true);
+  expect(client.json).toHaveBeenCalledExactlyOnceWith('/api/v1/desktop/setup/protected-browser/open', {
+    parent_operation_id: operationId, attempt_id: value.authentication.authentication_attempt.authentication_attempt_id,
+    expected: { generation, revision: value.revision, scope_digest: value.scope_digest },
+  });
+  expect(invoke).toHaveBeenCalledExactlyOnceWith('A'.repeat(43));
+  client.value.authentication.actions.open_browser = false;
+  await expect(openProtectedBrowser(client, invoke)).rejects.toThrow('browser_unavailable');
+  expect(client.json).toHaveBeenCalledOnce();
+});
+
+it('a stale protected launch response cannot launch a different child or workspace', async () => {
+  const invoke = vi.fn(), value = protectedSelected();
+  const client = { value, connected: true, json: vi.fn(async () => {
+    client.value = { ...value, authority_recovery: 'checking', authentication: null };
+    return { entry_code: 'A'.repeat(43) };
+  }) };
+  expect(await openProtectedBrowser(client, invoke)).toBe(false);
+  expect(invoke).not.toHaveBeenCalled();
+  expect(client.json).toHaveBeenCalledOnce();
+});
+
+it('renders the protected recovery sequence as one task and never exposes ordinary setup controls', () => {
+  document.documentElement.innerHTML = markup;
+  const render = (value, extra = {}) => renderSetup(document, { snapshot: value, connected: true, pending: null,
+    authentication: { checked: true, authenticated: false, access: 'expired', enrolled: null, busy: false }, ...extra });
+  const primary = document.getElementById('task-action'), cancel = document.getElementById('protected-cancel');
+  const base = { ...initial(), next_task: 'account-connection', authority_recovery: 'available', allowed_actions: ['account.connect'] };
+  render(base);
+  expect(primary.textContent).toBe('Restore access');
+  expect(primary.dataset.protectedRecovery).toBe('true');
+  expect(primary.dataset.action).toBe('account.connect');
+  expect(document.querySelector('main nav').hidden).toBe(true);
+  for (const id of ['local-access', 'setup-code-open', 'sign-in-options', 'browser-reopen', 'decision-details']) expect(document.getElementById(id).hidden).toBe(true);
+  render({ ...base, authority_recovery: 'preparing', allowed_actions: [] });
+  expect(primary.hidden).toBe(true);
+  expect(document.getElementById('task-status').textContent).toBe('Preparing sign-in\u2026');
+  const selected = protectedSelected();
+  const auth = { ...selected.authentication, choices: { default: true, google: false }, authentication_attempt: null,
+    state: 'selection-required', actions: { select: true, cancel: false, open_browser: false, switch_account: false } };
+  render({ ...selected, authentication: auth, allowed_actions: ['auth.select'] });
+  expect(primary.textContent).toBe('Sign in');
+  expect(primary.disabled).toBe(false);
+  expect(authorityRecoveryOptions(primary.dataset.action)).toEqual({ recover_authority: true, provider: 'default' });
+  // The explicit sign-in continues by itself, so neither later step offers a click.
+  render({ ...selected, authentication: auth, allowed_actions: ['auth.select'] }, { recoverySignInPending: true });
+  expect(primary.hidden).toBe(true);
+  expect(document.getElementById('task-status').textContent).toBe('Preparing sign-in\u2026');
+  render({ ...selected, authority_recovery_browser: 'ready', allowed_actions: ['auth.cancel'] }, { recoverySignInPending: true });
+  expect(primary.hidden).toBe(true);
+  expect(document.getElementById('task-status').textContent).toBe('Opening Chrome\u2026');
+  expect(cancel.hidden).toBe(true);
+  render({ ...selected, authority_recovery_browser: 'ready', allowed_actions: ['auth.cancel'] });
+  expect(primary.textContent).toBe('Open Chrome');
+  expect(primary.dataset.action).toBe('browser.open');
+  expect(cancel.hidden).toBe(false);
+  render({ ...selected, authority_recovery_browser: 'launch-claimed', allowed_actions: ['auth.cancel'] });
+  expect(primary.hidden).toBe(true);
+  expect(document.getElementById('task-status').textContent).toBe('Waiting for Chrome\u2026');
+  render({ ...selected, authority_recovery_browser: 'handed-off', allowed_actions: ['auth.cancel'] });
+  expect(document.getElementById('task-status').textContent).toBe('Waiting for sign-in\u2026');
+  render({ ...selected, authority_recovery_browser: 'unconfirmed', allowed_actions: ['auth.cancel'] });
+  expect(document.getElementById('task-status').textContent).toBe('Sign-in is not confirmed.');
+  expect(primary.hidden).toBe(true);
+  expect(cancel.hidden).toBe(false);
+  render({ ...selected, authentication: { ...auth, state: 'retired' }, allowed_actions: ['auth.select'] });
+  expect(primary.textContent).toBe('Sign in again');
+  expect(cancel.hidden).toBe(true);
+  render({ ...base, authority_recovery: 'restoring', allowed_actions: [] });
+  expect(document.getElementById('task-status').textContent).toBe('Sign-in complete. Restoring access\u2026');
+  expect(primary.hidden).toBe(true);
+  expect(cancel.hidden).toBe(true);
+  render({ ...base, authority_recovery: 'blocked', allowed_actions: [] });
+  expect(document.getElementById('task-title').textContent).toBe('Access could not be restored');
+  expect(primary.hidden).toBe(true);
+  render(initial(), { authentication: null });
+  expect(document.querySelector('main nav').hidden).toBe(false);
+  expect(primary.dataset.protectedRecovery).toBe('');
+  expect(cancel.hidden).toBe(true);
+});
+
+it('protected recovery never enables stale controls during a command or disconnected presentation', () => {
+  const value = { ...protectedSelected(), authority_recovery_browser: 'ready', allowed_actions: ['auth.cancel'] };
+  expect(authorityRecoveryView({ snapshot: value, connected: false }).action).toBeNull();
+  expect(authorityRecoveryView({ snapshot: value, connected: true }, 'auth.cancel').action).toBeNull();
+  expect(authorityRecoveryView({ snapshot: value, connected: true, pending: 'new', pendingAction: 'auth.cancel' }).cancel).toBe(false);
+  expect(authorityRecoveryView({ snapshot: value, connected: true, browserLaunchPending: true }).action).toBeNull();
+  expect(authorityRecoveryView({ snapshot: value, connected: true, error: 'chrome_unavailable' }).status).toBe('Install Chrome to continue.');
+});
+
+it('preflights Chrome before spending a protected launch and never auto-opens a replacement', async () => {
+  const request = vi.fn(async () => response({ entry_code: 'A'.repeat(43) }));
+  const invoke = vi.fn(async () => false);
+  vi.stubGlobal('__TAURI__', { core: { invoke } });
+  try {
+    const subject = new DesktopSetupClient({ generation, storage: storage(), receive() {}, request, stream: () => () => {} });
+    subject.value = { ...protectedSelected(), authority_recovery_browser: 'ready' };
+    subject.connected = true; subject.session = session;
+    await expect(subject.launchProtectedBrowser()).rejects.toThrow('chrome_unavailable');
+    expect(invoke).toHaveBeenCalledExactlyOnceWith('desktop_chrome_available');
+    expect(request).not.toHaveBeenCalled();
+    subject.stop();
+  } finally { vi.unstubAllGlobals(); }
+});
+
+it('opens the protected native entry once from the current explicit gesture', async () => {
+  const invoke = vi.fn(async name => name === 'desktop_chrome_available' ? true : undefined);
+  vi.stubGlobal('__TAURI__', { core: { invoke } });
+  try {
+    let subject;
+    const request = vi.fn(async (url, options) => {
+      expect(url).toBe('/api/v1/desktop/setup/protected-browser/open');
+      expect(JSON.parse(options.body).attempt_id).toBe(subject.value.authentication.authentication_attempt.authentication_attempt_id);
+      subject.value = { ...subject.value, authority_recovery_browser: 'launch-claimed',
+        authentication: { ...subject.value.authentication, actions: { ...subject.value.authentication.actions, open_browser: false } } };
+      return response({ entry_code: 'A'.repeat(43) });
+    });
+    subject = new DesktopSetupClient({ generation, storage: storage(), receive() {}, request, stream: () => () => {} });
+    subject.value = { ...protectedSelected(), authority_recovery_browser: 'ready' };
+    subject.connected = true; subject.session = session;
+    await subject.launchProtectedBrowser();
+    expect(invoke.mock.calls).toEqual([['desktop_chrome_available'], ['desktop_browser_task', { entryCode: 'A'.repeat(43) }]]);
+    expect(request).toHaveBeenCalledOnce();
+    await expect(subject.launchProtectedBrowser()).rejects.toThrow('browser_unavailable');
+    expect(request).toHaveBeenCalledOnce();
+    subject.stop();
+  } finally { vi.unstubAllGlobals(); }
+});
+
+describe('one explicit protected sign-in', () => {
+  const child = '33333333-3333-4333-8333-333333333333';
+  const attempt = { authentication_attempt_id: '0198a1b2-c3d4-7300-8000-000000000063', provider: 'default', mode: 'sign-in' };
+  const auth = (state, actions, authenticationAttempt = null) => ({ operation_id: operationId, browser_operation_id: null, state,
+    choices: { default: true, google: false, 'microsoft-personal': false, telegram: false, tiktok: false },
+    actions: { select: false, cancel: false, open_browser: false, switch_account: false, ...actions },
+    authentication_attempt: authenticationAttempt });
+  const parent = { ...record, action: 'account.connect', state: 'waiting' };
+  const base = { ...initial(), next_task: 'account-connection', authority_recovery: 'available', allowed_actions: ['account.connect'] };
+  const selection = revision => ({ ...base, revision, authority_recovery: 'sign-in-required', allowed_actions: ['auth.select'],
+    pending_operations: [parent], authentication: auth('selection-required', { select: true }) });
+  const ready = revision => ({ ...base, revision, authority_recovery: 'sign-in-required', authority_recovery_browser: 'ready',
+    allowed_actions: ['auth.cancel'], pending_operations: [parent], authentication: auth('selected', { cancel: true, open_browser: true }, attempt) });
+  const start = (clock = () => 1000) => {
+    let publish, latest = base;
+    const ids = [operationId, child], commands = [], opens = [], states = [];
+    const subject = new DesktopSetupClient({ generation, storage: storage(), receive: state => states.push(state), uuid: () => ids.shift(), now: clock,
+      stream: async (_request, _headers, _signal, listener) => {
+        publish = next => { latest = next; listener(JSON.stringify(next)); };
+        listener(JSON.stringify(latest));
+      },
+      request: async (url, options) => {
+        const body = options?.body && JSON.parse(options.body);
+        if (url.endsWith('/session')) return response(session);
+        if (url.endsWith('/commands')) {
+          commands.push(body);
+          return response({ ...record, operation_id: body.operation_id, action: body.action, state: 'accepted' }, 202);
+        }
+        if (url.endsWith('/protected-browser/open')) { opens.push(body); return response({ entry_code: 'A'.repeat(43) }); }
+        const id = url.split('/').pop();
+        return response(id === child ? { ...record, operation_id: id, action: 'auth.select', state: 'completed' } : { ...parent, operation_id: id });
+      } });
+    return { subject, commands, opens, states, publish: next => publish(next) };
+  };
+
+  it('continues through the default selection to one Chrome launch and never past a retired attempt', async () => {
+    const invoke = vi.fn(async name => name === 'desktop_chrome_available' ? true : undefined);
+    vi.stubGlobal('__TAURI__', { core: { invoke } });
+    try {
+      const { subject, commands, opens, states, publish } = start();
+      await subject.connect();
+      await subject.act('account.connect', { recover_authority: true });
+      expect(commands).toEqual([expect.objectContaining({ action: 'account.connect', recover_authority: true })]);
+      publish({ ...base, revision: 1, authority_recovery: 'preparing', allowed_actions: [], pending_operations: [parent] });
+      expect(commands).toHaveLength(1);
+      publish(selection(2));
+      await vi.waitFor(() => expect(commands).toHaveLength(2));
+      expect(commands[1]).toMatchObject({ action: 'auth.select', provider: 'default', recover_authority: true });
+      expect(authorityRecoveryView(states.at(-1)).action).toBeNull();
+      publish(selection(3));
+      publish({ ...base, revision: 4, authority_recovery: 'checking', allowed_actions: [], pending_operations: [parent] });
+      publish(ready(5));
+      await vi.waitFor(() => expect(opens).toHaveLength(1));
+      expect(opens[0]).toMatchObject({ parent_operation_id: operationId, attempt_id: attempt.authentication_attempt_id });
+      await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('desktop_browser_task', { entryCode: 'A'.repeat(43) }));
+      publish(ready(6));
+      publish({ ...ready(7), authority_recovery_browser: undefined, allowed_actions: ['auth.select'],
+        authentication: auth('retired', { select: true }, attempt) });
+      await vi.waitFor(() => expect(authorityRecoveryView(states.at(-1))).toMatchObject({ action: 'auth.select', label: 'Sign in again' }));
+      expect(commands).toHaveLength(2);
+      expect(opens).toHaveLength(1);
+      expect(subject.recoverySignIn).toBeNull();
+      subject.stop();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('leaves each later step to an explicit click once its time bound has passed', async () => {
+    let now = 1000;
+    const { subject, commands, states, publish } = start(() => now);
+    await subject.connect();
+    await subject.act('account.connect', { recover_authority: true });
+    now += 120_001;
+    publish(selection(1));
+    await Promise.resolve();
+    expect(commands).toHaveLength(1);
+    expect(subject.recoverySignIn).toBeNull();
+    expect(authorityRecoveryView(states.at(-1))).toMatchObject({ action: 'auth.select', label: 'Sign in' });
+    subject.stop();
+  });
+
+  it('ends the sequence on a reconnect instead of continuing an old click', async () => {
+    const { subject, commands, publish } = start();
+    await subject.connect();
+    await subject.act('account.connect', { recover_authority: true });
+    await subject.connect();
+    publish(selection(1));
+    await Promise.resolve();
+    expect(commands).toHaveLength(1);
+    expect(subject.recoverySignIn).toBeNull();
+    subject.stop();
+  });
 });

@@ -58,3 +58,28 @@ export async function openBrowserTask(client, operationId, invoke = (code) =>
   await invoke(result.entry_code);
   return true;
 }
+
+/** One explicit protected launch; no task reissue, helper session or automatic retry. */
+export async function openProtectedBrowser(client, invoke = code =>
+  globalThis.__TAURI__.core.invoke('desktop_browser_task', { entryCode: code })) {
+  const snapshot = client.value, auth = snapshot?.authentication;
+  const attempt = auth?.authentication_attempt?.authentication_attempt_id;
+  if (!client.connected || snapshot?.authority_recovery !== 'sign-in-required'
+    || auth?.state !== 'selected' || !auth.actions.open_browser || !UUID.test(auth.operation_id)
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(attempt ?? '')) throw Error('browser_unavailable');
+  const value = await client.json('/api/v1/desktop/setup/protected-browser/open', {
+    parent_operation_id: auth.operation_id, attempt_id: attempt,
+    expected: { generation: snapshot.generation, revision: snapshot.revision, scope_digest: snapshot.scope_digest },
+  });
+  if (!exact(value, ['entry_code']) || !/^[A-Za-z0-9_-]{43}$/u.test(value.entry_code)) throw Error('browser_unavailable');
+  // The accepted claim may already be visible in a newer snapshot. Only
+  // retain this one response if the same workspace and child still own it.
+  const current = client.value;
+  if (!client.connected || current?.generation !== snapshot.generation
+    || current.journey_id !== snapshot.journey_id || current.authority_recovery !== 'sign-in-required'
+    || current.authentication?.state !== 'selected' || current.authentication?.operation_id !== auth.operation_id
+    || current.authentication?.authentication_attempt?.authentication_attempt_id !== attempt
+    || !['ready', 'launch-claimed', undefined].includes(current.authority_recovery_browser)) return false;
+  await invoke(value.entry_code);
+  return true;
+}

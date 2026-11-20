@@ -145,7 +145,13 @@
         "0044_onboarding_source_replacement_outcomes.sql": "f84c374b393ab5b4668735744f78fdcc396e19b05448bb0eac79b2796d69d88a",
         "0045_desktop_activation_reconciliation.sql": "2bcecc1d48a0ba329c404fd1acb1bbfdc048c5501d6691808729fcf1af917348",
         "0046_initial_replacement_recovery.sql": "f9098709b1adadf8c025f1dd89ed0a8b6c8be16d4fb8dc206a47ea545753ab86",
-        "0047_activation_review_replacements.sql": "9e9ec45d5c07b6e2592427110b2c6fee8d8eb2c210fef128814fa22f51f2e19e"
+        "0047_activation_review_replacements.sql": "9e9ec45d5c07b6e2592427110b2c6fee8d8eb2c210fef128814fa22f51f2e19e",
+        "0048_installation_authority_recoveries.sql": "5241f95d78ee638e1aa03c6176cea27b0e29cb04758201f2cd091fedd6992d83",
+        "0049_protected_recovery_browser.sql": "26d25540fad3f35f12294f6f99eb36032333ff72ddc9ee348be933c9ceb4aaba",
+        "0050_protected_recovery_desktop.sql": "652422ca223e7ba57e7fa7a43157feb1df00e4898535a7dac0a6594f8652712d",
+        "0051_protected_recovery_browser_dispatch.sql": "06a67109881193549b267c8ed038ca74305c371c7b32ce80d8660677ac10e851",
+        "0052_lost_enrollment_evidence.sql": "35240165cd5a4dfa83d7a53e52813713a08a96b71b41f2dcac93369f37b1e1a3",
+        "0053_protected_recovery_retirement.sql": "b69dacf80c45b2f066df26ffa499408beaac5cc5d326d516cf45c72a347564d6"
       }
     },
     {

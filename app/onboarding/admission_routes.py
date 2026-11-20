@@ -78,7 +78,7 @@ def _public_session(session):
         "csrf_token": csrf_token(session.identifier)}
 
 
-def admission_router(admissions: ScopedAdmissions, *, launcher_token: str) -> APIRouter:
+def admission_router(admissions: ScopedAdmissions, *, launcher_token: str, protected_entry=None) -> APIRouter:
     if len(launcher_token) < 32:
         raise ValueError("Desktop launcher token is invalid")
     router = APIRouter()
@@ -154,6 +154,19 @@ def admission_router(admissions: ScopedAdmissions, *, launcher_token: str) -> AP
 
     @router.post("/api/v1/browser-tasks/entry/consume", include_in_schema=False)
     def consume_browser(request: Request, body: EntryBody):
+        _browser(request, mutation=True)
+        if request.url.query:
+            raise HTTPException(400, "Invalid browser task request")
+        if protected_entry is not None:
+            from app.security.hosted_grants import HostedGrantUnavailable
+            try:
+                url=protected_entry(body.code)
+            except (AdmissionRefused, HostedGrantUnavailable, ValueError):
+                raise HTTPException(401, "Setup entry expired or was already used") from None
+            if url is not None:
+                # This one-use response contains no helper cookie, operator
+                # session, grant or extension authority.
+                return JSONResponse({"protected_browser_url":url}, headers=HEADERS)
         return consume(request, body, "browser_task")
 
     def read_session(request, role):

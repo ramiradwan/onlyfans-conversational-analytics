@@ -6,7 +6,7 @@ const browser = location.pathname === '/browser-tasks/entry';
 const endpoint = browser ? '/api/v1/browser-tasks/entry/consume' : '/api/v1/desktop/entry/consume';
 const status = document.getElementById('status');
 if (fields.size !== 1 || !/^[A-Za-z0-9_-]{43}$/.test(code ?? '')) {
-  status.textContent = 'This setup link is unavailable. Open a fresh link from the desktop app.';
+  status.textContent = 'This setup link is unavailable. Return to the desktop app to continue.';
 } else {
   fetch(endpoint, { method: 'POST', credentials: 'same-origin', redirect: 'error',
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) })
@@ -15,6 +15,13 @@ if (fields.size !== 1 || !/^[A-Za-z0-9_-]{43}$/.test(code ?? '')) {
       return response.json();
     })
     .then(session => {
+      if (browser && Object.keys(session).length === 1 && typeof session.protected_browser_url === 'string') {
+        const url = new URL(session.protected_browser_url);
+        if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash
+          || !/^\/onboarding\/browser-ceremonies\/[A-Za-z0-9_-]{43}$/u.test(url.pathname)) throw Error('entry unavailable');
+        location.replace(url.href);
+        return;
+      }
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(session.generation)) throw Error('entry unavailable');
       // The new document receives the generation from this exact consumption.
       // Session reads cannot discover a replacement generation from shared cookies.
@@ -22,5 +29,5 @@ if (fields.size !== 1 || !/^[A-Za-z0-9_-]{43}$/.test(code ?? '')) {
       catch { /* A locator and one-shot presentation intent, not authority. */ }
       location.replace((browser ? '/browser-tasks' : '/onboarding') + '#presentation=' + session.generation);
     })
-    .catch(() => { status.textContent = 'This setup link expired or was already used. Open a fresh link from the desktop app.'; });
+    .catch(() => { status.textContent = 'This setup link expired or was already used. Return to the desktop app to continue.'; });
 }

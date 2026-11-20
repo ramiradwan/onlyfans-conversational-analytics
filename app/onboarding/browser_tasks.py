@@ -127,6 +127,18 @@ class BrowserTasks:
         events.publish()
         return task_id
 
+    def prepare_protected(self, connection, session, *, selection, recovery_id, attempt_id, deadline):
+        # The protected owner has already made its exact open claim in this
+        # transaction. Only the native fixed-entry launcher can use this code.
+        return self.admissions.prepare_protected_task(connection,session,selection=selection,
+            recovery_id=recovery_id,attempt_id=attempt_id,deadline=deadline)
+
+    def consume_protected(self, code, *, resolve):
+        result=self.admissions.consume_protected_entry(code,resolve=resolve)
+        if result is not None:
+            events.publish()
+        return result
+
     def prepare_early(self, operation) -> bool:
         """Create an accepted sign-in's task before its ceremony exists, so a browser launch overlaps preparation.
 
@@ -165,6 +177,7 @@ class BrowserTasks:
             tasks = connection.execute("SELECT t.* FROM desktop_browser_tasks t JOIN desktop_setup_operations o "
                 "ON o.operation_id=t.operation_id WHERE t.journey_id=? AND t.expires_at>? "
                 "AND t.state NOT IN ('cancelled','expired') AND o.state IN ('accepted','waiting','outcome_unknown') "
+                "AND NOT EXISTS (SELECT 1 FROM protected_recovery_browser_dispatches d WHERE d.task_id=t.task_id) "
                 "ORDER BY o.created_at,t.task_id", (parent["journey_id"], self.admissions._now())).fetchall()
             return [self.public(task) for task in tasks]
 
