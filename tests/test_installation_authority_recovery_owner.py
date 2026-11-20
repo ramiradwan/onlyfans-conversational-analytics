@@ -297,11 +297,13 @@ def test_verified_recovery_admits_complete_bundle_atomically(installed):
             journal(case, reopened).reserve(connection, authorize=allow)
 
 
-@pytest.mark.parametrize("change", ["actor","membership","accounts","old-jti","time","key","signature","approval","local-withdrawal","adopt-fault"])
+@pytest.mark.parametrize(("installed", "change"), [
+    pytest.param(creator, change, id=f"{'approved-creator' if creator else 'no-creator'}-{change}")
+    for creator in (False, True)
+    for change in ["actor","membership","accounts","old-jti","time","key","signature","approval","local-withdrawal","adopt-fault"]
+    if creator or change != "approval"], indirect=["installed"])
 def test_recovery_grant_admission_rejects_changed_evidence_and_rolls_back(installed, change):
     case = installed
-    if change == "approval" and not case.creator:
-        pytest.skip("Creator approval only")
     owner = journal(case)
     request, attempt = prepared_delivery(case, owner)
     verifier, result = signed_delivery(case, request, change=change)
