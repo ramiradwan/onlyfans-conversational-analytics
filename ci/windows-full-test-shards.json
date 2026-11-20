@@ -13,6 +13,10 @@
     "tests/test_activation_enforcement.py": 2,
     "tests/test_activation_gate.py": 3,
     "tests/test_activation_read_scope.py": 3,
+    "tests/test_activation_reconciliation_client.py": 1,
+    "tests/test_activation_reconciliation_owner.py": 1,
+    "tests/test_activation_review_replacement_client.py": 1,
+    "tests/test_activation_review_replacement_owner.py": 1,
     "tests/test_admission_confirmation.py": 2,
     "tests/test_agent_bundle.py": 2,
     "tests/test_agent_configuration.py": 3,
@@ -408,6 +412,8 @@
     "tests/test_signing_parameters.py": 3,
     "tests/test_small_conversation_pages.py": 2,
     "tests/test_source_catalog_cache.py": 2,
+    "tests/test_source_replacement_client.py": 1,
+    "tests/test_source_replacement_reservations.py": 3,
     "tests/test_source_token_migration.py": 1,
     "tests/test_sqlcipher_runtime_supply.py": 1,
     "tests/test_sqlite_backup.py": 2,
@@ -985,17 +991,23 @@
       "tests/test_webauthn_access_events.py": 0.6223025999993297
     },
     "expected_shard_seconds": {
-      "1": 1333.0,
+      "1": 1340.0,
       "2": 1348.4,
-      "3": 1338.7
+      "3": 1340.0
     },
     "unmeasured_files": [
+      "tests/test_activation_reconciliation_client.py",
+      "tests/test_activation_reconciliation_owner.py",
+      "tests/test_activation_review_replacement_client.py",
+      "tests/test_activation_review_replacement_owner.py",
       "tests/test_analytics_publication_events.py",
       "tests/test_browser_task_waiting.py",
       "tests/test_desktop_idle.py",
       "tests/test_desktop_lifetimes.py",
       "tests/test_desktop_recovery.py",
       "tests/test_shared_store_reads.py",
+      "tests/test_source_replacement_client.py",
+      "tests/test_source_replacement_reservations.py",
       "tests/test_wait_diagnostics.py"
     ]
   }

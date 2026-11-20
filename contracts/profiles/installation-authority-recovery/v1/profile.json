@@ -1,0 +1,67 @@
+{
+  "profile": "urn:bridge-clean:installation-authority-recovery:v1",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "proof_profile": "urn:bridge-clean:installation-authority-recovery-proof:v1",
+  "request_max_bytes": 8192,
+  "response_max_bytes": 65536,
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "pending_ttl_seconds": 1800,
+  "creation_id_timestamp_max_age_seconds": 1800,
+  "creation_id_timestamp_max_future_seconds": 60,
+  "prepare": "exact-registered-key-proof-no-grant-issuance",
+  "scope_digest": "SHA-256(RFC8785(scope))",
+  "request_digest": "SHA-256(RFC8785(request))",
+  "expected_actor": "prior-exact-membership-grant-or-authoritative-consumed-enrollment-identity",
+  "lost_enrollment": "exact-consumed-claim-and-original-enrollment-evidence; no creator binding minted",
+  "prior_evidence": "exact-JTIs-and-current-newest-exact-subject-grants; refuse ambiguity and explicit withdrawal",
+  "eligible": "installation-grant-renewal-exhausted-or-proved-lost-enrollment-beyond-bootstrap-deadline",
+  "authentication": {
+    "purpose": "recover-installation-authority",
+    "provider": "entra-step-up",
+    "max_age": 0,
+    "verified_auth_time_max_age_seconds": 300,
+    "single_use": true,
+    "binding": "recovery-id-exact-scope-digest-expected-actor-organization-installation-key",
+    "ordinary_session_reuse": false
+  },
+  "issuer": "existing-grant-profile-v1-only",
+  "commit": "atomic-issuance-metadata-and-recovery-to-JTI-commitment-under-organization-and-installation-fences",
+  "delivery": "fresh-exact-key-proof; same-claims-JTIs-and-expiry; no-new-issuance; current-validity-and-authority-rechecked",
+  "refusal_precedence": [
+    "scope-and-proof",
+    "withdrawal",
+    "renewal-eligibility",
+    "operation-state"
+  ],
+  "retention": {
+    "pending": "onboarding-working-state-fixed-deadline",
+    "completed": "security-audit-400-days-from-issuance",
+    "tokens_or_proof_bodies": false,
+    "deleted_operation": "no-exact-retry-creation"
+  },
+  "refusal_status": {
+    "invalid": 400,
+    "proof_invalid": 401,
+    "authorization_denied": 403,
+    "installation_revoked": 403,
+    "membership_removed": 403,
+    "approval_revoked": 403,
+    "grant_withdrawn": 403,
+    "refresh_eligible": 409,
+    "operation_conflict": 409,
+    "not_ready": 409,
+    "result_unavailable": 410,
+    "expired": 410,
+    "rate_limited": 429,
+    "temporarily_unavailable": 503
+  },
+  "messages": {
+    "definitions": "schemas/installation-authority-recovery/v1/definitions.schema.json",
+    "prepare-request": "schemas/installation-authority-recovery/v1/prepare-request.schema.json",
+    "prepare-response": "schemas/installation-authority-recovery/v1/prepare-response.schema.json",
+    "deliver-request": "schemas/installation-authority-recovery/v1/deliver-request.schema.json",
+    "deliver-response": "schemas/installation-authority-recovery/v1/deliver-response.schema.json",
+    "error": "schemas/installation-authority-recovery/v1/error.schema.json"
+  }
+}

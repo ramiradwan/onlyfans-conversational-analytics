@@ -176,6 +176,9 @@ class OnboardingJourneyStore:
         with (self.authentication.database.read() if connection is None else nullcontext(connection)) as current:
             row = current.execute("SELECT * FROM onboarding_journeys WHERE journey_id=?",
                                      (require_journey(journey_id),)).fetchone()
+            if row is not None and current.execute("SELECT 1 FROM onboarding_source_replacement_outcomes "
+                    "WHERE predecessor_operation_id=? AND status='prepared'", (row["operation_id"],)).fetchone():
+                raise OnboardingJourneyUnavailable("journey_unavailable")
         if row is None:
             raise OnboardingJourneyUnavailable("journey_unavailable")
         if datetime.fromisoformat(row["expires_at"]) <= self.authentication._now():
@@ -183,6 +186,8 @@ class OnboardingJourneyStore:
         return dict(row)
 
     def _cleanup(self,connection,now) -> None:
+        from app.persistence.source_preparations import SourcePreparations
+        SourcePreparations.cleanup(connection, now)
         moment=now.isoformat()
         for retained in connection.execute("SELECT * FROM onboarding_presentation_retirements WHERE expires_at<=?",
                 (now.timestamp(),)).fetchall():
@@ -260,7 +265,8 @@ class OnboardingJourneyStore:
             + ",".join("?" for _ in preserved) + ")", (now.timestamp(), *preserved))
         connection.execute("DELETE FROM onboarding_native_selection_receipts WHERE expires_at<=?", (now.timestamp(),))
 
-    def update(self, journey_id: str, *, state: str, require_current: bool = False, **changes) -> dict:
+    def update(self, journey_id: str, *, state: str, require_current: bool = False,
+               retain_prepare: bool = False, retain_result: bool = False, **changes) -> dict:
         allowed = {"operation_id", "handoff_reference", "handoff_expires_at", "scope_json", "prepare_json", "reason"}
         if not set(changes) <= allowed:
             raise ValueError("Invalid journey update")
@@ -283,6 +289,21 @@ class OnboardingJourneyStore:
             values = [state, *changes.values(), require_journey(journey_id)]
             connection.execute("UPDATE onboarding_journeys SET " + ", ".join(name + " = ?" for name in names)
                                + ", revision = revision + 1 WHERE journey_id = ?", values)
+            if retain_prepare:
+                from app.persistence.source_preparations import SourcePreparations
+                prepared = connection.execute("SELECT * FROM onboarding_journeys WHERE journey_id=?",
+                    (journey_id,)).fetchone()
+                if prepared is None or state != "preparing" or not require_current:
+                    raise OnboardingJourneyUnavailable("journey_unavailable")
+                SourcePreparations(self.authentication).retain(connection, prepared, json.loads(prepared["prepare_json"]))
+            if retain_result:
+                from app.persistence.source_preparations import SourcePreparations
+                prepared = connection.execute("SELECT * FROM onboarding_journeys WHERE journey_id=?",
+                    (journey_id,)).fetchone()
+                if prepared is None or state != "waiting" or not require_current:
+                    raise OnboardingJourneyUnavailable("journey_unavailable")
+                SourcePreparations(self.authentication).record_prepared(connection, prepared,
+                    expires_at=prepared["handoff_expires_at"])
             if state == "completed":
                 completed = connection.execute("SELECT * FROM onboarding_journeys WHERE journey_id=?", (journey_id,)).fetchone()
                 if completed is not None:
@@ -434,10 +455,13 @@ class OnboardingJourneyStore:
             state = "prepare-unknown"
             operation, scope, preparation = retired["operation_id"], None, retired["prepare_json"]
             installation = retired["installation_id"]
-        elif ((state == "new" and retired["operation_id"] is None and retired["scope_json"] is None)
-              or (state == "expired" and retired["scope_json"] is None)):
+        elif state == "new" and retired["operation_id"] is None and retired["scope_json"] is None:
+            from app.persistence.source_preparations import SourcePreparations
+            if SourcePreparations(self.authentication).classify(retired["previous_journey_id"],
+                    connection=connection) != "never-prepared":
+                raise OnboardingJourneyUnavailable("journey_unavailable")
             state, operation, scope, preparation = "new", None, None, None
-            installation = _new_uuid7(now)
+            installation = retired["installation_id"]
         else:
             # An unconfirmed prepared/registered scope is not permission
             # to start another operation or discard its receipt.

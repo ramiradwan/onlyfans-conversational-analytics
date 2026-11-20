@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/complimentary-activation-reconciliation/v1/read-response.schema.json",
+  "title": "Complimentary activation reconciliation read-response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "source_operation_id",
+    "activation_operation_id",
+    "status"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:complimentary-activation-reconciliation:v1"
+    },
+    "source_operation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "activation_operation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "status": {
+      "enum": [
+        "committed",
+        "expired-uncommitted",
+        "unresolved"
+      ]
+    }
+  }
+}

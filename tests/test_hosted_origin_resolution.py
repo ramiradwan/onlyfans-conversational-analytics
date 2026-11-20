@@ -235,14 +235,15 @@ with tempfile.TemporaryDirectory(dir=temp_parent) as temporary:
         initial_handoff.InitialInstallationEnrollment = capture_initial
         def capture_continuation(store, *, hosted_origin):
             captured["continuation"] = hosted_origin
-            return object()
+            return SimpleNamespace(client=SimpleNamespace(transport=claim_submission.hosted_transport(hosted_origin)))
         installation_continuation.RegisteredInstallationContinuation = capture_continuation
         select_brain_application(root / "runtime")
         # Launcher-less setup has no domain action surface. Qualify the shared
         # constructor used by both admitted native roots, not unused owners.
         from app.onboarding.composition import build_desktop_setup
         from app.core.customer_release import resolve_hosted_api_origin
-        build_desktop_setup(store=object(), stage="setup", extension_id=None,
+        from app.persistence.auth import SQLiteAuthenticationStore
+        build_desktop_setup(store=SQLiteAuthenticationStore(root / "origin-qualification.sqlite3"), stage="setup", extension_id=None,
             hosted_origin=resolve_hosted_api_origin(), authentication_providers=("default",),
             finalize=lambda **kwargs: None, completion_ready=lambda: False)
 

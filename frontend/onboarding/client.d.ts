@@ -11,7 +11,7 @@ export type DesktopAnalysisReadiness =
 export interface DesktopAuthentication {
   operation_id: string | null;
   browser_operation_id: string | null;
-  state: 'selection-required' | 'reauthentication-required' | 'selected' | 'admitted' | 'retired' | 'expired' | 'unavailable';
+  state: 'selection-required' | 'reauthentication-required' | 'replacement-required' | 'replacement-pending' | 'selected' | 'admitted' | 'retired' | 'expired' | 'unavailable';
   choices: Record<SignInProvider, boolean>;
   actions: { select: boolean; cancel: boolean; open_browser: boolean; switch_account: boolean };
   authentication_attempt: { authentication_attempt_id: string; provider: SignInProvider; mode: 'sign-in' | 'switch-account' } | null;
@@ -59,7 +59,7 @@ export class DesktopSetupClient {
   json(path: string, body?: unknown): Promise<unknown>;
   browserTaskPrepared(task: { operation_id: string; journey_id: string; expires_at: number }): void;
   connect(): Promise<void>;
-  act(action: string, options?: { provider?: SignInProvider }): Promise<void>;
+  act(action: string, options?: { provider?: SignInProvider; replace_ceremony?: true }): Promise<void>;
   reconcile(selectedOperation?: string): Promise<void>;
   launchBrowser(explicit?: boolean, selectedOperation?: string): Promise<void>;
   stop(): void;

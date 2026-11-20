@@ -50,12 +50,19 @@ class DesktopAuthentication:
                 return None
             parent = rows[0]["operation_id"]
             value = json.loads(rows[0]["projection_json"])
+            ceremony = self.ceremonies.row(parent, connection=current)
+            if (ceremony is None or value["operation_id"] != ceremony["hosted_operation_id"]
+                    or value["ceremony_id"] != ceremony["ceremony_id"]
+                    or self.ceremonies.replacement_reservation(parent, ceremony["hosted_operation_id"], connection=current) is not None):
+                return None
             attempt = value["authentication_attempt"]
             browser_operation = None
             if attempt is not None:
                 for row in current.execute("SELECT operation_id,request_json FROM desktop_authentication_commands "
                         "WHERE parent_operation_id=? AND verb IN ('select','switch')", (parent,)).fetchall():
-                    if json.loads(row["request_json"])["authentication_attempt_id"] == attempt["authentication_attempt_id"]:
+                    request = json.loads(row["request_json"])
+                    if (self.ceremonies.matches_request(ceremony, request)
+                            and request["authentication_attempt_id"] == attempt["authentication_attempt_id"]):
                         browser_operation = row["operation_id"]
                         break
             ended = browser_operation is not None and current.execute(
@@ -93,9 +100,15 @@ class DesktopAuthentication:
                 return None
             row = connection.execute("SELECT projection_json FROM desktop_authentication_projections WHERE operation_id=?",
                 (selected["parent_operation_id"],)).fetchone()
-        if row is None:
+            ceremony = self.ceremonies.row(selected["parent_operation_id"], connection=connection)
+            request = json.loads(selected["request_json"])
+            if (row is None or not self.ceremonies.matches_request(ceremony, request)
+                    or self.ceremonies.replacement_reservation(selected["parent_operation_id"], ceremony["hosted_operation_id"],
+                        connection=connection) is not None):
+                return None
+        value = json.loads(row["projection_json"])
+        if (value["operation_id"], value["ceremony_id"]) != (request["operation_id"], request["ceremony_id"]):
             return None
-        value, request = json.loads(row["projection_json"]), json.loads(selected["request_json"])
         attempt = value["authentication_attempt"]
         return value if (value["actions"]["open_browser"] and timestamp(value["expires_at"]) > self.store._now()
             and attempt is not None and attempt["authentication_attempt_id"] == request["authentication_attempt_id"]) else None
@@ -112,10 +125,7 @@ class DesktopAuthentication:
         encoded = canonical(projection).decode()
         publish = connection is None
         with (self.store.database.transaction() if connection is None else nullcontext(connection)) as connection:
-            current = connection.execute("SELECT binding_json,ceremony_id FROM desktop_browser_ceremonies WHERE operation_id=?",
-                (row["operation_id"],)).fetchone()
-            if current is None or (current["binding_json"], current["ceremony_id"]) != (row["binding_json"], row["ceremony_id"]):
-                raise HostedGrantUnavailable("Authentication scope changed")
+            self.ceremonies.require_current(row, connection=connection)
             previous = connection.execute("SELECT projection_json FROM desktop_authentication_projections WHERE operation_id=?",
                 (row["operation_id"],)).fetchone()
             if previous is not None and previous[0] == encoded:
@@ -142,12 +152,13 @@ class DesktopAuthentication:
             self._save(row, result)
         return result
 
-    async def _read_request(self, row, request, *, authorize, journey_id=None):
-        ticket = self._prefetched.pop(row["operation_id"], None) if request["authentication_attempt_id"] is None else None
+    async def _read_request(self, row, request, *, authorize, journey_id=None, task_scoped=False):
+        ticket = self._prefetched.pop(row["hosted_operation_id"], None) if request["authentication_attempt_id"] is None else None
         options = {} if ticket is None else {"prefetched": ticket}
         journey_id = self.ceremonies._journey(row["operation_id"]) if journey_id is None else journey_id
         return await self._effects.run(self.client.read, request, expires_at=row["provider_expires_at"],
-            before_send=authorize, journey_id=journey_id, protected=False, **options)
+            before_send=authorize if task_scoped else self.ceremonies.guarded(row, authorize),
+            journey_id=journey_id, protected=False, **options)
 
     async def prefetch(self, operation_id, *, authorize):
         """Hold one fresh current-read challenge. Returns seconds until it needs renewal."""
@@ -156,7 +167,8 @@ class DesktopAuthentication:
         parent = self.parent_operation(operation_id)
         row, request = self._request(parent)
         renewal = getattr(self.client, "renewal_delay", None)
-        held = self._prefetched.get(parent)
+        key = row["hosted_operation_id"]
+        held = self._prefetched.get(key)
         if held is not None:
             if renewal is None:
                 return None
@@ -164,13 +176,14 @@ class DesktopAuthentication:
             if delay > 0:
                 return delay
         with timing.phase("authentication-read", "renew"):
-            ticket = await self._effects.run(self.client.prefetch_read, request, before_send=authorize,
+            ticket = await self._effects.run(self.client.prefetch_read, request,
+                before_send=self.ceremonies.guarded(row, authorize),
                 journey_id=self.ceremonies._journey(parent), protected=False)
-        if self._prefetched.get(parent) in (None, held):
-            self._prefetched.pop(parent, None)
+        if self._prefetched.get(key) in (None, held):
+            self._prefetched.pop(key, None)
             if len(self._prefetched) >= 64:
                 self._prefetched.pop(next(iter(self._prefetched)))
-            self._prefetched[parent] = ticket
+            self._prefetched[key] = ticket
         return None if renewal is None else renewal(ticket)
 
     async def reconcile_task(self, operation_id, *, authorize):
@@ -188,10 +201,15 @@ class DesktopAuthentication:
                     return None
                 # The hinted read's scope comes from the same connection as the task it may complete.
                 row, request = self._request(command["parent_operation_id"], connection=connection)
+                if not self.ceremonies.matches_request(row, json.loads(command["request_json"])):
+                    return None
                 journey = self.ceremonies._journey(row["operation_id"], connection=connection)
             task = dict(tasks[0])
             with timing.phase("authentication-read", "read-end"):
-                result = await self._read_request(row, request, authorize=authorize, journey_id=journey)
+                # The task and exact command were checked in one read. Its
+                # proof is nonmutating and the writer fences the same lineage
+                # and task again before any projection or completion is saved.
+                result = await self._read_request(row, request, authorize=authorize, journey_id=journey, task_scoped=True)
             expected = json.loads(command["request_json"])
             attempt = result["authentication_attempt"]
             return await self._effects.run(self._finish_task, operation_id, task, row, result, expected, attempt,
@@ -266,7 +284,14 @@ class DesktopAuthentication:
         """A known ended decision needs another explicit selection, not a retry."""
         with self.store.database.read() as connection:
             parent = self.parent_operation(operation_id, connection=connection)
-            if self._closures(connection, parent):
+            if self.ceremonies.replacement_pending(parent, connection=connection) or self._closures(connection, parent):
+                return False
+            ceremony = self.ceremonies.row(parent, connection=connection)
+            if (ceremony is not None and self.ceremonies.replacement_client is not None
+                    and ceremony["presentation_state"] == "active" and ceremony["provider_expires_at"] is not None
+                    and timestamp(ceremony["provider_expires_at"]) <= self.store._now()):
+                # Expiry of a local clock is only a trigger for an exact read,
+                # never proof that the Provider has admitted replacement.
                 return False
             row = connection.execute("SELECT projection_json FROM desktop_decision_projections WHERE operation_id=?",
                 (parent,)).fetchone()
@@ -291,7 +316,9 @@ class DesktopAuthentication:
         parent = self.parent_operation(operation_id)
         row, request = self._request(parent)
         result = await self._effects.run(self.client.read, request, expires_at=row["provider_expires_at"],
-            before_send=authorize, journey_id=self.ceremonies._journey(parent), protected=False)
+            before_send=self.ceremonies.guarded(row, authorize),
+            journey_id=self.ceremonies._journey(parent), protected=False)
+        self.ceremonies.require_current(row)
         encoded = canonical(result).decode()
         if self._probed.get(operation_id) == encoded:
             return False
@@ -310,8 +337,10 @@ class DesktopAuthentication:
         if row is None or row["ceremony_id"] is None:
             raise HostedGrantUnavailable("Authentication scope is unavailable")
         request = wait_request(self.ceremonies.request(row))
-        envelope = await asyncio.to_thread(self.waits.envelope, request, before_send=authorize)
+        envelope = await asyncio.to_thread(self.waits.envelope, request,
+            before_send=self.ceremonies.guarded(row, authorize))
         async for hint in self.waits.hints(envelope):
+            self.ceremonies.require_current(row)
             yield hint
 
     async def refresh(self, parent, *, authorize):
@@ -360,6 +389,10 @@ class DesktopAuthentication:
                     or operation["state"] not in {"accepted", "waiting", "outcome_unknown"}
                     or parent["state"] not in {"accepted", "waiting", "outcome_unknown"}):
                 raise HostedGrantUnavailable("Authentication owner changed")
+            ceremony = self.ceremonies.row(command["parent_operation_id"], connection=connection)
+            if not self.ceremonies.matches_request(ceremony, json.loads(command["request_json"])):
+                raise HostedGrantUnavailable("Authentication closure scope changed")
+            self.ceremonies.require_current(ceremony, connection=connection, mutation=True)
             connection.execute("DELETE FROM desktop_authentication_closures WHERE expires_at<=?", (now,))
             deadline = min(task["expires_at"], operation["expires_at"], parent["expires_at"],
                 timestamp(json.loads(command["request_json"])["binding"]["source_expires_at"]).timestamp())
@@ -403,7 +436,7 @@ class DesktopAuthentication:
                         raise HostedGrantUnavailable("Authentication closure expired")
                 try:
                     await self._effects.run(self.client.execute, "cancel", expected,
-                        expires_at=row["provider_expires_at"], before_send=guard,
+                        expires_at=row["provider_expires_at"], before_send=self.ceremonies.guarded(row, guard, mutation=True),
                         journey_id=self.ceremonies._journey(parent))
                 except BrowserAuthenticationRefused:
                     pass
@@ -421,6 +454,12 @@ class DesktopAuthentication:
         # One transaction reads the scope and pending closures and records the command.
         with self.store.database.transaction() as connection:
             row, request = self._request(parent, intent["authentication_attempt_id"], connection=connection)
+            current = connection.execute("SELECT state,owner_scope_json FROM desktop_setup_operations WHERE operation_id=?",
+                (operation["operation_id"],)).fetchone()
+            if (current is None or current["state"] not in {"accepted", "waiting", "outcome_unknown"}
+                    or current["owner_scope_json"] != operation["owner_scope_json"]
+                    or (operation["operation_id"] == parent and self.ceremonies.is_successor(row, connection=connection))):
+                raise HostedGrantUnavailable("Authentication command changed")
             if self.ceremonies._journey(parent, connection=connection) != operation["journey_id"]:
                 raise HostedGrantUnavailable("Authentication journey changed")
             if verb in {"select", "switch"}:
@@ -433,6 +472,9 @@ class DesktopAuthentication:
                 if (previous["request_json"], previous["verb"], previous["parent_operation_id"]) != (encoded, verb, parent):
                     raise HostedGrantUnavailable("Authentication command changed")
                 return row, request, verb, False, closures
+            # Reserve the already accepted command even at expiry; execute()
+            # classifies expiry before dispatch, and the send guard rechecks it.
+            self.ceremonies.require_current(row, connection=connection, mutation=True)
             connection.execute("INSERT INTO desktop_authentication_commands VALUES (?,?,?,?)",
                 (operation["operation_id"], parent, verb, encoded))
         return row, request, verb, True, closures
@@ -452,19 +494,26 @@ class DesktopAuthentication:
                     return OperationResult("refused", "operation_expired")
                 try:
                     result = await self._effects.run(self.client.execute, verb, request,
-                        expires_at=row["provider_expires_at"], before_send=authorize, journey_id=operation["journey_id"])
+                        expires_at=row["provider_expires_at"], before_send=self.ceremonies.guarded(row, authorize, mutation=True),
+                        journey_id=operation["journey_id"])
                 except BrowserAuthenticationRefused:
                     await self._read(parent, authorize=read_guard)
                     return OperationResult("refused", "operation_refused")
             else:
                 # A reserved request may have committed. Reopening only reads
                 # that child; a fresh explicit command admits any next attempt.
-                result = await self._read(parent, authorize=read_guard, attempt=request["authentication_attempt_id"])
+                result = await self._read_request(row, {name: request[name] for name in (
+                    "profile", "operation_id", "ceremony_id", "binding", "authentication_attempt_id")},
+                    authorize=read_guard)
             if use_selection and fresh and not reconcile:
                 await asyncio.to_thread(self._save, row, result)
                 current = result
             else:
-                current = await self._read(parent, authorize=read_guard)
+                # Never re-resolve an old command against a newer ceremony.
+                current_request = {name: request[name] for name in ("profile", "operation_id", "ceremony_id", "binding")}
+                current_request["authentication_attempt_id"] = None
+                current = await self._read_request(row, current_request, authorize=read_guard)
+                self._save(row, current)
             if (result["state"] == "admitted" and verb != "cancel" and current["actions"]["open_browser"]
                     and current["authentication_attempt"] is not None
                     and current["authentication_attempt"]["authentication_attempt_id"] == request["authentication_attempt_id"]):
@@ -485,6 +534,9 @@ class DesktopAuthentication:
         if intent is not None:
             def lookup():
                 with self.store.database.read() as connection:
+                    row = self.ceremonies.row(operation["operation_id"], connection=connection)
+                    if row is not None and self.ceremonies.is_successor(row, connection=connection):
+                        return True
                     return connection.execute("SELECT 1 FROM desktop_authentication_commands WHERE operation_id=?",
                         (operation["operation_id"],)).fetchone() is not None
             with timing.phase("authentication-" + intent["verb"], "lookup"):

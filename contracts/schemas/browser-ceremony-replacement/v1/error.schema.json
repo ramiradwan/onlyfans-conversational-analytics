@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/browser-ceremony-replacement/v1/error.schema.json",
+  "title": "Browser ceremony replacement error v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "reason"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:browser-ceremony-replacement:v1"
+    },
+    "reason": {
+      "enum": [
+        "invalid",
+        "proof_invalid",
+        "authorization_denied",
+        "operation_conflict",
+        "not_ready",
+        "expired",
+        "rate_limited",
+        "temporarily_unavailable"
+      ]
+    }
+  }
+}

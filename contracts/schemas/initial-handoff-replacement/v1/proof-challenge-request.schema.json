@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/initial-handoff-replacement/v1/proof-challenge-request.schema.json",
+  "title": "Initial handoff replacement proof-challenge-request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "target"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:initial-handoff-replacement-proof:v1"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "operation": {
+          "const": "initial-handoff-replace"
+        },
+        "request": {
+          "$ref": "definitions.schema.json#/$defs/request"
+        }
+      }
+    }
+  }
+}

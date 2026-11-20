@@ -52,6 +52,7 @@ CLAIM_PROFILE_V1 = "urn:bridge-clean:installation-claim:v1"
 CLAIM_PROFILE_V2 = "urn:bridge-clean:installation-claim:v2"
 CLAIM_PROFILE = CLAIM_PROFILE_V1
 BOOTSTRAP_RECOVERY_PROFILE = "urn:bridge-clean:bootstrap-recovery:v2"
+BOOTSTRAP_RECOVERY_PROFILE_V3 = "urn:bridge-clean:bootstrap-recovery:v3"
 PROOF_PROFILE = "urn:bridge-clean:installation-key-proof:v1"
 REFRESH_PROFILE = "urn:bridge-clean:grant-refresh:v1"
 CREATOR_ASSOCIATION_PROFILE = "urn:bridge-clean:creator-association:v1"
@@ -139,6 +140,34 @@ class InstallationClaimRefused(HostedGrantError):
 
 class InstallationClaimReplay(InstallationClaimRefused):
     """The hosted claim store refused a repeated consumption."""
+
+
+@lru_cache(maxsize=1)
+def _bootstrap_v3_validators():
+    from jsonschema import Draft202012Validator
+    from referencing import Registry, Resource
+    from app.core.resource_paths import resource_path
+    from contracts.loader import verify_snapshot_integrity
+
+    root = resource_path("contracts")
+    verify_snapshot_integrity(root)
+    documents = [json.loads(path.read_text(encoding="utf-8")) for path in
+                 (root / "schemas").rglob("*.schema.json")]
+    registry = Registry().with_resources((document["$id"], Resource.from_contents(document))
+                                        for document in documents)
+    return {
+        document["$id"].rsplit("/", 1)[-1].removesuffix(".schema.json"):
+        Draft202012Validator(document, registry=registry)
+        for document in documents if "/schemas/provisioning/v3/bootstrap-recovery-" in document["$id"]
+    }
+
+
+def _validate_bootstrap_v3(name, document):
+    from jsonschema import ValidationError
+    try:
+        _bootstrap_v3_validators()["bootstrap-recovery-" + name].validate(document)
+    except (ValidationError, ValueError, TypeError, RecursionError):
+        raise HostedGrantUnavailable("Bootstrap recovery response is invalid") from None
 
 
 class BootstrapRecoveryRefused(HostedGrantError):
@@ -597,8 +626,25 @@ class HostedGrantClient:
             "urn:bridge-clean:onboarding-progress:v1",
         ),
     ) -> BootstrapRecovery:
-        """Recover bootstrap identity authority for one possibly committed v2 enrollment."""
+        """Historical v2 compatibility adapter; new owner recovery uses v3."""
+        return self._recover_bootstrap(claim_id=claim_id, recovery_request_id=recovery_request_id,
+            supported_profiles=supported_profiles, profile=BOOTSTRAP_RECOVERY_PROFILE)
 
+    def recover_bootstrap_v3(
+        self, *, claim_id: str, recovery_request_id: str,
+        supported_profiles: tuple[str, ...] = (
+            "urn:bridge-clean:grant-profile:v1", "urn:bridge-clean:onboarding-progress:v1",
+        ),
+        before_send=None, existing_key=None, expected_enrolled_at=None, adopt_verified=None,
+    ) -> BootstrapRecovery:
+        """Use only the bounded key-only recovery admission. Never downgrade."""
+        return self._recover_bootstrap(claim_id=claim_id, recovery_request_id=recovery_request_id,
+            supported_profiles=supported_profiles, profile=BOOTSTRAP_RECOVERY_PROFILE_V3,
+            before_send=before_send, existing_key=existing_key, expected_enrolled_at=expected_enrolled_at,
+            adopt_verified=adopt_verified)
+
+    def _recover_bootstrap(self, *, claim_id, recovery_request_id, supported_profiles, profile,
+                           before_send=None, existing_key=None, expected_enrolled_at=None, adopt_verified=None):
         submission = self._store.claim_submission(claim_id)
         if (
             submission is None
@@ -615,10 +661,19 @@ class HostedGrantClient:
             or not all(isinstance(value, str) and value.startswith("urn:bridge-clean:") for value in supported_profiles)
         ):
             raise ValueError("Bootstrap recovery supported profiles are invalid")
-        key = self._installation_key.ensure_ready()
+        def guard():
+            if before_send is not None:
+                before_send()
+            if existing_key is not None:
+                reference = getattr(self._installation_key, "signing_reference", None) or self._installation_key.reopen_existing
+                if reference() != existing_key:
+                    raise HostedGrantUnavailable("Original recovery key changed")
+        guard()
+        key = self._installation_key.ensure_ready() if existing_key is None else existing_key
         if key.installation_key_id == "" or key.installation_key_jkt == "":
             raise AuthenticationStateError("Installation key is unavailable")
         challenge_path = f"/v1/installations/{submission.installation_id}/proof-challenges"
+        guard()
         challenge_response = self._request(
             challenge_path,
             {"profile": PROGRESS_PROOF_PROFILE, "purpose": "bootstrap-recovery"},
@@ -635,7 +690,7 @@ class HostedGrantClient:
             audience=PROGRESS_PROOF_AUDIENCE,
         )
         request_body: dict[str, object] = {
-            "profile": BOOTSTRAP_RECOVERY_PROFILE,
+            "profile": profile,
             "recovery_request_id": recovery_request_id,
             "claim_id": submission.claim_id,
             "onboarding_transaction_id": submission.onboarding_transaction_id,
@@ -645,23 +700,25 @@ class HostedGrantClient:
             "supported_profiles": list(supported_profiles),
         }
         path = f"/v1/installations/{submission.installation_id}/bootstrap:recover"
-        response = self._request(
-            path,
-            {
-                "request": request_body,
-                "proof": self._proof(
-                    challenge=challenge,
-                    request_body=request_body,
-                    path=path,
-                    purpose="bootstrap-recovery",
-                    installation_id=submission.installation_id,
-                    key=key,
-                    audience=PROGRESS_PROOF_AUDIENCE,
-                ),
-            },
-        )
+        guard()
+        envelope = {
+            "request": request_body,
+            "proof": self._proof(
+                challenge=challenge, request_body=request_body, path=path, purpose="bootstrap-recovery",
+                installation_id=submission.installation_id, key=key, audience=PROGRESS_PROOF_AUDIENCE,
+            ),
+        }
+        if profile == BOOTSTRAP_RECOVERY_PROFILE_V3:
+            _validate_bootstrap_v3("request", envelope)
+        guard()
+        response = self._request(path, envelope)
         if _retryable(response.status_code):
             raise HostedGrantUnavailable("Bootstrap recovery is temporarily unavailable")
+        if profile == BOOTSTRAP_RECOVERY_PROFILE_V3 and response.status_code == 403:
+            document = _response_object(response)
+            _validate_bootstrap_v3("refusal", document)
+            # No retry, downgrade, grant mutation or tombstone on this refusal.
+            raise BootstrapRecoveryRefused(document["detail"])
         refusal = {
             401: "registered_key_mismatch",
             403: "installation_binding_mismatch",
@@ -673,13 +730,21 @@ class HostedGrantClient:
         if response.status_code != 200:
             raise BootstrapRecoveryRefused("recovery_refused")
         document = _response_object(response)
+        if profile == BOOTSTRAP_RECOVERY_PROFILE_V3:
+            _validate_bootstrap_v3("response", document)
         tokens, enrolled_at, recovered_at, selected = self._validated_bootstrap_recovery_response(
             document,
             submission=submission,
             recovery_request_id=recovery_request_id,
             key=key,
             supported_profiles=supported_profiles,
+            profile=profile,
         )
+        if profile == BOOTSTRAP_RECOVERY_PROFILE_V3 and not (
+                enrolled_at <= recovered_at < enrolled_at + timedelta(days=37)):
+            raise HostedGrantUnavailable("Bootstrap recovery deadline changed")
+        if expected_enrolled_at is not None and enrolled_at != expected_enrolled_at:
+            raise HostedGrantUnavailable("Original enrollment time changed")
         references = self._verify_bundle(
             tokens,
             grant_types=HOSTED_CLAIM_V2_GRANT_TYPES,
@@ -688,10 +753,14 @@ class HostedGrantClient:
             key=key,
             identity=None,
         )
-        self._store.record_verified_grants(references)
-        self._store.resolve_claim_submission(
-            claim_id, outcome=None, resolved_at=recovered_at, enrolled_at=enrolled_at
-        )
+        guard()
+        if adopt_verified is not None:
+            adopt_verified(references, enrolled_at=enrolled_at, recovered_at=recovered_at)
+        else:
+            self._store.record_verified_grants(references)
+            self._store.resolve_claim_submission(
+                claim_id, outcome=None, resolved_at=recovered_at, enrolled_at=enrolled_at
+            )
         return BootstrapRecovery(
             tuple(reference.reference_id for reference in references),
             enrolled_at,
@@ -1430,6 +1499,7 @@ class HostedGrantClient:
         recovery_request_id: str,
         key: InstallationKeyReference,
         supported_profiles: tuple[str, ...],
+        profile: str = BOOTSTRAP_RECOVERY_PROFILE,
     ) -> tuple[dict[str, str], datetime, datetime, tuple[str, ...]]:
         expected = {
             "profile", "status", "recovery_request_id", "claim_id",
@@ -1441,7 +1511,7 @@ class HostedGrantClient:
             raise HostedGrantUnavailable("Bootstrap recovery response is invalid")
         # ClaimSubmission is kept structurally typed here to avoid granting it authority.
         if (
-            document.get("profile") != BOOTSTRAP_RECOVERY_PROFILE
+            document.get("profile") != profile
             or document.get("status") != "recovered"
             or document.get("recovery_request_id") != recovery_request_id
             or document.get("claim_id") != getattr(submission, "claim_id")

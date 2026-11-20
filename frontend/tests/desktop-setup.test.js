@@ -679,6 +679,78 @@ describe('desktop setup presentation', () => {
     client.stop();
   });
 
+
+  it('offers explicit ceremony recovery without launching Chrome or choosing a provider', async () => {
+    mount();
+    const parent = generation;
+    const value = { ...initial(), journey_id: parent, next_task: 'account-connection',
+      allowed_actions: ['auth.select'], pending_operations: [{ ...record, operation_id: parent, action: 'account.connect', state: 'waiting' }],
+      authentication: { ...signIn(), operation_id: parent, state: 'replacement-required',
+        choices: { google: false, 'microsoft-personal': false, telegram: false, tiktok: false, default: false } } };
+    renderSetup(document, { snapshot: value, connected: true, pending: parent });
+    const button = document.getElementById('task-action');
+    expect(button.hidden).toBe(false);
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toBe('Sign in again');
+    expect(button.dataset.replaceCeremony).toBe('true');
+    expect(document.getElementById('sign-in-options').hidden).toBe(true);
+    expect(document.getElementById('browser-reopen').hidden).toBe(true);
+    const request = vi.fn(async url => response(url.endsWith('/commands')
+      ? { ...record, action: 'auth.select' }
+      : { ...record, action: 'auth.select', state: 'completed' }));
+    const openBrowser = vi.fn();
+    const client = new DesktopSetupClient({ generation, request, openBrowser, storage: storage(), uuid: () => operationId, receive: vi.fn() });
+    client.value = value; client.session = session; client.connected = true; client.remember(parent);
+    await client.act('auth.select', { replace_ceremony: true });
+    expect(openBrowser).not.toHaveBeenCalled();
+    const sent = JSON.parse(request.mock.calls.find(([url]) => url.endsWith('/commands'))[1].body);
+    expect(sent.replace_ceremony).toBe(true);
+    expect(sent.provider).toBeUndefined();
+    client.stop();
+  });
+
+  it('continues an expired source without opening Chrome, then admits a provider choice', async () => {
+    mount();
+    const parent = generation;
+    const value = { ...initial(), journey_id: parent, next_task: 'account-connection',
+      continuation_available: true, allowed_actions: ['account.connect'], authentication: null };
+    renderSetup(document, { snapshot: value, connected: true });
+    expect(document.getElementById('task-action').textContent).toBe('Continue setup');
+    expect(document.getElementById('task-action').hidden).toBe(false);
+    expect(document.getElementById('sign-in-options').hidden).toBe(true);
+    const request = vi.fn(async () => response({ ...record, action: 'account.connect', state: 'accepted' }));
+    const openBrowser = vi.fn(async () => true);
+    const client = new DesktopSetupClient({ generation, request, openBrowser, storage: storage(), uuid: () => operationId, receive: vi.fn() });
+    client.value = value; client.session = session; client.connected = true;
+    await client.act('account.connect');
+    expect(openBrowser).not.toHaveBeenCalled();
+    const sent = JSON.parse(request.mock.calls.find(([url]) => url.endsWith('/commands'))[1].body);
+    expect(sent.provider).toBeUndefined();
+    const selection = { ...value, continuation_available: false, allowed_actions: ['auth.select'],
+      pending_operations: [{ ...record, operation_id: parent, action: 'account.connect', state: 'waiting' }],
+      authentication: { ...signIn(), operation_id: parent, state: 'selection-required' } };
+    renderSetup(document, { snapshot: selection, connected: true, pending: parent });
+    expect(document.getElementById('sign-in-options').hidden).toBe(false);
+    client.value = selection; client.remember(parent);
+    await client.act('auth.select', { provider: 'google' });
+    expect(openBrowser).toHaveBeenCalledTimes(1);
+    client.stop();
+  });
+
+  it('keeps interrupted ceremony recovery passive even after desktop restart', () => {
+    mount();
+    const value = { ...initial(), next_task: 'account-connection', allowed_actions: [],
+      pending_operations: [{ ...record, action: 'auth.select', state: 'outcome_unknown', reason: 'operation_unconfirmed' }],
+      authentication: { ...signIn(), operation_id: generation, state: 'replacement-pending',
+        actions: { select: false, cancel: false, open_browser: false, switch_account: false },
+        choices: { google: false, 'microsoft-personal': false, telegram: false, tiktok: false, default: false } } };
+    renderSetup(document, { snapshot: value, connected: true });
+    expect(document.getElementById('task-status').textContent).toBe('Checking sign-in\u2026');
+    expect(document.getElementById('task-action').hidden).toBe(true);
+    expect(document.getElementById('sign-in-options').hidden).toBe(true);
+    expect(document.getElementById('browser-reopen').hidden).toBe(true);
+  });
+
   it('does not suggest opening an unavailable browser and reserves the warning line', () => {
     mount();
     renderSetup(document, { snapshot: { ...initial(), pending_operations: [record], allowed_actions: [] },
@@ -1218,4 +1290,24 @@ it('names only the current deliberate desktop action while the owner receipt is 
   subject.notify();
   expect(states.at(-1)).not.toHaveProperty('pendingAction');
   subject.stop();
+});
+
+it.each(['activation.review', 'activation.confirm'])('submits a fresh explicit replacement review without launching the old browser task (%s)', async localAction => {
+  const calls = [];
+  const openBrowser = vi.fn();
+  const old = { ...record, action: 'activation.review', state: 'outcome_unknown', reason: 'operation_unconfirmed' };
+  const successorId = '33333333-3333-4333-8333-333333333333';
+  const subject = new DesktopSetupClient({ generation, storage: storage(), receive() {},
+    uuid: () => successorId, stream: () => () => {}, openBrowser, request: async (url, options) => {
+      calls.push([url, options?.body && JSON.parse(options.body)]);
+      return response({ ...old, operation_id: successorId, state: 'accepted', reason: 'none' }, 202);
+    } });
+  const child = { ...old, action: 'activation.confirm', operation_id: '44444444-4444-4444-8444-444444444444' };
+  subject.value = { ...initial(), pending_operations: localAction === 'activation.review' ? [old] : [old, child], allowed_actions: ['activation.review'] };
+  subject.session = session; subject.connected = true; subject.remember(localAction === 'activation.review' ? old.operation_id : child.operation_id);
+  await subject.act('activation.review');
+  const commands = calls.filter(([url]) => url.endsWith('/commands'));
+  expect(commands).toHaveLength(1);
+  expect(commands[0][1]).toMatchObject({ action: 'activation.review', operation_id: successorId });
+  expect(openBrowser).not.toHaveBeenCalled();
 });

@@ -471,7 +471,15 @@ class InstallationContinuationStore:
             return target
 
     def desktop_recovery_proposal(self, connection, *, journey_id, work=()):
-        """Classify an expired exact source without renewing it or starting work."""
+        """Only an unused local source can enter ordinary preparation again."""
+        from app.persistence.source_preparations import SourcePreparations
+        proposal = self._desktop_terminal_proposal(connection, journey_id=journey_id, work=work)
+        if SourcePreparations(self.authentication).classify(journey_id, connection=connection) != "never-prepared":
+            raise OnboardingJourneyUnavailable("workspace_changed")
+        return proposal
+
+    def _desktop_terminal_proposal(self, connection, *, journey_id, work=()):
+        """Classify the exact saved target; does not itself authorize a prepare."""
         from app.persistence.saved_workspace import SavedWorkspaceStore
         require_journey(journey_id)
         previous = connection.execute("SELECT expires_at,state FROM onboarding_journeys WHERE journey_id=?",
@@ -512,13 +520,26 @@ class InstallationContinuationStore:
 
     def admit_initial_desktop_recovery(self, connection, *, proposal, work=()):
         from app.persistence.saved_workspace import SavedWorkspaceStore
-        if SavedWorkspaceStore(self).inspect_initial(connection, proposal["source_journey_id"],
-                proposal["creator_account_id"], work=work) != proposal:
+        from app.persistence.source_preparations import SourcePreparations
+        if (SourcePreparations(self.authentication).classify(proposal["source_journey_id"], connection=connection) != "never-prepared"
+                or SavedWorkspaceStore(self).inspect_initial(connection, proposal["source_journey_id"],
+                    proposal["creator_account_id"], work=work) != proposal):
             raise OnboardingJourneyUnavailable("workspace_changed")
         self.journeys._require_initial_native_candidate(connection)
-        # An exact terminal source is retained; only explicit admission creates
-        # a new source. Its unused presentation lifetime must not select it again.
-        return self.journeys._open(connection, str(uuid4()), self.authentication._now())["journey_id"]
+        # Preserve the original installation even if the local draft was never sent.
+        prior = connection.execute("SELECT installation_id FROM onboarding_journeys WHERE journey_id=?",
+            (proposal["source_journey_id"],)).fetchone()
+        if prior is None:
+            history = connection.execute("SELECT evidence_json FROM onboarding_presentation_retirements "
+                "WHERE journey_id=? AND expires_at>?", (proposal["source_journey_id"],
+                    self.authentication._now().timestamp())).fetchone()
+            prior = None if history is None else json.loads(history["evidence_json"]).get("journey")
+        if prior is None:
+            raise OnboardingJourneyUnavailable("workspace_changed")
+        source = self.journeys._open(connection, str(uuid4()), self.authentication._now())["journey_id"]
+        connection.execute("UPDATE onboarding_journeys SET installation_id=? WHERE journey_id=?",
+            (prior["installation_id"], source))
+        return source
 
     def admit_desktop_context(self, connection, *, journey_id: str | None, reopen_key) -> str:
         """Select a domain context without creating a browser or operator session.
@@ -747,6 +768,12 @@ class InstallationContinuationStore:
         ).fetchone()
         if row is None or row["operation_profile"] != CONTINUATION_PROFILE:
             raise OnboardingJourneyUnavailable("journey_unavailable")
+        if connection.execute("SELECT 1 FROM onboarding_source_replacement_outcomes "
+                "WHERE predecessor_operation_id=? AND status='prepared'", (row["operation_id"],)).fetchone():
+            raise OnboardingJourneyUnavailable("journey_unavailable")
+        if connection.execute("SELECT 1 FROM desktop_activation_review_replacements "
+                "WHERE source_operation_id=? AND status='prepared'", (row["operation_id"],)).fetchone():
+            raise OnboardingJourneyUnavailable("journey_unavailable")
         if datetime.fromisoformat(row["expires_at"]) <= self.authentication._now():
             raise OnboardingJourneyUnavailable("journey_expired")
         target = self.selection.select_in_transaction(connection, association_request_id=row["association_request_id"])
@@ -763,6 +790,9 @@ class InstallationContinuationStore:
             row = self.require_current(journey_id, connection=connection)
             if row["state"] != "new":
                 return None
+            from app.persistence.source_preparations import SourcePreparations
+            SourcePreparations(self.authentication).retain(connection, row, {
+                "profile": CONTINUATION_PROFILE, "operation_id": row["operation_id"], "scope": row["scope"]})
             connection.execute(
                 "UPDATE onboarding_journeys SET state='prepare-unknown',revision=revision+1 WHERE journey_id=?",
                 (journey_id,),
@@ -809,6 +839,9 @@ class InstallationContinuationStore:
                 # new action. Read reconciliation returns the retained state.
                 return row
             _require_transition(row["state"], state)
+            from app.persistence.source_preparations import SourcePreparations
+            SourcePreparations(self.authentication).record_prepared(connection, row,
+                expires_at=expires_at, continuation_id=continuation_id)
             connection.execute(
                 "UPDATE installation_continuation_contexts SET continuation_id=?,provider_expires_at=?,"
                 "reference=COALESCE(reference,?),epoch=COALESCE(epoch,?),provider_revision=COALESCE(?,provider_revision),"

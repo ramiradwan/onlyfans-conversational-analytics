@@ -1,0 +1,82 @@
+{
+  "profile": "urn:bridge-clean:browser-authentication-selection:v3",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "proof_profile": "urn:bridge-clean:browser-authentication-selection-proof:v3",
+  "ceremony_profile": "urn:bridge-clean:browser-ceremony:v2",
+  "request_max_bytes": 8192,
+  "response_max_bytes": 16384,
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "providers": [
+    "default"
+  ],
+  "provider_domain_hint": {
+    "default": null
+  },
+  "mapping_owner": "Provider-only-closed-mapping-no-client-domain-hint-or-URL-parameters",
+  "choices_availability": "default-only-until-other-routes-qualified-for-required-fresh-assurance",
+  "binding": "entire-original-ceremony-binding-and-operation-plus-exact-child-attempt",
+  "child_attempt_id": "caller-generated-UUIDv7-persist-before-outbound-request",
+  "max_child_attempts_per_ceremony": 32,
+  "deadline": "original-minimum-source-and-ceremony-expiry-no-attempt-read-select-or-cancel-renewal",
+  "read": "noncreating-exact-child-or-null-current-selection-projection",
+  "select": "explicit-fresh-step-up-exact-current-predecessor-CAS; no-browser-session-reuse",
+  "switch": "not-admitted",
+  "switch_prompt": "not-applicable",
+  "ordinary_sign_in_prompt": "login-with-max_age=0; fresh-verified-auth_time",
+  "cancel": "exact-child-idempotent-retirement-admitted-truth-wins-no-domain-rollback",
+  "successor": "explicit-current-retired-predecessor-only-while-source-and-ceremony-live",
+  "reauthentication": "no-reuse; failed-or-expired-Identity-attempt-retires-selected-child; explicit-successor",
+  "same_attempt_changed_meaning": "attempt_conflict",
+  "lost_reply": "fresh-proof-read-exact-original-child-no-replacement-or-automatic-browser-dispatch",
+  "dispatch": "explicit-current-selected-child-only; one-OIDC-dispatch-per-child; cancel-and-explicit-successor-on-failure",
+  "callback_fences": [
+    "exact-active-child-before-code-exchange",
+    "exact-active-child-before-final-admission",
+    "same-original-source-and-key",
+    "actual-source-admission-generation-and-expected-actor",
+    "existing-state-nonce-confidential-fixed-endpoint-exchange-and-browser-CSRF"
+  ],
+  "admission_authority": "exact-current-protected-callback-only; atomic-recovery-commit",
+  "identity": "Provider-derived-exact-actor; no-account-switch-or-actor-substitution",
+  "customer_credentials_on_desktop": false,
+  "callbacks": "unchanged-fixed-chromiumapp-correlation-only",
+  "retention": {
+    "attempts": "onboarding-working-state-original-expiry-90-day-abandonment-ceiling",
+    "challenges": "60-second-original-expiry-and-replay-tombstones",
+    "audit": "400-days-minimal-no-tokens-codes-or-complete-bodies",
+    "accepted_work": "existing-owning-domain-until-definitive-outcome"
+  },
+  "refusal_status": {
+    "invalid": 400,
+    "proof_invalid": 401,
+    "authentication_required": 401,
+    "authorization_denied": 403,
+    "operation_conflict": 409,
+    "attempt_conflict": 409,
+    "provider_unavailable": 409,
+    "attempt_limit": 409,
+    "expired": 410,
+    "not_ready": 409,
+    "rate_limited": 429,
+    "temporarily_unavailable": 503
+  },
+  "messages": {
+    "definitions": "schemas/browser-authentication-selection/v3/definitions.schema.json",
+    "projection": "schemas/browser-authentication-selection/v3/projection.schema.json",
+    "read-request": "schemas/browser-authentication-selection/v3/read-request.schema.json",
+    "read-response": "schemas/browser-authentication-selection/v3/read-response.schema.json",
+    "select-request": "schemas/browser-authentication-selection/v3/select-request.schema.json",
+    "select-response": "schemas/browser-authentication-selection/v3/select-response.schema.json",
+    "cancel-request": "schemas/browser-authentication-selection/v3/cancel-request.schema.json",
+    "cancel-response": "schemas/browser-authentication-selection/v3/cancel-response.schema.json",
+    "error": "schemas/browser-authentication-selection/v3/error.schema.json"
+  },
+  "legacy_adapters_required": false,
+  "admitted_browser_reentry": "none; reconcile-committed-owner-fact-only",
+  "routing_context": "default-Entra-only; no-federation-routing-qualification",
+  "routing_authority": "none-account-admission-remains-Entra-verified",
+  "provider_subject": "upstream-IDs-are-never-merged-by-email-or-display-name",
+  "selection_dispatch": "at-most-once-per-child; expired-or-consumed-Identity-callback-does-not-reopen-child; retry-requires-explicit-successor",
+  "committed": "all-actions-false; no-grants-or-credentials-in-projection"
+}

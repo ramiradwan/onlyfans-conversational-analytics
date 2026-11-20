@@ -1,0 +1,32 @@
+{
+  "profile": "urn:bridge-clean:bootstrap-recovery:v3",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "request_max_bytes": 16384,
+  "response_max_bytes": 49152,
+  "proof_profile": "urn:bridge-clean:provisioning-proof:v1",
+  "proof_purpose": "bootstrap-recovery",
+  "proof_audience": "urn:bridge-clean:commercial-control-plane:provisioning-v2",
+  "route": "/v1/installations/{installation_id}/bootstrap:recover",
+  "proof_binding": "canonical-inner-request-including-profile-method-path-exact-registered-key",
+  "source_profile": "urn:bridge-clean:installation-claim:v2",
+  "maximum_enrollment_age_seconds": 3196800,
+  "deadline_rule": "now-strictly-before-original-enrolled-at-plus-3196800-never-extended",
+  "authority": "current-exact-enrolled-organization-membership-unrevoked-installation-and-newest-exact-subject-grants",
+  "membership_reduction_exception": "only-existing-membership-refresh-policy",
+  "refusal_precedence": [
+    "scope-and-proof",
+    "withdrawn-authority",
+    "fixed-deadline"
+  ],
+  "refusals": {
+    "bootstrap_authentication_required": 403,
+    "bootstrap_authority_withdrawn": 403
+  },
+  "legacy_v2": "same-current-admission-boundaries-no-unbounded-fallback",
+  "retention_class": "security-audit",
+  "messages": {
+    "request": "schemas/provisioning/v3/bootstrap-recovery-request.schema.json",
+    "response": "schemas/provisioning/v3/bootstrap-recovery-response.schema.json",
+    "refusal": "schemas/provisioning/v3/bootstrap-recovery-refusal.schema.json"
+  }
+}

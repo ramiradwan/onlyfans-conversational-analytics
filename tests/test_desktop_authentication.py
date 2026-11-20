@@ -357,7 +357,7 @@ async def test_setup_owners_probe_only_through_the_operation_read_guard():
         return value
     runtime = runtime_owner(activation=activation, setup_owner=setup)
     runtime_child = {"operation_id": "runtime-child", "action": "auth.select", "owner_scope_json": json.dumps({"actor": {}})}
-    review = {"operation_id": "review", "action": "activation.review", "owner_scope_json": "{}"}
+    review = {"operation_id": "review", "journey_id": "review-journey", "action": "activation.review", "owner_scope_json": "{}"}
     connect = {"operation_id": "connect", "action": "account.connect", "owner_scope_json": "{}"}
     for operation in (runtime_child, review, child, connect):
         assert RuntimeSetupOwner.probe_interval(runtime, operation) == 2
@@ -836,6 +836,8 @@ async def test_guards_and_binding_check_the_persisted_key_without_provider_work(
     owner = ProvisioningSetupOwner.__new__(ProvisioningSetupOwner)
     owner.store = SimpleNamespace(database=ceremonies.store.database, installation_key_reference=lambda **_: reference[0])
     owner.ceremonies = ceremonies
+    from app.persistence.source_replacement_reservations import SourceReplacementReservations
+    owner.source_replacements = SimpleNamespace(reservations=SourceReplacementReservations(ceremonies.store))
     owner.key = SimpleNamespace(reopen_existing=lambda: pytest.fail("provider key work in a guard"))
     owner._read_guard({"operation_id": parent["operation_id"]})
     journey = SimpleNamespace(kind="initial-enrollment", installation_id="installation", operation_id="source-operation",
@@ -856,7 +858,7 @@ async def test_guards_and_binding_check_the_persisted_key_without_provider_work(
 
 @pytest.mark.asyncio
 async def test_prefetch_renews_a_due_or_consumed_challenge_and_keeps_a_fresh_one(auth):
-    _, _, authentication, client, parent, _, _ = auth
+    _, ceremonies, authentication, client, parent, _, _ = auth
     tickets = []
 
     def prefetch_read(request, *, before_send):
@@ -869,15 +871,16 @@ async def test_prefetch_renews_a_due_or_consumed_challenge_and_keeps_a_fresh_one
     client.renewal_delay = lambda ticket: ticket.delay
     guards = []
     operation_id = parent["operation_id"]
+    hosted_id = ceremonies.row(operation_id)["hosted_operation_id"]
     assert await authentication.prefetch(operation_id, authorize=lambda: guards.append(True)) == 40
     assert await authentication.prefetch(operation_id, authorize=lambda: guards.append(True)) == 40
-    assert len(tickets) == 1 and authentication._prefetched[operation_id] is tickets[0]
+    assert len(tickets) == 1 and authentication._prefetched[hosted_id] is tickets[0]
     tickets[0].delay = 0.0
     assert await authentication.prefetch(operation_id, authorize=lambda: guards.append(True)) == 40
-    assert len(tickets) == 2 and authentication._prefetched[operation_id] is tickets[1]
-    authentication._prefetched.pop(operation_id)
+    assert len(tickets) == 2 and authentication._prefetched[hosted_id] is tickets[1]
+    authentication._prefetched.pop(hosted_id)
     assert await authentication.prefetch(operation_id, authorize=lambda: guards.append(True)) == 40
-    assert len(tickets) == 3 and authentication._prefetched[operation_id] is tickets[2]
+    assert len(tickets) == 3 and authentication._prefetched[hosted_id] is tickets[2]
     assert len(guards) == 3
 
 
@@ -1381,3 +1384,68 @@ async def test_a_fresh_sign_in_writes_its_reservations_off_the_event_loop_before
     # The ceremony and the command are each recorded before their send.
     assert order.index("write") < order.index("prepare-send") < order.index("select-send")
     assert "write" in order[order.index("prepare-send"):order.index("select-send")]
+
+
+@pytest.mark.asyncio
+async def test_replacement_fences_old_authentication_task_command_projection_and_held_read(auth):
+    from test_desktop_ceremonies import ReplacementClient, replacement_predecessor
+    coordinator, ceremonies, authentication, client, parent, _, _ = auth
+    operation, browser, admitted = await close_task(auth)
+    local_id = parent["operation_id"]
+    old = ceremonies.row(local_id)
+    old_projection = await authentication.refresh(local_id, authorize=authorized)
+    ordinary = ceremonies.client
+    ordinary.state, ordinary.revision = "retired", 2
+    await ceremonies.reconcile(local_id, authorize=authorized)
+    predecessor = replacement_predecessor(ceremonies, parent)
+    replacement = ReplacementClient(ordinary)
+    ceremonies.replacement_client = replacement
+    # Keep a held challenge for the predecessor; a successor read must not use it.
+    authentication._prefetched[old["hosted_operation_id"]] = object()
+    await ceremonies.replace(local_id, predecessor, authorize=authorized)
+    successor = ceremonies.row(local_id)
+    assert successor["hosted_operation_id"] != old["hosted_operation_id"]
+    assert authentication.presentation(parent["journey_id"], "account.connect") is None
+    assert ceremonies.browser_entry(operation["operation_id"]) is None
+    assert ceremonies.task_row(operation["operation_id"]) is None
+    with coordinator.store.database.read() as connection:
+        assert connection.execute("SELECT state FROM desktop_browser_tasks WHERE task_id=?",
+            (browser.task_id,)).fetchone()[0] == "cancelled"
+        assert connection.execute("SELECT state FROM desktop_setup_operations WHERE operation_id=?",
+            (operation["operation_id"],)).fetchone()[0] == "refused"
+    with pytest.raises(HostedGrantUnavailable):
+        authentication._save(old, old_projection)
+    before = copy.deepcopy(client.calls)
+    with pytest.raises(HostedGrantUnavailable):
+        await authentication.execute(operation, authorize=authorized, read_guard=authorized, reconcile=False)
+    assert client.calls == before
+    # Simulate the Provider's fresh selection state on the verified successor.
+    client.current = None
+    fresh = await authentication.refresh(local_id, authorize=authorized)
+    assert fresh["operation_id"] == successor["hosted_operation_id"]
+    assert fresh["state"] == "selection-required"
+    assert authentication._prefetched[old["hosted_operation_id"]] is not None
+    assert authentication.presentation(parent["journey_id"], "account.connect")["actions"]["select"]
+    command, _ = accept(auth, provider="default")
+    assert (await authentication.execute(command, authorize=authorized, read_guard=authorized, reconcile=False)).state == "waiting"
+    assert client.calls[-1][1]["operation_id"] == successor["hosted_operation_id"]
+
+
+@pytest.mark.asyncio
+async def test_replacement_fences_predecessor_auth_command_before_first_dispatch(auth):
+    from test_desktop_ceremonies import ReplacementClient, replacement_predecessor
+    coordinator, ceremonies, authentication, client, parent, _, _ = auth
+    operation, _ = accept(auth)
+    local_id = parent["operation_id"]
+    ordinary = ceremonies.client
+    ordinary.state, ordinary.revision = "retired", 2
+    await ceremonies.reconcile(local_id, authorize=authorized)
+    ceremonies.replacement_client = ReplacementClient(ordinary)
+    await ceremonies.replace(local_id, replacement_predecessor(ceremonies, parent), authorize=authorized)
+    before = copy.deepcopy(client.calls)
+    with pytest.raises(HostedGrantUnavailable):
+        await authentication.execute(operation, authorize=authorized, read_guard=authorized, reconcile=False)
+    assert client.calls == before
+    with coordinator.store.database.read() as connection:
+        assert connection.execute("SELECT 1 FROM desktop_authentication_commands WHERE operation_id=?",
+            (operation["operation_id"],)).fetchone() is None

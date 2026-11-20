@@ -51,6 +51,9 @@ def _is_kernel_path(path: Path) -> bool:
         "persistence/text_analysis_reissue.py",
         "persistence/authoritative_pair.py",
         "persistence/authoritative_backup.py",
+        "persistence/initial_replacement_recovery.py",
+        "persistence/installation_authority_recovery.py",
+        "persistence/lost_enrollment_evidence.py",
     }
 
 
@@ -175,7 +178,10 @@ def test_text_analysis_authority_persistence_has_an_exact_kernel_owner(tmp_path:
     ]
 
 
-@pytest.mark.parametrize('owner', ['authoritative_pair', 'authoritative_backup', 'text_analysis_reissue'])
+@pytest.mark.parametrize('owner', [
+    'authoritative_pair', 'authoritative_backup', 'text_analysis_reissue',
+    'initial_replacement_recovery', 'installation_authority_recovery', 'lost_enrollment_evidence',
+])
 def test_authoritative_store_security_has_only_exact_kernel_owners(tmp_path: Path, owner: str) -> None:
     root = tmp_path / 'app'
     persistence = root / 'persistence'

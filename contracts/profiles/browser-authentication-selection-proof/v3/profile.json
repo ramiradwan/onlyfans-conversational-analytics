@@ -1,0 +1,43 @@
+{
+  "profile": "urn:bridge-clean:browser-authentication-selection-proof:v3",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "domain": "BRIDGE-CLEAN-BROWSER-AUTHENTICATION-SELECTION-PROOF-V3\u0000",
+  "algorithm": "ES256",
+  "signature_encoding": "ieee-p1363-low-s",
+  "audience": "urn:bridge-clean:commercial-control-plane:browser-authentication-selection",
+  "canonical_request": "RFC8785(request)",
+  "request_digest": "SHA-256",
+  "field_encoding": "uint32be-length-prefixed",
+  "fields": [
+    "challenge-raw32",
+    "method-utf8",
+    "path-utf8",
+    "request-digest-raw32",
+    "purpose-utf8",
+    "RFC7638-key-thumbprint-raw32",
+    "audience-utf8"
+  ],
+  "challenge_ttl_seconds": 60,
+  "challenge_single_use": true,
+  "challenge_disclosure": "uniform-nonauthorizing-unknown-revoked-wrong-scope",
+  "key_resolution": "exact-existing-recovery-owner-installation-key; validate-current-authority",
+  "cross_domain_detection": "forbidden",
+  "purposes": {
+    "browser-authentication-read": {
+      "method": "POST",
+      "path": "/v3/onboarding/browser-authentication-selections:read"
+    },
+    "browser-authentication-select": {
+      "method": "POST",
+      "path": "/v3/onboarding/browser-authentication-selections:select"
+    },
+    "browser-authentication-cancel": {
+      "method": "POST",
+      "path": "/v3/onboarding/browser-authentication-selections:cancel"
+    }
+  },
+  "messages": {
+    "proof-challenge-request": "schemas/browser-authentication-selection/v3/proof-challenge-request.schema.json",
+    "proof-challenge-response": "schemas/browser-authentication-selection/v3/proof-challenge-response.schema.json"
+  }
+}

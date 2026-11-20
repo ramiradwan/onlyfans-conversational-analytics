@@ -1,0 +1,35 @@
+{
+  "profile": "urn:bridge-clean:browser-ceremony-replacement:v1",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "proof_profile": "urn:bridge-clean:browser-ceremony-replacement-proof:v1",
+  "request_max_bytes": 8192,
+  "response_max_bytes": 16384,
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "predecessor_profile": "urn:bridge-clean:browser-ceremony:v1",
+  "admission": "exact-retained-inactive-predecessor-current-lineage-live-original-source-no-accepted-domain-mutation",
+  "binding": "Provider derives original binding changing only correlation attempt_id; source owner continues to enforce established customer; no new account organization creator key purpose offer activation or completion target",
+  "replacement": "fresh explicit successor operation UUID and correlation; distinct from predecessor; atomically record one exact successor and fence predecessor; exact retry returns only same eligible active successor; different successor conflicts",
+  "deadline": "min(original-source-deadline,successor-created-at-plus-1800)-never-renew-source",
+  "committed_or_accepted": "not_ready; reconcile original operation with existing owner, never accept another decision",
+  "unresolved": "not_ready; no assumption of rollback from absent evidence",
+  "legacy_prepare": "existing exact retry unchanged; new prepare may not bypass existing presentation lineage for same source operation and purpose",
+  "retention": "retain minimum lineage through source deadline, no expired locator or authentication material; no replacement after predecessor evidence absent; at most original-source-creation-plus-90-days",
+  "messages": {
+    "definitions": "schemas/browser-ceremony-replacement/v1/definitions.schema.json",
+    "replace-request": "schemas/browser-ceremony-replacement/v1/replace-request.schema.json",
+    "replace-response": "schemas/browser-ceremony-replacement/v1/replace-response.schema.json",
+    "error": "schemas/browser-ceremony-replacement/v1/error.schema.json"
+  },
+  "refusal_status": {
+    "invalid": 400,
+    "proof_invalid": 401,
+    "authorization_denied": 403,
+    "operation_conflict": 409,
+    "not_ready": 409,
+    "expired": 410,
+    "rate_limited": 429,
+    "temporarily_unavailable": 503
+  },
+  "response_cache_control": "no-store"
+}

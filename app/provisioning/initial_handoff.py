@@ -70,13 +70,17 @@ class InitialInstallationEnrollment:
         self._tasks = {}
         self._lock = asyncio.Lock()
         self._effects = OwnerEffects()
+        self._original_effects = OwnerEffects()
+        from app.persistence.initial_replacement_recovery import InitialReplacementRecovery
+        self.original_recovery = InitialReplacementRecovery(store, hosted_origin)
         self._stopped = False
 
     def accepted_work(self):
-        return self._effects.accepted_work()
+        return self._effects.accepted_work() + self._original_effects.accepted_work()
 
     def bind_effect_gate(self, lock, guard):
         self._effects.bind_effect_gate(lock, guard)
+        self._original_effects.bind_effect_gate(lock, lambda _: None)
 
     async def prepare(self, journey_id: str, *, resume: bool = True) -> dict:
         """Prepare or reuse the handoff. With resume=False the caller resumes its wait later."""
@@ -116,7 +120,7 @@ class InitialInstallationEnrollment:
             if row["prepare_json"] is not None:
                 request = json.loads(row["prepare_json"])
             self._current_update(journey_id, state="preparing", operation_id=operation,
-                prepare_json=json.dumps(request, separators=(",", ":")))
+                prepare_json=json.dumps(request, separators=(",", ":")), retain_prepare=True)
             return request
         # The request is durable before it is sent. The write runs off the event loop.
         with timing.phase("handoff-prepare", "persist"):
@@ -142,7 +146,7 @@ class InitialInstallationEnrollment:
             raise
         row = await asyncio.to_thread(self._current_update, journey_id, state="waiting",
                                       handoff_reference=prepared["reference"], handoff_expires_at=prepared["expires_at"],
-                                      reason=None)
+                                      reason=None, retain_result=True)
         events.publish()
         if resume:
             self.resume(journey_id)
@@ -354,8 +358,8 @@ class InitialInstallationEnrollment:
             self.journeys.update(journey_id, state="waiting", reason=current["reason"])
         events.publish()
 
-    def _record_claim(self, row: dict, value: dict) -> None:
-        key = self.client.key.ensure_ready()
+    def _record_claim(self, row: dict, value: dict, *, key=None) -> None:
+        key = self.client.key.ensure_ready() if key is None else key
         scope = json.loads(row["scope_json"]) if row["scope_json"] else None
         if (value.get("installation_id") != row["installation_id"]
                 or value.get("installation_key_id") != key.installation_key_id
@@ -364,11 +368,110 @@ class InitialInstallationEnrollment:
                 or any(value.get(name) != scope[name] for name in ("organization_id", "onboarding_transaction_id"))):
             raise HostedGrantUnavailable("Initial receipt binding mismatch")
         existing = self.store.claim_submission(value["claim_id"])
+        if existing is not None and (existing.installation_id != value["installation_id"]
+                or existing.organization_id != value["organization_id"]
+                or existing.onboarding_transaction_id != value["onboarding_transaction_id"]
+                or existing.claim_profile != "urn:bridge-clean:installation-claim:v2"
+                or existing.state.value == "refused"):
+            raise HostedGrantUnavailable("Original claim changed")
         if existing is None:
             self.store.record_claim_submission(ClaimSubmission(
                 claim_id=value["claim_id"], onboarding_transaction_id=value["onboarding_transaction_id"],
                 organization_id=value["organization_id"], installation_id=row["installation_id"],
                 submitted_at=self.store._now(), claim_profile="urn:bridge-clean:installation-claim:v2"))
+
+    def original_recovery_due(self, operation, *, authorize):
+        from app.persistence.initial_replacement_recovery import MAX_ATTEMPTS
+        try:
+            with self.store.database.read() as connection:
+                context = self.original_recovery.context(connection, operation, authorize=authorize)
+            journal = context["journal"]
+            return journal is None or bool(journal["completed"] or (
+                not journal["blocked"] and journal["attempts"] < MAX_ATTEMPTS and
+                (journal["receipt_json"] is None or context["scope"] is not None)))
+        except (HostedGrantUnavailable, ValueError, KeyError):
+            return False
+
+    async def reconcile_original_replacement(self, operation, *, authorize):
+        """Read the original receipt, never resubmit the expired completion."""
+        from app.security.hosted_grants import GrantVerificationRefused
+        from app.security.installation_key import InstallationKeyError
+        async with self._lock:
+            if self._stopped:
+                return None
+            try:
+                result = await self._original_effects.run(self._recover_original_replacement, operation,
+                    authorize=authorize, journey_id=json.loads(operation["owner_scope_json"])["source_replacement"]["source_journey_id"])
+            except (HostedGrantUnavailable, GrantVerificationRefused, InstallationKeyError, ValueError, KeyError):
+                return None
+            if result is not None:
+                self.resume(result)
+                events.publish()
+            return result
+
+    def _recover_original_replacement(self, operation, *, authorize):
+        from app.security.installation_continuation import signing_reference
+        from app.security.hosted_grants import BootstrapRecovery, BootstrapRecoveryRefused
+        from app.security.initial_handoff import InitialHandoffRefused, timestamp
+        recovery = self.original_recovery
+        with self.store.database.transaction() as connection:
+            context = recovery.context(connection, operation, authorize=authorize)
+            if context["journal"] is not None and context["journal"]["completed"]:
+                return context["evidence"]["journey_id"]
+            context = recovery.claim(connection, operation, authorize=authorize)
+        if context is None:
+            return None
+        def guard():
+            with self.store.database.read() as connection:
+                recovery.guard(connection, operation, context, authorize=authorize)
+        guard()
+        key = signing_reference(self.client.key)
+        if (key.installation_key_id, key.installation_key_jkt) != (
+                context["key"].installation_key_id, context["key"].installation_key_jkt):
+            raise HostedGrantUnavailable("Original enrollment key changed")
+        original = context["evidence"]["operation_id"]
+        raw = context["journal"]["receipt_json"]
+        if raw is None:
+            # The accepted decision ID is deliberately not a completion ID.
+            # Product's original completion always used its prepare operation ID.
+            try:
+                receipt = self.client.receipt({"profile": PROFILE, "operation_id": original,
+                    "installation_id": context["evidence"]["installation_id"], "installation_key_id": key.installation_key_id},
+                    before_send=guard, key=key)
+            except InitialHandoffRefused:
+                if context["outcome"]["status"] == "committed":
+                    with self.store.database.transaction() as connection:
+                        recovery.block(connection, operation, context, authorize=authorize)
+                return None
+            with self.store.database.transaction() as connection:
+                context = recovery.retain_receipt(connection, operation, context, receipt, authorize=authorize)
+        else:
+            receipt = recovery.validate_original_receipt(context, json.loads(raw))
+        if context["scope"] is None:
+            return None
+        with self.store.database.read() as connection:
+            recovery._check_claims(connection, recovery.guard(connection, operation, context, authorize=authorize), receipt)
+        row = {"journey_id": context["evidence"]["journey_id"], "operation_id": original,
+            "installation_id": context["evidence"]["installation_id"], "scope_json": json.dumps(context["scope"])}
+        guard()
+        self._record_claim(row, receipt, key=key)
+        adopted = []
+        def adopt_verified(grants, *, enrolled_at, recovered_at):
+            adopted.append(recovery.adopt_bootstrap(operation, context, grants, enrolled_at=enrolled_at,
+                recovered_at=recovered_at, authorize=authorize))
+        try:
+            result = self.grants.recover_bootstrap_v3(claim_id=receipt["claim_id"], recovery_request_id=original,
+                before_send=guard, existing_key=key, expected_enrolled_at=timestamp(receipt["consumed_at"]),
+                adopt_verified=adopt_verified)
+        except BootstrapRecoveryRefused:
+            # A refused recovery is not noncommit and must not start enrollment.
+            with self.store.database.transaction() as connection:
+                recovery.block(connection, operation, context, authorize=authorize)
+            return None
+        if (not isinstance(result, BootstrapRecovery) or result.enrolled_at != timestamp(receipt["consumed_at"])
+                or adopted != [context["evidence"]["journey_id"]]):
+            raise HostedGrantUnavailable("Original bootstrap result changed")
+        return adopted[0]
 
     async def _recover(self, row: dict) -> None:
         key = await self._effects.run(self.client.key.ensure_ready, journey_id=row["journey_id"])
@@ -378,8 +481,10 @@ class InitialInstallationEnrollment:
         if receipt["operation_id"] != row["operation_id"]:
             raise HostedGrantUnavailable("Initial operation mismatch")
         self._record_claim(row, receipt)
-        await self._effects.run(self.grants.recover_bootstrap_v2, claim_id=receipt["claim_id"],
-                                recovery_request_id=self.journeys.new_operation(), journey_id=row["journey_id"])
+        # The existing durable handoff operation ID is also the stable
+        # purpose-separated bootstrap recovery correlation. No new ID on a lost reply.
+        await self._effects.run(self.grants.recover_bootstrap_v3, claim_id=receipt["claim_id"],
+                                recovery_request_id=row["operation_id"], journey_id=row["journey_id"])
         row = self.journeys.update(row["journey_id"], state="completed", reason=None)
         self._candidate(row)
         events.publish()
@@ -534,11 +639,13 @@ class InitialInstallationEnrollment:
 
     async def stop(self) -> None:
         self._effects.close_admission()
+        self._original_effects.close_admission()
         self._stopped = True
         tasks = tuple(self._tasks.values())
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await self._effects.drain()
+        await self._original_effects.drain()
         if self._closes_transport:
             self.grants.close()

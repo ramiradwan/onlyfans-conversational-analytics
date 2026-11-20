@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/installation-authority-recovery/v1/deliver-response.schema.json",
+  "title": "Installation authority recovery v1 deliver-response",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "recovery_id",
+        "scope_digest",
+        "status",
+        "organization_id",
+        "installation_id",
+        "installation_key_id",
+        "installation_key_jkt",
+        "enrollment_transaction_id",
+        "enrolled_at",
+        "committed_at",
+        "creator_scope",
+        "grants"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:installation-authority-recovery:v1"
+        },
+        "recovery_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "scope_digest": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "status": {
+          "const": "committed"
+        },
+        "organization_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_key_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"
+        },
+        "installation_key_jkt": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "enrollment_transaction_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "enrolled_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "committed_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "creator_scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "none"
+            }
+          }
+        },
+        "grants": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "installation_grant",
+            "membership_snapshot"
+          ],
+          "properties": {
+            "installation_grant": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+            },
+            "membership_snapshot": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "recovery_id",
+        "scope_digest",
+        "status",
+        "organization_id",
+        "installation_id",
+        "installation_key_id",
+        "installation_key_jkt",
+        "enrollment_transaction_id",
+        "enrolled_at",
+        "committed_at",
+        "creator_scope",
+        "grants"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:installation-authority-recovery:v1"
+        },
+        "recovery_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "scope_digest": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "status": {
+          "const": "committed"
+        },
+        "organization_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_key_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"
+        },
+        "installation_key_jkt": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "enrollment_transaction_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "enrolled_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "committed_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "creator_scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "creator_account_id",
+            "approval_id",
+            "approval_revision"
+          ],
+          "properties": {
+            "kind": {
+              "const": "approved"
+            },
+            "creator_account_id": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "approval_id": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+            },
+            "approval_revision": {
+              "const": 1
+            }
+          }
+        },
+        "grants": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "installation_grant",
+            "membership_snapshot",
+            "creator_account_binding"
+          ],
+          "properties": {
+            "installation_grant": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+            },
+            "membership_snapshot": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+            },
+            "creator_account_binding": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

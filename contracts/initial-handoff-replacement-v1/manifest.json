@@ -1,0 +1,13 @@
+{
+  "files": [
+    {
+      "path": "cases.json",
+      "sha256": "01c37c45fcb4bca0bd5f606df00fa70b4e14fada01efaf95c849820765c70304",
+      "size": 18044
+    }
+  ],
+  "generator": "tools/generate_initial_handoff_replacement_vectors.py",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "profile": "urn:bridge-clean:initial-handoff-replacement-vectors:v1",
+  "test_only": true
+}

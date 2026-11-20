@@ -1,0 +1,38 @@
+{
+  "profile": "urn:bridge-clean:registered-continuation-replacement:v1",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "proof_profile": "urn:bridge-clean:registered-continuation-replacement-proof:v1",
+  "request_max_bytes": 8192,
+  "response_max_bytes": 16384,
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "predecessor_profile": "urn:bridge-clean:installation-setup-continuation:v2",
+  "exact_predecessor": "retained operation and continuation IDs and digest of canonical original v2 prepare with exact saved scope; registered key proof",
+  "admission": "expired exact source with complete retained history, current installation and saved approval authority, current established actor if present; no commercial admission; one successor atomically",
+  "identity": "preserve original saved scope, established actor, starter admission; no transferred session or decision; normal current customer admission remains mandatory",
+  "approval": "reuse original durable approval if present; never create an additional approval by replacement",
+  "commercial": "commercial_reconciliation_required if original source entered activation; no successor, changed context, offer or consent",
+  "replacement": "one explicit distinct successor operation UUID; exact fresh-proof retry returns same eligible successor; competing successor conflicts",
+  "deadline": "fresh 1800-second v2 source within original evidence retention; predecessor never renewed",
+  "unresolved": "incomplete or absent predecessor evidence is not rollback; no successor",
+  "legacy_prepare": "exact live retries unchanged; ordinary v2 prepare must not bypass a retained expired exact scope or successor; independent legacy v1 semantics unchanged",
+  "retention": "minimum source IDs, prepare/scope commitments, established actor identifiers, commercial admission flag, successor IDs, policy; no expired locator, session or credential; maximum 90 days from original source creation",
+  "messages": {
+    "definitions": "schemas/registered-continuation-replacement/v1/definitions.schema.json",
+    "replace-request": "schemas/registered-continuation-replacement/v1/replace-request.schema.json",
+    "replace-response": "schemas/registered-continuation-replacement/v1/replace-response.schema.json",
+    "error": "schemas/registered-continuation-replacement/v1/error.schema.json"
+  },
+  "refusal_status": {
+    "invalid": 400,
+    "proof_invalid": 401,
+    "authorization_denied": 403,
+    "operation_conflict": 409,
+    "not_ready": 409,
+    "commercial_reconciliation_required": 409,
+    "expired": 410,
+    "rate_limited": 429,
+    "temporarily_unavailable": 503
+  },
+  "response_cache_control": "no-store"
+}

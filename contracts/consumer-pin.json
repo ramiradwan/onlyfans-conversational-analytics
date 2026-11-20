@@ -1,5 +1,5 @@
 {
-  "aggregate_bundle_sha256": "d1ccf95e17cc3c27cf0312f7409fc17aaa347d65e6775105380fd86b99a8af1a",
+  "aggregate_bundle_sha256": "807e30c61bf9135fa184c6c76b7f8eb24d0f27877db4550ba63b41b53246c6b6",
   "conformance_manifests": [
     {
       "export": "installation-setup-continuation-v1",
@@ -110,11 +110,46 @@
       "export": "text-analysis-license-reissue-response-conformance-v1",
       "path": "text-analysis-license-reissue-response-conformance-v1/manifest.json",
       "sha256": "caefdad92b2ef29058b2bb9876b28df16756280658e5010ca9725af55a1b08c5"
+    },
+    {
+      "export": "bootstrap-recovery-v3",
+      "path": "bootstrap-recovery-v3/manifest.json",
+      "sha256": "aa8c7ab50a57f0e5eb721322c0b1baba55eb9a8e54df103481edefd58e953f24"
+    },
+    {
+      "export": "browser-ceremony-replacement-v1",
+      "path": "browser-ceremony-replacement-v1/manifest.json",
+      "sha256": "9f9d0bc18895a965dbcda99d20282204f3b7a214803867b4c3b36148c05d0d44"
+    },
+    {
+      "export": "initial-handoff-replacement-v1",
+      "path": "initial-handoff-replacement-v1/manifest.json",
+      "sha256": "04f890c86ce37533e2301d629b2250a2ee7b5d7e958090b041906124a228476f"
+    },
+    {
+      "export": "registered-continuation-replacement-v1",
+      "path": "registered-continuation-replacement-v1/manifest.json",
+      "sha256": "11fd0dd5e99f953d605196d9bed8a9e7d261fd8ace7c9d32da67b8015e5d65d2"
+    },
+    {
+      "export": "installation-authority-recovery-v1",
+      "path": "installation-authority-recovery-v1/manifest.json",
+      "sha256": "aadc99a745320dd9bcbb076592cefee4670a505cb01c8f80538b07f2e0a74358"
+    },
+    {
+      "export": "complimentary-activation-reconciliation-v1",
+      "path": "complimentary-activation-reconciliation-v1/manifest.json",
+      "sha256": "0abfffbf6b66ebb349083a54d9a8ec95f60b9ab9406820606477df08d6e17d7a"
+    },
+    {
+      "export": "complimentary-activation-review-replacement-v1",
+      "path": "complimentary-activation-review-replacement-v1/manifest.json",
+      "sha256": "c9d8c0eaab9ec0113ff1456a9745cbb63834ac091e735716bcc9898d52a520f7"
     }
   ],
   "consumer_pin_version": 4,
   "contract_manifest_path": "manifest.json",
-  "contract_manifest_sha256": "ba2cf309dc8b169dd4c6758f1f3603cd87124da623621217ed8e6a79c2c68cc6",
+  "contract_manifest_sha256": "6b504f6ae2939519ef004cdc4f557a7451f6aaa84dc7344b19a7c0e6af5a3d06",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -151,7 +186,14 @@
     "complimentary-onboarding-activation-v2",
     "text-analysis-license-reissue-v1",
     "text-analysis-license-reissue-v2",
-    "text-analysis-license-reissue-response-conformance-v1"
+    "text-analysis-license-reissue-response-conformance-v1",
+    "bootstrap-recovery-v3",
+    "browser-ceremony-replacement-v1",
+    "initial-handoff-replacement-v1",
+    "registered-continuation-replacement-v1",
+    "installation-authority-recovery-v1",
+    "complimentary-activation-reconciliation-v1",
+    "complimentary-activation-review-replacement-v1"
   ],
   "generator_versions": [
     {
@@ -194,22 +236,29 @@
       "sha256": "58d266fcee4f987091b67ee3adf6e517531606a226d35b75c5870b748908e504"
     }
   ],
-  "source_commit": "5e76aedc2e2c0bccdba657adbed3ddb9c91ad6ad",
+  "source_commit": "41061fc8c7e2148ecfda86531564a64e2f41bdef",
   "source_contract_manifest_path": "source-contract-manifest/contract-manifest.json",
-  "source_contract_manifest_sha256": "696f490f5967f8e278bc69d8ea00d79758de82b4a8f7f7e1a61bca221bf06914",
+  "source_contract_manifest_sha256": "605c147e2e1cd2b7aa866261aaad135008b1b16ae6bd1bb9cbfca17fb8df2b76",
   "source_repository": "ramiradwan/creator-platform-contracts",
-  "source_tree": "a5381514946ac4de5c11d8942193ace6769e547f",
+  "source_tree": "60620971820793872120a5abc16bfbae6f468982",
   "supported_profiles": [
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
+    "urn:bridge-clean:bootstrap-recovery:v3",
     "urn:bridge-clean:browser-authentication-selection-proof:v1",
     "urn:bridge-clean:browser-authentication-selection-proof:v2",
+    "urn:bridge-clean:browser-authentication-selection-proof:v3",
     "urn:bridge-clean:browser-authentication-selection:v1",
     "urn:bridge-clean:browser-authentication-selection:v2",
+    "urn:bridge-clean:browser-authentication-selection:v3",
     "urn:bridge-clean:browser-ceremony-proof:v1",
+    "urn:bridge-clean:browser-ceremony-proof:v2",
+    "urn:bridge-clean:browser-ceremony-replacement-proof:v1",
+    "urn:bridge-clean:browser-ceremony-replacement:v1",
     "urn:bridge-clean:browser-ceremony-wait-proof:v1",
     "urn:bridge-clean:browser-ceremony-wait:v1",
     "urn:bridge-clean:browser-ceremony:v1",
+    "urn:bridge-clean:browser-ceremony:v2",
     "urn:bridge-clean:capability-license-activation-package:v1",
     "urn:bridge-clean:capability-license-activation-proof:v1",
     "urn:bridge-clean:capability-license-activation:v1",
@@ -232,6 +281,10 @@
     "urn:bridge-clean:capability-purchase-session-proof:v1",
     "urn:bridge-clean:capability-purchase-session:v1",
     "urn:bridge-clean:companion-pairing:v1",
+    "urn:bridge-clean:complimentary-activation-reconciliation-proof:v1",
+    "urn:bridge-clean:complimentary-activation-reconciliation:v1",
+    "urn:bridge-clean:complimentary-activation-review-replacement-proof:v1",
+    "urn:bridge-clean:complimentary-activation-review-replacement:v1",
     "urn:bridge-clean:complimentary-onboarding-activation:v1",
     "urn:bridge-clean:complimentary-onboarding-activation:v2",
     "urn:bridge-clean:creator-association:v1",
@@ -239,10 +292,14 @@
     "urn:bridge-clean:desktop-decision:v1",
     "urn:bridge-clean:grant-profile:v1",
     "urn:bridge-clean:hosted-onboarding:v1",
+    "urn:bridge-clean:initial-handoff-replacement-proof:v1",
+    "urn:bridge-clean:initial-handoff-replacement:v1",
     "urn:bridge-clean:initial-installation-handoff-proof:v1",
     "urn:bridge-clean:initial-installation-handoff-proof:v2",
     "urn:bridge-clean:initial-installation-handoff:v1",
     "urn:bridge-clean:initial-installation-handoff:v2",
+    "urn:bridge-clean:installation-authority-recovery-proof:v1",
+    "urn:bridge-clean:installation-authority-recovery:v1",
     "urn:bridge-clean:installation-claim-package:v1",
     "urn:bridge-clean:installation-claim-package:v2",
     "urn:bridge-clean:installation-claim:v1",
@@ -256,6 +313,8 @@
     "urn:bridge-clean:onboarding-proof:v1",
     "urn:bridge-clean:onboarding-transfer:v1",
     "urn:bridge-clean:provisioning-proof:v1",
+    "urn:bridge-clean:registered-continuation-replacement-proof:v1",
+    "urn:bridge-clean:registered-continuation-replacement:v1",
     "urn:bridge-clean:release-descriptor:v1",
     "urn:bridge-clean:text-analysis-authority-delivery-proof:v1",
     "urn:bridge-clean:text-analysis-authority-delivery:v1",

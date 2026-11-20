@@ -244,6 +244,8 @@ class InitialHandoffClient:
         pieces = (_decode(challenge["challenge"]), b"POST", (PATH_PREFIX + operation).encode(), digest,
                   purpose.encode(), _decode(key.installation_key_jkt), _AUDIENCE)
         message = _DOMAIN + b"".join(len(piece).to_bytes(4, "big") + piece for piece in pieces)
+        if before_send is not None:
+            before_send()
         proof = self.key.sign_challenge(message)
         _require_proof_budget(started, self.monotonic())
         if (proof.installation_key_id != key.installation_key_id or proof.algorithm != "ES256"
@@ -275,8 +277,9 @@ class InitialHandoffClient:
             validate_receipt(result["receipt"])
         return result
 
-    def receipt(self, request: dict) -> dict:
-        result = self._request(PATH_PREFIX + "receipt", self.envelope("receipt", request), expected=200)
+    def receipt(self, request: dict, *, before_send=None, key=None) -> dict:
+        result = self._request(PATH_PREFIX + "receipt",
+            self.envelope("receipt", request, before_send=before_send, key=key), expected=200, before_send=before_send)
         if set(result) != {"profile", "status", "receipt"} or result.get("profile") != PROFILE or result.get("status") != "recovery-required":
             raise HostedGrantUnavailable("Invalid initial receipt")
         validate_receipt(result["receipt"])

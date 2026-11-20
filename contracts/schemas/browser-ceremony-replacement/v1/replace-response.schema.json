@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/browser-ceremony-replacement/v1/replace-response.schema.json",
+  "title": "Browser ceremony replacement replace-response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "predecessor_operation_id",
+    "successor",
+    "successor_binding"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:browser-ceremony-replacement:v1"
+    },
+    "predecessor_operation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "successor": {
+      "$ref": "../../browser-ceremony/v1/prepare-response.schema.json"
+    },
+    "successor_binding": {
+      "$ref": "../../browser-ceremony/v1/definitions.schema.json#/$defs/binding"
+    }
+  }
+}

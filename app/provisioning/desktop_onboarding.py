@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
+from contextlib import nullcontext
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -17,7 +18,7 @@ from app.provisioning.finalize import FinalizationRefused, FinalizationRequest, 
 from app.provisioning.owner_effects import OwnerEffects
 from app.provisioning.progress import scoped_durable_provisioning_progress
 from app.provisioning.state import local_setup_facts
-from app.provisioning.setup_sources import SetupSourceLifecycle
+from app.provisioning.setup_sources import SetupSourceLifecycle, PreparedSourceRecovery
 from app.security.browser_authentication import BrowserAuthenticationRefused
 from app.security.hosted_grants import HostedGrantUnavailable
 from app.security.installation_key import InstallationKeyError
@@ -31,15 +32,18 @@ class ProvisioningSetupOwner:
     automatic_finalization = True
 
     def __init__(self, store, *, browser_tasks, ceremonies, initial, registered, key,
-                 finalize, completion_ready, completed=lambda: None):
+                 finalize, completion_ready, completed=lambda: None, source_replacement_clients=None):
         self.store, self.browser_tasks, self.ceremonies = store, browser_tasks, ceremonies
         self.initial, self.registered, self.key = initial, registered, key
         self.finalize, self.completion_ready, self.completed = finalize, completion_ready, completed
         self.journeys = OnboardingJourneyStore(store)
         self.contexts = InstallationContinuationStore(store)
         self.sources = SetupSourceLifecycle(store, self.journeys, self.contexts)
+        self.source_replacements = PreparedSourceRecovery(self.sources, source_replacement_clients or {})
+        self.commercial_reconciliation = None
         self.progress = scoped_durable_provisioning_progress(lambda: store)
         self._effects = OwnerEffects()
+        self._source_replacement_effects = OwnerEffects()
         self._key_task, self._key_launch, self._key_closed = None, None, False
         # Effect threads recheck their original domain context at admission.
         from threading import RLock
@@ -73,8 +77,10 @@ class ProvisioningSetupOwner:
             return progress, creator, "account_mismatch"
         return progress, creator or observed, "none"
 
-    def _work(self):
+    def _work(self, *, exclude_source_replacement=False):
         result = list(self._effects.accepted_work())
+        if not exclude_source_replacement:
+            result.extend(self._source_replacement_effects.accepted_work())
         for owner in (self.initial, self.registered):
             if owner is not None:
                 result.extend(getattr(owner, "accepted_work", lambda: ())())
@@ -91,7 +97,7 @@ class ProvisioningSetupOwner:
                     "AND action<>'browser.access' AND state IN ('accepted','waiting','outcome_unknown')", (journey_id,)).fetchone():
                 return None
             try:
-                return self.sources.recovery_proposal(current, source, work=self._work()).scope()
+                return self._source_recovery_proposal(current, source)
             except ContinuationSelectionUnavailable as error:
                 if error.reason != "registration_required":
                     return None
@@ -108,23 +114,63 @@ class ProvisioningSetupOwner:
                         proposal = scope.get("source_recovery")
                         if (not isinstance(proposal, dict) or set(proposal) != {
                                 "source_journey_id", "classification_generation", "creator_account_id",
-                                "association_request_id", "initial"} or proposal["initial"] is not True
+                                "association_request_id", "initial"} | ({"replacement"} if "replacement" in proposal else set())
+                                or proposal["initial"] is not True
                                 or proposal["association_request_id"] is not None
                                 or proposal.get("source_journey_id") != scope["source_journey_id"]
                                 or proposal.get("creator_account_id") != scope["creator_account_id"]):
                             continue
+                    elif scope.get("source_replacement") is not None:
+                        original = scope["source_replacement"]
+                        if original["creator_account_id"] != scope["creator_account_id"]:
+                            continue
+                        outcome = self.source_replacements.reservations.outcome(current, original["replacement"]["operation_id"])
+                        if outcome is None or outcome["status"] != "prepared":
+                            scope = {**scope, "source_journey_id": original["source_journey_id"]}
                     scopes.append(scope)
                 creators = {scope["creator_account_id"] for scope in scopes
                     if self.sources.effective(scope["source_journey_id"], connection=current) == source}
                 if len(previous) > 128 or len(creators) != 1 or None in creators:
                     return None
                 try:
-                    return self.sources.recovery_proposal(current, source,
-                        initial_creator=creators.pop(), work=self._work()).scope()
-                except (ContinuationSelectionUnavailable, OnboardingJourneyUnavailable):
+                    return self._source_recovery_proposal(current, source, initial_creator=creators.pop())
+                except (ContinuationSelectionUnavailable, OnboardingJourneyUnavailable, HostedGrantUnavailable):
                     return None
-            except OnboardingJourneyUnavailable:
+            except (OnboardingJourneyUnavailable, HostedGrantUnavailable):
                 return None
+
+    def _source_recovery_proposal(self, connection, source, *, initial_creator=None):
+        try:
+            return self.sources.recovery_proposal(connection, source, work=self._work(), initial_creator=initial_creator).scope()
+        except OnboardingJourneyUnavailable:
+            prior = self.sources.resolve(source, connection=connection)
+            if prior is None or prior.kind not in self.source_replacements.clients:
+                raise
+            if initial_creator is None:
+                if prior.kind != "registered-continuation" or prior.binding is None:
+                    raise
+                creator = prior.binding.creator_account_id
+            else:
+                creator = initial_creator
+            proposal = self.source_replacements.proposal(connection, source, creator, work=self._work())
+            reservation = connection.execute("SELECT state FROM onboarding_source_replacement_reservations "
+                "WHERE predecessor_operation_id=?", (proposal["replacement"]["operation_id"],)).fetchone()
+            if reservation is not None and reservation["state"] != "reserved":
+                raise OnboardingJourneyUnavailable("workspace_changed")
+            return proposal
+
+    def _pending_source_replacement(self, journey_id, *, connection=None):
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as current:
+            rows = current.execute("SELECT operation_id,owner_scope_json FROM desktop_setup_operations WHERE journey_id=? "
+                "AND action='account.connect' AND state IN ('accepted','waiting','outcome_unknown')", (journey_id,)).fetchall()
+            if len(rows) != 1:
+                return None
+            selected = json.loads(rows[0]["owner_scope_json"])
+            proposal = selected.get("source_replacement")
+            if proposal is None:
+                return None
+            outcome = self.source_replacements.reservations.outcome(current, proposal["replacement"]["operation_id"])
+            return {**selected, "operation_id": rows[0]["operation_id"]} if outcome is None or outcome["status"] != "prepared" else None
 
     def read(self, journey_id, *, actor=None, connection=None):
         reason = "none" if self.browser_tasks.extension_id is not None else "browser_unavailable"
@@ -140,9 +186,10 @@ class ProvisioningSetupOwner:
         browser = self.browser_tasks.progress(journey_id)
         progress, creator, selection_reason = self._selection(journey, browser)
         recovery = self._recovery(journey_id, source_journey, connection=connection) if journey is None else None
-        if recovery is not None:
+        pending_replacement = self._pending_source_replacement(journey_id, connection=connection) if journey is None else None
+        if recovery is not None or pending_replacement is not None:
             reason = "none"
-            creator = recovery["creator_account_id"]
+            creator = (recovery if recovery is not None else pending_replacement)["creator_account_id"]
             if browser is not None and browser["creator_account_id"] not in {None, creator}:
                 selection_reason = "account_mismatch"
         if selection_reason != "none":
@@ -177,6 +224,35 @@ class ProvisioningSetupOwner:
                 self.ceremonies.decisions.status(journey_id, "account.connect", connection=connection),
             "desktop_authentication": None if self.ceremonies is None or self.ceremonies.authentication is None else
                 self.ceremonies.authentication.presentation(journey_id, "account.connect", connection=connection)}
+        if (recovery is not None and recovery.get("replacement") is not None) or pending_replacement is not None:
+            # No authentication choice or old decision can bypass prepared-source recovery.
+            scope.update(desktop_authentication=None, desktop_decision=None, desktop_decision_status=None)
+        if pending_replacement is not None:
+            scope["desktop_authentication"] = {"operation_id": pending_replacement["operation_id"],
+                "browser_operation_id": None, "state": "replacement-pending",
+                "choices": dict.fromkeys(("google", "microsoft-personal", "telegram", "tiktok", "default"), False),
+                "actions": dict.fromkeys(("select", "cancel", "open_browser", "switch_account"), False),
+                "authentication_attempt": None}
+            return DomainView(facts, scope, reason, permitted_actions=frozenset())
+        if (reason == "none" and self.ceremonies is not None and journey is not None
+                and facts["account"] != "verified"):
+            with (self.store.database.read() if connection is None else nullcontext(connection)) as current:
+                offer = self.ceremonies.replacement_offer(journey_id, connection=current)
+                if offer is not None:
+                    parent = current.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?",
+                        (offer["parent_operation_id"],)).fetchone()
+                    try:
+                        self._guard(dict(parent), connection=current)
+                        original = json.loads(parent["owner_scope_json"])
+                        binding = json.loads(self.ceremonies.row(parent["operation_id"], connection=current)["binding_json"])
+                        if (all(original.get(name) == scope.get(name) for name in (
+                                "source_journey_id", "installation_id", "creator_account_id"))
+                                and scope["key"] is not None and all(binding[name] == scope["key"][name] for name in (
+                                    "installation_key_id", "installation_key_jkt"))
+                                and binding["intended_creator_id"] == scope["creator_account_id"]):
+                            scope["ceremony_replacement"] = offer
+                    except (HostedGrantUnavailable, OnboardingJourneyUnavailable, ValueError):
+                        pass
         return DomainView(facts, scope, reason)
 
     def admit(self, connection, journey_id, *, action, scope, actor=None):
@@ -199,6 +275,20 @@ class ProvisioningSetupOwner:
                     if action != "account.connect" or self._recovery(journey_id,
                             self._source(journey_id, connection=connection), connection=connection) != recovery:
                         raise OnboardingJourneyUnavailable("workspace_changed")
+                    if recovery.get("replacement") is not None:
+                        if scope.get("authentication_intent") is not None:
+                            raise OnboardingJourneyUnavailable("workspace_changed")
+                        def authorize(*, connection):
+                            if self._recovery(journey_id, self._source(journey_id, connection=connection),
+                                    connection=connection) != recovery:
+                                raise OnboardingJourneyUnavailable("workspace_changed")
+                        reservation = self.source_replacements.reserve(connection, recovery, authorize=authorize, work=self._work())
+                        accepted.update(source_replacement=recovery, source_journey_id=str(uuid4()),
+                            journey_kind=recovery["replacement"]["kind"], journey_revision=0,
+                            installation_id=recovery["replacement"]["installation_id"],
+                            association_request_id=recovery["association_request_id"],
+                            successor_operation_id=reservation["successor_operation_id"])
+                        return AcceptedContext(journey_id, accepted)
                     if recovery.get("initial"):
                         if self.sources.recovery_proposal(connection, recovery["source_journey_id"],
                                 initial_creator=recovery["creator_account_id"], work=self._work()).scope() != recovery:
@@ -210,7 +300,7 @@ class ProvisioningSetupOwner:
                 else:
                     source = self.contexts.admit_desktop_context(connection,
                         journey_id=self._source(journey_id, connection=connection), reopen_key=self.key.reopen_existing)
-            except (ContinuationSelectionUnavailable, OnboardingJourneyUnavailable, InstallationKeyError):
+            except (ContinuationSelectionUnavailable, OnboardingJourneyUnavailable, InstallationKeyError, HostedGrantUnavailable):
                 raise CommandRefused("authority_unavailable") from None
             connection.execute("UPDATE desktop_setup_journeys SET source_journey_id=? WHERE journey_id=?", (source, journey_id))
             row = connection.execute("SELECT * FROM onboarding_journeys WHERE journey_id=?", (source,)).fetchone()
@@ -241,6 +331,17 @@ class ProvisioningSetupOwner:
         elif operation["action"] == "setup.finalize" and self._finalized(scope):
             return OperationResult("completed")
         elif operation["action"] == "account.connect":
+            replacement = scope.get("source_replacement")
+            if replacement is not None and replacement["replacement"]["kind"] == "initial-enrollment":
+                original = replacement["replacement"]["operation_id"]
+                with self.store.database.read() as connection:
+                    outcome = self.source_replacements.reservations.outcome(connection, original)
+                    if outcome is not None and outcome["status"] in {"accepted", "committed"}:
+                        recovered = connection.execute("SELECT completed FROM onboarding_initial_replacement_recoveries "
+                            "WHERE predecessor_operation_id=? AND desktop_operation_id=?", (original, operation["operation_id"])).fetchone()
+                        if recovered is None or not recovered["completed"]:
+                            return None
+                        scope = {**scope, "source_journey_id": replacement["source_journey_id"]}
             source = self.sources.resolve(scope["source_journey_id"])
             if source is not None and source.installation_id == scope["installation_id"]:
                 if source.state in {"expired", "revoked"}:
@@ -303,6 +404,22 @@ class ProvisioningSetupOwner:
                 or self.initial is None or self.registered is None):
             return False
         selected = json.loads(operation["owner_scope_json"])
+        replacement = selected.get("source_replacement")
+        if replacement is not None:
+            original = replacement["replacement"]["operation_id"]
+            with self.store.database.read() as connection:
+                outcome = self.source_replacements.reservations.outcome(connection, original)
+                if outcome is None:
+                    return connection.execute("SELECT 1 FROM onboarding_source_replacement_reservations "
+                        "WHERE predecessor_operation_id=? AND state='send-claimed' AND NOT EXISTS "
+                        "(SELECT 1 FROM onboarding_source_replacement_reconciliations WHERE predecessor_operation_id=?)",
+                        (original, original)).fetchone() is not None
+                if outcome["status"] != "prepared":
+                    if (replacement["replacement"]["kind"] == "initial-enrollment"
+                            and outcome["status"] in {"accepted", "committed"}):
+                        return self.initial.original_recovery_due(operation,
+                            authorize=lambda *, connection: self._original_initial_guard(operation, connection=connection))
+                    return False
         source = self.sources.resolve(selected["source_journey_id"])
         if source is None or source.state in {"expired", "revoked", "reauthentication-required"}:
             return False
@@ -497,7 +614,119 @@ class ProvisioningSetupOwner:
                 previous_journey_id=original, authorize=lambda: authorize(connection))
         return recovered["journey_id"]
 
+    def _replacement_command_guard(self, operation, *, connection=None):
+        with (self.store.database.read() if connection is None else nullcontext(connection)) as current:
+            self._guard(operation, connection=current)
+            selected = json.loads(operation["owner_scope_json"])
+            view = self.read(operation["journey_id"], connection=current)
+            if (view.reason != "none" or view.facts["account"] == "verified"
+                    or any(view.scope.get(name) != selected.get(name) for name in (
+                        "source_journey_id", "installation_id", "creator_account_id", "association_request_id",
+                        "key", "policy_revision"))):
+                raise HostedGrantUnavailable("Replacement selection changed")
+
+    def _source_replacement_guard(self, operation, *, connection):
+        selected = json.loads(operation["owner_scope_json"])
+        proposal = selected["source_replacement"]
+        saved = connection.execute("SELECT owner_scope_json,state FROM desktop_setup_operations WHERE operation_id=?",
+            (operation["operation_id"],)).fetchone()
+        root = connection.execute("SELECT source_journey_id FROM desktop_setup_journeys WHERE journey_id=?",
+            (operation["journey_id"],)).fetchone()
+        reservation = connection.execute("SELECT * FROM onboarding_source_replacement_reservations WHERE predecessor_operation_id=?",
+            (proposal["replacement"]["operation_id"],)).fetchone()
+        outcome = self.source_replacements.reservations.outcome(connection, proposal["replacement"]["operation_id"])
+        expected_source = selected["source_journey_id"] if outcome is not None and outcome["status"] == "prepared" else proposal["source_journey_id"]
+        key = self.store.installation_key_reference(connection=connection)
+        browser = self.browser_tasks.progress(operation["journey_id"])
+        if (saved is None or saved["state"] not in {"accepted", "waiting", "outcome_unknown"}
+                or saved["owner_scope_json"] != operation["owner_scope_json"] or root is None
+                or root["source_journey_id"] != expected_source or reservation is None
+                or reservation["successor_operation_id"] != selected["successor_operation_id"]
+                or key is None or selected["key"] != {"installation_key_id": key.installation_key_id,
+                    "installation_key_jkt": key.installation_key_jkt}
+                or self.store.read_epoch(connection).value != selected["policy_revision"]
+                or browser is not None and browser["creator_account_id"] not in {None, selected["creator_account_id"]}):
+            raise OnboardingJourneyUnavailable("workspace_changed")
+        if outcome is not None and outcome["status"] == "prepared" and outcome["successor_journey_id"] != expected_source:
+            raise OnboardingJourneyUnavailable("workspace_changed")
+
+    def _original_initial_guard(self, operation, *, connection):
+        """Retained original receipt admission does not revive the expired command."""
+        selected = json.loads(operation["owner_scope_json"])
+        proposal = selected["source_replacement"]
+        coords = proposal["replacement"]
+        saved = connection.execute("SELECT * FROM desktop_setup_operations WHERE operation_id=?",
+            (operation["operation_id"],)).fetchone()
+        root = connection.execute("SELECT source_journey_id FROM desktop_setup_journeys WHERE journey_id=?",
+            (operation["journey_id"],)).fetchone()
+        browser = self.browser_tasks.progress(operation["journey_id"])
+        if (saved is None or saved["action"] != "account.connect" or saved["journey_id"] != operation["journey_id"]
+                or saved["state"] not in {"accepted", "waiting", "outcome_unknown"}
+                or saved["owner_scope_json"] != operation["owner_scope_json"]
+                or root is None or root["source_journey_id"] != proposal["source_journey_id"]
+                or coords["kind"] != "initial-enrollment" or selected["journey_kind"] != coords["kind"]
+                or selected["installation_id"] != coords["installation_id"]
+                or selected["creator_account_id"] != proposal["creator_account_id"]
+                or selected["association_request_id"] != proposal["association_request_id"]
+                or browser is not None and browser["creator_account_id"] not in {None, selected["creator_account_id"]}
+                or connection.execute("SELECT 1 FROM onboarding_journeys WHERE operation_id=?",
+                    (selected["successor_operation_id"],)).fetchone()):
+            raise OnboardingJourneyUnavailable("workspace_changed")
+
+    def _execute_source_replacement(self, operation, *, reconcile):
+        selected = json.loads(operation["owner_scope_json"])
+        proposal = selected["source_replacement"]
+        def authorize(*, connection):
+            self._source_replacement_guard(operation, connection=connection)
+        def adopt(*, connection, successor_journey_id):
+            # The reservation and verified successor are committed together with
+            # the existing desktop's source pointer, never on a renderer read.
+            updated = connection.execute("UPDATE desktop_setup_journeys SET source_journey_id=?,revision=revision+1 "
+                "WHERE journey_id=? AND source_journey_id=?", (successor_journey_id, operation["journey_id"],
+                    proposal["source_journey_id"])).rowcount
+            if updated != 1:
+                raise OnboardingJourneyUnavailable("workspace_changed")
+        return self.source_replacements.execute(proposal, successor_journey_id=selected["source_journey_id"],
+            authorize=authorize, adopt=adopt, reconcile=reconcile,
+            work=lambda: self._work(exclude_source_replacement=True))
+
     async def execute(self, operation, *, reconcile, actor=None):
+        if operation["action"] == "account.connect" and json.loads(operation["owner_scope_json"]).get("source_replacement") is not None:
+            observed = self.observe(operation)
+            if observed is not None:
+                return observed
+            selected = json.loads(operation["owner_scope_json"])
+            proposal = selected["source_replacement"]
+            original = proposal["replacement"]["operation_id"]
+            with self.store.database.read() as connection:
+                outcome = self.source_replacements.reservations.outcome(connection, original)
+            if not (outcome is not None and proposal["replacement"]["kind"] == "initial-enrollment"
+                    and outcome["status"] in {"accepted", "committed"}):
+                outcome = await self._source_replacement_effects.run(self._execute_source_replacement, operation,
+                    reconcile=reconcile, journey_id=proposal["source_journey_id"])
+            if outcome is None and reconcile:
+                with self.store.database.read() as connection:
+                    reservation = connection.execute("SELECT state FROM onboarding_source_replacement_reservations "
+                        "WHERE predecessor_operation_id=?", (original,)).fetchone()
+                    if reservation is not None and reservation["state"] == "reserved":
+                        # No send claim was made. A new explicit click can reuse the same reservation.
+                        return OperationResult("refused", "operation_expired")
+            if (outcome is not None and outcome["status"] in {"accepted", "committed"}
+                    and proposal["replacement"]["kind"] == "initial-enrollment" and self.initial is not None):
+                recovered = await self.initial.reconcile_original_replacement(operation,
+                    authorize=lambda *, connection: self._original_initial_guard(operation, connection=connection))
+                return self.observe(operation) or OperationResult("waiting" if recovered is not None else "outcome_unknown",
+                    "none" if recovered is not None else "operation_unconfirmed")
+            if outcome is not None and outcome["status"] == "commercial-reconciliation-required" and self.commercial_reconciliation is not None:
+                await self.commercial_reconciliation(selected["source_replacement"])
+                return self.observe(operation) or OperationResult("outcome_unknown", "operation_unconfirmed")
+            if outcome is None or outcome["status"] != "prepared":
+                # Original accepted/committed or commercial results retain
+                # priority and require their respective owners; never enroll again.
+                return OperationResult("outcome_unknown", "operation_unconfirmed")
+            # Continue the already accepted account action only with the verified
+            # successor. It will expose the ordinary provider choices.
+            return self.observe(operation) or await self._connect(operation, reconcile=True)
         stale = False
         recovered = None
         # The checks that precede the first await share one store connection.
@@ -522,7 +751,10 @@ class ProvisioningSetupOwner:
             return OperationResult("waiting")
         if operation["action"] == "account.connect":
             if stale:
-                result = await self.ceremonies.reconcile(operation["operation_id"], authorize=lambda: self._read_guard(operation))
+                result = await self.ceremonies.reconcile(operation["operation_id"], authorize=lambda: self._read_guard(operation),
+                    adopt_authorize=lambda connection=None: self._read_guard(operation, connection=connection))
+                if result.get("status") == "unavailable" and self.ceremonies.replacement_pending(operation["operation_id"]):
+                    return OperationResult("outcome_unknown", "operation_unconfirmed")
                 terminal = await self._terminal_initial_read(operation, result)
                 if terminal is not None:
                     return terminal
@@ -534,6 +766,13 @@ class ProvisioningSetupOwner:
                 self.initial.resume(recovered)
                 return self.observe(operation) or OperationResult("outcome_unknown", "operation_unconfirmed")
             return await self._connect(operation, reconcile=reconcile)
+        if operation["action"] == "auth.select" and json.loads(operation["owner_scope_json"]).get("ceremony_replacement") is not None:
+            if self.ceremonies is None:
+                return OperationResult("refused", "authority_unavailable")
+            parent = json.loads(operation["owner_scope_json"])["ceremony_replacement"]["parent_operation_id"]
+            return await self.ceremonies.execute_replacement(operation, reconcile=reconcile,
+                authorize=lambda connection=None: self._replacement_command_guard(operation, connection=connection),
+                read_guard=lambda connection=None: self._read_guard({"operation_id": parent}, connection=connection))
         if operation["action"].startswith("auth.") and self.ceremonies is not None and self.ceremonies.authentication is not None:
             intent = json.loads(operation["owner_scope_json"])["authentication_intent"]
             parent = intent["parent_operation_id"]
@@ -616,7 +855,10 @@ class ProvisioningSetupOwner:
                         binding = self._binding(operation)
                 await self.ceremonies.prepare(operation["operation_id"], binding, authorize=guard)
             else:
-                result = await self.ceremonies.reconcile(operation["operation_id"], authorize=lambda: self._read_guard(operation))
+                result = await self.ceremonies.reconcile(operation["operation_id"], authorize=lambda: self._read_guard(operation),
+                    adopt_authorize=lambda connection=None: self._read_guard(operation, connection=connection))
+                if result.get("status") == "unavailable" and self.ceremonies.replacement_pending(operation["operation_id"]):
+                    return OperationResult("outcome_unknown", "operation_unconfirmed")
                 terminal = await self._terminal_initial_read(operation, result)
                 if terminal is not None:
                     return terminal
@@ -717,7 +959,12 @@ class ProvisioningSetupOwner:
             source = {"kind": "initial", "profile": preparation.profile, "operation_id": journey.operation_id,
                 "request_digest": preparation.request_digest, "reference": journey.handoff_reference}
             expiry = journey.handoff_expires_at
-            organization = {}
+            with self.store.database.read() as connection:
+                identity = self.source_replacements.reservations.initial_identity(connection, journey.operation_id)
+            if identity is not None and identity["intended_creator_id"] != selected["creator_account_id"]:
+                raise HostedGrantUnavailable("Replacement creator changed")
+            organization = ({"expected_customer_id": identity["expected_customer_id"]}
+                if identity is not None and identity["expected_customer_id"] is not None else {})
         else:
             row = self.contexts.require_current(journey.journey_id)
             request = self.registered._request(row)
@@ -762,7 +1009,9 @@ class ProvisioningSetupOwner:
             self._key_launch.set()
         if self._key_task is not None:
             await asyncio.gather(asyncio.shield(self._key_task), return_exceptions=True)
+        self._source_replacement_effects.close_admission()
         self._effects.close_admission()
+        await self._source_replacement_effects.drain()
         await self._effects.drain()
         if self.initial is not None:
             await self.initial.stop()

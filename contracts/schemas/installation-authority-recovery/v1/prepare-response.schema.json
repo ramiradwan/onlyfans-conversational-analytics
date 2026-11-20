@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/installation-authority-recovery/v1/prepare-response.schema.json",
+  "title": "Installation authority recovery v1 prepare-response",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "recovery_id",
+        "scope_digest",
+        "status",
+        "source_reference",
+        "expires_at"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:installation-authority-recovery:v1"
+        },
+        "recovery_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "scope_digest": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "status": {
+          "const": "prepared"
+        },
+        "source_reference": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "expires_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "recovery_id",
+        "scope_digest",
+        "status",
+        "committed_at"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:installation-authority-recovery:v1"
+        },
+        "recovery_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "scope_digest": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "status": {
+          "const": "committed"
+        },
+        "committed_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        }
+      }
+    }
+  ]
+}

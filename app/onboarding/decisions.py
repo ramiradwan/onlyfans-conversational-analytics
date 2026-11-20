@@ -30,10 +30,16 @@ class DesktopDecisions:
                 "JOIN desktop_setup_operations o ON o.operation_id=d.operation_id "
                 "WHERE o.journey_id=? AND o.action=? AND o.state IN ('accepted','waiting','outcome_unknown')",
                 (journey_id, action)).fetchall()
-        if len(rows) != 1:
-            return None
-        projection = json.loads(rows[0]["projection_json"])
-        return {"operation_id": rows[0]["operation_id"], "projection": projection}
+            if len(rows) != 1:
+                return None
+            projection = json.loads(rows[0]["projection_json"])
+            parent = rows[0]["operation_id"]
+            ceremony = self.ceremonies.row(parent, connection=current)
+            if (ceremony is None or projection["operation_id"] != ceremony["hosted_operation_id"]
+                    or projection["ceremony_id"] != ceremony["ceremony_id"]
+                    or self.ceremonies.replacement_reservation(parent, ceremony["hosted_operation_id"], connection=current) is not None):
+                return None
+            return {"operation_id": parent, "projection": projection}
 
     def status(self, journey_id, action, *, connection=None):
         selected = self._projection(journey_id, action, connection=connection)
@@ -69,10 +75,7 @@ class DesktopDecisions:
     def _save(self, row, projection):
         encoded = canonical(projection).decode()
         with self.store.database.transaction() as connection:
-            current = connection.execute("SELECT binding_json,ceremony_id,provider_revision FROM desktop_browser_ceremonies WHERE operation_id=?",
-                (row["operation_id"],)).fetchone()
-            if current is None or (current["binding_json"], current["ceremony_id"]) != (row["binding_json"], row["ceremony_id"]):
-                raise HostedGrantUnavailable("Decision scope changed")
+            current = self.ceremonies.require_current(row, connection=connection)
             if current["provider_revision"] != row["provider_revision"]:
                 return
             if projection["state"] == "confirmation-required":
@@ -99,20 +102,20 @@ class DesktopDecisions:
             return False
         with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
             try:
-                _, request = self._request(operation_id, connection=connection)
+                row, request = self._request(operation_id, connection=connection)
             except HostedGrantUnavailable:
                 return False
             journey = self.ceremonies._journey(operation_id, connection=connection)
-        return self._held.hold(operation_id, lambda: self._effects.run(self.client.prefetch_read, request,
-            before_send=authorize, journey_id=journey, protected=False))
+        return self._held.hold(row["hosted_operation_id"], lambda: self._effects.run(self.client.prefetch_read, request,
+            before_send=self.ceremonies.guarded(row, authorize), journey_id=journey, protected=False))
 
     async def refresh(self, operation_id, *, authorize):
         row, request = self._request(operation_id)
-        ticket = await self._held.take(operation_id)
+        ticket = await self._held.take(row["hosted_operation_id"])
         options = {} if ticket is None else {"prefetched": ticket}
         with timing.phase("decision-read", "read-end"):
             result = await self._effects.run(self.client.read, request,
-                expires_at=row["provider_expires_at"], before_send=authorize,
+                expires_at=row["provider_expires_at"], before_send=self.ceremonies.guarded(row, authorize),
                 journey_id=self.ceremonies._journey(operation_id), protected=False, **options)
         self._save(row, result)
         return result
@@ -124,8 +127,11 @@ class DesktopDecisions:
         parent = selected["operation_id"]
         row, request = self._request(parent)
         expected = {"account.confirm": "connect-account", "activation.confirm": "activate-complimentary"}
+        projection = selected["projection"]
         if (self.ceremonies._journey(parent) != operation["journey_id"]
-                or request["binding"]["purpose"] != expected[operation["action"]]):
+                or request["binding"]["purpose"] != expected[operation["action"]]
+                or projection["operation_id"] != request["operation_id"]
+                or projection["ceremony_id"] != request["ceremony_id"]):
             raise HostedGrantUnavailable("Decision selection changed")
         if reconcile:
             # Restart and uncertain replies can only read the original owner
@@ -133,7 +139,6 @@ class DesktopDecisions:
             result = await self.refresh(parent, authorize=read_guard)
         else:
             authorize()
-            projection = selected["projection"]
             if (self.store._now().timestamp() >= operation["expires_at"]
                     or timestamp(projection["decision"]["expires_at"]) <= self.store._now()):
                 return OperationResult("refused", "operation_expired")
@@ -141,7 +146,7 @@ class DesktopDecisions:
                 decision_digest=projection["decision_digest"], consent=projection["decision"]["action"])
             try:
                 result = await self._effects.run(self.client.submit, request,
-                    expires_at=row["provider_expires_at"], before_send=authorize,
+                    expires_at=row["provider_expires_at"], before_send=self.ceremonies.guarded(row, authorize, mutation=True),
                     journey_id=operation["journey_id"])
                 self._save(row, result)
             except DesktopDecisionRefused:

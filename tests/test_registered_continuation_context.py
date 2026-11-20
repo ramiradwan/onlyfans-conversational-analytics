@@ -116,6 +116,14 @@ def test_unknown_prepare_survives_store_restart_and_fresh_admission_without_new_
     _, original = selected(owner)
     first = owner.contexts.begin_prepare(original.journey_id)
     assert first["state"] == "prepare-unknown"
+    from app.persistence.source_preparations import SourcePreparations
+    from app.persistence.installation_continuation import CONTINUATION_PROFILE
+    with owner.store.database.read() as connection:
+        evidence = SourcePreparations(owner.store).get(first["operation_id"], connection=connection)
+        assert json.loads(evidence["prepare_json"]) == {"profile": CONTINUATION_PROFILE,
+            "operation_id": first["operation_id"], "scope": first["scope"]}
+        assert connection.execute("SELECT 1 FROM onboarding_source_prepared_receipts WHERE operation_id=?",
+            (first["operation_id"],)).fetchone() is None
     reopened = SQLiteAuthenticationStore(owner.store.database.path, clock=lambda: owner.clock[0])
     contexts = InstallationContinuationStore(reopened)
     assert contexts.begin_prepare(original.journey_id) is None
@@ -334,7 +342,7 @@ def test_a_send_guard_checks_its_source_through_one_store_connection(owner):
 
 
 @pytest.mark.parametrize("state", ["expired", "revoked"])
-def test_provider_terminal_source_can_continue_before_local_presentation_expiry(owner, state):
+def test_prepared_terminal_source_cannot_enter_ordinary_fresh_recovery(owner, state):
     _, original = selected(owner)
     owner.contexts.begin_prepare(original.journey_id)
     owner.contexts.bind_result(original.journey_id, continuation_id="provider-1",
@@ -343,8 +351,6 @@ def test_provider_terminal_source_can_continue_before_local_presentation_expiry(
     before = owner.journeys.require_current(original.journey_id)
     owner.clock[0] += timedelta(minutes=11)
     with owner.store.database.transaction() as connection:
-        proposal = owner.contexts.desktop_recovery_proposal(connection, journey_id=original.journey_id)
-        replacement = owner.contexts.admit_desktop_recovery(connection, proposal=proposal, reopen_key=owner.key.reopen_existing)
-    assert replacement != original.journey_id
+        with pytest.raises(OnboardingJourneyUnavailable):
+            owner.contexts.desktop_recovery_proposal(connection, journey_id=original.journey_id)
     assert owner.journeys.require_current(original.journey_id) == before
-    assert owner.contexts.require_current(replacement)["scope"]["creator_account_id"] == "creator-1"

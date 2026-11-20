@@ -47,7 +47,7 @@ describe('native coordinator adapter', () => {
     const pairing = { operation_id: '33333333-3333-4333-8333-333333333333', action: 'browser.pair', state: 'waiting', reason: 'none' };
     const activation = { ...pairing, operation_id: '44444444-4444-4444-8444-444444444444', action: 'activation.review' };
     h.publish({ ...h.current, pending: pairing.operation_id,
-      snapshot: { ...h.current.snapshot!, pending_operations: [pairing, activation] } });
+      snapshot: { ...h.current.snapshot!, allowed_actions: [], pending_operations: [pairing, activation] } });
     await h.api.begin('activation.review');
     expect(h.client.launchBrowser).toHaveBeenCalledExactlyOnceWith(true, activation.operation_id);
     await h.api.reconcile('activation.review');

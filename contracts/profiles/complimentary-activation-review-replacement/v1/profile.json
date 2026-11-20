@@ -1,0 +1,34 @@
+{
+  "profile": "urn:bridge-clean:complimentary-activation-review-replacement:v1",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "proof_profile": "urn:bridge-clean:complimentary-activation-review-replacement-proof:v1",
+  "request_max_bytes": 8192,
+  "response_max_bytes": 16384,
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "source_profile": "urn:bridge-clean:installation-setup-continuation:v2",
+  "exact_admission": "Exact original expired registered source, activation UUID, complete retained admission history, original commercial review commitment, current exact registered key and customer/approval authority; definitive original noncommit under commercial and organization fences. Distinct source and activation UUIDs, one exact successor, no current competing source.",
+  "committed_delivery": "ADR0034 unchanged; independent existing delivery read/recover remains authoritative and does not require this read or fresh browser authentication",
+  "retention": "Original source lineage at most 90 days; retain only hash commitment to review meaning, exact successor IDs and request digest. No old quote, credential, consent or offer snapshot. Do not infer historical commitments.",
+  "response_cache_control": "no-store",
+  "messages": {
+    "definitions": "schemas/complimentary-activation-review-replacement/v1/definitions.schema.json",
+    "replace-request": "schemas/complimentary-activation-review-replacement/v1/replace-request.schema.json",
+    "replace-response": "schemas/complimentary-activation-review-replacement/v1/replace-response.schema.json",
+    "error": "schemas/complimentary-activation-review-replacement/v1/error.schema.json"
+  },
+  "refusal_status": {
+    "invalid": 400,
+    "proof_invalid": 401,
+    "authorization_denied": 403,
+    "rate_limited": 429,
+    "temporarily_unavailable": 503,
+    "not_ready": 409,
+    "operation_conflict": 409,
+    "expired": 410,
+    "review_unavailable": 409,
+    "original_committed": 409
+  },
+  "successor_semantics": "Create only an ordinary v2 source with the same saved scope and actor and fixed inherited original retention; reserve exact new activation UUID and immutable expected review commitment; fresh admission and explicit confirmation required. Existing source and activation remain terminal. No quote, funding allocation, consent, credit or license on replacement.",
+  "review_admission": "Before publishing a successor quote and at confirmation, require same original immutable offer terms, funding entry, approval origin and admission selection, exact creator approval, actor and installation. Current policy must independently admit the offer and funding. No silent substitution; no old consent, session, authorization or expiry transferred. If original quote was never prepared and no inherited commitment exists, refuse review_unavailable."
+}

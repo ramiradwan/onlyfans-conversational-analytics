@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/complimentary-activation-reconciliation/v1/read-request.schema.json",
+  "title": "Complimentary activation reconciliation read-request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request",
+    "proof"
+  ],
+  "properties": {
+    "request": {
+      "$ref": "definitions.schema.json#/$defs/request"
+    },
+    "proof": {
+      "$ref": "../../installation-continuation/v2/definitions.schema.json#/$defs/proof"
+    }
+  }
+}

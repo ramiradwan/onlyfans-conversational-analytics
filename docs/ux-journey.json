@@ -2062,6 +2062,31 @@
         },
         {
           "kind": "unit",
+          "file": "tests/test_activation_reconciliation_owner.py",
+          "name": "test_terminal_original_outcome_never_creates_a_new_activation"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_activation_review_replacement_owner.py",
+          "name": "test_desktop_review_replacement_explicit_command_prepares_exact_successor"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "offers an explicit fresh review only after the owner permits replacement"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_activation_reconciliation_owner.py",
+          "name": "test_read_budget_survives_restart_and_exhaustion_is_passive"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_activation_reconciliation_owner.py",
+          "name": "test_registered_source_refusal_delegates_only_exact_existing_activation"
+        },
+        {
+          "kind": "unit",
           "file": "frontend/tests/CommercialActivationControls.test.tsx",
           "name": "opens a newly prepared offer after an explicit review without another click"
         },
@@ -2443,6 +2468,26 @@
         {
           "kind": "unit",
           "file": "frontend/tests/desktop-setup.test.js",
+          "name": "offers explicit ceremony recovery without launching Chrome or choosing a provider"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "keeps interrupted ceremony recovery passive even after desktop restart"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_expired_ceremony_recovery_requires_explicit_scoped_action_and_does_not_launch"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_explicit_ceremony_recovery_reconciles_or_refuses_without_resending"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
           "name": "renders the three local setup tasks and optional activation from one projection"
         },
         {
@@ -2478,6 +2523,51 @@
         {
           "kind": "unit",
           "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_prepared_source_replacement_adopts_only_verified_successor"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_verified_initial_source_replacement_prepares_new_ceremony_without_fresh_handoff"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_initial_replacement_recovers_only_original_enrollment"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_initial_replacement_does_not_invent_authority"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_initial_accepted_receipt_read_budget_survives_owner_restart"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_original_bootstrap_adoption_is_atomic_and_retries_retained_receipt"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_source_replacement_reservations.py",
+          "name": "test_initial_replacement_identity_is_retained_and_cannot_change"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_source_replacement_reservations.py",
+          "name": "test_owner_adapter_resumes_exact_prepared_source"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "continues an expired source without opening Chrome, then admits a provider choice"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
           "name": "test_unconfirmed_initial_read_never_settles_or_replaces_original_source"
         },
         {
@@ -2503,7 +2593,7 @@
         {
           "kind": "unit",
           "file": "tests/test_registered_continuation_context.py",
-          "name": "test_provider_terminal_source_can_continue_before_local_presentation_expiry"
+          "name": "test_prepared_terminal_source_cannot_enter_ordinary_fresh_recovery"
         },
         {
           "kind": "unit",

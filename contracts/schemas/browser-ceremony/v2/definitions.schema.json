@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/browser-ceremony/v2/definitions.schema.json",
+  "title": "Browser ceremony definitions v2",
+  "$defs": {
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "installation_id",
+        "installation_key_id",
+        "installation_key_jkt",
+        "organization_id",
+        "attempt_id",
+        "completion",
+        "source_expires_at",
+        "purpose"
+      ],
+      "properties": {
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "profile",
+            "request",
+            "request_digest",
+            "scope_digest",
+            "reference"
+          ],
+          "properties": {
+            "kind": {
+              "const": "authority-recovery"
+            },
+            "profile": {
+              "const": "urn:bridge-clean:installation-authority-recovery:v1"
+            },
+            "request": {
+              "$ref": "../../installation-authority-recovery/v1/definitions.schema.json#/$defs/request"
+            },
+            "request_digest": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+            },
+            "scope_digest": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+            },
+            "reference": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+            }
+          }
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_key_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"
+        },
+        "installation_key_jkt": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "organization_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "completion": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "extension_id"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "extension-auth-flow"
+                },
+                "extension_id": {
+                  "type": "string",
+                  "minLength": 32,
+                  "maxLength": 32,
+                  "pattern": "^[a-p]{32}$"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "system-browser"
+                }
+              }
+            }
+          ]
+        },
+        "source_expires_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "purpose": {
+          "const": "recover-installation-authority"
+        }
+      }
+    },
+    "prepareRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:browser-ceremony:v2"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "definitions.schema.json#/$defs/binding"
+        }
+      }
+    },
+    "readRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:browser-ceremony:v2"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "definitions.schema.json#/$defs/binding"
+        },
+        "ceremony_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        }
+      }
+    },
+    "recoverRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding",
+        "ceremony_id"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:browser-ceremony:v2"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "definitions.schema.json#/$defs/binding"
+        },
+        "ceremony_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        }
+      }
+    },
+    "cancelRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding",
+        "ceremony_id"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:browser-ceremony:v2"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "definitions.schema.json#/$defs/binding"
+        },
+        "ceremony_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        }
+      }
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "challenge",
+        "signature"
+      ],
+      "properties": {
+        "challenge": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "signature": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url64"
+        }
+      }
+    },
+    "entryCompletion": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "return_uri"
+          ],
+          "properties": {
+            "mode": {
+              "const": "extension-auth-flow"
+            },
+            "return_uri": {
+              "type": "string",
+              "minLength": 85,
+              "maxLength": 85,
+              "pattern": "^https://[a-p]{32}\\.chromiumapp\\.org/browser-ceremony/v1/complete$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "const": "system-browser"
+            }
+          }
+        }
+      ]
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_reference",
+        "completion"
+      ],
+      "properties": {
+        "entry_reference": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "completion": {
+          "$ref": "definitions.schema.json#/$defs/entryCompletion"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "files": [
+    {
+      "path": "cases.json",
+      "sha256": "45ac69e6f922fe928fe2e51d0b271281e9d8917c36bd610a1ed766e85a7b171f",
+      "size": 23676
+    }
+  ],
+  "generator": "tools/generate_activation_review_replacement_vectors.py",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "profile": "urn:bridge-clean:complimentary-activation-review-replacement-vectors:v1",
+  "test_only": true
+}

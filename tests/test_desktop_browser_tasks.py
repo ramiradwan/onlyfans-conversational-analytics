@@ -345,6 +345,33 @@ async def initial_ceremony_case(setup, *, active_wait=False):
     initial.bind_effect_gate(coordinator.owner._effect_gate, initial._current_journey)
     coordinator.owner.initial = initial
     coordinator.owner.registered = SimpleNamespace()
+    class ReplacementClient:
+        def __init__(self):
+            self.calls = []
+            self.mode = "prepared"
+            self.expected_customer_id = None
+            self.completion_id = None
+        def replace(self, request, *, before_send, intended_creator_id):
+            import hashlib
+            from app.security.source_replacement import original_prepare
+            from app.security.installation_continuation import canonical_request
+            before_send()
+            self.calls.append(request)
+            if self.mode == "lost":
+                raise HostedGrantUnavailable("Unavailable")
+            if self.mode == "accepted":
+                return {"profile": request["profile"], "predecessor_operation_id": request["predecessor_operation_id"],
+                    "status": "accepted", "accepted_operation_id": "0198a1b2-c3d4-7300-8000-000000000077"}
+            if self.mode == "committed":
+                return {"profile": request["profile"], "predecessor_operation_id": request["predecessor_operation_id"],
+                    "status": "committed", "completion_operation_id": self.completion_id or request["predecessor_operation_id"]}
+            prepare = original_prepare("initial-handoff", request, successor=True)
+            return {"profile": request["profile"], "predecessor_operation_id": request["predecessor_operation_id"],
+                "status": "prepared", "successor_prepare_digest": hashlib.sha256(canonical_request(prepare)).hexdigest(),
+                "successor": {"profile": prepare["profile"], "operation_id": prepare["operation_id"],
+                    "reference": "A" * 43, "expires_at": (clock[0] + timedelta(minutes=10)).isoformat(timespec="milliseconds").replace("+00:00", "Z")},
+                "intended_creator_id": intended_creator_id} | ({"expected_customer_id": self.expected_customer_id} if self.expected_customer_id else {})
+    coordinator.owner.source_replacements.clients["initial-enrollment"] = ReplacementClient()
     coordinator.owner.key = SimpleNamespace(reopen_existing=fixture.key.ensure_ready)
     coordinator.owner.store.installation_key_reference = lambda **_: fixture.key.ensure_ready()
     if not active_wait:
@@ -391,12 +418,18 @@ async def test_exact_initial_terminal_read_allows_explicit_same_desktop_continua
         native = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(replacing_generation=native.generation), role="desktop")
     view = coordinator.owner.read(operation["journey_id"])
     recovery = view.scope["source_recovery"]
+    if elapsed == 0:
+        assert recovery is None
+        return
     assert recovery is not None and recovery["creator_account_id"] == scope["creator_account_id"]
+    assert recovery["replacement"]["operation_id"] == before.operation_id
     with coordinator.store.database.transaction() as connection:
         admitted = coordinator.owner.admit(connection, operation["journey_id"], action="account.connect", scope=view.scope)
+        root = connection.execute("SELECT source_journey_id FROM desktop_setup_journeys WHERE journey_id=?", (operation["journey_id"],)).fetchone()
+        assert root["source_journey_id"] == scope["source_journey_id"]
     assert admitted.journey_id == operation["journey_id"]
-    successor = initial.journeys.require_current(admitted.scope["source_journey_id"])
-    assert successor["journey_id"] != scope["source_journey_id"] and successor["state"] == "new"
+    assert admitted.scope["source_journey_id"] != scope["source_journey_id"]
+    assert admitted.scope["installation_id"] == before.installation_id
     retained = coordinator.owner.sources.resolve(scope["source_journey_id"])
     assert retained.state == "expired" and retained.operation_id == before.operation_id
     assert retained.expires_at == before.expires_at
@@ -594,3 +627,428 @@ async def test_a_setup_snapshot_read_opens_the_store_once(setup, monkeypatch):
     monkeypatch.setattr(database, "connect", counted)
     assert coordinator.read(native) == expected
     assert len(opened) == 1
+
+async def replacement_case(setup):
+    from app.onboarding.authentication import DesktopAuthentication
+    from test_desktop_authentication import AuthenticationClient
+    from test_desktop_ceremonies import ReplacementClient
+    from test_onboarding_enrollment_runtime import _HandoffFixture
+    # Production retains the browser observation under the installation key.
+    # Establish the same key before observing browser access in this fixture.
+    setup[0].store.installation_key_reference = lambda **_: _HandoffFixture().key.ensure_ready()
+    coordinator, initial, client, parent, scope, clock, native = await initial_ceremony_case(setup)
+    owner = coordinator.owner
+    ceremonies = owner.ceremonies
+    client.mode, client.state, client.revision = "live", "retired", 2
+    await ceremonies.reconcile(parent["operation_id"], authorize=lambda: owner._read_guard(parent))
+    authentication = DesktopAuthentication(coordinator.store, ceremonies, AuthenticationClient())
+    ceremonies.authentication = authentication
+    ceremonies.replacement_client = ReplacementClient(client, clock=lambda: clock[0])
+    return coordinator, initial, ceremonies, parent, scope, clock, native
+
+
+@pytest.mark.asyncio
+async def test_expired_ceremony_recovery_requires_explicit_scoped_action_and_does_not_launch(setup):
+    from app.onboarding.coordinator import CommandRefused
+    from app.onboarding.contract import validate
+    coordinator, initial, ceremonies, parent, scope, clock, native = await replacement_case(setup)
+    owner = coordinator.owner
+    original = ceremonies.row(parent["operation_id"])
+    source = owner.sources.resolve(scope["source_journey_id"])
+    before = len(ceremonies.client.calls)
+    snapshot = coordinator.read(native)
+    assert snapshot["authentication"]["state"] == "replacement-required"
+    assert snapshot["allowed_actions"] == ["auth.select"]
+    assert snapshot["authentication"]["actions"] == dict(select=True, cancel=False, open_browser=False, switch_account=False)
+    assert not any(snapshot["authentication"]["choices"].values())
+    assert coordinator.read(native) == snapshot
+    assert len(ceremonies.client.calls) == before
+    with pytest.raises(CommandRefused):
+        coordinator._accept(native, {**command(snapshot, "auth.select"), "provider": "google"})
+    with pytest.raises(ValueError):
+        validate({**command(snapshot, "auth.select"), "provider": "google", "replace_ceremony": True}, kind="command")
+    with pytest.raises(ValueError):
+        validate({**command(snapshot, "auth.switch"), "replace_ceremony": True}, kind="command")
+    clicked = {**command(snapshot, "auth.select"), "replace_ceremony": True}
+    child, fresh = coordinator._accept(native, clicked)
+    assert fresh
+    assert coordinator._accept(native, clicked) == (child, False)
+    with pytest.raises(CommandRefused):
+        coordinator._accept(native, {**clicked, "operation_id": str(uuid4())})
+    pending = coordinator.read(native)
+    assert pending["authentication"]["state"] == "replacement-pending"
+    assert "auth.select" not in pending["allowed_actions"]
+    with pytest.raises(AdmissionRefused):
+        coordinator.admissions.prepare_accepted_task(child["operation_id"], purpose="browser.authentication",
+            deadline=child["expires_at"])
+    coordinator._start(child, reconcile=False, actor=None)
+    await coordinator.drain()
+    assert coordinator.receipt(native, child["operation_id"])["state"] == "completed"
+    successor = ceremonies.row(parent["operation_id"])
+    assert successor["ceremony_id"] != original["ceremony_id"]
+    assert successor["provider_expires_at"] == original["provider_expires_at"]
+    assert owner.sources.resolve(scope["source_journey_id"]) == source
+    assert len(ceremonies.replacement_client.calls) == 1
+    assert ceremonies.authentication.client.calls
+    assert all(verb == "read" for verb, _ in ceremonies.authentication.client.calls)
+    with coordinator.store.database.read() as connection:
+        assert connection.execute("SELECT 1 FROM desktop_browser_tasks WHERE operation_id=?", (child["operation_id"],)).fetchone() is None
+    assert (await owner.execute(child, reconcile=True)).state == "completed"
+    assert len(ceremonies.replacement_client.calls) == 1
+    # The coordinator automatically refreshed the original parent. No extra read command.
+    current = coordinator.read(native)
+    assert current["authentication"]["state"] == "selection-required"
+    assert "auth.select" in current["allowed_actions"]
+    assert current["authentication"]["operation_id"] == parent["operation_id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["before-reservation", "lost-response", "changed-predecessor", "changed-account"])
+async def test_explicit_ceremony_recovery_reconciles_or_refuses_without_resending(setup, fault):
+    from app.onboarding.coordinator import CommandRefused, OperationResult
+    coordinator, initial, ceremonies, parent, scope, clock, native = await replacement_case(setup)
+    owner = coordinator.owner
+    snapshot = coordinator.read(native)
+    assert snapshot["authentication"]["state"] == "replacement-required"
+    clicked = {**command(snapshot, "auth.select"), "replace_ceremony": True}
+    if fault == "changed-predecessor":
+        ceremonies.client.revision += 1
+        await ceremonies.reconcile(parent["operation_id"], authorize=lambda: owner._read_guard(parent))
+        with pytest.raises(CommandRefused):
+            coordinator._accept(native, clicked)
+        assert ceremonies.replacement_client.calls == []
+        return
+    child, fresh = coordinator._accept(native, clicked)
+    assert fresh
+    if fault == "before-reservation":
+        assert (await owner.execute(child, reconcile=True)).state == "refused"
+        assert ceremonies.replacement_client.calls == []
+        return
+    if fault == "changed-account":
+        selected = owner.read
+        def changed(*args, **kwargs):
+            from app.onboarding.coordinator import DomainView
+            view = selected(*args, **kwargs)
+            return DomainView(view.facts, {**view.scope, "creator_account_id": "different-account"}, view.reason)
+        owner.read = changed
+        assert (await owner.execute(child, reconcile=False)).state == "refused"
+        assert ceremonies.replacement_client.calls == []
+        return
+    ceremonies.replacement_client.lost = True
+    with pytest.raises(OSError):
+        await owner.execute(child, reconcile=False)
+    coordinator._settle(child, OperationResult("outcome_unknown", "operation_unconfirmed"))
+    assert coordinator.read(native)["authentication"]["state"] == "replacement-pending"
+    replacement = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(replacing_generation=native.generation),
+        role="desktop")
+    assert coordinator.read(replacement)["authentication"]["state"] == "replacement-pending"
+    result = await owner.execute(child, reconcile=True)
+    assert result.state == "completed"
+    coordinator._settle(child, result)
+    assert len(ceremonies.replacement_client.calls) == 1
+    assert ceremonies.authentication.client.calls == []
+    assert coordinator.receipt(replacement, child["operation_id"])["state"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_expired_local_presentation_does_not_shorten_live_ceremony_recovery_source(setup):
+    coordinator, _, native, clock = setup
+    clock[0] += timedelta(seconds=1720)
+    coordinator, _, ceremonies, parent, scope, clock, native = await replacement_case(setup)
+    source = coordinator.owner.sources.resolve(scope["source_journey_id"])
+    clock[0] += timedelta(seconds=81)
+    assert parent["expires_at"] < clock[0].timestamp() < source.expires_at.timestamp()
+    replacement = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(replacing_generation=native.generation),
+        role="desktop")
+    snapshot = coordinator.read(replacement)
+    assert snapshot["authentication"]["state"] == "replacement-required"
+    clicked = {**command(snapshot, "auth.select"), "replace_ceremony": True}
+    child, _ = coordinator._accept(replacement, clicked)
+    assert (await coordinator.owner.execute(child, reconcile=False)).state == "completed"
+    assert len(ceremonies.replacement_client.calls) == 1
+    assert coordinator.owner.sources.resolve(scope["source_journey_id"]) == source
+
+
+@pytest.mark.asyncio
+async def test_closed_ceremony_recovery_refusal_is_not_rollback_or_permission_to_resend(setup):
+    from app.onboarding.coordinator import OperationResult
+    coordinator, _, ceremonies, parent, _, _, native = await replacement_case(setup)
+    owner = coordinator.owner
+    child, _ = coordinator._accept(native, {**command(coordinator.read(native), "auth.select"), "replace_ceremony": True})
+    ceremonies.replacement_client.refused = True
+    result = await owner.execute(child, reconcile=False)
+    assert result == OperationResult("outcome_unknown", "operation_unconfirmed")
+    coordinator._settle(child, result)
+    assert (await owner.execute(child, reconcile=True)) == result
+    assert coordinator.read(native)["authentication"]["state"] == "replacement-pending"
+    assert "auth.select" not in coordinator.read(native)["allowed_actions"]
+    assert len(ceremonies.replacement_client.calls) == 1
+    # An independently verified original account outcome wins over replacement.
+    coordinator._settle(parent, OperationResult("completed"))
+    assert (await owner.execute(child, reconcile=True)).state == "refused"
+    assert len(ceremonies.replacement_client.calls) == 1
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("lost", [False, True])
+async def test_prepared_source_replacement_adopts_only_verified_successor(setup, lost, monkeypatch):
+    coordinator, initial, _, old, scope, clock, native = await initial_ceremony_case(setup)
+    clock[0] += timedelta(minutes=11)
+    terminal = await coordinator.owner.execute(old, reconcile=True)
+    coordinator._settle(old, terminal)
+    # The recovery owner owns preparation and pointer adoption; isolate the
+    # subsequent ordinary ceremony (covered by the ceremony suite).
+    connected = []
+    async def connect(operation, *, reconcile):
+        from app.onboarding.coordinator import OperationResult
+        accepted = json.loads(operation["owner_scope_json"])
+        current = initial.journeys.require_current(accepted["source_journey_id"])
+        assert current["state"] == "waiting"
+        assert current["installation_id"] == accepted["installation_id"]
+        connected.append(current["journey_id"])
+        return OperationResult("waiting")
+    monkeypatch.setattr(coordinator.owner, "_connect", connect)
+    ready = coordinator.read(native)
+    assert ready["continuation_available"]
+    operation, _ = coordinator._accept(native, command(ready, "account.connect"))
+    replacement = coordinator.owner.source_replacements.clients["initial-enrollment"]
+    if lost:
+        replacement.mode = "lost"
+        outcome = await coordinator.owner.execute(operation, reconcile=False)
+        assert outcome.state == "outcome_unknown"
+        assert coordinator.owner._source(operation["journey_id"]) == scope["source_journey_id"]
+        assert coordinator.read(native)["authentication"]["state"] == "replacement-pending"
+        replacement.mode = "prepared"
+    outcome = await coordinator.owner.execute(operation, reconcile=lost)
+    assert outcome.state == "waiting"
+    accepted = json.loads(operation["owner_scope_json"])
+    assert coordinator.owner._source(operation["journey_id"]) == accepted["source_journey_id"]
+    assert connected == [accepted["source_journey_id"]]
+    assert len(initial.client.preparations) == 1
+    assert len(replacement.calls) == (2 if lost else 1)
+    assert all(call == replacement.calls[0] for call in replacement.calls)
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("expected_customer_id", [None, "customer-original"])
+async def test_verified_initial_source_replacement_prepares_new_ceremony_without_fresh_handoff(setup, expected_customer_id):
+    coordinator, initial, client, old, scope, clock, native = await initial_ceremony_case(setup)
+    clock[0] += timedelta(minutes=11)
+    terminal = await coordinator.owner.execute(old, reconcile=True)
+    coordinator._settle(old, terminal)
+    operation, _ = coordinator._accept(native, command(coordinator.read(native), "account.connect"))
+    coordinator.owner.source_replacements.clients["initial-enrollment"].expected_customer_id = expected_customer_id
+    # The hosted fixture normally uses a constant ceremony ID. A different
+    # source gets a distinct ceremony ID, independently of the source ID.
+    original_prepare = client.prepare
+    def prepare(request, **kwargs):
+        result = original_prepare(request, **kwargs)
+        return {**result, "ceremony_id": "0198a1b2-c3d4-7300-8000-000000000099"}
+    client.prepare = prepare
+    client.mode = "active"
+    client.state = "active"
+    result = await coordinator.owner.execute(operation, reconcile=False)
+    assert result.state == "waiting"
+    assert len(initial.client.preparations) == 1
+    assert len([call for call in client.calls if call[0] == "prepare"]) == 2
+    selected = json.loads(operation["owner_scope_json"])
+    assert coordinator.owner._source(operation["journey_id"]) == selected["source_journey_id"]
+    ceremony = coordinator.owner.ceremonies.row(operation["operation_id"])
+    binding = json.loads(ceremony["binding_json"])
+    assert binding["source"]["operation_id"] == selected["successor_operation_id"]
+    assert binding.get("expected_customer_id") == expected_customer_id
+    assert ("expected_customer_id" in binding) == (expected_customer_id is not None)
+
+async def original_initial_case(setup, *, mode="committed", retained_scope=True, retired=False):
+    from types import SimpleNamespace
+    from app.security.hosted_grants import BootstrapRecovery, BootstrapRecoveryRefused
+    from app.security.initial_handoff import InitialHandoffRefused
+    from app.persistence.auth import VerifiedGrantReference
+    from hashlib import sha256
+
+    coordinator, initial, client, old, selection, clock, native = await initial_ceremony_case(setup)
+    store = coordinator.store
+    source_id = selection["source_journey_id"]
+    source = initial.journeys.require_current(source_id)
+    key = initial.client.key.ensure_ready()
+    original_id = source["operation_id"]
+    scope = {"onboarding_transaction_id": "original-transaction", "organization_id": "original-org",
+        "intended_creator_id": selection["creator_account_id"],
+        "association_request_id": "0198a1b2-c3d4-7300-8000-000000000078",
+        "installation_id": source["installation_id"], "installation_key_jkt": key.installation_key_jkt,
+        "action_digests": {"issue-installation-claim": "a"*64, "approve-creator-association": "b"*64},
+        "authorization_revision": 1}
+    enrolled = clock[0] + timedelta(minutes=1)
+    receipt = {"operation_id": original_id, "installation_id": scope["installation_id"],
+        "organization_id": scope["organization_id"], "onboarding_transaction_id": scope["onboarding_transaction_id"],
+        "installation_key_id": key.installation_key_id, "installation_key_jkt": key.installation_key_jkt,
+        "claim_id": "0198a1b2-c3d4-7300-8000-000000000079",
+        "consumed_at": enrolled.isoformat(timespec="milliseconds").replace("+00:00", "Z")}
+    if retained_scope:
+        with store.database.transaction() as connection:
+            connection.execute("UPDATE onboarding_journeys SET scope_json=? WHERE journey_id=?", (json.dumps(scope), source_id))
+    clock[0] += timedelta(minutes=11)
+    terminal = await coordinator.owner.execute(old, reconcile=True)
+    assert terminal.reason == "operation_expired"
+    coordinator._settle(old, terminal)
+    operation, _ = coordinator._accept(native, command(coordinator.read(native), "account.connect"))
+    replacement = coordinator.owner.source_replacements.clients["initial-enrollment"]
+    replacement.mode = mode
+    receipt_calls, bootstrap_calls, resumed = [], [], []
+    control = SimpleNamespace(receipt_available=mode=="committed", bootstrap_refused=False, transient=retired, invalid_grant=False, bootstrap_transient=False)
+    initial.client.key.reopen_existing = lambda: key
+    store.installation_key_reference = lambda **_: key
+    initial.client.key.ensure_ready = lambda: pytest.fail("Original reconciliation cannot create a key")
+    def read_receipt(request, *, before_send, key):
+        before_send()
+        receipt_calls.append(request)
+        if control.transient:
+            raise HostedGrantUnavailable("Transient read failure")
+        if not control.receipt_available:
+            raise InitialHandoffRefused("handoff_refused")
+        return dict(receipt)
+    initial.client.receipt = read_receipt
+    def recover_bootstrap(*, claim_id, recovery_request_id, before_send, existing_key, expected_enrolled_at, adopt_verified):
+        before_send()
+        bootstrap_calls.append(recovery_request_id)
+        assert recovery_request_id == original_id
+        assert claim_id == receipt["claim_id"] and expected_enrolled_at == enrolled
+        if control.bootstrap_refused:
+            raise BootstrapRecoveryRefused("bootstrap_authority_withdrawn")
+        if control.bootstrap_transient:
+            raise HostedGrantUnavailable("Bootstrap response unavailable")
+        refs = tuple(VerifiedGrantReference(reference_id=kind, grant_identifier=kind, grant_type=kind,
+            grant_digest=sha256(kind.encode()).hexdigest(), issuer="issuer", subject="subject",
+            installation_id=scope["installation_id"], creator_account_id=None,
+            valid_from=clock[0]-timedelta(seconds=1), expires_at=clock[0]+timedelta(hours=1),
+            verified_at=clock[0], organization_id=scope["organization_id"],
+            installation_key_id=key.installation_key_id, installation_key_jkt=key.installation_key_jkt)
+            for kind in ("installation_grant", "membership_snapshot"))
+        if control.invalid_grant:
+            from dataclasses import replace
+            refs = (refs[0], replace(refs[1], organization_id="different-org"))
+        adopt_verified(refs, enrolled_at=enrolled, recovered_at=clock[0])
+        return BootstrapRecovery(tuple(g.reference_id for g in refs), enrolled, clock[0], ())
+    initial.grants.recover_bootstrap_v3 = recover_bootstrap
+    initial.resume = resumed.append
+    return SimpleNamespace(coordinator=coordinator, owner=coordinator.owner, store=store, initial=initial,
+        client=client, source_id=source_id, original_id=original_id, operation=operation, clock=clock,
+        scope=scope, receipt=receipt, replacement=replacement, receipt_calls=receipt_calls,
+        bootstrap_calls=bootstrap_calls, resumed=resumed, control=control, native=native)
+
+
+def original_journal(case):
+    with case.store.database.read() as connection:
+        return connection.execute("SELECT * FROM onboarding_initial_replacement_recoveries WHERE predecessor_operation_id=?",
+            (case.original_id,)).fetchone()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode,retired", [("accepted",False),("committed",False),("committed",True)])
+async def test_initial_replacement_recovers_only_original_enrollment(setup, mode, retired):
+    case = await original_initial_case(setup, mode=mode, retired=retired)
+    first = await case.owner.execute(case.operation, reconcile=False)
+    if retired:
+        assert first.state == "outcome_unknown"
+        case.clock[0] += timedelta(minutes=21)
+        with case.store.database.transaction() as connection:
+            case.initial.journeys._cleanup(connection, case.clock[0])
+        case.control.transient = False
+        first = await case.owner.execute(case.operation, reconcile=True)
+    if mode == "accepted":
+        assert first.state == "outcome_unknown"
+        assert not case.bootstrap_calls and not case.store.unresolved_claim_submissions()
+        case.control.receipt_available = True
+        case.clock[0] += timedelta(seconds=15)
+        first = await case.owner.execute(case.operation, reconcile=True)
+    assert first.state == "waiting"
+    assert original_journal(case)["completed"] == 1
+    assert case.bootstrap_calls == [case.original_id]
+    assert all(req["operation_id"] == case.original_id for req in case.receipt_calls)
+    assert case.resumed == [case.source_id]
+    assert case.owner._source(case.operation["journey_id"]) == case.source_id
+    row = case.initial.journeys.require_current(case.source_id)
+    assert row["state"] == "completed" and row["operation_id"] == case.original_id
+    assert row["handoff_reference"] is None
+    assert json.loads(row["scope_json"]) == case.scope
+    assert len(case.replacement.calls) == 1 and len(case.initial.client.preparations) == 1
+    assert len([call for call in case.client.calls if call[0]=="prepare"]) == 1
+    assert len(case.store.consumed_claim_submissions()) == 1
+    assert case.store.provisioning_candidate(case.scope["association_request_id"]).state.value == "pending"
+    assert case.owner.observe(case.operation) is None
+    await case.owner.execute(case.operation, reconcile=True)
+    assert len(case.bootstrap_calls) == 1 and len(case.replacement.calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["missing-scope","wrong-organization","wrong-operation","wrong-completion","bootstrap-refused"])
+async def test_initial_replacement_does_not_invent_authority(setup, fault):
+    case = await original_initial_case(setup, retained_scope=fault!="missing-scope")
+    if fault == "wrong-organization":
+        case.receipt["organization_id"] = "different-org"
+    elif fault == "wrong-operation":
+        case.receipt["operation_id"] = "0198a1b2-c3d4-7300-8000-000000000090"
+    elif fault == "wrong-completion":
+        case.replacement.completion_id = "0198a1b2-c3d4-7300-8000-000000000090"
+    elif fault == "bootstrap-refused":
+        case.control.bootstrap_refused = True
+    result = await case.owner.execute(case.operation, reconcile=False)
+    assert result.state == "outcome_unknown"
+    journal = original_journal(case)
+    assert not case.resumed and not case.store.consumed_claim_submissions()
+    assert case.store.provisioning_candidate(case.scope["association_request_id"]) is None
+    if fault == "wrong-completion":
+        assert journal is None and not case.receipt_calls
+    else:
+        assert journal["completed"] == 0
+        assert bool(journal["receipt_json"]) == (fault in {"missing-scope","bootstrap-refused"})
+        assert bool(journal["blocked"]) == (fault == "bootstrap-refused")
+    assert len(case.bootstrap_calls) == (1 if fault == "bootstrap-refused" else 0)
+    case.clock[0] += timedelta(minutes=1)
+    if fault in {"missing-scope","bootstrap-refused","wrong-completion"}:
+        assert not case.owner.automatic_recovery(case.operation)
+        await case.owner.execute(case.operation, reconcile=True)
+        assert len(case.bootstrap_calls) == (1 if fault == "bootstrap-refused" else 0)
+    assert len(case.replacement.calls) == 1 and len(case.initial.client.preparations) == 1
+    assert case.owner._source(case.operation["journey_id"]) == case.source_id
+
+
+@pytest.mark.asyncio
+async def test_initial_accepted_receipt_read_budget_survives_owner_restart(setup):
+    from test_onboarding_enrollment_runtime import _enrollment_worker
+    case = await original_initial_case(setup, mode="accepted")
+    assert (await case.owner.execute(case.operation, reconcile=False)).state == "outcome_unknown"
+    restarted = _enrollment_worker(case.store, case.initial.client)
+    restarted.grants = case.initial.grants
+    restarted.resume = case.resumed.append
+    restarted.bind_effect_gate(case.owner._effect_gate, restarted._current_journey)
+    case.owner.initial = restarted
+    await case.owner.execute(case.operation, reconcile=True)
+    assert len(case.receipt_calls) == 1
+    for delay in (15,30,60):
+        case.clock[0] += timedelta(seconds=delay)
+        await case.owner.execute(case.operation, reconcile=True)
+    assert len(case.receipt_calls) == 3 and original_journal(case)["attempts"] == 3
+    assert not case.owner.automatic_recovery(case.operation)
+    assert not case.bootstrap_calls and not case.resumed
+    assert len(case.replacement.calls) == 1
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["invalid-grant","lost-bootstrap"])
+async def test_original_bootstrap_adoption_is_atomic_and_retries_retained_receipt(setup, fault):
+    case = await original_initial_case(setup)
+    case.control.invalid_grant = fault == "invalid-grant"
+    case.control.bootstrap_transient = fault == "lost-bootstrap"
+    result = await case.owner.execute(case.operation, reconcile=False)
+    assert result.state == "outcome_unknown"
+    assert original_journal(case)["receipt_json"]
+    assert not original_journal(case)["completed"]
+    assert case.store.claim_submission(case.receipt["claim_id"]).state.value == "submitted"
+    assert not case.store.consumed_claim_submissions()
+    assert case.store.provisioning_candidate(case.scope["association_request_id"]) is None
+    with case.store.database.read() as connection:
+        assert connection.execute("SELECT count(*) FROM verified_grant_references").fetchone()[0] == 0
+    case.control.invalid_grant = case.control.bootstrap_transient = False
+    case.clock[0] += timedelta(seconds=15)
+    result = await case.owner.execute(case.operation, reconcile=True)
+    assert result.state == "waiting" and original_journal(case)["completed"] == 1
+    assert len(case.receipt_calls) == 1 and case.bootstrap_calls == [case.original_id]*2
+    assert len(case.replacement.calls) == 1

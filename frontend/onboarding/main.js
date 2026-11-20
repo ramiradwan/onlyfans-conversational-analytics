@@ -14,6 +14,7 @@ try {
   let current = { snapshot: null, pending: null, connected: false, error: null };
   let choosingAccount = false;
   let acting = null;
+  let replacingCeremony = false;
   let provider = null;
   let finished = false;
   let chromeAvailable = false, chromeScope = null, chromeCheck = 0;
@@ -46,7 +47,7 @@ try {
       && current.snapshot?.next_task === 'complete' && current.snapshot.local_ready === true
       && authentication?.checked === true && authentication.authenticated === true
       && !authentication.busy && !authentication.error;
-    renderSetup(document, { ...current, choosingAccount, acting, provider, authentication, continuing, chromeAvailable });
+    renderSetup(document, { ...current, choosingAccount, acting, provider, authentication, continuing, chromeAvailable, replacingCeremony });
     if (continuing) {
       finished = true;
       location.replace('/');
@@ -78,7 +79,12 @@ try {
     const button = event.currentTarget;
     if (finished || button.hidden || button.disabled || !button.dataset.action || !current.connected
       || !current.snapshot?.allowed_actions.includes(button.dataset.action)) return;
-    void act(button.dataset.action);
+    const replacing = button.dataset.replaceCeremony === 'true';
+    if (replacing && current.snapshot?.authentication?.state !== 'replacement-required') return;
+    const continuingSource = button.dataset.action === 'account.connect' && current.snapshot?.continuation_available
+      && !current.snapshot?.authentication;
+    if (replacing || continuingSource) replacingCeremony = true;
+    void act(button.dataset.action, replacing ? { replace_ceremony: true } : {}).finally(() => { replacingCeremony = false; render(); });
   });
   for (const button of document.querySelectorAll('#sign-in-options [data-provider]')) {
     button.addEventListener('click', event => {

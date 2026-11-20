@@ -1,0 +1,14 @@
+{
+  "case_count": 8,
+  "files": [
+    {
+      "path": "cases.json",
+      "sha256": "a1320b7e116df6a1bc241f999e8e26633a83ba415af3c8ac4de92816b227e32d",
+      "size": 4363
+    }
+  ],
+  "generator": "tools/generate_bootstrap_recovery_v3_vectors.py",
+  "governing_adr": "docs/adr/0060-operation-scoped-authority-recovery.md",
+  "profile": "urn:bridge-clean:bootstrap-recovery-v3-vectors:v1",
+  "test_only": true
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/browser-ceremony-replacement/v1/replace-request.schema.json",
+  "title": "Browser ceremony replacement replace-request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request",
+    "proof"
+  ],
+  "properties": {
+    "request": {
+      "$ref": "definitions.schema.json#/$defs/request"
+    },
+    "proof": {
+      "$ref": "../../browser-ceremony/v1/definitions.schema.json#/$defs/proof"
+    }
+  }
+}

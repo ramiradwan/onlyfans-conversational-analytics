@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "assignment_basis": {
-    "status": "measured",
-    "method": "reviewed minimal five-file reassignment using two successful Linux runs; serial phase seconds plus parallel phase seconds divided by four",
+    "status": "provisional_unmeasured",
+    "method": "preserved existing assignments; new files assigned deterministically by declared test counts",
     "timing_seconds": {
       "tests/hardening/falsifiers/test_falsifiers.py": 0.915615,
       "tests/stateful/test_agent_delivery.py": 14.646299,
@@ -412,6 +412,8 @@
     "tests/test_activation_enforcement.py": 3,
     "tests/test_activation_gate.py": 2,
     "tests/test_activation_read_scope.py": 2,
+    "tests/test_activation_reconciliation_owner.py": 4,
+    "tests/test_activation_review_replacement_owner.py": 4,
     "tests/test_analysis_authorization.py": 2,
     "tests/test_analysis_restart_offline.py": 4,
     "tests/test_analysis_runtime_gate.py": 4,
@@ -1008,6 +1010,18 @@
       {
         "selector": "tests/test_wait_diagnostics.py",
         "reason": "Coordinator wait diagnostics observe durable command recovery through the Windows encrypted writer."
+      },
+      {
+        "selector": "tests/test_source_replacement_reservations.py",
+        "reason": "Prepared source identity, successor reservation, exact outcome adoption, and restart fencing persist in the encrypted Windows authentication database."
+      },
+      {
+        "selector": "tests/test_activation_review_replacement_owner.py",
+        "reason": "Explicit same-terms review replacement must preserve the exact original commercial authority in the Windows encrypted journal."
+      },
+      {
+        "selector": "tests/test_activation_reconciliation_owner.py",
+        "reason": "Original commercial activation outcome reconciliation must retain durable claim identity in the Windows encrypted journal."
       }
     ],
     "analytics": [
@@ -1324,6 +1338,8 @@
   },
   "windows_platform_shards": {
     "tests/test_activation_gate.py": 3,
+    "tests/test_activation_reconciliation_owner.py": 1,
+    "tests/test_activation_review_replacement_owner.py": 3,
     "tests/test_agent_bundle.py": 1,
     "tests/test_analysis_restart_offline.py": 2,
     "tests/test_analytics_qualification_storage.py": 3,
@@ -1385,6 +1401,7 @@
     "tests/test_redemption_journal_workspace.py": 3,
     "tests/test_release_signing.py": 2,
     "tests/test_resource_paths.py": 3,
+    "tests/test_source_replacement_reservations.py": 1,
     "tests/test_sqlcipher_runtime_supply.py": 2,
     "tests/test_sqlite_backup.py": 2,
     "tests/test_sqlite_canonical_persistence.py": 2,
@@ -1411,8 +1428,8 @@
     "tests/test_webauthn_access_events.py": 3
   },
   "windows_platform_assignment_basis": {
-    "status": "measured",
-    "method": "reviewed file-duration longest-first allocation; shard 1 reserves measured auxiliary step time",
+    "status": "provisional_unmeasured",
+    "method": "Preserved measured assignments; new platform files allocated provisionally using collected case counts as relative weights.",
     "source": {
       "source_commit": "aacf004ce0a44719db6a44e10f108b7e8461a08f",
       "workflow_run_id": "41407674027",
@@ -1509,6 +1526,11 @@
       "tests/test_upgrade_checkpoint.py": 2.4263504999980796,
       "tests/test_upgrade_corrective.py": 4.743177299999843,
       "tests/test_upgrade_lifecycle.py": 2.545206900001176
-    }
+    },
+    "unmeasured_files": [
+      "tests/test_activation_reconciliation_owner.py",
+      "tests/test_activation_review_replacement_owner.py",
+      "tests/test_source_replacement_reservations.py"
+    ]
   }
 }

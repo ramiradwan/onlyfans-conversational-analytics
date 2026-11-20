@@ -82,6 +82,22 @@ class RuntimeSetupOwner:
                 actions.add("activation.review")
                 actions.add("activation.confirm")
                 actions.update(("auth.select", "auth.cancel", "auth.switch"))
+        if self.activation is not None and getattr(self.activation, "reconciliation_pending", lambda *_, **__: False)(
+                journey_id, connection=connection):
+            # The expired original remains pending. Do not admit new review or
+            # confirmation or display its obsolete decision/authentication controls.
+            actions.difference_update(("activation.review", "activation.confirm", "auth.select", "auth.cancel", "auth.switch"))
+            scope.update(desktop_decision=None, desktop_decision_status=None, desktop_authentication=None)
+            # Only a current authenticated creator and verified noncommit can
+            # expose a fresh explicit review, never a generic activation retry.
+            if (policy.identity is not None and policy.identity.role == "creator"
+                    and facts["activation"] == "missing" and all(facts[name] == "verified" for name in
+                        ("installation", "account", "configuration", "enrollment", "pairing"))):
+                proposal = getattr(self.activation, "replacement_offer", lambda *_, **__: None)(
+                    journey_id, scope, connection=connection)
+                if proposal is not None:
+                    scope["activation_replacement"] = proposal
+                    actions.add("activation.review")
         return DomainView(facts, scope, reason="authority_unavailable" if local is None else "none",
             permitted_actions=frozenset(actions), analysis_readiness=creator_readiness(policy, identity, readiness))
 
@@ -93,6 +109,17 @@ class RuntimeSetupOwner:
             raise HostedGrantUnavailable("Saved setup is unavailable")
         if actor is None or actor.policy().identity is None:
             raise HostedGrantUnavailable("Operator authentication is required")
+        if action == "activation.review" and scope.get("activation_replacement") is not None:
+            intent = scope["activation_replacement"]
+            def authorize(*, connection):
+                view = self.read(journey_id, actor=actor, connection=connection)
+                if (view.scope.get("activation_replacement") != {name: value for name, value in intent.items()
+                        if name != "successor_desktop_operation_id"} or any(view.scope.get(name) != scope.get(name)
+                        for name in ("actor", "creator_account_id", "association_request_id", "installation_id", "key",
+                            "organization_id", "source_journey_id"))):
+                    raise HostedGrantUnavailable("Review replacement authority changed")
+            accepted = self.activation.admit_replacement(connection, journey_id, scope, authorize=authorize)
+            return AcceptedContext(journey_id, {**scope, "activation_replacement": accepted})
         return AcceptedContext(journey_id, dict(scope))
 
     def authorize(self, operation, actor, *, connection=None):
@@ -105,6 +132,10 @@ class RuntimeSetupOwner:
                 raise HostedGrantUnavailable("Setup authority changed")
         if operation["action"] not in view.permitted_actions:
             raise HostedGrantUnavailable("Setup authority is unavailable")
+        if expected.get("activation_replacement") is not None and (
+                view.facts["activation"] != "missing" or not all(view.facts[name] == "verified" for name in
+                    ("installation", "account", "configuration", "enrollment", "pairing"))):
+            raise HostedGrantUnavailable("Review replacement authority is unavailable")
         return actor.policy()
 
     def observe(self, operation):
@@ -154,7 +185,9 @@ class RuntimeSetupOwner:
             return await self.setup_owner.execute(operation, reconcile=reconcile)
         if operation["action"] == "activation.review" and self.activation is not None:
             return await self.activation.execute(operation,
-                authorize=lambda connection=None: self.authorize(operation, actor, connection=connection), can_prepare=actor is not None)
+                authorize=lambda connection=None: self.authorize(operation, actor, connection=connection),
+                can_prepare=actor is not None, **({"reconcile": reconcile} if json.loads(
+                    operation["owner_scope_json"]).get("activation_replacement") is not None else {}))
         if operation["action"] == "activation.confirm" and self.activation is not None:
             return await self.activation.confirm(operation, reconcile=reconcile,
                 authorize=lambda: self.authorize(operation, actor))
@@ -167,8 +200,11 @@ class RuntimeSetupOwner:
         if operation["action"].startswith("auth."):
             return True
         if self.activation is not None and operation["action"] in {"activation.review", "activation.confirm"}:
-            return (operation["action"] == "activation.confirm"
-                or self.activation.ceremonies.row(operation["operation_id"]) is not None)
+            if operation["action"] == "activation.confirm":
+                return True
+            recover = getattr(self.activation, "automatic_recovery", None)
+            return (self.activation.ceremonies.row(operation["operation_id"]) is not None if recover is None
+                else recover(operation))
         return (self.setup_owner is not None and operation["action"] in {"account.connect", "account.confirm"}
                 and self.setup_owner.automatic_recovery(operation))
 
@@ -180,6 +216,8 @@ class RuntimeSetupOwner:
             return "setup", self.setup_owner
         if ((action.startswith("auth.") or action == "activation.review") and self.activation is not None
                 and self.activation.ceremonies.authentication is not None):
+            if action == "activation.review" and getattr(self.activation, "reconciliation_pending", lambda *_: False)(operation["journey_id"]):
+                return None
             return "activation", self.activation
         return None
 

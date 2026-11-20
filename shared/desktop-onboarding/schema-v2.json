@@ -149,7 +149,8 @@
             "tiktok",
             "default"
           ]
-        }
+        },
+        "replace_ceremony": {"const": true}
       },
       "allOf": [
         {
@@ -164,8 +165,10 @@
             }
           },
           "then": {
-            "required": [
-              "provider"
+            "oneOf": [
+              {"required": ["provider"], "not": {"required": ["replace_ceremony"]}},
+              {"required": ["replace_ceremony"], "not": {"required": ["provider"]},
+               "properties": {"action": {"const": "auth.select"}}}
             ]
           }
         },
@@ -190,6 +193,10 @@
               ]
             }
           }
+        },
+        {
+          "if": {"required": ["replace_ceremony"]},
+          "then": {"properties": {"action": {"const": "auth.select"}}, "not": {"required": ["provider"]}}
         }
       ]
     },
@@ -573,6 +580,8 @@
                   "enum": [
                     "selection-required",
                     "reauthentication-required",
+                    "replacement-required",
+                    "replacement-pending",
                     "selected",
                     "admitted",
                     "retired",

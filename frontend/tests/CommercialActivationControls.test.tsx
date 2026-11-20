@@ -65,7 +65,7 @@ it('observes an unavailable offer on the same operation and presents a later dec
   const fixture = desktopFixture();
   const pending = { operation_id: decision.operation_id, action: 'activation.review', state: 'waiting', reason: 'activation_unavailable' };
   fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!,
-    decision_status: { operation_id: decision.operation_id, state: 'unavailable' }, pending_operations: [pending] } });
+    decision_status: { operation_id: decision.operation_id, state: 'unavailable' }, pending_operations: [pending], allowed_actions: [] } });
   mount(makeApi(), fixture.api);
   expect(await screen.findByText('Checking the activation offer.')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Set up Full analytics' })).toBeNull();
@@ -80,7 +80,7 @@ it('observes an unavailable offer on the same operation and presents a later dec
 it('does not describe an unknown activation outcome as ongoing offer observation', async () => {
   const fixture = desktopFixture();
   fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!,
-    decision_status: { operation_id: decision.operation_id, state: 'unavailable' },
+    decision_status: { operation_id: decision.operation_id, state: 'unavailable' }, allowed_actions: [],
     pending_operations: [{ operation_id: decision.operation_id, action: 'activation.review', state: 'outcome_unknown', reason: 'operation_unconfirmed' }] } });
   mount(makeApi(), fixture.api);
   expect(await screen.findByText('Activation has not been confirmed.')).toBeTruthy();
@@ -667,4 +667,19 @@ it('does not prepare an activation or open a new ceremony solely from an unprepa
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(fixture.api.begin).not.toHaveBeenCalled();
   expect(fixture.api.openBrowser).not.toHaveBeenCalled();
+});
+
+it('offers an explicit fresh review only after the owner permits replacement', async () => {
+  const fixture = desktopFixture(false);
+  const pending = { operation_id: decision.operation_id, action: 'activation.review', state: 'outcome_unknown', reason: 'operation_unconfirmed' };
+  fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, pending_operations: [pending] } });
+  mount(makeApi(), fixture.api);
+  expect(screen.queryByRole('button', { name: 'Review offer again' })).toBeNull();
+  await act(async () => fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, allowed_actions: ['activation.review'] } }));
+  expect(screen.getByText('Activation was not completed.')).toBeTruthy();
+  expect(fixture.api.begin).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Review offer again' }));
+  expect(fixture.api.begin).toHaveBeenCalledExactlyOnceWith('activation.review');
+  expect(fixture.api.openBrowser).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: 'Activate for free' })).toBeNull();
 });

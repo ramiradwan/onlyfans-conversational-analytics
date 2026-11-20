@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/installation-authority-recovery/v1/error.schema.json",
+  "title": "Installation authority recovery v1 error",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "reason"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:installation-authority-recovery:v1"
+    },
+    "reason": {
+      "enum": [
+        "invalid",
+        "proof_invalid",
+        "authorization_denied",
+        "installation_revoked",
+        "membership_removed",
+        "approval_revoked",
+        "grant_withdrawn",
+        "refresh_eligible",
+        "operation_conflict",
+        "not_ready",
+        "result_unavailable",
+        "expired",
+        "rate_limited",
+        "temporarily_unavailable"
+      ]
+    }
+  }
+}

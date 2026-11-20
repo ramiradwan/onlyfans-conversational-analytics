@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/complimentary-activation-review-replacement/v1/error.schema.json",
+  "title": "Complimentary activation review replacement error v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "reason"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:complimentary-activation-review-replacement:v1"
+    },
+    "reason": {
+      "enum": [
+        "invalid",
+        "proof_invalid",
+        "authorization_denied",
+        "rate_limited",
+        "temporarily_unavailable",
+        "not_ready",
+        "operation_conflict",
+        "expired",
+        "review_unavailable",
+        "original_committed"
+      ]
+    }
+  }
+}

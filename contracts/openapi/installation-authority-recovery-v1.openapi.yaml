@@ -1,0 +1,345 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Bridge Clean installation authority recovery v1 API",
+    "version": "1.0.0",
+    "description": "Protected recovery of an exact enrolled installation after ordinary renewal eligibility ends. Preparation creates no authority. Customer authentication and issuance remain with their existing owners; delivery returns only already committed grant claims."
+  },
+  "servers": [
+    {
+      "url": "https://control-plane.example.invalid"
+    }
+  ],
+  "paths": {
+    "/v1/installations/{installation_id}/authority-recovery:prepare": {
+      "post": {
+        "operationId": "prepareInstallationAuthorityRecovery",
+        "parameters": [
+          {
+            "name": "installation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/installation-authority-recovery/v1/prepare-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact operation result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/prepare-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/installations/{installation_id}/authority-recovery:deliver": {
+      "post": {
+        "operationId": "deliverInstallationAuthorityRecovery",
+        "parameters": [
+          {
+            "name": "installation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/installation-authority-recovery/v1/deliver-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact operation result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/deliver-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/installations/{installation_id}/authority-recovery-proof-challenges": {
+      "post": {
+        "operationId": "issueInstallationAuthorityRecoveryProofChallenge",
+        "parameters": [
+          {
+            "name": "installation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/installation-authority-recovery/v1/proof-challenge-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Exact operation result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/proof-challenge-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-authority-recovery/v1/error.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
