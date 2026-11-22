@@ -208,45 +208,49 @@ h1:focus { outline: none; }
 .browser-task-page .brand-mark { flex: none; }
 .browser-task .setup-task-card { padding: 32px; position: relative; border-color: var(--dipsy-intent-surface-dominant-border); box-shadow: var(--dipsy-intent-surface-dominant-elevation); }
 .browser-task-header { display: flex; align-items: center; gap: 12px; margin-block-end: 16px; }
-.browser-task-header .setup-eyebrow { margin: 0; font-size: .75rem; font-weight: var(--dipsy-font-weight-semibold); }
+.browser-task-header .setup-eyebrow { margin: 0; font-size: .75rem; font-weight: var(--dipsy-font-weight-semibold); line-height: 1.4; letter-spacing: .08em; text-transform: uppercase; }
 .browser-task-spot { display: grid; place-items: center; flex: none; inline-size: 40px; block-size: 40px; border-radius: var(--dipsy-radius-control); background: var(--dipsy-color-surface-subtle); color: var(--dipsy-color-text-secondary); box-shadow: inset 0 0 0 1px var(--dipsy-color-divider); }
 .browser-task-spot svg { inline-size: 20px; block-size: 20px; fill: currentColor; }
-.browser-task .setup-task-card > h1 { min-block-size: 0; margin: 0; font-size: clamp(1.375rem, 1.1rem + .9vw, 1.75rem); line-height: 1.25; letter-spacing: -.015em; overflow-wrap: anywhere; }
+.browser-task .setup-task-card > h1 { min-block-size: 0; margin: 0; font-size: clamp(1.375rem, 1.1rem + .9vw, 1.75rem); line-height: 1.25; letter-spacing: -.015em; text-wrap: balance; overflow-wrap: anywhere; }
 .browser-task .task-actions-slot .setup-actions:first-child { margin-block-start: 24px; }
 .browser-task .setup-actions > :is(button, .button) { min-block-size: var(--dipsy-static-control-height); min-inline-size: 0; overflow-wrap: anywhere; }
-.browser-task .setup-actions:not(:has(button:not([hidden]), #extension-install:not([hidden]))) #desktop-return { width: fit-content; max-inline-size: 100%; }
 .browser-task #task-status { min-block-size: 0; margin: 16px 0 0; padding: 0; color: var(--dipsy-color-text); font-size: .9375rem; line-height: 1.5; }
-.browser-task #task-status[data-tone="neutral"] { color: var(--dipsy-color-text-secondary); }
-.browser-task #task-status[data-tone="none"] { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); margin: 0; }
-.browser-task #task-status[data-tone]::after,
-.browser-task #task-status[data-tone]:not([data-tone="progress"])::before { content: none; }
-.browser-task #task-status:is([data-tone="success"], [data-tone="error"], [data-tone="warning"], [data-tone="progress"]) { padding-inline-start: 28px; }
-.browser-status-icon, .browser-status-icon path { display: none; }
-.browser-task #task-status:is([data-tone="success"], [data-tone="error"], [data-tone="warning"]) .browser-status-icon { display: block; position: absolute; inset-inline-start: 0; inset-block-start: calc((1lh - 20px) / 2); inline-size: 20px; block-size: 20px; fill: currentColor; color: var(--dipsy-color-text-secondary); }
+.browser-task #task-status:is([data-tone="neutral"], [data-tone="none"]) { color: var(--dipsy-color-text-secondary); }
+.browser-task #task-status:has(#task-message:empty) { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); margin: 0; }
+.browser-task #task-status::before,
+.browser-task #task-status::after { content: none; }
+.browser-task #task-status:is([data-tone="success"], [data-tone="error"], [data-tone="warning"], [data-tone="progress"]) {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: start; column-gap: 10px;
+}
+.browser-status-icon, .browser-status-icon > [data-icon] { display: none; }
+.browser-task #task-status:is([data-tone="success"], [data-tone="error"], [data-tone="warning"], [data-tone="progress"]) .browser-status-icon {
+  display: block; inline-size: 20px; block-size: 20px; margin-block-start: max(0px, calc((1lh - 20px) / 2));
+  fill: currentColor; color: var(--dipsy-color-text-secondary);
+}
 .browser-task #task-status[data-tone="error"] .browser-status-icon { color: var(--dipsy-color-error); }
-.browser-task #task-status[data-tone="success"] .browser-status-icon { color: var(--dipsy-color-primary); }
+.browser-task #task-status:is([data-tone="success"], [data-tone="progress"]) .browser-status-icon { color: var(--dipsy-color-primary); }
 .browser-task #task-status:is([data-tone="warning"], [data-tone="error"]) [data-icon="notice"],
-.browser-task #task-status[data-tone="success"] [data-icon="success"] { display: block; }
-
-.browser-task #task-status[data-tone="progress"]::before,
-.browser-task[data-journey-state="browser.ready"] .browser-task-spot::before { content: ""; inline-size: 16px; block-size: 16px; margin-block-start: calc((1lh - 16px) / 2); inset-block-start: 0; border: 2px solid var(--dipsy-color-primary); border-inline-end-color: transparent; border-radius: 50%; }
-.browser-task[data-journey-state="browser.ready"] .browser-task-spot::before { margin: 0; box-sizing: border-box; }
-.browser-task[data-journey-state="browser.ready"] .browser-task-spot svg { display: none; }
-.browser-task[data-journey-state="browser.auth_opening"] #task-status { margin-block-start: 24px; min-block-size: var(--dipsy-static-control-height); padding-block: max(10px, calc((var(--dipsy-static-control-height) - 1lh) / 2)); }
-.browser-task[data-journey-state="browser.auth_opening"] #task-status::before { inset-block-start: max(10px, calc((var(--dipsy-static-control-height) - 1lh) / 2)); }
+.browser-task #task-status[data-tone="success"] [data-icon="success"],
+.browser-task #task-status[data-tone="progress"] [data-icon="pending"] { display: block; }
+.browser-task #task-status[data-tone="progress"] {
+  min-block-size: var(--dipsy-static-control-height); padding-block: max(0px, calc((var(--dipsy-static-control-height) - 1lh) / 2));
+}
+.browser-task .task-actions-slot:has(.setup-actions[hidden]) > #task-status[data-tone="progress"] { margin-block-start: 24px; }
 
 .browser-loading-action { display: none; }
-.browser-task [aria-busy="true"] :is(.setup-eyebrow, h1) { position: relative; color: transparent; }
-.browser-task [aria-busy="true"] :is(.setup-eyebrow, h1)::before { content: ""; position: absolute; inset: 0 auto auto 0; inline-size: 100%; block-size: 1lh; border-radius: var(--dipsy-radius-compact); background: var(--dipsy-color-surface-subtle); }
-.browser-task [aria-busy="true"] h1::before { inline-size: min(56%, 22rem); }
+.browser-task [aria-busy="true"] .setup-eyebrow { font-size: 0; inline-size: 32%; block-size: .675rem; border-radius: var(--dipsy-radius-compact); background: var(--dipsy-intent-surface-placeholder); }
+.browser-task [aria-busy="true"] #task-title { position: relative; }
+.browser-task [aria-busy="true"] #task-title::before { content: ""; display: block; inline-size: 64%; block-size: 1lh; border-radius: var(--dipsy-radius-compact); background: var(--dipsy-intent-surface-placeholder); }
+.browser-task [aria-busy="true"] #task-title-text { position: absolute; inset-block-start: 0; font-size: 1px; line-height: 1; clip-path: inset(50%); }
 .browser-task [aria-busy="true"] .browser-task-spot svg { visibility: hidden; }
-.browser-task [aria-busy="true"] .browser-loading-action { display: block; margin-block-start: 24px; inline-size: min(100%, 11rem); block-size: var(--dipsy-static-control-height); border-radius: var(--dipsy-radius-control); background: var(--dipsy-color-surface-subtle); }
+.browser-task [aria-busy="true"] .browser-loading-action { display: block; margin-block-start: 24px; inline-size: min(100%, 12rem); block-size: var(--dipsy-static-control-height); border-radius: var(--dipsy-radius-control); background: var(--dipsy-intent-surface-placeholder); }
 
 @media (max-width: 600px) { .browser-task .setup-task-card { padding: 24px; } }
+@media (max-width: 420px) { .browser-task .setup-task-card { padding-inline: 20px; } }
 @media (prefers-reduced-motion: no-preference) {
-  .browser-task .setup-task-card:not([aria-busy="true"]) { animation: browser-task-arrive var(--dipsy-motion-standard) ease-out both; }
-  .browser-task[data-journey-state="browser.ready"] .browser-task-spot::before { animation: status-rotate 1s linear infinite; }
-  @keyframes browser-task-arrive { from { opacity: 0; transform: translateY(4px); } }
+  .browser-task .setup-task-card:not([aria-busy="true"]) { animation: browser-task-arrive var(--dipsy-motion-standard) var(--dipsy-easing-enter) both; }
+  .browser-task #task-status[data-tone="progress"] .browser-status-icon { animation: status-rotate 1s linear infinite; }
+  @keyframes browser-task-arrive { from { opacity: 0; transform: translateY(8px); } }
 }
 
 @media (max-width: 600px) {

@@ -336,6 +336,50 @@ test('native recovery aligns the outlined pending icon in the Trust action row',
 });
 
 for (const mode of ['light', 'dark']) {
+  test(`Chrome task placeholders and narrow handoffs match the boards in ${mode}`, async () => {
+    await withStaticSurface('browser-task', 1440, 1, mode, 'loading', async (page, render) => {
+      for (const [width, size] of [[1440, 16], [390, 16], [320, 32]]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.evaluate(size => { document.documentElement.style.fontSize = size + 'px'; }, size);
+        await render(BROWSER_TASK_STATES.loading);
+        const loading = page.getByRole('region', { name: 'Loading browser task' });
+        assert.equal(await loading.getAttribute('aria-busy'), 'true');
+        assert(await loading.getByRole('heading', { name: 'Loading browser task' }).count());
+        const metrics = await loading.evaluate(card => {
+          const heading = card.querySelector('h1');
+          const title = heading.getBoundingClientRect();
+          const bar = getComputedStyle(heading, '::before');
+          const eyebrow = card.querySelector('.setup-eyebrow').getBoundingClientRect();
+          const spot = card.querySelector('.browser-task-spot').getBoundingClientRect();
+          return {
+            titleHeight: title.height, lineHeight: parseFloat(getComputedStyle(heading).lineHeight),
+            titleWidth: title.width, barWidth: parseFloat(bar.width), barColor: bar.backgroundColor,
+            actionColor: getComputedStyle(card.querySelector('.browser-loading-action')).backgroundColor,
+            token: getComputedStyle(card).getPropertyValue('--dipsy-intent-surface-placeholder').trim(),
+            eyebrowCenter: eyebrow.top + eyebrow.height / 2, spotCenter: spot.top + spot.height / 2,
+          };
+        });
+        assert(Math.abs(metrics.titleHeight - metrics.lineHeight) < 1, JSON.stringify({ width, ...metrics }));
+        assert(Math.abs(metrics.barWidth - metrics.titleWidth * .64) < 1);
+        assert(Math.abs(metrics.eyebrowCenter - metrics.spotCenter) < 1);
+        assert(colorDistance(metrics.barColor, metrics.token) < .001);
+        assert(colorDistance(metrics.actionColor, metrics.token) < .001);
+
+        if (width > 420) continue;
+        for (const name of ['extension_disconnected', 'profile_mismatch', 'account_mismatch', 'reported',
+          'task_completed', 'task_expired', 'task_changed', 'service_unavailable']) {
+          await render(BROWSER_TASK_STATES[name]);
+          const handoff = await page.locator('#desktop-return').evaluate(link => {
+            const actions = link.parentElement;
+            const card = link.closest('.setup-task-card');
+            return [link.getBoundingClientRect().width, actions.getBoundingClientRect().width, getComputedStyle(card).paddingInlineStart];
+          });
+          assert.deepEqual(handoff, [handoff[1], handoff[1], '20px'], `${width} ${name}`);
+        }
+      }
+    });
+  });
+
   test(`Chrome task copy and waiting swaps fit at 1440px in ${mode}`, async () => {
     await withStaticSurface('browser-task', 1440, 1, mode, 'auth_idle', async (page, render) => {
       const heading = page.locator('#task-title');
@@ -395,6 +439,74 @@ for (const mode of ['light', 'dark']) {
     });
   });
 }
+
+test('Chrome task cards use the specified spot icons, quiet guidance and pending rows', async () => {
+  await withStaticSurface('browser-task', 1440, 1, 'light', 'needs_consent', async (page, render) => {
+    const expectedSpots = {
+      unavailable: 'extension', extension_disconnected: 'app', needs_consent: 'extension', needs_permission: 'extension',
+      needs_account: 'account', account_mismatch: 'account', pairing_saved: 'link', auth_idle: 'account',
+      auth_opening: 'account', paused: 'pause', ready: 'browser',
+    };
+    for (const [name, expected] of Object.entries(expectedSpots)) {
+      await render(BROWSER_TASK_STATES[name]);
+      const spot = page.locator('.browser-task-spot');
+      assert(await spot.locator('svg').isVisible(), name);
+      const icons = await spot.locator('path').evaluateAll(paths =>
+        paths.filter(path => getComputedStyle(path).display !== 'none').map(path => path.dataset.spot));
+      assert.deepEqual(icons, [expected], name);
+      assert.equal(await spot.evaluate(node => getComputedStyle(node, '::before').content), 'none');
+    }
+
+    for (const name of ['task_changed', 'task_expired', 'needs_consent', 'needs_permission', 'needs_account', 'pairing_saved']) {
+      await render(BROWSER_TASK_STATES[name]);
+      const row = page.getByRole('status');
+      assert(await row.isVisible(), name);
+      assert.equal(await row.getAttribute('data-tone'), 'none', name);
+      assert.equal(await row.locator('svg:visible').count(), 0, name);
+      const color = await row.evaluate(node => {
+        const css = getComputedStyle(node);
+        return [css.color, css.getPropertyValue('--dipsy-color-text-secondary').trim()];
+      });
+      assert(colorDistance(...color) < .001, name);
+    }
+    assert.deepEqual(await page.locator('.browser-task-header .setup-eyebrow, #task-title').evaluateAll(([eyebrow, title]) => [
+      getComputedStyle(eyebrow).textTransform,
+      parseFloat(getComputedStyle(eyebrow).letterSpacing) / parseFloat(getComputedStyle(eyebrow).fontSize),
+      getComputedStyle(title).textWrapStyle,
+    ]), ['uppercase', .08, 'balance']);
+
+    for (const name of ['auth_opening', 'paused', 'status_reconnecting', 'pairing_connecting',
+      'auth_checking', 'auth_unconfirmed', 'pairing_checking']) {
+      await render(BROWSER_TASK_STATES[name]);
+      const row = page.getByRole('status');
+      const icon = row.locator('svg');
+      assert(await icon.isVisible(), name);
+      const arc = icon.locator('circle');
+      assert.equal(await arc.getAttribute('r'), '8');
+      assert.equal(await arc.getAttribute('stroke-width'), '2.2');
+      assert.equal(await arc.getAttribute('stroke-linecap'), 'round');
+      assert.equal(await icon.evaluate(node => getComputedStyle(node).animationName), 'none');
+      const { width, height } = await icon.boundingBox();
+      assert.deepEqual([width, height], [20, 20]);
+      const { y, height: rowHeight } = await row.boundingBox();
+      const anchor = page.locator(name.endsWith('checking') || name === 'auth_unconfirmed' ? '#desktop-return' : '#task-title');
+      const anchorBox = await anchor.boundingBox();
+      const gap = name.endsWith('checking') || name === 'auth_unconfirmed' ? 16 : 24;
+      assert.deepEqual([rowHeight, y - anchorBox.y - anchorBox.height], [44, gap], name);
+    }
+
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await render(BROWSER_TASK_STATES.paused);
+    assert.equal(await page.locator('#task-status svg').evaluate(node => getComputedStyle(node).animationName), 'status-rotate');
+    const motion = await page.locator('.setup-task-card').evaluate(async node => {
+      await new Promise(requestAnimationFrame);
+      const arrival = node.getAnimations().find(animation => animation.animationName === 'browser-task-arrive');
+      const [first] = arrival.effect.getKeyframes();
+      return [first.opacity, first.transform, first.easing, arrival.effect.getTiming().duration];
+    });
+    assert.deepEqual(motion, ['0', 'translateY(8px)', 'cubic-bezier(0, 0, 0, 1)', 200]);
+  });
+});
 
 test('Chrome task copy wraps freely at 320px and 2× text', async () => {
   await withStaticSurface('browser-task', 320, 2, 'dark', 'pairing_saved', async (page, render) => {

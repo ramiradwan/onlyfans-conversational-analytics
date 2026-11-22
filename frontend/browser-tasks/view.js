@@ -46,6 +46,12 @@ const serviceFailures = {
   authorization_refused: [handoff, 'This page can’t continue setup.', 'desktop-handoff'],
 };
 const extensionPrompts = ['needs-consent', 'needs-permission', 'needs-account'];
+const quietStatuses = [...extensionPrompts, 'pairing_saved', 'task_expired', 'task_changed'];
+const taskSpots = {
+  unavailable: 'extension', extension_disconnected: 'app', 'needs-consent': 'extension', 'needs-permission': 'extension',
+  'needs-account': 'account', account_mismatch: 'account', pairing_saved: 'link', auth_idle: 'account',
+  auth_opening: 'account', paused: 'pause',
+};
 const desktopHandoffs = ['reported', 'task_completed', 'task_expired', 'task_changed', 'profile_mismatch',
   'account_mismatch', 'unavailable', 'extension_disconnected', 'service_unavailable', 'auth_checking', 'auth_closed',
   'auth_unconfirmed', 'auth_access_required', 'pairing_checking', 'pairing_unconfirmed', 'pairing_access_required'];
@@ -93,7 +99,11 @@ export function renderBrowserTask(document, value) {
   const header = card.querySelector('.browser-task-header');
   if (loading) header.setAttribute('aria-hidden', 'true');
   else header.removeAttribute('aria-hidden');
-  const heading = get('task-title');
+  const spot = taskSpots[state] ?? 'browser';
+  for (const icon of header.querySelectorAll('[data-spot]')) {
+    icon.toggleAttribute('hidden', icon.dataset.spot !== spot);
+  }
+  const heading = get('task-title-text');
   const nextTitle = title ?? (pairing ? 'Connect browser' : authentication ? 'Sign in' : 'Browser access');
   if (heading.textContent !== nextTitle) heading.textContent = nextTitle;
 
@@ -111,7 +121,7 @@ export function renderBrowserTask(document, value) {
     ? 'Dipsy can’t connect right now. Open the desktop app to continue setup.' : message;
   const tone = ['task_completed', 'reported'].includes(state) ? 'success'
     : ['auth_unconfirmed', 'paused'].includes(state) ? 'progress' : recoveryTone(classification);
-  get('task-status').dataset.tone = text ? tone : 'none';
+  get('task-status').dataset.tone = text && !quietStatuses.includes(state) ? tone : 'none';
   setStatus(get('task-message'), text);
   if (card !== previous && actions[focused?.id]) {
     focused.focus({ preventScroll: true });
