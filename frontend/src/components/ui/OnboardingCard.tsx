@@ -18,6 +18,7 @@ import SyncOutlined from '@mui/icons-material/SyncOutlined';
 import SystemUpdateAltOutlined from '@mui/icons-material/SystemUpdateAltOutlined';
 import WebAssetOutlined from '@mui/icons-material/WebAssetOutlined';
 import SvgIcon from '@mui/material/SvgIcon';
+import Typography from '@mui/material/Typography';
 import { useId, type ReactNode } from 'react';
 
 import '../../theme/onboarding.css';
@@ -63,7 +64,7 @@ export function OnboardingAction({ children, swap }: { children: ReactNode; swap
   </div>;
 }
 
-const statusIcons = { neutral: InfoOutlined, done: CheckCircleOutlined, error: ErrorOutlineOutlined };
+const statusIcons = { neutral: InfoOutlined, done: CheckCircleOutlined, attention: ErrorOutlineOutlined, error: ErrorOutlineOutlined };
 
 export function OnboardingStatus({
   children, tone = 'neutral', animate = false, live = true,
@@ -72,11 +73,11 @@ export function OnboardingStatus({
   return <div className="onboarding-status" data-tone={tone} data-arrive={animate ? '' : undefined}
     role={live ? 'status' : undefined}>
     {children != null && children !== false && children !== '' && <>
-      <Icon focusable="false">
+      <Icon focusable="false" sx={tone === 'attention' ? { color: 'text.secondary' } : undefined}>
         {tone === 'pending' && <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor"
           strokeWidth="2.2" strokeDasharray="38 13" strokeLinecap="round" />}
       </Icon>
-      <span>{children}</span>
+      <Typography component="span" variant="body2">{children}</Typography>
     </>}
   </div>;
 }

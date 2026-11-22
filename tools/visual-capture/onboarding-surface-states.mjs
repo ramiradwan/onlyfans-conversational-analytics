@@ -100,8 +100,50 @@ function localAuth(overrides = {}) {
 const finishSetupVerifiedFacts = baseFacts(['browser_access', 'installation', 'account', 'configuration']);
 const authenticatedLocal = localAuth({ enrolled: true, authenticated: true });
 
+function protectedRecovery(recovery, snapshot = {}, state = {}) {
+  return desktopState({
+    next_task: 'account-connection',
+    authority_recovery: recovery,
+    ...snapshot,
+  }, { authentication: localAuth({ access: 'expired', enrolled: null }), ...state });
+}
+
+function protectedBrowser(phase, state = {}) {
+  return protectedRecovery('sign-in-required', {
+    authority_recovery_browser: phase,
+    allowed_actions: ['auth.cancel'],
+    authentication: signInProjection({
+      operation_id: OPERATION_ID,
+      state: 'selected',
+      actions: { select: false, open_browser: phase === 'ready', cancel: true, switch_account: false },
+    }),
+  }, state);
+}
+
 export const DESKTOP_ONBOARDING_STATES = Object.freeze({
   loading: desktopState(null, { connected: false }),
+  recovery_status_pending: protectedRecovery('available', {}, { connected: false }),
+  recovery_blocked: protectedRecovery('blocked'),
+  recovery_available: protectedRecovery('available', { allowed_actions: ['account.connect'] }),
+  recovery_selection_required: protectedRecovery('sign-in-required', {
+    allowed_actions: ['auth.select'],
+    authentication: signInProjection({ operation_id: OPERATION_ID }),
+  }),
+  recovery_preparing: protectedRecovery('preparing'),
+  recovery_browser_ready: protectedBrowser('ready'),
+  recovery_browser_opening: protectedBrowser('ready', { acting: 'browser.open' }),
+  recovery_browser_unavailable: protectedBrowser('ready', { error: 'chrome_unavailable' }),
+  recovery_browser_claimed: protectedBrowser('launch-claimed'),
+  recovery_browser_handed_off: protectedBrowser('handed-off'),
+  recovery_canceling: protectedBrowser('handed-off', { acting: 'auth.cancel' }),
+  recovery_browser_unconfirmed: protectedBrowser('unconfirmed'),
+  recovery_checking: protectedRecovery('checking'),
+  recovery_retired: protectedRecovery('sign-in-required', {
+    allowed_actions: ['auth.select'],
+    authentication: signInProjection({ operation_id: OPERATION_ID, state: 'retired' }),
+  }),
+  recovery_restoring: protectedRecovery('restoring'),
+  recovery_connection_unavailable: protectedRecovery('available', {}, { connected: false, error: 'connection_unavailable' }),
 
   browser_access_needed: desktopState({
     journey_id: null,

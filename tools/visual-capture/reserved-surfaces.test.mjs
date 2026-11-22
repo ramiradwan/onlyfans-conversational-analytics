@@ -172,8 +172,13 @@ test('desktop task copy fits the 1440px budgets in both color schemes', async ()
         ].map(id => {
           const node = document.getElementById(id);
           const range = document.createRange();
-          range.selectNodeContents(node);
-          return [id, new Set([...range.getClientRects()].map(rect => rect.top)).size];
+          const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+          const tops = new Set();
+          while (walker.nextNode()) {
+            range.selectNodeContents(walker.currentNode);
+            for (const rect of range.getClientRects()) tops.add(rect.top);
+          }
+          return [id, tops.size];
         })));
         for (const [id, count] of Object.entries(lines)) {
           assert(count <= (id === 'task-description' ? 2 : 1), `${mode} ${name} ${id} wraps to ${count} lines`);
@@ -181,6 +186,23 @@ test('desktop task copy fits the 1440px budgets in both color schemes', async ()
       }
     });
   }
+});
+
+test('native recovery aligns the outlined pending icon in the Trust action row', async () => {
+  await withDesktop(1440, 1, 'light', 'recovery_preparing', async page => {
+    const row = page.locator('#task-pending');
+    const icon = row.locator('svg[data-status-icon="pending"]');
+    const bounds = await row.boundingBox();
+    const mark = await icon.boundingBox();
+    assert.equal(bounds.height, 48);
+    assert.equal(mark.width, 20);
+    assert.equal(mark.height, 20);
+    assert.equal(mark.y - bounds.y, 14);
+    assert.equal(await row.evaluate(node => getComputedStyle(node, '::before').content), 'none');
+    assert.equal(await icon.evaluate(node => getComputedStyle(node).animationName), 'none');
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    assert.equal(await icon.evaluate(node => getComputedStyle(node).animationName), 'status-rotate');
+  });
 });
 
 for (const mode of ['light', 'dark']) {

@@ -47,9 +47,9 @@ const passkeyErrors = {
 };
 // No action here can restore access. Pushed updates replace this copy.
 const accessCopy = {
-  renewing: ['Renewing access on this computer. This window updates when renewal finishes.', 'Renewal needs an internet connection.'],
-  expired: ['Access on this computer expired. It could not be renewed in time.', 'Contact support to restore access.'],
-  removed: ['Access was removed from this computer.', 'Contact support if you did not expect this.'],
+  renewing: ['Renewing access on this computer', 'This page updates when renewal finishes.', 'Renewal needs an internet connection.'],
+  expired: ['Access on this computer isn’t active', 'This page updates by itself if you can sign in again.'],
+  removed: ['Access removed from this computer', 'This computer can no longer open analytics.'],
 };
 
 // Avatars show the first character of a labelled account's name.
@@ -57,26 +57,62 @@ const initial = label => [...new Intl.Segmenter(undefined, { granularity: 'graph
   .segment((label?.display_name || label?.username || '').trim())][0]?.segment.toUpperCase() || '';
 const accountName = label => label?.display_name || (label?.username ? '@' + label.username : '');
 
+const statusIcons = { neutral: 'info', progress: 'pending', success: 'done', warning: 'attention', error: 'attention' };
+
 export function renderSetup(document, state) {
   const get = id => document.getElementById(id);
   const value = state.snapshot;
   const recovery = authorityRecoveryView(state, state.acting);
   const main = document.querySelector('main');
+  const card = main.querySelector('.setup-task-card');
   const loading = !value && !state.error;
-  main.querySelector('.setup-task-card').setAttribute('aria-busy', String(loading));
+  const trust = Boolean(recovery || value?.next_task === 'finish-setup' && state.authentication && !state.authentication.authenticated);
+  if (trust) card.dataset.composition = 'trust';
+  else delete card.dataset.composition;
+  const updateStatus = (element, message, tone, showIcon = trust) => {
+    setStatus(element, message || '', tone);
+    const kind = showIcon && message && statusIcons[tone];
+    const icon = element.firstElementChild;
+    if (kind && icon?.dataset.statusIcon === kind) return;
+    icon?.remove();
+    if (kind) element.prepend(get('desktop-trust-status-icons').content.querySelector(`[data-status-icon="${kind}"]`).cloneNode(true));
+  };
+  const taskStatus = get('task-status');
+  const updateTaskStatus = (message, tone) => {
+    updateStatus(taskStatus, message, tone);
+    Object.assign(taskStatus.style, {
+      minBlockSize: trust ? '0' : '',
+      marginBlockStart: trust && !message ? '0' : '',
+      marginBlockEnd: trust ? '0' : '',
+    });
+  };
+  const brand = document.querySelector('.setup-header .setup-brand');
+  Object.assign(brand.style, { flexShrink: trust ? '1' : '', minInlineSize: trust ? '0' : '',
+    whiteSpace: trust ? 'normal' : '', overflowWrap: trust ? 'anywhere' : '' });
+  brand.firstElementChild.style.flexShrink = trust ? '0' : '';
+  Object.assign(card.style, { inlineSize: recovery ? '100%' : '', maxInlineSize: recovery ? '560px' : '',
+    marginInline: recovery ? 'auto' : '' });
+  for (const control of [get('task-action'), get('protected-cancel'), get('task-pending'), card.querySelector('.desktop-loading-action')]) {
+    control.style.minBlockSize = recovery ? 'var(--dipsy-static-large-control-height)' : '';
+  }
+  card.setAttribute('aria-busy', String(loading || Boolean(recovery && !recovery.title)));
   delete main.dataset.access;
   main.querySelector('nav').hidden = Boolean(recovery);
+  get('task-step').hidden = Boolean(recovery);
   get('protected-cancel').hidden = true;
   get('task-action').dataset.protectedRecovery = '';
   if (recovery) {
     main.dataset.journeyState = 'desktop.' + 'setup_authority_recovery';
     main.dataset.task = 'authority-recovery';
-    get('task-step').textContent = 'Account access';
-    get('task-title').textContent = recovery.title;
+    get('task-title').textContent = recovery.title || 'Checking access';
     get('task-description').textContent = recovery.description;
     get('task-description').hidden = !recovery.description;
-    setStatus(get('task-status'), recovery.status, recovery.tone);
-    for (const id of ['local-access', 'local-authenticate', 'decision-details', 'decision-sign-in', 'decision-provider', 'task-pending', 'header-account', 'sign-in-options',
+    const pending = recovery.tone === 'progress' && Boolean(recovery.status);
+    const pendingRow = get('task-pending');
+    pendingRow.hidden = !pending;
+    updateStatus(pendingRow, pending ? recovery.status : '', 'progress');
+    updateTaskStatus(pending ? '' : recovery.status, recovery.tone);
+    for (const id of ['local-access', 'local-authenticate', 'decision-details', 'decision-sign-in', 'decision-provider', 'header-account', 'sign-in-options',
       'browser-reopen', 'sign-in-switch', 'sign-in-back', 'setup-code-open']) get(id).hidden = true;
     const primary = get('task-action'), cancel = get('protected-cancel');
     primary.hidden = !recovery.action;
@@ -87,6 +123,7 @@ export function renderSetup(document, state) {
     primary.dataset.replaceCeremony = 'false';
     cancel.hidden = !recovery.cancel;
     cancel.disabled = recovery.disabled;
+    cancel.classList.toggle('secondary', !recovery.cancelPrimary);
     for (const group of document.querySelectorAll('.setup-actions')) group.hidden = [...group.children].every(child => child.hidden);
     focusTransition(get('task-title'), state.deliberate);
     return;
@@ -103,10 +140,16 @@ export function renderSetup(document, state) {
   const lapsed = needsAuthentication && accessCopy[authentication.access] || null;
   const task = value?.next_task;
   const securing = task === 'finish-setup' && needsAuthentication;
-  const passkeyKnown = needsAuthentication && typeof authentication.enrolled === 'boolean' && !lapsed;
-  const ceremonyPending = passkeyKnown && authentication.busy && !authentication.checking && !authentication.error && !unavailable;
-  const localDescription = lapsed?.[0] || (needsAuthentication && !securing && passkeyKnown ? 'Use a passkey to sign in on this computer.' : '');
-  get('local-access').hidden = !needsAuthentication || reasonClass === 'invariant_failed';
+  const checkingPasskey = needsAuthentication && (authentication.checking || authentication.recoveringStatus || authentication.checked === false);
+  const passkeyPlaceholder = securing && checkingPasskey && !lapsed && !unavailable;
+  if (passkeyPlaceholder) card.setAttribute('aria-busy', 'true');
+  const passkeyKnown = needsAuthentication && typeof authentication.enrolled === 'boolean' && !lapsed
+    && !checkingPasskey;
+  const ceremonyPending = passkeyKnown && authentication.busy && !authentication.error && !unavailable;
+  const localDescription = lapsed && !securing ? `${lapsed[0]}. ${lapsed[1]}` : needsAuthentication && !securing && passkeyKnown
+    ? 'Windows will ask you to confirm it’s you.' : '';
+  get('local-access').hidden = !needsAuthentication || reasonClass === 'invariant_failed' || passkeyPlaceholder
+    || Boolean(securing && lapsed && !lapsed[2]);
   get('local-access').dataset.journeyState = 'desktop.setup_local_access';
   setStatus(get('local-access-description'), localDescription);
   get('local-access-description').hidden = !localDescription;
@@ -114,16 +157,20 @@ export function renderSetup(document, state) {
   get('local-authenticate').disabled = !state.connected || authentication?.busy;
   get('local-authenticate').textContent = authentication?.enrolled ? 'Sign in with passkey' : 'Create passkey';
   const ceremonyFailure = ['passkey_unconfirmed', 'passkey_start_unavailable'].includes(authentication?.error) && authentication?.attempt;
-  setStatus(get('local-auth-pending'), ceremonyPending ? authentication.attempt === 'create' ? 'Waiting for your passkey…' : 'Waiting for verification…' : '', 'progress');
+  const statusReadUnavailable = securing && !lapsed && !checkingPasskey && !passkeyKnown
+    && (!authentication.error || ['passkey_status_unavailable', 'passkey_status_network'].includes(authentication.error));
+  updateStatus(get('local-auth-pending'), ceremonyPending ? authentication.attempt === 'create' ? 'Waiting for your passkey…' : 'Waiting for verification…' : '', 'progress', true);
   get('local-auth-pending').hidden = !ceremonyPending;
-  setStatus(get('local-auth-status'), lapsed?.[1]
-    || (authentication?.recoveringStatus ? 'Checking access automatically…' : null)
+  updateStatus(get('local-auth-status'), lapsed ? lapsed[2] || '' : passkeyPlaceholder ? ''
+    : statusReadUnavailable ? 'This page updates by itself.'
+    : (authentication?.recoveringStatus ? 'Checking access automatically…' : null)
     || (authentication?.checking ? 'Checking access on this computer…' : null)
     || (authentication?.error ? recoveryClass(passkeyRecovery, authentication.error) === 'invariant_failed'
       ? 'Access on this computer could not be checked.' : ceremonyFailure === 'create' ? 'Passkey setup didn’t finish.'
         : ceremonyFailure === 'sign-in' ? 'Sign-in didn’t finish.' : passkeyErrors[authentication.error] : null),
-  authentication?.recoveringStatus || authentication?.checking || authentication?.busy || authentication?.access === 'renewing'
-    ? 'progress' : lapsed ? 'warning' : recoveryTone(recoveryClass(passkeyRecovery, authentication?.error)));
+  lapsed ? 'neutral' : authentication?.error === 'passkey_sign_in_required' ? 'success'
+    : ceremonyFailure || statusReadUnavailable ? 'warning' : checkingPasskey || authentication?.busy ? 'progress'
+      : recoveryTone(recoveryClass(passkeyRecovery, authentication?.error)), true);
   const accountDecision = value?.decision?.action === 'connect-account' ? value.decision : null;
   const decisionStatus = value?.decision_status?.state;
   const decision = decisionStatus === 'accepted' ? null : accountDecision;
@@ -191,12 +238,9 @@ export function renderSetup(document, state) {
       taskTitle = authentication.enrolled ? 'Confirm it’s you' : 'Protect your analytics on this computer';
       taskDescription = authentication.enrolled ? 'Windows will ask you to confirm it’s you.'
         : 'Create a passkey. Windows will ask you to confirm it’s you, so only you can open your analytics here.';
-    } else if (lapsed) taskTitle = 'Access on this computer';
-    else if (authentication.checking) taskTitle = 'Checking this computer…';
-    else {
-      taskTitle = 'Can’t check your passkey right now';
-      taskDescription = 'This page updates by itself.';
-    }
+    } else if (lapsed) [taskTitle, taskDescription] = lapsed;
+    else if (checkingPasskey) taskTitle = 'Checking this computer…';
+    else taskTitle = 'Can’t check your passkey right now';
   } else if (waitingForAccess) {
     taskTitle = 'Getting ready';
     taskDescription = 'Checking access on this computer…';
@@ -327,13 +371,13 @@ export function renderSetup(document, state) {
       : finalizing && !reason ? 'Preparing this computer…'
         : accepted && task === 'account-connection' && !reason ? 'Account connected. Moving to the next step…'
           : connecting && browserReopen.hidden ? pairingProgress : '';
-  setStatus(get('task-pending'), pendingMessage, 'progress');
+  updateStatus(get('task-pending'), pendingMessage, 'progress');
   get('task-pending').hidden = !pendingMessage;
   const status = terminal ? '' : lapsed ? reason !== 'authority_unavailable' && reasonMessage
     : reconnectingChrome || preparingChrome && reason === 'browser_preparing' || confirmingUnknown && (!reason || reason === 'operation_unconfirmed') ? ''
       : replacing ? progress : endedPrompt ? signInMessage : unfinished ? 'Sign-in did not finish.'
         : reasonMessage || (!pendingMessage && (connecting ? pairingProgress : progress));
-  setStatus(get('task-status'), status || '', connecting && !reason ? 'progress' : taskTone);
+  updateTaskStatus(status || '', connecting && !reason ? 'progress' : taskTone);
   get('sign-in-switch').hidden = !canSwitch || choosingAccount || unavailable;
   get('sign-in-switch').disabled = controlsDisabled;
   get('decision-sign-in').hidden = !providerName && get('sign-in-switch').hidden;

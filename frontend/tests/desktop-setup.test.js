@@ -1373,12 +1373,16 @@ describe('desktop setup presentation', () => {
       error: 'passkey_status_network', recoveringStatus: true };
     const get = id => document.getElementById(id);
     renderSetup(document, { snapshot, connected: true, authentication });
-    expect(get('local-auth-status').textContent).toBe('Checking access automatically…');
+    expect(get('task-title').textContent).toBe('Checking this computer…');
+    expect(get('local-auth-status').textContent).toBe('');
+    expect(document.querySelector('.setup-task-card').getAttribute('aria-busy')).toBe('true');
     expect(get('local-authenticate').hidden).toBe(true);
     expect(get('local-auth-retry')).toBeNull();
     expect(get('task-action').disabled).toBe(true);
     renderSetup(document, { snapshot, connected: true, authentication: { ...authentication, recoveringStatus: false } });
-    expect(get('local-auth-status').textContent).toBe('Dipsy can’t check access on this computer right now.');
+    expect(get('task-description').hidden).toBe(true);
+    expect(get('local-auth-status').textContent).toBe('This page updates by itself.');
+    expect(get('local-auth-status').querySelector('[data-status-icon="attention"]')).toBeTruthy();
     expect(get('local-authenticate').hidden).toBe(true);
     renderSetup(document, { snapshot, connected: true, authentication: { ...authentication, enrolled: true, recoveringStatus: false, error: null } });
     expect(get('local-authenticate').hidden).toBe(false);
@@ -1439,19 +1443,21 @@ describe('desktop setup presentation', () => {
     expect(get('task-status').textContent).toBe('');
   });
   it.each([
-    ['renewing', 'Renewing access on this computer. This window updates when renewal finishes.', 'Renewal needs an internet connection.'],
-    ['expired', 'Access on this computer expired. It could not be renewed in time.', 'Contact support to restore access.'],
-    ['removed', 'Access was removed from this computer.', 'Contact support if you did not expect this.'],
-  ])('names %s access on this computer instead of offering another attempt', (access, description, guidance) => {
+    ['renewing', 'Renewing access on this computer', 'This page updates when renewal finishes.', 'Renewal needs an internet connection.'],
+    ['expired', 'Access on this computer isn’t active', 'This page updates by itself if you can sign in again.', ''],
+    ['removed', 'Access removed from this computer', 'This computer can no longer open analytics.', ''],
+  ])('names %s access on this computer instead of offering another attempt', (access, heading, description, guidance) => {
     mount();
     const snapshot = { ...initial(), next_task: 'finish-setup', allowed_actions: ['browser.pair'],
       pending_operations: [{ ...record, action: 'browser.pair', state: 'outcome_unknown', reason: 'authority_unavailable' }] };
     const authentication = { checked: true, enrolled: null, authenticated: false, busy: false, error: null, access };
     renderSetup(document, { snapshot, connected: true, authentication });
     const get = id => document.getElementById(id);
-    expect(get('local-access').hidden).toBe(false);
-    expect(get('local-access-description').textContent).toBe(description);
+    expect(get('local-access').hidden).toBe(!guidance);
+    expect(get('task-title').textContent).toBe(heading);
+    expect(get('task-description').textContent).toBe(description);
     expect(get('local-auth-status').textContent).toBe(guidance);
+    if (access === 'renewing') expect(get('local-auth-status').querySelector('[data-status-icon="info"]')).toBeTruthy();
     expect(get('local-authenticate').hidden).toBe(true);
     expect(get('local-auth-retry')).toBeNull();
     expect(get('task-status').textContent).toBe('');
@@ -1755,14 +1761,19 @@ it('renders the protected recovery sequence as one task and never exposes ordina
   const primary = document.getElementById('task-action'), cancel = document.getElementById('protected-cancel');
   const base = { ...initial(), next_task: 'account-connection', authority_recovery: 'available', allowed_actions: ['account.connect'] };
   render(base);
-  expect(primary.textContent).toBe('Restore access');
+  expect(document.getElementById('task-title').textContent).toBe('Sign in to open your analytics');
+  expect(document.getElementById('task-description').textContent).toBe('Use the same sign-in as before.');
+  expect(primary.textContent).toBe('Sign in');
   expect(primary.dataset.protectedRecovery).toBe('true');
   expect(primary.dataset.action).toBe('account.connect');
   expect(document.querySelector('main nav').hidden).toBe(true);
   for (const id of ['local-access', 'setup-code-open', 'sign-in-options', 'browser-reopen', 'decision-details']) expect(document.getElementById(id).hidden).toBe(true);
+  render({ ...base, allowed_actions: [] });
+  expect(primary.hidden).toBe(true);
   render({ ...base, authority_recovery: 'preparing', allowed_actions: [] });
   expect(primary.hidden).toBe(true);
-  expect(document.getElementById('task-status').textContent).toBe('Preparing sign-in\u2026');
+  expect(document.getElementById('task-pending').textContent).toBe('Preparing sign-in\u2026');
+  expect(document.getElementById('task-pending').querySelector('[data-status-icon="pending"] circle')).toBeTruthy();
   const selected = protectedSelected();
   const auth = { ...selected.authentication, choices: { default: true, google: false }, authentication_attempt: null,
     state: 'selection-required', actions: { select: true, cancel: false, open_browser: false, switch_account: false } };
@@ -1773,34 +1784,47 @@ it('renders the protected recovery sequence as one task and never exposes ordina
   // The explicit sign-in continues by itself, so neither later step offers a click.
   render({ ...selected, authentication: auth, allowed_actions: ['auth.select'] }, { recoverySignInPending: true });
   expect(primary.hidden).toBe(true);
-  expect(document.getElementById('task-status').textContent).toBe('Preparing sign-in\u2026');
+  expect(document.getElementById('task-pending').textContent).toBe('Preparing sign-in\u2026');
   render({ ...selected, authority_recovery_browser: 'ready', allowed_actions: ['auth.cancel'] }, { recoverySignInPending: true });
   expect(primary.hidden).toBe(true);
-  expect(document.getElementById('task-status').textContent).toBe('Opening Chrome\u2026');
+  expect(document.getElementById('task-pending').textContent).toBe('Opening Chrome\u2026');
   expect(cancel.hidden).toBe(true);
   render({ ...selected, authority_recovery_browser: 'ready', allowed_actions: ['auth.cancel'] });
   expect(primary.textContent).toBe('Open Chrome');
   expect(primary.dataset.action).toBe('browser.open');
   expect(cancel.hidden).toBe(false);
+  expect(cancel.classList.contains('secondary')).toBe(true);
+  render({ ...selected, authority_recovery_browser: 'ready', allowed_actions: ['auth.cancel'] }, { error: 'chrome_unavailable' });
+  expect(document.getElementById('task-description').textContent).toBe('Sign-in happens in Chrome.');
+  expect(document.getElementById('task-status').textContent).toBe('Install Chrome to continue.');
   render({ ...selected, authority_recovery_browser: 'launch-claimed', allowed_actions: ['auth.cancel'] });
   expect(primary.hidden).toBe(true);
-  expect(document.getElementById('task-status').textContent).toBe('Waiting for Chrome\u2026');
+  expect(document.getElementById('task-pending').textContent).toBe('Waiting for Chrome\u2026');
+  expect(document.getElementById('task-status').textContent).toBe('');
   render({ ...selected, authority_recovery_browser: 'handed-off', allowed_actions: ['auth.cancel'] });
-  expect(document.getElementById('task-status').textContent).toBe('Waiting for sign-in\u2026');
+  expect(document.getElementById('task-description').textContent).toBe('Finish signing in in Chrome. This page continues by itself.');
+  expect(document.getElementById('task-pending').textContent).toBe('Waiting for sign-in\u2026');
+  render({ ...selected, authority_recovery_browser: 'handed-off', allowed_actions: ['auth.cancel'] }, { acting: 'auth.cancel' });
+  expect(document.getElementById('task-pending').textContent).toBe('Canceling sign-in…');
+  expect(cancel.hidden).toBe(true);
   render({ ...selected, authority_recovery_browser: 'unconfirmed', allowed_actions: ['auth.cancel'] });
-  expect(document.getElementById('task-status').textContent).toBe('Sign-in is not confirmed.');
+  expect(document.getElementById('task-status').textContent).toBe('Sign-in isn’t confirmed.');
   expect(primary.hidden).toBe(true);
   expect(cancel.hidden).toBe(false);
+  expect(cancel.classList.contains('secondary')).toBe(false);
   render({ ...selected, authentication: { ...auth, state: 'retired' }, allowed_actions: ['auth.select'] });
-  expect(primary.textContent).toBe('Sign in again');
+  expect(primary.textContent).toBe('Sign in');
+  expect(document.getElementById('task-status').textContent).toBe('Sign-in didn’t finish.');
+  expect(document.getElementById('task-status').querySelector('[data-status-icon="info"]')).toBeTruthy();
   expect(cancel.hidden).toBe(true);
   render({ ...base, authority_recovery: 'restoring', allowed_actions: [] });
-  expect(document.getElementById('task-status').textContent).toBe('Sign-in complete. Restoring access\u2026');
+  expect(document.getElementById('task-pending').textContent).toBe('Signed in. Getting this computer ready…');
   expect(primary.hidden).toBe(true);
   expect(cancel.hidden).toBe(true);
   render({ ...base, authority_recovery: 'blocked', allowed_actions: [] });
-  expect(document.getElementById('task-title').textContent).toBe('Access could not be restored');
+  expect(document.getElementById('task-title').textContent).toBe('Can’t open your analytics right now');
   expect(primary.hidden).toBe(true);
+  expect(document.getElementById('task-description').textContent).toBe('This page updates by itself if anything changes.');
   render(initial(), { authentication: null });
   expect(document.querySelector('main nav').hidden).toBe(false);
   expect(primary.dataset.protectedRecovery).toBe('');
@@ -1813,9 +1837,9 @@ it('protected recovery never enables stale controls during a command or disconne
   expect(authorityRecoveryView({ snapshot: value, connected: false, error: 'session_unavailable' }))
     .toMatchObject({ status: "Setup couldn't continue.", tone: 'error', action: null, cancel: false });
   expect(authorityRecoveryView({ snapshot: { ...value, journey_id: operationId }, connected: false, error: 'connection_unavailable' }))
-    .toMatchObject({ status: "Dipsy can't connect right now. Your setup progress is saved.", tone: 'error', action: null, cancel: false });
+    .toMatchObject({ description: '', status: 'Dipsy can’t connect right now. Your setup progress is saved.', tone: 'warning', action: null, cancel: false });
   expect(authorityRecoveryView({ snapshot: { ...value, journey_id: null }, connected: false, error: 'connection_unavailable' }))
-    .toMatchObject({ status: "Dipsy can't connect right now.", tone: 'error', action: null, cancel: false });
+    .toMatchObject({ description: '', status: 'Dipsy can’t connect right now.', tone: 'warning', action: null, cancel: false });
   expect(authorityRecoveryView({ snapshot: value, connected: true }, 'auth.cancel').action).toBeNull();
   expect(authorityRecoveryView({ snapshot: value, connected: true, pending: 'new', pendingAction: 'auth.cancel' }).cancel).toBe(false);
   expect(authorityRecoveryView({ snapshot: value, connected: true, browserLaunchPending: true }).action).toBeNull();
@@ -1919,7 +1943,7 @@ describe('one explicit protected sign-in', () => {
       publish(ready(6));
       publish({ ...ready(7), authority_recovery_browser: undefined, allowed_actions: ['auth.select'],
         authentication: auth('retired', { select: true }, attempt) });
-      await vi.waitFor(() => expect(authorityRecoveryView(states.at(-1))).toMatchObject({ action: 'auth.select', label: 'Sign in again' }));
+      await vi.waitFor(() => expect(authorityRecoveryView(states.at(-1))).toMatchObject({ action: 'auth.select', label: 'Sign in' }));
       expect(commands).toHaveLength(2);
       expect(opens).toHaveLength(1);
       expect(subject.recoverySignIn).toBeNull();

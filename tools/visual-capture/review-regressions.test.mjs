@@ -676,7 +676,8 @@ for (const width of [320, 390, 600]) test(`supported activation recovery grows b
 });
 
 for (const width of [320, 390]) for (const mode of ['light', 'dark']) test(`passkey pending and recovery fit at ${width} with doubled text in ${mode}`, async () => {
-  const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: 'reduce', colorScheme: mode });
+  const height = width === 320 ? 640 : 900;
+  const page = await browser.newPage({ viewport: { width, height }, reducedMotion: 'reduce', colorScheme: mode });
   try {
     await page.addInitScript(() => { new MutationObserver(() => {
       if (document.documentElement && !document.documentElement.style.fontSize) document.documentElement.style.fontSize = '200%';
@@ -684,15 +685,50 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) test(`pass
     await page.goto(harness.base + `?workspace=passkey&state=loading&transitions=1&mode=${mode}`);
     await page.waitForFunction(() => window.__workspaceFixture);
     await page.evaluate(() => document.fonts.ready); await settle(page);
-    const keyBoxes = () => Promise.all([page.getByRole('heading', { level: 1 }), page.getByRole('button', { name: 'Sign in with passkey', exact: true }), page.locator('[data-reserved-region="passkey-feedback"]')].map(node => node.boundingBox()));
-    const before = await keyBoxes();
-    await page.getByRole('button', { name: 'Sign in with passkey', exact: true }).click();
+    const main = page.getByRole('main');
+    const action = main.getByRole('button', { name: 'Sign in with passkey', exact: true });
+    const flowBox = locator => locator.evaluate(node => {
+      const { x, y, width, height } = node.getBoundingClientRect();
+      return { x, y: y + window.scrollY, width, height };
+    });
+    const anchors = () => Promise.all([
+      main.getByRole('heading', { level: 1 }), main.locator('.onboarding-surface-body'),
+      main.locator('.onboarding-action-content'), main.getByRole('button', { name: 'Set up a passkey', exact: true }),
+      page.getByRole('banner'),
+    ].map(flowBox));
+    const footer = page.getByRole('contentinfo');
+    const restingFooter = await flowBox(footer);
+    const before = await anchors();
+    const buttonBox = await flowBox(action);
+    const card = main.locator('[data-composition="trust"]');
+    const restCard = await flowBox(card);
+    const feedback = main.locator('[data-visual="passkey-feedback"]');
+    assert.equal((await flowBox(feedback)).height, 0, 'Resting feedback has no reserved height');
+    await action.click();
+    const pendingRow = main.getByRole('status').filter({ hasText: 'Waiting for your passkey…' });
+    await pendingRow.waitFor();
     await settle(page);
-    const pending = await keyBoxes();
-    assert.deepEqual(pending, before, 'Pending feedback must not move the task or its action');
+    assert.equal(await action.count(), 0, 'The pending row replaces the button');
+    const pendingBox = await flowBox(pendingRow);
+    assert.deepEqual([pendingBox.x, pendingBox.y, pendingBox.height], [buttonBox.x, buttonBox.y, buttonBox.height],
+      'The pending row must start where the button starts and occupy its height');
+    assert.deepEqual(await anchors(), before, 'Pending feedback must preserve layout anchors');
+    assert.deepEqual(await flowBox(card), restCard, 'The pending row must preserve the card geometry');
+    assert.deepEqual(await flowBox(footer), restingFooter, 'The pending row must preserve the footer geometry');
+    assert.equal((await flowBox(feedback)).height, 0, 'Pending feedback has no reserved height');
     await page.evaluate(() => window.__workspaceFixture.reject('passkey.login', 'NotAllowedError'));
-    await page.getByRole('alert').filter({ hasText: 'Sign-in did not finish.' }).waitFor(); await settle(page);
-    assert.deepEqual(await keyBoxes(), before, 'Incomplete sign-in must not move the task or its action');
+    await page.getByRole('alert').filter({ hasText: 'Sign-in didn’t finish.' }).waitFor(); await settle(page);
+    assert.deepEqual(await anchors(), before, 'Incomplete sign-in must preserve layout anchors');
+    assert.deepEqual(await flowBox(action), buttonBox, 'The restored action must return to its original geometry');
+    const feedbackBox = await flowBox(feedback);
+    assert(feedbackBox.height > 0 && feedbackBox.y >= before[3].y + before[3].height
+      && await feedback.evaluate(node => node === node.parentElement.lastElementChild),
+      'Visible feedback follows the content at the end of the card');
+    const finalCard = await flowBox(card);
+    const padding = await main.evaluate(node => parseFloat(getComputedStyle(node.parentElement).paddingBottom));
+    assert.deepEqual(await flowBox(footer), { ...restingFooter,
+      y: Math.max(restingFooter.y, finalCard.y + finalCard.height + padding) },
+    'The footer stays at the viewport foot or follows the enlarged card');
     const geometry = await page.locator('[data-reserved-region="passkey-card"]').evaluate(node => {
       const box = node.getBoundingClientRect();
       const alert = node.querySelector('[role="alert"]');
@@ -703,7 +739,8 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) test(`pass
     assert(geometry.textFits && geometry.pageFits, 'Passkey recovery must remain fully visible without horizontal scrolling');
     await page.getByRole('alert').scrollIntoViewIfNeeded();
     const box = await page.getByRole('alert').boundingBox();
-    assert(box.y >= 0 && box.y + box.height <= 901, 'Passkey recovery must be reachable by scrolling');
+    assert(box.y >= 0 && box.y + box.height <= height + 1, 'Passkey recovery must be reachable by scrolling');
+    if (width === 320) assert(await page.evaluate(() => window.scrollY > 0), 'Overflowing recovery scrolls the document');
   } finally { await page.close(); }
 });
 

@@ -132,7 +132,8 @@ h1:focus { outline: none; }
 .desktop-task-icon svg { display: none; inline-size: 20px; block-size: 20px; fill: currentColor; }
 .desktop-setup:is([data-task="browser-access"], [data-task="unavailable"]) .desktop-task-icon svg:first-child,
 .desktop-setup[data-task="account-connection"] .desktop-task-icon svg:nth-child(2),
-.desktop-setup:is([data-task="authority-recovery"], [data-task="complete"], [data-access="passkey"]) .desktop-task-icon svg:nth-child(3),
+.desktop-setup:is([data-task="complete"], [data-access="passkey"]) .desktop-task-icon svg:nth-child(3),
+.desktop-setup[data-task="authority-recovery"] .desktop-task-icon [data-task-icon="lock"],
 .desktop-setup[data-task="finish-setup"]:not([data-access="passkey"]) .desktop-task-icon svg:nth-child(4) { display: block; }
 .desktop-setup .setup-task-card > h1 { min-block-size: 0; margin-block-end: 8px; font-size: clamp(1.375rem, 1.1rem + .9vw, 1.75rem); line-height: 1.25; letter-spacing: -.015em; overflow-wrap: anywhere; }
 .desktop-setup .setup-task-card > #task-description { min-block-size: 0; max-inline-size: 60ch; color: var(--dipsy-color-text-secondary); }
@@ -169,6 +170,24 @@ h1:focus { outline: none; }
 .desktop-setup :is(#local-authenticate, #local-auth-pending) { min-block-size: 48px; }
 .desktop-setup #local-auth-pending { padding-block: max(0px, calc((48px - 1lh) / 2)); }
 .desktop-setup #local-auth-pending[data-tone="progress"]::before { inset-block-start: max(.25em, calc((48px - 1lh) / 2 + .25em)); }
+.desktop-setup :is([data-composition="trust"] .task-status, #local-auth-pending, #local-auth-status):has(> svg) {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: start; column-gap: 10px; padding-inline-start: 0;
+}
+.desktop-setup :is([data-composition="trust"] .task-status, #local-auth-pending, #local-auth-status)::before { content: none; }
+.desktop-setup .task-status > svg {
+  inline-size: 20px; block-size: 20px; margin-block-start: max(0px, calc((1lh - 20px) / 2)); fill: currentColor; color: var(--dipsy-color-text-secondary);
+}
+.desktop-setup .task-status[data-tone="error"] > svg { color: var(--dipsy-color-error); }
+.desktop-setup .task-status > :is([data-status-icon="pending"], [data-status-icon="done"]) { color: var(--dipsy-color-primary); }
+@media (prefers-reduced-motion: no-preference) {
+  .desktop-setup .task-status > [data-status-icon="pending"] { animation: status-rotate 1s linear infinite; }
+}
+.desktop-setup[data-task="authority-recovery"] #task-pending {
+  flex: 1 1 14rem; min-inline-size: 0;
+  padding-block: max(0px, calc((var(--dipsy-static-large-control-height) - 1lh) / 2));
+}
+.desktop-setup #protected-cancel.secondary { border-color: transparent; background: transparent; }
+.desktop-setup #protected-cancel.secondary:hover:not(:disabled) { background: var(--dipsy-color-surface-subtle); }
 .desktop-setup .desktop-sr-only { position: absolute; inset-block-start: 0; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; margin: 0; }
 
 .desktop-loading-copy, .desktop-loading-action { display: none; }
@@ -179,6 +198,13 @@ h1:focus { outline: none; }
 .desktop-loading-copy span { display: block; inline-size: min(100%, 28rem); block-size: 1em; margin-block: .25em .55em; }
 .desktop-loading-copy span:last-child { inline-size: min(65%, 20rem); margin-block-end: .25em; }
 .desktop-loading-action { inline-size: min(100%, 11rem); block-size: var(--dipsy-static-control-height); }
+.desktop-setup [data-composition="trust"][aria-busy="true"] :is(#task-title, .desktop-loading-copy span, .desktop-loading-action) {
+  background: var(--dipsy-intent-surface-placeholder);
+}
+.desktop-setup [data-composition="trust"] .desktop-loading-action { block-size: var(--dipsy-static-large-control-height); }
+.desktop-setup[data-access="passkey"] [aria-busy="true"] #task-title { background: none; color: inherit; }
+.desktop-setup[data-access="passkey"] [aria-busy="true"] #task-step { background: none; inline-size: auto; block-size: auto; }
+.desktop-setup[data-access="passkey"] [aria-busy="true"] .desktop-loading-copy { display: none; }
 
 .browser-task-page .setup-brand { flex-shrink: 1; min-inline-size: 0; white-space: normal; overflow-wrap: anywhere; }
 .browser-task-page .brand-mark { flex: none; }
@@ -232,6 +258,10 @@ h1:focus { outline: none; }
   .desktop-setup .setup-task-card { padding: 24px; }
 }
 @media (max-width: 420px) { .desktop-setup .setup-task-card { padding-inline: 20px; } }
+.desktop-setup .setup-task-card[data-composition="trust"] { padding: 40px; }
+@media (max-width: 600px) {
+  .desktop-setup .setup-task-card[data-composition="trust"] { padding: 24px; }
+}
 
 @media (prefers-reduced-motion: no-preference) {
   .desktop-setup .setup-step-badge svg { animation: desktop-step-check var(--dipsy-motion-standard) ease-out; }
