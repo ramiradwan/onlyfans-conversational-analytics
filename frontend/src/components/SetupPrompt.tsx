@@ -8,6 +8,7 @@ import { Link as RouterLink } from 'react-router-dom';
 
 import { effectTokens } from '../theme';
 import { VisuallyHidden } from './ui';
+import { OnboardingAction, OnboardingCard, OnboardingSpot } from './ui/OnboardingCard';
 
 interface SetupPromptProps {
   /** Whether the browser extension is already connected, which completes the first step. */
@@ -117,6 +118,17 @@ export function SetupPrompt({
   compact = false,
 }: SetupPromptProps) {
   const headingId = useId();
+  if (compact && !extensionConnected) {
+    return (
+      <Box data-journey-state="desktop.setup_prompt" data-visual="setup-prompt" sx={{ maxWidth: 560, width: '100%' }}>
+        <OnboardingCard title={title} spot={<OnboardingSpot icon="browser" />}
+          body="New messages appear in this app once the extension is connected. Full analytics is optional."
+          actions={<OnboardingAction><Button component={RouterLink} to="/settings#browser-extension" variant="contained">
+            Continue in Chrome
+          </Button></OnboardingAction>} />
+      </Box>
+    );
+  }
   const steps = [
     { done: extensionConnected, label: 'Connect the browser extension', reason: 'Use the browser where you sign in to OnlyFans. Add the extension if needed.' },
   ];

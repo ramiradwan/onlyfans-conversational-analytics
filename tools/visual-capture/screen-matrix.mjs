@@ -20,16 +20,17 @@ export function createScreens({ assertMaxWidth, assertCentered, assertLoadingGeo
 return [
   ...['current', 'pending', 'unavailable', 'degraded'].map((state) => ({ workspace: 'graph', state,
     ready: heading('Graph explorer'), act: (page) => page.evaluate((status) => window.__workspaceFixture.projection(status), state) })),
-  { workspace: 'home', state: 'loading', ready: text('Loading dashboard…') },
+  { workspace: 'home', state: 'loading', ready: (page) => page.getByRole('region', { name: 'Overview', busy: true }) },
   {
     workspace: 'home',
     state: 'fresh',
-    ready: (page) => page.getByRole('link', { name: 'Continue setup' }),
+    ready: (page) => page.getByRole('link', { name: 'Continue in Chrome' }),
     assert: async (page, viewport) => {
       if (viewport.name !== 'desktop') return;
       const prompt = page.locator('[data-visual="setup-prompt"]');
       await assertMaxWidth(prompt, 560);
-      await assertCentered(prompt, page.getByRole('main'));
+      const [card, title] = await Promise.all([prompt.boundingBox(), heading('Dashboard')(page).boundingBox()]);
+      if (!card || !title || card.x !== title.x) throw new Error('Setup prompt and dashboard title must share a left edge');
     },
   },
   { workspace: 'home', state: 'syncing', ready: (page) => page.getByRole('progressbar', { name: /History \d+% synced/ }) },
@@ -73,9 +74,9 @@ return [
   {
     workspace: 'dashboard-continuation',
     state: 'message-collection-paused',
-    ready: (page) => page.getByRole('heading', { name: 'Message collection is paused', exact: true }),
+    ready: (page) => page.getByRole('heading', { name: 'Paused by you', exact: true }),
     assert: async (page) => {
-      await page.getByRole('button', { name: 'Resume collecting', exact: true }).waitFor({ state: 'visible' });
+      await page.getByRole('button', { name: 'Review in Chrome', exact: true }).waitFor({ state: 'visible' });
     },
   },
   {

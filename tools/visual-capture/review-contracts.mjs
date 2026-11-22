@@ -184,6 +184,181 @@ export async function measureTrustPasskeys(page, open, mode, screenshot) {
   return measurements;
 }
 
+async function textLines(locator) {
+  return locator.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const text = [...range.getClientRects()];
+    const bounds = element.getBoundingClientRect();
+    return {
+      count: new Set(text.map(rect => rect.top)).size,
+      fits: text.every(rect => rect.left >= bounds.left - 0.5 && rect.right <= bounds.right + 0.5
+        && rect.top >= bounds.top - 0.5 && rect.bottom <= bounds.bottom + 0.5),
+    };
+  });
+}
+
+export async function measureDashboardOnboarding(page, open) {
+  const layouts = [];
+  for (const [width, scale] of [[1440, 1], [390, 1], [320, 2]]) {
+    await page.setViewportSize({ width, height: 900 });
+    const dashboard = page.getByRole('heading', { name: 'Dashboard', level: 1, exact: true });
+    await open('home', 'fresh');
+    await page.evaluate(value => { document.documentElement.style.fontSize = `${value * 100}%`; }, scale);
+    const setup = page.locator('[data-visual="setup-prompt"]');
+    const title = setup.getByRole('heading', { name: 'Set up Chrome to see your message counts', exact: true });
+    await title.waitFor();
+    near((await appearance(setup)).x, (await appearance(dashboard)).x, 'Setup card left edge');
+    const titleLines = await textLines(title);
+    const bodyLines = await textLines(setup.locator('.onboarding-surface-body'));
+    assert(titleLines.fits && bodyLines.fits, 'Dashboard setup copy clips');
+    if (width === 1440) {
+      assert.equal(titleLines.count, 1);
+      assert(bodyLines.count <= 2);
+    } else if (scale === 2) assert(titleLines.count > 1 && bodyLines.count > 2, 'Narrow dashboard setup copy must wrap');
+    assert.equal(await setup.getByRole('link', { name: 'Continue in Chrome', exact: true }).getAttribute('href'), '/settings#browser-extension');
+
+    await open('home');
+    await page.evaluate(value => { document.documentElement.style.fontSize = `${value * 100}%`; }, scale);
+    await page.evaluate(() => {
+      const fixture = window.__workspaceFixture;
+      const snapshot = fixture.sample();
+      const { inbound_messages, outbound_messages } = snapshot.analytics;
+      inbound_messages.sample_size = outbound_messages.sample_size = inbound_messages.value + outbound_messages.value;
+      fixture.delta({ creator_account_id: snapshot.creator_account_id, view_revision: snapshot.view_revision + 1,
+        committed_at: snapshot.generated_at, changes: [{ type: 'analytics.replace', analytics: snapshot.analytics }] });
+    });
+    const basis = page.locator('[data-dashboard-saved-basis]');
+    await basis.waitFor();
+    assert.match(await basis.innerText(), /^Based on [\d,]+ messages saved on this computer so far\.$/u);
+    const sent = page.locator('[data-reserved-region="metric-Sent"]');
+    assert((await sent.boundingBox()).y < (await basis.boundingBox()).y, 'The saved basis must follow the counts');
+    near((await appearance(basis)).x, (await appearance(dashboard)).x, 'Saved basis left edge');
+    const count = page.locator('[data-visual="message-total"] [data-region-content]');
+    assert.equal((await appearance(count)).animation, 'none');
+
+    const connectionPill = page.getByRole('region', { name: 'Connection', exact: true })
+      .locator('.onboarding-pill').filter({ hasText: /^Connected$/u }).first();
+    const pillStyle = await appearance(connectionPill);
+    const dotStyle = await appearance(connectionPill.locator('.onboarding-tone-dot'));
+    near(dotStyle.width, 6, 'Connection status dot');
+    assert.equal(await connectionPill.getAttribute('data-tone'), 'progress');
+    assert.equal(pillStyle.fontSize, 12 * scale);
+
+    const details = page.getByRole('button', { name: 'Details', exact: true });
+    await page.keyboard.press('Tab');
+    await details.focus();
+    assert((await appearance(details)).focusVisible);
+    await page.keyboard.press('Enter');
+    await page.getByRole('dialog', { name: 'How these numbers are counted' }).waitFor();
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(node => document.activeElement === node, await details.elementHandle());
+
+    const overview = page.getByRole('region', { name: 'Overview', exact: true });
+    const beforePause = await appearance(overview);
+    await page.evaluate(() => window.__workspaceFixture.browser({ capture: 'paused' }));
+    const pause = page.getByRole('region', { name: 'Paused by you', exact: true });
+    await pause.waitFor();
+    near((await appearance(overview)).y, beforePause.y, 'Overview y after pushed pause');
+    near((await appearance(pause)).x, beforePause.x, 'Pause card left edge');
+    assert((await appearance(pause)).width <= 760, 'Pause card exceeds its guided width');
+    assert.match(await basis.innerText(), / Last updated .+\.$/u);
+    assert.equal(await page.getByRole('button', { name: 'Review in Chrome', exact: true }).count(), 1);
+    const basisLines = await textLines(basis);
+    assert(basisLines.fits);
+    if (width === 1440) assert.equal(basisLines.count, 1);
+
+    if (scale === 2) {
+      await page.evaluate(() => {
+        const fixture = window.__workspaceFixture;
+        const snapshot = fixture.sample();
+        snapshot.analytics.total_conversations.value = 1_234_567;
+        snapshot.analytics.total_messages.value = 9_999_999;
+        fixture.delta({ creator_account_id: snapshot.creator_account_id, view_revision: fixture.state().viewRevision + 1,
+          committed_at: snapshot.generated_at, changes: [{ type: 'analytics.replace', analytics: snapshot.analytics }] });
+      });
+      for (const [name, value] of [['conversation-total', '1,234,567'], ['message-total', '9,999,999']]) {
+        const numeral = page.locator(`[data-visual="${name}"]`);
+        await numeral.getByText(value, { exact: true }).waitFor();
+        assert((await textLines(numeral)).fits, `${value} escapes its count row`);
+      }
+    } else {
+      const status = page.locator('[data-reserved-region="dashboard-notice"] .onboarding-status');
+      const verifyStatus = async (text, tone) => {
+        const label = status.getByText(text, { exact: true });
+        await label.waitFor();
+        assert.equal(await status.getAttribute('data-tone'), tone);
+        const mark = await appearance(status.locator('svg'));
+        near(mark.width, 20, 'Freshness icon width');
+        near(mark.height, 20, 'Freshness icon height');
+        const labelBox = await appearance(label);
+        assert.deepEqual(labelBox.ink, (await appearance(dashboard)).ink);
+        assert((await basis.boundingBox()).y < labelBox.y, 'Freshness must follow the count basis');
+        assert(labelBox.y + labelBox.height <= 900, 'Freshness must be above the fold');
+        if (width === 1440) assert.equal((await textLines(label)).count, 1);
+        if (tone === 'pending') assert.equal(mark.animation, 'none');
+      };
+      await page.evaluate(() => { window.__workspaceFixture.disconnected(); window.__workspaceFixture.connection('reconnecting'); });
+      await verifyStatus('Reconnecting to the app…', 'pending');
+      await page.evaluate(() => window.__workspaceFixture.connection('disconnected'));
+      await verifyStatus('Dipsy can’t connect right now. Showing your saved counts.', 'attention');
+      await page.evaluate(() => window.__workspaceFixture.connection('connected'));
+      await verifyStatus('Couldn’t check the latest update. Showing your saved counts.', 'attention');
+      await page.evaluate(() => window.__workspaceFixture.browser({ history_error_code: 'software_update_required' }));
+      await verifyStatus('Update Conversation Analytics to continue.', 'attention');
+    }
+    layouts.push({ width, scale, titleLines, bodyLines, basisLines });
+  }
+
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open('home', 'loading');
+    const overview = page.getByRole('region', { name: 'Overview', exact: true });
+    await page.getByRole('region', { name: 'Overview', busy: true }).waitFor();
+    const loadingOverview = await appearance(overview);
+    await page.evaluate(() => window.__workspaceFixture.snapshot('populated'));
+    await page.getByRole('region', { name: 'Overview', busy: false }).waitFor();
+    const count = page.locator('[data-visual="message-total"] [data-region-content]');
+    const motion = await appearance(count);
+    assert.notEqual(motion.animation, 'none');
+    assert.equal(motion.duration, '0.2s');
+    assert.equal(motion.iterations, '1');
+    for (const label of ['Received', 'Sent']) {
+      const numeral = page.locator(`[data-reserved-region="metric-${label}"] [data-region-content]`);
+      const style = await appearance(numeral);
+      assert.equal(style.duration, '0.2s');
+      assert(parseFloat(style.delay) <= 0.08, `${label} arrives too late`);
+    }
+    const animationStart = () => count.evaluate(async node => {
+      const [animation] = node.getAnimations();
+      await animation.ready;
+      return animation.startTime;
+    });
+    const start = await animationStart();
+    await page.evaluate(() => {
+      const fixture = window.__workspaceFixture;
+      const snapshot = fixture.sample();
+      snapshot.analytics.total_messages.value += 1;
+      fixture.delta({ creator_account_id: snapshot.creator_account_id, view_revision: snapshot.view_revision + 1,
+        committed_at: snapshot.generated_at, changes: [{ type: 'analytics.replace', analytics: snapshot.analytics }] });
+    });
+    assert.equal(await animationStart(), start, 'An updated count must not replay its arrival');
+    await page.evaluate(() => {
+      const fixture = window.__workspaceFixture;
+      fixture.connection('connected');
+      fixture.agent(fixture.agentSample());
+      fixture.resolve('onboarding.readiness', { schema: 'ofca-analysis-readiness/v1',
+        commercial_authority: 'active', analysis_admission: 'admitted' });
+    });
+    await page.getByRole('region', { name: 'Connection', exact: true }).waitFor();
+    near((await appearance(overview)).y, loadingOverview.y, 'Overview y after snapshot and readiness');
+    return { layouts, motion: { duration: motion.duration, delay: motion.delay, iterations: motion.iterations } };
+  } finally {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+  }
+}
+
 /** Separate interaction probes; they never alter a standard capture's state. */
 export async function captureReviewChecks(browser, base, outDir, recorder = null) {
   const directory = join(outDir, 'review'); await mkdir(directory, { recursive: true });
@@ -316,7 +491,8 @@ export async function captureReviewChecks(browser, base, outDir, recorder = null
         near(status.width, 280, 'status width'); near(status.height, 24, 'status height'); near(status.fontSize, 14, 'status size');
         assert.equal((await appearance(page.locator('[data-freshness-glyph="dot"]').filter({ visible: true }))).animation, 'none');
         const passkeyLayouts = await measureTrustPasskeys(page, open, mode, screenshot);
-        return { avatar, timestamp, status, passkeyLayouts };
+        const dashboardLayouts = await measureDashboardOnboarding(page, open);
+        return { avatar, timestamp, status, passkeyLayouts, dashboardLayouts };
       });
       await record(`${mode}: bounded motion and reduced-motion suppression`, async () => {
         await page.emulateMedia({ reducedMotion: 'no-preference' }); await open('analytics', 'model');

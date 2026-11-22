@@ -24,6 +24,10 @@ import type { HistorySettingsApi } from '../src/services/historySettingsApi';
 
 const ACCOUNT_ID = 'creator-account';
 const AS_OF = '2026-07-19T12:00:00Z';
+const COLLECTION_ON: BrowserSurfacePayload = { capture: 'active', site_access: 'granted',
+  history_permission: 'missing', legal_review_required: false, reported_at: AS_OF };
+const SAVED_BASIS = 'Based on 19 messages saved on this computer so far.';
+const LAST_UPDATED = `Last updated ${new Intl.DateTimeFormat(undefined, { timeStyle: 'short' }).format(new Date(AS_OF))}.`;
 
 function metric(
   value: number | null,
@@ -50,11 +54,12 @@ function analytics(
   basis: AnalyticsMetric['basis'] = 'complete',
   projectionRevision = 4,
 ): AnalyticsView {
+  const directionalSampleSize = (values[2] ?? 0) + (values[3] ?? 0);
   return {
-    total_conversations: metric(values[0], basis, 7, projectionRevision),
-    total_messages: metric(values[1], basis, 19, projectionRevision),
-    inbound_messages: metric(values[2], basis, 11, projectionRevision),
-    outbound_messages: metric(values[3], basis, 8, projectionRevision),
+    total_conversations: metric(values[0], basis, values[0] ?? 0, projectionRevision),
+    total_messages: metric(values[1], basis, values[1] ?? 0, projectionRevision),
+    inbound_messages: metric(values[2], basis, directionalSampleSize, projectionRevision),
+    outbound_messages: metric(values[3], basis, directionalSampleSize, projectionRevision),
   };
 }
 
@@ -198,22 +203,65 @@ afterEach(() => {
 });
 
 describe('CreatorDashboardView', () => {
+  it('opens without actions until the account is bound, then shows count placeholders', () => {
+    const store = createBridgeTransportStore();
+    mountDashboard(store, readinessSource(null));
+    expect(screen.getByRole('heading', { name: 'Opening Dipsy' })).toBeTruthy();
+    expect(screen.getByText('Checking your connection.')).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
+    act(() => store.bindAccount(ACCOUNT_ID));
+    expect(overview().getByRole('group', { name: 'Messages' }).querySelector('.MuiSkeleton-root')).toBeTruthy();
+    expect(screen.queryByText('Checking setup…')).toBeNull();
+  });
+
+  it('shows the browser prerequisite instead of a zero-count claim', () => {
+    const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]) }), conversations: [] });
+    store.setAgent({ ...store.getState().agent!, status: 'disconnected' });
+    mountDashboard(store, readinessSource(true));
+    expect(screen.getByRole('heading', { name: 'Set up Chrome to see your message counts' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Continue in Chrome' }).getAttribute('href')).toBe('/settings#browser-extension');
+    expect(screen.queryByRole('heading', { name: 'No messages to show yet' })).toBeNull();
+    expect(screen.queryByText('Results will appear when Dipsy receives messages.')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Overview' })).toBeNull();
+  });
+
   it('uses the reference empty card for confirmed zero activity, then renders arriving data', async () => {
     window.location.hash = '#journey=11111111-1111-4111-8111-111111111111';
     const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]) }), conversations: [] });
+    store.setAgent({ ...store.getState().agent!, browser: COLLECTION_ON });
     await renderDashboard(store);
-    expect(screen.getByRole('heading', { name: 'No new activity yet' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'No messages to show yet' })).toBeTruthy();
+    expect(screen.getByText('Results will appear when Dipsy receives messages.')).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Overview' })).toBeNull();
-    expect(screen.getByText('Not checked', { exact: true })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
     await act(async () => { store.applySnapshot(snapshot({ viewRevision: 2 })); });
-    expect(screen.queryByRole('heading', { name: 'No new activity yet' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'No messages to show yet' })).toBeNull();
     expectStat('Messages', '19');
+  });
+
+  it('waits for messages while collection is on and the empty sample is incomplete', async () => {
+    const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0], 'synced_subset'),
+      coverage: { ...COMPLETE_COVERAGE, status: 'partial', phase: 'not_started', complete_as_of: null } }), conversations: [] });
+    store.setAgent({ ...store.getState().agent!, browser: COLLECTION_ON });
+    useUserStore.getState().actions.setUserRole(null);
+    await renderDashboard(store);
+    expect(screen.getByRole('heading', { name: 'Waiting for messages' })).toBeTruthy();
+    expect(screen.getByText('Results will appear when Dipsy receives messages.')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'No messages to show yet' })).toBeNull();
+  });
+
+  it('does not use complete empty counts when live freshness is delayed', async () => {
+    const payload = snapshot({ analyticsView: analytics([0, 0, 0, 0]) });
+    const store = readyStore({ ...payload, conversations: [], live_freshness: { ...payload.live_freshness, status: 'delayed' } });
+    store.setAgent({ ...store.getState().agent!, browser: COLLECTION_ON });
+    await renderDashboard(store);
+    expect(screen.queryByRole('heading', { name: 'No messages to show yet' })).toBeNull();
+    expect(overview().getByRole('group', { name: 'Messages' }).textContent).not.toContain('0');
   });
   it('does not treat unavailable counts as an empty received snapshot', async () => {
     window.location.hash = '#journey=11111111-1111-4111-8111-111111111111';
     await renderDashboard(readyStore({ ...snapshot({ analyticsView: analytics([null, null, null, null]) }), conversations: [] }));
-    expect(screen.queryByRole('heading', { name: 'No new activity yet' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'No messages to show yet' })).toBeNull();
     expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
   });
   it('shows a paused browser without a ready claim in the empty journey', async () => {
@@ -222,9 +270,118 @@ describe('CreatorDashboardView', () => {
     store.setAgent({ ...store.getState().agent!, browser: { capture: 'paused', site_access: 'granted',
       history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
     await renderDashboard(store);
-    expect(screen.getByRole('heading', { name: 'Message collection is paused' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Paused by you' })).toBeTruthy();
+    expect(screen.getByText('New messages aren’t being collected.')).toBeTruthy();
+    expect(screen.queryByText('Results will appear when Dipsy receives messages.')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
     expect(screen.queryByText("You're all set")).toBeNull();
+  });
+
+  it('opens collection controls once only for an explicit user pause', async () => {
+    const store = readyStore();
+    const api: BrowserControlApi = { setCapture: vi.fn(), open: vi.fn(async () => 'delivered') };
+    store.setAgent({ ...store.getState().agent!, browser: COLLECTION_ON });
+    mountDashboard(store, readinessSource(true), api);
+    expect(screen.queryByRole('button', { name: 'Review in Chrome' })).toBeNull();
+    act(() => store.setAgent({ ...store.getState().agent!, browser: { ...COLLECTION_ON, capture: 'paused' } }));
+    const review = screen.getByRole('button', { name: 'Review in Chrome' });
+    expect(api.open).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(review); fireEvent.click(review); });
+    expect(api.open).toHaveBeenCalledExactlyOnceWith('setup', expect.any(AbortSignal));
+    expect(api.setCapture).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: 'Paused by you' })).toBeTruthy();
+  });
+
+  it('reports a browser launch failure only after an undelivered review action', async () => {
+    const store = readyStore();
+    store.setAgent({ ...store.getState().agent!, browser: { ...COLLECTION_ON, capture: 'paused' } });
+    const api: BrowserControlApi = { setCapture: vi.fn(), open: vi.fn(async () => 'unreachable') };
+    mountDashboard(store, readinessSource(true), api);
+    expect(screen.queryByText('Chrome didn’t open. Open Chrome to continue.')).toBeNull();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Review in Chrome' })));
+    expect(screen.getByText('Chrome didn’t open. Open Chrome to continue.')).toBeTruthy();
+  });
+
+  it('places the live saved basis after both directional counts and omits Last updated', async () => {
+    await renderDashboard(readyStore());
+    const basis = screen.getByText((text) => text.startsWith(SAVED_BASIS));
+    const sent = overview().getByText('Sent', { exact: true }).parentElement!;
+    expect(sent.compareDocumentPosition(basis) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText(/Last updated/)).toBeNull();
+    expect(basis.textContent).toBe(SAVED_BASIS);
+  });
+
+  it.each(['revision', 'time', 'range', 'basis', 'sample size', 'missing'] as const)('suppresses the saved basis when directional evidence has a mismatched %s', async (mismatch) => {
+    const values = analytics([1, 19, 11, 8]);
+    const sent = values.outbound_messages;
+    if (mismatch === 'revision') sent.projection_revision = 3;
+    if (mismatch === 'time') sent.as_of = '2026-07-19T11:59:00Z';
+    if (mismatch === 'range') sent.observed_range = { ...sent.observed_range, start: null };
+    if (mismatch === 'basis') sent.basis = 'synced_subset';
+    if (mismatch === 'sample size') sent.sample_size += 1;
+    if (mismatch === 'missing') sent.value = null;
+    await renderDashboard(readyStore(snapshot({ analyticsView: values })));
+    expect(screen.queryByText(/Based on .* messages saved on this computer so far/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Details' })).toBeTruthy();
+  });
+
+  it('adds the real sample time when user pause stops updates', async () => {
+    const store = readyStore();
+    store.setAgent({ ...store.getState().agent!, browser: { ...COLLECTION_ON, capture: 'paused' } });
+    await renderDashboard(store);
+    expect(screen.getByText(`${SAVED_BASIS} ${LAST_UPDATED}`, { exact: true })).toBeTruthy();
+  });
+
+  it('omits an invalid timestamp even when updates have stopped', async () => {
+    const values = analytics([1, 19, 11, 8]);
+    values.inbound_messages.as_of = '';
+    values.outbound_messages.as_of = '';
+    const store = readyStore(snapshot({ analyticsView: values }));
+    store.setAgent({ ...store.getState().agent!, browser: { ...COLLECTION_ON, capture: 'paused' } });
+    await renderDashboard(store);
+    expect(screen.getByText(SAVED_BASIS, { exact: true })).toBeTruthy();
+    expect(screen.queryByText(/Last updated/)).toBeNull();
+  });
+
+  it('keeps the saved counts through a 3 second reconnect grace and clears the notice on recovery', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    try {
+      const store = readyStore();
+      mountDashboard(store, readinessSource(true));
+      act(() => { store.markDisconnected(); store.setConnection('reconnecting'); });
+      act(() => vi.advanceTimersByTime(2999));
+      expect(screen.queryByText('Reconnecting to the app…')).toBeNull();
+      expectStat('Messages', '19');
+      act(() => vi.advanceTimersByTime(1));
+      expect(screen.getByText('Reconnecting to the app…')).toBeTruthy();
+      expect(screen.queryByText(/Last updated/)).toBeNull();
+      act(() => store.setConnection('disconnected'));
+      expect(screen.getByText('Dipsy can’t connect right now. Showing your saved counts.')).toBeTruthy();
+      expect(screen.getByText(`${SAVED_BASIS} ${LAST_UPDATED}`, { exact: true })).toBeTruthy();
+      act(() => { store.setConnection('connected'); store.applySnapshot(snapshot({ viewRevision: 2 })); });
+      expect(screen.queryByText('Reconnecting to the app…')).toBeNull();
+      expect(screen.queryByText('Dipsy can’t connect right now. Showing your saved counts.')).toBeNull();
+      expectStat('Messages', '19');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('describes an unverified update and the saved sample time after recovery stops', async () => {
+    const store = readyStore();
+    await renderDashboard(store);
+    act(() => { store.markDisconnected(); store.setConnection('connected'); });
+    expect(screen.getByText('Couldn’t check the latest update. Showing your saved counts.')).toBeTruthy();
+    expect(screen.getByText(`${SAVED_BASIS} ${LAST_UPDATED}`, { exact: true })).toBeTruthy();
+  });
+
+  it('shows the update-required copy only for the classified software update', async () => {
+    const store = readyStore();
+    store.setAgent({ ...store.getState().agent!, browser: { ...COLLECTION_ON, history_error_code: 'unsupported_revision' } });
+    await renderDashboard(store);
+    expect(screen.queryByText('Update Conversation Analytics to continue.')).toBeNull();
+    expect(screen.queryByText('Updating this page…')).toBeNull();
+    act(() => store.setAgent({ ...store.getState().agent!, browser: { ...COLLECTION_ON, history_error_code: 'software_update_required' } }));
+    expect(screen.getByText('Update Conversation Analytics to continue.')).toBeTruthy();
+    expect(screen.queryByText(/Last updated/)).toBeNull();
   });
   it('opens the current browser review directly and never accepts collection from the dashboard', async () => {
     const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]) }), conversations: [] });
@@ -272,7 +429,7 @@ describe('CreatorDashboardView', () => {
     expect(source.api.begin).not.toHaveBeenCalled();
   });
 
-  it('leaves paused collection untouched until an explicit resume and waits for pushed confirmation', async () => {
+  it('leaves paused collection untouched after opening Chrome and waits for pushed confirmation', async () => {
     const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]) }), conversations: [] });
     const browser: BrowserSurfacePayload = { capture: 'paused', site_access: 'granted',
       history_permission: 'missing', legal_review_required: false, reported_at: AS_OF };
@@ -281,11 +438,12 @@ describe('CreatorDashboardView', () => {
     const source = readinessSource(true);
     mountDashboard(store, source, api);
     expect(api.setCapture).not.toHaveBeenCalled();
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Resume collecting' })));
-    expect(api.setCapture).toHaveBeenCalledExactlyOnceWith('resume', expect.any(AbortSignal));
-    expect(screen.getByRole('heading', { name: 'Message collection is paused' })).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Review in Chrome' })));
+    expect(api.open).toHaveBeenCalledExactlyOnceWith('setup', expect.any(AbortSignal));
+    expect(api.setCapture).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: 'Paused by you' })).toBeTruthy();
     await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, capture: 'active' } }));
-    expect(screen.queryByRole('heading', { name: 'Message collection is paused' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Paused by you' })).toBeNull();
     expect(source.api.begin).not.toHaveBeenCalled();
   });
 
@@ -333,17 +491,18 @@ describe('CreatorDashboardView', () => {
     expect(source.api.begin).not.toHaveBeenCalled();
   });
 
-  it('can resume previously authorized collection before commercial activation', async () => {
+  it('can review previously authorized collection before commercial activation', async () => {
     const store = readyStore();
     store.setAgent({ ...store.getState().agent!, browser: { capture: 'paused', site_access: 'granted',
       history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
     const source = readinessSource(false);
     const api: BrowserControlApi = { setCapture: vi.fn(async () => 'delivered'), open: vi.fn(async () => 'delivered') };
     mountDashboard(store, source, api);
-    expect(screen.getByRole('heading', { name: 'Message collection is paused' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Paused by you' })).toBeTruthy();
     expect(api.setCapture).not.toHaveBeenCalled();
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Resume collecting' })));
-    expect(api.setCapture).toHaveBeenCalledExactlyOnceWith('resume', expect.any(AbortSignal));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Review in Chrome' })));
+    expect(api.open).toHaveBeenCalledExactlyOnceWith('setup', expect.any(AbortSignal));
+    expect(api.setCapture).not.toHaveBeenCalled();
     expect(source.api.begin).not.toHaveBeenCalled();
   });
 
@@ -373,7 +532,7 @@ describe('CreatorDashboardView', () => {
     source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['activation.review'] } });
     mountDashboard(store, source);
     expect(screen.getByRole('button', { name: 'Set up Full analytics' })).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Finish setup' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Set up Chrome to see your message counts' })).toBeNull();
     expect(source.api.begin).not.toHaveBeenCalled();
   });
 
@@ -510,7 +669,7 @@ describe('CreatorDashboardView', () => {
     expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
     expectStat('Messages', '1+');
     expectSplit('Received', '1+');
-    expect(screen.getByText(/Counts include messages synced so far/)).toBeTruthy();
+    expect(screen.getByText('Based on 1 messages saved on this computer so far.')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Open inbox' }).getAttribute('href')).toBe('/inbox');
     expect(source.api.begin).not.toHaveBeenCalled();
     expect(historyApi.update).not.toHaveBeenCalled();
@@ -520,7 +679,7 @@ describe('CreatorDashboardView', () => {
     const store = readyStore({ ...snapshot({ analyticsView: analytics([1, 1, 1, 0], 'synced_subset', 3) }) });
     await renderDashboard(store);
     expectStat('Messages', '\u2014');
-    expect(screen.queryByText(/Counts include messages synced so far/)).toBeNull();
+    expect(screen.queryByText(/Based on .* messages saved on this computer so far/)).toBeNull();
   });
 
   it('does not show a percentage before discovery closes or before history is verified complete', async () => {
@@ -546,8 +705,8 @@ describe('CreatorDashboardView', () => {
     const api = readinessSource(null);
     mountDashboard(readyStore(), api);
     expectStat('Messages', '19');
-    expect(screen.getByText('Checking setup…')).toBeTruthy();
-    expect(screen.queryByText('Finish setup')).toBeNull();
+    expect(screen.queryByText('Checking setup…')).toBeNull();
+    expect(screen.queryByText('Set up Chrome to see your message counts')).toBeNull();
   });
   it('reserves metric skeletons before the first snapshot', async () => {
     const store = createBridgeTransportStore();
@@ -556,7 +715,7 @@ describe('CreatorDashboardView', () => {
     await renderDashboard(store);
 
     expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeTruthy();
-    expect(screen.queryByRole('region', { name: 'Finish setup' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Set up Chrome to see your message counts' })).toBeNull();
     expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Recent conversations' })).toBeNull();
@@ -585,8 +744,7 @@ describe('CreatorDashboardView', () => {
     expectSplit('Received', '—');
     expectSplit('Sent', '4+');
     expect(overview().getByRole('progressbar', { name: 'History 50% synced' })).toBeTruthy();
-    expect(screen.queryByText(/Counts include messages synced so far/)).toBeNull();
-    expect(screen.queryByText(/Based on your full message history/)).toBeNull();
+    expect(screen.queryByText(/Based on .* messages saved on this computer so far/)).toBeNull();
   });
 
   it('names the partial basis when history sync is not in progress', async () => {
@@ -605,7 +763,7 @@ describe('CreatorDashboardView', () => {
     await renderDashboard(store);
 
     expect(screen.queryByRole('progressbar')).toBeNull();
-    expect(screen.getByText(/Counts include messages synced so far/)).toBeTruthy();
+    expect(screen.getByText('Based on 12 messages saved on this computer so far.')).toBeTruthy();
   });
 
   it('renders complete counts with the basis details in a popover', async () => {
@@ -619,7 +777,7 @@ describe('CreatorDashboardView', () => {
     expectSplit('Sent', '8');
     expect(screen.queryByRole('progressbar')).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.getByText(/Based on your full message history/)).toBeTruthy();
+    expect(screen.getByText(SAVED_BASIS)).toBeTruthy();
 
     const details = screen.getByRole('button', { name: 'Details' });
     expect(details.getAttribute('aria-expanded')).toBe('false');
@@ -629,6 +787,7 @@ describe('CreatorDashboardView', () => {
     const popover = within(screen.getByRole('dialog', { name: 'How these numbers are counted' }));
     const counted = popover.getByText('Messages counted', { exact: true }).nextElementSibling;
     expect(counted?.textContent).toBe('19');
+    expect(popover.getByText('Your full message history')).toBeTruthy();
     expect(popover.queryByText('Data version')).toBeNull();
   });
 
@@ -665,7 +824,7 @@ describe('CreatorDashboardView', () => {
 
     await renderDashboard(store, readinessSource(false));
 
-    expect(screen.queryByRole('region', { name: 'Finish setup' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Set up Chrome to see your message counts' })).toBeNull();
     expect(screen.getByRole('heading', { name: 'Full analytics' })).toBeTruthy();
     expect(screen.queryByText('Turn on message history')).toBeNull();
     expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
@@ -680,7 +839,7 @@ describe('CreatorDashboardView', () => {
         discovered_conversations: null, complete_conversations: 0, complete_as_of: null },
     }));
     await renderDashboard(store, readinessSource(true));
-    expect(screen.queryByRole('region', { name: 'Finish setup' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Set up Chrome to see your message counts' })).toBeNull();
     expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
   });
 
@@ -779,8 +938,7 @@ describe('CreatorDashboardView', () => {
 
     act(() => store.setConnection('connected'));
     const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain('Updates unavailable');
-    expect(alert.textContent).toContain('Showing your last numbers.');
+    expect(alert.textContent).toBe('Couldn’t check the latest update. Showing your saved counts.');
     expect(alert.textContent).not.toMatch(/reconnecting|paused|until/iu);
     expectStat('Messages', '19');
   });
@@ -850,17 +1008,17 @@ describe('CreatorDashboardView', () => {
     expect(alert.textContent).not.toMatch(/needs attention|stopped|Settings|Resume|will/iu);
   });
 
-  it('renders the setup prompt and overview together when the shared owner view arrives', async () => {
+  it('keeps the mounted overview ahead of a newly available readiness action', async () => {
     const source = readinessSource(null);
     mountDashboard(readyStore(), source);
-    expect(screen.getByText('Checking setup…')).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
-    expect(screen.queryByRole('region', { name: 'Finish setup' })).toBeNull();
+    expect(screen.queryByText('Checking setup…')).toBeNull();
+    const overview = screen.getByRole('region', { name: 'Overview' });
+    expect(screen.queryByRole('region', { name: 'Set up Chrome to see your message counts' })).toBeNull();
     const current = readinessSource(false).api.getState();
     await act(async () => source.publish(current));
     const prompt = screen.getByRole('heading', { name: 'Full analytics' });
-    const overview = screen.getByRole('region', { name: 'Overview' });
-    expect(prompt.compareDocumentPosition(overview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Overview' })).toBe(overview);
+    expect(overview.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(prompt.closest('[data-reserved-region="dashboard-setup"]')).toBeTruthy();
     expect(screen.queryByText('Loading dashboard…')).toBeNull();
     expectStat('Messages', '19');
