@@ -69,27 +69,15 @@ export function renderSetup(document, state) {
   const trust = Boolean(recovery || value?.next_task === 'finish-setup' && state.authentication && !state.authentication.authenticated);
   if (trust) card.dataset.composition = 'trust';
   else delete card.dataset.composition;
-  const updateStatus = (element, message, tone, showIcon = trust) => {
+  const updateStatus = (element, message, tone) => {
     setStatus(element, message || '', tone);
-    const kind = showIcon && message && statusIcons[tone];
+    const kind = message && statusIcons[tone];
     const icon = element.firstElementChild;
     if (kind && icon?.dataset.statusIcon === kind) return;
     icon?.remove();
-    if (kind) element.prepend(get('desktop-trust-status-icons').content.querySelector(`[data-status-icon="${kind}"]`).cloneNode(true));
+    if (kind) element.prepend(get('desktop-status-icons').content.querySelector(`[data-status-icon="${kind}"]`).cloneNode(true));
   };
   const taskStatus = get('task-status');
-  const updateTaskStatus = (message, tone) => {
-    updateStatus(taskStatus, message, tone);
-    Object.assign(taskStatus.style, {
-      minBlockSize: trust ? '0' : '',
-      marginBlockStart: trust && !message ? '0' : '',
-      marginBlockEnd: trust ? '0' : '',
-    });
-  };
-  const brand = document.querySelector('.setup-header .setup-brand');
-  Object.assign(brand.style, { flexShrink: trust ? '1' : '', minInlineSize: trust ? '0' : '',
-    whiteSpace: trust ? 'normal' : '', overflowWrap: trust ? 'anywhere' : '' });
-  brand.firstElementChild.style.flexShrink = trust ? '0' : '';
   Object.assign(card.style, { inlineSize: recovery ? '100%' : '', maxInlineSize: recovery ? '560px' : '',
     marginInline: recovery ? 'auto' : '' });
   for (const control of [get('task-action'), get('protected-cancel'), get('task-pending'), card.querySelector('.desktop-loading-action')]) {
@@ -111,7 +99,7 @@ export function renderSetup(document, state) {
     const pendingRow = get('task-pending');
     pendingRow.hidden = !pending;
     updateStatus(pendingRow, pending ? recovery.status : '', 'progress');
-    updateTaskStatus(pending ? '' : recovery.status, recovery.tone);
+    updateStatus(taskStatus, pending ? '' : recovery.status, recovery.tone);
     for (const id of ['local-access', 'local-authenticate', 'decision-details', 'decision-sign-in', 'decision-provider', 'header-account', 'sign-in-options',
       'browser-reopen', 'sign-in-switch', 'sign-in-back', 'setup-code-open']) get(id).hidden = true;
     const primary = get('task-action'), cancel = get('protected-cancel');
@@ -159,7 +147,7 @@ export function renderSetup(document, state) {
   const ceremonyFailure = ['passkey_unconfirmed', 'passkey_start_unavailable'].includes(authentication?.error) && authentication?.attempt;
   const statusReadUnavailable = securing && !lapsed && !checkingPasskey && !passkeyKnown
     && (!authentication.error || ['passkey_status_unavailable', 'passkey_status_network'].includes(authentication.error));
-  updateStatus(get('local-auth-pending'), ceremonyPending ? authentication.attempt === 'create' ? 'Waiting for your passkey…' : 'Waiting for verification…' : '', 'progress', true);
+  updateStatus(get('local-auth-pending'), ceremonyPending ? authentication.attempt === 'create' ? 'Waiting for your passkey…' : 'Waiting for verification…' : '', 'progress');
   get('local-auth-pending').hidden = !ceremonyPending;
   updateStatus(get('local-auth-status'), lapsed ? lapsed[2] || '' : passkeyPlaceholder ? ''
     : statusReadUnavailable ? 'This page updates by itself.'
@@ -170,7 +158,7 @@ export function renderSetup(document, state) {
         : ceremonyFailure === 'sign-in' ? 'Sign-in didn’t finish.' : passkeyErrors[authentication.error] : null),
   lapsed ? 'neutral' : authentication?.error === 'passkey_sign_in_required' ? 'success'
     : ceremonyFailure || statusReadUnavailable ? 'warning' : checkingPasskey || authentication?.busy ? 'progress'
-      : recoveryTone(recoveryClass(passkeyRecovery, authentication?.error)), true);
+      : recoveryTone(recoveryClass(passkeyRecovery, authentication?.error)));
   const accountDecision = value?.decision?.action === 'connect-account' ? value.decision : null;
   const decisionStatus = value?.decision_status?.state;
   const decision = decisionStatus === 'accepted' ? null : accountDecision;
@@ -287,8 +275,8 @@ export function renderSetup(document, state) {
   get('task-step').textContent = task && task !== 'complete' ? `Step ${Object.keys(tasks).indexOf(task) + 1} of 3 · ${stepLabel}`
     : stepLabel || (terminal ? 'Desktop setup' : '');
   const pending = Boolean(state.pending || value?.pending_operations.length || startingChrome);
-  get('setup-code-open').hidden = !value || pending || value.facts.installation === 'verified' || Boolean(authentication);
-  get('setup-code-open').disabled = !state.connected || pending;
+  get('setup-code-open').hidden = !value || pending || opening || value.facts.installation === 'verified' || Boolean(authentication);
+  get('setup-code-open').disabled = !state.connected || pending || opening;
   const reasonMessage = reasonClass === 'invariant_failed' ? ''
     : reason === 'connection_unavailable' && value?.journey_id
       ? 'Dipsy can’t connect right now. Your setup progress is saved.'
@@ -377,7 +365,7 @@ export function renderSetup(document, state) {
     : reconnectingChrome || preparingChrome && reason === 'browser_preparing' || confirmingUnknown && (!reason || reason === 'operation_unconfirmed') ? ''
       : replacing ? progress : endedPrompt ? signInMessage : unfinished ? 'Sign-in did not finish.'
         : reasonMessage || (!pendingMessage && (connecting ? pairingProgress : progress));
-  updateTaskStatus(status || '', connecting && !reason ? 'progress' : taskTone);
+  updateStatus(taskStatus, status, connecting && !reason ? 'progress' : taskTone);
   get('sign-in-switch').hidden = !canSwitch || choosingAccount || unavailable;
   get('sign-in-switch').disabled = controlsDisabled;
   get('decision-sign-in').hidden = !providerName && get('sign-in-switch').hidden;

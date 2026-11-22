@@ -96,6 +96,136 @@ test('desktop empty task actions occupy no more than one line', async () => {
   });
 });
 
+for (const [width, scale, mode] of [[1440, 1, 'light'], [390, 1, 'dark'], [320, 2, 'light']]) {
+  test(`desktop empty status occupies no space at ${width}px and ${scale}× text`, async () => {
+    await withDesktop(width, scale, mode, 'loading', async (page, render) => {
+      const status = page.locator('#task-status');
+      const states = DESKTOP_ONBOARDING_STATES;
+      for (const state of [states.loading, states.browser_access_needed, states.account_confirm,
+        states.finish_secure_app_setup, states.finish_connect_extension, { ...states.loading, error: 'session_unavailable' }]) {
+        await render(state);
+        assert.equal(await status.textContent(), '');
+        assert.deepEqual(await status.evaluate(node => {
+          const style = getComputedStyle(node);
+          return [node.getBoundingClientRect().height, style.marginBlockStart, style.marginBlockEnd];
+        }), [0, '0px', '0px']);
+      }
+    });
+  });
+}
+
+test('desktop status draws the outlined mark for each owner tone', async () => {
+  await withDesktop(1440, 1, 'light', 'browser_access_connecting', async (page, render) => {
+    const states = DESKTOP_ONBOARDING_STATES;
+    const signIn = states.account_sign_in_in_progress;
+    const retired = { ...signIn, pending: null, snapshot: { ...signIn.snapshot, pending_operations: [],
+      authentication: { ...signIn.snapshot.authentication, state: 'retired' } } };
+    const cases = [
+      [states.browser_access_connecting, '#task-pending', 'progress', 'pending', '--dipsy-color-primary'],
+      [states.browser_access_extension_unavailable, '#task-status', 'warning', 'attention', '--dipsy-color-text-secondary'],
+      [{ ...states.loading, error: 'connection_unavailable' }, '#task-status', 'error', 'attention', '--dipsy-color-error'],
+      [retired, '#task-status', 'neutral', 'info', '--dipsy-color-text-secondary'],
+      [states.passkey_sign_in_required, '#local-auth-status', 'success', 'done', '--dipsy-color-primary'],
+    ];
+    for (const [state, selector, tone, kind, token] of cases) {
+      await render(state);
+      const row = page.locator(selector);
+      assert.equal(await row.getAttribute('data-tone'), tone);
+      assert.deepEqual(await row.evaluate((node, token) => {
+        const icon = node.querySelector('svg');
+        if (!icon) return null;
+        const probe = document.createElement('span');
+        probe.style.color = `var(${token})`;
+        document.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        const { width, height } = icon.getBoundingClientRect();
+        return [icon.dataset.statusIcon, width, height, getComputedStyle(icon).color === color,
+          getComputedStyle(node, '::before').content, icon.getAttribute('aria-hidden')];
+      }, token), [kind, 20, 20, true, 'none', 'true']);
+    }
+    await render(states.browser_access_connecting);
+    const row = page.locator('#task-pending');
+    const arc = row.locator('svg[data-status-icon="pending"]');
+    assert.equal((await arc.boundingBox()).y - (await row.boundingBox()).y, 12);
+    assert.equal(await arc.evaluate(node => getComputedStyle(node).animationName), 'none');
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    assert.equal(await arc.evaluate(node => getComputedStyle(node).animationName), 'status-rotate');
+  });
+});
+
+test('desktop step labels and branding fit at 320px and 2× text', async () => {
+  await withDesktop(320, 2, 'dark', 'browser_access_needed', async (page, render) => {
+    for (const state of [DESKTOP_ONBOARDING_STATES.browser_access_needed, DESKTOP_ONBOARDING_STATES.account_confirm,
+      DESKTOP_ONBOARDING_STATES.finish_secure_app_setup]) {
+      await render(state);
+      const geometry = await page.locator('.setup-steps').evaluate(list => {
+        const steps = [...list.children];
+        const number = steps[0].querySelector('.setup-step-badge span');
+        const labels = steps.map(step => [step.matches('[aria-current="step"]'),
+          getComputedStyle(step.querySelector('.setup-step-label')).clipPath === 'none']);
+        const markCenters = steps.map(step => {
+          const mark = step.querySelector('.setup-step-badge').getBoundingClientRect();
+          return mark.y + mark.height / 2;
+        });
+        return { labels, markCenters, digitHeight: number.getBoundingClientRect().height,
+          pageFits: document.documentElement.scrollWidth <= innerWidth };
+      });
+      assert(geometry.labels.every(([current, visible]) => current === visible));
+      assert(geometry.markCenters.every(center => center === geometry.markCenters[0]));
+      assert(geometry.digitHeight <= 24);
+      assert(geometry.pageFits);
+    }
+    assert.match(await page.getByRole('navigation').ariaSnapshot(), /Set up Chrome[\s\S]*Connect your account[\s\S]*Finish setup/u);
+  });
+});
+
+test('desktop loading and unavailable cards use the specified tokens and marks', async () => {
+  await withDesktop(1440, 1, 'dark', 'loading', async (page, render) => {
+    const colors = await page.locator('.setup-task-card').evaluate(card => {
+      const probe = document.createElement('span');
+      probe.style.background = 'var(--dipsy-intent-surface-placeholder)';
+      card.append(probe);
+      const fill = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return ['#task-step', '#task-title', '.desktop-loading-copy span', '.desktop-loading-action']
+        .map(selector => getComputedStyle(card.querySelector(selector)).backgroundColor === fill);
+    });
+    assert.deepEqual(colors, [true, true, true, true]);
+    await render({ ...DESKTOP_ONBOARDING_STATES.loading, error: 'session_unavailable' });
+    assert.equal(await page.locator('.desktop-task-icon svg:visible').getAttribute('data-task-icon'), 'app');
+    assert.deepEqual(await page.locator('#task-step').evaluate(node => {
+      const style = getComputedStyle(node);
+      return [style.textTransform, style.letterSpacing];
+    }), ['uppercase', '0.96px']);
+    assert.equal(await page.locator('#task-title').evaluate(node => getComputedStyle(node).textWrapStyle), 'balance');
+  });
+});
+
+test('desktop sign-in link has room for focus and a shared left edge', async () => {
+  await withDesktop(390, 1, 'dark', 'account_confirm', async (page, render) => {
+    const state = DESKTOP_ONBOARDING_STATES.account_confirm;
+    const link = page.locator('#sign-in-switch');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    assert(await link.evaluate(node => node.matches(':focus-visible')));
+    const provider = page.locator('#decision-provider');
+    assert.match(await provider.evaluate(node => getComputedStyle(node, '::after').content), /·/u);
+    const proof = await provider.boundingBox();
+    const action = await link.boundingBox();
+    const outline = await link.evaluate(node => {
+      const style = getComputedStyle(node);
+      return parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+    });
+    assert(action.x - outline > proof.x + proof.width);
+    await render({ ...state, snapshot: { ...state.snapshot,
+      authentication: { ...state.snapshot.authentication, authentication_attempt: null } } });
+    assert(await provider.isHidden());
+    assert.equal((await link.boundingBox()).x, (await page.locator('#task-title').boundingBox()).x);
+    assert.equal(await link.evaluate(node => getComputedStyle(node).paddingInlineStart), '0px');
+  });
+});
+
 test('desktop marks and pending swaps stay aligned through current-step and reason changes', async () => {
   await withDesktop(1440, 1, 'light', 'browser_access_needed', async (page, render) => {
     await page.waitForFunction(() => window.__staticPaint.first !== null);

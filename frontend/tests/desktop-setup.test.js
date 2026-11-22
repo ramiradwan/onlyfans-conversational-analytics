@@ -1094,8 +1094,14 @@ describe('desktop setup presentation', () => {
     const choosing = { ...initial(), next_task: 'account-connection', allowed_actions: ['account.connect'], authentication: signIn() };
     const busy = () => [...document.querySelectorAll('[data-provider]')].filter(button => button.getAttribute('aria-busy') === 'true')
       .map(button => button.dataset.provider);
+    const setupCode = document.getElementById('setup-code-open');
+    renderSetup(document, { snapshot: choosing, connected: true });
+    expect(setupCode.hidden).toBe(false);
+    expect(setupCode.disabled).toBe(false);
     renderSetup(document, { snapshot: choosing, connected: true, acting: 'account.connect', provider: 'google' });
     expect(busy()).toEqual(['google']);
+    expect(setupCode.hidden).toBe(true);
+    expect(setupCode.disabled).toBe(true);
     expect(document.getElementById('task-status').textContent).toBe('Finish signing in in Chrome. This window continues by itself.');
     // While the command is pending and nothing is selected yet, Brain reports no sign-in projection.
     const accepted = { ...choosing, allowed_actions: [], pending_operations: [{ ...record, action: 'account.connect' }], authentication: null };
@@ -1113,6 +1119,9 @@ describe('desktop setup presentation', () => {
     expect(document.getElementById('task-status').textContent).toBe('Finish signing in in Chrome. This window continues by itself.');
     renderSetup(document, { snapshot: accepted, connected: true, pending: operationId, provider: 'google', error: 'browser_unavailable' });
     expect(busy()).toEqual([]);
+    renderSetup(document, { snapshot: choosing, connected: true });
+    expect(setupCode.hidden).toBe(false);
+    expect(setupCode.disabled).toBe(false);
   });
 
   it('requires the current authentication projection before offering account sign-in or browser retry', () => {
