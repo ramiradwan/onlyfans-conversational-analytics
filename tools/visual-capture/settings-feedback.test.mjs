@@ -94,6 +94,122 @@ async function textFits(locator) {
   });
 }
 
+for (const mode of ['light', 'dark']) test(`keyboard code comparison keeps the Settings sections in place at 320px and doubled text in ${mode}`, async () => {
+  const owner = await context({ viewport: { width: 320, height: 900 }, colorScheme: mode, reducedMotion: 'reduce' });
+  const page = await owner.newPage();
+  try {
+    await settings(page, mode, 2);
+    await push(page, 'desktopSnapshot', { allowed_actions: ['activation.review'] });
+    await push(page, 'refresh');
+    await settle(page);
+    for (const key of await push(page, 'pending')) await push(page, 'release', key, 'fresh');
+    const options = page.getByRole('button', { name: 'Connection options' });
+    await options.scrollIntoViewIfNeeded();
+    await settle(page);
+    const sections = '[data-settings-section]';
+    const bounds = () => page.locator(sections).evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().toJSON()));
+    const baseline = await bounds();
+    assert(await textFits(page.getByText('Connect the extension to this app', { exact: true })));
+    const notice = page.locator('[data-reserved-region="browser-feedback"]');
+    const initialNoticeHeight = (await notice.boundingBox()).height;
+    await options.press('Enter');
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('button', { name: 'Compare connection codes' }).press('Enter');
+    assert(await dialog.getByRole('heading', { name: 'Connect the extension to this app' }).isVisible());
+    const pin = await push(page, 'apiSample', 'pairing');
+    const expires_at = await page.evaluate(() => new Date(Date.now() + 300_000).toISOString());
+    await push(page, 'resolve', 'pairing.open', { ...pin, state: 'open', version: 0, expires_at });
+    await waitForPairingOpenPresentation(page);
+    const arc = dialog.locator('.onboarding-status svg');
+    assert(await arc.isVisible(), 'Reduced motion keeps the pending arc visible');
+    assert.deepEqual(await arc.evaluate(node => {
+      const style = getComputedStyle(node);
+      return [style.width, style.height, style.animationName];
+    }), ['20px', '20px', 'none']);
+    await push(page, 'companion', { creator_account_id: pin.creator_account_id, revision: 110, changed_at: expires_at });
+    await page.waitForFunction(() => window.__workspaceFixture.pending().includes('pairing.get'));
+    await push(page, 'resolve', 'pairing.get', { ...pin, state: 'awaiting_confirmation', version: 1, expires_at, comparison_code: '012345' });
+    const confirmation = dialog.getByRole('button', { name: 'Confirm connection' });
+    await confirmation.waitFor();
+    assert.equal(await confirmation.isEnabled(), false);
+    assert.equal(await dialog.evaluate(node => node.closest('.MuiDialog-container').classList.contains('MuiDialog-scrollBody')), true);
+    assert.equal(await dialog.getByLabel('Connection comparison code').innerText(), '012 345');
+    assert(await textFits(dialog.getByText('Compare this with the extension’s setup tab. Confirm here only if both codes match.', { exact: true })));
+    const check = dialog.getByRole('checkbox', { name: 'The codes match' });
+    await check.press('Space');
+    assert(await confirmation.isEnabled());
+    assert.deepEqual(await bounds(), baseline);
+    await record(page, `comparison-320-doubled-${mode}`, { baseline, current: await bounds() });
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => window.__workspaceFixture.pending().includes('pairing.change'));
+    await push(page, 'resolve', 'pairing.change', { ...pin, state: 'cancelled', version: 2, expires_at });
+    await dialog.waitFor({ state: 'hidden' });
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Connection options');
+    assert(await notice.getByText('Connection cancelled.', { exact: true }).isVisible());
+    assert(await textFits(notice));
+    const noticeGrowth = (await notice.boundingBox()).height - initialNoticeHeight;
+    assert.deepEqual(await bounds(), baseline.map((rect, index) => index === 0
+      ? { ...rect, height: rect.height + noticeGrowth, bottom: rect.bottom + noticeGrowth }
+      : { ...rect, y: rect.y + noticeGrowth, top: rect.top + noticeGrowth, bottom: rect.bottom + noticeGrowth }));
+  } finally { await owner.close(); }
+});
+
+for (const [width, scale, mode] of [[1440, 1, 'light'], [320, 2, 'dark']]) test(`dashboard history aligns and its decision stays readable at ${width}px in ${mode}`, async () => {
+  const owner = await context({ viewport: { width, height: 844 }, colorScheme: mode, reducedMotion: 'reduce' });
+  const page = await owner.newPage();
+  try {
+    await page.goto(`${harness.base}?workspace=dashboard-continuation&state=add-older-conversations&mode=${mode}`);
+    const heading = page.getByRole('heading', { name: 'Add older conversations', exact: true });
+    await heading.waitFor();
+    await page.evaluate(async scale => { await document.fonts.ready; document.documentElement.style.fontSize = `${16 * scale}px`; }, scale);
+    await settle(page);
+    const dashboard = page.getByRole('heading', { name: 'Dashboard', exact: true });
+    assert.equal((await heading.boundingBox()).x, (await dashboard.boundingBox()).x);
+    assert(await textFits(heading));
+    await page.getByRole('button', { name: 'Review message history', exact: true }).press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Add older conversations' });
+    assert.equal(await dialog.locator('.MuiDialogContent-root [data-surface-emphasis="secondary"]').count(), 0);
+    const actions = dialog.locator('.MuiDialogActions-root');
+    const primary = actions.getByRole('button', { name: 'Allow message history' });
+    assert.equal(await primary.isEnabled(), false);
+    assert(await actions.getByRole('button', { name: 'Not now' }).isVisible());
+    for (const copy of [
+      'Read-only: it never sends messages or changes your account.',
+      'Synced message history stays on this computer.',
+      'Pause or turn it off at any time.',
+      'I allow read-only syncing of my older messages to this computer.',
+    ]) {
+      const line = dialog.getByText(copy, { exact: true });
+      await line.scrollIntoViewIfNeeded();
+      assert(await textFits(line), copy);
+    }
+    await dialog.getByRole('checkbox').press('Space');
+    assert(await primary.isEnabled());
+    await primary.scrollIntoViewIfNeeded();
+    assert(await textFits(primary));
+    await record(page, `dashboard-history-${width}-${mode}`, { width, scale, mode });
+  } finally { await owner.close(); }
+});
+
+test('Settings shows full history status inline at 320px and doubled text', async () => {
+  const owner = await context({ viewport: { width: 320, height: 844 }, colorScheme: 'light', reducedMotion: 'reduce' });
+  const page = await owner.newPage();
+  try {
+    await page.goto(`${harness.base}?workspace=settings&state=syncing&mode=light`);
+    const history = page.locator('#message-history');
+    const status = history.locator('[data-reserved-region="history-feedback"]').getByRole('status');
+    await status.getByText('Adding older messages. Message counts update as they arrive.', { exact: true }).waitFor();
+    await page.evaluate(async () => { await document.fonts.ready; document.documentElement.style.fontSize = '200%'; });
+    await status.scrollIntoViewIfNeeded();
+    assert(await textFits(status));
+    assert(await history.getByRole('button', { name: 'Pause', exact: true }).isVisible());
+    await push(page, 'browser', { history_permission: 'missing' });
+    await status.getByText('Older messages start syncing after Chrome allows access.', { exact: true }).waitFor();
+    assert(await textFits(status));
+    assert(await history.getByRole('button', { name: 'Allow Chrome access' }).isVisible());
+  } finally { await owner.close(); }
+});
+
 test('pairing expiry driver holds its boundary through slow native observation, then expires explicitly', async () => {
   const owner = await context({ viewport: { width: 1440, height: 900 }, colorScheme: 'light' });
   const page = await owner.newPage();
@@ -120,14 +236,14 @@ test('pairing expiry driver holds its boundary through slow native observation, 
         const after = await page.evaluate(() => ({ date: Date.now(), native: window.__regionWatchControl.boundary().nativeAt }));
         assert(after.native - before.native >= 1500);
         assert.equal(after.date, before.date, 'Driver latency must not advance the expiry state');
-        assert(await page.getByText('Waiting for the browser extension to connect.', { exact: true }).isVisible());
-        assert.equal(await page.getByText('Time ran out before the connection finished. Try again.', { exact: true }).count(), 0);
+        assert(await page.getByText('Waiting for the extension…', { exact: true }).isVisible());
+        assert.equal(await page.getByText('Time ran out before the connection finished.', { exact: true }).count(), 0);
       }
       stages.push(id);
     };
     await drivePairingExpiry(page, pin, (method, ...args) => push(page, method, ...args), step, openedAt);
     assert.deepEqual(stages, ['pairing:pending', 'pairing:before-expiry', 'pairing:expired']);
-    assert(await page.getByText('Time ran out before the connection finished. Try again.', { exact: true }).isVisible());
+    assert(await page.getByText('Time ran out before the connection finished.', { exact: true }).isVisible());
     const before = await page.evaluate(() => Date.now());
     await new Promise(resolve => setTimeout(resolve, 50));
     assert((await page.evaluate(() => Date.now())) > before, 'Later driver actions require a resumed clock');
@@ -171,14 +287,14 @@ test('pairing expiry driver preserves the original open deadline when its respon
       if (id === 'pairing:before-expiry') {
         assert((await page.evaluate(() => Date.now())) - openedAt < 300_000,
           'The before-expiry observation must precede the original local deadline');
-        assert(await page.getByText('Waiting for the browser extension to connect.', { exact: true }).isVisible());
-        assert.equal(await page.getByText('Time ran out before the connection finished. Try again.', { exact: true }).count(), 0);
+        assert(await page.getByText('Waiting for the extension…', { exact: true }).isVisible());
+        assert.equal(await page.getByText('Time ran out before the connection finished.', { exact: true }).count(), 0);
       }
       stages.push(id);
     };
     await drivePairingExpiry(page, pin, (method, ...args) => push(page, method, ...args), step, openedAt);
     assert.deepEqual(stages, ['pairing:pending', 'pairing:before-expiry', 'pairing:expired']);
-    assert(await page.getByText('Time ran out before the connection finished. Try again.', { exact: true }).isVisible());
+    assert(await page.getByText('Time ran out before the connection finished.', { exact: true }).isVisible());
   } finally { await owner.close(); }
 });
 
@@ -226,7 +342,7 @@ test('pairing driver completes the waiting presentation before a passive compani
     assert.equal(observed.length, 0, 'A passive notice cannot admit a delayed open-page layout change');
     assert.equal(inspectFrames(frames).length, 0, 'Passive companion-notice geometry must stay stable');
     assert((await push(page, 'pending')).includes('pairing.get'));
-    assert(await page.getByText('Waiting for the browser extension to connect.', { exact: true }).isVisible());
+    assert(await page.getByText('Waiting for the extension…', { exact: true }).isVisible());
     await record(page, 'pairing-delayed-scheduler', { ...raw, passiveStart: before, observed, passiveFailures: inspectFrames(frames) });
   } finally { await owner.close(); }
 });
@@ -294,8 +410,8 @@ for (const mode of ['light', 'dark']) test(`compact Settings keeps passive brows
     await push(page, 'companion', { creator_account_id: 'story-only-account', revision: 7, changed_at: '2026-09-29T10:00:00Z' });
     await page.waitForFunction(() => window.__workspaceFixture.pending().includes('pairing.pins'));
     await push(page, 'reject', 'pairing.pins', 'FixtureFailure');
-    const retry = page.getByRole('button', { name: 'Retry checking connected extensions' });
-    await retry.waitFor();
+    const alert = section.getByRole('button', { name: 'Browser alert' });
+    await alert.waitFor();
     await settle(page);
     const feedback = section.locator('[data-reserved-region="browser-feedback"]');
     assert(await textFits(feedback), 'Combined feedback escapes its fixed region');
@@ -303,10 +419,10 @@ for (const mode of ['light', 'dark']) test(`compact Settings keeps passive brows
     const raw = await passiveReport(page);
     await record(page, `passive-${width}-${scale}-${mode}`, { baseline, full, ...raw });
     assert.deepEqual(raw.passiveFailures, []);
-    const details = feedback.getByRole('button', { name: 'Show details' });
-    const hasDetails = await details.count() > 0;
-    if (hasDetails) await details.click();
-    const message = await (hasDetails ? page.getByRole('dialog') : feedback).innerText();
+    await alert.click();
+    const dialog = page.getByRole('dialog', { name: 'Browser alert' });
+    assert(await dialog.getByRole('button', { name: 'Retry checking connected extensions' }).isVisible());
+    const message = await dialog.getByRole('alert').innerText();
     assert(message.includes('The browser extension is not connected right now.'));
     assert(message.includes("Connected extensions couldn't be checked."));
   } finally { await owner.close(); }
@@ -322,9 +438,8 @@ for (const width of [320, 390]) test(`shared browser feedback retains every mess
     await push(page, 'companion', { creator_account_id: 'story-only-account', revision: 8, changed_at: '2026-09-29T10:00:00Z' });
     await page.waitForFunction(() => window.__workspaceFixture.pending().includes('pairing.pins'));
     await push(page, 'reject', 'pairing.pins', 'FixtureFailure');
-    const retry = page.getByRole('button', { name: 'Retry checking connected extensions' });
-    await retry.waitFor();
     const feedback = page.locator('[data-reserved-region="browser-feedback"]');
+    await feedback.getByRole('button', { name: 'Browser alert' }).waitFor();
     await feedback.scrollIntoViewIfNeeded();
     await settle(page);
     const fits = await textFits(feedback);
@@ -337,12 +452,12 @@ for (const width of [320, 390]) test(`shared browser feedback retains every mess
     await record(page, `narrow-${width}`, { fits, geometry, overflow });
     assert.deepEqual(overflow, [], 'Browser controls must not escape the section');
     assert(fits, 'Long simultaneous feedback must fit or expose its complete details');
+    await feedback.getByRole('button', { name: 'Browser alert' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Browser alert' });
+    const retry = dialog.getByRole('button', { name: 'Retry checking connected extensions' });
     assert(await textFits(retry), 'Retry must remain readable');
-    await feedback.getByRole('button', { name: 'Show details' }).click();
-    const dialog = page.getByRole('dialog');
     const message = await dialog.getByRole('alert').innerText();
     assert.equal(message, 'The browser extension is not connected right now. Connected extensions couldn\'t be checked.');
-    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
     await retry.focus();
     await retry.press('Enter');
     assert.deepEqual(await push(page, 'pending'), ['pairing.pins']);
@@ -358,7 +473,7 @@ for (const [width, scale] of [[640, 1], [390, 2]]) test(`shared footer preserves
     await push(page, 'desktopActionError', 'FixtureFailure');
     await page.getByRole('button', { name: 'Connect another extension', exact: true }).click();
     const section = page.locator('#browser-extension');
-    await section.locator('[data-reserved-region="browser-feedback"]').getByRole('button', { name: 'Show details' }).click();
+    await section.getByRole('button', { name: 'Browser alert' }).click();
     const entryDetails = page.getByRole('dialog');
     assert.equal(await entryDetails.getByRole('alert').innerText(), 'The browser connection request could not be opened.');
     await entryDetails.getByRole('button', { name: 'Close', exact: true }).click();
@@ -369,16 +484,9 @@ for (const [width, scale] of [[640, 1], [390, 2]]) test(`shared footer preserves
     await push(page, 'companion', { creator_account_id: 'story-only-account', revision: 9, changed_at: '2026-09-29T10:00:00Z' });
     await page.waitForFunction(() => window.__workspaceFixture.pending().includes('pairing.pins'));
     await push(page, 'reject', 'pairing.pins', 'FixtureFailure');
-    const retry = page.getByRole('button', { name: 'Retry checking connected extensions' });
-    await retry.waitFor();
     await settle(page);
     const connect = page.getByRole('button', { name: 'Connect extension', exact: true });
-    const options = page.getByRole('button', { name: 'Connection options', exact: true });
-    for (const control of [connect, options, retry]) assert(await textFits(control), 'Every explicit recovery action remains readable');
-    assert.equal(await options.evaluate(node => {
-      const range = document.createRange(); range.selectNodeContents(node);
-      return new Set([...range.getClientRects()].filter(rect => rect.width > 0 && rect.height > 0).map(rect => rect.top)).size;
-    }), 1, 'Options must stay on one line, never split inside the word');
+    assert(await textFits(connect), 'The entry action remains readable');
     const feedback = section.locator('[data-reserved-region="browser-feedback"]');
     assert(await textFits(feedback));
     assert.deepEqual(await section.boundingBox(), baseline, 'Adding the separately permitted options and scoped retry must not resize the footer');
@@ -395,11 +503,17 @@ for (const [width, scale] of [[640, 1], [390, 2]]) test(`shared footer preserves
     await record(page, `actions-${width}`, { baseline, ...raw, browserFailures, outsideBrowserOverflow,
       containmentScope: width < 640 ? 'browser only; full raw page overflow retained; all movement and native shifts checked' : 'full page' });
     assert.deepEqual(browserFailures, []);
-    await feedback.getByRole('button', { name: 'Show details' }).click();
-    const dialog = page.getByRole('dialog');
+    await feedback.getByRole('button', { name: 'Browser alert' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Browser alert' });
+    const options = dialog.getByRole('button', { name: 'Connection options', exact: true });
+    const retry = dialog.getByRole('button', { name: 'Retry checking connected extensions' });
+    for (const control of [options, retry]) assert(await textFits(control), 'Every explicit recovery action remains readable');
+    assert.equal(await options.evaluate(node => {
+      const range = document.createRange(); range.selectNodeContents(node);
+      return new Set([...range.getClientRects()].filter(rect => rect.width > 0 && rect.height > 0).map(rect => rect.top)).size;
+    }), 1, 'Options must stay on one line, never split inside the word');
     assert((await dialog.getByRole('alert').innerText()).includes('The browser connection request could not be opened.'));
     assert((await dialog.getByRole('alert').innerText()).includes("Connected extensions couldn't be checked."));
-    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
     await options.click();
     assert(await page.getByRole('button', { name: 'Compare connection codes', exact: true }).isEnabled());
     assert.deepEqual(await push(page, 'desktopActions'), [{ action: 'browser.pair' }]);

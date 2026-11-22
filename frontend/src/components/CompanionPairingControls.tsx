@@ -1,12 +1,13 @@
 import {
   Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogContentText,
-  DialogTitle, FormControlLabel, Stack, Typography,
+  DialogTitle, FormControlLabel, Stack, Typography, useMediaQuery,
 } from '@mui/material';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { BrowserExtensionControls } from './BrowserExtensionControls';
 import { Panel, SectionHeader, SettingRow, useRevealHold, type SectionStatus } from './ui';
-import { ReservedRegion, StatusLine } from './ui/ReservedRegion';
+import { OnboardingStatus } from './ui/OnboardingCard';
+import { ReservedRegion } from './ui/ReservedRegion';
 import { usePermissions } from '../hooks/usePermissions';
 import { browserControlApi, type BrowserControlApi } from '../services/browserControlApi';
 import {
@@ -24,6 +25,7 @@ import {
 } from '../utils/statusCopy';
 
 const WINDOW_LIMIT_MS = 300_000;
+const PAIRING_EXPIRED = 'Time ran out before the connection finished.';
 const terminal = (status: CompanionPairingStatus) => (
   ['confirmed', 'admitted', 'declined', 'cancelled', 'expired', 'revoked'].includes(status.state)
 );
@@ -47,17 +49,27 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
   creatorAccountId: string;
   embedded: boolean;
 }) {
+  const narrowDialog = useMediaQuery(theme => theme.breakpoints.down('sm'));
   const [status, setStatus] = useState<CompanionPairingStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [rechecking, setRechecking] = useState(false);
   const [codesMatch, setCodesMatch] = useState(false);
   const [connectedCount, setConnectedCount] = useState<number | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [manualRecovery, setManualRecovery] = useState(false);
+  const [openingWindow, setOpeningWindow] = useState(false);
+  const expectedAccount = useRef<string | null>(null);
   const [opening, setOpening] = useState(false);
   const [entryError, setEntryError] = useState<string | null>(null);
   const [browserFeedback, setBrowserFeedback] = useState<string | null>(null);
   const [listFeedback, setListFeedback] = useState<PairingListFeedback | null>(null);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const lastKnownCount = useRef<number | null>(null);
+  const updateCount = useCallback((count: number | null) => {
+    if (count !== null) lastKnownCount.current = count;
+    setConnectedCount(count);
+  }, []);
   const openingRef = useRef(false);
   const current = useRef<CompanionPairingStatus | null>(null);
   const deadline = useRef(0);
@@ -112,19 +124,25 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
     if (confirmationInFlight.current) return false;
     const previous = current.current;
     if (action !== 'open' && previous === null) return;
-    if (action === 'confirm' && (!codesMatch || previous?.state !== 'awaiting_confirmation')) return;
+    if (action === 'confirm' && (!codesMatch || busy || failed || status !== previous
+      || previous?.state !== 'awaiting_confirmation' || Date.now() >= deadline.current)) return;
     operation.current?.abort();
     const controller = new AbortController();
     operation.current = controller;
     const version = ++epoch.current;
     if (action === 'confirm') confirmationInFlight.current = true;
     setBusy(true);
-    setFailed(false);
+    if (action === 'get') setRechecking(true);
+    else setFailed(false);
     setCodesMatch(false);
     if (action === 'open') {
+      const owner = onboarding.getState();
+      const label = owner.connected ? owner.snapshot?.creator_label : null;
+      expectedAccount.current = label?.creator_id === creatorAccountId ? label.display_name ?? label.username : null;
       current.current = null;
       setStatus(null);
       deadline.current = Date.now() + WINDOW_LIMIT_MS;
+      setOpeningWindow(true);
     }
     try {
       const next = action === 'open'
@@ -133,15 +151,21 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
           ? await api.get(previous!.pairing_id, controller.signal)
           : await api.change(previous!.pairing_id, action, previous!.version, controller.signal);
       if (controller.signal.aborted || epoch.current !== version) return false;
-      deadline.current = Math.min(deadline.current, Date.parse(next.expires_at));
       acceptStatus(next);
+      deadline.current = Math.min(deadline.current, Date.parse(next.expires_at));
+      setFailed(false);
+      if (terminal(next)) setManualRecovery(false);
       return true;
     } catch {
       if (!controller.signal.aborted && epoch.current === version) setFailed(true);
       return false;
     } finally {
       if (action === 'confirm') confirmationInFlight.current = false;
-      if (!controller.signal.aborted && epoch.current === version) setBusy(false);
+      if (!controller.signal.aborted && epoch.current === version) {
+        setBusy(false);
+        setRechecking(false);
+        if (action === 'open') setOpeningWindow(false);
+      }
     }
   };
 
@@ -165,8 +189,9 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
     const version = epoch.current;
     void api.get(pending.pairing_id, controller.signal).then((next) => {
       if (controller.signal.aborted || epoch.current !== version) return;
-      deadline.current = Math.min(deadline.current, Date.parse(next.expires_at));
       acceptStatus(next);
+      deadline.current = Math.min(deadline.current, Date.parse(next.expires_at));
+      if (terminal(next)) setManualRecovery(false);
     }).catch(() => {
       if (!controller.signal.aborted && epoch.current === version) setFailed(true);
     });
@@ -175,31 +200,36 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
   }, [api, notice]);
 
   useEffect(() => {
-    if (!status || terminal(status)) return;
+    if (!openingWindow && (!status || terminal(status))) return;
     const remaining = deadline.current - Date.now();
     const expire = () => {
       epoch.current += 1;
       operation.current?.abort();
       const pending = current.current;
-      if (!pending || terminal(pending)) return;
-      const expired = { ...pending, state: 'expired' as const };
-      current.current = expired;
-      setStatus(expired);
+      if (pending && !terminal(pending)) {
+        const expired = { ...pending, state: 'expired' as const };
+        current.current = expired;
+        setStatus(expired);
+      } else if (!pending) setEntryError(PAIRING_EXPIRED);
       setCodesMatch(false);
       setBusy(false);
       setFailed(false);
+      setRechecking(false);
+      setOpeningWindow(false);
+      setManualRecovery(false);
     };
     const expiryTimer = setTimeout(expire, Math.max(0, remaining));
     return () => clearTimeout(expiryTimer);
-  }, [status]);
+  }, [status, openingWindow]);
 
   const approved = status?.state === 'confirmed' || status?.state === 'admitted';
   const active = status !== null && !terminal(status);
   const awaiting = active && status.state === 'awaiting_confirmation';
+  const starting = active || openingWindow || pendingPairing || opening;
   const connected = approved || (connectedCount !== null && connectedCount > 0);
 
   useEffect(() => {
-    if (!active) {
+    if (!active && !openingWindow) {
       setRemainingSeconds(null);
       return;
     }
@@ -210,12 +240,12 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
     // A local countdown for display; it never reads remote state.
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
-  }, [active, status?.pairing_id]);
+  }, [active, openingWindow, status?.pairing_id, status?.expires_at]);
 
   // The chip names the most important current fact: a link problem, then what
   // the extension itself reports, then a healthy link. A running attempt reads
   // as connecting rather than as not connected.
-  const sectionStatus: SectionStatus | null = active || pendingPairing || opening
+  const sectionStatus: SectionStatus | null = starting
     ? { label: 'Connecting', tone: 'info' }
     : connected
       ? connection !== 'connected'
@@ -230,153 +260,147 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
         : { label: 'Not connected', tone: 'default' };
 
   const attemptFeedback = approved ? connection === 'connected' ? 'Extension connected.' : 'Connection approved. Waiting for the extension.'
-      : status && terminal(status) ? status.state === 'expired' ? 'Time ran out before the connection finished. Try again.'
+      : status && terminal(status) ? status.state === 'expired' ? PAIRING_EXPIRED
           : status.state === 'revoked' ? 'This browser extension was disconnected.'
-            : status.state === 'declined' ? 'Connection declined. Try again.'
-              : 'Connection cancelled.' : connectedCount === 0 && status === null && !pendingPairing ? 'Connect the browser extension so your messages reach this app.' : null;
+            : status.state === 'declined' ? 'Connection declined.'
+              : 'Connection cancelled.' : starting && !manualRecovery ? 'Waiting for the extension…' : null;
   const feedback = [...new Set([
     browserFeedback,
     listFeedback?.failed ? "Connected extensions couldn't be checked." : null,
     entryError,
-    failed ? "The connection couldn't be checked. Try again." : null,
-    attemptFeedback,
+    failed && !manualRecovery ? 'Dipsy can’t check the connection right now.' : null,
   ].filter((text): text is string => text !== null))].join(' ') || null;
-  const feedbackFailed = Boolean(browserFeedback || listFeedback?.failed || failed || entryError);
+  const canCompare = !connected && !pendingPairing && (!canStart || Boolean(entryError));
+  const showOptionsInline = canCompare && (lastKnownCount.current === 0
+    || lastKnownCount.current === null && !listFeedback?.failed);
+  const openOptions = () => {
+    setFailed(false);
+    setManualRecovery(true);
+  };
+  const optionsAction = <Button aria-label="Connection options" onClick={openOptions}>Options</Button>;
+  useEffect(() => {
+    if (!feedback) setShowFeedback(false);
+  }, [feedback]);
+  const expiration = remainingSeconds === null ? null : (
+    <Typography variant="body2" sx={{ color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>
+      {awaiting ? 'Code expires in' : 'This attempt expires in'} {remainingLabel(remainingSeconds)}.
+    </Typography>
+  );
 
   return (
     <Stack
       data-journey-state="desktop.extension_pairing"
-      data-pairing-active={active || pendingPairing || opening ? 'true' : undefined}
+      data-pairing-active={starting ? 'true' : undefined}
       data-pairing-path={active ? 'operator-compared' : 'desktop-task'}
       spacing={1.5}
-      sx={{ containerType: 'inline-size' }}
     >
       {!embedded && <SectionHeader
         sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) 8rem' }, gap: { xs: 0, sm: 2 },
-          '& > [aria-live]': { width: '100%', minHeight: '2rem', margin: '0 !important', '& .MuiChip-root': { width: '100%' }, '& .MuiChip-label': { width: '100%', textAlign: 'left' } } }}
+          '& > [aria-live]': { display: 'flex', width: '100%', minHeight: '1.5rem', margin: '0 !important',
+            '& .MuiChip-root': { maxWidth: '100%', height: 'auto', minHeight: '1.5rem' },
+            '& .MuiChip-label': { whiteSpace: 'normal', overflowWrap: 'anywhere' } } }}
         status={sectionStatus}
         title="Browser extension"
+        summary={!connected && lastKnownCount.current === 0 ? 'Connect the extension to this app' : undefined}
       />}
       {embedded && sectionStatus && <Typography role="status">{sectionStatus.label}</Typography>}
-      <ReservedRegion grow id="pairing-body" size={{ xs: 0, sm: 0 }} sx={{ display: 'grid' }}>
-      <Box sx={{ gridArea: '1 / 1', visibility: active || pendingPairing || opening ? 'hidden' : 'visible' }}><AdmittedPairings
+      <AdmittedPairings
         api={api}
         browserApi={browserApi}
         connection={connection}
         creatorAccountId={creatorAccountId}
-        onCount={setConnectedCount}
+        onCount={updateCount}
         onBrowserFeedback={setBrowserFeedback}
         onFeedback={setListFeedback}
         refresh={`${status?.version ?? -1}:${notice?.revision ?? -1}:${notice?.changed_at ?? ''}`}
-      /></Box>
-      <Stack spacing={1.5} sx={{ gridArea: '1 / 1', pointerEvents: active || pendingPairing || opening ? 'auto' : 'none' }}>
-      {(pendingPairing || opening) && <Typography role="status">Connecting the browser extension…</Typography>}
-      {active && !awaiting && !failed && (
-        <Stack spacing={0.5}>
-          <Typography role="status">
-            Waiting for the browser extension to connect.
-          </Typography>
-          {remainingSeconds !== null && (
-            <Typography variant="body2" sx={{ color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>
-              Connection window expires in {remainingLabel(remainingSeconds)}.
-            </Typography>
-          )}
+      />
+      <Box data-browser-feedback sx={{ minWidth: 0, mt: '0 !important' }}>
+        {(canStart || showOptionsInline) && (
+          <Stack data-pairing-actions direction="row" spacing={1} useFlexGap
+            sx={{ flexWrap: 'wrap', alignItems: 'flex-start', pt: 1,
+              '& > button': { maxWidth: '100%', overflowWrap: 'anywhere' } }}>
+            {canStart && <Button disabled={opening || manualRecovery} onClick={() => void connect()}
+              variant={connected && !entryError ? 'outlined' : 'contained'}>
+              {pendingPairing ? 'Continue connecting' : connected && !entryError ? 'Connect another extension' : 'Connect extension'}
+            </Button>}
+            {showOptionsInline && optionsAction}
+          </Stack>
+        )}
+        <Stack data-reserved-region="browser-feedback" direction="row" spacing={1} useFlexGap aria-live="polite"
+          sx={{ minHeight: '1.25rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          {attemptFeedback && <Typography data-region-content variant="body2" role="status"
+            sx={{ color: 'text.secondary', lineHeight: '1.25rem', overflowWrap: 'anywhere' }}>{attemptFeedback}</Typography>}
+          {feedback && <Button data-region-content size="small" onClick={() => setShowFeedback(true)}
+            sx={{ minWidth: 0, minHeight: '1.25rem', p: 0, lineHeight: '1.25rem', color: 'text.secondary' }}>Browser alert</Button>}
         </Stack>
-      )}
-      {awaiting && (
-        <Stack spacing={1.5}>
-          <Typography component="h3" variant="subtitle1">{failed ? 'Confirmation paused' : 'Check the code'}</Typography>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>Desktop code</Typography>
-          <Typography
-            aria-label={failed ? undefined : 'Connection comparison code'}
-            variant="h4"
-            sx={(theme) => ({
-              fontFamily: theme.brandTypography.fontFamilyMono,
-              fontSize: theme.typography.h2.fontSize,
-              fontWeight: theme.brandTypography.weights.semibold,
-              letterSpacing: '0.08em',
-              lineHeight: 1.2,
-              marginBlock: theme.spacing(0.5),
-            })}
-          >
-            {failed ? '••• •••' : `${status.comparison_code!.slice(0, 3)} ${status.comparison_code!.slice(3)}`}
-          </Typography>
-          {remainingSeconds !== null && (
-            <Typography variant="body2" sx={{ color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>
-              Code expires in {remainingLabel(remainingSeconds)}.
-            </Typography>
-          )}
-          <Typography variant="body2" sx={{ color: 'text.secondary', display: 'grid' }}>
-            <Box component="span" aria-hidden={failed} sx={{ gridArea: '1 / 1', visibility: failed ? 'hidden' : 'visible' }}>
+      </Box>
+      <Dialog open={showFeedback && Boolean(feedback)} onClose={() => setShowFeedback(false)} aria-labelledby="browser-alert-title">
+        <DialogTitle id="browser-alert-title">Browser alert</DialogTitle>
+        <DialogContent><DialogContentText role="alert">{feedback}</DialogContentText></DialogContent>
+        <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5 }} disableSpacing>
+          {canCompare && !showOptionsInline && optionsAction}
+          {listFeedback?.failed && <Button aria-label="Retry checking connected extensions" disabled={listFeedback.busy}
+            onClick={listFeedback.retry}>Check list</Button>}
+          <Button onClick={() => setShowFeedback(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={manualRecovery} onClose={() => {
+        if (active && !busy) void run('cancel');
+        else if (!busy) setManualRecovery(false);
+      }} aria-labelledby="pairing-options-title" fullWidth maxWidth="sm" scroll={narrowDialog ? 'body' : 'paper'}
+        slotProps={{ paper: { sx: { m: { xs: 1, sm: 4 }, width: { xs: 'calc(100% - 16px)' },
+          maxWidth: { xs: 'calc(100% - 16px)', sm: 'sm' } } } }}>
+        <DialogTitle id="pairing-options-title" sx={{ overflowWrap: 'anywhere' }}>
+          {failed ? 'Extension connection' : awaiting ? 'Confirm the connection' : active || openingWindow
+            ? 'Connect the extension to this app' : 'Connect another Chrome profile'}
+        </DialogTitle>
+        <DialogContent>
+          {!active && !openingWindow && !failed && <DialogContentText>
+            Use code comparison when this app cannot reach the Chrome profile containing your extension.
+          </DialogContentText>}
+          {awaiting && <Stack spacing={1} useFlexGap>
+            <DialogContentText variant="body2">
               Compare this with the extension’s setup tab. Confirm here only if both codes match.
+            </DialogContentText>
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>Desktop code</Typography>
+            <Typography aria-label={failed ? undefined : 'Connection comparison code'} variant="h4"
+              sx={(theme) => ({ fontFamily: theme.brandTypography.displayNumeric, fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' })}>
+              {failed ? '••• •••' : `${status.comparison_code!.slice(0, 3)} ${status.comparison_code!.slice(3)}`}
+            </Typography>
+            {expiration}
+            {expectedAccount.current && !failed && <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+              OnlyFans account: {expectedAccount.current}
+            </Typography>}
+            <FormControlLabel control={<Checkbox checked={codesMatch} disabled={busy || failed}
+              onChange={(event) => setCodesMatch(event.target.checked)} />} label="The codes match" />
+          </Stack>}
+          {!awaiting && (active || openingWindow) && expiration}
+          {failed && !rechecking ? <Typography variant="body2" role="alert" sx={{ color: 'error.main' }}>
+            Dipsy can’t check the connection right now.
+          </Typography> : (rechecking || (active || openingWindow) && !awaiting) && (
+            <Box sx={{ '& .onboarding-status:not(:empty)': { color: 'text.secondary', overflowWrap: 'anywhere' } }}>
+              <OnboardingStatus tone="pending">{rechecking || openingWindow ? 'Checking the connection…' : 'Waiting for the extension…'}</OnboardingStatus>
             </Box>
-            {failed && <Box component="span" sx={{ gridArea: '1 / 1' }}>Try again to check this connection.</Box>}
-          </Typography>
-          <FormControlLabel
-            control={(
-              <Checkbox
-                checked={codesMatch}
-                disabled={busy || failed}
-                onChange={(event) => setCodesMatch(event.target.checked)}
-              />
-            )}
-            label="The codes match"
-          />
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-            <Button
-              disabled={busy || failed || !codesMatch}
-              onClick={() => void run('confirm')}
-              variant="contained"
-            >
+          )}
+        </DialogContent>
+        <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5, '& > button': { maxWidth: '100%', overflowWrap: 'anywhere' } }} disableSpacing>
+          <Button disabled={busy} onClick={() => active ? void run('cancel') : setManualRecovery(false)}>
+            {active ? 'Cancel' : 'Close'}
+          </Button>
+          {failed && active && <Button disabled={busy} onClick={() => void run('get')} variant="outlined">
+            Check connection
+          </Button>}
+          {awaiting && <>
+            <Button disabled={busy || failed} onClick={() => void run('decline')}>Codes don’t match</Button>
+            <Button disabled={busy || failed || !codesMatch} onClick={() => void run('confirm')} variant="contained">
               Confirm connection
             </Button>
-            <Button color="error" disabled={busy || failed} onClick={() => void run('decline')}>
-              Codes don&apos;t match
-            </Button>
-          </Stack>
-        </Stack>
-      )}
-      </Stack>
-      </ReservedRegion>
-      <Box data-browser-feedback sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 18rem', columnGap: 1, minWidth: 0, alignItems: 'start',
-        '@container (max-width: 26rem)': { gridTemplateColumns: 'minmax(0, 1fr)' },
-        '& [data-reserved-region="browser-feedback"]': { blockSize: '2.5rem' } }}>
-        <Box sx={{ minWidth: 0 }}><StatusLine id="browser-feedback" text={feedback}
-          summary={feedbackFailed ? 'Browser alert' : 'Browser status'} tone={feedbackFailed ? 'error' : 'secondary'} /></Box>
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 4.5rem', columnGap: 1, minWidth: 0,
-          '@container (max-width: 26rem)': { gridTemplateColumns: 'minmax(0, 1fr)' },
-          '& button': { minWidth: 0, maxWidth: '100%', minHeight: '2.5rem', py: 0, px: 1, lineHeight: '1.25rem', overflowWrap: 'anywhere' } }}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', minWidth: 0, minHeight: '2.5rem',
-          '@container (max-width: 26rem)': { flexDirection: 'column', minHeight: active || opening || entryError ? '5.5rem' : '2.5rem' },
-          '& > button': { justifyContent: 'flex-start' } }} useFlexGap>
-        {!active && canStart && <Button disabled={opening} onClick={() => void connect()}
-          variant={connected ? 'text' : 'contained'}>
-          {pendingPairing ? 'Continue connecting' : connected ? 'Connect another extension' : 'Connect extension'}
-        </Button>}
-        {!connected && !active && !pendingPairing && (!canStart || entryError) && <Button aria-label="Connection options" title="Connection options" onClick={() => setManualRecovery(true)} variant="text" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
-          Options
-        </Button>}
-        {active && <Button disabled={busy} onClick={() => void run('cancel')}>Cancel</Button>}
-        {active && failed && (
-          <Button disabled={busy} onClick={() => void run('get')} variant="outlined">
-            Try again
-          </Button>
-        )}
-        </Stack>
-        <Button aria-label="Retry checking connected extensions" size="small" color="inherit"
-          sx={{ width: '4.5rem', justifySelf: 'start', visibility: listFeedback?.failed ? 'visible' : 'hidden' }}
-          disabled={listFeedback?.busy ?? false} onClick={() => listFeedback?.retry()}>Try again</Button>
-        </Box>
-      </Box>
-      <Dialog open={manualRecovery} onClose={() => setManualRecovery(false)} aria-labelledby="pairing-options-title">
-        <DialogTitle id="pairing-options-title">Connect another Chrome profile</DialogTitle>
-        <DialogContent><DialogContentText>
-          Use code comparison when this app cannot reach the Chrome profile containing your extension.
-        </DialogContentText></DialogContent>
-        <DialogActions><Button onClick={() => setManualRecovery(false)}>Close</Button>
-          <Button disabled={busy || !desktop.connected} onClick={() => { setManualRecovery(false); setEntryError(null); void run('open'); }}>
+          </>}
+          {!active && !openingWindow && !failed && <Button disabled={busy || !desktop.connected}
+            onClick={() => { setEntryError(null); void run('open'); }}>
             Compare connection codes
-          </Button></DialogActions>
+          </Button>}
+        </DialogActions>
       </Dialog>
     </Stack>
   );
@@ -449,15 +473,16 @@ function AdmittedPairings({ api, browserApi, connection, creatorAccountId, onCou
     finally { if (!controller.signal.aborted) setBusy(false); }
   };
   return (
-    <Stack spacing={0.75}>
-          {pins.length > 0 && <ReservedRegion grow id="browser-facts" size={{ xs: 0, sm: 0 }} sx={{ visibility: pins.length ? 'visible' : 'hidden' }}><BrowserExtensionControls
+    <>
+      {pins.length > 0 && <Stack spacing={0.75}>
+          <ReservedRegion grow id="browser-facts" size={{ xs: 0, sm: 0 }}><BrowserExtensionControls
             api={browserApi}
             creatorAccountId={creatorAccountId}
             browser={browser}
             canManage={isCreator}
             connection={connection}
             onFeedback={onBrowserFeedback}
-          /></ReservedRegion>}
+          /></ReservedRegion>
           <Box data-reading-viewport data-region-role="scroll" sx={{ maxHeight: '8rem', overflowY: 'auto', scrollbarGutter: 'stable' }}>{pins.map((pin, index) => (
             <SettingRow
               key={pin.pairing_id}
@@ -475,6 +500,7 @@ function AdmittedPairings({ api, browserApi, connection, creatorAccountId, onCou
               )}
             />
           ))}</Box>
+      </Stack>}
       <Dialog open={confirming !== null} onClose={() => setConfirming(null)}>
         <DialogTitle>Disconnect the browser extension?</DialogTitle>
         <DialogContent>
@@ -493,7 +519,7 @@ function AdmittedPairings({ api, browserApi, connection, creatorAccountId, onCou
           </Button>
         </DialogActions>
       </Dialog>
-    </Stack>
+    </>
   );
 }
 

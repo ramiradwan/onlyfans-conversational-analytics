@@ -560,22 +560,58 @@ describe('CreatorDashboardView', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Review message history' }));
     expect(api.get).toHaveBeenCalledOnce();
     const dialog = screen.getByRole('dialog', { name: 'Add older conversations' });
+    const disclosure = [
+      'Read-only: it never sends messages or changes your account.',
+      'Synced message history stays on this computer.',
+      'Pause or turn it off at any time.',
+    ];
+    const readOnly = within(dialog).getByText(disclosure[0], { exact: true });
+    expect([...readOnly.parentElement!.children].map(item => item.textContent)).toEqual(disclosure);
+    const consent = within(dialog).getByRole('checkbox', {
+      name: 'I allow read-only syncing of my older messages to this computer.',
+    });
+    expect(readOnly.parentElement!.compareDocumentPosition(consent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const allow = await within(dialog).findByRole('button', { name: 'Allow message history' });
+    expect(allow.parentElement).toBe(within(dialog).getByRole('button', { name: 'Not now' }).parentElement);
     expect(allow.hasAttribute('disabled')).toBe(true);
     expect(api.update).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole('checkbox'));
+    expect(consent.compareDocumentPosition(allow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(consent);
     await act(async () => { fireEvent.click(allow); fireEvent.click(allow); });
     await waitFor(() => expect(api.update).toHaveBeenCalledExactlyOnceWith(1, expect.objectContaining({
       desired_state: 'running', accept_consent: true, consent_policy_version: 'history-consent-v1',
       recent_window_days: 30, page_size: 50,
     }), expect.any(AbortSignal)));
     expect(browserApi.open).not.toHaveBeenCalled();
-    fireEvent.click(await within(dialog).findByRole('button', { name: 'Allow Chrome access' }));
+    const allowChrome = await within(dialog).findByRole('button', { name: 'Allow Chrome access' });
+    expect(allowChrome.parentElement).toBe(within(dialog).getByRole('button', { name: 'Close' }).parentElement);
+    fireEvent.click(allowChrome);
     await waitFor(() => expect(browserApi.open).toHaveBeenCalledExactlyOnceWith('history', expect.any(AbortSignal)));
     await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, history_permission: 'granted' } }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add older conversations' })).toBeNull());
-    expect(screen.getByRole('heading', { name: 'Starting message history' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Starting message history…' })).toBeTruthy();
     expect(api.update).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the dashboard permission decision open after a denied grant without reopening Chrome', async () => {
+    const { store, browser, api, browserApi } = historyReviewFixture();
+    const review = await screen.findByRole('button', { name: 'Review message history' });
+    expect(screen.getByRole('heading', { name: 'Add older conversations' })).toBeTruthy();
+    expect(screen.getByText('Use older messages to see results sooner.')).toBeTruthy();
+    review.focus();
+    fireEvent.click(review);
+    const dialog = screen.getByRole('dialog', { name: 'Add older conversations' });
+    expect(within(dialog).getByText('Use older messages to see results sooner. Chrome may ask you to allow access next.')).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+    await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Allow message history' })));
+    const allow = within(dialog).getByRole('button', { name: 'Allow Chrome access' });
+    await act(async () => fireEvent.click(allow));
+    await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, history_permission: 'missing' } }));
+    expect(within(dialog).getByText('Older messages start syncing after Chrome allows access.')).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: 'Allow Chrome access' })).toBe(allow);
+    expect(browserApi.open).toHaveBeenCalledExactlyOnceWith('history', expect.any(AbortSignal));
+    expect(api.update).toHaveBeenCalledOnce();
+    expect(screen.queryByText('Adding older messages. Message counts update as they arrive.')).toBeNull();
   });
 
   it('does not offer history for a different creator', async () => {
@@ -614,7 +650,7 @@ describe('CreatorDashboardView', () => {
       desired_state: 'running', accept_consent: false, consent_policy_version: null,
     }), expect.any(AbortSignal));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add older conversations' })).toBeNull());
-    expect(screen.getByRole('heading', { name: 'Starting message history' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Starting message history…' })).toBeTruthy();
     expect(browserApi.open).not.toHaveBeenCalled();
   });
 
@@ -623,7 +659,7 @@ describe('CreatorDashboardView', () => {
       consent_revision: 'consent-1', authorized_platform_creator_id: 'platform-creator-1',
       desired_state: 'running', effective_state: 'not_applied',
     }, 'granted');
-    expect(await screen.findByRole('heading', { name: 'Starting message history' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Starting message history…' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
     expect(screen.queryByRole('checkbox')).toBeNull();
     expect(api.update).not.toHaveBeenCalled();
@@ -634,7 +670,8 @@ describe('CreatorDashboardView', () => {
       consent_revision: 'consent-1', authorized_platform_creator_id: 'platform-creator-1',
       desired_state: 'running', effective_state: 'running',
     }, 'granted', 'backfilling');
-    expect(await screen.findByRole('heading', { name: 'Adding messages' })).toBeTruthy();
+    expect(await screen.findByText('Adding older messages. Message counts update as they arrive.')).toBeTruthy();
+    expect(within(screen.getByRole('region', { name: 'Message history' })).queryByRole('progressbar')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
     expect(api.update).not.toHaveBeenCalled();
   });

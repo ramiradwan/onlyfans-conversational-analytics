@@ -9,15 +9,15 @@ export async function openPairingFallback(page) {
   const openedAt = await page.evaluate(() => Date.now());
   await dialog.getByRole('button', { name: 'Compare connection codes', exact: true }).click();
   await page.clock.fastForward(250);
-  await dialog.waitFor({ state: 'hidden' });
+  await dialog.getByRole('button', { name: 'Compare connection codes', exact: true }).waitFor({ state: 'hidden' });
   return openedAt;
 }
 
 export async function waitForPairingOpenPresentation(page) {
   // A resolved API promise and animation frames do not imply that React has
   // committed its task and countdown. Keep that render inside the open action.
-  await page.getByText('Waiting for the browser extension to connect.', { exact: true }).waitFor();
-  await page.getByText(/^Connection window expires in /).waitFor();
+  await page.getByText('Waiting for the extension…', { exact: true }).waitFor();
+  await page.getByText(/^This attempt expires in /).waitFor();
 }
 
 export async function drivePairingExpiry(page, pin, push, step, openedAt) {
@@ -33,12 +33,12 @@ export async function drivePairingExpiry(page, pin, push, step, openedAt) {
     // Keep the existing one-second boundary deterministic while native frame
     // observation continues. Real driver/render latency cannot consume it.
     await page.clock.pauseAt(new Date(Date.parse(initialExpiry) - 1000));
-    await page.getByText('Waiting for the browser extension to connect.', { exact: true }).waitFor();
+    await page.getByText('Waiting for the extension…', { exact: true }).waitFor();
   });
   await step('pairing:expired', async () => {
     const remaining = await page.evaluate(expiry => Date.parse(expiry) - Date.now(), initialExpiry);
     await page.clock.fastForward(Math.max(0, remaining));
-    await page.getByText('Time ran out before the connection finished. Try again.', { exact: true }).waitFor();
+    await page.getByText('Time ran out before the connection finished.', { exact: true }).waitFor();
     await page.clock.resume();
   });
 }
@@ -236,7 +236,7 @@ export async function driveWorkspaceDetails(page, view, step, unseen) {
         }
       });
     } else {
-      await step(`pairing:${outcome}:action`, () => page.getByRole('button', { name: outcome === 'declined' ? "Codes don't match" : 'Cancel', exact: true }).click());
+      await step(`pairing:${outcome}:action`, () => page.getByRole('button', { name: outcome === 'declined' ? 'Codes don’t match' : 'Cancel', exact: true }).click());
       await step(`pairing:${outcome}:result`, async () => {
         await push('resolve', 'pairing.change', { ...pin, expires_at, state: outcome, version: 2 });
         await waitForPairingResultPresentation(page, outcome);

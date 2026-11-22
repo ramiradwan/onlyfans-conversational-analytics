@@ -583,7 +583,7 @@ for (const width of [320, 390]) test(`combined browser recovery follows its cont
     assert(previous && previous.y + previous.height <= geometry.feedback.top, 'Connection facts must finish before shared feedback');
     const next = await page.locator('#full-analytics').boundingBox();
     assert(next && next.y >= geometry.feedback.bottom, 'The next section must follow recovery');
-    const details = feedback.getByRole('button', { name: 'Show details' });
+    const details = feedback.getByRole('button', { name: 'Browser alert' });
     if (await details.count()) {
       await details.click();
       assert.equal(await page.getByRole('dialog').getByRole('alert').innerText(), 'The browser extension is not connected right now.');

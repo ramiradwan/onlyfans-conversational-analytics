@@ -1,5 +1,5 @@
 import { ThemeProvider } from '@mui/material/styles';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { HistorySettings } from '../src/protocol';
@@ -114,6 +114,27 @@ afterEach(() => {
 });
 
 describe('SettingsWithVaultView', () => {
+  it('keeps the pending connection action and the surrounding Settings sections mounted', async () => {
+    const { release, onboardingApi, ...props } = apis('vault');
+    const desktop = desktopFixture();
+    const snapshot = { ...desktop.api.getState().snapshot!, allowed_actions: ['browser.pair' as const] };
+    let finish!: () => void;
+    vi.mocked(desktop.api.begin).mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+    desktop.publish({ snapshot });
+    const { container } = render(<ThemeProvider theme={theme}><SettingsWithVaultView {...props} onboardingApi={desktop.api} /></ThemeProvider>);
+    await act(async () => { release(); });
+    const sections = [...container.querySelectorAll('[data-settings-section]')];
+    const action = screen.getByRole('button', { name: 'Connect extension' });
+    fireEvent.click(action);
+    expect(action).toHaveProperty('disabled', true);
+    expect(action.closest('[data-pairing-actions]')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Connect extension' })).toBe(action);
+    expect([...container.querySelectorAll('[data-settings-section]')]).toEqual(sections);
+    expect(desktop.api.begin).toHaveBeenCalledExactlyOnceWith('browser.pair');
+    expect(onboardingApi.begin).not.toHaveBeenCalled();
+    await act(async () => finish());
+  });
+
   it.each<Section>(['pairing', 'history', 'activation', 'vault'])(
     'settles the other sections while %s is pending',
     async (slow) => {

@@ -82,7 +82,7 @@ return [
   {
     workspace: 'dashboard-continuation',
     state: 'add-older-conversations',
-    ready: (page) => page.getByRole('heading', { name: 'See your first conversations', exact: true }),
+    ready: (page) => page.getByRole('heading', { name: 'Add older conversations', exact: true }),
     assert: async (page) => {
       await page.getByRole('button', { name: 'Review message history', exact: true }).waitFor({ state: 'visible' });
     },
@@ -227,13 +227,13 @@ return [
   {
     workspace: 'settings', state: 'fresh', variant: 'pairing-comparison', viewports: ['narrow'], modes: ['light'],
     act: openPairingComparison,
-    ready: (page) => page.getByText('Check the code', { exact: true }),
+    ready: (page) => page.getByRole('heading', { name: 'Confirm the connection', exact: true }),
   },
   {
     workspace: 'settings', state: 'fresh', variant: 'history-consent', viewports: ['narrow'], modes: ['light'],
     act: async (page) => {
       await openPairingComparison(page);
-      await page.getByText('Check the code', { exact: true }).waitFor({ state: 'visible' });
+      await page.getByRole('heading', { name: 'Confirm the connection', exact: true }).waitFor({ state: 'visible' });
       await page.getByRole('checkbox', { name: 'The codes match' }).check();
       await page.getByRole('button', { name: 'Confirm connection' }).click();
     },

@@ -179,11 +179,25 @@ describe('SettingsView history consent', () => {
 
     const start = await screen.findByRole('button', { name: 'Turn on message history' });
     expect(start.hasAttribute('disabled')).toBe(true);
-    fireEvent.click(
-      screen.getByRole('checkbox', {
-        name: /I allow read-only syncing of my older messages/,
-      }),
-    );
+    const disclosure = [
+      'Read-only: it never sends messages or changes your account.',
+      'Synced message history stays on this computer.',
+      'Pause or turn it off at any time.',
+    ];
+    const list = screen.getByText(disclosure[0], { exact: true }).parentElement!;
+    expect([...list.children].map(item => item.textContent)).toEqual(disclosure);
+    const consent = screen.getByRole('checkbox', {
+      name: 'I allow read-only syncing of my older messages to this computer.',
+    });
+    expect(list.compareDocumentPosition(consent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(consent.compareDocumentPosition(start) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(consent);
+    fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    expect(api.update).not.toHaveBeenCalled();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Review message history' }));
+    expect(screen.getByRole('button', { name: 'Turn on message history' })).toHaveProperty('disabled', true);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'I allow read-only syncing of my older messages to this computer.' }));
     fireEvent.click(screen.getByRole('button', { name: 'Turn on message history' }));
 
     await waitFor(() => expect(api.update).toHaveBeenCalledTimes(1));
@@ -202,6 +216,12 @@ describe('SettingsView history consent', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Turn off' }));
     expect(api.revoke).not.toHaveBeenCalled();
+    const decision = screen.getByRole('dialog', { name: 'Turn off message history?' });
+    expect(within(decision).getByText('Older messages stop syncing. Messages already synced stay on this computer.')).toBeTruthy();
+    fireEvent.click(within(decision).getByRole('button', { name: 'Keep message history on' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(api.revoke).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Turn off' }));
     await waitFor(() => expect(api.revoke).toHaveBeenCalledWith(2, expect.any(AbortSignal)));
   });

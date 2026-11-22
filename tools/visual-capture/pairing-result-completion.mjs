@@ -1,12 +1,11 @@
 const terminalFeedback = Object.freeze({
-  declined: 'Connection declined. Try again.',
+  declined: 'Connection declined.',
   cancelled: 'Connection cancelled.',
   confirmed: 'Extension connected.',
 });
 
 // Only the driver's three explicit terminal responses use this completion
-// assertion. A resolved fixture promise does not mean Chromium has applied the
-// terminal container-query rule. The caller retains its native paint barrier.
+// assertion. The caller retains its native paint barrier for the action row.
 export async function waitForPairingResultPresentation(page, outcome, timeoutMs = 2_000) {
   if (!Object.hasOwn(terminalFeedback, outcome)) throw new Error('Unsupported terminal pairing result: ' + outcome);
   const expectedFeedback = terminalFeedback[outcome];
@@ -19,19 +18,20 @@ export async function waitForPairingResultPresentation(page, outcome, timeoutMs 
       const owners = document.querySelectorAll('[data-journey-state="desktop.extension_pairing"]');
       const owner = owners.length === 1 ? owners[0] : null;
       const footer = owner?.querySelector('[data-browser-feedback]');
-      const actions = footer?.children[1]?.children[0];
+      const actions = footer?.querySelector('[data-pairing-actions]');
       const feedback = footer?.querySelector('[data-reserved-region="browser-feedback"] [role="status"]');
-      const expectedHeight = 2.5 * Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
-      const minHeight = actions ? Number.parseFloat(getComputedStyle(actions).minHeight) : null;
-      const height = actions?.getBoundingClientRect().height;
+      const minHeight = actions ? Number.parseFloat(getComputedStyle(actions).minHeight) || 0 : 0;
+      const height = actions?.getBoundingClientRect().height ?? 0;
+      const actionsSettled = minHeight === 0 && (actions?.childElementCount ? height > 0 : height === 0);
       const terminal = owner && !owner.hasAttribute('data-pairing-active')
         && owner.getAttribute('data-pairing-path') === 'desktop-task'
         && feedback?.textContent.trim() === expectedFeedback
         && !owner.querySelector('input[type="checkbox"]')
-        && ![...owner.querySelectorAll('button')].some(button => ['Cancel', 'Confirm connection', "Codes don't match"].includes(button.textContent.trim()));
+        && ![...owner.querySelectorAll('button'), ...document.querySelectorAll('[aria-labelledby="pairing-options-title"] button')]
+          .some(button => ['Cancel', 'Confirm connection', 'Codes don’t match'].includes(button.textContent.trim()));
       const at = control.boundary().nativeAt;
-      if (terminal && minHeight === expectedHeight && height === expectedHeight) {
-        return { outcome, start, at, expectedHeight, minHeight, height };
+      if (terminal && actionsSettled) {
+        return { outcome, start, at, minHeight, height };
       }
       if (at - start >= timeoutMs) throw new Error('Terminal pairing presentation did not complete: ' + outcome);
       // Poll this exact terminal DOM/style assertion with the already-captured
