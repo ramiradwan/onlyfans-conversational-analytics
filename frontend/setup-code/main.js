@@ -6,10 +6,11 @@ import { parseOnboardingJson } from '../../shared/onboarding/json.mjs';
 applyTheme(document);
 const status = document.getElementById('receiving-status'), actions = document.getElementById('receiving-actions');
 const form = document.getElementById('receiving-form'), code = document.getElementById('receiving-code');
+const card = document.querySelector('.setup-code-card'), submit = document.getElementById('receiving-submit');
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 let active = true, session, timer, busy = false;
 const current = () => active && session && Date.now() < session.expires_at * 1000;
-const onStatus = text => { if (active) status.textContent = text; };
+const onStatus = text => { if (active) { status.textContent = text; status.dataset.tone = 'neutral'; } };
 const onRecovery = (text, action) => {
   if (!current()) return;
   const button = document.createElement('button'); button.type = 'button'; button.textContent = text;
@@ -19,7 +20,12 @@ const onRecovery = (text, action) => {
     try { await action(); } finally { busy = false; }
   }); actions.append(button);
 };
-const expire = () => { active = false; form.hidden = true; code.value = ''; actions.replaceChildren(); status.textContent = 'This receiving session expired. Open a fresh link in the desktop app.'; };
+const expire = () => {
+  active = false; card.dataset.state = 'expired'; card.removeAttribute('aria-busy');
+  form.hidden = true; code.value = ''; actions.replaceChildren();
+  status.dataset.tone = 'neutral';
+  status.textContent = 'This receiving session expired. Open a fresh link in the desktop app.';
+};
 async function json(path, body) {
   const response = await fetch(path, { method: body ? 'POST' : 'GET', credentials: 'same-origin', redirect: 'error', cache: 'no-store',
     signal: AbortSignal.timeout(10000), headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
@@ -30,6 +36,10 @@ async function json(path, body) {
 const options = () => ({ fetch: globalThis.fetch.bind(globalThis), document, journeyId: session.journey_id,
   registeredHostedUrl: session.hosted_url, current, onStatus, onRecovery });
 async function start(readOnly = false) {
+  card.dataset.state = 'opening';
+  card.removeAttribute('aria-busy');
+  status.dataset.tone = 'progress';
+  status.textContent = 'Getting ready for your code…';
   try {
     const fields = new URLSearchParams(location.hash.slice(1));
     if (location.pathname === '/setup-code/entry') {
@@ -48,9 +58,18 @@ async function start(readOnly = false) {
     clearTimeout(timer); timer = setTimeout(expire, session.expires_at*1000-Date.now());
     actions.replaceChildren();
     const result = await continueReceivingTransfer({ ...options(), readOnly });
-    if (result === 'none' && current()) { form.hidden = false; onStatus('Enter the code shown on the other device.'); }
+    if (result === 'none' && current()) {
+      form.hidden = false;
+      submit.disabled = false;
+      submit.textContent = 'Continue';
+      card.dataset.state = 'ready';
+      status.textContent = '';
+      status.dataset.tone = 'none';
+    }
   } catch {
+    card.dataset.state = 'unavailable';
     onStatus('Receiving setup is unavailable. Open a fresh link in the desktop app.');
+    status.dataset.tone = 'error';
     active = false; clearTimeout(timer); form.hidden = true; code.value = ''; actions.replaceChildren();
   }
 }
@@ -58,11 +77,27 @@ form.addEventListener('submit', async event => {
   event.preventDefault();
   if (busy || !current()) return;
   const value = code.value.toUpperCase().replace(/[ -]/gu, '');
-  if (!/^[0-9A-HJKMNP-TV-Z]{12}$/u.test(value)) { onStatus('Enter the 12-character setup code.'); return; }
-  busy = true; document.getElementById('receiving-submit').disabled = true;
-  code.value = ''; form.hidden = true;
+  if (!/^[0-9A-HJKMNP-TV-Z]{12}$/u.test(value)) {
+    onStatus('Enter the 12-character setup code.');
+    status.dataset.tone = 'error';
+    return;
+  }
+  busy = true;
+  submit.disabled = true;
+  submit.textContent = 'Checking the code…';
+  card.dataset.state = 'checking';
+  card.setAttribute('aria-busy', 'true');
+  status.textContent = 'Checking the code…';
+  status.dataset.tone = 'progress';
+  code.value = '';
   try { await startReceivingCode({ ...options(), setupCode: value, csrfToken: session.csrf_token }); }
-  catch { onStatus('Receiving could not be confirmed. Open a fresh link in the desktop app to check its status.'); }
+  catch {
+    card.dataset.state = 'unavailable';
+    card.removeAttribute('aria-busy');
+    form.hidden = true;
+    onStatus('Receiving could not be confirmed. Open a fresh link in the desktop app to check its status.');
+    status.dataset.tone = 'error';
+  }
   finally { busy = false; }
 });
 window.addEventListener('pagehide', () => {active = false; clearTimeout(timer); code.value = '';});

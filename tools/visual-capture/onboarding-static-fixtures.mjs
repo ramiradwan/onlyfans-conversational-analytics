@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BROWSER_TASK_STATES, DESKTOP_ONBOARDING_STATES } from './onboarding-surface-states.mjs';
-import { desktopOnboardingWidths } from './static-fixture-matrix.mjs';
+import { desktopOnboardingWidths, SETUP_CODE_STATES } from './static-fixture-matrix.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const frontend = join(root, 'frontend');
@@ -52,7 +52,26 @@ applyTheme(document);
 renderSetup(document, window.__staticSurfaceFixture);
 document.querySelector('main').dataset.ready = 'true';
 `
-      : `import { applyTheme } from './shared-setup/presentation.js';
+      : surface === 'setup-code'
+        ? `import { applyTheme } from './shared-setup/presentation.js';
+applyTheme(document);
+const fixture = window.__staticSurfaceFixture;
+const card = document.querySelector('.setup-code-card');
+const form = document.querySelector('#receiving-form');
+const button = document.querySelector('#receiving-submit');
+const status = document.querySelector('#receiving-status');
+card.dataset.state = fixture.state.slice('setup_code.'.length);
+if (fixture.state === 'setup_code.opening') {
+  form.hidden = true; status.dataset.tone = 'progress'; status.textContent = 'Getting ready for your code…';
+} else if (fixture.state === 'setup_code.ready') {
+  form.hidden = false; status.dataset.tone = 'none'; status.textContent = '';
+} else {
+  form.hidden = false; button.disabled = true; button.textContent = 'Checking the code…';
+  status.dataset.tone = 'progress'; status.textContent = 'Checking the code…';
+}
+document.querySelector('main').dataset.ready = 'true';
+`
+        : `import { applyTheme } from './shared-setup/presentation.js';
 import { renderBrowserTask } from './browser-tasks/view.js';
 applyTheme(document);
 renderBrowserTask(document, window.__staticSurfaceFixture);
@@ -73,12 +92,13 @@ document.querySelector('main').dataset.ready = 'true';
 export async function onboardingDocument(surface) {
   const key = `html:${surface}`;
   if (!cache.has(key)) {
-    const sourcePath = surface === 'desktop-onboarding'
-      ? join(frontend, 'onboarding/index.html')
-      : join(frontend, 'browser-tasks/index.html');
+    const sourcePath = surface === 'desktop-onboarding' ? join(frontend, 'onboarding/index.html')
+      : surface === 'setup-code' ? join(frontend, 'setup-code/index.html')
+        : join(frontend, 'browser-tasks/index.html');
     const source = await readFile(sourcePath, 'utf8');
     const preload = await fontPreloadTag();
-    const headInsert = `${preload}\n    <link rel="stylesheet" href="/${surface}.css">\n  </head>`;
+    const stylesheet = surface === 'setup-code' ? 'setup-code.css' : `${surface}.css`;
+    const headInsert = `${preload}\n    <link rel="stylesheet" href="/${stylesheet}">\n  </head>`;
     const html = source
       .replace('</head>', headInsert)
       .replace('<script type="module" src="./main.js"></script>', `<script src="/${surface}.js"></script>`);
@@ -90,12 +110,13 @@ export async function onboardingDocument(surface) {
 
 export async function onboardingStaticAssets() {
   if (!cache.has('assets')) {
-    const [setupThemeInit, googlePng, microsoftSvg, onboardingCss, browserTaskCss] = await Promise.all([
+    const [setupThemeInit, googlePng, microsoftSvg, onboardingCss, browserTaskCss, setupCodeCss] = await Promise.all([
       readFile(join(frontend, 'public/setup-theme-init.js'), 'utf8'),
       readFile(join(frontend, 'shared-setup/providers/google.png')),
       readFile(join(frontend, 'shared-setup/providers/microsoft.svg'), 'utf8'),
       bundleCss('desktop-onboarding'),
       bundleCss('browser-task'),
+      bundleCss('setup-code'),
     ]);
     cache.set('assets', {
       '/setup-theme-init.js': { contentType: 'text/javascript', body: setupThemeInit },
@@ -103,17 +124,20 @@ export async function onboardingStaticAssets() {
       '/shared-setup/providers/microsoft.svg': { contentType: 'image/svg+xml', body: microsoftSvg },
       '/desktop-onboarding.css': { contentType: 'text/css', body: onboardingCss },
       '/browser-task.css': { contentType: 'text/css', body: browserTaskCss },
+      '/setup-code.css': { contentType: 'text/css', body: setupCodeCss },
     });
   }
   return cache.get('assets');
 }
 
 export async function onboardingStaticFixtures() {
-  const [onboardingHtml, onboardingScript, browserTaskHtml, browserTaskScript] = await Promise.all([
+  const [onboardingHtml, onboardingScript, browserTaskHtml, browserTaskScript, setupCodeHtml, setupCodeScript] = await Promise.all([
     onboardingDocument('desktop-onboarding'),
     bundleScript('desktop-onboarding'),
     onboardingDocument('browser-task'),
     bundleScript('browser-task'),
+    onboardingDocument('setup-code'),
+    bundleScript('setup-code'),
   ]);
   const fixtures = [];
   for (const [name, state] of Object.entries(DESKTOP_ONBOARDING_STATES)) {
@@ -139,6 +163,10 @@ export async function onboardingStaticFixtures() {
       widths: [1440, 390],
       injectedSurface: true,
     });
+  }
+  for (const [name, state] of Object.entries(SETUP_CODE_STATES)) {
+    fixtures.push({ surface: 'setup-code', name, state, urlPath: '/setup-code/index.html',
+      html: setupCodeHtml, script: setupCodeScript, widths: desktopOnboardingWidths, injectedSurface: true });
   }
   return fixtures;
 }

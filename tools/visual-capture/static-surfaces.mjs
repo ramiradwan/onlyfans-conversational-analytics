@@ -92,7 +92,23 @@ async function inspect(page, fixture, width, session) {
         metrics.disclosureSizes = sizes;
       }
     }
-    const task = null;
+    if (fixture.surface === 'setup-code') {
+      const expected = fixture.state.state;
+      assert.equal(await page.locator('#receiving-title').textContent(), 'Use a setup code');
+      assert.equal(await page.locator('#receiving-guidance').textContent(), 'Enter the code shown on your other computer or browser.');
+      assert.equal(await page.locator('#receiving-form').isHidden(), expected === 'setup_code.opening');
+      assert.equal(await page.locator('#receiving-status').textContent(),
+        expected === 'setup_code.opening' ? 'Getting ready for your code…'
+          : expected === 'setup_code.checking' ? 'Checking the code…' : '');
+      if (expected !== 'setup_code.opening') {
+        assert.equal(await page.locator('#receiving-submit').textContent(),
+          expected === 'setup_code.checking' ? 'Checking the code…' : 'Continue');
+        metrics.codeFonts = await actualFonts(session, '#receiving-code');
+        assert(metrics.codeFonts.some(font => font.isCustomFont && /Space Grotesk/.test(font.familyName)),
+          'Setup codes must render in Space Grotesk');
+      }
+    }
+    const task = fixture.surface === 'setup-code' ? {} : undefined;
     const control = page.locator((await page.locator('dialog[open]').count()) ? 'dialog[open] button:visible:enabled' : 'button:visible:enabled, a.primary-link:visible, a.button:visible').first();
     if (await control.count()) {
       const stops = await page.locator('button:visible:enabled, a[href]:visible, input:visible:enabled, textarea:visible:enabled, select:visible:enabled').count();
@@ -128,7 +144,8 @@ export async function captureStaticSurfaces(browser, outDir, recorder = null) {
         console.log('start ' + name);
         const context = await browser.newContext({ viewport, colorScheme: mode, reducedMotion: 'reduce', locale: 'en-US', deviceScaleFactor: 1 });
         const page = await context.newPage();
-        await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[fixture.surface], taskTransitions: fixture.surface === 'popup' ? 'popup' : fixture.surface === 'setup' });
+        await installWatcher(page, { requiredRegions: fixture.surface === 'setup-code' ? [] : REQUIRED_REGIONS[fixture.surface],
+          taskTransitions: fixture.surface === 'popup' ? 'popup' : fixture.surface === 'setup' });
         // Cold-delivery paint probes run without the CSS inspector affecting font discovery.
         const session = fixture.deliveryDelay ? null : await context.newCDPSession(page);
         if (session) { await session.send('DOM.enable'); await session.send('CSS.enable'); }
