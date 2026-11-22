@@ -7,10 +7,10 @@ import { theme } from '../src/theme';
 
 afterEach(cleanup);
 it('shows the dashboard setup prompt with the browser connection handoff', () => {
-  render(<ThemeProvider theme={theme}><MemoryRouter><SetupPrompt title="Set up Chrome to see your message counts" compact /></MemoryRouter></ThemeProvider>);
-  expect(screen.getByRole('heading', { name: 'Set up Chrome to see your message counts' })).toBeTruthy();
+  render(<ThemeProvider theme={theme}><MemoryRouter><SetupPrompt title="Set up your browser to see your message counts" compact /></MemoryRouter></ThemeProvider>);
+  expect(screen.getByRole('heading', { name: 'Set up your browser to see your message counts' })).toBeTruthy();
   expect(screen.getByText('New messages appear in this app once the extension is connected. Full analytics is optional.')).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Continue in Chrome' }).getAttribute('href')).toBe('/settings#browser-extension');
+  expect(screen.getByRole('link', { name: 'Continue in browser' }).getAttribute('href')).toBe('/settings#browser-extension');
   expect(screen.queryByRole('list')).toBeNull();
 });
 

@@ -19,7 +19,7 @@ function readFont(repositoryRoot: string, source: typeof SOURCES[number]) {
   if (faces.length !== 1) throw new Error('Expected one latin font face: ' + source.package);
   const license = fs.readFileSync(path.join(root, 'LICENSE'), 'utf8').trim().replaceAll('*/', '* /');
   const hash = createHash('sha256').update(bytes).digest('hex');
-  const notice = `/* ${source.package}@${manifest.version}; ${source.file}; sha256:${hash}\n${license}\n*/`;
+  const notice = `/* ${source.package}@${manifest.version} (${source.file}, sha256:${hash})\n${license}\n*/`;
   return { bytes, face: faces[0], notice };
 }
 

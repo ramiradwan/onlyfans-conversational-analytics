@@ -156,7 +156,7 @@ export function CommercialActivationControls({
   // Code recovery may continue an accepted activation, not compete with an
   // outstanding confirmation or an unacknowledged desktop command.
   // Intent can display an already-admitted review. It cannot prepare a
-  // ceremony, open Chrome or execute activation in an effect.
+  // ceremony, open the browser or execute activation in an effect.
   const intentScope = currentAuthority && snapshot?.local_ready && presentationIntent?.journey_id === snapshot.journey_id
     ? JSON.stringify([ownerCreator, snapshot.journey_id, presentationIntent.disclosure_bundle_id]) : null;
   const promotedIntent = useRef<string | null>(null);
@@ -255,7 +255,7 @@ export function CommercialActivationControls({
     const controller = new AbortController(); entryOperation.current = controller; entryScope.current = reviewScope;
     setOpening(true); setOpeningAction('browser.open'); setEntryError(null);
     try { await onboarding.openBrowser(authentication.browser_operation_id); }
-    catch { if (!controller.signal.aborted) setEntryError('Chrome could not be opened.'); }
+    catch { if (!controller.signal.aborted) setEntryError('The browser could not be opened.'); }
     finally {
       if (entryOperation.current === controller) {
         entryOperation.current = null;
@@ -329,7 +329,7 @@ export function CommercialActivationControls({
   const activationRequired = readiness?.commercial_authority === 'required';
   const activationUnavailable = readiness?.commercial_authority === 'unavailable';
   const browserLaunchError = desktop.error === 'browser_unavailable' ? 'The browser action could not be confirmed.'
-    : desktop.error === 'chrome_unavailable' ? 'Chrome could not be opened.' : null;
+    : desktop.error === 'chrome_unavailable' ? 'The browser could not be opened.' : null;
   const noticeError = (entryScope.current === reviewScope ? entryError : null) ?? error ?? (!codeOpen ? codeError : null) ?? browserLaunchError;
   const offer = decision?.offer;
   const codeChecking = codeBusy || codePending;
@@ -346,8 +346,8 @@ export function CommercialActivationControls({
   const classifiedMismatch = Boolean(expectedLabel);
   const feedback = noticeError || (!desktop.connected ? desktop.error === 'session_unavailable' ? 'The setup session ended. Reconnecting…' : 'Activation status could not be received.'
     : fullReady ? null : opening ? openingAction === 'activation.confirm' ? 'Confirming activation…'
-      : openingAction === 'activation.review' ? 'Preparing activation…' : 'Opening Chrome…'
-        : expectedLabel ? `You’re signed in to a different OnlyFans account. Switch to ${expectedLabel} in Chrome to continue.`
+      : openingAction === 'activation.review' ? 'Preparing activation…' : 'Opening browser…'
+        : expectedLabel ? `You’re signed in to a different creator account. Switch to ${expectedLabel} in your browser to continue.`
           : terminalUnknown ? 'Activation couldn’t finish.'
           : replacementAvailable ? 'Activation was not completed.'
           : unresolvedCommand ? 'Activation has not been confirmed.'
@@ -358,7 +358,7 @@ export function CommercialActivationControls({
             : authentication?.state === 'expired' ? 'This sign-in request expired.'
               : authentication?.state === 'retired' ? 'Sign-in was cancelled.'
                 : authentication?.state === 'unavailable' ? 'The sign-in request could not be confirmed.'
-                  : authentication?.state === 'selected' || decisionStatus === 'awaiting-authentication' ? 'Finish signing in in Chrome.'
+                  : authentication?.state === 'selected' || decisionStatus === 'awaiting-authentication' ? 'Finish signing in in your browser.'
                     : decisionStatus === 'unavailable' || activationOutcome?.reason === 'activation_unavailable' || desktop.error === 'activation_unavailable' ? 'Full analytics activation could not be prepared.'
                       : checking && !decision ? 'Checking activation…'
               : activeButBlocked ? "New messages aren't being analyzed"
@@ -443,7 +443,7 @@ export function CommercialActivationControls({
             else void openSetup();
           }}>{replacementAvailable ? 'Review offer again' : 'Review offer'}</Button>}
         {showPrompt && <Button sx={quietButtonSx} onClick={() => { dismissOffer(); setDismissedPrompt(ownerScope); }}>Not now</Button>}
-        {!fullReady && showBrowser && <Button onClick={() => void reopenBrowser()} disabled={opening} sx={buttonSx}>Open Chrome</Button>}
+        {!fullReady && showBrowser && <Button onClick={() => void reopenBrowser()} disabled={opening} sx={buttonSx}>Open browser</Button>}
         {showSwitch && !offer && <Button ref={switchElement} onClick={() => setChoosingAccount(true)} disabled={opening} sx={quietButtonSx}>{SIGN_IN_SWITCH}</Button>}
         {choosingAccount && !offer && <Button onClick={() => setChoosingAccount(false)} disabled={opening} sx={buttonSx}>Back</Button>}
         {!hasActions && inlineStatus}

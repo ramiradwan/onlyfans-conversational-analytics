@@ -1,4 +1,4 @@
-/* Generated from frontend/src/theme/tokens.json; run npm run sync:static-tokens in frontend. */
+/* Generated from frontend/src/theme/tokens.json. Run npm run sync:static-tokens in frontend. */
 :root {
   --dipsy-font-family: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --dipsy-font-family-mono: ui-monospace, SFMono-Regular, Menlo, monospace;

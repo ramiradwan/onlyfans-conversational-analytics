@@ -352,11 +352,11 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
           maxWidth: { xs: 'calc(100% - 16px)', sm: 'sm' } } } }}>
         <DialogTitle id="pairing-options-title" sx={{ overflowWrap: 'anywhere' }}>
           {failed ? 'Extension connection' : awaiting ? 'Confirm the connection' : active || openingWindow
-            ? 'Connect the extension to this app' : 'Connect another Chrome profile'}
+            ? 'Connect the extension to this app' : 'Connect another browser profile'}
         </DialogTitle>
         <DialogContent>
           {!active && !openingWindow && !failed && <DialogContentText>
-            Use code comparison when this app cannot reach the Chrome profile containing your extension.
+            Use code comparison when this app cannot reach the browser profile containing your extension.
           </DialogContentText>}
           {awaiting && <Stack spacing={1} useFlexGap>
             <DialogContentText variant="body2">
@@ -369,7 +369,7 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
             </Typography>
             {expiration}
             {expectedAccount.current && !failed && <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-              OnlyFans account: {expectedAccount.current}
+              Creator account: {expectedAccount.current}
             </Typography>}
             <FormControlLabel control={<Checkbox checked={codesMatch} disabled={busy || failed}
               onChange={(event) => setCodesMatch(event.target.checked)} />} label="The codes match" />

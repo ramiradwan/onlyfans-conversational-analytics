@@ -124,7 +124,7 @@ export function SetupPrompt({
         <OnboardingCard title={title} spot={<OnboardingSpot icon="browser" />}
           body="New messages appear in this app once the extension is connected. Full analytics is optional."
           actions={<OnboardingAction><Button component={RouterLink} to="/settings#browser-extension" variant="contained">
-            Continue in Chrome
+            Continue in browser
           </Button></OnboardingAction>} />
       </Box>
     );

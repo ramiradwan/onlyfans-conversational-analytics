@@ -16,7 +16,8 @@ export function AuthorityRecoveryTask({ view, act }: { view: RecoveryPresentatio
   const control = { minHeight: componentTokens.staticUi.largeControlHeight, maxWidth: '100%', overflowWrap: 'anywhere' };
   const family = [title, description, (action || pending) && label, cancel, cancelPrimary].join('\n');
   return <OnboardingWorkspace trust>
-    <TrustTask visual="authority-recovery-card" spot="lock" family={family} busy={progress} placeholder={placeholder} arrive={!placeholder}
+    <TrustTask data-journey-state="desktop.authority_recovery" visual="authority-recovery-card"
+      spot="lock" family={family} busy={progress} placeholder={placeholder} arrive={!placeholder}
       title={placeholder ? <><span style={visuallyHidden}>Checking access</span>
         <Skeleton aria-hidden="true" animation={false} width="min(100%, 20ch)" /></> : title}
       body={placeholder ? <Skeleton aria-hidden="true" animation={false} width="min(100%, 28ch)" /> : description}

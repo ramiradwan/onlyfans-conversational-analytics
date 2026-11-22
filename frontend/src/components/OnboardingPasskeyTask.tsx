@@ -27,8 +27,8 @@ export function OnboardingPasskeyTask({
   const title = lapsed?.title ?? (checking ? 'Checking this computer…' : statusUnavailable ? 'Can’t check your passkey right now'
     : create ? 'Protect your analytics on this computer' : 'Confirm it’s you');
   const body = lapsed?.body ?? (checking || statusUnavailable ? undefined : create
-    ? 'Create a passkey. Windows will ask you to confirm it’s you, so only you can open your analytics here.'
-    : 'Windows will ask you to confirm it’s you.');
+    ? 'Create a passkey. Your computer will ask you to confirm it’s you, so only you can open your analytics here.'
+    : 'Your computer will ask you to confirm it’s you.');
   const status = lapsed ? lapsed.status : error ?? (statusUnavailable ? 'This page updates by itself.' : sessionNotice);
   const success = status === 'Passkey created. Sign in to continue.';
   const failed = Boolean(error && !lapsed && !success);
@@ -70,7 +70,7 @@ export function OnboardingPasskeyTask({
       sx={{ visibility: fontState === 'loading' ? 'hidden' : 'visible',
         ...(fontState === 'fallback' && { '& *': { fontFamily: 'Arial, sans-serif !important' } }) }}>
       {fontState !== 'loading' && <OnboardingWorkspace trust>
-        <TrustTask spot="passkey" visual="passkey-card" family={family} busy={busy || checking || readingStatus}
+        <TrustTask data-journey-state="desktop.passkey_sign_in" spot="passkey" visual="passkey-card" family={family} busy={busy || checking || readingStatus}
           title={title} body={body} placeholder={checking}
           actions={canAct && <>
             <OnboardingAction swap={busy ? 'pending' : undefined}>

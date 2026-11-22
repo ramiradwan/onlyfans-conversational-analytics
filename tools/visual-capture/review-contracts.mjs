@@ -206,7 +206,7 @@ export async function measureDashboardOnboarding(page, open) {
     await open('home', 'fresh');
     await page.evaluate(value => { document.documentElement.style.fontSize = `${value * 100}%`; }, scale);
     const setup = page.locator('[data-visual="setup-prompt"]');
-    const title = setup.getByRole('heading', { name: 'Set up Chrome to see your message counts', exact: true });
+    const title = setup.getByRole('heading', { name: 'Set up your browser to see your message counts', exact: true });
     await title.waitFor();
     near((await appearance(setup)).x, (await appearance(dashboard)).x, 'Setup card left edge');
     const titleLines = await textLines(title);
@@ -216,7 +216,7 @@ export async function measureDashboardOnboarding(page, open) {
       assert.equal(titleLines.count, 1);
       assert(bodyLines.count <= 2);
     } else if (scale === 2) assert(titleLines.count > 1 && bodyLines.count > 2, 'Narrow dashboard setup copy must wrap');
-    assert.equal(await setup.getByRole('link', { name: 'Continue in Chrome', exact: true }).getAttribute('href'), '/settings#browser-extension');
+    assert.equal(await setup.getByRole('link', { name: 'Continue in browser', exact: true }).getAttribute('href'), '/settings#browser-extension');
 
     await open('home');
     await page.evaluate(value => { document.documentElement.style.fontSize = `${value * 100}%`; }, scale);
@@ -263,7 +263,7 @@ export async function measureDashboardOnboarding(page, open) {
     near((await appearance(pause)).x, beforePause.x, 'Pause card left edge');
     assert((await appearance(pause)).width <= 760, 'Pause card exceeds its guided width');
     assert.match(await basis.innerText(), / Last updated .+\.$/u);
-    assert.equal(await page.getByRole('button', { name: 'Review in Chrome', exact: true }).count(), 1);
+    assert.equal(await page.getByRole('button', { name: 'Review in browser', exact: true }).count(), 1);
     const basisLines = await textLines(basis);
     assert(basisLines.fits);
     if (width === 1440) assert.equal(basisLines.count, 1);

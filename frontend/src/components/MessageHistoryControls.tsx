@@ -35,7 +35,7 @@ import { presentHistory } from '../utils/historyPresentation';
 import { extensionConnection } from '../utils/statusCopy';
 
 const HISTORY_PURPOSE = 'Use older messages to see results sooner.';
-const PERMISSION_PURPOSE = 'Older messages start syncing after Chrome allows access.';
+const PERMISSION_PURPOSE = 'Older messages start syncing after you allow access in your browser.';
 const STARTING_HISTORY = 'Starting message history…';
 const ADDING_HISTORY = 'Adding older messages. Message counts update as they arrive.';
 
@@ -396,7 +396,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
     } catch {
       if (controller.signal.aborted) return;
       setPermissionReturn(current => current === intent ? null : current);
-      setError('Chrome permission could not be opened.');
+      setError('The browser permission prompt could not be opened.');
     } finally {
       if (permissionRequest.current === controller) {
         permissionRequest.current = null;
@@ -448,7 +448,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
       journal.clear(change);
       if (sameEffect(change, next)) {
         if (desired === 'revoked') store.clearMessageCache();
-        // Preserve the existing Settings gesture, but never open Chrome
+        // Preserve the existing Settings gesture, but never open the browser
         // after a read-only reconciliation of a competing or lost write.
         if (!review && desired === 'running' && currentChange(change)) await allowBrowserHistory(next);
       } else {
@@ -524,7 +524,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
     </Button>
   ) : permissionNeeded ? (
     <Button disabled={controlsDisabled || openingPermission} onClick={() => void allowBrowserHistory()} variant="contained">
-      Allow Chrome access
+      Allow browser access
     </Button>
   ) : paused ? (
     <Button disabled={controlsDisabled} onClick={() => void update('running')} size="small" variant="outlined">Resume</Button>
@@ -563,7 +563,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
                 Turn on message history?
               </Typography>}
               <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                {review ? `${HISTORY_PURPOSE} Chrome may ask you to allow access next.` : HISTORY_PURPOSE}
+                {review ? `${HISTORY_PURPOSE} Your browser may ask you to allow access next.` : HISTORY_PURPOSE}
               </Typography>
               <Box component="ul" sx={{ color: 'text.secondary', m: 0, pl: 2.5, typography: 'body2' }}>
                 <li>Read-only: it never sends messages or changes your account.</li>
@@ -691,7 +691,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
           sx={{ alignSelf: 'flex-start' }}>Message history</Button>}
         {ready && permissionNeeded && !dialogOpen && <Button variant="outlined"
           disabled={controlsDisabled || openingPermission} onClick={() => void allowBrowserHistory()}
-          sx={{ alignSelf: 'flex-start' }}>Allow Chrome access</Button>}
+          sx={{ alignSelf: 'flex-start' }}>Allow browser access</Button>}
         {error && error !== detail && !dialogOpen && <StatusLine id="history-continuation-feedback" text={error} tone="error" />}
       </Panel>
       <Dialog open={dialogOpen} onClose={() => setOpenReview(null)} aria-labelledby="history-review-title" fullWidth maxWidth="sm"

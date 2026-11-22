@@ -29,20 +29,20 @@ const taskControls = ['pairing-replace', 'extension-open', 'authentication-open'
 const desktop = ['desktop-return'];
 const browserTaskCases = [
   ['loading', 'Loading browser task', '', [], () => null],
-  ['unavailable', 'Set up the extension', 'Install or turn on the extension in this Chrome profile.', ['extension-install', ...desktop]],
+  ['unavailable', 'Set up the extension', 'Install or turn on the extension in this browser profile.', ['extension-install', ...desktop]],
   ['extension_disconnected', 'Continue in the desktop app', 'Dipsy couldn’t connect to the extension.', desktop],
-  ['profile_mismatch', 'Switch Chrome profile', 'This isn’t the profile you used for setup.', desktop],
-  ['account_mismatch', 'Switch OnlyFans account', 'Sign in to OnlyFans with the account you want to connect.', desktop, pairingPayload],
+  ['profile_mismatch', 'Switch browser profile', 'This isn’t the profile you used for setup.', desktop],
+  ['account_mismatch', 'Switch creator account', 'Sign in with the creator account you want to connect.', desktop, pairingPayload],
   ['needs-consent', 'Review the extension', 'See what it collects before you turn it on.', ['extension-open']],
-  ['needs-permission', 'Allow site access', 'The extension needs it to read your OnlyFans activity.', ['extension-open']],
-  ['needs-account', 'Sign in to OnlyFans', 'Use your OnlyFans account in this Chrome profile.', ['extension-open']],
+  ['needs-permission', 'Allow site access', 'The extension needs it to read activity from your creator account.', ['extension-open']],
+  ['needs-account', 'Sign in to your creator account', 'Use your creator account in this browser profile.', ['extension-open']],
   ['auth_idle', 'Finish signing in', '', ['authentication-open'], authenticationPayload],
   ['auth_opening', 'Signing in…', 'Finish in the sign-in window.', [], authenticationPayload],
   ['auth_checking', 'Sign in', 'Checking the sign-in outcome…', desktop, authenticationPayload],
   ['auth_unconfirmed', 'Sign in', 'Checking whether sign-in finished…', desktop, authenticationPayload],
   ['auth_access_required', 'Sign in', 'Browser access is required for this request.', desktop, authenticationPayload],
   ['auth_closed', 'Sign in', 'Sign-in window closed. Continue in the desktop app.', desktop, authenticationPayload],
-  ['pairing_saved', 'Replace the saved connection?', 'This Chrome profile is already connected to a desktop app.', ['pairing-replace'], pairingPayload],
+  ['pairing_saved', 'Replace the saved connection?', 'This browser profile is already connected to a desktop app.', ['pairing-replace'], pairingPayload],
   ['pairing_connecting', 'Connect browser', 'Connecting this browser to the desktop app…', [], pairingPayload],
   ['pairing_checking', 'Connect browser', 'Checking the browser connection…', desktop, pairingPayload],
   ['pairing_unconfirmed', 'Connect browser', 'The browser connection has not been confirmed.', desktop, pairingPayload],
@@ -59,7 +59,7 @@ const browserTaskCases = [
   ['service_unavailable', 'Continue in the desktop app', 'This page can’t continue setup.', desktop, payload, 'authorization_refused'],
 ];
 
-describe('Chrome task presentation', () => {
+describe('Browser task presentation', () => {
   it.each(browserTaskCases)('uses the per-state D4 title and copy for %s (%s)', (state, title, message, controls, makePayload = payload, recovery) => {
     document.documentElement.innerHTML = browserTaskHtml;
     const value = makePayload();
@@ -72,7 +72,7 @@ describe('Chrome task presentation', () => {
       expect(document.getElementById('desktop-return').textContent).toBe('Open desktop app');
       expect(document.getElementById('desktop-return').getAttribute('href')).toBe('ofca://onboarding/?journey=' + value.task.journey_id);
     }
-    if (state === 'needs-account') expect(document.getElementById('extension-open').textContent).toBe('Open OnlyFans');
+    if (state === 'needs-account') expect(document.getElementById('extension-open').textContent).toBe('Open creator account');
   });
 
   it('paints an accessible placeholder before the task owner responds', () => {
@@ -83,7 +83,7 @@ describe('Chrome task presentation', () => {
     expect(taskControls.every(id => document.getElementById(id).hidden)).toBe(true);
     renderBrowserTask(document, { state: 'needs-permission', payload: payload() });
     expect(document.querySelector('.setup-task-card').getAttribute('aria-busy')).toBeNull();
-    expect(document.querySelector('.setup-eyebrow').textContent).toBe('Setup in Chrome');
+    expect(document.querySelector('.setup-eyebrow').textContent).toBe('Browser setup');
   });
 
   it.each(['unavailable', 'needs-permission', 'auth_idle', 'pairing_saved', 'service_unavailable'])(

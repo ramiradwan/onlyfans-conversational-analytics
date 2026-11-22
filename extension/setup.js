@@ -282,8 +282,8 @@ function render(model) {
   show('enable-preview', !active); show('enable-full', mode !== 'full' || legal.requires_reauthorization);
   text('full-secondary', mode === 'preview' ? 'Keep Preview' : 'Not now');
   text('access-title', pendingAccess ? 'Allow site access' : 'Site access needed');
-  text('access-body', pendingAccess ? 'Allow the extension to read activity from your OnlyFans account.'
-    : 'Allow site access to receive activity from OnlyFans.');
+  text('access-body', pendingAccess ? 'Allow the extension to read activity from your creator account.'
+    : 'Allow site access to receive activity from your creator account.');
   element('access-icon-mark').dataset.icon = pendingAccess ? 'extension' : 'attention';
   show('restore-access', Boolean(pendingAccess) || status.phase === 'permission_required');
   renderJourney(currentJourney, model);
@@ -305,8 +305,8 @@ function render(model) {
   if (currentJourney.id === 'preview_available') {
     const ready = counting || stopped;
     element('journey-icon-mark').dataset.icon = ready ? 'insights' : 'pending';
-    text('journey-title', ready ? currentJourney.title : 'Waiting for OnlyFans messages');
-    text('journey-badge', stopped ? 'Updates stopped' : counting ? 'Counting as you use OnlyFans' : '');
+    text('journey-title', ready ? currentJourney.title : 'Waiting for messages');
+    text('journey-badge', stopped ? 'Updates stopped' : counting ? 'Counting messages' : '');
     text('journey-body', ready ? currentJourney.body : '');
   }
   element('journey-badge').dataset.tone = previewValue && counting ? 'success' : 'neutral';

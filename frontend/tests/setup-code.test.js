@@ -140,10 +140,3 @@ describe('setup code entry states', () => {
     window.close();
   });
 });
-
-
-
-
-
-
-

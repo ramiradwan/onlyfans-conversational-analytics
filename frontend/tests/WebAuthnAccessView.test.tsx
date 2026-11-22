@@ -76,7 +76,7 @@ describe('WebAuthn access view', () => {
     const view = renderView(api);
     const create = await screen.findByRole('button', { name: 'Create passkey' });
     expect(screen.getByRole('heading', { name: 'Protect your analytics on this computer' })).toBeTruthy();
-    expect(screen.getByText('Create a passkey. Windows will ask you to confirm it’s you, so only you can open your analytics here.')).toBeTruthy();
+    expect(screen.getByText('Create a passkey. Your computer will ask you to confirm it’s you, so only you can open your analytics here.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
     fireEvent.click(create);
     await waitFor(() => expect(view.onAuthenticated).toHaveBeenCalledTimes(1));
@@ -595,10 +595,10 @@ it('renders protected native recovery instead of passkey access and returns only
       actions: { select: false, cancel: true, open_browser: true, switch_account: false } } };
   show(selected);
   expect(screen.getByRole('button', { name: 'Cancel sign-in' }).classList.contains('MuiButton-text')).toBe(true);
-  fireEvent.click(screen.getByRole('button', { name: 'Open Chrome' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Open browser' }));
   await waitFor(() => expect(recoveryApi.act).toHaveBeenCalledWith('browser.open'));
   show({ ...selected, authority_recovery_browser: 'launch-claimed' });
-  expect(screen.queryByRole('button', { name: 'Open Chrome' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Open browser' })).toBeNull();
   show({ ...selected, authority_recovery_browser: 'handed-off' });
   expect(screen.getByText('Waiting for sign-in\u2026').closest('.onboarding-action-content')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Cancel sign-in' }));

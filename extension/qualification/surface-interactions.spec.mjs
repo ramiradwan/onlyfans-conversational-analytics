@@ -114,16 +114,16 @@ test('status badge and next action reflect a confirmed sleeping browser tab', as
   await expect(page.locator('#journey-primary')).toHaveText('Continue in the desktop app');
 });
 
-test('the setup sleeping action deliberately focuses the existing OnlyFans tab', async ({ page }) => {
+test('the setup sleeping action focuses the existing creator site tab', async ({ page }) => {
   await renderSurfaceState(page, SURFACE_STATES.full_tab_sleeping);
   await page.evaluate(() => {
     chrome.tabs.query = async () => [{ id: 5, active: false }];
     chrome.tabs.update = async (id, update) => { window.__surfaceFixture.calls.push({ type: 'activate-tab', id, ...update }); };
   });
   await expect(page.locator('#desktop-entry-title')).toHaveText('Updates paused');
-  await expect(page.locator('#desktop-entry-body')).toHaveText('Your browser paused the OnlyFans tab.');
+  await expect(page.locator('#desktop-entry-body')).toHaveText('Your browser paused the creator site tab.');
   expect((await calls(page)).some(({ type }) => ['activate-tab', 'tab'].includes(type))).toBe(false);
-  await page.getByRole('button', { name: 'Open OnlyFans', exact: true }).click();
+  await page.getByRole('button', { name: 'Open creator account', exact: true }).click();
   expect((await calls(page)).filter(({ type }) => ['activate-tab', 'tab'].includes(type))).toEqual([{ type: 'activate-tab', id: 5, active: true }]);
 });
 
@@ -134,7 +134,7 @@ test('the pinned popup keeps its Full summary, primary action and disclosure', a
   const action = page.locator('#journey-primary');
   await expect(action).toHaveText('Continue in the desktop app');
   await expect(page.locator('footer')).toContainText('Use only with a creator account you are authorized to analyze.');
-  await expect(page.locator('footer')).toContainText('Independent software. It is not affiliated with or endorsed by OnlyFans.');
+  await expect(page.locator('footer')).toContainText(/Independent software\. It is not affiliated with or endorsed by /u);
   await expect(page.locator('footer #privacy-link')).toHaveText('Extension Privacy Notice');
   expect((await action.boundingBox()).y).toBeLessThan((await page.locator('footer').boundingBox()).y);
   expect(await page.locator('body').evaluate((body) => body.scrollHeight)).toBeGreaterThanOrEqual(await page.locator('body').evaluate((body) => body.clientHeight));
@@ -309,7 +309,7 @@ for (const [name, visible] of [['connection', true], ['connection_desktop_contro
 
 test('history recovery does not promise collection is ready after waking the tab', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.connection, sleeping: true });
-  await expect(page.locator('#history-health')).toHaveText('Your browser paused OnlyFans. Open the tab to continue.');
+  await expect(page.locator('#history-health')).toHaveText('Your browser paused the creator site. Open the tab to continue.');
   await expect(page.locator('#history-health')).not.toContainText('automatically');
 });
 
@@ -410,7 +410,7 @@ for (const width of [320, 390, 600]) {
       const historyStates = [
         [{ browser_tab_sleeping: false, history_error_code: null }, ''],
         [{ browser_tab_sleeping: false, history_error_code: 'history_unavailable' }, 'Message history needs attention in the desktop app.'],
-        [{ browser_tab_sleeping: true, history_error_code: 'history_unavailable' }, 'Your browser paused OnlyFans. Open the tab to continue.'],
+        [{ browser_tab_sleeping: true, history_error_code: 'history_unavailable' }, 'Your browser paused the creator site. Open the tab to continue.'],
       ];
       for (const [capture, captureText] of captureStates) for (const [history, historyText] of historyStates) {
         for (const pending of [0, 999, Number.MAX_SAFE_INTEGER]) {

@@ -50,6 +50,11 @@ describe('task-focused static copy', () => {
     expect(unavailable?.querySelector('p')?.textContent).toBe('Update the extension to continue.');
     expect(unavailable?.nextElementSibling?.id).toBe('pre-mode');
   });
+  it('describes browser setup without naming the browser vendor', () => {
+    const doc = parse('frontend/browser-tasks/index.html');
+    expect(doc.title).not.toMatch(/\bChrome\b/u);
+    expect(doc.querySelector('.setup-eyebrow')?.textContent).toBe('Browser setup');
+  });
   it.each(['extension/popup.html', 'extension/setup.html', 'extension/options.html', 'frontend/onboarding/index.html', 'frontend/browser-tasks/index.html'])('has no semicolons in rendered copy in %s', (file) => {
     const doc = parse(file);
     doc.querySelectorAll('style,script').forEach((node) => node.remove());

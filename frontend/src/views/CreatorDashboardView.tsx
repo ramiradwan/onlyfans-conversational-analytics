@@ -348,7 +348,7 @@ function PausedCollection({ api, canReview, current }: {
     setFeedback(null);
     try {
       const result = await api.open('setup', controller.signal);
-      if (!controller.signal.aborted && result === 'unreachable') setFeedback('Chrome didn’t open. Open Chrome to continue.');
+      if (!controller.signal.aborted && result === 'unreachable') setFeedback('The browser didn’t open. Open it to continue.');
     } catch {
       if (!controller.signal.aborted) setFeedback('The change was not confirmed.');
     } finally {
@@ -357,10 +357,10 @@ function PausedCollection({ api, canReview, current }: {
     }
   }
 
-  return <Box data-journey-state="desktop.message_collection_review" sx={{ maxWidth: 760 }}>
+  return <Box sx={{ maxWidth: 760 }}>
     <OnboardingCard title="Paused by you" body="New messages aren’t being collected." spot={<OnboardingSpot icon="pause" />}
       actions={canReview && <OnboardingAction><Button aria-disabled={opening || undefined} aria-busy={opening || undefined}
-        onClick={() => void review()} variant="contained">Review in Chrome</Button></OnboardingAction>}
+        onClick={() => void review()} variant="contained">Review in browser</Button></OnboardingAction>}
       status={feedback && <OnboardingStatus tone="attention">{feedback}</OnboardingStatus>} />
   </Box>;
 }
@@ -470,7 +470,7 @@ export default function CreatorDashboardView({
     {collectionReview}
     {showActivation && <CommercialActivationControls api={activationApi} onboarding={onboardingApi} creatorAccountId={state.creatorAccountId}
       presentationIntent={fullIntent} dashboard />}
-  </Stack> : historyPrompt ?? (showSetup ? <SetupPrompt title="Set up Chrome to see your message counts" compact />
+  </Stack> : historyPrompt ?? (showSetup ? <SetupPrompt title="Set up your browser to see your message counts" compact />
     : completeEmpty || waitingForMessages ? <OnboardingEmptyActivity waitingForMessages={waitingForMessages} collectionOn={collectionOn} />
       : hasSnapshot && fullAnalyticsReady === true ? connectionSummary : null);
   const opening = !state.creatorAccountId && !hasSnapshot && issue === null;

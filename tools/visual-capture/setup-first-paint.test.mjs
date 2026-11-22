@@ -19,7 +19,7 @@ test('native startup documents expose settled copy and preserve native semantics
   assert.match(waiting, /<h1 id="startup-title">Opening Conversation Analytics<\/h1>/);
   assert.match(waiting, /role="status"[^>]*>Getting things ready on this computer…<\/p>/);
   assert.match(unavailable, /<h1>Conversation Analytics can’t start right now<\/h1>/);
-  assert.match(unavailable, /Quit Conversation Analytics from its icon near the Windows clock, then open it again\./);
+  assert.match(unavailable, /Quit Conversation Analytics from its icon in the system tray, then open it again\./);
   assert.match(recovery, /<h1>Can’t open your saved data<\/h1>/);
   assert.match(recovery, /role="alert"/);
   assert.match(recovery, /Keep your existing data and keys\./);

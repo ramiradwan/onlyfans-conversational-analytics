@@ -243,7 +243,7 @@ describe('critical accessibility gates', () => {
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
     await screen.findByRole('heading', { name: 'Turn on Full analytics' });
-    expect(screen.queryByRole('region', { name: 'Set up Chrome to see your message counts' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Set up your browser to see your message counts' })).toBeNull();
     expect(screen.getByRole('heading', { name: 'Recent conversations' })).toBeTruthy();
     await expectNoCriticalOrSeriousViolations(document.body);
   });

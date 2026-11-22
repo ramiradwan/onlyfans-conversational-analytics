@@ -13,10 +13,10 @@ const journeyStates = { loading: 'loading', unavailable: 'unavailable', profile_
 const handoff = 'Continue in the desktop app';
 const status = {
   loading: ['Loading browser task', ''],
-  unavailable: ['Set up the extension', 'Install or turn on the extension in this Chrome profile.'],
+  unavailable: ['Set up the extension', 'Install or turn on the extension in this browser profile.'],
   extension_disconnected: [handoff, 'Dipsy couldn’t connect to the extension.', 'desktop-handoff'],
-  profile_mismatch: ['Switch Chrome profile', 'This isn’t the profile you used for setup.'],
-  account_mismatch: ['Switch OnlyFans account', 'Sign in to OnlyFans with the account you want to connect.'],
+  profile_mismatch: ['Switch browser profile', 'This isn’t the profile you used for setup.'],
+  account_mismatch: ['Switch creator account', 'Sign in with the creator account you want to connect.'],
   auth_idle: ['Finish signing in', '', 'sign-in'],
   auth_opening: ['Signing in…', 'Finish in the sign-in window.', 'sign-in'],
   auth_checking: [null, 'Checking the sign-in outcome…', 'sign-in-check'],
@@ -25,7 +25,7 @@ const status = {
   auth_access_required: [null, 'Browser access is required for this request.'],
   pairing_connecting: [null, 'Connecting this browser to the desktop app…'],
   pairing_checking: [null, 'Checking the browser connection…'],
-  pairing_saved: ['Replace the saved connection?', 'This Chrome profile is already connected to a desktop app.'],
+  pairing_saved: ['Replace the saved connection?', 'This browser profile is already connected to a desktop app.'],
   pairing_unconfirmed: [null, 'The browser connection has not been confirmed.'],
   pairing_access_required: [null, 'Browser access is required to connect.'],
   task_expired: [handoff, 'This step expired.', 'desktop-handoff'],
@@ -34,8 +34,8 @@ const status = {
   service_unavailable: [null, 'Dipsy can’t confirm this step. Continue setup in the desktop app.'],
   status_reconnecting: ['Waiting for the desktop app', 'This page updates by itself.'],
   'needs-consent': ['Review the extension', 'See what it collects before you turn it on.'],
-  'needs-permission': ['Allow site access', 'The extension needs it to read your OnlyFans activity.'],
-  'needs-account': ['Sign in to OnlyFans', 'Use your OnlyFans account in this Chrome profile.'],
+  'needs-permission': ['Allow site access', 'The extension needs it to read activity from your creator account.'],
+  'needs-account': ['Sign in to your creator account', 'Use your creator account in this browser profile.'],
   ready: ['Confirming browser access…', ''],
   paused: ['Message collection is paused', 'Letting the desktop app know…'],
   reported: ['Browser access confirmed', 'This tab closes by itself.'],
@@ -109,7 +109,7 @@ export function renderBrowserTask(document, value) {
 
   card.querySelector('.setup-actions').hidden = !hasAction;
   for (const [id, visible] of Object.entries(actions)) get(id).hidden = !visible;
-  get('extension-open').textContent = state === 'needs-account' ? 'Open OnlyFans' : 'Open extension';
+  get('extension-open').textContent = state === 'needs-account' ? 'Open creator account' : 'Open extension';
   const install = get('extension-install');
   const desktop = get('desktop-return');
   if (actions['extension-install']) install.href = 'https://chromewebstore.google.com/detail/' + payload.extension_id;

@@ -71,7 +71,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.SETUP_INCOMPLETE,
       tone: 'warning',
       title: 'Site access needed',
-      body: 'Allow site access to receive activity from OnlyFans.',
+      body: 'Allow site access to receive activity from your creator account.',
       primaryAction: ['preview', 'full'].includes(status.consent.mode) ? 'restore_access' : null,
       primaryLabel: ['preview', 'full'].includes(status.consent.mode) ? 'Allow site access' : null,
       secondaryAction: null,
@@ -193,10 +193,10 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.SETUP_INCOMPLETE,
       tone: 'warning',
-      title: setup ? 'Sign in to your OnlyFans account' : 'Sign in to your creator account',
-      body: setup ? 'Use the OnlyFans account you want to connect.' : 'Use the creator account you want to connect.',
+      title: 'Sign in to your creator account',
+      body: 'Use the creator account you want to connect.',
       primaryAction: 'open_creator_account',
-      primaryLabel: setup ? 'Open OnlyFans' : 'Open creator account',
+      primaryLabel: 'Open creator account',
       secondaryAction: 'open_dashboard',
       secondaryLabel: 'Open desktop app',
     });
@@ -275,10 +275,10 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.FULL_UNAVAILABLE,
       tone: 'warning',
-      title: setup ? 'Updates paused' : 'Open OnlyFans to continue',
-      body: 'Your browser paused the OnlyFans tab.',
+      title: setup ? 'Updates paused' : 'Open the creator site to continue',
+      body: 'Your browser paused the creator site tab.',
       primaryAction: 'open_creator_account',
-      primaryLabel: 'Open OnlyFans',
+      primaryLabel: 'Open creator account',
       secondaryAction: null,
       secondaryLabel: null,
     });

@@ -51,8 +51,8 @@ export function statusPresentation(model) {
     return choice('Needs access', 'Allow site access so the extension can read activity from your creator account.');
   if (status.consent.mode === 'paused') return choice('Paused', desktopOwnsCapture(model) ? 'Pause and resume from the desktop app.' : 'New messages are not collected until you resume.');
   if (status.consent.mode === 'preview') return status.observer?.attachment === 'ready'
-    ? choice('Ready', 'Preview counts update as you use OnlyFans.')
-    : choice('Waiting for activity', 'Waiting for OnlyFans activity.');
+    ? choice('Ready', 'Preview counts update as you use your creator account.')
+    : choice('Waiting for activity', 'Waiting for activity from your creator account.');
   if (status.consent.mode === 'full' && ['pairing', 'compare'].includes(model.pairing?.state))
     return model.pairing.state === 'compare' && !model.pairing.desktop_attempt ? choice('Confirm connection', 'Compare the codes in both places.')
       : choice('Connecting', 'Connecting to the desktop app.');
@@ -71,7 +71,7 @@ export function statusPresentation(model) {
     if (model.analysisReadiness?.commercial_authority === 'unavailable') return choice('Needs attention', 'Activation could not be checked.');
     if (model.analysisReadiness?.commercial_authority !== 'active') return choice('Checking activation', '');
     if (status.delivery?.browser_tab_sleeping === true)
-      return choice('Browser tab paused', 'Open OnlyFans to continue.');
+      return choice('Browser tab paused', 'Open the creator site to continue.');
     if (model.analysisReadiness?.analysis_admission === 'blocked') return choice('Not ready', "New messages aren't being analyzed.");
     if (model.analysisReadiness?.analysis_admission !== 'admitted') return choice('Checking analysis', '');
   }

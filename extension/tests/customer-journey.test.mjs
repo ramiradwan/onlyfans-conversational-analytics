@@ -302,10 +302,10 @@ test('sleeping OnlyFans tab has a direct recovery action after activation', () =
     analysisReadiness: readiness('active', 'blocked'),
   });
   assert.equal(result.id, CUSTOMER_STATES.FULL_UNAVAILABLE);
-  assert.equal(result.title, 'Open OnlyFans to continue');
+  assert.equal(result.title, 'Open the creator site to continue');
   assert.equal(result.primaryAction, 'open_creator_account');
-  assert.equal(result.primaryLabel, 'Open OnlyFans');
-  assert.equal(result.body, 'Your browser paused the OnlyFans tab.');
+  assert.equal(result.primaryLabel, 'Open creator account');
+  assert.equal(result.body, 'Your browser paused the creator site tab.');
   assert.doesNotMatch(result.body, /resume automatically|ready/i);
 });
 
@@ -366,8 +366,8 @@ test('D1 setup shows Full analytics is on with admission alone', () => {
   const sleeping = deriveCustomerJourney({ ...input,
     status: status({ phase: 'full', transport: 'authenticated', sleeping: true }) }, setup);
   assert.equal(sleeping.title, 'Updates paused');
-  assert.equal(sleeping.body, 'Your browser paused the OnlyFans tab.');
-  assert.equal(sleeping.primaryLabel, 'Open OnlyFans');
+  assert.equal(sleeping.body, 'Your browser paused the creator site tab.');
+  assert.equal(sleeping.primaryLabel, 'Open creator account');
   assert.equal(sleeping.primaryAction, 'open_creator_account');
 });
 

@@ -10,11 +10,12 @@ import { componentTokens } from '../theme';
 
 export interface SetupStep { label: string; complete?: boolean; current?: boolean }
 
-export function TrustTask({ family, spot, visual, busy, placeholder, ...content }:
+export function TrustTask({ family, spot, visual, busy, placeholder, 'data-journey-state': journeyState, ...content }:
   Omit<OnboardingCardProps, 'composition' | 'spot' | 'heading'> & {
     family: string; spot: 'lock' | 'passkey'; visual: 'passkey-card' | 'authority-recovery-card'; busy: boolean; placeholder?: boolean;
+    'data-journey-state': 'desktop.passkey_sign_in' | 'desktop.authority_recovery';
   }) {
-  return <Box component="main" data-journey-state={visual === 'passkey-card' ? 'desktop.passkey_sign_in' : 'desktop.authority_recovery'}
+  return <Box component="main" data-journey-state={journeyState}
     data-visual={visual} data-reserved-region={visual === 'passkey-card' ? visual : undefined} aria-busy={busy}
     sx={{ width: '100%', maxWidth: 560, justifySelf: 'center', minWidth: 0 }}>
     <OnboardingCard key={family} {...content} composition="trust" heading="h1"

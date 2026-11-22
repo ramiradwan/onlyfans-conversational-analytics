@@ -16,7 +16,7 @@ const openPairingComparison = async page => {
   await page.getByRole('dialog').getByRole('button', { name: 'Compare connection codes', exact: true }).click();
 };
 
-const findingHeadline = 'Pricing questions come up in 50% of fully checked messages';
+const findingHeadline = 'One topic appears in 50% of fully checked messages';
 const findingsDialog = page => page.getByRole('dialog', { name: 'All topics', exact: true });
 const findingsTrigger = page => page.getByRole('button', { name: 'See all topics', exact: true });
 
@@ -120,7 +120,7 @@ return [
   {
     workspace: 'home',
     state: 'fresh',
-    ready: (page) => page.getByRole('link', { name: 'Continue in Chrome' }),
+    ready: (page) => page.getByRole('link', { name: 'Continue in browser' }),
     assert: async (page, viewport) => {
       if (viewport.name !== 'desktop') return;
       const prompt = page.locator('[data-visual="setup-prompt"]');
@@ -147,15 +147,15 @@ return [
     state: 'allow-message-collection',
     ready: (page) => page.getByRole('heading', { name: 'Allow message collection', exact: true }),
     assert: async (page) => {
-      await page.getByRole('button', { name: 'Review in Chrome', exact: true }).waitFor({ state: 'visible' });
+      await page.getByRole('button', { name: 'Review in browser', exact: true }).waitFor({ state: 'visible' });
     },
   },
   {
     workspace: 'dashboard-continuation',
     state: 'allow-onlyfans-access',
-    ready: (page) => page.getByRole('heading', { name: 'Allow OnlyFans access', exact: true }),
+    ready: (page) => page.getByRole('heading', { name: 'Allow site access', exact: true }),
     assert: async (page) => {
-      await page.getByRole('button', { name: 'Review in Chrome', exact: true }).waitFor({ state: 'visible' });
+      await page.getByRole('button', { name: 'Review in browser', exact: true }).waitFor({ state: 'visible' });
       await page.getByRole('region', { name: 'Overview' }).waitFor({ state: 'visible' });
     },
   },
@@ -164,7 +164,7 @@ return [
     state: 'message-collection-off',
     ready: (page) => page.getByRole('heading', { name: 'Message collection is off', exact: true }),
     assert: async (page) => {
-      await page.getByRole('button', { name: 'Review in Chrome', exact: true }).waitFor({ state: 'visible' });
+      await page.getByRole('button', { name: 'Review in browser', exact: true }).waitFor({ state: 'visible' });
     },
   },
   {
@@ -172,7 +172,7 @@ return [
     state: 'message-collection-paused',
     ready: (page) => page.getByRole('heading', { name: 'Paused by you', exact: true }),
     assert: async (page) => {
-      await page.getByRole('button', { name: 'Review in Chrome', exact: true }).waitFor({ state: 'visible' });
+      await page.getByRole('button', { name: 'Review in browser', exact: true }).waitFor({ state: 'visible' });
     },
   },
   {
@@ -300,7 +300,7 @@ return [
       await publishActivation(page, 'waiting');
       await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
     },
-    ready: page => page.getByText('Finish signing in in Chrome.', { exact: true }),
+    ready: page => page.getByText('Finish signing in in your browser.', { exact: true }),
     assert: async (page) => {
       if (await page.getByRole('button', { name: 'Activate for free' }).count()) throw new Error('Authentication must precede consent');
       if ((await page.evaluate(() => window.__workspaceFixture.desktopActions())).length) throw new Error('Returning from Chrome must not submit a decision');

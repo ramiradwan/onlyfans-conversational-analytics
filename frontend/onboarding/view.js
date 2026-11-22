@@ -4,18 +4,18 @@ import { authorityRecoveryView } from '../shared-setup/authority-recovery.js';
 import { desktopRecovery, passkeyRecovery, recoveryClass } from '../shared-setup/recovery.js';
 
 const tasks = {
-  'browser-access': ['Bring in your conversations', 'Set up Chrome', 'setup_browser_access'],
+  'browser-access': ['Bring in your conversations', 'Set up browser access', 'setup_browser_access'],
   'account-connection': ['Connect your account', 'Connect your account', 'setup_account_connection'],
   'finish-setup': ['Finish setup', 'Finish setup', 'setup_finish'],
   complete: ['Setup complete', 'Desktop setup', 'setup_complete'],
 };
-const actions = { 'browser.access': 'Continue in Chrome', 'account.connect': 'Sign in', 'account.confirm': 'Connect account', 'browser.pair': 'Connect extension' };
-const providerNames = new Map([['google', 'Google'], ['microsoft-personal', 'Microsoft'], ['telegram', 'Telegram'], ['tiktok', 'TikTok']]);
-const chromeInstruction = 'Finish setup in Chrome. This window updates by itself.';
+const actions = { 'browser.access': 'Continue in browser', 'account.connect': 'Sign in', 'account.confirm': 'Connect account', 'browser.pair': 'Connect extension' };
+const namedProviders = new Set(['google', 'microsoft-personal', 'telegram', 'tiktok']);
+const chromeInstruction = 'Finish setup in your browser. This window updates by itself.';
 const chooseSignIn = 'Choose how to sign in. You’ll confirm the connection here next.';
-const finishSignIn = 'Finish signing in in Chrome. This window continues by itself.';
+const finishSignIn = 'Finish signing in in your browser. This window continues by itself.';
 const pairingDescription = 'New messages show up in your analytics once it’s connected.';
-const pairingProgress = 'Keep Chrome open. This window continues by itself.';
+const pairingProgress = 'Keep the browser open. This window continues by itself.';
 const errors = {
   status_unavailable: 'The setup connection was interrupted. Reconnecting…',
   connection_unavailable: "Dipsy can't connect right now.",
@@ -24,14 +24,14 @@ const errors = {
   operation_refused: 'The action was refused.',
   authority_unavailable: 'Account authorization is unavailable.',
   browser_unavailable: 'The browser connection is unavailable.',
-  chrome_unavailable: 'Install Chrome to continue setup.',
+  chrome_unavailable: 'Install the required browser to continue setup.',
   browser_preparing: 'The browser task is being prepared.',
-  extension_unavailable: 'Install or turn on the extension in Chrome to continue setup.',
-  profile_mismatch: 'Switch to the Chrome profile that has the extension.',
-  account_mismatch: 'Switch to the creator account you want to connect in Chrome.',
-  browser_needs_account: 'Sign in to your OnlyFans account in Chrome.',
-  browser_needs_consent: 'Browser access is not turned on in the extension. Turn it on in Chrome.',
-  browser_needs_permission: 'Allow OnlyFans site access in the extension.',
+  extension_unavailable: 'Install or turn on the extension in your browser to continue setup.',
+  profile_mismatch: 'Switch to the browser profile that has the extension.',
+  account_mismatch: 'Switch to the creator account you want to connect in your browser.',
+  browser_needs_account: 'Sign in to your creator account in your browser.',
+  browser_needs_consent: 'Browser access is not turned on in the extension. Turn it on in your browser.',
+  browser_needs_permission: 'Allow access to the creator site in the extension.',
   operation_expired: 'This task expired.',
   activation_unavailable: 'Dipsy couldn’t prepare your activation.',
 };
@@ -135,7 +135,7 @@ export function renderSetup(document, state) {
     && !checkingPasskey;
   const ceremonyPending = passkeyKnown && authentication.busy && !authentication.error && !unavailable;
   const localDescription = lapsed && !securing ? `${lapsed[0]}. ${lapsed[1]}` : needsAuthentication && !securing && passkeyKnown
-    ? 'Windows will ask you to confirm it’s you.' : '';
+    ? 'Your computer will ask you to confirm it’s you.' : '';
   get('local-access').hidden = !needsAuthentication || reasonClass === 'invariant_failed' || passkeyPlaceholder
     || Boolean(securing && lapsed && !lapsed[2]);
   get('local-access').dataset.journeyState = 'desktop.setup_local_access';
@@ -224,8 +224,8 @@ export function renderSetup(document, state) {
   } else if (securing) {
     if (passkeyKnown) {
       taskTitle = authentication.enrolled ? 'Confirm it’s you' : 'Protect your analytics on this computer';
-      taskDescription = authentication.enrolled ? 'Windows will ask you to confirm it’s you.'
-        : 'Create a passkey. Windows will ask you to confirm it’s you, so only you can open your analytics here.';
+      taskDescription = authentication.enrolled ? 'Your computer will ask you to confirm it’s you.'
+        : 'Create a passkey. Your computer will ask you to confirm it’s you, so only you can open your analytics here.';
     } else if (lapsed) [taskTitle, taskDescription] = lapsed;
     else if (checkingPasskey) taskTitle = 'Checking this computer…';
     else taskTitle = 'Can’t check your passkey right now';
@@ -238,12 +238,12 @@ export function renderSetup(document, state) {
   } else if (task === 'browser-access') {
     if (inChrome) taskDescription = chromeInstruction;
     else if (!reason || reason === 'status_unavailable') {
-      taskDescription = 'Chrome opens next so the extension can read your OnlyFans activity. You’ll review what it collects first.';
+      taskDescription = 'The browser opens next so the extension can read activity from your creator account. You’ll review what it collects first.';
     }
   } else if (showingProviders || ['selected', 'retired', 'expired'].includes(signIn?.state)) taskDescription = chooseSignIn;
   else if (canReplace) taskDescription = 'Sign in to connect your account.';
   else if (!accepted && !confirmingUnknown) {
-    if (decision) taskDescription = 'Check the OnlyFans account and this computer, then connect them.';
+    if (decision) taskDescription = 'Check the creator account and this computer, then connect them.';
     else if (task === 'account-connection') taskDescription = 'Sign in, then confirm the account connection here.';
     else if (task === 'finish-setup') taskDescription = 'Set up access to this computer and connect the browser.';
   }
@@ -252,7 +252,7 @@ export function renderSetup(document, state) {
   get('task-description').hidden = !taskDescription;
   get('decision-details').hidden = !accountDecision || choosingAccount || terminal;
   const label = accountDecision && value.creator_label?.creator_id === accountDecision.creator_id ? value.creator_label : null;
-  get('decision-account').textContent = accountDecision ? accountName(label) || 'OnlyFans account ' + accountDecision.creator_id : '';
+  get('decision-account').textContent = accountDecision ? accountName(label) || 'creator account ' + accountDecision.creator_id : '';
   // Unlabelled accounts show a generic glyph.
   get('decision-account-avatar').textContent = initial(label);
   get('decision-account-avatar').hidden = !get('decision-account-avatar').textContent;
@@ -269,7 +269,7 @@ export function renderSetup(document, state) {
   get('header-account-handle').hidden = !get('header-account-handle').textContent;
   // A display name may be shared, so the handle or account number follows it.
   get('decision-account-identifier').textContent = !label?.display_name ? ''
-    : label.username ? '@' + label.username : 'OnlyFans account ' + accountDecision.creator_id;
+    : label.username ? '@' + label.username : 'creator account ' + accountDecision.creator_id;
   get('decision-account-identifier').hidden = !get('decision-account-identifier').textContent;
   get('decision-computer').textContent = accountDecision?.computer_name || '';
   get('task-step').textContent = task && task !== 'complete' ? `Step ${Object.keys(tasks).indexOf(task) + 1} of 3 · ${stepLabel}`
@@ -281,9 +281,9 @@ export function renderSetup(document, state) {
     : reason === 'connection_unavailable' && value?.journey_id
       ? 'Dipsy can’t connect right now. Your setup progress is saved.'
       : reason === 'account_mismatch' && accountName(expectedLabel)
-        ? `You’re signed in to a different OnlyFans account. Switch to ${accountName(expectedLabel)} in Chrome to continue.`
+        ? `You’re signed in to a different creator account. Switch to ${accountName(expectedLabel)} in your browser to continue.`
         : reportedReason === 'browser_unavailable' && inChrome && recoveryTarget
-          ? 'Chrome closed or lost its connection.' : reasonClass ? errors[reason] : null;
+          ? 'The browser closed or lost its connection.' : reasonClass ? errors[reason] : null;
   if (unavailable || reason === 'chrome_unavailable') get('setup-code-open').hidden = true;
   const signInMessage = { selected: finishSignIn, expired: 'Sign in to continue.',
     'replacement-required': 'Sign-in ended.',
@@ -298,16 +298,16 @@ export function renderSetup(document, state) {
     && item.state === 'outcome_unknown');
   const switching = state.choosingAccount || [state.acting, state.pendingAction].some(action => ['auth.switch', 'auth.select', 'auth.cancel'].includes(action))
     || value?.pending_operations.some(item => ['auth.switch', 'auth.select', 'auth.cancel'].includes(item.action));
-  const providerName = decision && allowed.includes('account.confirm') && state.connected && !reason && !confirmingUnknown && !replacing && !switching
+  const hasConfirmedProvider = decision && allowed.includes('account.confirm') && state.connected && !reason && !confirmingUnknown && !replacing && !switching
     && signIn?.state === 'admitted' && signIn.operation_id === decision.operation_id && !signIn.actions.open_browser
     && (!value.decision_status || decisionStatus === 'confirmation-required' && value.decision_status.operation_id === decision.operation_id)
-    ? providerNames.get(signIn.authentication_attempt?.provider) : null;
-  get('decision-provider').textContent = providerName ? `Signed in with ${providerName}` : '';
-  get('decision-provider').hidden = !providerName;
+    && namedProviders.has(signIn.authentication_attempt?.provider);
+  get('decision-provider').textContent = hasConfirmedProvider ? 'Sign-in confirmed' : '';
+  get('decision-provider').hidden = !hasConfirmedProvider;
   const progress = task === 'complete' ? state.continuing ? 'Opening dashboard…' : ''
     : replacing ? (replacementUnknown ? 'Checking sign-in\u2026' : 'Preparing sign-in\u2026')
     : state.acting === 'auth.cancel' ? 'Cancelling sign-in…'
-    : opening ? finishSignIn : state.acting === 'browser.open' ? 'Opening Chrome…'
+    : opening ? finishSignIn : state.acting === 'browser.open' ? 'Opening browser…'
       : choosingProvider ? '' : signInMessage || (decisionStatus === 'awaiting-authentication' ? finishSignIn
         : decisionStatus === 'unavailable' ? 'This sign-in request is unavailable.'
           : pending && !decision && !connecting && !recoveryTarget ? 'Waiting for the current action to finish.' : '');
@@ -351,10 +351,10 @@ export function renderSetup(document, state) {
     || Boolean(state.browserLaunchPending || state.acting || !localAccessReady);
   browserReopen.disabled = controlsDisabled;
   browserReopen.dataset.operation = browserReopen.hidden ? '' : recoveryTarget;
-  browserReopen.textContent = 'Open Chrome';
+  browserReopen.textContent = 'Open browser';
   const reconnectingChrome = inChrome && reason === 'status_unavailable';
   const preparingChrome = inChrome && browserReopen.hidden && (startingChrome || state.browserLaunchPending || reason === 'browser_preparing');
-  const pendingMessage = terminal ? '' : reconnectingChrome ? 'Reconnecting…' : preparingChrome ? 'Getting Chrome ready…'
+  const pendingMessage = terminal ? '' : reconnectingChrome ? 'Reconnecting…' : preparingChrome ? 'Getting the browser ready…'
     : confirmingUnknown ? 'Checking whether your setup finished…'
       : finalizing && !reason ? 'Preparing this computer…'
         : accepted && task === 'account-connection' && !reason ? 'Account connected. Moving to the next step…'
@@ -368,7 +368,7 @@ export function renderSetup(document, state) {
   updateStatus(taskStatus, status, connecting && !reason ? 'progress' : taskTone);
   get('sign-in-switch').hidden = !canSwitch || choosingAccount || unavailable;
   get('sign-in-switch').disabled = controlsDisabled;
-  get('decision-sign-in').hidden = !providerName && get('sign-in-switch').hidden;
+  get('decision-sign-in').hidden = !hasConfirmedProvider && get('sign-in-switch').hidden;
   get('sign-in-back').hidden = !choosingAccount || unavailable;
   get('sign-in-back').disabled = controlsDisabled;
   for (const group of document.querySelectorAll('.setup-actions')) {

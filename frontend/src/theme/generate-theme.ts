@@ -339,7 +339,7 @@ export function generateStaticTokensCss(tokensJsonSource: string, explicitScheme
     ['press-scale', String(motion.pressScale)],
   ];
   return (
-    '/* Generated from frontend/src/theme/tokens.json; run npm run sync:static-tokens in frontend. */\n' +
+    '/* Generated from frontend/src/theme/tokens.json. Run npm run sync:static-tokens in frontend. */\n' +
     declarationBlock(':root', [...shared, ...colorDeclarations(getObject(colorSchemes, 'light')), ...intentDeclarations(getObject(intents, 'light'))], '') +
     (explicitScheme ? '\n' + declarationBlock(':root[data-color-scheme="dark"]', [...colorDeclarations(getObject(colorSchemes, 'dark')), ...intentDeclarations(getObject(intents, 'dark'))], '') : '') +
     '\n@media (prefers-color-scheme: dark) {\n' +

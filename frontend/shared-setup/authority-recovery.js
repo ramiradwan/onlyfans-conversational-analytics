@@ -10,7 +10,7 @@ export function authorityRecoveryView(state, acting = null) {
     ({ title, description, status, tone, action, label, cancel, disabled });
   const title = 'Sign in to open your analytics';
   const sameSignIn = 'Use the same sign-in as before.';
-  const finishInChrome = 'Finish signing in in Chrome.';
+  const finishInChrome = 'Finish signing in in your browser.';
   const preparing = () => card(title, sameSignIn, 'Preparing sign-in…', 'progress', null, 'Sign in');
   const checking = () => card(title, sameSignIn, 'Checking sign-in…', 'progress');
   const canceling = () => card(title, sameSignIn, 'Canceling sign-in…', 'progress', null, 'Cancel sign-in');
@@ -33,7 +33,7 @@ export function authorityRecoveryView(state, acting = null) {
   if (acting === 'auth.cancel') return canceling();
   if (acting === 'browser.open' || state.browserLaunchPending || continuing && auth?.state === 'selected'
       && value.authority_recovery_browser === 'ready' && auth.actions.open_browser) return card(title,
-    finishInChrome, 'Opening Chrome…', 'progress', null, 'Open Chrome');
+    finishInChrome, 'Opening browser…', 'progress', null, 'Open browser');
   if (recovery === 'available') return card(title, sameSignIn, '', 'neutral',
     permitted('account.connect') ? 'account.connect' : null, 'Sign in');
   if (recovery === 'preparing') return preparing();
@@ -51,12 +51,12 @@ export function authorityRecoveryView(state, acting = null) {
     const phase = value.authority_recovery_browser;
     const chromeUnavailable = state.error === 'chrome_unavailable';
     if (phase === 'ready' && auth.actions.open_browser) return card(title,
-      chromeUnavailable ? 'Sign-in happens in Chrome.' : finishInChrome, chromeUnavailable ? 'Install Chrome to continue.' : '',
-      chromeUnavailable ? 'warning' : 'neutral', 'browser.open', 'Open Chrome', cancel);
+      chromeUnavailable ? 'Sign in using your browser.' : finishInChrome, chromeUnavailable ? 'Install the required browser to continue.' : '',
+      chromeUnavailable ? 'warning' : 'neutral', 'browser.open', 'Open browser', cancel);
     if (phase === 'launch-claimed') return card(title,
-      'Finish signing in in Chrome when it opens.', 'Waiting for Chrome…', 'progress', null, null, cancel);
+      'Finish signing in in your browser when it opens.', 'Waiting for browser…', 'progress', null, null, cancel);
     if (phase === 'handed-off') return card(title,
-      'Finish signing in in Chrome. This page continues by itself.', 'Waiting for sign-in…', 'progress', null, null, cancel);
+      'Finish signing in in your browser. This page continues by itself.', 'Waiting for sign-in…', 'progress', null, null, cancel);
     return { ...card(title, 'If you didn’t finish signing in, cancel it here.',
       'Sign-in isn’t confirmed.', 'warning', null, null, cancel), cancelPrimary: cancel };
   }

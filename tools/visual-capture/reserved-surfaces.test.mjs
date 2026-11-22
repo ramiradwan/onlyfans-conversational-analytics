@@ -176,7 +176,7 @@ test('desktop step labels and branding fit at 320px and 2× text', async () => {
       assert(geometry.digitHeight <= 24);
       assert(geometry.pageFits);
     }
-    assert.match(await page.getByRole('navigation').ariaSnapshot(), /Set up Chrome[\s\S]*Connect your account[\s\S]*Finish setup/u);
+    assert.match(await page.getByRole('navigation').ariaSnapshot(), /Set up browser access[\s\S]*Connect your account[\s\S]*Finish setup/u);
   });
 });
 
@@ -288,7 +288,7 @@ test('desktop titles wrap freely and narrow step names remain accessible at 320p
         pageFits: document.documentElement.scrollWidth <= innerWidth };
     });
     assert(result.count > 2 && result.fits && result.pageFits && result.clamp === 'none', JSON.stringify(result));
-    assert.match(await page.getByRole('navigation').ariaSnapshot(), /Set up Chrome[\s\S]*Connect your account[\s\S]*Finish setup/u);
+    assert.match(await page.getByRole('navigation').ariaSnapshot(), /Set up browser access[\s\S]*Connect your account[\s\S]*Finish setup/u);
   });
 });
 
@@ -336,7 +336,7 @@ test('native recovery aligns the outlined pending icon in the Trust action row',
 });
 
 for (const mode of ['light', 'dark']) {
-  test(`Chrome task placeholders and narrow handoffs match the boards in ${mode}`, async () => {
+  test(`Browser task placeholders and narrow handoffs render in ${mode}`, async () => {
     await withStaticSurface('browser-task', 1440, 1, mode, 'loading', async (page, render) => {
       for (const [width, size] of [[1440, 16], [390, 16], [320, 32]]) {
         await page.setViewportSize({ width, height: 900 });
@@ -380,7 +380,7 @@ for (const mode of ['light', 'dark']) {
     });
   });
 
-  test(`Chrome task copy and waiting swaps fit at 1440px in ${mode}`, async () => {
+  test(`Browser task copy and waiting swaps fit at 1440px in ${mode}`, async () => {
     await withStaticSurface('browser-task', 1440, 1, mode, 'auth_idle', async (page, render) => {
       const heading = page.locator('#task-title');
       const card = await page.locator('.setup-task-card').elementHandle();
@@ -440,7 +440,7 @@ for (const mode of ['light', 'dark']) {
   });
 }
 
-test('Chrome task cards use the specified spot icons, quiet guidance and pending rows', async () => {
+test('Browser task cards use the specified spot icons, quiet guidance and pending rows', async () => {
   await withStaticSurface('browser-task', 1440, 1, 'light', 'needs_consent', async (page, render) => {
     const expectedSpots = {
       unavailable: 'extension', extension_disconnected: 'app', needs_consent: 'extension', needs_permission: 'extension',
@@ -508,7 +508,7 @@ test('Chrome task cards use the specified spot icons, quiet guidance and pending
   });
 });
 
-test('Chrome task copy wraps freely at 320px and 2× text', async () => {
+test('Browser task copy wraps freely at 320px and 2× text', async () => {
   await withStaticSurface('browser-task', 320, 2, 'dark', 'pairing_saved', async (page, render) => {
     await render(BROWSER_TASK_STATES.auth_idle);
     const signIn = await page.locator('.setup-task-card').elementHandle();

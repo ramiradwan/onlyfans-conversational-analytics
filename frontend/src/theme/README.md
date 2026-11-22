@@ -14,7 +14,7 @@ MUI adapts action intents to `primary` and `secondary`, and feedback intents to 
 
 Components use `theme.vars.palette` or semantic `sx` paths. Static surfaces receive `--dipsy-intent-*` variables. Existing `--dipsy-color-*` variable names remain compatible and resolve through the active intents.
 
-The reserved financial family stays outside runtime tokens, MUI and static CSS. The generator rejects aliases and reuse of its reserved field color. The chart opportunity role and the opportunity metric icon both use measurement jade. The fourth categorical slot uses slate. Chart marks retain their 3:1 qualification.
+The reserved color family stays outside runtime tokens and generated styles. The generator rejects aliases and reuse of its reserved field color. The chart opportunity role and the opportunity metric icon both use measurement jade. The fourth categorical slot uses slate. Chart marks retain their 3:1 qualification.
 
 ## Color validation
 

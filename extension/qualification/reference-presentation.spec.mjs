@@ -338,7 +338,7 @@ for (const width of [320, 390]) {
 test('Preview waiting does not display a verified icon before observer attachment', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.preview_complete, observer: { attachment: 'checking', helper: 'none' } });
   await expect(page.locator('#journey-icon .onboarding-icon')).toHaveAttribute('data-icon', 'pending');
-  await expect(page.locator('#journey-title')).toHaveText('Waiting for OnlyFans messages');
+  await expect(page.locator('#journey-title')).toHaveText('Waiting for messages');
 });
 
 test('D1 setup shows the admitted state through the persistent entry view', async ({ page }) => {
@@ -374,8 +374,8 @@ for (const [width, scale, theme] of [[1440, 16, 'light'], [480, 16, 'dark'], [32
       }));
       expect(countLines).toEqual([1, 1, 1]);
     }
-    await expect(note).toHaveText('Updates stop if you close the OnlyFans tab the extension opened.');
-    await expect(badge).toHaveText('Counting as you use OnlyFans');
+    await expect(note).toHaveText('Updates stop if you close the tab the extension opened.');
+    await expect(badge).toHaveText('Counting messages');
     await expect(action).toHaveCSS('text-align', 'start');
     expect((await box('#journey-primary')).x).toBe((await box('#pause')).x);
     const iconOffset = await note.evaluate((row) => {
@@ -394,7 +394,7 @@ for (const [width, scale, theme] of [[1440, 16, 'light'], [480, 16, 'dark'], [32
     const before = [await box('#journey-primary'), await box('#preview-metrics')];
     const badgeBefore = await box('#journey-badge');
     await page.evaluate(() => window.__surfaceFixture.change({ observer: { attachment: 'checking', helper: 'closed' } }));
-    await expect(reopen).toHaveText('Reopen OnlyFans tab');
+    await expect(reopen).toHaveText('Reopen creator site tab');
     await expect(reopen).toBeVisible();
     await expect(note).toBeHidden();
     await expect(badge).toHaveText('Updates stopped');
@@ -420,7 +420,7 @@ for (const [width, scale, theme] of [[1440, 16, 'light'], [480, 16, 'dark'], [32
     await page.evaluate(() => window.__surfaceFixture.change({ observer: { attachment: 'ready', helper: 'closed' } }));
     await expect(reopen).toBeHidden();
     await expect(note).toBeHidden();
-    await expect(badge).toHaveText('Counting as you use OnlyFans');
+    await expect(badge).toHaveText('Counting messages');
     expect(await reopenCalls()).toBe(1);
   });
 }

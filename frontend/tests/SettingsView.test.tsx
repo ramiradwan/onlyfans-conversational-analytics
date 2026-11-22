@@ -259,7 +259,7 @@ describe('SettingsView history consent', () => {
     expect(screen.queryByText('On', { exact: true })).toBeNull();
     await act(async () => bridgeTransportStore.setAgent({ ...agent, browser: { capture: 'active', site_access: 'granted',
       history_permission: 'granted', legal_review_required: false, reported_at: initial.updated_at } }));
-    expect(screen.queryByRole('button', { name: 'Allow Chrome access' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Allow browser access' })).toBeNull();
     expect(screen.getByText('Waiting', { exact: true })).toBeTruthy();
     expect(api.update).toHaveBeenCalledOnce();
   });
@@ -320,14 +320,14 @@ describe('native history permission return', () => {
     const api = { get: vi.fn(async () => settings), update: vi.fn(), revoke: vi.fn() };
     const browserApi = { open: vi.fn(async () => delivery), setCapture: vi.fn() };
     const view = render(<ThemeProvider theme={theme}><SettingsView api={api} browserApi={browserApi} desktopApi={desktopApi} /></ThemeProvider>);
-    await screen.findByRole('button', { name: 'Allow Chrome access' });
+    await screen.findByRole('button', { name: 'Allow browser access' });
     return { invoke, publish, permission, view, browserApi };
   }
 
   it('focuses once after a requested, confirmed grant, never from mounting or duplicate pushes', async () => {
     const { invoke, permission } = await prepare();
     expect(invoke).not.toHaveBeenCalled();
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Allow Chrome access' })));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Allow browser access' })));
     expect(invoke).not.toHaveBeenCalled();
     await act(async () => permission('granted'));
     await act(async () => permission('granted'));
@@ -338,7 +338,7 @@ describe('native history permission return', () => {
     const { invoke, permission, browserApi } = await prepare();
     let resolve!: (value: 'delivered') => void;
     browserApi.open.mockImplementation(() => new Promise(done => { resolve = done; }));
-    const button = screen.getByRole('button', { name: 'Allow Chrome access' });
+    const button = screen.getByRole('button', { name: 'Allow browser access' });
     await act(async () => { fireEvent.click(button); fireEvent.click(button); });
     expect(button.hasAttribute('disabled')).toBe(true);
     expect(browserApi.open).toHaveBeenCalledOnce();
@@ -351,7 +351,7 @@ describe('native history permission return', () => {
   it.each(['journey', 'generation', 'creator', 'expired', 'failed', 'unmounted', 'unsolicited'] as const)(
     'does not focus after %s permission results', async reason => {
       const { invoke, permission, publish, view } = await prepare(reason === 'failed' ? 'unreachable' : 'delivered');
-      if (reason !== 'unsolicited') await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Allow Chrome access' })));
+      if (reason !== 'unsolicited') await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Allow browser access' })));
       if (reason === 'journey') await act(async () => publish({ journey_id: 'journey-2' }));
       if (reason === 'generation') await act(async () => publish({ generation: 'generation-2' }));
       if (reason === 'creator') await act(async () => bridgeTransportStore.bindAccount('creator-2'));
@@ -384,7 +384,7 @@ describe('history change reconciliation', () => {
     fireEvent.click(await screen.findByRole('checkbox'));
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Turn on message history' })));
     expect(await screen.findByText('Permission needed')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Allow Chrome access' })).toHaveProperty('disabled', false);
+    expect(screen.getByRole('button', { name: 'Allow browser access' })).toHaveProperty('disabled', false);
     expect(screen.queryByText("Your change hasn't been confirmed.")).toBeNull();
     expect(screen.queryByText('Message history settings changed.')).toBeNull();
     expect(api.update).toHaveBeenCalledOnce();
@@ -554,7 +554,7 @@ describe('history recovery after renderer restart', () => {
     nextApi.get.mockResolvedValue(authorized);
     await act(async () => bridgeTransportStore.setAgent({ ...bridgeTransportStore.getState().agent!,
       required_history_settings_revision: 2, applied_history_settings_revision: 2 }));
-    expect(await screen.findByRole('button', { name: 'Allow Chrome access' })).toHaveProperty('disabled', false);
+    expect(await screen.findByRole('button', { name: 'Allow browser access' })).toHaveProperty('disabled', false);
     expect(restarted.getState()).toBeNull();
     expect(createHistoryRecoveryJournal(() => storage).getState()).toBeNull();
     expect(nextApi.update).not.toHaveBeenCalled();

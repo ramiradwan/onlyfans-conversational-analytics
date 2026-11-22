@@ -83,14 +83,13 @@ function TaskSection({ task, previous = false, onCategory, selected, navigation 
   </ChartPanel>;
 }
 
-function FindingsCard({ title, first = false, state, children }: {
-  title: string; first?: boolean; state?: 'loading' | 'unavailable'; children?: ReactNode;
+function FindingsCard({ title, first = false, busy = false, 'data-journey-state': journeyState, children }: {
+  title: string; first?: boolean; busy?: boolean; 'data-journey-state'?: 'findings.unavailable'; children?: ReactNode;
 }) {
   const titleId = useId();
-  const busy = state === 'loading';
   return <Box component="section" className="onboarding-surface" data-composition="first-value"
     aria-label={busy ? title : undefined} aria-labelledby={busy ? undefined : titleId} aria-busy={busy || undefined}
-    data-visual="findings-summary" data-journey-state={state && `findings.${state}`}
+    data-visual="findings-summary" data-journey-state={journeyState}
     sx={(theme) => ({ width: '100%', maxWidth: '68rem', fontFamily: theme.typography.fontFamily,
       ...(first && { '&.onboarding-surface': theme.effects.ambientGlow(theme) }),
       '& > .onboarding-surface-head:last-child, & > .onboarding-surface-head:has(+ .onboarding-status)': { mb: 0 },
@@ -136,7 +135,7 @@ function FindingsSummary({ tasks, title, first, navigation, onCategory, selected
   return <>
     <FindingsCard title={title} first={first}>
       {pricingShare !== null && pricingShare > 0 && <h3 className="onboarding-surface-title" data-visual="findings-headline">
-        Pricing questions come up in {formatRatioPercent(pricingShare)} of fully checked messages
+        One topic appears in {formatRatioPercent(pricingShare)} of fully checked messages
       </h3>}
       {measuredTask && <Stack component="ul" aria-label={`${taskLabel(measuredTask.task)} shares of fully checked messages`}
         spacing={1} sx={{ listStyle: 'none', p: 0, m: 0, '.onboarding-surface-title + &': { mt: 2 } }}>
@@ -328,8 +327,8 @@ function FindingsSession({ baseline, controller, literalsController, presentatio
       <Button onClick={() => selectCategory(null)}>Clear category filter</Button></Alert>}
     {state.established && (baseline || refreshing) && <Button disabled={refreshing || state.status === 'loading'} onClick={() => void refresh()}>Refresh saved findings</Button>}
     {!result && (state.status === 'loading'
-      ? <FindingsCard title={insightTitle} state="loading" />
-      : <FindingsCard title={insightTitle} state="unavailable">
+      ? <FindingsCard title={insightTitle} busy />
+      : <FindingsCard title={insightTitle} data-journey-state="findings.unavailable">
         <OnboardingStatus tone="attention">Insights aren’t available right now.</OnboardingStatus>
       </FindingsCard>)}
     {result && <Stack spacing={2} data-journey-state="findings.results">

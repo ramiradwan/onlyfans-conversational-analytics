@@ -127,7 +127,7 @@ it('shows accepted activation as pending while leaving stale consent actions ina
   expect(screen.getByText('On')).toBeTruthy();
 });
 
-it('names the expected OnlyFans account only after the owner verifies its label', async () => {
+it('names the expected creator account only after the owner verifies its label', async () => {
   const fixture = desktopFixture(false);
   const snapshot = { ...fixture.api.getState().snapshot!, facts: { account: 'verified', authenticated_account_label: 'Provider sign-in' },
     pending_operations: [{ operation_id: decision.operation_id, action: 'activation.review', state: 'outcome_unknown', reason: 'account_mismatch' }] };
@@ -139,7 +139,7 @@ it('names the expected OnlyFans account only after the owner verifies its label'
     creator_label: { creator_id: 'creator-account', display_name: 'Expected account', username: null } } }));
   expect(screen.getByRole('heading', { name: 'Full analytics unavailable' })).toBeTruthy();
   const status = screen.getByRole('status');
-  expect(status.textContent).toBe('You’re signed in to a different OnlyFans account. Switch to Expected account in Chrome to continue.');
+  expect(status.textContent).toBe('You’re signed in to a different creator account. Switch to Expected account in your browser to continue.');
   expect(status.getAttribute('data-tone')).toBe('attention');
   expect(within(status).getByTestId('ErrorOutlineOutlinedIcon')).toBeTruthy();
   expect(screen.queryByRole('button', { name: /activate|review/i })).toBeNull();
@@ -304,8 +304,8 @@ describe('native commercial activation', () => {
     fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, authentication: { ...authentication, state: 'selected',
       actions: { select: false, cancel: true, open_browser: true, switch_account: true } }, allowed_actions: ['auth.switch', 'auth.cancel'] } });
     mount(makeApi(), fixture.api);
-    expect(await screen.findByText('Finish signing in in Chrome.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Open Chrome' })).toBeNull();
+    expect(await screen.findByText('Finish signing in in your browser.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Open browser' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Cancel sign-in' })).toBeNull();
     expect(fixture.api.openBrowser).not.toHaveBeenCalled();
     expect(fixture.api.begin).not.toHaveBeenCalled();
@@ -315,10 +315,10 @@ describe('native commercial activation', () => {
     fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, authentication: { ...authentication, state: 'selected',
       actions: { select: false, cancel: true, open_browser: true, switch_account: false } }, allowed_actions: [] } });
     mount(makeApi(), fixture.api);
-    expect(await screen.findByText('Finish signing in in Chrome.')).toBeTruthy();
+    expect(await screen.findByText('Finish signing in in your browser.')).toBeTruthy();
     await act(async () => fixture.publish({ error }));
-    expect(screen.queryByText('Finish signing in in Chrome.')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Open Chrome' }));
+    expect(screen.queryByText('Finish signing in in your browser.')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Open browser' }));
     await waitFor(() => expect(fixture.api.openBrowser).toHaveBeenCalledExactlyOnceWith(authentication.browser_operation_id));
     expect(fixture.api.begin).not.toHaveBeenCalled();
   });
@@ -343,9 +343,9 @@ describe('native commercial activation', () => {
       pending_operations: [{ operation_id: decision.operation_id, action: 'activation.review', state: 'accepted', reason: 'none' }] } });
     mount(makeApi(), fixture.api);
     expect(await screen.findByText('The activation offer is unavailable.')).toBeTruthy();
-    expect(screen.queryByText('Finish signing in in Chrome.')).toBeNull();
+    expect(screen.queryByText('Finish signing in in your browser.')).toBeNull();
     expect(screen.queryByRole('group', { name: 'Sign-in options' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Open Chrome' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open browser' }));
     await waitFor(() => expect(fixture.api.openBrowser).toHaveBeenCalledExactlyOnceWith(authentication.browser_operation_id));
     expect(fixture.api.begin).not.toHaveBeenCalled();
   });
@@ -357,12 +357,12 @@ describe('native commercial activation', () => {
     fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, authentication: { ...authentication, state: 'admitted',
       actions: { select: false, cancel: true, open_browser: true, switch_account: false } }, allowed_actions: ['auth.cancel'] } });
     mount(makeApi(), { ...fixture.api, openBrowser });
-    fireEvent.click(await screen.findByRole('button', { name: 'Open Chrome' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open browser' }));
     await act(async () => fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!,
       decision_status: { operation_id: decision.operation_id, state: 'accepted' } } }));
     await act(async () => reject(new Error('late browser reply')));
     expect(screen.getByText('Checking your activation…')).toBeTruthy();
-    expect(screen.queryByText('Chrome could not be opened.')).toBeNull();
+    expect(screen.queryByText('The browser could not be opened.')).toBeNull();
     expect(openBrowser).toHaveBeenCalledOnce();
   });
 
@@ -514,7 +514,7 @@ describe('native commercial activation', () => {
     fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, decision_status: { operation_id: decision.operation_id, state: 'awaiting-authentication' }, allowed_actions: [],
       pending_operations: [{ operation_id: decision.operation_id, action: 'activation.review', state: 'accepted', reason: 'none' }] } });
     mount(makeApi(), fixture.api);
-    expect(await screen.findByText('Finish signing in in Chrome.')).toBeTruthy();
+    expect(await screen.findByText('Finish signing in in your browser.')).toBeTruthy();
     expect(fixture.api.begin).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Activate for free' })).toBeNull();
     expect(screen.queryByLabelText('Activation code')).toBeNull();

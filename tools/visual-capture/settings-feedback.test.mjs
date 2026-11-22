@@ -204,9 +204,9 @@ test('Settings shows full history status inline at 320px and doubled text', asyn
     assert(await textFits(status));
     assert(await history.getByRole('button', { name: 'Pause', exact: true }).isVisible());
     await push(page, 'browser', { history_permission: 'missing' });
-    await status.getByText('Older messages start syncing after Chrome allows access.', { exact: true }).waitFor();
+    await status.getByText('Older messages start syncing after you allow access in your browser.', { exact: true }).waitFor();
     assert(await textFits(status));
-    assert(await history.getByRole('button', { name: 'Allow Chrome access' }).isVisible());
+    assert(await history.getByRole('button', { name: 'Allow browser access' }).isVisible());
   } finally { await owner.close(); }
 });
 

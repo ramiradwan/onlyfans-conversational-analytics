@@ -80,7 +80,7 @@ describe('TaskFindings', () => {
 
   it('uses complete topic support and keeps saved-window evidence and uncertainty', async () => {
     setup({ read: async request => parseFindings(pricingFinding(request), request) });
-    const headline = await screen.findByRole('heading', { name: /^Pricing questions come up in 50\s*% of fully checked messages$/ });
+    const headline = await screen.findByRole('heading', { name: /^One topic appears in 50\s*% of fully checked messages$/ });
     expect(headline).toBeTruthy();
     expect(screen.getByText(/Available message dates:.*All directions/)).toBeTruthy();
     expect(screen.getAllByText(/Unassessed or uncertain messages do not count as confirmed absence/)).toHaveLength(4);
