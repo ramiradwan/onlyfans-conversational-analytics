@@ -1,20 +1,35 @@
 @import url("./onboarding-theme.css");
 
-:root { color-scheme: light dark; font-family: var(--dipsy-font-family); color: var(--dipsy-color-text); background: var(--dipsy-color-background); }
+:root { color-scheme: light dark; font-family: var(--dipsy-font-family-ui); color: var(--dipsy-color-text); background: var(--dipsy-color-background); }
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 0; min-height: 100vh; background: var(--dipsy-color-background); }
-header { height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px 0 20px; border-bottom: 1px solid var(--dipsy-color-divider); font-size: 13px; font-weight: 600; }
-header[data-desktop-drag-region] { app-region: drag; -webkit-app-region: drag; }
-desktop-window-controls { app-region: no-drag; -webkit-app-region: no-drag; }
-main { min-height: calc(100vh - 48px); display: grid; place-items: center; padding: 24px; }
-.startup-card { width: min(100%, 640px); padding: 36px; border: 1px solid var(--dipsy-color-divider); border-radius: 20px; background: var(--dipsy-color-paper); box-shadow: var(--dipsy-shadow-raised); }
-.spot { width: 48px; height: 48px; display: grid; place-items: center; margin-bottom: 24px; border: 1px solid var(--dipsy-color-divider); border-radius: 14px; background: var(--dipsy-color-surface-subtle); color: var(--dipsy-color-text-secondary); }
-.spot span { width: 18px; height: 14px; border: 2px solid currentColor; border-radius: 3px; position: relative; }
-.spot span::after { content: ""; position: absolute; width: 8px; height: 2px; left: 3px; bottom: -5px; background: currentColor; }
-h1 { margin: 0 0 12px; font-size: 26px; line-height: 1.24; font-weight: 600; letter-spacing: -0.025em; }
-p { margin: 0; color: var(--dipsy-color-text-secondary); font-size: 16px; line-height: 1.5; }
-.status-line { display: flex; align-items: center; gap: 10px; }
-.status-line p { color: var(--dipsy-color-text-secondary); }
-.pending { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--dipsy-color-primary); }
-@media (max-width: 480px) { main { padding: 16px; } .startup-card { padding: 24px; } h1 { font-size: 23px; } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+body { margin: 0; min-width: 0; min-height: 100vh; background: var(--dipsy-color-background); color: var(--dipsy-color-text); font: 400 1rem/1.55 var(--dipsy-font-family-ui); }
+.setup-header { display: flex; align-items: center; gap: calc(2 * var(--dipsy-space-unit)); min-height: var(--dipsy-static-header-height); padding: 12px 24px 12px var(--dipsy-static-brand-inset); border-bottom: 1px solid var(--dipsy-color-divider); }
+.setup-brand { display: flex; flex: none; align-items: center; gap: calc(1.25 * var(--dipsy-space-unit)); font-size: 1rem; font-weight: 600; letter-spacing: -.02em; white-space: nowrap; }
+.brand-mark { display: grid; place-items: center; flex: 0 0 var(--dipsy-static-brand-size); inline-size: var(--dipsy-static-brand-size); block-size: var(--dipsy-static-brand-size); border-radius: var(--dipsy-radius-compact); color: var(--dipsy-intent-brand-contrast-text); background: linear-gradient(140deg, var(--dipsy-intent-brand-light), var(--dipsy-intent-brand-main)); }
+.brand-mark svg { inline-size: var(--dipsy-static-brand-glyph-size); block-size: var(--dipsy-static-brand-glyph-size); stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
+.brand-mark circle { fill: currentColor; stroke: none; }
+desktop-window-controls { flex: 0 0 auto; margin-inline-start: auto; app-region: no-drag; -webkit-app-region: no-drag; }
+[data-desktop-drag-region] { user-select: none; -webkit-user-select: none; app-region: drag; -webkit-app-region: drag; }
+.setup-main { inline-size: 100%; max-inline-size: 880px; margin-inline: auto; padding: 48px 32px 64px; }
+.startup-card { display: flex; flex-direction: column; align-items: stretch; inline-size: 100%; min-inline-size: 0; padding: 32px; border: 1px solid var(--dipsy-intent-surface-dominant-border); border-radius: var(--dipsy-radius-surface); background: var(--dipsy-color-paper); box-shadow: var(--dipsy-intent-surface-dominant-elevation); }
+.task-head { display: flex; align-items: center; gap: 12px; margin-block-end: 16px; }
+.spot-tile { display: grid; place-items: center; flex: none; inline-size: 40px; block-size: 40px; border-radius: var(--dipsy-radius-control); background: var(--dipsy-color-surface-subtle); box-shadow: inset 0 0 0 1px var(--dipsy-color-divider); color: var(--dipsy-color-text-secondary); }
+.spot-tile svg { display: block; inline-size: 20px; block-size: 20px; }
+h1 { margin: 0; font-size: clamp(1.375rem, 1.1rem + .9vw, 1.75rem); font-weight: 600; line-height: 1.25; letter-spacing: -.015em; text-wrap: balance; }
+.startup-card > p { max-inline-size: 60ch; margin: 8px 0 0; color: var(--dipsy-color-text-secondary); font-size: 1rem; line-height: 1.5; }
+.status-line { display: flex; align-items: flex-start; gap: 10px; min-block-size: var(--dipsy-static-control-height); margin-block-start: 16px; padding-block: max(0px, calc((var(--dipsy-static-control-height) - 1lh) / 2)); font-size: .9375rem; line-height: 1.5; }
+.status-icon { display: grid; place-items: center; flex: none; inline-size: 20px; block-size: 1lh; color: var(--dipsy-color-primary); }
+.status-icon .si-pending { display: block; inline-size: 20px; block-size: 20px; animation: status-rotate 1s linear infinite; }
+.status-line p { max-inline-size: 60ch; margin: 0; color: var(--dipsy-color-text); font-size: inherit; line-height: inherit; }
+@keyframes status-rotate { to { transform: rotate(360deg); } }
+@media (max-width: 600px) {
+  .setup-header { padding-inline: 16px 8px; }
+  .setup-header:has(> desktop-window-controls:defined) .brand-name { display: none; }
+  .setup-main { padding: 24px 16px 48px; }
+  .startup-card { padding: 24px; }
+}
+@media (max-width: 420px) {
+  .setup-main { padding-inline: 12px; }
+  .startup-card { padding: 24px 20px; }
+}
+@media (prefers-reduced-motion: reduce) { .status-icon .si-pending { animation: none; } }

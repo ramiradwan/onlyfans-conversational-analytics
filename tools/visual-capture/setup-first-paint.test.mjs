@@ -17,13 +17,24 @@ test('native startup documents expose settled copy and preserve native semantics
   const css = files['shell.css'];
   const theme = files['onboarding-theme.css'];
   assert.match(waiting, /<h1 id="startup-title">Opening Conversation Analytics<\/h1>/);
-  assert.match(waiting, /role="status">Getting things ready on this computer…<\/p>/);
+  assert.match(waiting, /role="status"[^>]*>Getting things ready on this computer…<\/p>/);
   assert.match(unavailable, /<h1>Conversation Analytics can’t start right now<\/h1>/);
   assert.match(unavailable, /Quit Conversation Analytics from its icon near the Windows clock, then open it again\./);
   assert.match(recovery, /<h1>Can’t open your saved data<\/h1>/);
   assert.match(recovery, /role="alert"/);
   assert.match(recovery, /Keep your existing data and keys\./);
   assert.match(recovery, /If the problem continues, contact your administrator\./);
+  for (const html of [waiting, unavailable, recovery]) {
+    assert.match(html, /class="setup-header"/);
+    assert.match(html, /class="brand-mark"/);
+    assert.match(html, /class="spot-tile"[^>]*aria-hidden="true"><svg[^>]+width="20"[^>]+height="20"/);
+  }
+  assert.match(recovery, /StorageOutlined/);
+  assert.match(waiting, /class="status-icon"[^>]*aria-hidden="true"><svg[^>]*class="si-pending"/);
+  assert.match(css, /--dipsy-intent-surface-dominant-border/);
+  assert.match(css, /--dipsy-intent-surface-dominant-elevation/);
+  assert.match(css, /font-size:\s*clamp\(1\.375rem,\s*1\.1rem\s*\+\s*\.9vw,\s*1\.75rem\)/);
+  assert.match(css, /prefers-reduced-motion/);
   assert.match(waiting, /data-desktop-drag-region/);
   assert.match(waiting, /<desktop-window-controls><\/desktop-window-controls>/);
   assert.match(css, /onboarding-theme\.css/);
@@ -52,6 +63,7 @@ test('native startup first paint uses local assets and fits narrow 2x viewports 
     for (const scheme of ['light', 'dark']) {
       const context = await browser.newContext({ colorScheme: scheme, viewport: { width: 320, height: 640 }, deviceScaleFactor: 2 });
       const page = await context.newPage();
+      await page.addInitScript(() => customElements.define('desktop-window-controls', class extends HTMLElement {}));
       const errors = [];
       page.on('request', request => { if (new URL(request.url()).origin !== `http://127.0.0.1:${address.port}`) errors.push('external request'); });
       await page.goto(`http://127.0.0.1:${address.port}/index.html`, { waitUntil: 'networkidle' });
@@ -63,19 +75,60 @@ test('native startup first paint uses local assets and fits narrow 2x viewports 
         font: document.fonts.check('16px "Inter Variable"'),
         heading: document.querySelector('h1').getBoundingClientRect().height,
         role: document.querySelector('[role="status"]')?.textContent,
+        headerHeight: document.querySelector('header').getBoundingClientRect().height,
+        tile: document.querySelector('.spot-tile').getBoundingClientRect().width,
+        titleSize: parseFloat(getComputedStyle(document.querySelector('h1')).fontSize),
+        bodySize: parseFloat(getComputedStyle(document.querySelector('body')).fontSize),
+        pendingAnimation: getComputedStyle(document.querySelector('.si-pending')).animationName,
+        statusColor: getComputedStyle(document.querySelector('[role="status"]')).color,
+        ink: getComputedStyle(document.body).color,
+        statusHeight: document.querySelector('.status-line').getBoundingClientRect().height,
+        statusTop: document.querySelector('.status-line').getBoundingClientRect().top,
+        titleBottom: document.querySelector('h1').getBoundingClientRect().bottom,
       }));
       assert.ok(metrics.overflow <= 1, `${scheme} 320px overflow: ${metrics.overflow}`);
       assert.ok(metrics.font, 'local Inter font must load');
       assert.ok(metrics.bg && metrics.text && metrics.heading > 0);
       assert.equal(metrics.role, 'Getting things ready on this computer…');
+      assert.equal(metrics.headerHeight, 72);
+      assert.equal(metrics.tile, 40);
+      assert.equal(metrics.statusColor, metrics.ink);
+      assert.equal(metrics.pendingAnimation, 'status-rotate');
+      assert.ok(metrics.statusHeight >= 44);
+      assert.ok(metrics.statusTop - metrics.titleBottom >= 15);
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      assert.equal(await page.locator('.si-pending').evaluate(node => getComputedStyle(node).animationName), 'none');
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      await page.addStyleTag({ content: 'html { font-size: 32px !important; }' });
+      const zoomed = await page.evaluate(() => ({
+        title: parseFloat(getComputedStyle(document.querySelector('h1')).fontSize),
+        body: parseFloat(getComputedStyle(document.body).fontSize),
+        header: parseFloat(getComputedStyle(document.querySelector('.brand-name')).fontSize),
+        overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth,
+      }));
+      assert.ok(zoomed.title >= 44, `title must scale with text size: ${zoomed.title}`);
+      assert.equal(zoomed.body, 32);
+      assert.equal(zoomed.header, 32);
+      assert.ok(zoomed.overflow <= 1, `320px 2x text overflow: ${zoomed.overflow}`);
       assert.deepEqual(errors, []);
-      await page.setViewportSize({ width: 1440, height: 900 });
-      await page.goto(`http://127.0.0.1:${address.port}/unavailable.html`, { waitUntil: 'networkidle' });
-      const titleLines = await page.locator('h1').evaluate(node => {
-        const range = document.createRange(); range.selectNodeContents(node);
-        return range.getClientRects().length;
-      });
-      assert.equal(titleLines, 1, `${scheme} unavailable title must occupy one line at 1440px`);
+      for (const path of ['index.html', 'unavailable.html', 'data-recovery.html']) {
+        await page.setViewportSize({ width: 320, height: 640 });
+        await page.goto(`http://127.0.0.1:${address.port}/${path}`, { waitUntil: 'networkidle' });
+        await page.addStyleTag({ content: 'html { font-size: 32px !important; }' });
+        const narrow = await page.evaluate(() => ({
+          overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth,
+          title: parseFloat(getComputedStyle(document.querySelector('h1')).fontSize),
+        }));
+        assert.ok(narrow.overflow <= 1, `${scheme} ${path} 320px 2x text overflow: ${narrow.overflow}`);
+        assert.ok(narrow.title >= 44, `${scheme} ${path} title did not scale: ${narrow.title}`);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.goto(`http://127.0.0.1:${address.port}/${path}`, { waitUntil: 'networkidle' });
+        const titleLines = await page.locator('h1').evaluate(node => {
+          const range = document.createRange(); range.selectNodeContents(node);
+          return range.getClientRects().length;
+        });
+        assert.equal(titleLines, 1, `${scheme} ${path} title must occupy one line at 1440px`);
+      }
       await context.close();
     }
     assert.ok(seen.includes('/inter-latin-opsz-normal.woff2'), 'the packaged font asset must be requested');
