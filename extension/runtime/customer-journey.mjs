@@ -247,7 +247,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.ACTIVATION_REQUIRED,
       tone: 'warning',
       title: 'Set up Full analytics',
-      body: 'Continue in Settings in the desktop app.',
+      body: setup ? 'Continue in the desktop app.' : 'Continue in Settings in the desktop app.',
       primaryAction: 'open_dashboard',
       primaryLabel: 'Open desktop app',
       secondaryAction: null,

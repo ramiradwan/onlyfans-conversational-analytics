@@ -23,7 +23,15 @@ const mutations = ['revoke', 'forget-companion', 'history', 'clear-preview', 'de
 function render(model) {
   const { status, legal } = model;
   renderLoading(status, failed);
-  for (const id of ['capture', 'connection', 'data']) show(id, status !== null);
+  const historyHandoff = document.querySelector('main').dataset.permissionHandoff === 'true';
+  const historyStatus = element('history-status');
+  const historyStatusRegion = historyStatus.closest('.options-state');
+  const historyChecking = historyHandoff && !status && !failed;
+  if (historyChecking) {
+    show('loading', false);
+    historyStatusRegion.setAttribute('aria-busy', 'true');
+  } else historyStatusRegion.removeAttribute('aria-busy');
+  for (const id of ['capture', 'connection', 'data']) show(id, status !== null || id === 'connection' && historyHandoff && !failed);
   for (const id of mutations) page.lock(id, !status);
   renderLegalLinks(legal);
   if (!status) return;

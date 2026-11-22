@@ -10,6 +10,19 @@ for (const request of ['ofca.ui.status', 'ofca.legal-activation.status']) {
     await expect(page.locator('#loading')).toHaveAccessibleName('Loading setup');
     await expect(page.locator('#loading')).toHaveText('');
     await expect(page.locator('#loading')).toHaveAttribute('role', 'status');
+    const bars = await page.locator('#loading .loading-placeholder > span').evaluateAll((nodes) => {
+      const [first] = nodes;
+      const previous = getComputedStyle(first).backgroundColor;
+      first.style.backgroundColor = 'var(--dipsy-intent-surface-placeholder)';
+      const expected = getComputedStyle(first).backgroundColor;
+      first.style.removeProperty('background-color');
+      return { count: nodes.length, colors: [previous, ...nodes.slice(1).map(node => getComputedStyle(node).backgroundColor)],
+        expected, actionHeight: nodes.at(-1).getBoundingClientRect().height,
+        controlHeight: Number.parseFloat(getComputedStyle(first).getPropertyValue('--dipsy-static-control-height')) };
+    });
+    expect(bars.count).toBe(4);
+    expect(bars.colors).toEqual(Array(4).fill(bars.expected));
+    expect(bars.actionHeight).toBe(bars.controlHeight);
     await expect(page.locator('main')).toBeHidden();
     await expect(page.locator('.onboarding-footer')).toBeHidden();
     const header = await page.locator('.onboarding-header').boundingBox();
@@ -105,9 +118,103 @@ for (const theme of ['light', 'dark']) {
       await expect(page.locator('#setup-progress, #pairing-code')).toHaveCount(0);
       if (name === 'pairing_compare') await expect(page.locator('#desktop-comparison-code')).toBeVisible();
       else await expect(page.locator('#desktop-comparison-code')).toBeHidden();
+      if (name === 'pairing_compare') await expect(page.locator('#desktop-comparison-code')).toHaveCSS('font-size', '80px');
       await expect(page.locator('#open-desktop')).toBeEnabled();
     }
     await page.screenshot({ path: info.outputPath(`handoff-320-200-${theme}.png`), fullPage: true });
+  });
+}
+
+for (const [width, textSize] of [[1440, 16], [390, 16], [320, 32]]) {
+  for (const theme of ['light', 'dark']) {
+    test(`visual review: desktop launch keeps the body and actions anchored at ${width}px in ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 960 });
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
+      await renderSurfaceState(page, SURFACE_STATES.full_handoff);
+      await page.evaluate((size) => {
+        document.documentElement.style.fontSize = `${size}px`;
+        const send = chrome.runtime.sendMessage;
+        chrome.runtime.sendMessage = (message) => message.action !== 'prepare_launch' ? send(message)
+          : new Promise(resolve => { window.__finishLaunch = () => resolve({ ok: false }); });
+      }, textSize);
+      const layout = () => page.locator('#desktop-entry').evaluate(card => {
+        const top = card.getBoundingClientRect().top;
+        return [...card.querySelectorAll('#desktop-entry-title, #desktop-entry-body, #desktop-setup-code, button')].map(node => {
+          const rect = node.getBoundingClientRect();
+          return [rect.top - top, rect.height];
+        });
+      });
+      const body = page.locator('#desktop-entry-body');
+      const originalBody = await body.textContent();
+      const original = await layout();
+      const action = page.locator('#open-desktop');
+      const spot = page.locator('#desktop-icon-mark');
+      const status = page.locator('#desktop-launch-status');
+      await action.click();
+      await expect(status).toHaveText('Waiting for the desktop app…');
+      await expect(spot).toHaveAttribute('data-icon', 'app');
+      await expect(status.locator('#desktop-launch-mark')).toHaveAttribute('data-icon', 'pending');
+      await expect(action).toBeDisabled();
+      expect(await action.evaluate((button) => {
+        const context = document.createElement('canvas').getContext('2d');
+        const style = getComputedStyle(button);
+        const lightness = (color) => {
+          context.fillStyle = color;
+          context.fillRect(0, 0, 1, 1);
+          const rgb = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3).map(value => value / 255);
+          return rgb.reduce((sum, value, index) => sum + [0.2126, 0.7152, 0.0722][index]
+            * (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4), 0);
+        };
+        const [dark, light] = [lightness(style.color), lightness(style.backgroundColor)].sort((left, right) => left - right);
+        return (light + 0.05) / (dark + 0.05);
+      })).toBeGreaterThanOrEqual(4.5);
+      await expect(body).toHaveText(originalBody);
+      expect(await layout()).toEqual(original);
+      await page.evaluate(() => window.__finishLaunch());
+      await expect(status).toHaveText('Desktop connection not confirmed');
+      await expect(action).toBeEnabled();
+      expect(await layout()).toEqual(original);
+      await page.evaluate(() => window.__surfaceFixture.change({ mode: 'full', paired: true, reachable: false }));
+      await expect(page.locator('#desktop-entry-title')).toHaveText('Desktop connection not confirmed');
+      await expect(status).toBeHidden();
+      await page.evaluate(() => window.__surfaceFixture.change({ mode: 'preview', paired: false }));
+      await page.evaluate(() => window.__surfaceFixture.change({ adopted: true, browserTask: false }));
+      await expect(status).toHaveText('The desktop app has this browser’s setup request. Continue there.');
+      await expect(spot).toHaveAttribute('data-icon', 'app');
+      await expect(status.locator('#desktop-launch-mark')).toHaveAttribute('data-icon', 'done');
+      expect(await layout()).toEqual(original);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    });
+  }
+}
+
+test('visual review: connection status unavailable has no desktop action or setup-code hint', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.extension_connection_unknown);
+  await expect(page.locator('#desktop-entry-title')).toHaveText('Connection status unavailable');
+  await expect(page.locator('#desktop-entry button:visible')).toHaveCount(0);
+  await expect(page.locator('#desktop-setup-code')).toBeHidden();
+  await expect(page.locator('#desktop-icon-mark')).toHaveAttribute('data-icon', 'offline');
+});
+
+test('visual review: setup readiness uses the approved spot icons and desktop guidance', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.activation_required);
+  const body = page.locator('#desktop-entry-body');
+  const icon = page.locator('#desktop-icon-mark');
+  await expect(body).toHaveText('Continue in the desktop app.');
+  await expect(icon).toHaveAttribute('data-icon', 'insights');
+  await page.evaluate(() => window.__surfaceFixture.change({ commercial: 'unavailable' }));
+  await expect(icon).toHaveAttribute('data-icon', 'offline');
+  await page.evaluate(() => window.__surfaceFixture.change({ commercial: 'active', ready: true }));
+  await expect(icon).toHaveAttribute('data-icon', 'insights');
+  await page.evaluate(() => window.__surfaceFixture.change({ sleeping: true }));
+  await expect(icon).toHaveAttribute('data-icon', 'pause');
+});
+
+for (const reauthorization of [false, true]) {
+  test(`visual review: paused Preview has one status heading with review ${reauthorization}`, async ({ page }) => {
+    await renderSurfaceState(page, { ...SURFACE_STATES.preview_complete, mode: 'paused', resume: 'preview', reauthorization });
+    await expect(page.locator('#journey-title')).toHaveText('Analytics paused');
+    await expect(page.locator('#journey-badge')).toBeHidden();
   });
 }
 
@@ -134,6 +241,9 @@ for (const width of [1440, 390, 320]) {
         if (name === 'preview_complete') {
           await expect(page.locator('#messages-count')).toHaveText('128');
           await expect(page.locator('#setup-progress')).toBeHidden();
+        }
+        if (name === 'permission_required') {
+          await expect(page.locator('#access-card .onboarding-icon')).toHaveAttribute('data-icon', 'attention');
         }
         if (width === 1440) {
           await page.evaluate(() => document.fonts.ready);
@@ -266,6 +376,14 @@ for (const [width, scale, theme] of [[1440, 16, 'light'], [480, 16, 'dark'], [32
     }
     await expect(note).toHaveText('Updates stop if you close the OnlyFans tab the extension opened.');
     await expect(badge).toHaveText('Counting as you use OnlyFans');
+    await expect(action).toHaveCSS('text-align', 'start');
+    expect((await box('#journey-primary')).x).toBe((await box('#pause')).x);
+    const iconOffset = await note.evaluate((row) => {
+      const [icon, copy] = row.children;
+      const iconBox = icon.getBoundingClientRect();
+      return iconBox.top + iconBox.height / 2 - copy.getBoundingClientRect().top;
+    });
+    expect(iconOffset).toBe(Number.parseFloat(await note.evaluate((row) => getComputedStyle(row).lineHeight)) / 2);
     await expect(reopen).toBeHidden();
     const open = await box('#background-tab-note');
     expect((await box('.background-tab-row')).height).toBe(open.height);
@@ -329,6 +447,12 @@ test('the owned comparison displays the admitted code until the original attempt
   await expect(page.locator('#desktop-entry-body')).toHaveText('Check that the desktop app shows the same code, then confirm there. Keep this tab open.');
   const code = page.locator('#desktop-comparison-code');
   await expect(code).toHaveText('483 217');
+  await expect(code).toHaveCSS('font-size', '44px');
+  await expect(code).toHaveCSS('font-weight', '700');
+  const bodyBounds = await page.locator('#desktop-entry-body').boundingBox();
+  const codeBounds = await code.boundingBox();
+  expect(codeBounds.y).toBeGreaterThanOrEqual(bodyBounds.y + bodyBounds.height);
+  expect(codeBounds.y + codeBounds.height).toBeLessThanOrEqual((await page.locator('#open-desktop').boundingBox()).y);
   await page.evaluate(() => window.__surfaceFixture.change({ pairing: 'pairing_failed' }));
   await expect(code).toBeHidden();
   await expect(page.locator('#desktop-entry-title')).toHaveText('Connection didn’t finish');
@@ -374,6 +498,7 @@ for (const { width, textScale } of [{ width: 1280, textScale: 1 }, { width: 390,
       expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0);
       await consent.click();
       await expect(page.locator('#access-title')).toBeFocused();
+      await expect(page.locator('#access-card .onboarding-icon')).toHaveAttribute('data-icon', 'extension');
       const access = await position(page);
       expect(access.heading.top).toBeGreaterThanOrEqual(0);
       expect(access.heading.bottom).toBeLessThanOrEqual(access.height);

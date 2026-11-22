@@ -30,7 +30,7 @@
     </header>
     <section id="loading" class="onboarding-card onboarding-loading" role="status" aria-label="Loading setup" aria-busy="true">
       <div class="loading-placeholder" aria-hidden="true">
-        <span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span>
       </div>
     </section>
   <main class="onboarding-content" data-presentation-ready="false">
@@ -43,13 +43,13 @@
       <span id="desktop-entry-icon" class="onboarding-status-icon" aria-hidden="true"><span id="desktop-icon-mark" class="onboarding-icon" data-icon="app"></span></span>
       <h2 id="desktop-entry-title" tabindex="-1">Full analytics uses the desktop app</h2>
       <p id="desktop-entry-body" role="status" aria-live="polite"></p>
+      <p id="desktop-comparison-code" class="pairing-code hidden" aria-label="Connection code" role="status"></p>
       <p id="desktop-setup-code" class="fine-print">Have a setup code? Enter it in the desktop app.</p>
       <div class="journey-actions">
         <button id="open-desktop" class="primary" type="button">Open desktop app</button>
         <button id="download-desktop" class="secondary outlined hidden" type="button">Download desktop app</button>
         <button id="desktop-back" class="text-button" type="button">Back</button>
       </div>
-      <p id="desktop-comparison-code" class="hidden" aria-label="Connection code" role="status"></p>
       <p id="desktop-launch-status" class="desktop-launch-status hidden" role="status"><span id="desktop-launch-mark" class="onboarding-icon" aria-hidden="true"></span><span id="desktop-launch-message"></span></p>
     </section>
     <section id="start-choice" class="onboarding-card hidden" aria-labelledby="start-title" data-composition="decision">
@@ -125,7 +125,7 @@
   </div>
       </section>
     <section id="access-card" class="journey-card onboarding-card hidden" aria-labelledby="access-title" data-composition="guided">
-      <span class="onboarding-status-icon" aria-hidden="true"><span class="onboarding-icon" data-icon="lock"></span></span>
+      <span class="onboarding-status-icon" aria-hidden="true"><span id="access-icon-mark" class="onboarding-icon" data-icon="extension"></span></span>
       <h2 id="access-title" tabindex="-1"></h2>
       <p id="access-body"></p>
       <button id="restore-access" class="primary hidden">Allow site access</button>

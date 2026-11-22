@@ -139,36 +139,40 @@ function setFullReview(value) {
 function renderDesktop(model, journey) {
   const launch = desktopLaunch.state;
   const opening = launch === 'opening';
-  const unconfirmed = launch === 'unconfirmed';
-  const adopted = launch === 'adopted';
   const comparison = model.pairing?.state === 'compare' && model.pairing.owns_attempt && model.pairing.comparison_code;
   const compare = journey?.id === 'pairing_in_progress' && comparison;
-  const launchUnconfirmed = unconfirmed && (!journey || ['desktop_app_needed', 'desktop_app_unavailable'].includes(journey.id));
+  const passiveConnection = journey?.id === 'setup_incomplete' && model.pairing?.state === 'unavailable';
+  const launchUnconfirmed = launch === 'unconfirmed' && (!journey || journey.id === 'desktop_app_needed');
   const fullReady = journey?.id === 'full_ready';
   const openOnlyFans = journey?.primaryAction === 'open_creator_account';
-  const status = opening ? 'Waiting for the desktop app…'
-    : adopted && !journey ? 'The desktop app has this browser’s setup request. Continue there.' : '';
-  const tone = launchUnconfirmed ? 'warning' : journey?.tone ?? (opening ? 'progress' : adopted ? 'success' : 'info');
-  const icon = tone === 'progress' ? 'pending' : tone === 'success' ? 'done' : tone === 'error' ? 'error'
-    : tone === 'warning' ? 'attention' : 'app';
+  const status = passiveConnection ? '' : opening ? 'Waiting for the desktop app…'
+    : launch === 'adopted' && !journey ? 'The desktop app has this browser’s setup request. Continue there.'
+      : launchUnconfirmed ? 'Desktop connection not confirmed' : '';
+  const tone = journey?.tone ?? 'info';
+  const icon = compare ? 'link' : fullReady || journey?.id === 'activation_required' ? 'insights'
+    : openOnlyFans ? journey.id === 'full_unavailable' ? 'pause' : 'browser'
+      : journey?.id === 'activation_unavailable' || passiveConnection && tone === 'warning' ? 'offline'
+        : ({ progress: opening && status ? 'app' : 'pending', success: 'done', error: 'error', warning: 'attention' })[tone] ?? 'app';
   element('desktop-entry').dataset.tone = tone;
-  element('desktop-entry').dataset.journeyState = launchUnconfirmed ? 'desktop_not_confirmed' : journey?.id ?? 'extension.full_handoff';
+  element('desktop-entry').dataset.journeyState = journey?.id ?? 'extension.full_handoff';
+  element('desktop-entry').dataset.launchState = launch;
   element('desktop-entry').dataset.composition = compare ? 'decision' : 'guided';
-  element('desktop-icon-mark').dataset.icon = compare ? 'link' : openOnlyFans ? 'browser' : icon;
-  text('desktop-entry-title', launchUnconfirmed ? 'Desktop connection not confirmed' : journey?.title ?? 'Full analytics uses the desktop app');
-  text('desktop-entry-body', launchUnconfirmed ? 'Open the desktop app to finish connecting.' : journey?.body
-    ?? (status ? '' : 'Your conversation insights are stored on this computer. Open the desktop app to continue setup.'));
+  element('desktop-icon-mark').dataset.icon = icon;
+  text('desktop-entry-title', journey?.title ?? 'Full analytics uses the desktop app');
+  text('desktop-entry-body', journey?.body
+    ?? 'Your conversation insights are stored on this computer. Open the desktop app to continue setup.');
   text('desktop-launch-message', status);
-  element('desktop-launch-mark').dataset.icon = opening ? 'pending' : 'done';
+  element('desktop-launch-mark').dataset.icon = opening ? 'pending' : launchUnconfirmed ? 'attention' : 'done';
   show('desktop-launch-status', Boolean(status));
-  show('desktop-setup-code', !fullReady && !openOnlyFans && !compare && !model.pairing?.desktop_control && !model.desktopRuntimeReachable);
+  const desktopResources = !passiveConnection && !fullReady && !openOnlyFans && !compare && !model.desktopRuntimeReachable;
+  show('desktop-setup-code', desktopResources && !model.pairing?.desktop_control);
   text('desktop-comparison-code', compare ? `${comparison.slice(0, 3)} ${comparison.slice(3)}` : '');
   show('desktop-comparison-code', Boolean(compare));
   element('open-desktop').dataset.action = openOnlyFans ? 'open_creator_account' : 'open_desktop';
   text('open-desktop', fullReady || openOnlyFans ? journey.primaryLabel : 'Open desktop app');
+  show('open-desktop', !passiveConnection);
   page.lock('open-desktop', opening || !workspaceRecord);
-  show('download-desktop', !fullReady && !openOnlyFans && !compare && !model.desktopRuntimeReachable
-    && secureExternalUrl(model.config.desktop_app_download_url) !== null);
+  show('download-desktop', desktopResources && secureExternalUrl(model.config.desktop_app_download_url) !== null);
 }
 function render(model) {
   desktopLaunch.observe(desktopAdoption);
@@ -280,6 +284,7 @@ function render(model) {
   text('access-title', pendingAccess ? 'Allow site access' : 'Site access needed');
   text('access-body', pendingAccess ? 'Allow the extension to read activity from your OnlyFans account.'
     : 'Allow site access to receive activity from OnlyFans.');
+  element('access-icon-mark').dataset.icon = pendingAccess ? 'extension' : 'attention';
   show('restore-access', Boolean(pendingAccess) || status.phase === 'permission_required');
   renderJourney(currentJourney, model);
   const preview = mode === 'preview' || (mode === 'paused' && status.consent.resume_mode === 'preview');
@@ -294,7 +299,7 @@ function render(model) {
   const daily = previewCounts(status.preview);
   text('metrics-range', daily.label);
   for (const [id, key] of [['messages-count', 'message_observations'], ['inbound-count', 'inbound_observations'], ['outbound-count', 'outbound_observations']]) text(id, new Intl.NumberFormat().format(daily.counts[key] ?? 0));
-  if (currentJourney.id === 'analytics_off') {
+  if (['analytics_off', 'paused'].includes(currentJourney.id)) {
     text('journey-badge', '');
   }
   if (currentJourney.id === 'preview_available') {

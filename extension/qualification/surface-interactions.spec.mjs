@@ -332,6 +332,37 @@ test('options history permission uses the approved copy and preserves denied acc
   expect(permission.userGesture).toBe(true);
 });
 
+for (const width of [1440, 390]) {
+  test(`history handoff checking uses a busy placeholder and no tall empty row at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.addInitScript(() => { location.hash = '#history'; });
+    const rendering = renderSurfaceState(page, { ...SURFACE_STATES.connection, hash: undefined, initialRequestHold: 'ofca.ui.status' });
+    await page.waitForFunction(() => typeof window.__releaseInitialRequest === 'function');
+    await expect(page.locator('#loading')).toBeHidden();
+    await expect(page.locator('#connection')).toBeVisible();
+    const status = page.locator('#history-status');
+    const state = status.locator('..');
+    await expect(state).toHaveAttribute('aria-busy', 'true');
+    await expect(status).toBeEmpty();
+    const placeholder = await status.evaluate((node) => ({
+      content: getComputedStyle(node, '::before').content,
+      height: parseFloat(getComputedStyle(node, '::before').height),
+      width: parseFloat(getComputedStyle(node, '::before').width),
+      lineHeight: parseFloat(getComputedStyle(node.parentElement).lineHeight),
+    }));
+    expect(placeholder.content).not.toBe('none');
+    expect(placeholder.height).toBeLessThanOrEqual(placeholder.lineHeight);
+    expect(placeholder.width).toBeGreaterThan(0);
+    const rowCopy = await state.evaluate((node) => ({ height: node.getBoundingClientRect().height,
+      lineHeight: parseFloat(getComputedStyle(node).lineHeight) }));
+    expect(rowCopy.height).toBeLessThanOrEqual(rowCopy.lineHeight * 2 + 1);
+    await page.evaluate(() => window.__releaseInitialRequest());
+    await rendering;
+    await expect(state).not.toHaveAttribute('aria-busy', 'true');
+    await expect(status).toHaveText('You turned on message history in the desktop app. Allow the extension to read your older messages.');
+  });
+}
+
 for (const [name, state] of [['connection', SURFACE_STATES.connection], ['manage', SURFACE_STATES.manage],
   ['permission_required', { ...SURFACE_STATES.connection, phase: 'permission_required' }]]) {
   test(`options frames show their whole cards (${name})`, async ({ page }) => {

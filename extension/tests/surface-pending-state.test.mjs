@@ -21,7 +21,8 @@ async function surface(t, entry, mode = 'off') {
     if (!nodes.has(id)) {
       const listeners = new Map();
       nodes.set(id, { dataset: {}, disabled: false, checked: false, textContent: '',
-        classList: { toggle() {} }, setAttribute() {}, removeAttribute() {},
+        classList: { toggle(name, value) { if (name === 'hidden') nodes.get(id).hidden = value; } },
+        setAttribute() {}, removeAttribute() {},
         addEventListener: (type, fn) => listeners.set(type, fn), dispatch: (type) => listeners.get(type)?.() });
     }
     return nodes.get(id);
@@ -91,6 +92,16 @@ test('paused Full remains a desktop handoff as control sessions change', async (
   await h.client.refresh();
   await tick();
   assert.equal(h.node('journey-primary').textContent, 'Continue in the desktop app');
+});
+
+test('setup reconnecting hides desktop actions and the setup-code hint', async (t) => {
+  const h = await surface(t, 'setup', 'full');
+  h.port.onDisconnect.emit();
+  assert.equal(h.node('desktop-entry-title').textContent, 'Reconnecting to the extension');
+  assert.equal(h.node('desktop-icon-mark').dataset.icon, 'pending');
+  for (const id of ['open-desktop', 'download-desktop', 'desktop-setup-code']) {
+    assert.equal(h.node(id).hidden, true, id);
+  }
 });
 
 test('setup and popup omit #retry-runtime and recover passively through surface-client', async (t) => {
