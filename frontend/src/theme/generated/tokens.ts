@@ -1025,12 +1025,11 @@ export const typography = {
     "lineHeight": 1.66
   },
   "passkeyTitle": {
-    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk Variable Fallback\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
+    "fontFamily": "\"Inter Variable\", \"Inter Variable Fallback\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
     "fontSize": "1.625rem",
-    "fontVariantNumeric": "tabular-nums",
     "fontWeight": 600,
-    "letterSpacing": "-0.02em",
-    "lineHeight": 1.3
+    "letterSpacing": "-0.015em",
+    "lineHeight": 1.25
   },
   "subtitle1": {
     "fontSize": "1rem",

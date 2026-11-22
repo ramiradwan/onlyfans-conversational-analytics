@@ -28,11 +28,9 @@ const IconTile = styled(Box, {
   const color =
     $tone === 'sentiment'
       ? theme.vars.palette.sentiment.positive
-      : $tone === 'opportunity'
-        ? theme.vars.palette.chart.opportunity
-        : $tone === 'connection'
-          ? theme.vars.palette.secondary.main
-          : theme.vars.palette.measurement.main;
+      : $tone === 'connection'
+        ? theme.vars.palette.secondary.main
+        : theme.vars.palette.measurement.main;
   const field = theme.vars.palette.surface.metric[$tone === 'primary' ? 'measurement' : $tone];
   return {
     alignItems: 'center',

@@ -53,7 +53,7 @@ export function qualifyThemeColors(root: JsonObject) {
     }
     const metrics = {
       measurement: 'measurement.main', sentiment: 'sentiment.positive',
-      opportunity: 'chart.opportunity', connection: 'action.secondary.main',
+      opportunity: 'measurement.main', connection: 'action.secondary.main',
     };
     for (const [field, foreground] of Object.entries(metrics)) {
       requirePair(foreground, 'surface.metric.' + field + '.fill', 3);

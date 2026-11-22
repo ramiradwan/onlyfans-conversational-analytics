@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { contrastRatio } from '../src/theme/color-validation';
-import { generateThemeSource, generateStaticTokensCss, replaceStaticTokenBlock, staticTokenConsumers } from '../src/theme/generate-theme';
+import { generateNativeOnboardingBundle, generateThemeSource, generateStaticTokensCss, replaceStaticTokenBlock, staticTokenConsumers } from '../src/theme/generate-theme';
 import { semanticIntents } from '../src/theme/generated/tokens';
 import { generateStaticFontsCss, replaceStaticFontPreloads } from '../src/theme/static-fonts';
 
@@ -12,6 +12,7 @@ const root = path.resolve('..');
 const read = (file: string) => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const sha = (text: string | Buffer) => createHash('sha256').update(text).digest('hex');
 const fonts = generateStaticFontsCss(root);
+const tokensSource = read('frontend/src/theme/tokens.json');
 const baseline = JSON.parse(read('frontend/tests/fixtures/static-surface-content.json')) as {
   sha256: Record<string, string>; provisioningBodyText: string;
 };
@@ -41,6 +42,69 @@ describe('static surface font delivery', () => {
     });
     expect(fonts).not.toContain('@import');
     expect(fonts.match(/SIL OPEN FONT LICENSE/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('native surface font delivery', () => {
+  it('packages the same deterministic CSS, pinned Inter bytes and redistribution notice', () => {
+    expect(typeof generateNativeOnboardingBundle).toBe('function');
+    const bundle = generateNativeOnboardingBundle(tokensSource, root);
+    expect(generateNativeOnboardingBundle(tokensSource, root)).toEqual(bundle);
+    const pinned = 'frontend/node_modules/@fontsource-variable/inter';
+    const file = 'inter-latin-opsz-normal.woff2';
+    expect(bundle.font.filename).toBe(file);
+    expect(sha(bundle.font.bytes)).toBe(sha(fs.readFileSync(path.join(root, pinned, 'files', file))));
+    expect(bundle.font.bytes.subarray(0, 4).toString()).toBe('wOF2');
+    expect(sha(fs.readFileSync(path.join(root, 'desktop/shell', file)))).toBe(sha(bundle.font.bytes));
+    expect(read('desktop/shell/onboarding-theme.css')).toBe(bundle.css);
+    expect(bundle.css).toContain(read(pinned + '/LICENSE').trim());
+    expect(bundle.css).toContain('sha256:' + sha(bundle.font.bytes));
+    expect(bundle.css).toMatch(/@font-face\s*\{[^}]*font-family:\s*'Inter Variable'[^}]*src:\s*url\(\.\/inter-latin-opsz-normal\.woff2\)/);
+    expect(bundle.css).not.toMatch(/url\(\s*['"]?(?:https?:|data:font)|@import/);
+  });
+
+  it('allows same-origin fonts through the otherwise identical native CSP', () => {
+    const { build, app } = JSON.parse(read('desktop/src-tauri/tauri.conf.json'));
+    expect(build.frontendDist).toBe('../shell');
+    const { csp, capabilities } = app.security;
+    expect(csp.split('; ')).toEqual([
+      "default-src 'none'", "style-src 'self'", "script-src 'self'", "img-src 'self'",
+      'connect-src ipc: http://ipc.localhost', "font-src 'self'",
+    ]);
+    expect(capabilities).toEqual(['desktop', 'window-frame']);
+  });
+});
+
+describe('opt-in static onboarding primitives', () => {
+  const css = read('frontend/src/theme/onboarding.css');
+
+  it('pairs 24-grid masks with the installed outlined paths and uses currentColor', () => {
+    expect(css).toContain('Apache-2.0');
+    for (const icon of ['KeyOutlined', 'WebAssetOutlined', 'CheckCircleOutlined', 'ErrorOutlineOutlined']) {
+      const source = read('frontend/node_modules/@mui/icons-material/' + icon + '.mjs');
+      const pathData = /\bd:\s*"([^"]+)"/.exec(source)?.[1];
+      expect(pathData, icon).toBeTruthy();
+      expect(css).toContain(encodeURIComponent(pathData!));
+    }
+    expect(css).toContain('viewBox%3D%220%200%2024%2024%22');
+    expect(css).toMatch(/\.onboarding-icon\[data-icon\]\s*\{[^}]*background:\s*currentColor/);
+  });
+
+  it('uses the authored timing, has no animated layout, and stops in reduced motion', () => {
+    const primitives = css.slice(css.indexOf('.onboarding-surface {'));
+    expect(primitives).toMatch(/--onboarding-arrival:\s*200ms/);
+    expect(primitives).toMatch(/--onboarding-swap:\s*180ms/);
+    expect(primitives).toMatch(/--onboarding-value:\s*240ms/);
+    expect(primitives).toMatch(/onboarding-pending 1s linear infinite/);
+    const frames = [...primitives.matchAll(/@keyframes[^{]+\{([\s\S]*?)(?=\n\})/g)];
+    expect(frames).toHaveLength(4);
+    for (const [, rules] of frames) {
+      const properties = [...rules.matchAll(/(?:[{;])\s*([\w-]+):/g)].map(([, name]) => name);
+      expect(properties.length).toBeGreaterThan(0);
+      expect(properties.every(name => name === 'transform' || name === 'opacity')).toBe(true);
+    }
+    expect(primitives).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*animation:\s*none/);
+    expect(primitives).not.toMatch(/line-clamp|text-overflow|visibility:\s*hidden/);
   });
 });
 

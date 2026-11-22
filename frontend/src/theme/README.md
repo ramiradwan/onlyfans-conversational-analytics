@@ -14,7 +14,7 @@ MUI adapts action intents to `primary` and `secondary`, and feedback intents to 
 
 Components use `theme.vars.palette` or semantic `sx` paths. Static surfaces receive `--dipsy-intent-*` variables. Existing `--dipsy-color-*` variable names remain compatible and resolve through the active intents.
 
-Financial colors have a separate, reserved source family. They are validated but omitted from runtime tokens, MUI and static CSS. Token aliases into that family and explicit financial-token references in consumers fail checks. Analytical opportunity uses measurement jade. The fourth categorical slot uses slate instead of financial yellow. No public intent may reuse the reserved financial field color.
+The reserved financial family stays outside runtime tokens, MUI and static CSS. The generator rejects aliases and reuse of its reserved field color. The chart opportunity role and the opportunity metric icon both use measurement jade. The fourth categorical slot uses slate. Chart marks retain their 3:1 qualification.
 
 ## Color validation
 
@@ -44,7 +44,7 @@ The generator checks token-reference provenance, policy shape, gamut, required c
 
 Warm neutrals and jade now carry surfaces, measurements and primary actions. Light and dark values are authored independently. The `brand` intent preserves the existing violet mark separately from actions.
 
-Space Grotesk is bundled locally for `kpi`, `metric`, `insight`, numeric captions and counts. Inter remains the default face for prose, headings and labels. The reviewed passkey title is the only display-heading exception. Design previews load both local font packages.
+Space Grotesk is bundled locally for tabular KPI numbers, codes and finding values. Existing numeric variants include `kpi`, `metric`, `insight` and the numeric captions. Inter covers prose, titles, finding headlines and labels. Design previews load both local font packages.
 
 Use `Panel` emphasis to distinguish the one dominant surface from secondary content and quiet rows. Status styling preserves labels, feedback meanings and live announcements. This phase adds no revenue display, first-insights ceremony or readiness transition.
 
@@ -66,8 +66,20 @@ The popup and setup page load local Latin Inter and Space Grotesk from the same 
 
 Run `npm run sync:static-tokens` after changing the font source or static roles. Do not edit the `static-fonts` or `static-font-preloads` blocks directly. The old font-stack variable remains compatible; the new UI and numeric variables include the bundled fallback faces.
 
+The native bundle generator writes `desktop/shell/onboarding-theme.css` and the pinned Latin Inter WOFF2. The stylesheet resolves the face relative to itself and carries the redistribution notice. Native consumers can load it with a stylesheet link under the same-origin font policy and use inline, decorative SVG paths under the native image policy.
+
 Static feedback fields use named, opaque colors. Healthy settled cards use paper and state readiness once in the task heading. Hover, focus, disabled controls, dominant cards and quiet navigation retain separate meanings. Popup disclosures keep their wording and structure. Setup continues to use its existing controller and validation rules.
 
 The visual workflow includes `static-surfaces/acceptance.json` and fold/full screenshots. Setup fixtures are rendered by the existing controller with synthetic responses; they qualify presentation, not signed-grant authority. The checks verify actual rendered fonts, first-frame canvas color, layout shifts, keyboard focus, disclosure visibility and narrow overflow. They retain the limits in `stability-contracts.mjs`; Bridge's separate production-boot diagnostics remain unchanged.
 
 Operational copy names the current task once. Setup feedback appears beside the active control only after a check or failure. Completed steps stay compact. Recovery guidance names an existing route. Use periods, not semicolons. Protected disclosures retain their substance, structure and prominence. The only disclosure edit in this pass replaces a semicolon with a period.
+
+## Onboarding presentation
+
+`OnboardingCard` opts into the dominant surface and composition padding. Static consumers can use the same classes. Use the 40 px spot for the optional head, the action row for an occupied control swap, and the trailing status for updates. Put unsolicited additions last or in an overlay. The owner continues to choose the content and its order.
+
+Keep the 1440 px copy budget at one title line, two body lines and one status line. At narrow widths and increased text size, allow natural wrapping. Give system-driven replacements the same occupied size or a separate surface. The action swap key restarts the opacity animation while the outer action stays mounted.
+
+Neutral surfaces carry spots and pills. Jade marks progress and actions. Keep error ink on the state icon and the destructive confirmation action. Apply the surface glow in the first-finding consumer.
+
+Arrival and status changes use 200 ms, control swaps use 180 ms, and value bars use 240 ms. The pending arc rotates in one second. Reduced motion shows the final pose of each primitive and a static arc.

@@ -5,13 +5,44 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BrowserExtensionControls } from '../src/components/BrowserExtensionControls';
 import { CompanionPairingControls } from '../src/components/CompanionPairingControls';
 import { CommercialActivationControls } from '../src/components/CommercialActivationControls';
+import { MetricCard } from '../src/components/analytics/MetricCard';
+import * as ui from '../src/components/ui';
 import type { CompanionPairingApi } from '../src/services/companionPairingApi';
 import { bridgeTransportStore } from '../src/store/transportStore';
 import { useUserStore } from '../src/store/userStore';
+import { storyWindowSources } from '../src/story-only/analyticsFixtures';
 import { theme } from '../src/theme';
 import { desktopFixture } from './desktopOnboardingFixture';
 
 afterEach(() => { cleanup(); bridgeTransportStore.reset(); useUserStore.getState().actions.setUserRole(null); vi.clearAllMocks(); });
+
+describe('onboarding presentation primitives', () => {
+  it('renders only supplied content with decorative icons and trailing status', () => {
+    const { OnboardingAction, OnboardingCard, OnboardingPill, OnboardingSpot, OnboardingStatus } = ui;
+    expect(typeof OnboardingCard).toBe('function');
+    const view = render(<OnboardingCard title="Heading" composition="trust" heading="h2"
+      spot={<OnboardingSpot icon="passkey" />} body="Body"
+      actions={<OnboardingAction><button type="button">Continue</button></OnboardingAction>}
+      status={<OnboardingStatus tone="pending">Waiting</OnboardingStatus>}>
+      <OnboardingPill tone="progress">Ready</OnboardingPill>
+    </OnboardingCard>);
+    const card = screen.getByRole('region', { name: 'Heading' });
+    expect(screen.getByRole('heading', { name: 'Heading', level: 2 })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy();
+    expect(card.lastElementChild).toBe(screen.getByRole('status'));
+    expect(card.querySelectorAll('svg[aria-hidden="true"][focusable="false"]')).toHaveLength(2);
+    expect(card.textContent).toBe('HeadingBodyReadyContinueWaiting');
+    view.rerender(<OnboardingCard title="Heading" />);
+    expect(screen.getByRole('region', { name: 'Heading' }).children).toHaveLength(1);
+  });
+
+  it('renders the opportunity metric icon in measurement jade', () => {
+    const { container } = render(<ThemeProvider theme={theme}><MetricCard label="Metric" value="4"
+      supportingText="Sample" icon={<svg />} tone="opportunity" windowSource={storyWindowSources.creatorMetrics} /></ThemeProvider>);
+    const icon = container.querySelector<HTMLElement>('[aria-hidden="true"]')!;
+    expect(getComputedStyle(icon).color).toBe('var(--bridge-palette-measurement-main)');
+  });
+});
 
 describe('owner-driven onboarding controls', () => {
   it('ignores a late confirmation failure after the owner has accepted activation', async () => {

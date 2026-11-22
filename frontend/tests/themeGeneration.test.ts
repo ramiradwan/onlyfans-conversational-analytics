@@ -5,9 +5,10 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { brandTypography, colorSchemeProps, theme } from '../src/theme';
+import { brandTypography, colorSchemeProps, theme, typography } from '../src/theme';
 import {
   firstPaintConsumers,
+  generateColorReport,
   generateFirstPaintCss,
   generateFirstPaintScript,
   generateStaticTokensCss,
@@ -78,6 +79,27 @@ describe('theme token generation', () => {
       Array.from(fontCss.matchAll(/font-family:\s*'([^']+)'/g), (match) => match[1]),
     );
     expect([...declared]).toEqual([leading]);
+  });
+
+  it('uses Inter for the passkey heading token and tabular Space Grotesk for numeric tokens', () => {
+    expect(typography.passkeyTitle.fontFamily).toBe(brandTypography.fontFamily);
+    expect(typography.passkeyTitle).not.toHaveProperty('fontVariantNumeric');
+    expect(typography.passkeyTitle.lineHeight).toBe(1.25);
+    for (const role of ['kpi', 'metric', 'insight', 'numericCaption', 'numericBody'] as const) {
+      expect(typography[role].fontFamily).toBe(brandTypography.displayNumeric);
+      expect(typography[role].fontVariantNumeric).toBe('tabular-nums');
+    }
+  });
+
+  it('keeps opportunity on measurement jade and qualifies the metric icon field', () => {
+    const pairs = JSON.parse(generateColorReport(tokensSource)).pairs;
+    for (const mode of ['light', 'dark'] as const) {
+      const palette = theme.colorSchemes[mode]!.palette;
+      expect(palette.chart.opportunity).toBe(palette.measurement.main);
+      expect(pairs).toContainEqual(expect.objectContaining({
+        mode, foreground: 'measurement.main', background: 'surface.metric.opportunity.fill', minimum: 3,
+      }));
+    }
   });
 });
 

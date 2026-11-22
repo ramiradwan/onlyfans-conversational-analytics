@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { qualifyThemeColors } from './chart-qualification.ts';
 import { contrastRatio, contrastRatioOnComposite } from './color-validation.ts';
 import { buildTokenGraph, isObject, publicIntents, validateBridgeIntents, type JsonObject, type JsonValue } from './intent-contracts.ts';
-import { generateStaticFontsCss, replaceStaticFontPreloads } from './static-fonts.ts';
+import { generateNativeInter, generateStaticFontsCss, replaceStaticFontPreloads } from './static-fonts.ts';
 import { validateRepositoryConsumers } from './token-consumers.ts';
 
 const filename = fileURLToPath(import.meta.url);
@@ -419,6 +419,12 @@ function writeIfChanged(filePath: string, content: string): boolean {
   return true;
 }
 
+export function generateNativeOnboardingBundle(tokensJsonSource: string, root: string) {
+  const { css: fontCss, ...font } = generateNativeInter(root);
+  const layout = fs.readFileSync(path.join(root, 'frontend/src/theme/onboarding.css'), 'utf8').replace(/\r\n/g, '\n');
+  return { css: generateStaticTokensCss(tokensJsonSource, true) + '\n' + fontCss + '\n' + layout, font };
+}
+
 export function generateColorReport(tokensJsonSource: string): string {
   return JSON.stringify(qualifyThemeColors(resolveTokens(tokensJsonSource)), null, 2) + '\n';
 }
@@ -435,6 +441,13 @@ function main(): void {
   writeIfChanged(path.join(themeDirectory, 'generated', 'static-fonts.css'), fonts);
   const workspace = fs.readFileSync(path.join(themeDirectory, 'onboarding.css'), 'utf8').replace(/\r\n/g, '\n');
   writeIfChanged(path.join(themeDirectory, 'generated', 'hosted-onboarding.css'), css + '\n' + fonts + '\n' + workspace);
+  const native = generateNativeOnboardingBundle(tokensSource, repositoryRoot);
+  const shell = path.join(repositoryRoot, 'desktop', 'shell');
+  writeIfChanged(path.join(shell, 'onboarding-theme.css'), native.css);
+  const fontPath = path.join(shell, native.font.filename);
+  if (!fs.existsSync(fontPath) || !fs.readFileSync(fontPath).equals(native.font.bytes)) {
+    fs.writeFileSync(fontPath, native.font.bytes);
+  }
   console.log('Theme generated deterministically from tokens.json');
   const reportIndex = process.argv.indexOf('--color-report');
   if (reportIndex >= 0) {
