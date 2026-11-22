@@ -40,7 +40,7 @@ describe('task-focused static copy', () => {
       expect(createHash('sha256').update(disclosure.outerHTML).digest('hex')).toBe(item.element_sha256);
     }
   });
-  it.each(['extension/popup.html', 'extension/setup.html', 'extension/options.html', 'frontend/onboarding/index.html'])('has no semicolons in rendered copy in %s', (file) => {
+  it.each(['extension/popup.html', 'extension/setup.html', 'extension/options.html', 'frontend/onboarding/index.html', 'frontend/browser-tasks/index.html'])('has no semicolons in rendered copy in %s', (file) => {
     const doc = parse(file);
     doc.querySelectorAll('style,script').forEach((node) => node.remove());
     // Formatting rules cannot rewrite exact adopted text. Verify those bytes
@@ -54,7 +54,7 @@ describe('task-focused static copy', () => {
     }
     expect(doc.body.textContent).not.toContain(';');
   });
-  it.each(['extension/popup.js', 'extension/runtime/customer-journey.mjs', 'frontend/onboarding/view.js'])('has no semicolons in operational messages in %s', (file) => {
+  it.each(['extension/popup.js', 'extension/runtime/customer-journey.mjs', 'frontend/onboarding/view.js', 'frontend/browser-tasks/view.js'])('has no semicolons in operational messages in %s', (file) => {
     const source = ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
     const visit = (node: ts.Node) => {
       if (ts.isStringLiteralLike(node)) expect(node.text, file).not.toMatch(/[A-Za-z];\s/);

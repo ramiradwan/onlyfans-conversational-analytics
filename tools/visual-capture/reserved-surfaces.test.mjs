@@ -4,9 +4,10 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 import { chromium } from 'playwright';
 import { onboardingStaticAssets, onboardingStaticFixtures } from './onboarding-static-fixtures.mjs';
-import { DESKTOP_ONBOARDING_STATES } from './onboarding-surface-states.mjs';
+import { BROWSER_TASK_STATES, DESKTOP_ONBOARDING_STATES } from './onboarding-surface-states.mjs';
 import { observeStaticPaint } from './static-surfaces.mjs';
 import { CANVAS_DELTA, LAYOUT_SHIFT, colorDistance, grade, gradeLayoutShifts } from './stability-contracts.mjs';
+import { inspectTaskCopy } from './task-copy.mjs';
 
 const { JSDOM } = createRequire(new URL('../../frontend/package.json', import.meta.url))('jsdom');
 for (const surface of ['popup', 'setup', 'options']) {
@@ -40,10 +41,16 @@ test('native recovery needs no package input and keeps setup-code receiving sepa
 });
 
 async function withDesktop(width, scale, mode, name, run) {
+  await withStaticSurface('desktop-onboarding', width, scale, mode, name, run);
+}
+
+async function withStaticSurface(surface, width, scale, mode, name, run, firstPaint) {
   const [assets, fixtures] = await Promise.all([onboardingStaticAssets(), onboardingStaticFixtures()]);
-  const fixture = fixtures.find(item => item.surface === 'desktop-onboarding' && item.name === name);
+  const fixture = fixtures.find(item => item.surface === surface && item.name === name);
   const origin = 'http://static-visual.localhost';
   const browser = await chromium.launch();
+  let release;
+  const delivery = new Promise(resolve => { release = resolve; });
   try {
     const page = await browser.newPage({ viewport: { width, height: 900 }, colorScheme: mode, reducedMotion: 'reduce' });
     await page.addInitScript(observeStaticPaint, 'h1, header, nav, .brand-mark, button');
@@ -51,14 +58,19 @@ async function withDesktop(width, scale, mode, name, run) {
       localStorage.setItem('mui-mode', mode);
       window.__staticSurfaceFixture = state;
     }, { state: fixture.state, mode });
-    await page.route('**/*', route => {
+    await page.route('**/*', async route => {
       const url = new URL(route.request().url());
       assert.equal(url.origin, origin);
       if (url.pathname === fixture.urlPath) return route.fulfill({ contentType: 'text/html', body: fixture.html });
-      if (url.pathname === '/desktop-onboarding.js') return route.fulfill({ contentType: 'text/javascript', body: fixture.script });
+      if (url.pathname === '/' + surface + '.js') {
+        if (firstPaint) await delivery;
+        return route.fulfill({ contentType: 'text/javascript', body: fixture.script });
+      }
       return assets[url.pathname] ? route.fulfill(assets[url.pathname]) : route.abort();
     });
-    await page.goto(origin + fixture.urlPath);
+    await page.goto(origin + fixture.urlPath, { waitUntil: firstPaint ? 'commit' : 'load' });
+    if (firstPaint) await firstPaint(page);
+    release();
     await page.locator('main[data-ready="true"]').waitFor();
     await page.evaluate(async scale => {
       await document.fonts.ready;
@@ -69,7 +81,10 @@ async function withDesktop(width, scale, mode, name, run) {
       await page.addScriptTag({ content: fixture.script });
     };
     await run(page, render);
-  } finally { await browser.close(); }
+  } finally {
+    release();
+    await browser.close();
+  }
 }
 
 test('desktop empty task actions occupy no more than one line', async () => {
@@ -166,4 +181,93 @@ test('desktop task copy fits the 1440px budgets in both color schemes', async ()
       }
     });
   }
+});
+
+for (const mode of ['light', 'dark']) {
+  test(`Chrome task copy and waiting swaps fit at 1440px in ${mode}`, async () => {
+    await withStaticSurface('browser-task', 1440, 1, mode, 'auth_idle', async (page, render) => {
+      const heading = page.locator('#task-title');
+      const card = await page.locator('.setup-task-card').elementHandle();
+      const box = async selector => {
+        const { y, height } = await page.locator(selector).boundingBox();
+        return { y, height };
+      };
+      await page.keyboard.press('Tab');
+      const action = page.locator('#authentication-open');
+      assert(await action.evaluate(node => node.matches(':focus-visible') && getComputedStyle(node).outlineWidth === '2px'));
+      const button = await box('#authentication-open');
+      const title = await box('#task-title');
+      await render(BROWSER_TASK_STATES.auth_opening);
+      assert.equal(await heading.textContent(), 'Signing in…');
+      assert(await card.evaluate(node => node.isConnected));
+      assert.deepEqual(await box('#task-title'), title);
+      assert.deepEqual(await box('#task-status'), button);
+      assert.equal(await page.locator('#task-status').evaluate(node => getComputedStyle(node, '::before').animationName), 'none');
+      await render(BROWSER_TASK_STATES.pairing_saved);
+      assert.equal(await card.evaluate(node => node.isConnected), false);
+
+      await render(BROWSER_TASK_STATES.auth_checking);
+      await page.keyboard.press('Tab');
+      const handoff = page.locator('#desktop-return');
+      const waiting = await box('#task-status');
+      const desktop = await box('#desktop-return');
+      await render(BROWSER_TASK_STATES.auth_unconfirmed);
+      assert.deepEqual(await box('#task-status'), waiting);
+      assert.deepEqual(await box('#desktop-return'), desktop);
+      assert(await handoff.evaluate(node => node.matches(':focus-visible')));
+
+      for (const [name, state] of Object.entries(BROWSER_TASK_STATES)) {
+        await render(state);
+        await inspectTaskCopy(page, { surface: 'browser-task', name, state });
+        const lines = await page.locator('#task-title, #task-description, #task-message').evaluateAll(nodes => nodes.map(node => {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          return [node.id, new Set([...range.getClientRects()].map(rect => rect.top)).size];
+        }));
+        for (const [id, count] of lines) {
+          assert(count <= (id === 'task-description' ? 2 : 1), `${mode} ${name} ${id} wraps to ${count} lines`);
+        }
+      }
+    }, async page => {
+      await page.waitForFunction(() => window.__staticPaint.first !== null);
+      const card = page.getByRole('region', { name: 'Loading browser task' });
+      await card.waitFor();
+      assert.equal(await card.getAttribute('aria-busy'), 'true');
+      assert.equal(await card.locator('button:visible, a:visible').count(), 0);
+      const paint = await page.evaluate(() => ({
+        first: window.__staticPaint.first,
+        canvas: getComputedStyle(document.body).backgroundColor,
+      }));
+      assert.equal(paint.first.faces.find(face => face.family === 'Inter Variable')?.status, 'loaded');
+      assert.notEqual(grade(colorDistance(paint.first.canvas, paint.canvas), CANVAS_DELTA), 'fail');
+    });
+  });
+}
+
+test('Chrome task copy wraps freely at 320px and 2× text', async () => {
+  await withStaticSurface('browser-task', 320, 2, 'dark', 'pairing_saved', async (page, render) => {
+    await render(BROWSER_TASK_STATES.auth_idle);
+    const signIn = await page.locator('.setup-task-card').elementHandle();
+    await render(BROWSER_TASK_STATES.auth_opening);
+    assert.equal(await signIn.evaluate(node => node.isConnected), false);
+    let wrapped = false;
+    for (const [name, state] of Object.entries(BROWSER_TASK_STATES)) {
+      await render(state);
+      await inspectTaskCopy(page, { surface: 'browser-task', name, state });
+      const result = await page.locator('#task-title, #task-message:not(:empty)').evaluateAll(nodes => nodes.map(node => {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const lines = [...range.getClientRects()];
+        const slot = node.closest('#task-status') ?? node;
+        return { count: lines.length, clamp: getComputedStyle(node).webkitLineClamp,
+          fits: lines.every(rect => rect.left >= 0 && rect.right <= innerWidth) && slot.scrollHeight <= slot.clientHeight,
+          pageFits: document.documentElement.scrollWidth <= innerWidth };
+      }));
+      assert(result.every(item => item.fits && item.pageFits && item.clamp === 'none'), `${name} ${JSON.stringify(result)}`);
+      wrapped ||= result.some(item => item.count > 2);
+    }
+    assert(wrapped);
+    await render(BROWSER_TASK_STATES.ready);
+    assert.equal(await page.locator('.task-actions-slot').evaluate(node => node.getBoundingClientRect().height), 0);
+  });
 });

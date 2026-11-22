@@ -4,9 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
-    <title>Browser task · Conversation Analytics</title>
+    <script src="/setup-theme-init.js"></script>
+    <title>Setup in Chrome · Conversation Analytics</title>
   </head>
-  <body>
+  <body class="browser-task-page">
     <header class="setup-header">
       <span class="setup-brand">
         <span class="brand-mark" aria-hidden="true">
@@ -15,20 +16,28 @@
         <span class="brand-name">Conversation Analytics</span>
       </span>
     </header>
-    <main class="setup-main" data-journey-state="browser.loading">
-      <section class="setup-card setup-task-card" aria-labelledby="task-title" data-reserved-region="browser-task-card">
-        <p class="setup-eyebrow">Chrome browser task</p>
-        <h1 data-region-content id="task-title" tabindex="-1">Browser access</h1>
-        <p data-reserved-region="browser-task-status" class="task-status" id="task-status" role="status" aria-live="polite">Reading the current task…</p>
-        <div class="task-actions-slot" data-reserved-region="browser-task-actions"><div data-region-content>
-        <div class="setup-actions">
-          <button id="pairing-replace" type="button" aria-describedby="task-status" hidden>Replace saved connection</button>
-          <button id="extension-open" type="button" aria-describedby="task-status" hidden>Open extension</button>
-          <button id="authentication-open" type="button" aria-describedby="task-status" hidden>Continue sign-in</button>
-          <a id="extension-install" class="button" rel="noreferrer" target="_self" hidden>Get the extension</a>
-          <a id="desktop-return" class="button secondary" hidden>Return to desktop</a>
+    <main class="setup-main browser-task" data-journey-state="browser.loading">
+      <section class="setup-card setup-task-card" aria-labelledby="task-title" aria-busy="true" data-task-family="loading" data-reserved-region="browser-task-card">
+        <div class="browser-task-header" aria-hidden="true">
+          <span class="browser-task-spot" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false"><path d="M19 4H5c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2m0 14H5V8h14z"/></svg>
+          </span>
+          <p class="setup-eyebrow">Setup in Chrome</p>
         </div>
-        </div></div>
+        <h1 data-region-content id="task-title" tabindex="-1">Loading browser task</h1>
+        <div class="task-actions-slot" data-reserved-region="browser-task-actions">
+          <div data-region-content>
+            <div class="setup-actions" hidden>
+              <button id="pairing-replace" type="button" aria-describedby="task-status" hidden>Replace saved connection</button>
+              <button id="extension-open" type="button" aria-describedby="task-status" hidden>Open extension</button>
+              <button id="authentication-open" type="button" aria-describedby="task-status" hidden>Continue sign-in</button>
+              <a id="extension-install" class="button" rel="noreferrer" target="_self" hidden>Get the extension</a>
+              <a id="desktop-return" class="button secondary" hidden>Open desktop app</a>
+            </div>
+            <div class="browser-loading-action" aria-hidden="true"></div>
+          </div>
+          <div data-reserved-region="browser-task-status" class="task-status" id="task-status" role="status" aria-live="polite" data-tone="none"><svg class="browser-status-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path data-icon="notice" d="M11 7h2v6h-2zm0 8h2v2h-2zm1-13a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16z"/><path data-icon="success" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm-2-6-2-2-1.41 1.41L10 16.83l7.41-7.42L16 8z"/></svg><span id="task-message"></span></div>
+        </div>
       </section>
     </main>
     <script type="module" src="./main.js"></script>

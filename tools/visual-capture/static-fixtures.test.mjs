@@ -79,7 +79,9 @@ test('static capture covers extension surfaces, desktop onboarding, and every br
     try {
       renderBrowserTask(dom.window.document, fixture.state);
       assert(dom.window.document.querySelector('main').dataset.journeyState.startsWith('browser.'));
-      assert(dom.window.document.getElementById('task-status').textContent.trim().length > 0);
+      assert(['loading', 'auth_idle', 'ready'].includes(fixture.state.state)
+        ? dom.window.document.getElementById('task-status').textContent === ''
+        : dom.window.document.getElementById('task-status').textContent.trim().length > 0);
     } finally {
       dom.window.close();
     }

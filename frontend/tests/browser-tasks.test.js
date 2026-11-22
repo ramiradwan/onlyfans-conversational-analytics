@@ -18,6 +18,111 @@ const authenticationPayload = () => {
   return value;
 };
 
+const browserTaskHtml = readFileSync('browser-tasks/index.html', 'utf8');
+const pairingPayload = () => {
+  const value = payload();
+  value.task.purpose = 'browser.pairing-confirmation';
+  value.creator_account_id = 'synthetic-creator';
+  return value;
+};
+const taskControls = ['pairing-replace', 'extension-open', 'authentication-open', 'extension-install', 'desktop-return'];
+const desktop = ['desktop-return'];
+const browserTaskCases = [
+  ['loading', 'Loading browser task', '', [], () => null],
+  ['unavailable', 'Set up the extension', 'Install or turn on the extension in this Chrome profile.', ['extension-install', ...desktop]],
+  ['extension_disconnected', 'Continue in the desktop app', 'Dipsy couldn’t connect to the extension.', desktop],
+  ['profile_mismatch', 'Switch Chrome profile', 'This isn’t the profile you used for setup.', desktop],
+  ['account_mismatch', 'Switch OnlyFans account', 'Sign in to OnlyFans with the account you want to connect.', desktop, pairingPayload],
+  ['needs-consent', 'Review the extension', 'See what it collects before you turn it on.', ['extension-open']],
+  ['needs-permission', 'Allow site access', 'The extension needs it to read your OnlyFans activity.', ['extension-open']],
+  ['needs-account', 'Sign in to OnlyFans', 'Use your OnlyFans account in this Chrome profile.', ['extension-open']],
+  ['auth_idle', 'Finish signing in', '', ['authentication-open'], authenticationPayload],
+  ['auth_opening', 'Signing in…', 'Finish in the sign-in window.', [], authenticationPayload],
+  ['auth_checking', 'Sign in', 'Checking the sign-in outcome…', desktop, authenticationPayload],
+  ['auth_unconfirmed', 'Sign in', 'Checking whether sign-in finished…', desktop, authenticationPayload],
+  ['auth_access_required', 'Sign in', 'Browser access is required for this request.', desktop, authenticationPayload],
+  ['auth_closed', 'Sign in', 'Sign-in window closed. Continue in the desktop app.', desktop, authenticationPayload],
+  ['pairing_saved', 'Replace the saved connection?', 'This Chrome profile is already connected to a desktop app.', ['pairing-replace'], pairingPayload],
+  ['pairing_connecting', 'Connect browser', 'Connecting this browser to the desktop app…', [], pairingPayload],
+  ['pairing_checking', 'Connect browser', 'Checking the browser connection…', desktop, pairingPayload],
+  ['pairing_unconfirmed', 'Connect browser', 'The browser connection has not been confirmed.', desktop, pairingPayload],
+  ['pairing_access_required', 'Connect browser', 'Browser access is required to connect.', desktop, pairingPayload],
+  ['ready', 'Confirming browser access…', '', []],
+  ['paused', 'Message collection is paused', 'Letting the desktop app know…', []],
+  ['reported', 'Browser access confirmed', 'This tab closes by itself.', desktop],
+  ['status_reconnecting', 'Waiting for the desktop app', 'This page updates by itself.', []],
+  ['task_completed', 'Continue in the desktop app', 'This step is done.', desktop],
+  ['task_expired', 'Continue in the desktop app', 'This step expired.', desktop],
+  ['task_changed', 'Continue in the desktop app', 'Setup moved on.', desktop],
+  ['service_unavailable', 'Browser access', 'Dipsy can’t confirm this step. Continue setup in the desktop app.', desktop],
+  ['service_unavailable', 'Continue in the desktop app', 'This step couldn’t finish.', desktop, payload, 'invariant_failed'],
+  ['service_unavailable', 'Continue in the desktop app', 'This page can’t continue setup.', desktop, payload, 'authorization_refused'],
+];
+
+describe('Chrome task presentation', () => {
+  it.each(browserTaskCases)('uses the per-state D4 title and copy for %s (%s)', (state, title, message, controls, makePayload = payload, recovery) => {
+    document.documentElement.innerHTML = browserTaskHtml;
+    const value = makePayload();
+    renderBrowserTask(document, { state, payload: value, recovery });
+    expect(document.querySelector('main').dataset.journeyState).toBe('browser.' + state.replaceAll('-', '_'));
+    expect(document.querySelector('h1').textContent).toBe(title);
+    expect(document.querySelector('#task-status').textContent).toBe(message);
+    expect(taskControls.filter(id => !document.getElementById(id).hidden)).toEqual(controls);
+    if (controls.includes('desktop-return')) {
+      expect(document.getElementById('desktop-return').textContent).toBe('Open desktop app');
+      expect(document.getElementById('desktop-return').getAttribute('href')).toBe('ofca://onboarding/?journey=' + value.task.journey_id);
+    }
+    if (state === 'needs-account') expect(document.getElementById('extension-open').textContent).toBe('Open OnlyFans');
+  });
+
+  it('paints an accessible placeholder before the task owner responds', () => {
+    document.documentElement.innerHTML = browserTaskHtml;
+    expect(document.querySelector('.setup-task-card').getAttribute('aria-busy')).toBe('true');
+    expect(document.querySelector('h1').textContent).toBe('Loading browser task');
+    expect(document.querySelector('#task-status').textContent).toBe('');
+    expect(taskControls.every(id => document.getElementById(id).hidden)).toBe(true);
+    renderBrowserTask(document, { state: 'needs-permission', payload: payload() });
+    expect(document.querySelector('.setup-task-card').getAttribute('aria-busy')).toBeNull();
+    expect(document.querySelector('.setup-eyebrow').textContent).toBe('Setup in Chrome');
+  });
+
+  it.each(['unavailable', 'needs-permission', 'auth_idle', 'pairing_saved', 'service_unavailable'])(
+    'clears scoped links and actions when %s has no payload', state => {
+      document.documentElement.innerHTML = browserTaskHtml;
+      renderBrowserTask(document, { state: 'unavailable', payload: payload() });
+      renderBrowserTask(document, { state });
+      expect(taskControls.every(id => document.getElementById(id).hidden)).toBe(true);
+      for (const id of ['extension-install', 'desktop-return']) expect(document.getElementById(id).hasAttribute('href')).toBe(false);
+    });
+
+  it('retains one guarded replacement control through card swaps', () => {
+    document.documentElement.innerHTML = browserTaskHtml;
+    const replace = document.getElementById('pairing-replace');
+    const onReplace = vi.fn();
+    replace.addEventListener('click', onReplace);
+    renderBrowserTask(document, { state: 'pairing_saved', payload: authenticationPayload() });
+    expect(replace.hidden).toBe(true);
+    const before = document.querySelector('.setup-task-card');
+    renderBrowserTask(document, { state: 'pairing_saved', payload: pairingPayload() });
+    expect(document.querySelector('.setup-task-card')).not.toBe(before);
+    expect(document.querySelectorAll('#pairing-replace:not([hidden])')).toHaveLength(1);
+    expect(document.getElementById('pairing-replace')).toBe(replace);
+    replace.click();
+    renderBrowserTask(document, { state: 'pairing_connecting', payload: pairingPayload() });
+    expect(replace.hidden).toBe(true);
+    expect(onReplace).toHaveBeenCalledOnce();
+  });
+
+  it('distinguishes access reporting from the pairing owner’s completion', () => {
+    document.documentElement.innerHTML = browserTaskHtml;
+    renderBrowserTask(document, { state: 'reported', payload: payload() });
+    expect(document.querySelector('h1').textContent).toBe('Browser access confirmed');
+    renderBrowserTask(document, { state: 'task_completed', payload: pairingPayload() });
+    expect(document.querySelector('h1').textContent).toBe('Continue in the desktop app');
+    expect(document.querySelector('#task-status').textContent).toBe('This step is done.');
+  });
+});
+
 describe('scoped browser helper', () => {
   it.each(['ack', 'disconnect', 'timeout', 'foreign-ack'])('finishes only its admitted helper without rewriting completion on %s', async outcome => {
     vi.useFakeTimers();
@@ -203,7 +308,7 @@ describe('scoped browser helper', () => {
       'needs-consent', 'needs-permission', 'needs-account', 'ready', 'paused', 'reported', 'task_completed']) {
       renderBrowserTask(document, { state, payload: payload() });
       expect(document.querySelector('main').dataset.journeyState).toBe('browser.' + state.replaceAll('-', '_'));
-      expect(document.getElementById('task-status').textContent.length).toBeGreaterThan(10);
+      expect(document.getElementById('task-status').textContent.length > 10).toBe(!['loading', 'ready'].includes(state));
       expect(document.querySelector('nav')).toBeNull();
       if (['task_expired', 'task_changed', 'profile_mismatch', 'task_completed'].includes(state)) {
         expect(document.getElementById('desktop-return').hidden).toBe(false);
@@ -480,7 +585,7 @@ describe('scoped browser helper', () => {
       expect(received.at(-1).state).toBe('status_reconnecting');
       document.documentElement.innerHTML = readFileSync('browser-tasks/index.html', 'utf8');
       renderBrowserTask(document, received.at(-1));
-      expect(document.getElementById('task-status').textContent).toBe('Waiting for the desktop app. Checking again automatically.');
+      expect(document.getElementById('task-status').textContent).toBe('This page updates by itself.');
       expect([...document.querySelectorAll('.setup-actions > *')].every(element => element.hidden)).toBe(true);
       expect(close).not.toHaveBeenCalled();
       unavailable = false;
@@ -498,7 +603,7 @@ describe('scoped browser helper', () => {
   it('renders automatic status recovery without a retry action', () => {
     document.documentElement.innerHTML = readFileSync('browser-tasks/index.html', 'utf8');
     renderBrowserTask(document, { state: 'status_reconnecting', payload: authenticationPayload() });
-    expect(document.getElementById('task-status').textContent).toBe('Waiting for the desktop app. Checking again automatically.');
+    expect(document.getElementById('task-status').textContent).toBe('This page updates by itself.');
     expect([...document.querySelectorAll('.setup-actions > *')].every(element => element.hidden)).toBe(true);
     expect(document.querySelector('main').dataset.journeyState).toBe('browser.status_reconnecting');
   });

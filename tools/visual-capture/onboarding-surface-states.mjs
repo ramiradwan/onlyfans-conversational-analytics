@@ -402,9 +402,10 @@ function browserTaskPayload(purpose = 'browser.access') {
   return value;
 }
 
-const taskState = (state, purpose = 'browser.access') => Object.freeze({
+const taskState = (state, purpose = 'browser.access', recovery) => Object.freeze({
   state,
   payload: purpose === null ? null : browserTaskPayload(purpose),
+  ...(recovery ? { recovery } : {}),
 });
 
 export const BROWSER_TASK_STATES = Object.freeze({
@@ -412,7 +413,7 @@ export const BROWSER_TASK_STATES = Object.freeze({
   unavailable: taskState('unavailable', 'browser.access'),
   extension_disconnected: taskState('extension_disconnected', 'browser.access'),
   profile_mismatch: taskState('profile_mismatch', 'browser.access'),
-  account_mismatch: taskState('account_mismatch', 'browser.access'),
+  account_mismatch: taskState('account_mismatch', 'browser.pairing-confirmation'),
   auth_idle: taskState('auth_idle', 'browser.authentication'),
   auth_opening: taskState('auth_opening', 'browser.authentication'),
   auth_checking: taskState('auth_checking', 'browser.authentication'),
@@ -428,6 +429,8 @@ export const BROWSER_TASK_STATES = Object.freeze({
   task_changed: taskState('task_changed', 'browser.access'),
   task_completed: taskState('task_completed', 'browser.access'),
   service_unavailable: taskState('service_unavailable', 'browser.access'),
+  service_unavailable_invariant_failed: taskState('service_unavailable', 'browser.access', 'invariant_failed'),
+  service_unavailable_authorization_refused: taskState('service_unavailable', 'browser.access', 'authorization_refused'),
   service_unavailable_no_payload: taskState('service_unavailable', null),
   status_reconnecting: taskState('status_reconnecting', 'browser.access'),
   needs_consent: taskState('needs-consent', 'browser.access'),

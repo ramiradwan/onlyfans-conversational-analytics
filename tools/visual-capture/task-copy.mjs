@@ -135,7 +135,8 @@ export async function inspectTaskCopy(page, fixture) {
       assert.equal(summary.hasRecoveryInput, false, 'Desktop onboarding must not reintroduce recovery inputs');
     } else {
       assert.equal(summary.journeyState, 'browser.' + fixture.state.state.replaceAll('-', '_'), 'Browser task must declare its exact journey state');
-      assert(summary.statusText.length > 10, 'Browser task must render readable status copy');
+      assert(['loading', 'auth_idle', 'ready'].includes(fixture.state.state) ? summary.statusText === '' : summary.statusText.length > 10,
+        'Browser task must render readable status copy');
       assert.equal(summary.hasNav, false, 'Browser task must not render a second setup wizard');
     }
     return summary;
