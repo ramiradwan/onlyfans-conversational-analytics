@@ -16,8 +16,8 @@ const baseFacts = (verified = []) => Object.fromEntries(
 
 const creatorLabel = Object.freeze({
   creator_id: 'creator-selected',
-  display_name: 'Mia Studio',
-  username: 'mia.studio',
+  display_name: 'Sample Studio',
+  username: 'sample.studio',
 });
 
 const providerChoices = Object.freeze({
@@ -92,6 +92,7 @@ function localAuth(overrides = {}) {
     recoveringStatus: false,
     error: null,
     access: null,
+    attempt: null,
     ...overrides,
   };
 }
@@ -111,6 +112,12 @@ export const DESKTOP_ONBOARDING_STATES = Object.freeze({
     next_task: 'browser-access',
     pending_operations: [pendingOp('browser.access', 'accepted')],
   }, { pending: OPERATION_ID, acting: 'browser.access' }),
+  browser_access_in_chrome: desktopState({
+    pending_operations: [pendingOp('browser.access', 'waiting')],
+  }),
+  browser_access_reconnecting: desktopState({
+    pending_operations: [pendingOp('browser.access', 'waiting')],
+  }, { connected: false, error: 'status_unavailable' }),
   browser_access_chrome_unavailable: desktopState({
     next_task: 'browser-access',
     pending_operations: [pendingOp('browser.access', 'waiting', 'chrome_unavailable')],
@@ -181,6 +188,7 @@ export const DESKTOP_ONBOARDING_STATES = Object.freeze({
       computer_name: 'Studio computer',
       expires_at: '2030-01-01T00:00:00Z',
     },
+    decision_status: { operation_id: OPERATION_ID, state: 'confirmation-required' },
     authentication: signInProjection({
       operation_id: OPERATION_ID,
       browser_operation_id: OPERATION_ID,
@@ -188,6 +196,19 @@ export const DESKTOP_ONBOARDING_STATES = Object.freeze({
       actions: { select: false, cancel: true, open_browser: false, switch_account: true },
       authentication_attempt: { authentication_attempt_id: ATTEMPT_ID, provider: 'google', mode: 'sign-in' },
     }),
+  }),
+  account_confirmed: desktopState({
+    next_task: 'account-connection',
+    facts: baseFacts(['browser_access']),
+    creator_label: creatorLabel,
+    decision_status: { operation_id: OPERATION_ID, state: 'accepted' },
+    pending_operations: [pendingOp('account.connect', 'waiting')],
+  }),
+  account_confirmation_unknown: desktopState({
+    next_task: 'account-connection',
+    facts: baseFacts(['browser_access']),
+    creator_label: creatorLabel,
+    pending_operations: [pendingOp('account.confirm', 'outcome_unknown', 'operation_unconfirmed')],
   }),
   account_sign_in_did_not_finish: desktopState({
     next_task: 'account-connection',
@@ -239,6 +260,16 @@ export const DESKTOP_ONBOARDING_STATES = Object.freeze({
     creator_label: creatorLabel,
     allowed_actions: ['browser.pair'],
   }, { authentication: localAuth({ enrolled: true, authenticated: false }) }),
+  finish_passkey_creating: desktopState({
+    next_task: 'finish-setup',
+    facts: finishSetupVerifiedFacts,
+    creator_label: creatorLabel,
+  }, { authentication: localAuth({ busy: true, attempt: 'create' }) }),
+  finish_passkey_sign_in_failed: desktopState({
+    next_task: 'finish-setup',
+    facts: finishSetupVerifiedFacts,
+    creator_label: creatorLabel,
+  }, { authentication: localAuth({ enrolled: true, error: 'passkey_unconfirmed', attempt: 'sign-in' }) }),
   finish_getting_ready: desktopState({
     next_task: 'finish-setup',
     facts: finishSetupVerifiedFacts,

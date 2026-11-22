@@ -91,6 +91,20 @@ describe('pushed access', () => {
 });
 
 describe('native local enrollment', () => {
+  it.each([[false, 'create'], [true, 'sign-in']])('identifies the deliberate %s ceremony through a quiet status refresh', async (enrolled, attempt) => {
+    const h = setup(enrolled);
+    try {
+      await h.owner.check();
+      expect(h.owner.state.attempt).toBeNull();
+      h.api[enrolled ? 'login' : 'enroll'].mockRejectedValue(refused());
+      const run = h.owner.authenticate();
+      expect(h.owner.state).toMatchObject({ busy: true, attempt });
+      await run;
+      await h.owner.check({ quiet: true });
+      expect(h.owner.state).toMatchObject({ busy: false, attempt, error: 'passkey_unconfirmed' });
+      expect(h.refresh).not.toHaveBeenCalled();
+    } finally { h.owner.stop(); }
+  });
   it.each([false, true])('reads without a ceremony and waits for an explicit %s action', async enrolled => {
     const h = setup(enrolled);
     expect(h.api.state).not.toHaveBeenCalled();

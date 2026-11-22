@@ -4,16 +4,21 @@ import { authorityRecoveryView } from '../shared-setup/authority-recovery.js';
 import { desktopRecovery, passkeyRecovery, recoveryClass } from '../shared-setup/recovery.js';
 
 const tasks = {
-  'browser-access': ['Browser access', 'Allow the extension to use this Chrome profile and select the creator account.', 'setup_browser_access'],
-  'account-connection': ['Connect your account', 'Sign in, then confirm the account connection here.', 'setup_account_connection'],
-  'finish-setup': ['Finish setup', 'Set up access to this computer and connect the browser.', 'setup_finish'],
-  complete: ['Setup complete', '', 'setup_complete'],
+  'browser-access': ['Bring in your conversations', 'Set up Chrome', 'setup_browser_access'],
+  'account-connection': ['Connect your account', 'Connect your account', 'setup_account_connection'],
+  'finish-setup': ['Finish setup', 'Finish setup', 'setup_finish'],
+  complete: ['Setup complete', 'Desktop setup', 'setup_complete'],
 };
-const actions = { 'browser.access': 'Set up browser access', 'account.connect': 'Sign in', 'account.confirm': 'Connect account', 'browser.pair': 'Connect extension' };
+const actions = { 'browser.access': 'Continue in Chrome', 'account.connect': 'Sign in', 'account.confirm': 'Connect account', 'browser.pair': 'Connect extension' };
+const providerNames = new Map([['google', 'Google'], ['microsoft-personal', 'Microsoft'], ['telegram', 'Telegram'], ['tiktok', 'TikTok']]);
+const chromeInstruction = 'Finish setup in Chrome. This window updates by itself.';
+const chooseSignIn = 'Choose how to sign in. You’ll confirm the connection here next.';
+const finishSignIn = 'Finish signing in in Chrome. This window continues by itself.';
+const pairingDescription = 'New messages show up in your analytics once it’s connected.';
+const pairingProgress = 'Keep Chrome open. This window continues by itself.';
 const errors = {
   status_unavailable: 'The setup connection was interrupted. Reconnecting…',
   connection_unavailable: "Dipsy can't connect right now.",
-  session_unavailable: "Setup couldn't continue.",
   authorization_unavailable: 'Access to setup status was refused. Sign in again.',
   operation_unconfirmed: 'The action’s outcome is not confirmed.',
   operation_refused: 'The action was refused.',
@@ -24,9 +29,9 @@ const errors = {
   extension_unavailable: 'Install or turn on the extension in Chrome to continue setup.',
   profile_mismatch: 'Switch to the Chrome profile that has the extension.',
   account_mismatch: 'Switch to the creator account you want to connect in Chrome.',
-  browser_needs_account: 'Chrome does not recognise your creator account yet. Open your creator account in Chrome.',
+  browser_needs_account: 'Sign in to your OnlyFans account in Chrome.',
   browser_needs_consent: 'Browser access is not turned on in the extension. Turn it on in Chrome.',
-  browser_needs_permission: 'The extension cannot open OnlyFans. Allow its site access in Chrome.',
+  browser_needs_permission: 'Allow OnlyFans site access in the extension.',
   operation_expired: 'This task expired.',
   activation_unavailable: 'Dipsy couldn’t prepare your activation.',
 };
@@ -50,12 +55,16 @@ const accessCopy = {
 // Avatars show the first character of a labelled account's name.
 const initial = label => [...new Intl.Segmenter(undefined, { granularity: 'grapheme' })
   .segment((label?.display_name || label?.username || '').trim())][0]?.segment.toUpperCase() || '';
+const accountName = label => label?.display_name || (label?.username ? '@' + label.username : '');
 
 export function renderSetup(document, state) {
   const get = id => document.getElementById(id);
   const value = state.snapshot;
   const recovery = authorityRecoveryView(state, state.acting);
   const main = document.querySelector('main');
+  const loading = !value && !state.error;
+  main.querySelector('.setup-task-card').setAttribute('aria-busy', String(loading));
+  delete main.dataset.access;
   main.querySelector('nav').hidden = Boolean(recovery);
   get('protected-cancel').hidden = true;
   get('task-action').dataset.protectedRecovery = '';
@@ -67,7 +76,7 @@ export function renderSetup(document, state) {
     get('task-description').textContent = recovery.description;
     get('task-description').hidden = !recovery.description;
     setStatus(get('task-status'), recovery.status, recovery.tone);
-    for (const id of ['local-access', 'local-authenticate', 'decision-details', 'header-account', 'sign-in-options',
+    for (const id of ['local-access', 'local-authenticate', 'decision-details', 'decision-sign-in', 'decision-provider', 'task-pending', 'header-account', 'sign-in-options',
       'browser-reopen', 'sign-in-switch', 'sign-in-back', 'setup-code-open']) get(id).hidden = true;
     const primary = get('task-action'), cancel = get('protected-cancel');
     primary.hidden = !recovery.action;
@@ -92,31 +101,38 @@ export function renderSetup(document, state) {
   const localAccessReady = !authentication || (authentication.checked && authentication.authenticated
     && !authentication.busy && !authentication.error);
   const lapsed = needsAuthentication && accessCopy[authentication.access] || null;
-  get('local-access').hidden = !needsAuthentication;
+  const task = value?.next_task;
+  const securing = task === 'finish-setup' && needsAuthentication;
+  const passkeyKnown = needsAuthentication && typeof authentication.enrolled === 'boolean' && !lapsed;
+  const ceremonyPending = passkeyKnown && authentication.busy && !authentication.checking && !authentication.error && !unavailable;
+  const localDescription = lapsed?.[0] || (needsAuthentication && !securing && passkeyKnown ? 'Use a passkey to sign in on this computer.' : '');
+  get('local-access').hidden = !needsAuthentication || reasonClass === 'invariant_failed';
   get('local-access').dataset.journeyState = 'desktop.setup_local_access';
-  setStatus(get('local-access-description'), lapsed?.[0] || 'Use a passkey to sign in on this computer.');
-  get('local-authenticate').hidden = !needsAuthentication || authentication.enrolled === null || unavailable;
+  setStatus(get('local-access-description'), localDescription);
+  get('local-access-description').hidden = !localDescription;
+  get('local-authenticate').hidden = !passkeyKnown || ceremonyPending || unavailable;
   get('local-authenticate').disabled = !state.connected || authentication?.busy;
-  get('local-authenticate').textContent = authentication?.enrolled ? 'Sign in with passkey' : 'Set up passkey';
+  get('local-authenticate').textContent = authentication?.enrolled ? 'Sign in with passkey' : 'Create passkey';
+  const ceremonyFailure = ['passkey_unconfirmed', 'passkey_start_unavailable'].includes(authentication?.error) && authentication?.attempt;
+  setStatus(get('local-auth-pending'), ceremonyPending ? authentication.attempt === 'create' ? 'Waiting for your passkey…' : 'Waiting for verification…' : '', 'progress');
+  get('local-auth-pending').hidden = !ceremonyPending;
   setStatus(get('local-auth-status'), lapsed?.[1]
     || (authentication?.recoveringStatus ? 'Checking access automatically…' : null)
     || (authentication?.checking ? 'Checking access on this computer…' : null)
     || (authentication?.error ? recoveryClass(passkeyRecovery, authentication.error) === 'invariant_failed'
-      ? 'Access on this computer could not be checked.' : passkeyErrors[authentication.error] : null)
-    || (authentication?.busy ? 'Waiting for verification…' : ''),
+      ? 'Access on this computer could not be checked.' : ceremonyFailure === 'create' ? 'Passkey setup didn’t finish.'
+        : ceremonyFailure === 'sign-in' ? 'Sign-in didn’t finish.' : passkeyErrors[authentication.error] : null),
   authentication?.recoveringStatus || authentication?.checking || authentication?.busy || authentication?.access === 'renewing'
     ? 'progress' : lapsed ? 'warning' : recoveryTone(recoveryClass(passkeyRecovery, authentication?.error)));
-  const task = value?.next_task;
-  const decision = value?.decision?.action === 'connect-account' && value?.decision_status?.state !== 'accepted'
-    ? value.decision : null;
+  const accountDecision = value?.decision?.action === 'connect-account' ? value.decision : null;
   const decisionStatus = value?.decision_status?.state;
+  const decision = decisionStatus === 'accepted' ? null : accountDecision;
   const signIn = task === 'account-connection' ? value?.authentication : null;
   const allowed = value?.allowed_actions || [];
   const accepted = decisionStatus === 'accepted';
   const hasChoices = Boolean(signIn && Object.values(signIn.choices || {}).some(Boolean));
   const activeProvider = state.continuingProvider || state.provider || null;
-  // The Provider projection does not identify its authenticated customer. Do
-  // not offer ambiguous account switching without that context.
+  // The confirmation and current ceremony must both admit a sign-in change.
   const canSwitch = !accepted && Boolean(decision) && signIn?.state === 'admitted'
     && signIn.actions.switch_account && allowed.includes('auth.switch');
   const choosingAccount = Boolean(state.choosingAccount && canSwitch);
@@ -146,64 +162,100 @@ export function renderSetup(document, state) {
       || signIn?.state === 'replacement-required' && (canReplaceProviders || sourceContinuationProviders) && signInActions.includes(state.acting)));
   const showingProviders = choosingProvider || opening;
   const controlsDisabled = !state.connected || !localAccessReady || Boolean(state.acting);
-  const pairingPending = task === 'finish-setup' && (state.acting === 'browser.pair'
-    || value?.pending_operations.some(item => item.action === 'browser.pair'));
+  const pairingPending = task === 'finish-setup' && value.pending_operations.some(item => item.action === 'browser.pair');
   const pairingAvailable = task === 'finish-setup' && state.connected && localAccessReady && !state.error
     && allowed.includes('browser.pair') && !pairingPending;
-  const [title, description, journeyState] = tasks[task] || (state.error
-    ? ['Setup unavailable', '', 'setup_unavailable'] : ['Loading setup', 'Reading local setup status…', 'setup_loading']);
-  document.querySelector('main').dataset.journeyState = 'desktop.' + (
-    ['status_unavailable', 'connection_unavailable', 'session_unavailable'].includes(state.error)
-      ? 'setup_unavailable' : journeyState);
-  const securing = task === 'finish-setup' && needsAuthentication;
+  const browserWork = task === 'browser-access' && value.pending_operations.some(item => item.action === 'browser.access');
+  const startingChrome = task === 'browser-access' && state.acting === 'browser.access';
+  const inChrome = task === 'browser-access' && (browserWork || startingChrome || state.pendingAction === 'browser.access'
+    || !allowed.includes('browser.access'));
+  const recoveryTarget = reason === 'chrome_unavailable' ? null : browserRecoveryTarget(value, reason ?? null);
+  const terminal = reasonClass === 'invariant_failed';
+  const [title, stepLabel, journeyState] = tasks[task] || (loading
+    ? ['Loading setup', '', 'setup_loading'] : ['Setup unavailable', 'Desktop setup', 'setup_unavailable']);
+  main.dataset.journeyState = 'desktop.' + (terminal || ['status_unavailable', 'connection_unavailable'].includes(state.error)
+    ? 'setup_unavailable' : journeyState);
+  main.dataset.task = terminal ? 'unavailable' : task || (loading ? 'loading' : 'unavailable');
+  if (securing && !terminal) main.dataset.access = 'passkey';
   const waitingForAccess = task === 'finish-setup' && authentication && !needsAuthentication
     && (!localAccessReady || !state.connected);
   const connecting = pairingPending && state.connected && localAccessReady;
-  get('task-title').textContent = securing ? 'Secure your app'
-    : waitingForAccess ? 'Getting ready' : connecting ? 'Connecting the extension'
-      : pairingAvailable ? 'Connect the browser extension' : title;
-  const taskDescription = securing ? '' : waitingForAccess ? 'Checking access on this computer…'
-    : connecting ? 'Keep Chrome open while Dipsy connects.'
-      : pairingAvailable ? 'Connect Chrome to Dipsy so they can work together.'
-        : choosingAccount ? 'Choose how to sign in with another account.'
-          : showingProviders ? 'Choose how to sign in. You will confirm the account connection here.'
-            : canReplace ? 'Sign in to connect your account.'
-              : decision ? 'Review the account and computer, then confirm the connection.' : description;
+  const confirmingUnknown = task === 'account-connection' && value.pending_operations.some(item =>
+    item.action === 'account.confirm' && item.state === 'outcome_unknown');
+  let taskTitle = title;
+  let taskDescription = '';
+  if (terminal) {
+    taskTitle = 'Setup couldn’t continue';
+  } else if (securing) {
+    if (passkeyKnown) {
+      taskTitle = authentication.enrolled ? 'Confirm it’s you' : 'Protect your analytics on this computer';
+      taskDescription = authentication.enrolled ? 'Windows will ask you to confirm it’s you.'
+        : 'Create a passkey. Windows will ask you to confirm it’s you, so only you can open your analytics here.';
+    } else if (lapsed) taskTitle = 'Access on this computer';
+    else if (authentication.checking) taskTitle = 'Checking this computer…';
+    else {
+      taskTitle = 'Can’t check your passkey right now';
+      taskDescription = 'This page updates by itself.';
+    }
+  } else if (waitingForAccess) {
+    taskTitle = 'Getting ready';
+    taskDescription = 'Checking access on this computer…';
+  } else if (connecting || pairingAvailable) {
+    taskTitle = connecting ? 'Connecting the extension' : 'Connect the extension to this app';
+    taskDescription = pairingDescription;
+  } else if (task === 'browser-access') {
+    if (inChrome) taskDescription = chromeInstruction;
+    else if (!reason || reason === 'status_unavailable') {
+      taskDescription = 'Chrome opens next so the extension can read your OnlyFans activity. You’ll review what it collects first.';
+    }
+  } else if (showingProviders || ['selected', 'retired', 'expired'].includes(signIn?.state)) taskDescription = chooseSignIn;
+  else if (canReplace) taskDescription = 'Sign in to connect your account.';
+  else if (!accepted && !confirmingUnknown) {
+    if (decision) taskDescription = 'Check the OnlyFans account and this computer, then connect them.';
+    else if (task === 'account-connection') taskDescription = 'Sign in, then confirm the account connection here.';
+    else if (task === 'finish-setup') taskDescription = 'Set up access to this computer and connect the browser.';
+  }
+  get('task-title').textContent = taskTitle;
   get('task-description').textContent = taskDescription;
   get('task-description').hidden = !taskDescription;
-  get('decision-details').hidden = !decision || choosingAccount;
-  const label = decision && value?.creator_label?.creator_id === decision.creator_id ? value.creator_label : null;
-  get('decision-account').textContent = decision ? label?.display_name || (label?.username ? '@' + label.username
-    : 'OnlyFans account ' + decision.creator_id) : '';
+  get('decision-details').hidden = !accountDecision || choosingAccount || terminal;
+  const label = accountDecision && value.creator_label?.creator_id === accountDecision.creator_id ? value.creator_label : null;
+  get('decision-account').textContent = accountDecision ? accountName(label) || 'OnlyFans account ' + accountDecision.creator_id : '';
   // Unlabelled accounts show a generic glyph.
   get('decision-account-avatar').textContent = initial(label);
   get('decision-account-avatar').hidden = !get('decision-account-avatar').textContent;
   get('decision-account-glyph').hidden = !get('decision-account-avatar').hidden;
-  const account = value?.creator_label && (!value.decision || value.decision.creator_id === value.creator_label.creator_id)
-    ? value.creator_label : null;
-  get('header-account').hidden = !account;
+  // A helper mismatch can name the observed account before the owner has a binding.
+  const scopedLabel = !terminal && (!value?.decision || value.decision.creator_id === value.creator_label?.creator_id)
+    ? value?.creator_label : null;
+  const expectedLabel = value?.decision || value?.facts.account === 'verified' ? scopedLabel : null;
+  const account = reason === 'account_mismatch' ? expectedLabel : scopedLabel;
+  get('header-account').hidden = !accountName(account);
   get('header-account-avatar').textContent = initial(account);
-  get('header-account-name').textContent = account ? account.display_name || '@' + account.username : '';
+  get('header-account-name').textContent = accountName(account);
   get('header-account-handle').textContent = account?.display_name && account.username ? '@' + account.username : '';
   get('header-account-handle').hidden = !get('header-account-handle').textContent;
   // A display name may be shared, so the handle or account number follows it.
   get('decision-account-identifier').textContent = !label?.display_name ? ''
-    : label.username ? '@' + label.username : 'OnlyFans account ' + decision.creator_id;
+    : label.username ? '@' + label.username : 'OnlyFans account ' + accountDecision.creator_id;
   get('decision-account-identifier').hidden = !get('decision-account-identifier').textContent;
-  get('decision-computer').textContent = decision?.computer_name || '';
-  get('task-step').textContent = task === 'complete' ? 'Desktop setup' : task ? 'Step ' + (Object.keys(tasks).indexOf(task) + 1) + ' of 3' : 'Desktop setup';
-  const pending = Boolean(state.pending || value?.pending_operations.length);
+  get('decision-computer').textContent = accountDecision?.computer_name || '';
+  get('task-step').textContent = task && task !== 'complete' ? `Step ${Object.keys(tasks).indexOf(task) + 1} of 3 · ${stepLabel}`
+    : stepLabel || (terminal ? 'Desktop setup' : '');
+  const pending = Boolean(state.pending || value?.pending_operations.length || startingChrome);
   get('setup-code-open').hidden = !value || pending || value.facts.installation === 'verified' || Boolean(authentication);
   get('setup-code-open').disabled = !state.connected || pending;
-  const reasonMessage = reasonClass === 'invariant_failed' ? "Setup couldn't continue."
+  const reasonMessage = reasonClass === 'invariant_failed' ? ''
     : reason === 'connection_unavailable' && value?.journey_id
-      ? "Dipsy can't connect right now. Your setup progress is saved."
-      : reasonClass ? errors[reason] : null;
+      ? 'Dipsy can’t connect right now. Your setup progress is saved.'
+      : reason === 'account_mismatch' && accountName(expectedLabel)
+        ? `You’re signed in to a different OnlyFans account. Switch to ${accountName(expectedLabel)} in Chrome to continue.`
+        : reportedReason === 'browser_unavailable' && inChrome && recoveryTarget
+          ? 'Chrome closed or lost its connection.' : reasonClass ? errors[reason] : null;
   if (unavailable || reason === 'chrome_unavailable') get('setup-code-open').hidden = true;
-  if (task === 'browser-access' && reasonMessage) get('task-description').hidden = true;
-  const signInMessage = { selected: 'Finish signing in in Chrome.', expired: 'This sign-in request expired.',
+  const signInMessage = { selected: finishSignIn, expired: 'Sign in to continue.',
     'replacement-required': 'Sign-in ended.',
-    retired: 'Sign-in was cancelled.', unavailable: 'The sign-in request could not be confirmed.' }[signIn?.state];
+    retired: 'Continue when you’re ready.', unavailable: 'The sign-in request could not be confirmed.' }[signIn?.state];
   const finalizing = task === 'finish-setup' && (allowed.includes('setup.finalize')
     || value.pending_operations.some(item => item.action === 'setup.finalize'));
   const replacing = task === 'account-connection' && (state.replacingCeremony
@@ -212,14 +264,21 @@ export function renderSetup(document, state) {
     || opening && signIn?.state === 'replacement-required');
   const replacementUnknown = value?.pending_operations.some(item => ['auth.select', 'account.connect'].includes(item.action)
     && item.state === 'outcome_unknown');
+  const switching = state.choosingAccount || [state.acting, state.pendingAction].some(action => ['auth.switch', 'auth.select', 'auth.cancel'].includes(action))
+    || value?.pending_operations.some(item => ['auth.switch', 'auth.select', 'auth.cancel'].includes(item.action));
+  const providerName = decision && allowed.includes('account.confirm') && state.connected && !reason && !confirmingUnknown && !replacing && !switching
+    && signIn?.state === 'admitted' && signIn.operation_id === decision.operation_id && !signIn.actions.open_browser
+    && (!value.decision_status || decisionStatus === 'confirmation-required' && value.decision_status.operation_id === decision.operation_id)
+    ? providerNames.get(signIn.authentication_attempt?.provider) : null;
+  get('decision-provider').textContent = providerName ? `Signed in with ${providerName}` : '';
+  get('decision-provider').hidden = !providerName;
   const progress = task === 'complete' ? state.continuing ? 'Opening dashboard…' : ''
     : replacing ? (replacementUnknown ? 'Checking sign-in\u2026' : 'Preparing sign-in\u2026')
     : state.acting === 'auth.cancel' ? 'Cancelling sign-in…'
-    : opening || state.acting && ['auth.select', 'auth.switch', 'account.connect', 'browser.open', 'browser.pair'].includes(state.acting) ? 'Opening Chrome…'
-      : finalizing ? 'Preparing Dipsy on this computer…'
-        : accepted ? 'Account connection accepted. Finishing setup…'
-        : choosingProvider ? '' : signInMessage || (decisionStatus === 'awaiting-authentication' ? 'Finish signing in in Chrome.'
-          : decisionStatus === 'unavailable' ? 'This sign-in request is unavailable.' : pending && !decision && !connecting ? 'Waiting for the current action to finish.' : '');
+    : opening ? finishSignIn : state.acting === 'browser.open' ? 'Opening Chrome…'
+      : choosingProvider ? '' : signInMessage || (decisionStatus === 'awaiting-authentication' ? finishSignIn
+        : decisionStatus === 'unavailable' ? 'This sign-in request is unavailable.'
+          : pending && !decision && !connecting && !recoveryTarget ? 'Waiting for the current action to finish.' : '');
   // The access section explains a lapse. Nothing progresses until access returns,
   // so the task line then names only errors unrelated to it.
   const unfinished = canSelect && signIn?.state === 'reauthentication-required' && !state.acting;
@@ -229,9 +288,6 @@ export function renderSetup(document, state) {
     : progress && (state.continuing || opening || state.acting || finalizing || accepted
       || signIn?.state === 'selected' || pending && !decision) ? 'progress'
       : signIn?.state === 'expired' || signIn?.state === 'unavailable' ? 'warning' : 'neutral';
-  setStatus(get('task-status'), (lapsed ? reason !== 'authority_unavailable' && reasonMessage
-    : reasonClass === 'invariant_failed' ? reasonMessage : replacing ? progress : endedPrompt ? signInMessage : unfinished ? 'Sign-in did not finish.' : reasonMessage || progress) || '', taskTone);
-  document.querySelector('main').dataset.task = task || 'loading';
   get('sign-in-options').hidden = !showingProviders || unavailable;
   for (const button of get('sign-in-options').querySelectorAll('[data-provider]')) {
     // Without a projection with choices, the opening choices keep the visibility they were clicked in.
@@ -249,23 +305,38 @@ export function renderSetup(document, state) {
     : allowed.find(item => actions[item] && (item !== 'browser.access' || task === 'browser-access')
       && (item !== 'account.connect' || sourceContinuationFallback));
   const taskAction = get('task-action');
+  const submittingPair = state.acting === 'browser.pair' || state.pendingAction === 'browser.pair';
   taskAction.hidden = unavailable || reason === 'chrome_unavailable' || !action || showingProviders || accepted || !localAccessReady
-    || action === 'browser.pair' && (!pairingAvailable || pending);
-  taskAction.disabled = controlsDisabled || replacing || (!canReplaceFallback && (decision ? Boolean(state.pending) : pending));
+    || startingChrome || confirmingUnknown || action === 'browser.pair' && (!pairingAvailable || pending && !submittingPair);
+  taskAction.disabled = controlsDisabled || replacing || action === 'browser.pair' && submittingPair
+    || (!canReplaceFallback && (decision ? Boolean(state.pending) : pending));
   taskAction.textContent = canReplaceFallback ? 'Sign in again' : value?.continuation_available && action === 'account.connect' ? 'Continue setup'
     : actions[action] || '';
   taskAction.dataset.action = taskAction.hidden ? '' : action;
   taskAction.dataset.replaceCeremony = String(canReplaceFallback && !taskAction.hidden);
-  const recoveryTarget = reason === 'chrome_unavailable' ? null : browserRecoveryTarget(value, reason ?? null);
   const browserReopen = get('browser-reopen');
   browserReopen.hidden = canReplace || replacing || unavailable || !recoveryTarget || accepted || showingProviders || Boolean(decision) || !state.connected
     || Boolean(state.browserLaunchPending || state.acting || !localAccessReady);
   browserReopen.disabled = controlsDisabled;
   browserReopen.dataset.operation = browserReopen.hidden ? '' : recoveryTarget;
   browserReopen.textContent = 'Open Chrome';
+  const reconnectingChrome = inChrome && reason === 'status_unavailable';
+  const preparingChrome = inChrome && browserReopen.hidden && (startingChrome || state.browserLaunchPending || reason === 'browser_preparing');
+  const pendingMessage = terminal ? '' : reconnectingChrome ? 'Reconnecting…' : preparingChrome ? 'Getting Chrome ready…'
+    : confirmingUnknown ? 'Checking whether your setup finished…'
+      : finalizing && !reason ? 'Preparing this computer…'
+        : accepted && task === 'account-connection' && !reason ? 'Account connected. Moving to the next step…'
+          : connecting && browserReopen.hidden ? pairingProgress : '';
+  setStatus(get('task-pending'), pendingMessage, 'progress');
+  get('task-pending').hidden = !pendingMessage;
+  const status = terminal ? '' : lapsed ? reason !== 'authority_unavailable' && reasonMessage
+    : reconnectingChrome || preparingChrome && reason === 'browser_preparing' || confirmingUnknown && (!reason || reason === 'operation_unconfirmed') ? ''
+      : replacing ? progress : endedPrompt ? signInMessage : unfinished ? 'Sign-in did not finish.'
+        : reasonMessage || (!pendingMessage && (connecting ? pairingProgress : progress));
+  setStatus(get('task-status'), status || '', connecting && !reason ? 'progress' : taskTone);
   get('sign-in-switch').hidden = !canSwitch || choosingAccount || unavailable;
-  get('sign-in-switch').textContent = 'Use a different sign-in account';
   get('sign-in-switch').disabled = controlsDisabled;
+  get('decision-sign-in').hidden = !providerName && get('sign-in-switch').hidden;
   get('sign-in-back').hidden = !choosingAccount || unavailable;
   get('sign-in-back').disabled = controlsDisabled;
   for (const group of document.querySelectorAll('.setup-actions')) {

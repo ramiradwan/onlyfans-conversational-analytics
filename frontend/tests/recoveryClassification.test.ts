@@ -100,7 +100,7 @@ describe('recovery classification', () => {
     renderSetup(document, { connected: true, error: 'private-owner-diagnostic', pending: null,
       snapshot: { generation: 'g', journey_id: 'j', next_task: 'browser-access', facts: { installation: 'missing' },
         allowed_actions: ['browser.access'], pending_operations: [], reason: 'none' } });
-    expect(document.getElementById('task-status')?.textContent).toBe("Setup couldn't continue.");
+    expect(document.getElementById('task-title')?.textContent).toBe('Setup couldn’t continue');
     expect(document.getElementById('task-action')?.hidden).toBe(true);
     expect(document.getElementById('setup-code-open')?.hidden).toBe(true);
   });

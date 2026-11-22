@@ -66,6 +66,9 @@ describe('task-focused static copy', () => {
     const doc = parse('frontend/onboarding/index.html');
     expect(doc.querySelector('#task-status')?.textContent).toBe('');
     expect(doc.querySelector('#task-title')?.textContent).toBe('Loading setup');
+    expect(doc.querySelector('.setup-task-card')?.getAttribute('aria-busy')).toBe('true');
+    expect(doc.querySelector('#task-description')?.textContent).toBe('');
+    expect(doc.querySelector('.desktop-loading-action')?.getAttribute('aria-hidden')).toBe('true');
     expect(doc.querySelector('#recovery-options')).toBeNull();
     for (const control of doc.querySelectorAll('[aria-describedby]')) {
       for (const id of control.getAttribute('aria-describedby')!.split(' ')) expect(doc.getElementById(id), id).not.toBeNull();

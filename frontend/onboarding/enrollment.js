@@ -5,7 +5,8 @@ import { AccessFollower, createWebAuthnApi, EnrollmentOutcomeError, lapsedAccess
 export class DesktopEnrollment {
   constructor({ api = createWebAuthnApi(), receive, refresh }) {
     Object.assign(this, { api, receive, refresh });
-    this.state = { checked: false, enrolled: null, authenticated: false, busy: false, checking: false, recoveringStatus: false, error: null, access: null };
+    this.state = { checked: false, enrolled: null, authenticated: false, busy: false, checking: false,
+      recoveringStatus: false, error: null, access: null, attempt: null };
     this.controller = null;
     this.watcher = null;
     this.retryTimer = null;
@@ -44,7 +45,7 @@ export class DesktopEnrollment {
     const wasAuthenticated = this.state.authenticated;
     const controller = this.start();
     this.watch();
-    if (!quiet) this.publish({ busy: true, checking: true, error: null });
+    if (!quiet) this.publish({ busy: true, checking: true, error: null, attempt: null });
     let outcome = null;
     let refused = false;
     try {
@@ -62,12 +63,12 @@ export class DesktopEnrollment {
       if (!controller.signal.aborted) {
         const access = lapsedAccess(error);
         outcome = error instanceof WebAuthnStatusError ? error.access : null;
-        if (access) this.publish({ checked: true, enrolled: null, authenticated: false, access, recoveringStatus: false, error: null });
+        if (access) this.publish({ checked: true, enrolled: null, authenticated: false, access, recoveringStatus: false, error: null, attempt: null });
         else {
           const kind = error instanceof WebAuthnStatusError ? error.kind : 'invalid';
           const delay = ['network', 'unavailable'].includes(kind) ? PASSKEY_STATUS_RETRY_DELAYS[this.retryCount] : undefined;
           refused = !['network', 'unavailable'].includes(kind);
-          this.publish({ checked: true, enrolled: null, authenticated: false, access: null,
+          this.publish({ checked: true, enrolled: null, authenticated: false, access: null, attempt: null,
             recoveringStatus: delay !== undefined,
             error: kind === 'unavailable' ? 'passkey_status_unavailable' : 'passkey_status_' + kind });
           if (delay !== undefined) {
@@ -90,9 +91,10 @@ export class DesktopEnrollment {
     // The ceremony retires a quiet read. The follower compares again when it ends.
     const controller = this.start();
     let reconcile = false;
-    this.publish({ busy: true, error: null });
+    const attempt = this.state.enrolled ? 'sign-in' : 'create';
+    this.publish({ busy: true, error: null, attempt });
     try {
-      if (this.state.enrolled) await this.api.login(controller.signal);
+      if (attempt === 'sign-in') await this.api.login(controller.signal);
       else await this.api.enroll(controller.signal);
       if (!controller.signal.aborted) {
         // The reconnect owns a long-lived event stream; it is not a new command.

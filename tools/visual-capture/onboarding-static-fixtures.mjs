@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BROWSER_TASK_STATES, DESKTOP_ONBOARDING_STATES } from './onboarding-surface-states.mjs';
+import { desktopOnboardingWidths } from './static-fixture-matrix.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const frontend = join(root, 'frontend');
@@ -123,7 +124,7 @@ export async function onboardingStaticFixtures() {
       urlPath: '/onboarding/index.html',
       html: onboardingHtml,
       script: onboardingScript,
-      widths: [1440, 390],
+      widths: desktopOnboardingWidths,
       injectedSurface: true,
     });
   }
