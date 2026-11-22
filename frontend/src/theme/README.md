@@ -66,7 +66,7 @@ The popup and setup page load local Latin Inter and Space Grotesk from the same 
 
 Run `npm run sync:static-tokens` after changing the font source or static roles. Do not edit the `static-fonts` or `static-font-preloads` blocks directly. The old font-stack variable remains compatible; the new UI and numeric variables include the bundled fallback faces.
 
-The native bundle generator writes `desktop/shell/onboarding-theme.css` and the pinned Latin Inter WOFF2. The stylesheet resolves the face relative to itself and carries the redistribution notice. Native consumers can load it with a stylesheet link under the same-origin font policy and use inline, decorative SVG paths under the native image policy.
+The native bundle generator writes `desktop/shell/onboarding-theme.css`, the pinned Latin Inter WOFF2, and the matching SVG masks under `desktop/shell/onboarding-icons/`. The stylesheet carries the redistribution notices and resolves both fonts and masks relative to itself under the native same-origin policy.
 
 Static feedback fields use named, opaque colors. Healthy settled cards use paper and state readiness once in the task heading. Hover, focus, disabled controls, dominant cards and quiet navigation retain separate meanings. Popup disclosures keep their wording and structure. Setup continues to use its existing controller and validation rules.
 
@@ -80,6 +80,6 @@ Operational copy names the current task once. Setup feedback appears beside the 
 
 Keep the 1440 px copy budget at one title line, two body lines and one status line. At narrow widths and increased text size, allow natural wrapping. Give system-driven replacements the same occupied size or a separate surface. The action swap key restarts the opacity animation while the outer action stays mounted.
 
-Neutral surfaces carry spots and pills. Jade marks progress and actions. Keep error ink on the state icon and the destructive confirmation action. Apply the surface glow in the first-finding consumer.
+Neutral surfaces carry spots and pills. Jade marks progress and actions. Use error ink for the error state icon, the error pill dot, and the destructive confirmation action. Apply the surface glow in the first-finding consumer.
 
 Arrival and status changes use 200 ms, control swaps use 180 ms, and value bars use 240 ms. The pending arc rotates in one second. Reduced motion shows the final pose of each primitive and a static arc.

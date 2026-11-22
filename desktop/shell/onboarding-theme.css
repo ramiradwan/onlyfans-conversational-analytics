@@ -694,7 +694,12 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   align-items: center;
   gap: 12px;
   margin-block-end: 16px;
-  color: var(--bridge-palette-text-secondary, var(--dipsy-color-text-muted));
+  color: var(--bridge-palette-text-secondary, var(--dipsy-color-text-secondary));
+  font-size: var(--dipsy-static-caption-size, .75rem);
+  font-weight: var(--dipsy-font-weight-semibold, 600);
+  line-height: 1.4;
+  letter-spacing: .08em;
+  text-transform: uppercase;
 }
 .onboarding-surface .onboarding-surface-title {
   margin: 0;
@@ -707,7 +712,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 }
 .onboarding-surface-body {
   max-inline-size: 60ch;
-  color: var(--bridge-palette-text-secondary, var(--dipsy-color-text-muted));
+  color: var(--bridge-palette-text-secondary, var(--dipsy-color-text-secondary));
 }
 .onboarding-surface-title + .onboarding-surface-body:not(:empty) { margin-block-start: 8px; }
 .onboarding-surface > .onboarding-action:has(.onboarding-action-content:not(:empty)) { margin-block-start: 24px; }
@@ -727,7 +732,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   border: 1px solid var(--bridge-palette-divider, var(--dipsy-color-divider));
   border-radius: var(--dipsy-radius-control, 12px);
   background: var(--bridge-palette-surface-subtle, var(--dipsy-intent-surface-subtle));
-  color: var(--bridge-palette-text-secondary, var(--dipsy-color-text-muted));
+  color: var(--bridge-palette-text-secondary, var(--dipsy-color-text-secondary));
 }
 .onboarding-spot > :is(svg, .onboarding-icon),
 .onboarding-status > :is(svg, .onboarding-icon) { flex: none; inline-size: 20px; block-size: 20px; }
@@ -745,16 +750,22 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   padding: 3px 10px;
   border-radius: var(--dipsy-radius-pill, 999px);
   background: var(--bridge-palette-surface-subtle, var(--dipsy-intent-surface-subtle));
+  font-size: var(--dipsy-static-caption-size, .75rem);
+  font-weight: var(--dipsy-font-weight-medium, 500);
+  line-height: 1.5;
 }
 .onboarding-tone-dot {
   flex: none;
   inline-size: 6px;
   block-size: 6px;
   border-radius: 50%;
-  background: var(--bridge-palette-text-secondary, var(--dipsy-color-text-muted));
+  background: var(--bridge-palette-text-secondary, var(--dipsy-color-text-secondary));
 }
 .onboarding-pill[data-tone="progress"] > .onboarding-tone-dot {
   background: var(--bridge-palette-primary-main, var(--dipsy-color-primary));
+}
+.onboarding-pill[data-tone="error"] > .onboarding-tone-dot {
+  background: var(--bridge-palette-error-main, var(--dipsy-color-error));
 }
 .onboarding-action-content:not(:empty) {
   display: flex;
@@ -763,17 +774,28 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   gap: 12px;
   min-block-size: var(--onboarding-control-height, var(--dipsy-static-control-height, 44px));
 }
+:where(.onboarding-status) {
+  font-size: .9375rem;
+  line-height: 1.5;
+}
 .onboarding-status:not(:empty) {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   color: var(--bridge-palette-text-primary, var(--dipsy-color-text));
 }
-.onboarding-status[data-tone="neutral"] { color: var(--bridge-palette-text-secondary, var(--dipsy-color-text-muted)); }
-.onboarding-status:is([data-tone="pending"], [data-tone="done"]) > :first-child {
+.onboarding-status > :is(svg, .onboarding-icon) {
+  font-size: inherit;
+  margin-block-start: max(0px, calc((1lh - 20px) / 2));
+}
+.onboarding-status[data-tone="neutral"],
+.onboarding-status[data-tone="attention"] > :is(svg, .onboarding-icon) {
+  color: var(--bridge-palette-text-secondary, var(--dipsy-color-text-secondary));
+}
+.onboarding-status:is([data-tone="pending"], [data-tone="done"]) > :is(svg, .onboarding-icon) {
   color: var(--bridge-palette-primary-main, var(--dipsy-color-primary));
 }
-.onboarding-status[data-tone="error"] > :first-child {
+.onboarding-status[data-tone="error"] > :is(svg, .onboarding-icon) {
   color: var(--bridge-palette-error-main, var(--dipsy-color-error));
 }
 
@@ -1018,22 +1040,22 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-.onboarding-icon[data-icon="account"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M12%205.9c1.16%200%202.1.94%202.1%202.1s-.94%202.1-2.1%202.1S9.9%209.16%209.9%208s.94-2.1%202.1-2.1m0%209c2.97%200%206.1%201.46%206.1%202.1v1.1H5.9V17c0-.64%203.13-2.1%206.1-2.1M12%204C9.79%204%208%205.79%208%208s1.79%204%204%204%204-1.79%204-4-1.79-4-4-4m0%209c-2.67%200-8%201.34-8%204v3h16v-3c0-2.66-5.33-4-8-4%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="app"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M20%2018c1.1%200%202-.9%202-2V6c0-1.1-.9-2-2-2H4c-1.1%200-2%20.9-2%202v10c0%201.1.9%202%202%202H0v2h24v-2zM4%206h16v10H4z%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="browser"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M19%204H5c-1.11%200-2%20.9-2%202v12c0%201.1.89%202%202%202h14c1.1%200%202-.9%202-2V6c0-1.1-.89-2-2-2m0%2014H5V8h14z%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="code"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M2%2017h20v2H2zm1.15-4.05L4%2011.47l.85%201.48%201.3-.75-.85-1.48H7v-1.5H5.3l.85-1.47L4.85%207%204%208.47%203.15%207l-1.3.75.85%201.47H1v1.5h1.7l-.85%201.48zm6.7-.75%201.3.75.85-1.48.85%201.48%201.3-.75-.85-1.48H15v-1.5h-1.7l.85-1.47-1.3-.75L12%208.47%2011.15%207l-1.3.75.85%201.47H9v1.5h1.7zM23%209.22h-1.7l.85-1.47-1.3-.75L20%208.47%2019.15%207l-1.3.75.85%201.47H17v1.5h1.7l-.85%201.48%201.3.75.85-1.48.85%201.48%201.3-.75-.85-1.48H23z%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="data"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M2%2020h20v-4H2zm2-3h2v2H4zM2%204v4h20V4zm4%203H4V5h2zm-4%207h20v-4H2zm2-3h2v2H4z%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="extension"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M10.5%204.5c.28%200%20.5.22.5.5v2h6v6h2c.28%200%20.5.22.5.5s-.22.5-.5.5h-2v6h-2.12c-.68-1.75-2.39-3-4.38-3s-3.7%201.25-4.38%203H4v-2.12c1.75-.68%203-2.39%203-4.38S5.76%209.8%204.01%209.12L4%207h6V5c0-.28.22-.5.5-.5m0-2C9.12%202.5%208%203.62%208%205H4c-1.1%200-1.99.9-1.99%202v3.8h.29c1.49%200%202.7%201.21%202.7%202.7s-1.21%202.7-2.7%202.7H2V20c0%201.1.9%202%202%202h3.8v-.3c0-1.49%201.21-2.7%202.7-2.7s2.7%201.21%202.7%202.7v.3H17c1.1%200%202-.9%202-2v-4c1.38%200%202.5-1.12%202.5-2.5S20.38%2011%2019%2011V7c0-1.1-.9-2-2-2h-4c0-1.38-1.12-2.5-2.5-2.5%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="history"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M15%204v7H5.17L4%2012.17V4zm1-2H3c-.55%200-1%20.45-1%201v14l4-4h10c.55%200%201-.45%201-1V3c0-.55-.45-1-1-1m5%204h-2v9H6v2c0%20.55.45%201%201%201h11l4%204V7c0-.55-.45-1-1-1%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="insights"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M21%208c-1.45%200-2.26%201.44-1.93%202.51l-3.55%203.56c-.3-.09-.74-.09-1.04%200l-2.55-2.55C12.27%2010.45%2011.46%209%2010%209c-1.45%200-2.27%201.44-1.93%202.52l-4.56%204.55C2.44%2015.74%201%2016.55%201%2018c0%201.1.9%202%202%202%201.45%200%202.26-1.44%201.93-2.51l4.55-4.56c.3.09.74.09%201.04%200l2.55%202.55C12.73%2016.55%2013.54%2018%2015%2018c1.45%200%202.27-1.44%201.93-2.52l3.56-3.55c1.07.33%202.51-.48%202.51-1.93%200-1.1-.9-2-2-2%22%2F%3E%3Cpath%20d%3D%22m15%209%20.94-2.07L18%206l-2.06-.93L15%203l-.92%202.07L12%206l2.08.93zM3.5%2011%204%209l2-.5L4%208l-.5-2L3%208l-2%20.5L3%209z%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="legal"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M8%2016h8v2H8zm0-4h8v2H8zm6-10H6c-1.1%200-2%20.9-2%202v16c0%201.1.89%202%201.99%202H18c1.1%200%202-.9%202-2V8zm4%2018H6V4h7v5h5z%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="link"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M17%207h-4v2h4c1.65%200%203%201.35%203%203s-1.35%203-3%203h-4v2h4c2.76%200%205-2.24%205-5s-2.24-5-5-5m-6%208H7c-1.65%200-3-1.35-3-3s1.35-3%203-3h4V7H7c-2.76%200-5%202.24-5%205s2.24%205%205%205h4zm-3-4h8v2H8z%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="lock"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M18%208h-1V6c0-2.76-2.24-5-5-5S7%203.24%207%206v2H6c-1.1%200-2%20.9-2%202v10c0%201.1.9%202%202%202h12c1.1%200%202-.9%202-2V10c0-1.1-.9-2-2-2M9%206c0-1.66%201.34-3%203-3s3%201.34%203%203v2H9zm9%2014H6V10h12zm-6-3c1.1%200%202-.9%202-2s-.9-2-2-2-2%20.9-2%202%20.9%202%202%202%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="offline"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M24%2015c0-2.64-2.05-4.78-4.65-4.96C18.67%206.59%2015.64%204%2012%204c-1.33%200-2.57.36-3.65.97l1.49%201.49C10.51%206.17%2011.23%206%2012%206c3.04%200%205.5%202.46%205.5%205.5v.5H19c1.66%200%203%201.34%203%203%200%20.99-.48%201.85-1.21%202.4l1.41%201.41c1.09-.92%201.8-2.27%201.8-3.81M4.41%203.86%203%205.27l2.77%202.77h-.42C2.34%208.36%200%2010.91%200%2014c0%203.31%202.69%206%206%206h11.73l2%202%201.41-1.41zM6%2018c-2.21%200-4-1.79-4-4s1.79-4%204-4h1.73l8%208z%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="passkey"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M21%2010h-8.35C11.83%207.67%209.61%206%207%206c-3.31%200-6%202.69-6%206s2.69%206%206%206c2.61%200%204.83-1.67%205.65-4H13l2%202%202-2%202%202%204-4.04zM7%2015c-1.65%200-3-1.35-3-3s1.35-3%203-3%203%201.35%203%203-1.35%203-3%203%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="pause"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M9%2016h2V8H9zm3-14C6.48%202%202%206.48%202%2012s4.48%2010%2010%2010%2010-4.48%2010-10S17.52%202%2012%202m0%2018c-4.41%200-8-3.59-8-8s3.59-8%208-8%208%203.59%208%208-3.59%208-8%208m1-4h2V8h-2z%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="sync"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M12%204V1L8%205l4%204V6c3.31%200%206%202.69%206%206%200%201.01-.25%201.97-.7%202.8l1.46%201.46C19.54%2015.03%2020%2013.57%2020%2012c0-4.42-3.58-8-8-8m0%2014c-3.31%200-6-2.69-6-6%200-1.01.25-1.97.7-2.8L5.24%207.74C4.46%208.97%204%2010.43%204%2012c0%204.42%203.58%208%208%208v3l4-4-4-4z%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="update"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22m12%2016%204-4h-3V3h-2v9H8zm9-13h-6v1.99h6v14.03H3V4.99h6V3H3c-1.1%200-2%20.9-2%202v14c0%201.1.9%202%202%202h18c1.1%200%202-.9%202-2V5c0-1.1-.9-2-2-2m-9%2013%204-4h-3V3h-2v9H8zm9-13h-6v1.99h6v14.03H3V4.99h6V3H3c-1.1%200-2%20.9-2%202v14c0%201.1.9%202%202%202h18c1.1%200%202-.9%202-2V5c0-1.1-.9-2-2-2%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="done"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M12%202C6.48%202%202%206.48%202%2012s4.48%2010%2010%2010%2010-4.48%2010-10S17.52%202%2012%202m0%2018c-4.41%200-8-3.59-8-8s3.59-8%208-8%208%203.59%208%208-3.59%208-8%208m4.59-12.42L10%2014.17l-2.59-2.58L6%2013l4%204%208-8z%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="error"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M11%2015h2v2h-2zm0-8h2v6h-2zm.99-5C6.47%202%202%206.48%202%2012s4.47%2010%209.99%2010C17.52%2022%2022%2017.52%2022%2012S17.52%202%2011.99%202M12%2020c-4.42%200-8-3.58-8-8s3.58-8%208-8%208%203.58%208%208-3.58%208-8%208%22%2F%3E%3C%2Fsvg%3E"); }
-.onboarding-icon[data-icon="info"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M11%207h2v2h-2zm0%204h2v6h-2zm1-9C6.48%202%202%206.48%202%2012s4.48%2010%2010%2010%2010-4.48%2010-10S17.52%202%2012%202m0%2018c-4.41%200-8-3.59-8-8s3.59-8%208-8%208%203.59%208%208-3.59%208-8%208%22%2F%3E%3C%2Fsvg%3E"); }
+.onboarding-icon[data-icon="account"] { --onboarding-icon: url("./onboarding-icons/account.svg"); }
+.onboarding-icon[data-icon="app"] { --onboarding-icon: url("./onboarding-icons/app.svg"); }
+.onboarding-icon[data-icon="browser"] { --onboarding-icon: url("./onboarding-icons/browser.svg"); }
+.onboarding-icon[data-icon="code"] { --onboarding-icon: url("./onboarding-icons/code.svg"); }
+.onboarding-icon[data-icon="data"] { --onboarding-icon: url("./onboarding-icons/data.svg"); }
+.onboarding-icon[data-icon="extension"] { --onboarding-icon: url("./onboarding-icons/extension.svg"); }
+.onboarding-icon[data-icon="history"] { --onboarding-icon: url("./onboarding-icons/history.svg"); }
+.onboarding-icon[data-icon="insights"] { --onboarding-icon: url("./onboarding-icons/insights.svg"); }
+.onboarding-icon[data-icon="legal"] { --onboarding-icon: url("./onboarding-icons/legal.svg"); }
+.onboarding-icon[data-icon="link"] { --onboarding-icon: url("./onboarding-icons/link.svg"); }
+.onboarding-icon[data-icon="lock"] { --onboarding-icon: url("./onboarding-icons/lock.svg"); }
+.onboarding-icon[data-icon="offline"] { --onboarding-icon: url("./onboarding-icons/offline.svg"); }
+.onboarding-icon[data-icon="passkey"] { --onboarding-icon: url("./onboarding-icons/passkey.svg"); }
+.onboarding-icon[data-icon="pause"] { --onboarding-icon: url("./onboarding-icons/pause.svg"); }
+.onboarding-icon[data-icon="sync"] { --onboarding-icon: url("./onboarding-icons/sync.svg"); }
+.onboarding-icon[data-icon="update"] { --onboarding-icon: url("./onboarding-icons/update.svg"); }
+.onboarding-icon[data-icon="done"] { --onboarding-icon: url("./onboarding-icons/done.svg"); }
+.onboarding-icon[data-icon="error"], .onboarding-icon[data-icon="attention"] { --onboarding-icon: url("./onboarding-icons/error.svg"); }
+.onboarding-icon[data-icon="info"] { --onboarding-icon: url("./onboarding-icons/info.svg"); }

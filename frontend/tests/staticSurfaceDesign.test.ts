@@ -73,6 +73,20 @@ describe('native surface font delivery', () => {
     ]);
     expect(capabilities).toEqual(['desktop', 'window-frame']);
   });
+
+  it('packages each native mask as the same outline SVG at a relative URL', () => {
+    const bundle = generateNativeOnboardingBundle(tokensSource, root);
+    const layout = read('frontend/src/theme/onboarding.css');
+    const masks = [...layout.matchAll(/^\.onboarding-icon\[data-icon="([a-z-]+)"\].*?url\("data:image\/svg\+xml,([^"]+)"\)/gm)];
+    expect(masks).toHaveLength(19);
+    expect(bundle.css).not.toContain('data:image/');
+    expect(fs.readdirSync(path.join(root, 'desktop/shell/onboarding-icons')).sort())
+      .toEqual(masks.map(([, name]) => name + '.svg').sort());
+    for (const [, name, svg] of masks) {
+      expect(bundle.css).toContain(`url("./onboarding-icons/${name}.svg")`);
+      expect(read(`desktop/shell/onboarding-icons/${name}.svg`)).toBe(decodeURIComponent(svg) + '\n');
+    }
+  });
 });
 
 describe('opt-in static onboarding primitives', () => {

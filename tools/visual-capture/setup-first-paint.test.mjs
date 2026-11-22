@@ -85,6 +85,104 @@ test('native startup first paint uses local assets and fits narrow 2x viewports 
   }
 });
 
+test('native onboarding primitives render under the shell CSP', async () => {
+  const root = new URL('../../desktop/shell/', import.meta.url);
+  const config = JSON.parse(await readFile(new URL('../../desktop/src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
+  const layout = await readFile(new URL('../../frontend/src/theme/onboarding.css', import.meta.url), 'utf8');
+  const icons = [...layout.matchAll(/^\.onboarding-icon\[data-icon="([a-z-]+)"\].*?url\("data:image\/svg\+xml,/gm)]
+    .map(([, name]) => name);
+  assert.equal(icons.length, 19);
+  const icon = name => `<span class="onboarding-icon" data-icon="${name}" aria-hidden="true"></span>`;
+  const document = scaled => `<!doctype html><html data-large="${scaled}"><head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/shell.css"><link rel="stylesheet" href="/fixture.css">
+    </head><body><section class="onboarding-surface" data-composition="static">
+    <div class="onboarding-surface-head"><span class="onboarding-spot">${icon('passkey')}</span>Device setup</div>
+    <h1 class="onboarding-surface-title">Prepare this computer</h1>
+    <div class="onboarding-surface-body">Follow the setup instructions.</div>
+    <span class="onboarding-pill" data-tone="error"><span class="onboarding-tone-dot" aria-hidden="true"></span>Stopped</span>
+    <span class="onboarding-pill" data-tone="neutral"><span class="onboarding-tone-dot" aria-hidden="true"></span>Ready</span>
+    <div class="onboarding-status" data-tone="attention">${icon('attention')}<span>The status stays readable when the message wraps onto another line.</span></div>
+    <div class="onboarding-status" data-tone="neutral">${icon('info')}<span>Setup is ready.</span></div>
+    </section><div aria-hidden="true">${icons.map(icon).join('')}</div>
+    <span class="reference-secondary"></span><span class="reference-primary"></span><span class="reference-error"></span>
+    </body></html>`;
+  const origin = 'http://native-onboarding.test';
+  const types = { '.css': 'text/css', '.woff2': 'font/woff2', '.svg': 'image/svg+xml' };
+  const browser = await chromium.launch();
+  try {
+    for (const colorScheme of ['light', 'dark']) for (const width of [1440, 390, 320]) {
+      const page = await browser.newPage({ colorScheme, viewport: { width, height: 900 }, reducedMotion: 'reduce' });
+      const loadedIcons = new Set();
+      try {
+        await page.addInitScript(() => {
+          window.imageCspViolations = [];
+          document.addEventListener('securitypolicyviolation', event => {
+            if (event.effectiveDirective === 'img-src') window.imageCspViolations.push(event.blockedURI);
+          });
+        });
+        await page.route(origin + '/**', async route => {
+          const { pathname } = new URL(route.request().url());
+          if (pathname === '/') return route.fulfill({ contentType: 'text/html', body: document(width === 320),
+            headers: { 'content-security-policy': config.app.security.csp } });
+          if (pathname === '/fixture.css') return route.fulfill({ contentType: 'text/css', body: `
+            [data-large="true"] { font-size: 200%; }
+            .reference-secondary { color: var(--dipsy-color-text-secondary); }
+            .reference-primary { color: var(--dipsy-color-text); }
+            .reference-error { color: var(--dipsy-color-error); }
+            body > [aria-hidden] { position: absolute; inset-inline-start: 0; }
+            body > [aria-hidden] > .onboarding-icon { inline-size: 1px; block-size: 1px; }
+          ` });
+          const name = pathname.slice(1);
+          if (!['shell.css', 'onboarding-theme.css', 'inter-latin-opsz-normal.woff2'].includes(name)
+            && !icons.some(iconName => name === `onboarding-icons/${iconName}.svg`)) return route.abort();
+          const body = await readFile(new URL(name, root));
+          await route.fulfill({ contentType: types[extname(name)], body });
+          if (name.endsWith('.svg')) loadedIcons.add(name);
+        });
+        await page.goto(origin, { waitUntil: 'networkidle' });
+        assert.deepEqual(await page.evaluate(() => window.imageCspViolations), []);
+        assert.deepEqual([...loadedIcons].sort(), icons.map(name => `onboarding-icons/${name}.svg`).sort());
+        const sizes = await page.evaluate(() => {
+          const style = selector => getComputedStyle(document.querySelector(selector));
+          const status = document.querySelector('.onboarding-status');
+          const [mark, text] = status.children;
+          const markRect = mark.getBoundingClientRect();
+          return {
+            head: ['fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textTransform'].map(key => style('.onboarding-surface-head')[key]),
+            pill: ['fontSize', 'fontWeight', 'lineHeight', 'color'].map(key => style('.onboarding-pill')[key]),
+            dot: style('.onboarding-tone-dot').backgroundColor,
+            neutralDot: style('.onboarding-pill[data-tone="neutral"] .onboarding-tone-dot').backgroundColor,
+            secondary: style('.reference-secondary').color,
+            primary: style('.reference-primary').color,
+            error: style('.reference-error').color,
+            copy: getComputedStyle(text).color,
+            secondaryInk: ['.onboarding-surface-head', '.onboarding-surface-body', '.onboarding-spot',
+              '.onboarding-status .onboarding-icon', '.onboarding-status[data-tone="neutral"]'].map(selector => style(selector).color),
+            firstLineDelta: markRect.top + markRect.height / 2 - text.getBoundingClientRect().top
+              - parseFloat(getComputedStyle(text).lineHeight) / 2,
+            overflow: document.documentElement.scrollWidth - innerWidth,
+          };
+        });
+        const small = width === 320 ? 24 : 12;
+        assert.deepEqual(sizes.head, [small + 'px', '600', width === 320 ? '33.6px' : '16.8px',
+          width === 320 ? '1.92px' : '0.96px', 'uppercase']);
+        assert.deepEqual(sizes.pill, [small + 'px', '500', (small * 1.5) + 'px', sizes.primary]);
+        assert.equal(sizes.dot, sizes.error);
+        assert.equal(sizes.neutralDot, sizes.secondary);
+        assert.deepEqual(sizes.secondaryInk, Array(5).fill(sizes.secondary));
+        assert.equal(sizes.copy, sizes.primary);
+        assert.ok(Math.abs(sizes.firstLineDelta) < 0.1);
+        assert.equal(sizes.overflow, 0);
+      } finally {
+        await page.close();
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
 for (const selected of ['dark', 'light']) {
   test(`saved ${selected} setup theme selects the canvas before CSS arrives`, async () => {
     const browser = await chromium.launch();

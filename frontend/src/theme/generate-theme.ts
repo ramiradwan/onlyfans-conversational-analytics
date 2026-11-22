@@ -422,7 +422,16 @@ function writeIfChanged(filePath: string, content: string): boolean {
 export function generateNativeOnboardingBundle(tokensJsonSource: string, root: string) {
   const { css: fontCss, ...font } = generateNativeInter(root);
   const layout = fs.readFileSync(path.join(root, 'frontend/src/theme/onboarding.css'), 'utf8').replace(/\r\n/g, '\n');
-  return { css: generateStaticTokensCss(tokensJsonSource, true) + '\n' + fontCss + '\n' + layout, font };
+  const icons: { name: string; svg: string }[] = [];
+  const nativeLayout = layout.replace(
+    /^(\.onboarding-icon\[data-icon="([a-z-]+)"\][^{}\n]* \{ --onboarding-icon: )url\("data:image\/svg\+xml,([^"]+)"\)/gm,
+    (_, selector: string, name: string, encoded: string) => {
+      icons.push({ name, svg: decodeURIComponent(encoded) + '\n' });
+      return selector + `url("./onboarding-icons/${name}.svg")`;
+    },
+  );
+  if (nativeLayout.includes('data:image/')) throw new Error('Native onboarding masks require local assets');
+  return { css: generateStaticTokensCss(tokensJsonSource, true) + '\n' + fontCss + '\n' + nativeLayout, font, icons };
 }
 
 export function generateColorReport(tokensJsonSource: string): string {
@@ -444,6 +453,11 @@ function main(): void {
   const native = generateNativeOnboardingBundle(tokensSource, repositoryRoot);
   const shell = path.join(repositoryRoot, 'desktop', 'shell');
   writeIfChanged(path.join(shell, 'onboarding-theme.css'), native.css);
+  const iconDirectory = path.join(shell, 'onboarding-icons');
+  fs.mkdirSync(iconDirectory, { recursive: true });
+  for (const { name, svg } of native.icons) {
+    writeIfChanged(path.join(iconDirectory, name + '.svg'), svg);
+  }
   const fontPath = path.join(shell, native.font.filename);
   if (!fs.existsSync(fontPath) || !fs.readFileSync(fontPath).equals(native.font.bytes)) {
     fs.writeFileSync(fontPath, native.font.bytes);

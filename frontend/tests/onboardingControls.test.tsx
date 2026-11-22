@@ -25,13 +25,17 @@ describe('onboarding presentation primitives', () => {
       actions={<OnboardingAction><button type="button">Continue</button></OnboardingAction>}
       status={<OnboardingStatus tone="pending">Waiting</OnboardingStatus>}>
       <OnboardingPill tone="progress">Ready</OnboardingPill>
+      <OnboardingPill tone="error">Stopped</OnboardingPill>
     </OnboardingCard>);
     const card = screen.getByRole('region', { name: 'Heading' });
     expect(screen.getByRole('heading', { name: 'Heading', level: 2 })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy();
     expect(card.lastElementChild).toBe(screen.getByRole('status'));
     expect(card.querySelectorAll('svg[aria-hidden="true"][focusable="false"]')).toHaveLength(2);
-    expect(card.textContent).toBe('HeadingBodyReadyContinueWaiting');
+    const errorPill = screen.getByText('Stopped').closest('.onboarding-pill');
+    expect(errorPill?.getAttribute('data-tone')).toBe('error');
+    expect(errorPill?.firstElementChild?.getAttribute('aria-hidden')).toBe('true');
+    expect(card.textContent).toBe('HeadingBodyReadyStoppedContinueWaiting');
     view.rerender(<OnboardingCard title="Heading" />);
     expect(screen.getByRole('region', { name: 'Heading' }).children).toHaveLength(1);
   });

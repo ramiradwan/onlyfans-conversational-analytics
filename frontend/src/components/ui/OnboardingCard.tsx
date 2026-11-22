@@ -49,7 +49,7 @@ export function OnboardingSpot({ icon }: { icon: keyof typeof spotIcons }) {
 
 export function OnboardingPill({
   children, tone = 'neutral',
-}: { children: ReactNode; tone?: 'neutral' | 'progress' }) {
+}: { children: ReactNode; tone?: 'neutral' | 'progress' | 'error' }) {
   return <span className="onboarding-pill" data-tone={tone}>
     <span className="onboarding-tone-dot" aria-hidden="true" />
     <span>{children}</span>
@@ -70,16 +70,16 @@ export function OnboardingStatus({
   children, tone = 'neutral', animate = false, live = true,
 }: { children: ReactNode; tone?: keyof typeof statusIcons | 'pending'; animate?: boolean; live?: boolean }) {
   const Icon = tone === 'pending' ? SvgIcon : statusIcons[tone];
-  return <div className="onboarding-status" data-tone={tone} data-arrive={animate ? '' : undefined}
+  return <Typography component="div" variant="body2" className="onboarding-status" data-tone={tone} data-arrive={animate ? '' : undefined}
     role={live ? 'status' : undefined}>
     {children != null && children !== false && children !== '' && <>
-      <Icon focusable="false" sx={tone === 'attention' ? { color: 'text.secondary' } : undefined}>
+      <Icon focusable="false">
         {tone === 'pending' && <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor"
           strokeWidth="2.2" strokeDasharray="38 13" strokeLinecap="round" />}
       </Icon>
-      <Typography component="span" variant="body2">{children}</Typography>
+      <span>{children}</span>
     </>}
-  </div>;
+  </Typography>;
 }
 
 export interface OnboardingCardProps {
