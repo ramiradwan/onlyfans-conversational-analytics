@@ -28,14 +28,19 @@
         </div>
       <button id="open-options" class="secondary outlined header-action">Extension settings</button>
     </header>
-    <p id="loading" class="onboarding-loading" role="status">Checking setup…</p>
+    <section id="loading" class="onboarding-card onboarding-loading" role="status" aria-label="Loading setup" aria-busy="true">
+      <div class="loading-placeholder" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+    </section>
   <main class="onboarding-content" data-presentation-ready="false">
     <h1 class="visually-hidden">Set up Conversation Analytics</h1>
     <p id="step-summary" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">Checking status…</p>
     <div class="onboarding-layout">
     <div data-reserved-region="extension-stage" data-region-role="flow" class="extension-stage"><div data-region-content>
     <p id="review-notice" class="fine-print hidden">Data-handling information changed. Review it before restarting analytics.</p>
-    <section id="desktop-entry" class="onboarding-card hidden" aria-labelledby="desktop-entry-title" data-journey-state="extension.full_handoff">
+    <section id="desktop-entry" class="onboarding-card hidden" aria-labelledby="desktop-entry-title" data-journey-state="extension.full_handoff" data-composition="guided">
+      <span id="desktop-entry-icon" class="onboarding-status-icon" aria-hidden="true"><span id="desktop-icon-mark" class="onboarding-icon" data-icon="app"></span></span>
       <h2 id="desktop-entry-title" tabindex="-1">Full analytics uses the desktop app</h2>
       <p id="desktop-entry-body" role="status" aria-live="polite"></p>
       <p id="desktop-setup-code" class="fine-print">Have a setup code? Enter it in the desktop app.</p>
@@ -44,23 +49,28 @@
         <button id="download-desktop" class="secondary outlined hidden" type="button">Download desktop app</button>
         <button id="desktop-back" class="text-button" type="button">Back</button>
       </div>
+      <p id="desktop-comparison-code" class="hidden" aria-label="Connection code" role="status"></p>
+      <p id="desktop-launch-status" class="desktop-launch-status hidden" role="status"><span id="desktop-launch-mark" class="onboarding-icon" aria-hidden="true"></span><span id="desktop-launch-message"></span></p>
     </section>
-    <section id="start-choice" class="onboarding-card hidden" aria-labelledby="start-title">
+    <section id="start-choice" class="onboarding-card hidden" aria-labelledby="start-title" data-composition="decision">
+      <span class="onboarding-status-icon" aria-hidden="true"><span class="onboarding-icon" data-icon="extension"></span></span>
       <h2 id="start-title">How do you want to start?</h2>
       <div class="start-option"><h3>Preview</h3><p>Daily message counts, right in this browser.</p><p class="fine-print">No desktop app needed.</p>
         <button id="start-preview" class="primary" type="button">Continue with Preview</button></div>
       <div class="start-option"><h3>Full analytics</h3><p>Conversation insights, stored on this computer.</p><p class="fine-print">Uses the desktop app.</p>
         <button id="start-full" class="secondary outlined" type="button">Set up Full analytics</button></div>
     </section>
-    <section id="runtime-unavailable" class="warning hidden" aria-labelledby="runtime-title">
-      <h2 id="runtime-title" tabindex="-1">Extension status is unavailable</h2>
-      <p id="runtime-body">Dipsy can't connect right now.</p>
+    <section id="runtime-unavailable" class="onboarding-card hidden" aria-labelledby="runtime-title" data-composition="guided">
+      <span class="onboarding-status-icon" aria-hidden="true"><span class="onboarding-icon" data-icon="extension"></span></span>
+      <h2 id="runtime-title" tabindex="-1">Can’t check the extension right now</h2>
+      <p id="runtime-body">Dipsy can’t connect right now.</p>
     </section>
-    <section id="legal-unavailable" class="warning hidden">
-        <h2>Setup is unavailable in this version</h2>
-        <p>Update the extension, then try again.</p>
-      </section>
-    <section id="pre-mode" class="onboarding-card hidden" aria-labelledby="activation-title">
+    <section id="legal-unavailable" class="onboarding-card hidden" aria-labelledby="legal-unavailable-title" data-composition="guided">
+      <span class="onboarding-status-icon" aria-hidden="true"><span class="onboarding-icon" data-icon="legal"></span></span>
+      <h2 id="legal-unavailable-title">Setup is unavailable in this version</h2>
+      <p>Update the extension to continue.</p>
+    </section>
+    <section id="pre-mode" class="onboarding-card hidden" aria-labelledby="activation-title" data-composition="trust">
         <button id="start-back" class="text-button" type="button">Back</button>
         <h2 id="activation-title">Before you start</h2>
         <div id="start-disclosure"></div>
@@ -80,7 +90,7 @@
           Continue
         </button>
       </section>
-    <section id="mode-choice" class="onboarding-card hidden">
+    <section id="mode-choice" class="onboarding-card hidden" data-composition="decision">
         <div id="preview-disclosure" class="choice" role="group" aria-labelledby="preview-choice-title">
           <div class="points" data-approved-copy="preview">
 <h2>Preview</h2>
@@ -114,15 +124,16 @@
 <p>Accepting the Software Terms, acknowledging risks and choosing a mode are separate steps. Enabling a mode does not accept OnlyFans' updated terms. Complete any required acceptance directly with OnlyFans.</p>
   </div>
       </section>
-    <section id="access-card" class="journey-card onboarding-card hidden" aria-labelledby="access-title">
+    <section id="access-card" class="journey-card onboarding-card hidden" aria-labelledby="access-title" data-composition="guided">
+      <span class="onboarding-status-icon" aria-hidden="true"><span class="onboarding-icon" data-icon="lock"></span></span>
       <h2 id="access-title" tabindex="-1"></h2>
       <p id="access-body"></p>
       <button id="restore-access" class="primary hidden">Allow site access</button>
 
     </section>
-    <section id="journey-card" class="journey-card onboarding-card hidden" aria-labelledby="journey-title">
-      <span id="journey-icon" class="onboarding-status-icon" aria-hidden="true"></span>
-      <h2 id="journey-title" tabindex="-1">Checking setup…</h2>
+    <section id="journey-card" class="journey-card onboarding-card hidden" aria-labelledby="journey-title" data-composition="guided">
+      <span id="journey-icon" class="onboarding-status-icon" aria-hidden="true"><span id="journey-icon-mark" class="onboarding-icon" data-icon="info"></span></span>
+      <h2 id="journey-title" tabindex="-1"></h2>
       <p id="journey-badge" class="state-badge"></p>
       <p id="journey-body"></p>
     <section id="preview-metrics" class="journey-card hidden" aria-label="Preview activity">
@@ -133,13 +144,15 @@
         <div><dt>Sent</dt><dd id="outbound-count">0</dd></div>
       </dl>
     </section>
-    <p id="background-tab-note" class="fine-print hidden">The background tab receives OnlyFans activity. Closing it stops updates from that tab.</p>
-    <button id="reopen-background-tab" class="secondary outlined hidden">Reopen background tab</button>
     <button id="pause" class="secondary hidden">Pause</button>
 
       <div class="journey-actions">
         <button id="journey-primary" class="primary hidden"></button>
         <button id="journey-secondary" class="secondary outlined hidden"></button>
+      </div>
+      <div class="background-tab-row">
+        <p id="background-tab-note" class="fine-print hidden"><span class="onboarding-icon" data-icon="info" aria-hidden="true"></span><span>Updates stop if you close the OnlyFans tab the extension opened.</span></p>
+        <button id="reopen-background-tab" class="secondary outlined hidden">Reopen OnlyFans tab</button>
       </div>
     </section>
     <div data-reserved-region="surface-feedback" class="reserved-status"><p id="feedback" data-region-content class="feedback" role="status" aria-live="polite"></p></div>

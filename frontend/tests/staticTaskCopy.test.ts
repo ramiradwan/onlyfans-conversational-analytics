@@ -35,10 +35,20 @@ describe('task-focused static copy', () => {
         const acknowledgements = read('extension/setup.html').match(/<label class="check-row">[\s\S]*?<\/label>/g);
         expect(acknowledgements).toHaveLength(2);
         expect(createHash('sha256').update(acknowledgements!.join('')).digest('hex')).toBe(baseline.acknowledgements_sha256);
+        expect([...element!.children].map(node => node.id || node.querySelector('input')?.id)).toEqual([
+          'start-back', 'activation-title', 'start-disclosure', 'terms-accepted', 'risk-acknowledged', 'activate-software',
+        ]);
         continue;
       }
       expect(createHash('sha256').update(disclosure.outerHTML).digest('hex')).toBe(item.element_sha256);
     }
+  });
+  it('keeps the release remedy outside the protected setup disclosures', () => {
+    const doc = parse('extension/setup.html');
+    const unavailable = doc.querySelector('#legal-unavailable');
+    expect(unavailable?.querySelector('h2')?.textContent).toBe('Setup is unavailable in this version');
+    expect(unavailable?.querySelector('p')?.textContent).toBe('Update the extension to continue.');
+    expect(unavailable?.nextElementSibling?.id).toBe('pre-mode');
   });
   it.each(['extension/popup.html', 'extension/setup.html', 'extension/options.html', 'frontend/onboarding/index.html', 'frontend/browser-tasks/index.html'])('has no semicolons in rendered copy in %s', (file) => {
     const doc = parse(file);

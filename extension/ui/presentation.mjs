@@ -21,14 +21,14 @@ export function needsAgreement(model) {
   return ((!active && !normalPaused) || legal.requires_reauthorization)
     && (!legal.flow.terms_event_id || !legal.flow.risk_event_id || legal.flow.stage === 'pre_mode');
 }
-export function customerJourney(model) {
+export function customerJourney(model, options) {
   return deriveCustomerJourney({ status: model.status, pairing: model.pairing,
     desktopRuntimeReachable: model.desktopRuntimeReachable,
     connectionRecovery: model.connectionRecovery,
     desktopDownloadAvailable: secureExternalUrl(model.config.desktop_app_download_url) !== null,
     analysisReadiness: model.analysisReadiness,
     resumeAvailable: model.legal?.configured === true && !model.legal.requires_reauthorization,
-    modeChoiceAvailable: modeChoiceAvailable(model) });
+    modeChoiceAvailable: modeChoiceAvailable(model) }, options);
 }
 export function isPreview(status) {
   return status?.consent.mode === 'preview' || (status?.consent.mode === 'paused' && status.consent.resume_mode === 'preview');

@@ -99,7 +99,7 @@ test('losing runtime access hides the desktop handoff and offers recovery', asyn
   await expect(page.locator('#desktop-entry')).toBeVisible();
   await page.evaluate(() => { window.__surfaceFixture.change({ runtimeUnavailable: true }); window.dispatchEvent(new Event('focus')); });
   await expect(page.locator('#runtime-unavailable')).toBeVisible();
-  await expect(page.locator('#runtime-title')).toHaveText('Extension status is unavailable');
+  await expect(page.locator('#runtime-title')).toHaveText('Can’t check the extension right now');
   await expect(page.locator('#desktop-entry')).toBeHidden();
   await expect(page.locator('#retry-runtime')).toHaveCount(0);
   await page.evaluate(() => window.__surfaceFixture.change({ runtimeUnavailable: false }));
@@ -114,6 +114,31 @@ test('status badge and next action reflect a confirmed sleeping browser tab', as
   await expect(page.locator('#journey-primary')).toHaveText('Continue in the desktop app');
 });
 
+test('the setup sleeping action deliberately focuses the existing OnlyFans tab', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.full_tab_sleeping);
+  await page.evaluate(() => {
+    chrome.tabs.query = async () => [{ id: 5, active: false }];
+    chrome.tabs.update = async (id, update) => { window.__surfaceFixture.calls.push({ type: 'activate-tab', id, ...update }); };
+  });
+  await expect(page.locator('#desktop-entry-title')).toHaveText('Updates paused');
+  await expect(page.locator('#desktop-entry-body')).toHaveText('Your browser paused the OnlyFans tab.');
+  expect((await calls(page)).some(({ type }) => ['activate-tab', 'tab'].includes(type))).toBe(false);
+  await page.getByRole('button', { name: 'Open OnlyFans', exact: true }).click();
+  expect((await calls(page)).filter(({ type }) => ['activate-tab', 'tab'].includes(type))).toEqual([{ type: 'activate-tab', id: 5, active: true }]);
+});
+
+test('the pinned popup keeps its Full summary, primary action and disclosure', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.full_ready);
+  await expect(page.locator('#journey-title')).toHaveText('Ready');
+  await expect(page.locator('#journey-body')).toHaveText('Keep your creator tab open so new messages can arrive.');
+  const action = page.locator('#journey-primary');
+  await expect(action).toHaveText('Continue in the desktop app');
+  await expect(page.locator('footer')).toContainText('Use only with a creator account you are authorized to analyze.');
+  await expect(page.locator('footer')).toContainText('Independent software. It is not affiliated with or endorsed by OnlyFans.');
+  await expect(page.locator('footer #privacy-link')).toHaveText('Extension Privacy Notice');
+  expect((await action.boundingBox()).y).toBeLessThan((await page.locator('footer').boundingBox()).y);
+});
+
 test('unknown extension connection does not ask for another creator sign-in', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.extension_connection_unknown, surface: 'popup' });
   await expect(page.locator('#journey-title')).toHaveText('Status unavailable');
@@ -126,7 +151,7 @@ test('consent revocation shows analytics off without restoring it automatically'
   await renderSurfaceState(page, SURFACE_STATES.full_access_revoked);
   await expect(page.locator('#journey-title')).toHaveText('Analytics off');
   await expect(page.locator('#journey-badge')).toHaveText('');
-  await expect(page.locator('#journey-icon')).toHaveText('Ⅱ');
+  await expect(page.locator('#journey-icon .onboarding-icon')).toHaveAttribute('data-icon', 'pause');
   await expect(page.locator('#mode-choice')).toBeHidden();
   await expect(page.locator('#journey-primary')).toHaveText('Choose analytics mode');
   await expect(page.locator('#journey-primary')).toHaveAttribute('data-action', 'choose_mode');
@@ -393,7 +418,7 @@ for (const width of [320, 390, 600]) {
     });
 
     for (const surface of ['popup', 'setup', 'options']) {
-      test(`${surface} real feedback slots stay fixed at ${width}px and ${scale * 100}% text`, async ({ page }) => {
+      test(`${surface} real feedback keeps task controls anchored at ${width}px and ${scale * 100}% text`, async ({ page }) => {
         await page.setViewportSize({ width, height: 640 });
         await renderSurfaceState(page, surface === 'popup' ? SURFACE_STATES.preview
           : surface === 'setup' ? SURFACE_STATES.activation_required : SURFACE_STATES.manage);
@@ -409,15 +434,25 @@ for (const width of [320, 390, 600]) {
           const following = document.querySelector('nav.menu') || document.querySelector('footer');
           const rect = following.getBoundingClientRect();
           const feedback = slot.querySelector('.feedback');
+          const action = document.querySelector('#open-desktop')?.getBoundingClientRect();
           return { slot: slot.getBoundingClientRect().toJSON(), feedback: feedback.getBoundingClientRect().toJSON(),
+            action: action && [action.x, action.y + window.scrollY, action.width, action.height],
+            slotLineHeight: parseFloat(getComputedStyle(slot).lineHeight),
             following: [rect.x, rect.y + window.scrollY, rect.width, rect.height] };
         });
         const empty = await layout();
+        if (surface === 'setup') expect(empty.slot.height).toBeLessThanOrEqual(empty.slotLineHeight);
         for (const [index, message] of messages.entries()) {
           await page.locator('#feedback').evaluate((node, value) => { node.textContent = value; }, message);
           const filled = await layout();
-          expect.soft(filled.following, `message ${index}`).toEqual(empty.following);
-          expect.soft(filled.slot.height, `message ${index}`).toBe(empty.slot.height);
+          if (surface === 'setup') {
+            expect.soft(filled.action, `message ${index}`).toEqual(empty.action);
+            expect.soft(filled.following[1], `message ${index}`).toBeGreaterThanOrEqual(empty.following[1]);
+            expect.soft(filled.following[1], `message ${index}`).toBeGreaterThanOrEqual(filled.slot.bottom);
+          } else {
+            expect.soft(filled.following, `message ${index}`).toEqual(empty.following);
+            expect.soft(filled.slot.height, `message ${index}`).toBe(empty.slot.height);
+          }
           expect.soft(filled.feedback.bottom, `message ${index}`).toBeLessThanOrEqual(filled.slot.bottom + 1);
           await page.locator('#feedback').evaluate((node) => { node.textContent = ''; });
           expect.soft((await layout()).following, `cleared ${index}`).toEqual(empty.following);
@@ -467,7 +502,7 @@ for (const width of [320, 390, 600]) {
     });
 
     for (const surface of ['popup', 'setup', 'options']) {
-      test(`${surface} feedback keeps its following content in place at ${width}px and ${scale * 100}% text`, async ({ page }) => {
+      test(`${surface} feedback stays clear of the following content at ${width}px and ${scale * 100}% text`, async ({ page }) => {
         await page.setViewportSize({ width, height: 640 });
         const state = surface === 'popup' ? SURFACE_STATES.preview
           : surface === 'setup' ? SURFACE_STATES.activation_required : SURFACE_STATES.manage;
@@ -496,7 +531,8 @@ for (const width of [320, 390, 600]) {
         expect(filled.feedback.height).toBeGreaterThanOrEqual(filled.lineHeight * 2 - 1);
         expect(filled.status.bottom).toBeGreaterThanOrEqual(filled.feedback.bottom - 1);
         expect(filled.following.top).toBeGreaterThanOrEqual(filled.feedback.bottom - 1);
-        expect(filled.following.top).toBeCloseTo(empty.following.top, 0);
+        if (surface === 'setup') expect(filled.status.top).toBe(empty.status.top);
+        else expect(filled.following.top).toBeCloseTo(empty.following.top, 0);
       });
     }
   }

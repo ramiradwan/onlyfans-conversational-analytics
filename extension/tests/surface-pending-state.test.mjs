@@ -100,7 +100,7 @@ test('setup and popup omit #retry-runtime and recover passively through surface-
     const section = markup.match(/<section id="runtime-unavailable"[\s\S]*?<\/section>/)?.[0] ?? '';
     assert.ok(section.includes('id="runtime-body"'), `${page}.html must include #runtime-body`);
     assert.doesNotMatch(section, /Try again/i);
-    assert.match(section, /Dipsy can't connect right now\./);
+    assert.ok(section.includes(page === 'setup' ? 'Dipsy can’t connect right now.' : "Dipsy can't connect right now."));
 
     const source = new URL(`../${page}.js`, import.meta.url);
     const bundle = await build({

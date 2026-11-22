@@ -36,7 +36,7 @@ export function deriveCustomerJourney({
   analysisReadiness = { commercial_authority: 'unknown', analysis_admission: 'blocked' },
   resumeAvailable = false,
   modeChoiceAvailable = false,
-} = {}) {
+} = {}, { setup = false } = {}) {
   if (status?.consent?.mode === 'paused') {
     const reviewAvailable = !resumeAvailable && modeChoiceAvailable;
     return Object.freeze({
@@ -96,7 +96,7 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.ANALYTICS_OFF,
       tone: 'info',
-      title: 'Start with Preview',
+      title: setup ? 'Choose analytics mode' : 'Start with Preview',
       body: 'See how many messages you send and receive each day.',
       primaryAction: modeChoiceAvailable ? 'choose_mode' : null,
       primaryLabel: modeChoiceAvailable ? 'Set up Preview' : null,
@@ -106,12 +106,14 @@ export function deriveCustomerJourney({
   }
 
   if (pairing?.state === 'pairing' || pairing?.state === 'compare') {
+    const comparing = pairing.state === 'compare' && (!setup || pairing.owns_attempt && pairing.comparison_code);
     return Object.freeze({
       id: CUSTOMER_STATES.PAIRING_IN_PROGRESS,
       tone: 'progress',
-      title: pairing.state === 'compare' ? 'Confirm the connection' : 'Connecting to the desktop app',
-      body: pairing.state === 'compare'
-        ? 'Check that the desktop app shows the same code, then confirm there.'
+      title: comparing ? 'Confirm the connection' : 'Connecting to the desktop app',
+      body: comparing
+        ? setup ? 'Check that the desktop app shows the same code, then confirm there. Keep this tab open.'
+          : 'Check that the desktop app shows the same code, then confirm there.'
         : 'Keep this page open.',
       primaryAction: null,
       primaryLabel: null,
@@ -124,10 +126,10 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.PAIRING_FAILED,
       tone: 'error',
-      title: 'Connection was not completed',
-      body: 'In the desktop app, choose Connect extension and try again.',
-      primaryAction: 'pair',
-      primaryLabel: 'Try connection again',
+      title: setup ? 'Connection didn’t finish' : 'Connection was not completed',
+      body: setup ? 'Choose Connect extension in the desktop app to start a new connection.' : 'In the desktop app, choose Connect extension and try again.',
+      primaryAction: setup ? 'open_desktop' : 'pair',
+      primaryLabel: setup ? 'Open desktop app' : 'Try connection again',
       secondaryAction: null,
       secondaryLabel: null,
     });
@@ -139,7 +141,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.DESKTOP_APP_UNAVAILABLE,
       tone: trying ? 'progress' : 'warning',
       title: trying ? 'Connecting to the desktop app' : 'Desktop connection not confirmed',
-      body: trying ? '' : 'The desktop connection could not be confirmed.',
+      body: trying ? '' : setup ? 'Open the desktop app to finish connecting.' : 'The desktop connection could not be confirmed.',
       primaryAction: trying ? null : 'open_desktop',
       primaryLabel: trying ? null : 'Open desktop app',
       secondaryAction: null,
@@ -153,7 +155,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.SETUP_INCOMPLETE,
       tone: trying ? 'progress' : 'warning',
       title: trying ? 'Reconnecting to the extension' : 'Connection status unavailable',
-      body: trying ? '' : 'The extension connection could not be checked.',
+      body: trying ? '' : setup ? 'Dipsy can’t check the connection right now.' : 'The extension connection could not be checked.',
       primaryAction: null,
       primaryLabel: null,
       secondaryAction: null,
@@ -191,10 +193,10 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.SETUP_INCOMPLETE,
       tone: 'warning',
-      title: 'Sign in to your creator account',
-      body: 'Use the creator account you want to connect.',
+      title: setup ? 'Sign in to your OnlyFans account' : 'Sign in to your creator account',
+      body: setup ? 'Use the OnlyFans account you want to connect.' : 'Use the creator account you want to connect.',
       primaryAction: 'open_creator_account',
-      primaryLabel: 'Open creator account',
+      primaryLabel: setup ? 'Open OnlyFans' : 'Open creator account',
       secondaryAction: 'open_dashboard',
       secondaryLabel: 'Open desktop app',
     });
@@ -219,7 +221,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.FULL_UNAVAILABLE,
       tone: trying ? 'progress' : 'warning',
       title: trying ? 'Connecting to the desktop app' : 'Desktop connection not confirmed',
-      body: trying ? '' : 'The connection could not be confirmed.',
+      body: trying ? '' : setup ? 'Open the desktop app to finish connecting.' : 'The connection could not be confirmed.',
       primaryAction: trying ? null : 'open_dashboard',
       primaryLabel: trying ? null : 'Open desktop app',
       secondaryAction: null,
@@ -231,7 +233,7 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.ACTIVATION_CHECKING,
       tone: 'progress',
-      title: 'Checking activation',
+      title: setup ? 'Checking Full analytics…' : 'Checking activation',
       body: '',
       primaryAction: 'open_dashboard',
       primaryLabel: 'Open desktop app',
@@ -257,12 +259,12 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.ACTIVATION_UNAVAILABLE,
       tone: 'error',
-      title: 'Couldn\'t check activation',
+      title: setup ? 'Can’t check Full analytics right now' : 'Couldn\'t check activation',
       body: '',
-      primaryAction: 'retry_readiness',
-      primaryLabel: 'Check again',
-      secondaryAction: 'open_dashboard',
-      secondaryLabel: 'Open desktop app',
+      primaryAction: setup ? 'open_dashboard' : 'retry_readiness',
+      primaryLabel: setup ? 'Open desktop app' : 'Check again',
+      secondaryAction: setup ? null : 'open_dashboard',
+      secondaryLabel: setup ? null : 'Open desktop app',
     });
   }
 
@@ -273,7 +275,7 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.FULL_UNAVAILABLE,
       tone: 'warning',
-      title: 'Open OnlyFans to continue',
+      title: setup ? 'Updates paused' : 'Open OnlyFans to continue',
       body: 'Your browser paused the OnlyFans tab.',
       primaryAction: 'open_creator_account',
       primaryLabel: 'Open OnlyFans',
@@ -289,10 +291,10 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.FULL_READY,
       tone: 'success',
-      title: 'Your analysis is ready',
-      body: '',
+      title: setup ? 'Full analytics is on' : 'Your analysis is ready',
+      body: setup ? 'Insights appear in the desktop app.' : '',
       primaryAction: 'open_dashboard',
-      primaryLabel: 'Open analysis',
+      primaryLabel: setup ? 'Open desktop app' : 'Open analysis',
       secondaryAction: null,
       secondaryLabel: null,
     });
@@ -305,7 +307,7 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.ACTIVATION_ACTIVE,
       tone: 'warning',
-      title: "New messages aren't being analyzed",
+      title: setup ? 'New messages aren’t being analyzed' : "New messages aren't being analyzed",
       body: '',
       primaryAction: 'open_dashboard',
       primaryLabel: 'Open desktop app',
@@ -317,12 +319,12 @@ export function deriveCustomerJourney({
   return Object.freeze({
     id: CUSTOMER_STATES.FULL_UNAVAILABLE,
     tone: 'warning',
-    title: 'Analysis status unavailable',
+    title: setup ? 'Can’t check analysis right now' : 'Analysis status unavailable',
     body: '',
-    primaryAction: 'retry_readiness',
-    primaryLabel: 'Check again',
-    secondaryAction: 'open_dashboard',
-    secondaryLabel: 'Open desktop app',
+    primaryAction: setup ? 'open_dashboard' : 'retry_readiness',
+    primaryLabel: setup ? 'Open desktop app' : 'Check again',
+    secondaryAction: setup ? null : 'open_dashboard',
+    secondaryLabel: setup ? null : 'Open desktop app',
   });
 }
 

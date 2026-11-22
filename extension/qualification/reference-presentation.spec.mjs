@@ -7,7 +7,8 @@ for (const request of ['ofca.ui.status', 'ofca.legal-activation.status']) {
     const rendering = renderSurfaceState(page, { ...SURFACE_STATES.mode_choice_full, initialRequestHold: request });
     await page.waitForFunction(() => typeof window.__releaseInitialRequest === 'function');
     await expect(page.locator('#loading')).toBeVisible();
-    await expect(page.locator('#loading')).toHaveText('Checking setup…');
+    await expect(page.locator('#loading')).toHaveAccessibleName('Loading setup');
+    await expect(page.locator('#loading')).toHaveText('');
     await expect(page.locator('#loading')).toHaveAttribute('role', 'status');
     await expect(page.locator('main')).toBeHidden();
     await expect(page.locator('.onboarding-footer')).toBeHidden();
@@ -63,6 +64,11 @@ test('updated consent identifies a new review while preserving the exact task an
   await expect(page.locator('main')).toHaveAttribute('data-requirement', 'agreement:initial:full');
   await expect(page.locator('#review-notice')).toBeHidden();
   const disclosure = await page.locator('#start-disclosure').textContent();
+  const sizes = await page.locator('#start-disclosure .points').evaluateAll((blocks) => blocks.map((block) =>
+    [...block.children].map((child) => getComputedStyle(child).fontSize)));
+  const originalSizes = await page.locator('#full-disclosure .points, #separate-choices-disclosure').evaluateAll((blocks) => blocks.map((block) =>
+    [...block.children].map((child) => getComputedStyle(child).fontSize)));
+  expect(sizes.map((block) => block.slice(1))).toEqual(originalSizes.map((block) => block.slice(1)));
   await page.locator('#terms-accepted').focus();
   await page.evaluate(() => window.__surfaceFixture.change({ mode: 'paused', resume: 'full', reauthorization: true }));
   await expect(page.locator('#review-notice')).toBeVisible();
@@ -73,7 +79,7 @@ test('updated consent identifies a new review while preserving the exact task an
 });
 
 for (const theme of ['light', 'dark']) {
-  test(`Full handoff remains stable at 320px and 200% text in ${theme}`, async ({ page }, info) => {
+  test(`Full handoff keeps its focus and heading anchor at 320px and 200% text in ${theme}`, async ({ page }, info) => {
     await page.setViewportSize({ width: 320, height: 960 });
     await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
     await renderSurfaceState(page, SURFACE_STATES.pairing_waiting);
@@ -86,16 +92,26 @@ for (const theme of ['light', 'dark']) {
       await expect(page.locator('main')).toHaveAttribute('data-requirement', 'desktop-handoff');
       await expect(page.locator('main')).toHaveAttribute('data-task', 'desktop');
       await expect(heading).toBeFocused();
-      expect(await heading.boundingBox()).toEqual(original);
+      const { height, ...anchor } = await heading.boundingBox();
+      expect(anchor).toEqual({ x: original.x, y: original.y, width: original.width });
+      const textHeight = await heading.evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return range.getBoundingClientRect().height;
+      });
+      expect(height).toBeGreaterThanOrEqual(textHeight);
+      expect(height - textHeight).toBeLessThan(await heading.evaluate((element) => parseFloat(getComputedStyle(element).lineHeight)));
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
       await expect(page.locator('#setup-progress, #pairing-code')).toHaveCount(0);
+      if (name === 'pairing_compare') await expect(page.locator('#desktop-comparison-code')).toBeVisible();
+      else await expect(page.locator('#desktop-comparison-code')).toBeHidden();
       await expect(page.locator('#open-desktop')).toBeEnabled();
     }
     await page.screenshot({ path: info.outputPath(`handoff-320-200-${theme}.png`), fullPage: true });
   });
 }
 
-for (const width of [1280, 390, 320]) {
+for (const width of [1440, 390, 320]) {
   for (const theme of ['light', 'dark']) {
     for (const name of ['start_choice', 'software_activation', 'mode_choice', 'preview_complete', 'permission_required',
       'desktop_app_needed', 'extension_connection_unknown', 'full_tab_sleeping', 'full_access_revoked',
@@ -118,6 +134,20 @@ for (const width of [1280, 390, 320]) {
         if (name === 'preview_complete') {
           await expect(page.locator('#messages-count')).toHaveText('128');
           await expect(page.locator('#setup-progress')).toBeHidden();
+        }
+        if (width === 1440) {
+          await page.evaluate(() => document.fonts.ready);
+          const copy = [[1, 'main section > h2:visible'],
+            [2, '#desktop-entry-body:visible, #journey-body:visible, #access-body:visible, #runtime-body:visible'],
+            [1, '#journey-badge:visible, #desktop-launch-message:visible']];
+          for (const [budget, selector] of copy) {
+            const lines = await page.locator(selector).evaluateAll((nodes) => nodes.map((node) => {
+              const range = document.createRange();
+              range.selectNodeContents(node);
+              return new Set([...range.getClientRects()].map(rect => rect.y)).size;
+            }));
+            expect(lines.every(line => line <= budget), selector).toBe(true);
+          }
         }
         const settled = await title.textContent();
         await page.screenshot({ path: info.outputPath(`${name}-${width}-${theme}.png`), fullPage: true });
@@ -197,7 +227,114 @@ for (const width of [320, 390]) {
 
 test('Preview waiting does not display a verified icon before observer attachment', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.preview_complete, observer: { attachment: 'checking', helper: 'none' } });
-  await expect(page.locator('#journey-icon')).not.toHaveText('✓');
+  await expect(page.locator('#journey-icon .onboarding-icon')).toHaveAttribute('data-icon', 'pending');
+  await expect(page.locator('#journey-title')).toHaveText('Waiting for OnlyFans messages');
+});
+
+test('D1 setup shows the admitted state through the persistent entry view', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.setup_complete);
+  await expect(page.locator('#desktop-entry-title')).toHaveText('Full analytics is on');
+  await expect(page.locator('#desktop-entry-body')).toHaveText('Insights appear in the desktop app.');
+  await expect(page.locator('#open-desktop')).toHaveText('Open desktop app');
+  await expect(page.locator('#journey-badge')).toBeHidden();
+});
+
+for (const [width, scale, theme] of [[1440, 16, 'light'], [480, 16, 'dark'], [320, 32, 'light'], [320, 32, 'dark']]) {
+  test(`D2 preserves Preview controls and metrics at ${width}px with ${scale}px text in ${theme}`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 960 });
+    await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
+    await renderSurfaceState(page, { ...SURFACE_STATES.preview_complete, observer: { attachment: 'ready', helper: 'open' } });
+    await page.evaluate((size) => { document.documentElement.style.fontSize = `${size}px`; }, scale);
+    const note = page.locator('#background-tab-note');
+    const reopen = page.locator('#reopen-background-tab');
+    const badge = page.locator('#journey-badge');
+    const action = page.locator('#journey-primary');
+    const box = (id) => page.locator(id).evaluate((element) => {
+      const card = element.closest('#journey-card').getBoundingClientRect();
+      const { x, y, width, height } = element.getBoundingClientRect();
+      return { x: x - card.x, y: y - card.y, width, height };
+    });
+    await page.evaluate(() => document.fonts.ready);
+    await action.focus();
+    if (width === 320) {
+      const countLines = await page.locator('#preview-metrics dd').evaluateAll((counts) => counts.map((count) => {
+        const range = document.createRange();
+        range.selectNodeContents(count);
+        return range.getClientRects().length;
+      }));
+      expect(countLines).toEqual([1, 1, 1]);
+    }
+    await expect(note).toHaveText('Updates stop if you close the OnlyFans tab the extension opened.');
+    await expect(badge).toHaveText('Counting as you use OnlyFans');
+    await expect(reopen).toBeHidden();
+    const open = await box('#background-tab-note');
+    expect((await box('.background-tab-row')).height).toBe(open.height);
+    if (width === 320) {
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      await page.screenshot({ path: info.outputPath(`preview-counting-${theme}.png`), fullPage: true });
+    }
+    const before = [await box('#journey-primary'), await box('#preview-metrics')];
+    const badgeBefore = await box('#journey-badge');
+    await page.evaluate(() => window.__surfaceFixture.change({ observer: { attachment: 'checking', helper: 'closed' } }));
+    await expect(reopen).toHaveText('Reopen OnlyFans tab');
+    await expect(reopen).toBeVisible();
+    await expect(note).toBeHidden();
+    await expect(badge).toHaveText('Updates stopped');
+    await expect(action).toBeFocused();
+    const badgeAfter = await box('#journey-badge');
+    const delta = badgeAfter.height - badgeBefore.height;
+    if (width > 320) expect(delta).toBe(0);
+    expect([await box('#journey-primary'), await box('#preview-metrics')]).toEqual(before.map(({ y, ...rect }) => ({ ...rect, y: y + delta })));
+    const closed = await box('#reopen-background-tab');
+    expect((await box('.background-tab-row')).height).toBe(closed.height);
+    expect(closed.y).toBe(open.y + delta);
+    if (width > 320) expect(closed.height).toBe(open.height);
+    else {
+      expect(open.height).toBeGreaterThan(closed.height);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      await info.attach('D2 row geometry', { body: JSON.stringify({ open, closed, badgeBefore, badgeAfter }), contentType: 'application/json' });
+      await page.screenshot({ path: info.outputPath(`preview-stopped-${theme}.png`), fullPage: true });
+    }
+    const reopenCalls = () => page.evaluate(() => window.__surfaceFixture.calls.filter(({ type }) => type === 'ofca.ui.reopen-background-tab').length);
+    expect(await reopenCalls()).toBe(0);
+    await reopen.click();
+    await expect.poll(reopenCalls).toBe(1);
+    await page.evaluate(() => window.__surfaceFixture.change({ observer: { attachment: 'ready', helper: 'closed' } }));
+    await expect(reopen).toBeHidden();
+    await expect(note).toBeHidden();
+    await expect(badge).toHaveText('Counting as you use OnlyFans');
+    expect(await reopenCalls()).toBe(1);
+  });
+}
+
+test('readiness stays terminal without an owner signal and can recover on a surface change', async ({ page }) => {
+  await page.clock.install();
+  await renderSurfaceState(page, SURFACE_STATES.activation_unavailable);
+  const title = page.locator('#desktop-entry-title');
+  await expect(title).toHaveText('Can’t check Full analytics right now');
+  await expect(page.getByRole('button', { name: 'Check again', exact: true })).toHaveCount(0);
+  await expect(page.locator('#desktop-entry')).not.toContainText('updates by itself');
+  await title.focus();
+  await page.evaluate(() => Object.assign(window.__surfaceFixture.state, { commercial: 'active', ready: true }));
+  await page.clock.runFor(13_000);
+  await expect(title).toHaveText('Can’t check Full analytics right now');
+  await page.evaluate(() => window.__surfaceFixture.change({}));
+  await expect(title).toHaveText('Full analytics is on');
+  await expect(title).toBeFocused();
+});
+
+test('the owned comparison displays the admitted code until the original attempt ends', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.pairing_compare);
+  await expect(page.locator('#desktop-entry-title')).toHaveText('Confirm the connection');
+  await expect(page.locator('#desktop-entry-body')).toHaveText('Check that the desktop app shows the same code, then confirm there. Keep this tab open.');
+  const code = page.locator('#desktop-comparison-code');
+  await expect(code).toHaveText('483 217');
+  await page.evaluate(() => window.__surfaceFixture.change({ pairing: 'pairing_failed' }));
+  await expect(code).toBeHidden();
+  await expect(page.locator('#desktop-entry-title')).toHaveText('Connection didn’t finish');
+  await expect(page.locator('#desktop-entry-body')).toHaveText('Choose Connect extension in the desktop app to start a new connection.');
+  await expect(page.locator('#open-desktop')).toHaveText('Open desktop app');
+  await expect(page.getByRole('button', { name: /try connection|check again/i })).toHaveCount(0);
 });
 
 test('the onboarding tab offers no setup-code entry and points to the desktop app', async ({ page }) => {
