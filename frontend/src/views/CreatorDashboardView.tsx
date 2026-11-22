@@ -30,6 +30,7 @@ import {
   type BridgeTransportStore,
 } from '../store/transportStore';
 import { componentTokens, effectTokens } from '../theme/generated/tokens';
+import { surfaceArrival } from '../theme/presentationMotion';
 import { createConnectionGrace, type ConnectionPhase } from '../utils/connectionGrace';
 import {
   coverageProgressLabel,
@@ -475,42 +476,52 @@ export default function CreatorDashboardView({
       : hasSnapshot && fullAnalyticsReady === true ? connectionSummary : null);
   const opening = !state.creatorAccountId && !hasSnapshot && issue === null;
   const updatesStopped = Boolean(collection.current && collection.paused || issue?.updatesStopped);
+  const showOverview = !opening && !hideEmptyOverview;
+  const showBasis = !overviewLoading && !hideEmptyOverview && evidence !== null;
+  const showRecent = hasSnapshot && state.conversations.length > 0;
+  const dashboardTask = [opening ? 'opening' : hideEmptyOverview ? 'setup' : 'overview',
+    Boolean(progress), showBasis, showRecent, issue?.title ?? '',
+    showSetup, showActivation, Boolean(collectionReview), Boolean(historyPrompt), Boolean(continuation)].join('|');
 
   return (
     <Box data-scroll-container sx={{ flex: 1, minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable', pb: 3 }}>
-      <Stack sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%',
-        '& > [data-reserved-region]:not(:empty)': { mt: 2.5 } }}>
-        <Typography component="h1" variant="h4">Dashboard</Typography>
+      <Stack data-dashboard-task={dashboardTask} sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}>
+        <Typography component="h1" variant="h4" data-dashboard-heading>Dashboard</Typography>
         <Box data-reserved-region="dashboard-overview">
-          {!opening && !hideEmptyOverview && <Box data-region-content>
+          {showOverview && <Box data-region-content style={{ paddingBlockStart: 20 }}>
             <DashboardOverview key={state.creatorAccountId} isLoading={overviewLoading} conversations={format(analytics?.total_conversations)}
               messages={format(analytics?.total_messages)} progress={progress} received={format(analytics?.inbound_messages)}
               sent={format(analytics?.outbound_messages)} split={split} />
           </Box>}
         </Box>
         <Box data-reserved-region="dashboard-basis">
-          {!overviewLoading && !hideEmptyOverview && evidence !== null && <Box data-region-content>
+          {showBasis && <Box data-region-content style={{ paddingBlockStart: 20 }}>
             <NumbersBasis evidence={evidence} messagesCounted={visibleMetrics.includes(analytics?.total_messages)
               ? analytics?.total_messages?.sample_size ?? null : null} sample={split?.sample ?? null} updatesStopped={updatesStopped} />
           </Box>}
         </Box>
         <Box data-reserved-region="dashboard-notice"
-          sx={{ '& .onboarding-status > svg': { inlineSize: 20, blockSize: 20, flexShrink: 0 } }}>
-          {issue && <Box data-region-content role="alert">
+          sx={{ '& .onboarding-status > svg': { inlineSize: 20, blockSize: 20, flexShrink: 0 },
+            '& .onboarding-status[data-tone="pending"] > svg': {
+              animation: 'none',
+              '& > circle': { animation: 'onboarding-pending 1s linear infinite', transformOrigin: 'center' },
+              '@media (prefers-reduced-motion: reduce)': { '& > circle': { animation: 'none' } },
+            } }}>
+          {issue && <Box data-region-content role="alert" style={{ paddingBlockStart: 20 }}>
             <OnboardingStatus tone={ISSUE_TONE[issue.severity]} live={false}>
               {[issue.title, issue.detail].filter(Boolean).join('. ')}
             </OnboardingStatus>
           </Box>}
         </Box>
         <Box data-reserved-region="dashboard-recent">
-          {hasSnapshot && state.conversations.length > 0 && <Box data-region-content>
+          {showRecent && <Box data-region-content style={{ paddingBlockStart: 20 }}>
             <RecentConversations conversations={state.conversations} showInboxLink={canViewInbox} />
           </Box>}
         </Box>
-        <Box data-reserved-region="dashboard-setup">
-          {opening ? <Box data-region-content sx={{ maxWidth: 760 }}><OnboardingCard title="Opening Dipsy" spot={<OnboardingSpot icon="app" />}
+        <Box data-reserved-region="dashboard-setup" sx={{ '& [data-surface-emphasis]': surfaceArrival(0, true) }}>
+          {opening ? <Box data-region-content style={{ paddingBlockStart: 20 }} sx={{ maxWidth: 760 }}><OnboardingCard title="Opening Dipsy" spot={<OnboardingSpot icon="app" />}
             status={<OnboardingStatus tone="pending">Checking your connection.</OnboardingStatus>} /></Box>
-            : continuation && <Box data-region-content>{continuation}</Box>}
+            : continuation && <Box data-region-content style={{ paddingBlockStart: 20 }}>{continuation}</Box>}
         </Box>
       </Stack>
     </Box>

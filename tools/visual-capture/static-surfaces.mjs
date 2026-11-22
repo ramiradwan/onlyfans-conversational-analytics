@@ -55,6 +55,16 @@ async function actualFonts(session, selector) {
   assert(nodeId, 'Font target is missing: ' + selector);
   return (await session.send('CSS.getPlatformFontsForNode', { nodeId })).fonts;
 }
+
+function injectedDocument({ html, script, surface }) {
+  const body = /(<body\b[^>]*>)([\s\S]*?)<script src="\/[\w-]+\.js"><\/script>/u;
+  assert(body.test(html), `Missing renderer mount point for ${surface}`);
+  return html.replace(body, (_, open, markup) => `${open}<template>${markup}</template><script>
+const fixtureMarkup = document.currentScript.previousElementSibling;
+fixtureMarkup.replaceWith(fixtureMarkup.content);
+${script.replace(/<\/script/gi, '<\\/script')}</script>`);
+}
+
 async function inspect(page, fixture, width, session) {
   try {
     const fonts = await actualFonts(session, 'h1');
@@ -103,7 +113,15 @@ async function inspect(page, fixture, width, session) {
       if (expected !== 'setup_code.opening') {
         assert.equal(await page.locator('#receiving-submit').textContent(),
           expected === 'setup_code.checking' ? 'Checking the code…' : 'Continue');
-        metrics.codeFonts = await actualFonts(session, '#receiving-code');
+        const code = page.locator('#receiving-code');
+        const previous = await code.inputValue();
+        try {
+          await code.evaluate(node => { node.value = '0123456789AB'; });
+          await page.evaluate(() => document.fonts.ready);
+          metrics.codeFonts = await actualFonts(session, '#receiving-code');
+        } finally {
+          await code.evaluate((node, value) => { node.value = value; }, previous);
+        }
         assert(metrics.codeFonts.some(font => font.isCustomFont && /Space Grotesk/.test(font.familyName)),
           'Setup codes must render in Space Grotesk');
       }
@@ -161,6 +179,7 @@ export async function captureStaticSurfaces(browser, outDir, recorder = null) {
           await page.addInitScript(installSurfaceFixture, fixture.state);
         }
         const documentPath = fixture.urlPath ?? `/${fixture.surface}.html`;
+        const document = fixture.injectedSurface ? injectedDocument(fixture) : fixture.html;
         await page.route('**/*', async (route) => {
           const url = new URL(route.request().url());
           if (url.origin !== ORIGIN) { unexpected.push('Unexpected network request'); return route.abort(); }
@@ -171,7 +190,7 @@ export async function captureStaticSurfaces(browser, outDir, recorder = null) {
           if (url.pathname === '/setup.css') return route.fulfill({ contentType: 'text/css', body: setupCss });
           if (Object.hasOwn(onboardingAssets, url.pathname)) return route.fulfill(onboardingAssets[url.pathname]);
           if (fixture.script && url.pathname === `/${fixture.surface}.js`) return route.fulfill({ contentType: 'text/javascript', body: fixture.script });
-          if (url.pathname === documentPath) return route.fulfill({ contentType: 'text/html', body: fixture.html });
+          if (url.pathname === documentPath) return route.fulfill({ contentType: 'text/html', body: document });
           return route.fulfill({ status: 404 });
         });
         try {

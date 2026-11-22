@@ -50,3 +50,33 @@ test('a task boundary covers its next paint and cannot excuse a later shift', ()
   assert(inspectFrames([first, changed, { ...report, shifts: [{ value: 0.1, at: 25 }] }]).includes('layout shift after first paint'));
   assert(inspectFrames([first, { ...changed, task: 'registration' }, { ...report, task: 'registration' }]).includes('layout shift after first paint'));
 });
+
+test('passkey task changes allow trailing feedback while retaining the card origin and width', () => {
+  const first = { ...frame(), task: 'passkey:sign-in', at: 110, nativeAt: 10,
+    regions: [{ id: 'passkey-card', rect: [16, 80, 358, 240] }] };
+  const next = { ...first, task: 'passkey:sign-in:feedback', at: 120, nativeAt: 20,
+    regions: [{ id: 'passkey-card', rect: [16, 80, 358, 276] }],
+    shifts: [{ value: 0.1, at: 16 }] };
+  assert.deepEqual(inspectFrames([first, next]), []);
+  assert(inspectFrames([first, { ...next, regions: [{ id: 'passkey-card', rect: [17, 80, 358, 276] }] }])
+    .includes('passkey-card: moved across task change'));
+  assert(inspectFrames([first, { ...next, task: first.task }]).includes('passkey-card: moved or resized'));
+});
+
+test('dashboard task changes retain fixed chrome and section columns', () => {
+  const first = { task: 'dashboard:setup', at: 10, shifts: [], regions: [
+    { id: 'dashboard-title', rect: [16, 50, 358, 40] },
+    { id: 'freshness-status', rect: [16, 16, 358, 24] },
+    { id: 'dashboard-setup', rect: [16, 90, 358, 180] },
+  ] };
+  const next = { ...first, task: 'dashboard:overview', at: 20, regions: [
+    ...first.regions.slice(0, 2), { id: 'dashboard-setup', rect: [16, 200, 358, 240] },
+  ] };
+  assert.deepEqual(inspectFrames([first, next]), []);
+  assert(inspectFrames([first, { ...next, regions: next.regions.map(region => ({ ...region,
+    rect: region.id === 'freshness-status' ? [16, 17, 358, 24] : region.rect,
+  })) }]).includes('freshness-status: moved across task change'));
+  assert(inspectFrames([first, { ...next, regions: next.regions.map(region => ({ ...region,
+    rect: region.id === 'dashboard-setup' ? [17, 200, 358, 240] : region.rect,
+  })) }]).includes('dashboard-setup: moved across task change'));
+});

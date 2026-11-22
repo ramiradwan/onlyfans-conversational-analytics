@@ -66,7 +66,8 @@ export function OnboardingPasskeyTask({
   }, []);
   return <>
     {fontState === 'loading' && <Typography role="status" data-surface-loading sx={{ position: 'fixed', top: 16, left: 16, fontFamily: 'Arial, sans-serif' }}>Loading…</Typography>}
-    <Box data-passkey-font={fontState} aria-hidden={fontState === 'loading' ? true : undefined} inert={fontState === 'loading' ? true : undefined}
+    <Box data-passkey-font={fontState} data-passkey-task={fontState === 'loading' ? undefined : `passkey:${family}${status ? ':feedback' : ''}`}
+      aria-hidden={fontState === 'loading' ? true : undefined} inert={fontState === 'loading' ? true : undefined}
       sx={{ visibility: fontState === 'loading' ? 'hidden' : 'visible',
         ...(fontState === 'fallback' && { '& *': { fontFamily: 'Arial, sans-serif !important' } }) }}>
       {fontState !== 'loading' && <OnboardingWorkspace trust>
@@ -94,8 +95,8 @@ export function OnboardingPasskeyTask({
               }}>Set up a passkey</Link>
             </Typography>}
           </>}
-          status={<Box data-visual="passkey-feedback" data-reserved-region="passkey-feedback" sx={status ? { mt: 2 } : undefined}>
-            {status && <div data-region-content role={failed ? 'alert' : undefined}><OnboardingStatus
+          status={<Box data-visual="passkey-feedback" data-reserved-region="passkey-feedback">
+            {status && <div data-region-content style={{ paddingBlockStart: 16 }} role={failed ? 'alert' : undefined}><OnboardingStatus
               tone={statusTone} live={!failed} animate>{status}</OnboardingStatus></div>}
           </Box>} />
       </OnboardingWorkspace>}

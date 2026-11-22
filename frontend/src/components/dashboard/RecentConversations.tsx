@@ -49,7 +49,7 @@ export function RecentConversations({
     <Paper
       component="section"
       aria-labelledby={headingId}
-      sx={(theme) => ({ maxWidth: 880, mx: 'auto', py: 1, width: '100%', ...theme.effects.cardBorder(theme), ...surfaceArrival(1) })}
+      sx={(theme) => ({ maxWidth: 880, mx: 'auto', py: 1, width: '100%', ...theme.effects.cardBorder(theme), ...surfaceArrival(1, true) })}
     >
       <Box
         sx={{ alignItems: 'center', columnGap: 2, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', pb: 0.5, pl: 3, pr: 2, pt: 1.5 }}

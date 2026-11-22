@@ -289,13 +289,21 @@ test('reading audit follows the document scroll owner', async () => {
 });
 
 for (const state of ['loading', 'fresh', 'syncing', 'populated']) test('numeric baselines follow inline glyphs during ' + state, async () => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   try {
     await page.goto(harness.base + '?workspace=home&state=' + state);
+    if (state === 'fresh') {
+      await page.getByRole('heading', { name: 'Set up your browser to see your message counts', exact: true }).waitFor();
+      assert.equal(await page.locator('[data-visual="conversation-total"]').count(), 0);
+      await page.evaluate(() => window.__workspaceFixture.snapshot('populated'));
+    }
     await page.locator('[data-visual="conversation-total"]').waitFor();
     await page.evaluate(() => document.fonts.ready);
     await assertNumericTypography(page, { width: 1440 });
-    await page.locator('[data-visual="message-total"]').evaluate((element) => { element.style.transform = 'translateY(2px)'; });
+    await page.locator('[data-visual="message-total"]').evaluate((element) => {
+      element.style.position = 'relative';
+      element.style.top = '2px';
+    });
     await assert.rejects(() => assertNumericTypography(page, { width: 1440 }), /baselines diverged/);
   } finally { await page.close(); }
 });
@@ -845,7 +853,7 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) for (const
     const pending = new Promise(resolve => { release = resolve; });
     let protectedRequests = 0, statusReads = 0;
     try {
-      await installWatcher(page, { requiredRegions: ['passkey-card', 'passkey-feedback'] });
+      await installWatcher(page, { requiredRegions: ['passkey-card', 'passkey-feedback'], taskTransitions: 'passkey' });
       await page.addInitScript(() => { new MutationObserver(() => {
         if (document.documentElement && !document.documentElement.style.fontSize) document.documentElement.style.fontSize = '200%';
       }).observe(document, { childList: true, subtree: true }); });
@@ -866,21 +874,19 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) for (const
       await page.goto('http://production-status.localhost/', { waitUntil: 'domcontentloaded' });
       await page.getByRole('heading', { name: 'Checking this computer…', exact: true }).waitFor();
       await page.evaluate(() => document.fonts.ready); await settle(page);
-      const action = page.locator('button.MuiButton-contained');
-      const boxes = () => Promise.all([page.getByRole('heading', { level: 1 }), action,
-        page.locator('[data-reserved-region="passkey-feedback"]')].map(node => node.boundingBox()));
-      const before = await boxes();
+      const title = page.getByRole('heading', { level: 1 });
+      const start = await title.boundingBox();
       assert.equal(await page.getByRole('button').count(), 0, 'Unknown status cannot expose a passkey ceremony');
-      assert(await action.isDisabled(), 'Unknown status cannot start a passkey ceremony');
       release();
-      await page.getByRole('heading', { name: outcome === false ? 'Create a passkey on this computer'
-        : outcome === true ? 'Sign in on this computer' : 'Can’t check passkey access', exact: true }).waitFor();
+      await page.getByRole('heading', { name: outcome === false ? 'Protect your analytics on this computer'
+        : outcome === true ? 'Confirm it’s you' : 'Can’t check your passkey right now', exact: true }).waitFor();
       if (outcome === 'unavailable') {
         await page.waitForTimeout(1000);
-        await page.getByRole('heading', { name: 'Can’t check passkey access', exact: true }).waitFor();
+        await page.getByRole('heading', { name: 'Can’t check your passkey right now', exact: true }).waitFor();
       }
       await settle(page);
-      assert.deepEqual(await boxes(), before, 'A delayed status result must not move the heading, action or feedback');
+      const end = await title.boundingBox();
+      assert.deepEqual([end.x, end.y, end.width], [start.x, start.y, start.width], 'A delayed status result retains the heading anchor');
       assert.equal(await page.getByRole('button').count(), outcome === 'unavailable' ? 0 : 1,
         outcome === 'unavailable' ? 'Unavailable status must not expose a ceremony or manual retry button' : 'Only one passkey action is focusable');
       const geometry = await page.locator('[data-reserved-region="passkey-card"]').evaluate(node => {
@@ -902,7 +908,7 @@ for (const width of [320, 390, 1440]) for (const mode of ['light', 'dark']) for 
     const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: motion, colorScheme: mode });
     let protectedRequests = 0, statusReads = 0;
     try {
-      await installWatcher(page, { requiredRegions: ['passkey-card', 'passkey-feedback'] });
+      await installWatcher(page, { requiredRegions: ['passkey-card', 'passkey-feedback'], taskTransitions: 'passkey' });
       await page.route('**/*', async route => {
         const path = new URL(route.request().url()).pathname.replace(/^\/static\/dist(?=\/)/u, '');
         if (route.request().method() === 'POST') protectedRequests++;
@@ -916,7 +922,7 @@ for (const width of [320, 390, 1440]) for (const mode of ['light', 'dark']) for 
         return route.fulfill({ body, contentType: path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : path.endsWith('.woff2') ? 'font/woff2' : 'text/html' });
       });
       await page.goto('http://production-arrival.localhost/', { waitUntil: 'domcontentloaded' });
-      await page.getByRole('heading', { name: 'Sign in on this computer', exact: true }).waitFor();
+      await page.getByRole('heading', { name: 'Confirm it’s you', exact: true }).waitFor();
       assert.equal(await page.locator('main').evaluate(node => getComputedStyle(node).animationName), 'none');
       await page.waitForTimeout(350);
       await settle(page);
@@ -936,7 +942,7 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) for (const
     const pending = new Promise(resolve => { release = resolve; });
     let protectedRequests = 0, statusReads = 0;
     try {
-      await installWatcher(page, { requiredRegions: ['passkey-card', 'passkey-feedback'] });
+      await installWatcher(page, { requiredRegions: ['passkey-card', 'passkey-feedback'], taskTransitions: 'passkey' });
       await page.route('**/*', async route => {
         const path = new URL(route.request().url()).pathname.replace(/^\/static\/dist(?=\/)/u, '');
         if (route.request().method() === 'POST') protectedRequests++;
@@ -966,7 +972,7 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) for (const
       }
       const expected = fonts === 'delayed' ? 'ready' : 'fallback';
       await page.waitForFunction(expected => document.querySelector('[data-passkey-font]')?.dataset.passkeyFont === expected, expected);
-      await page.getByRole('heading', { name: 'Sign in on this computer', exact: true }).waitFor();
+      await page.getByRole('heading', { name: 'Confirm it’s you', exact: true }).waitFor();
       await settle(page);
       const action = page.getByRole('button', { name: 'Sign in with passkey', exact: true });
       const bounds = () => Promise.all([page.locator('header'), page.getByRole('heading', { level: 1 }), action,

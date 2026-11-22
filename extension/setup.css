@@ -679,6 +679,16 @@ body.onboarding-workspace > main { max-width: none; padding: 28px; }
 @media (max-width: 600px) {
   body.onboarding-workspace > main { padding: 20px 16px; }
   .onboarding-workspace .onboarding-loading { width: calc(100% - 32px); margin-top: 20px; }
+  .onboarding-workspace [data-requirement="desktop-handoff"] #desktop-entry[data-composition="guided"] > h2 { min-block-size: 3lh; }
+  .onboarding-workspace [data-requirement="desktop-handoff"] #desktop-entry[data-composition="guided"] #desktop-entry-body { min-block-size: 5lh; }
+  .onboarding-workspace [data-requirement="desktop-handoff"] #desktop-entry[data-composition="guided"] :is(#desktop-setup-code, #download-desktop).hidden {
+    display: block !important;
+    visibility: hidden;
+  }
+}
+@container onboarding-layout (max-width: 14rem) {
+  .onboarding-workspace [data-requirement="desktop-handoff"] #desktop-entry[data-composition="guided"] > h2 { min-block-size: 5lh; }
+  .onboarding-workspace [data-requirement="desktop-handoff"] #desktop-entry[data-composition="guided"] #desktop-entry-body { min-block-size: 7lh; }
 }
 @media (max-width: 360px) {
   body.onboarding-workspace > main { padding-inline: 8px; }

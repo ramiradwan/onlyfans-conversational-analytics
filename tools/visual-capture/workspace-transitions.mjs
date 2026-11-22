@@ -173,8 +173,14 @@ export async function driveWorkspaceDetails(page, view, step, unseen) {
     await push('desktopActionError', 'reply_lost');
     await page.getByRole('button', { name: 'Activate for free' }).click();
   });
-  await step('activation:accepted', () => publishActivation(page, 'accepted'));
-  await step('activation:unavailable', () => publishActivation(page, 'unavailable'));
+  await step('activation:accepted', async () => {
+    await publishActivation(page, 'accepted');
+    await page.getByRole('heading', { name: 'Activating Full analytics', exact: true }).waitFor();
+  });
+  await step('activation:unavailable', async () => {
+    await publishActivation(page, 'unavailable');
+    await page.getByRole('heading', { name: 'Full analytics isn’t on', exact: true }).waitFor();
+  });
   await step.fixture('fixture:reset-activation-task', async () => {
     await push('desktopActionError', null);
     await push('desktopSnapshot', { decision: null, decision_status: null, authentication: null, allowed_actions: ['activation.review'], pending_operations: [] });

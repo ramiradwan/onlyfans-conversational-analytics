@@ -54,6 +54,7 @@ OBSERVER_REGIONS = {
     "settings": ["freshness-status", "issue-band", "settings-browser", "settings-history", "settings-activation", "settings-vault"],
     "graph": ["freshness-status", "issue-band", "graph-notice"],
     "passkey": ["passkey-card", "passkey-feedback"],
+    "findings": [],
     "production-boot": ["passkey-card", "passkey-feedback"],
     "popup": ["popup-content", "popup-status", "surface-feedback"],
     "setup": ["extension-stage", "surface-feedback"],

@@ -6,9 +6,28 @@ export function inspectFrames(frames) {
   let previous;
   for (const frame of frames) {
     if (previous && typeof frame.task === 'string' && typeof previous.task === 'string' && frame.task !== previous.task) {
+      if (previous.task.startsWith('passkey:') && frame.task.startsWith('passkey:')) {
+        const before = previous.regions.find(region => region.id === 'passkey-card');
+        const after = frame.regions.find(region => region.id === 'passkey-card');
+        if (!before || !after || before.rect.slice(0, 3).some((value, index) => value !== after.rect[index])) {
+          issues.add('passkey-card: moved across task change');
+        }
+      }
+      if (previous.task.startsWith('dashboard:') && frame.task.startsWith('dashboard:')) {
+        for (const id of ['dashboard-title', 'freshness-row', 'freshness-status', 'dashboard-overview',
+          'dashboard-basis', 'dashboard-notice', 'dashboard-recent', 'dashboard-setup']) {
+          const before = previous.regions.find(region => region.id === id);
+          const after = frame.regions.find(region => region.id === id);
+          if (!before && !after && id !== 'dashboard-title') continue;
+          const dimensions = id === 'dashboard-title' || id.startsWith('freshness-') ? [0, 1, 2, 3] : [0, 2];
+          if (!before || !after || dimensions.some(index => before.rect[index] !== after.rect[index])) {
+            issues.add(`${id}: moved across task change`);
+          }
+        }
+      }
       baseline.clear();
       overlays.clear();
-      taskTransitions.push([previous.at, frame.paintThrough ?? frame.at]);
+      taskTransitions.push([previous.nativeAt ?? previous.at, frame.nativePaintThrough ?? frame.nativeAt ?? frame.paintThrough ?? frame.at]);
     }
     for (const issue of frame.errors ?? []) issues.add(issue);
     const present = new Set();
@@ -93,6 +112,10 @@ export function observeRegions({ requiredRegions = [], taskTransitions = false, 
   function sample() {
     const regions = [];
     const ids = new Set();
+    if (taskTransitions === 'dashboard') {
+      const heading = document.querySelector('[data-dashboard-heading]');
+      if (heading && visible(heading)) regions.push({ id: 'dashboard-title', rect: layoutPosition(heading, heading.getBoundingClientRect()) });
+    }
     for (const node of document.querySelectorAll('[data-reserved-region]')) {
       if (!node.getClientRects().length) continue;
       const id = node.dataset.reservedRegion;
@@ -205,6 +228,14 @@ export function observeRegions({ requiredRegions = [], taskTransitions = false, 
           : document.querySelector('.provisioning-stage .step[aria-current="step"]')?.dataset.step ?? null
         : taskTransitions === 'popup'
           ? [...document.querySelectorAll('.popup-content > [data-region-content] > *')].filter(visible).map(node => node.id || node.dataset.reservedRegion).join(' ')
+          : taskTransitions === 'passkey'
+            ? document.querySelector('[data-passkey-task]')?.dataset.passkeyTask ?? null
+          : taskTransitions === 'dashboard'
+            ? (() => {
+              const dashboard = document.querySelector('[data-dashboard-task]');
+              const parts = [...dashboard?.querySelectorAll('[data-dashboard-task-part]') ?? []].map(node => node.dataset.dashboardTaskPart);
+              return dashboard ? `dashboard:${dashboard.dataset.dashboardTask}:${parts.join(',')}` : null;
+            })()
           : taskTransitions ? document.querySelector('main[data-presentation-ready="true"]')?.dataset.requirement ?? null : null;
       const signature = JSON.stringify({ task, regions });
       if (signature !== state.signature || state.shifts.length) {

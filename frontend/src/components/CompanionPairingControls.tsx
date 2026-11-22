@@ -348,7 +348,8 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
         if (active && !busy) void run('cancel');
         else if (!busy) setManualRecovery(false);
       }} aria-labelledby="pairing-options-title" fullWidth maxWidth="sm" scroll={narrowDialog ? 'body' : 'paper'}
-        slotProps={{ paper: { sx: { m: { xs: 1, sm: 4 }, width: { xs: 'calc(100% - 16px)' },
+        slotProps={{ container: { sx: { alignItems: 'flex-start' } },
+          paper: { sx: { verticalAlign: 'top', m: { xs: 1, sm: 4 }, width: { xs: 'calc(100% - 16px)' },
           maxWidth: { xs: 'calc(100% - 16px)', sm: 'sm' } } } }}>
         <DialogTitle id="pairing-options-title" sx={{ overflowWrap: 'anywhere' }}>
           {failed ? 'Extension connection' : awaiting ? 'Confirm the connection' : active || openingWindow
@@ -375,9 +376,7 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
               onChange={(event) => setCodesMatch(event.target.checked)} />} label="The codes match" />
           </Stack>}
           {!awaiting && (active || openingWindow) && expiration}
-          {failed && !rechecking ? <Typography variant="body2" role="alert" sx={{ color: 'error.main' }}>
-            Dipsy can’t check the connection right now.
-          </Typography> : (rechecking || (active || openingWindow) && !awaiting) && (
+          {!failed && (rechecking || (active || openingWindow) && !awaiting) && (
             <Box sx={{ '& .onboarding-status:not(:empty)': { color: 'text.secondary', overflowWrap: 'anywhere' } }}>
               <OnboardingStatus tone="pending">{rechecking || openingWindow ? 'Checking the connection…' : 'Waiting for the extension…'}</OnboardingStatus>
             </Box>
@@ -387,9 +386,6 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
           <Button disabled={busy} onClick={() => active ? void run('cancel') : setManualRecovery(false)}>
             {active ? 'Cancel' : 'Close'}
           </Button>
-          {failed && active && <Button disabled={busy} onClick={() => void run('get')} variant="outlined">
-            Check connection
-          </Button>}
           {awaiting && <>
             <Button disabled={busy || failed} onClick={() => void run('decline')}>Codes don’t match</Button>
             <Button disabled={busy || failed || !codesMatch} onClick={() => void run('confirm')} variant="contained">
@@ -401,6 +397,15 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
             Compare connection codes
           </Button>}
         </DialogActions>
+        {failed && <DialogContent sx={{ pt: 0 }}>
+          {rechecking ? <OnboardingStatus tone="pending">Checking the connection…</OnboardingStatus>
+            : <Typography variant="body2" role="alert" sx={{ color: 'error.main' }}>
+              Dipsy can’t check the connection right now.
+            </Typography>}
+          {active && <Button disabled={busy} onClick={() => void run('get')} variant="outlined" sx={{ mt: 1 }}>
+            Check connection
+          </Button>}
+        </DialogContent>}
       </Dialog>
     </Stack>
   );

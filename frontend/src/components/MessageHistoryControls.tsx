@@ -38,6 +38,10 @@ const HISTORY_PURPOSE = 'Use older messages to see results sooner.';
 const PERMISSION_PURPOSE = 'Older messages start syncing after you allow access in your browser.';
 const STARTING_HISTORY = 'Starting message history…';
 const ADDING_HISTORY = 'Adding older messages. Message counts update as they arrive.';
+const SETTINGS_HISTORY_ACTIONS = ['Allow browser access', 'Pause', 'Resume'];
+const SETTINGS_HISTORY_STATUS = [ADDING_HISTORY, PERMISSION_PURPOSE,
+  'History collection is waiting for the browser extension to connect.',
+  'Waiting for the extension to apply message history settings.'];
 
 // Optional promotion is presentation state, scoped to the current account,
 // journey and legal policy, not to a disposable desktop session generation.
@@ -600,7 +604,15 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
               sx={{ flexWrap: 'wrap', alignItems: 'flex-start',
                 '& > button': { minHeight: '2.5rem', maxWidth: '100%', lineHeight: '1.25rem', overflowWrap: 'anywhere' } }}
             >
-              {historyAction}
+              {hasConsent ? (
+                <Box sx={{ display: 'grid', minWidth: 0, maxWidth: '100%',
+                  '& > button': { gridArea: '1 / 1', justifySelf: 'start', minHeight: '2.5rem',
+                    maxWidth: '100%', lineHeight: '1.25rem', overflowWrap: 'anywhere' } }}>
+                  {SETTINGS_HISTORY_ACTIONS.map(label => <Button key={label} variant="outlined"
+                    aria-hidden="true" tabIndex={-1} sx={{ visibility: 'hidden' }}>{label}</Button>)}
+                  {historyAction}
+                </Box>
+              ) : historyAction}
               {!review && !hasConsent && !consentDeferred && (
                 <Button disabled={controlsDisabled} onClick={() => {
                   restoreSettingsFocus.current = true;
@@ -624,6 +636,7 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
       ) : null}
       {(!continuation || error) && (
         <StatusLine id="history-feedback" essential size={{ xs: 20 }}
+          reserveTexts={!continuation && hasConsent ? SETTINGS_HISTORY_STATUS : undefined}
           tone={error && error !== 'Message history settings changed.' ? 'error' : 'secondary'}
           text={error ?? (presentation?.label === 'Adding messages' ? ADDING_HISTORY
             : permissionNeeded ? PERMISSION_PURPOSE : hasConsent ? presentation?.detail ?? null : null)} />
@@ -679,7 +692,9 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   };
   return (
     <>
-      <Panel component="section" emphasis="quiet" aria-labelledby="history-continuation-title" sx={{ p: 0 }}>
+      <Panel component="section" emphasis="quiet" aria-labelledby="history-continuation-title"
+        data-dashboard-task-part={`history:${!ready ? 'loading' : offer ? 'review' : quiet ? 'quiet' : permissionNeeded ? 'permission' : 'acquisition'}`}
+        sx={{ p: 0 }}>
         <Typography ref={continuationHeading} tabIndex={-1} component="h2" id="history-continuation-title" variant="h5"
           sx={{ overflowWrap: 'anywhere' }}>{title}</Typography>
         {detail && <Typography variant="body2" sx={{ color: 'text.secondary' }}>{detail}</Typography>}

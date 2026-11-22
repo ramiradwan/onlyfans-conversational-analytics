@@ -30,10 +30,17 @@ async function openFindings(page) {
   const url = new URL(page.url());
   url.searchParams.delete('workspace');
   url.searchParams.set('stability', 'findings');
-  await page.goto(url.href, { waitUntil: 'networkidle' });
   if (page.viewportSize().width === 320) {
-    await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+    await page.addInitScript(() => {
+      const root = new MutationObserver(() => {
+        if (!document.documentElement) return;
+        document.documentElement.style.fontSize = '200%';
+        root.disconnect();
+      });
+      root.observe(document, { childList: true, subtree: true });
+    });
   }
+  await page.goto(url.href, { waitUntil: 'networkidle' });
   await page.evaluate(() => document.fonts.ready);
 }
 
@@ -203,7 +210,8 @@ return [
   {
     workspace: 'dashboard-continuation',
     state: 'activation-unavailable',
-    ready: text('Full analytics activation could not be prepared.'),
+    ready: (page) => page.getByRole('heading', { name: 'Full analytics isn’t on', exact: true }),
+    assert: (page) => text('Activation couldn’t finish.')(page).waitFor({ state: 'visible' }),
   },
   {
     workspace: 'analytics',
@@ -249,11 +257,11 @@ return [
       await assertCentered(frame, page.getByRole('main'));
     },
   })),
-  { workspace: 'passkey', state: 'resting', ready: heading('Sign in on this computer') },
+  { workspace: 'passkey', state: 'resting', ready: heading('Confirm it’s you') },
   {
     workspace: 'passkey', state: 'cancelled',
     act: (page) => page.getByRole('button', { name: 'Sign in with passkey' }).click(),
-    ready: (page) => page.getByRole('alert').filter({ hasText: 'Sign-in did not finish.' }),
+    ready: (page) => page.getByRole('alert').filter({ hasText: 'Sign-in didn’t finish.' }),
   },
   {
     workspace: 'analytics', state: 'model', variant: 'date-popover', viewports: ['desktop', 'narrow'],

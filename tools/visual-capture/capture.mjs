@@ -180,7 +180,9 @@ export async function captureOrdinaryScreens(browser, base, outDir, selectedScre
     const page = await context.newPage();
     const settings = screen.workspace === 'settings';
     const transitions = [];
-    await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[screen.workspace], nativeTimeline: settings });
+    await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[screen.workspace], nativeTimeline: settings,
+      taskTransitions: screen.workspace === 'passkey' ? 'passkey'
+        : ['home', 'dashboard-continuation'].includes(screen.workspace) ? 'dashboard' : false });
     const errors = [];
     page.on('pageerror', (error) => errors.push(String(error)));
     await page.clock.setFixedTime(FIXED_NOW);

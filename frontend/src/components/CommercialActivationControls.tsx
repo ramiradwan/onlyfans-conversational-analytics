@@ -407,6 +407,7 @@ export function CommercialActivationControls({
   if (dashboard && promptDismissed && !dialogOpen && !pending && !inlineFeedback && !authentication && !pendingActivation) return null;
 
   return <Panel component="section" aria-labelledby={embedded ? undefined : sectionTitleId} emphasis="quiet"
+    data-dashboard-task-part={dashboard ? `activation:${pending ? 'pending' : showPrompt ? 'prompt' : terminalUnknown ? 'ended' : 'status'}:${hasActions}:${Boolean(inlineStatus)}` : undefined}
     sx={{ gap: 1, minWidth: 0, overflowWrap: 'anywhere', ...(embedded ? { p: 0 } : dashboard ? {
       bgcolor: 'background.paper', border: 1, borderColor: 'divider', maxWidth: 760, p: { xs: 3, sm: 4 },
     } : {}) }}>
@@ -417,7 +418,12 @@ export function CommercialActivationControls({
       <Stack direction="row" useFlexGap sx={{ gap: 1, flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <Typography ref={sectionHeading} id={sectionTitleId} component="h2" variant="h6" tabIndex={-1}
           sx={guided ? { ...taskTitleSx, fontSize: { xs: '1.25rem', sm: '1.375rem' } } : undefined}>{title}</Typography>
-        {!dashboard && status && <Box aria-live="polite"><OnboardingPill tone={fullReady ? 'progress' : 'neutral'}>{status}</OnboardingPill></Box>}
+        {!dashboard && <Box aria-live="polite" sx={{
+          display: 'grid', justifyItems: 'start',
+          '&::before': { content: '"Needs attention" / ""', gridArea: '1 / 1', visibility: 'hidden',
+            fontSize: 'var(--dipsy-static-caption-size, .75rem)', lineHeight: 1.5, fontWeight: 500, py: '3px', px: '16px' },
+          '& > span': { gridArea: '1 / 1' },
+        }}>{status && <OnboardingPill tone={fullReady ? 'progress' : 'neutral'}>{status}</OnboardingPill>}</Box>}
       </Stack>
     </Box>}
     {showPrompt && <Typography color="text.secondary" sx={{ maxWidth: '60ch' }}>{ACTIVATION_BODY}</Typography>}
@@ -446,7 +452,9 @@ export function CommercialActivationControls({
         {!fullReady && showBrowser && <Button onClick={() => void reopenBrowser()} disabled={opening} sx={buttonSx}>Open browser</Button>}
         {showSwitch && !offer && <Button ref={switchElement} onClick={() => setChoosingAccount(true)} disabled={opening} sx={quietButtonSx}>{SIGN_IN_SWITCH}</Button>}
         {choosingAccount && !offer && <Button onClick={() => setChoosingAccount(false)} disabled={opening} sx={buttonSx}>Back</Button>}
-        {!hasActions && inlineStatus}
+        {!hasActions && (!dashboard && !embedded && !guided
+          ? <Box sx={{ typography: 'body2', width: '100%', minBlockSize: '2lh' }}>{inlineStatus}</Box>
+          : inlineStatus)}
       </OnboardingAction>
       {hasActions && inlineStatus}
     </Stack>
@@ -460,6 +468,7 @@ export function CommercialActivationControls({
         returnFocus.current = null;
       }}
       slotProps={{ paper: { sx: { bgcolor: 'background.paper', backgroundImage: 'none', overflow: 'visible', overflowWrap: 'anywhere',
+        verticalAlign: 'top',
         boxSizing: 'border-box', m: { xs: 2, sm: 4 }, p: { xs: 3, sm: 4 }, width: { xs: 'calc(100% - 32px)', sm: 'calc(100% - 64px)' },
         '& .MuiDialogContent-root': { p: 0, overflow: 'visible' },
       } } }}>

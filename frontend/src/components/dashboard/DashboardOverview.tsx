@@ -32,8 +32,9 @@ function CountValue({ value, step }: { value?: string; step: number }) {
   const [arrived, setArrived] = useState(false);
   const hasNumber = value !== undefined && /^\d/u.test(value);
   if (!arrived && hasNumber) setArrived(true);
-  return <Box component="span" data-region-content sx={arrived ? surfaceArrival(step) : undefined}>
-    {value ?? <Skeleton component="span" animation={false} width="100%" sx={{ height: '1lh' }} />}
+  return <Box component="span" data-region-content sx={arrived ? surfaceArrival(step, true) : undefined}>
+    {value ?? <Skeleton component="span" animation={false} width="100%"
+      sx={{ display: 'inline-block', verticalAlign: 'baseline', height: '.72em' }} />}
   </Box>;
 }
 
@@ -125,7 +126,7 @@ export function DashboardOverview({
               variant={progress.percent === null ? 'indeterminate' : 'determinate'}
               value={progress.percent ?? undefined}
             />
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>{progress.label}</Typography>
+            <Typography variant="caption" sx={{ color: 'text.secondary', minBlockSize: '2lh' }}>{progress.label}</Typography>
           </Stack>
         )}
       </Stat>
