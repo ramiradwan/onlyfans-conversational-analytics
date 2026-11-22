@@ -23,12 +23,16 @@ import {
 } from '../services/capabilityLicenseApi';
 import { desktopOnboardingApi, selectAnalysisReadiness, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import { componentTokens, typography } from '../theme';
-import { OnboardingAction, OnboardingPill, OnboardingStatus } from './ui/OnboardingCard';
+import { OnboardingAction, OnboardingPill, OnboardingSpot, OnboardingStatus } from './ui/OnboardingCard';
 
 const ACTIVATION_BODY = 'Conversation insights, like your most common topics, stored on this computer.';
 const ACTIVATION_PENDING = 'Checking your activation…';
 const SIGN_IN_SWITCH = 'Use a different sign-in for Full analytics';
 const CONTROL_HEIGHT = componentTokens.staticUi.controlHeight;
+const buttonSx = { minHeight: CONTROL_HEIGHT, maxWidth: '100%', overflowWrap: 'anywhere' } as const;
+const quietButtonSx = { ...buttonSx, color: 'text.primary', fontWeight: 600, px: 0, justifyContent: 'flex-start', textAlign: 'start' } as const;
+const taskTitleSx = { fontWeight: 600, lineHeight: 1.25, letterSpacing: '-.015em', textWrap: 'balance' } as const;
+const dialogActionsSx = { justifyContent: 'flex-start', p: 0, mt: 3 } as const;
 const dismissedOfferScopes = new Set<string>();
 const DISMISSED_OFFER_KEY = 'full-analytics-review-dismissals-v1';
 function dismissedIntent(scope: string) {
@@ -60,7 +64,6 @@ export function CommercialActivationControls({
   creatorAccountId,
   presentationIntent,
   dashboard = false,
-  savedMessageCount,
 }: {
   api?: CapabilityLicenseApi;
   onboarding?: DesktopOnboardingApi;
@@ -68,7 +71,6 @@ export function CommercialActivationControls({
   creatorAccountId?: string | null;
   presentationIntent?: FullPresentationIntent;
   dashboard?: boolean;
-  savedMessageCount?: number;
 }) {
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const sectionTitleId = useId();
@@ -386,32 +388,41 @@ export function CommercialActivationControls({
   const pending = activationChecking || codeChecking && !showCodeDialog;
   const title = pending ? 'Activating Full analytics' : terminalUnknown ? 'Full analytics isn’t on'
     : classifiedMismatch ? 'Full analytics unavailable' : showPrompt ? 'Turn on Full analytics' : 'Full analytics';
+  const guided = dashboard || pending || terminalUnknown || classifiedMismatch;
   const status = fullReady ? 'On' : activeButBlocked ? 'Needs attention' : activationRequired && !pending && !terminalUnknown ? 'Off' : null;
   const unavailable = !decision && !authentication && !accepted && activationRequired && !allowed.includes('activation.review') && !pendingActivation && desktop.connected;
   const inlineFeedback = !dialogOpen && !pending ? feedback || (unavailable ? 'The activation request is unavailable.'
     : fullReady && !embedded ? 'Tone, reply, and topic insights.' : null) : null;
   const codeFeedback = codeError || (canRedeem ? null : feedback);
   const offerFeedback = !desktop.connected ? feedback : noticeError || (opening ? feedback : null);
-  const buttonSx = { minHeight: CONTROL_HEIGHT, maxWidth: '100%', overflowWrap: 'anywhere' } as const;
   const showSwitch = canSwitch && !choosingAccount;
   const showBrowser = !accepted && !unresolvedCommand && !codeInProgress && !choosingProvider && authentication?.actions.open_browser
     && authentication.browser_operation_id && currentAuthority && !desktop.browserLaunchPending
     && (authentication.state === 'admitted' || browserLaunchError !== null);
   const hasActions = pending || canEnterCode || showReview || showBrowser || showSwitch || choosingAccount;
   const inlineStatus = inlineFeedback && <Box id={feedbackId} role={noticeError || terminalUnknown ? 'alert' : undefined}>
-    <OnboardingStatus tone={noticeError || terminalUnknown ? 'error' : 'neutral'} live={!noticeError && !terminalUnknown}>{inlineFeedback}</OnboardingStatus>
+    <OnboardingStatus tone={noticeError || terminalUnknown ? 'error' : classifiedMismatch ? 'attention' : 'neutral'} live={!noticeError && !terminalUnknown}>{inlineFeedback}</OnboardingStatus>
   </Box>;
 
   if (dashboard && promptDismissed && !dialogOpen && !pending && !inlineFeedback && !authentication && !pendingActivation) return null;
 
   return <Panel component="section" aria-labelledby={embedded ? undefined : sectionTitleId} emphasis="quiet"
-    sx={{ gap: 1, minWidth: 0, overflowWrap: 'anywhere', ...(embedded ? { p: 0 } : dashboard ? { bgcolor: 'background.paper', border: 1, borderColor: 'divider', boxShadow: 'none' } : {}) }}>
-    {!embedded && <Stack direction="row" useFlexGap sx={{ gap: 1, flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-      <Typography ref={sectionHeading} id={sectionTitleId} component="h2" variant="h6" tabIndex={-1}>{title}</Typography>
-      {!dashboard && status && <Box aria-live="polite"><OnboardingPill tone={fullReady ? 'progress' : 'neutral'}>{status}</OnboardingPill></Box>}
-    </Stack>}
+    sx={{ gap: 1, minWidth: 0, overflowWrap: 'anywhere', ...(embedded ? { p: 0 } : dashboard ? {
+      bgcolor: 'background.paper', border: 1, borderColor: 'divider', maxWidth: 760, p: { xs: 3, sm: 4 },
+    } : {}) }}>
+    {!embedded && <Box>
+      {guided && <Box className="onboarding-surface-head"><OnboardingSpot icon="insights" />
+        {title !== 'Full analytics' && <span>Full analytics</span>}
+      </Box>}
+      <Stack direction="row" useFlexGap sx={{ gap: 1, flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <Typography ref={sectionHeading} id={sectionTitleId} component="h2" variant="h6" tabIndex={-1}
+          sx={guided ? { ...taskTitleSx, fontSize: { xs: '1.25rem', sm: '1.375rem' } } : undefined}>{title}</Typography>
+        {!dashboard && status && <Box aria-live="polite"><OnboardingPill tone={fullReady ? 'progress' : 'neutral'}>{status}</OnboardingPill></Box>}
+      </Stack>
+    </Box>}
     {showPrompt && <Typography color="text.secondary" sx={{ maxWidth: '60ch' }}>{ACTIVATION_BODY}</Typography>}
-    <Stack data-journey-state="desktop.full_analytics_activation" spacing={1}>
+    <Stack data-journey-state="desktop.full_analytics_activation" spacing={1}
+      sx={guided && (hasActions || inlineStatus || choosingProvider) ? { mt: 2 } : undefined}>
       {choosingProvider && !offer && !fullReady && <Box ref={choicesElement}><ProviderSignInButtons providers={providers}
         disabled={opening} describedBy={inlineFeedback ? feedbackId : sectionTitleId}
         onSelect={provider => void openSetup(choosingAccount ? 'auth.switch' : 'auth.select', provider)} /></Box>}
@@ -431,16 +442,16 @@ export function CommercialActivationControls({
             if (offer) setOfferOpen(true);
             else void openSetup();
           }}>{replacementAvailable ? 'Review offer again' : 'Review offer'}</Button>}
-        {showPrompt && <Button sx={buttonSx} onClick={() => { dismissOffer(); setDismissedPrompt(ownerScope); }}>Not now</Button>}
+        {showPrompt && <Button sx={quietButtonSx} onClick={() => { dismissOffer(); setDismissedPrompt(ownerScope); }}>Not now</Button>}
         {!fullReady && showBrowser && <Button onClick={() => void reopenBrowser()} disabled={opening} sx={buttonSx}>Open Chrome</Button>}
-        {showSwitch && !offer && <Button ref={switchElement} onClick={() => setChoosingAccount(true)} disabled={opening} sx={buttonSx}>{SIGN_IN_SWITCH}</Button>}
+        {showSwitch && !offer && <Button ref={switchElement} onClick={() => setChoosingAccount(true)} disabled={opening} sx={quietButtonSx}>{SIGN_IN_SWITCH}</Button>}
         {choosingAccount && !offer && <Button onClick={() => setChoosingAccount(false)} disabled={opening} sx={buttonSx}>Back</Button>}
         {!hasActions && inlineStatus}
       </OnboardingAction>
       {hasActions && inlineStatus}
     </Stack>
 
-    <Dialog open={dialogOpen} onClose={showCodeDialog ? closeCode : dismissOffer} aria-labelledby={dialogTitleId} fullWidth maxWidth="sm"
+    <Dialog open={dialogOpen} onClose={showCodeDialog ? closeCode : dismissOffer} aria-labelledby={dialogTitleId} scroll="body" fullWidth maxWidth="sm"
       transitionDuration={reducedMotion ? 0 : 200}
       onTransitionExited={() => {
         const target = returnFocus.current;
@@ -448,13 +459,16 @@ export function CommercialActivationControls({
         else sectionHeading.current?.focus();
         returnFocus.current = null;
       }}
-      slotProps={{ paper: { sx: { bgcolor: 'background.paper', backgroundImage: 'none', boxShadow: 'none', overflowWrap: 'anywhere',
-        m: { xs: 2, sm: 4 }, width: { xs: 'calc(100% - 32px)', sm: 'calc(100% - 64px)' } } } }}>
-      <DialogTitle id={dialogTitleId} sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' }, lineHeight: 1.25, fontWeight: 600 }}>
+      slotProps={{ paper: { sx: { bgcolor: 'background.paper', backgroundImage: 'none', overflow: 'visible', overflowWrap: 'anywhere',
+        boxSizing: 'border-box', m: { xs: 2, sm: 4 }, p: { xs: 3, sm: 4 }, width: { xs: 'calc(100% - 32px)', sm: 'calc(100% - 64px)' },
+        '& .MuiDialogContent-root': { p: 0, overflow: 'visible' },
+      } } }}>
+      <Box className="onboarding-surface-head"><OnboardingSpot icon={showCodeDialog ? 'code' : 'insights'} /></Box>
+      <DialogTitle id={dialogTitleId} sx={{ ...taskTitleSx, p: 0, mb: 1, fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
         {showCodeDialog ? codeChecking ? 'Activating Full analytics' : 'Use an activation code' : choosingAccount ? SIGN_IN_SWITCH : 'Activate Full analytics'}
       </DialogTitle>
       {showCodeDialog ? <Box component="form" ref={focusCodeForm} onSubmit={event => { event.preventDefault(); void redeemCode(); }}>
-        <DialogContent sx={{ pt: '8px !important' }}>
+        <DialogContent>
           <Typography component="label" htmlFor={codeFormId} variant="body2" sx={{ display: 'block', mb: 1 }}>Activation code</Typography>
           <TextField id={codeFormId} autoComplete="off" fullWidth variant="outlined" value={code}
             disabled={!canRedeem || codeChecking || codeUnconfirmed || opening}
@@ -468,17 +482,17 @@ export function CommercialActivationControls({
               }
             }} />
         </DialogContent>
-        <DialogActions sx={{ justifyContent: 'flex-start', px: 3 }}>
+        <DialogActions sx={dialogActionsSx}>
           <OnboardingAction swap={codeChecking ? 'pending' : 'ready'}>
             {codeChecking ? <OnboardingStatus tone="pending">{ACTIVATION_PENDING}</OnboardingStatus>
               : <Button type="submit" variant="contained" sx={buttonSx} disabled={!canRedeem || opening || !code.trim() || refusedCode === code.trim()
                 || codeUnconfirmed && (codeScope.current !== ownerScope || attemptedCode.current !== code.trim())}>
                 {codeUnconfirmed ? 'Resume activation' : 'Activate'}
               </Button>}
-            <Button onClick={closeCode} sx={buttonSx}>Cancel</Button>
+            <Button onClick={closeCode} sx={quietButtonSx}>Cancel</Button>
           </OnboardingAction>
         </DialogActions>
-        {!codeChecking && codeFeedback && <Box id={`${codeFormId}-status`} role={codeError ? 'alert' : undefined} sx={{ px: 3, pb: 2 }}>
+        {!codeChecking && codeFeedback && <Box id={`${codeFormId}-status`} role={codeError ? 'alert' : undefined} sx={{ mt: 2 }}>
           <OnboardingStatus tone={codeError ? 'error' : 'neutral'} live={!codeError}>{codeFeedback}</OnboardingStatus>
         </Box>}
       </Box> : offer && <>
@@ -490,43 +504,45 @@ export function CommercialActivationControls({
             <Button onClick={() => setChoosingAccount(false)} disabled={opening}>Back</Button>
           </Stack> : <Stack spacing={2} useFlexGap>
             <Typography color="text.secondary" sx={{ maxWidth: '60ch' }}>{ACTIVATION_BODY}</Typography>
-            {dashboard && currentAuthority && savedMessageCount !== undefined && <Typography variant="body2" color="text.secondary">
-              Based on {new Intl.NumberFormat().format(savedMessageCount)} messages saved on this computer so far.
-            </Typography>}
-            <Box component="dl" sx={{ m: 0, '& > div': { display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(8rem, 1fr) minmax(0, 2fr)' },
-              columnGap: 2, py: 1, borderBottom: 1, borderColor: 'divider' }, '& dt': { color: 'text.secondary' }, '& dd': { m: 0 } }}>
-              <div><Typography component="dt">Funding</Typography><Typography component="dd">Complimentary pilot</Typography></div>
-              <div><Typography component="dt">Price</Typography><Typography component="dd" sx={{ color: 'text.primary' }}>
-                <Typography component="span" sx={{ color: 'text.primary' }}>Free</Typography>{' · '}
-                <Typography component="span" sx={{ color: 'text.primary' }}>
+            <Box component="dl" sx={{ m: 0,
+              '& > div': { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'baseline', columnGap: 2, py: 1.25 },
+              '& > div + div': { borderTop: 1, borderColor: 'divider' },
+              '& dt': { color: 'text.secondary' },
+              '& dd': { m: 0, color: 'text.primary', fontWeight: 600, fontVariantNumeric: 'tabular-nums', textAlign: 'end', maxWidth: '24ch' },
+              '@media (max-width: 359px)': { '& > div': { gridTemplateColumns: '1fr' } },
+            }}>
+              <div><Typography component="dt" variant="body2">Funding</Typography><Typography component="dd" variant="body2">Complimentary pilot</Typography></div>
+              <div><Typography component="dt" variant="body2">Price</Typography><Typography component="dd" variant="body2">
+                <Typography component="span" variant="inherit" sx={{ color: 'text.primary' }}>Free</Typography>
+                <Typography component="span" variant="inherit" sx={{ display: 'block', color: 'text.secondary', fontWeight: 400 }}>
                   Uses {new Intl.NumberFormat().format(offer.pilot_credit_cost)} {offer.pilot_credit_cost === 1 ? 'pilot credit' : 'pilot credits'}
                 </Typography>
               </Typography></div>
-              <div><Typography component="dt">Licensed version</Typography><Typography component="dd">{offer.licensed_major_version}.x</Typography></div>
-              <div><Typography component="dt">Update rights</Typography><Typography component="dd">{offer.update_rights ? 'Included' : 'Not included'}</Typography></div>
-              <div><Typography component="dt">Earlier versions</Typography><Typography component="dd">
+              <div><Typography component="dt" variant="body2">Licensed version</Typography><Typography component="dd" variant="body2">{offer.licensed_major_version}.x</Typography></div>
+              <div><Typography component="dt" variant="body2">Update rights</Typography><Typography component="dd" variant="body2">{offer.update_rights ? 'Included' : 'Not included'}</Typography></div>
+              <div><Typography component="dt" variant="body2">Earlier versions</Typography><Typography component="dd" variant="body2">
                 {offer.fallback_major_versions.length ? offer.fallback_major_versions.map(version => `${version}.x`).join(', ') : 'Not included'}
               </Typography></div>
             </Box>
             {showSwitch && <Button ref={switchElement} onClick={() => setChoosingAccount(true)} disabled={opening}
-              sx={{ ...buttonSx, alignSelf: 'flex-start', textAlign: 'start' }}>{SIGN_IN_SWITCH}</Button>}
+              sx={{ ...quietButtonSx, alignSelf: 'flex-start' }}>{SIGN_IN_SWITCH}</Button>}
           </Stack>}
         </DialogContent>
-        <DialogActions sx={{ justifyContent: 'flex-start', px: 3 }}>
+        <DialogActions sx={dialogActionsSx}>
           <OnboardingAction>
             {!choosingAccount && <Button onClick={() => void openSetup('activation.confirm')} disabled={!canConfirm || opening}
               aria-describedby={offerFeedback ? `${feedbackId}-offer` : undefined} variant="contained" sx={buttonSx}>Activate for free</Button>}
-            <Button onClick={dismissOffer} sx={buttonSx}>Not now</Button>
+            <Button onClick={dismissOffer} sx={quietButtonSx}>Not now</Button>
             {!choosingAccount && <Button ref={offerCodeButton} aria-haspopup="dialog" disabled={opening || !canRedeem || codeChecking}
               onClick={() => {
                 if (!currentPresentation()) return;
                 if (intentScope) dismissIntent(intentScope);
                 promotedIntent.current = null;
                 setCodeOpen(true);
-              }} sx={buttonSx}>Use an activation code</Button>}
+              }} sx={quietButtonSx}>Use an activation code</Button>}
           </OnboardingAction>
         </DialogActions>
-        {offerFeedback && <Box id={`${feedbackId}-offer`} role={noticeError ? 'alert' : undefined} sx={{ px: 3, pb: 2 }}>
+        {offerFeedback && <Box id={`${feedbackId}-offer`} role={noticeError ? 'alert' : undefined} sx={{ mt: 2 }}>
           <OnboardingStatus tone={noticeError ? 'error' : 'neutral'} live={!noticeError}>{offerFeedback}</OnboardingStatus>
         </Box>}
       </>}

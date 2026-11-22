@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 import { FIXED_NOW, startHarness } from './capture.mjs';
 import { auditScrolling, installWatcher, readWatcher } from './shift-watcher.mjs';
 import { renderSurfaceState, SURFACE_STATES } from '../../extension/qualification/surface-fixtures.mjs';
-import { openActivationReview } from './desktop-decision-fixtures.mjs';
+import { openActivationReview, publishActivation } from './desktop-decision-fixtures.mjs';
 
 let browser, harness;
 before(async () => { browser = await chromium.launch(); harness = await startHarness(); });
@@ -640,6 +640,94 @@ for (const width of [320, 390, 600]) test(`essential activation content stays se
     assert(geometry.statusFits && geometry.titleStatusSeparate, 'The status must fit the section and remain separate from its title');
     assert(!geometry.horizontalOverflow, 'Expanded essential copy must not require horizontal scrolling');
     assert.equal(await notice.getByRole('button', { name: 'Show details' }).count(), 0);
+  } finally { await page.close(); }
+});
+
+test('activation Dashboard prompt uses Guided task geometry at 1440', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  try {
+    await page.goto(harness.base + '?workspace=dashboard-continuation&state=activating-full-analytics');
+    await page.waitForFunction(() => window.__workspaceFixture);
+    await publishActivation(page, 'review');
+    const prompt = page.getByRole('region', { name: 'Turn on Full analytics' });
+    await prompt.waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await settle(page);
+    const geometry = await prompt.evaluate(node => {
+      const title = node.querySelector('h2');
+      const body = node.querySelector('p');
+      const action = node.querySelector('.onboarding-action');
+      const style = getComputedStyle(title);
+      return {
+        width: node.getBoundingClientRect().width,
+        padding: getComputedStyle(node).padding,
+        fontSize: style.fontSize,
+        titleLines: title.getClientRects().length,
+        titleHeight: parseFloat(style.height),
+        lineHeight: parseFloat(style.lineHeight),
+        actionGap: action.getBoundingClientRect().top - body.getBoundingClientRect().bottom,
+      };
+    });
+    assert.equal(geometry.width, 760);
+    assert.equal(geometry.padding, '32px');
+    assert.equal(geometry.fontSize, '22px');
+    assert.equal(geometry.titleLines, 1);
+    assert.equal(geometry.titleHeight, geometry.lineHeight);
+    assert.equal(geometry.actionGap, 24);
+  } finally { await page.close(); }
+});
+
+for (const mode of ['light', 'dark']) for (const width of [320, 390, 1440]) test(`activation offer scroll and styling at ${width} in ${mode}`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 640 }, reducedMotion: 'reduce', colorScheme: mode });
+  try {
+    await page.goto(harness.base + `?workspace=settings&state=fresh&mode=${mode}`);
+    await page.waitForFunction(() => window.__workspaceFixture);
+    if (width === 320) await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+    await openActivationReview(page);
+    const offer = page.getByRole('dialog', { name: 'Activate Full analytics' });
+    await page.evaluate(() => document.fonts.ready);
+    await settle(page);
+    const geometry = await offer.evaluate(node => {
+      const content = node.querySelector('.MuiDialogContent-root');
+      const rows = [...node.querySelectorAll('dl > div')];
+      const price = rows[1].querySelector('dd');
+      const caption = price.lastElementChild;
+      const quiet = [...node.querySelectorAll('.MuiButton-text')];
+      const style = getComputedStyle(node);
+      return {
+        clipped: content.scrollHeight > content.clientHeight,
+        shadow: style.boxShadow,
+        spot: node.querySelector('.onboarding-spot')?.getBoundingClientRect().width,
+        rowCount: rows.length,
+        valueStyle: [getComputedStyle(price).fontWeight, getComputedStyle(price).fontVariantNumeric, getComputedStyle(price).textAlign],
+        captionStyle: [getComputedStyle(caption).color, getComputedStyle(caption).display, getComputedStyle(caption).fontWeight],
+        secondaryInk: getComputedStyle(rows[0].querySelector('dt')).color,
+        trailingDivider: getComputedStyle(rows.at(-1)).borderBottomWidth,
+        quiet: quiet.map(button => [getComputedStyle(button).color, getComputedStyle(button).paddingInlineStart, getComputedStyle(button).textAlign]),
+        ink: getComputedStyle(price).color,
+        fits: node.getBoundingClientRect().left >= 0 && node.getBoundingClientRect().right <= innerWidth && node.scrollWidth <= node.clientWidth,
+      };
+    });
+    assert(!geometry.clipped, 'The offer content must scroll with the title and actions');
+    assert.notEqual(geometry.shadow, 'none');
+    assert.equal(geometry.spot, 40);
+    assert.equal(geometry.rowCount, 5);
+    assert.deepEqual(geometry.valueStyle, ['600', 'tabular-nums', 'end']);
+    assert.deepEqual(geometry.captionStyle, [geometry.secondaryInk, 'block', '400']);
+    assert.notEqual(geometry.secondaryInk, geometry.ink);
+    assert.equal(geometry.trailingDivider, '0px');
+    assert(geometry.quiet.length >= 2 && geometry.quiet.every(([color, padding, align]) => color === geometry.ink && padding === '0px' && align === 'start'));
+    assert(geometry.fits);
+    if (width === 320) {
+      const title = offer.getByRole('heading');
+      const before = await title.boundingBox();
+      await offer.getByRole('button', { name: 'Use an activation code' }).scrollIntoViewIfNeeded();
+      assert((await title.boundingBox()).y < before.y, 'Scrolling to the code entry moves the title with the rest of the offer');
+    }
+    await offer.getByRole('button', { name: 'Use an activation code' }).click();
+    const code = page.getByRole('dialog', { name: 'Use an activation code' });
+    assert.equal(await code.locator('.onboarding-spot').count(), 1);
+    assert(await code.getByRole('textbox', { name: 'Activation code' }).evaluate(input => input === document.activeElement));
   } finally { await page.close(); }
 });
 

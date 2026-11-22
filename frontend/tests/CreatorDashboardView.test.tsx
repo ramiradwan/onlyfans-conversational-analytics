@@ -214,11 +214,14 @@ describe('CreatorDashboardView', () => {
     mountDashboard(store, source);
     const region = within(screen.getByRole('region', { name: 'Turn on Full analytics' }));
     expect(region.getByText('Conversation insights, like your most common topics, stored on this computer.')).toBeTruthy();
+    expect(screen.getByText(SAVED_BASIS)).toBeTruthy();
     const review = region.getByRole('button', { name: 'Review offer' });
     review.focus();
     fireEvent.click(review);
     const offer = within(await screen.findByRole('dialog', { name: 'Activate Full analytics' }));
     expect(offer.getByText('Uses 1 pilot credit')).toBeTruthy();
+    expect(offer.queryByText(SAVED_BASIS)).toBeNull();
+    expect(region.getByText('Full analytics', { exact: true }).closest('.onboarding-surface-head')).toBeTruthy();
     expect(offer.getByRole('button', { name: 'Activate for free' })).toHaveProperty('disabled', false);
     fireEvent.click(offer.getByRole('button', { name: 'Not now' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());

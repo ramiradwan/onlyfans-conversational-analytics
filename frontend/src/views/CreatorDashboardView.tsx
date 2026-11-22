@@ -469,7 +469,7 @@ export default function CreatorDashboardView({
   const continuation = collectionReview || showActivation ? <Stack spacing={1}>
     {collectionReview}
     {showActivation && <CommercialActivationControls api={activationApi} onboarding={onboardingApi} creatorAccountId={state.creatorAccountId}
-      presentationIntent={fullIntent} dashboard savedMessageCount={!overviewLoading && !hideEmptyOverview ? split?.sample?.count : undefined} />}
+      presentationIntent={fullIntent} dashboard />}
   </Stack> : historyPrompt ?? (showSetup ? <SetupPrompt title="Set up Chrome to see your message counts" compact />
     : completeEmpty || waitingForMessages ? <OnboardingEmptyActivity waitingForMessages={waitingForMessages} collectionOn={collectionOn} />
       : hasSnapshot && fullAnalyticsReady === true ? connectionSummary : null);

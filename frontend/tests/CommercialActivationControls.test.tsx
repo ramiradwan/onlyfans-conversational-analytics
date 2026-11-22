@@ -44,6 +44,8 @@ it('opens a focused activation code dialog and returns focus on cancel and Escap
   fireEvent.click(trigger);
   const dialog = await screen.findByRole('dialog', { name: 'Use an activation code' });
   expect(dialog.getAttribute('aria-modal')).toBe('true');
+  expect(dialog.querySelector('[data-testid="PasswordOutlinedIcon"]')).toBeTruthy();
+  expect(getComputedStyle(within(dialog).getByRole('button', { name: 'Cancel' })).color).toBe('var(--bridge-palette-text-primary)');
   expect(document.activeElement).toBe(within(dialog).getByRole('textbox', { name: 'Activation code' }));
   expect(within(dialog).getByRole('button', { name: 'Activate', exact: true })).toHaveProperty('disabled', true);
   fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
@@ -74,9 +76,10 @@ it('uses admitted offer terms and ordinary ink in both schemes without exposing 
   for (const mode of ['light', 'dark'] as const) {
     const { text, background } = theme.colorSchemes[mode]!.palette;
     expect(new Color(text.primary).contrast(background.paper, 'WCAG21')).toBeGreaterThanOrEqual(4.5);
+    expect(new Color(text.secondary).contrast(background.paper, 'WCAG21')).toBeGreaterThanOrEqual(4.5);
   }
   expect(getComputedStyle(price).color).toBe('var(--bridge-palette-text-primary)');
-  expect(getComputedStyle(dialog.getByText('Uses 3 pilot credits')).color).toBe(getComputedStyle(price).color);
+  expect(getComputedStyle(dialog.getByText('Uses 3 pilot credits')).color).toBe('var(--bridge-palette-text-secondary)');
   expect(getComputedStyle(price.closest('.MuiDialog-paper')!).backgroundColor).toBe('var(--bridge-palette-background-paper)');
 });
 
@@ -103,6 +106,7 @@ it('presents a terminal unknown blocker without a recovery promise or competing 
   fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, decision_status: { operation_id: decision.operation_id, state: 'unavailable' } } });
   mount(makeApi(), fixture.api);
   expect(screen.getByRole('heading', { name: 'Full analytics isn’t on' })).toBeTruthy();
+  expect(screen.getByText('Full analytics', { exact: true }).closest('.onboarding-surface-head')).toBeTruthy();
   expect(screen.getByText('Activation couldn’t finish.')).toBeTruthy();
   expect(screen.queryByRole('button')).toBeNull();
   expect(fixture.api.begin).not.toHaveBeenCalled();
@@ -114,6 +118,7 @@ it('shows accepted activation as pending while leaving stale consent actions ina
   fixture.publish({ snapshot: { ...snapshot, decision_status: { operation_id: decision.operation_id, state: 'accepted' } } });
   mount(makeApi(), fixture.api);
   expect(screen.getByRole('heading', { name: 'Activating Full analytics' })).toBeTruthy();
+  expect(screen.getByText('Full analytics', { exact: true }).closest('.onboarding-surface-head')).toBeTruthy();
   expect(screen.getByText('Checking your activation…').closest('.onboarding-action')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Activate for free' })).toBeNull();
   expect(screen.queryByText('On')).toBeNull();
@@ -133,7 +138,10 @@ it('names the expected OnlyFans account only after the owner verifies its label'
   await act(async () => fixture.publish({ snapshot: { ...snapshot,
     creator_label: { creator_id: 'creator-account', display_name: 'Expected account', username: null } } }));
   expect(screen.getByRole('heading', { name: 'Full analytics unavailable' })).toBeTruthy();
-  expect(screen.getByText('You’re signed in to a different OnlyFans account. Switch to Expected account in Chrome to continue.')).toBeTruthy();
+  const status = screen.getByRole('status');
+  expect(status.textContent).toBe('You’re signed in to a different OnlyFans account. Switch to Expected account in Chrome to continue.');
+  expect(status.getAttribute('data-tone')).toBe('attention');
+  expect(within(status).getByTestId('ErrorOutlineOutlinedIcon')).toBeTruthy();
   expect(screen.queryByRole('button', { name: /activate|review/i })).toBeNull();
   expect(fixture.api.begin).not.toHaveBeenCalled();
 });
