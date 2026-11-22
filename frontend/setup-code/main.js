@@ -61,6 +61,7 @@ async function start(readOnly = false) {
     if (result === 'none' && current()) {
       form.hidden = false;
       submit.disabled = false;
+      submit.hidden = false;
       submit.textContent = 'Continue';
       card.dataset.state = 'ready';
       status.textContent = '';
@@ -84,6 +85,7 @@ form.addEventListener('submit', async event => {
   }
   busy = true;
   submit.disabled = true;
+  submit.hidden = true;
   submit.textContent = 'Checking the code…';
   card.dataset.state = 'checking';
   card.setAttribute('aria-busy', 'true');

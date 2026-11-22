@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>Use a setup code</title></head>
-<body><header class="setup-header"><span class="setup-brand"><span class="brand-mark" aria-hidden="true">
+<body class="setup-code-page"><header class="setup-header"><span class="setup-brand"><span class="brand-mark" aria-hidden="true">
 <svg viewBox="0 0 20 20" fill="none" focusable="false"><path d="M5 3.75h10A2.25 2.25 0 0 1 17.25 6v6A2.25 2.25 0 0 1 15 14.25h-4.4L7 16.75v-2.5H5A2.25 2.25 0 0 1 2.75 12V6A2.25 2.25 0 0 1 5 3.75Z"/><path d="M6.25 10.75 8.7 8.45l2 1.45 2.8-3"/><circle cx="6.25" cy="10.75" r=".8"/><circle cx="8.7" cy="8.45" r=".8"/><circle cx="10.7" cy="9.9" r=".8"/><circle cx="13.5" cy="6.9" r=".8"/></svg>
 </span><span class="brand-name">Conversation Analytics</span></span></header>
 <main class="setup-main"><section class="setup-card setup-code-card" aria-labelledby="receiving-title" data-state="opening">
@@ -11,5 +11,11 @@
 <input id="receiving-code" class="setup-field setup-code-field" maxlength="16" autocomplete="off" spellcheck="false" required>
 <div class="setup-actions"><button id="receiving-submit" type="submit">Continue</button></div></form>
 <div id="receiving-actions" class="setup-actions"></div>
-<p id="receiving-status" class="task-status" data-tone="progress" role="status" aria-live="polite">Getting ready for your code…</p>
+<div class="status-line"><span class="status-icon" aria-hidden="true">
+<svg class="si si-pending" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="33.5 50.3"></circle></svg>
+<svg class="si si-done" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2m0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8m4.59-12.42L10 14.17l-2.59-2.58L6 13l4 4 8-8z"></path></svg>
+<svg class="si si-attention" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2M12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8"></path></svg>
+<svg class="si si-error" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2M12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8"></path></svg>
+<svg class="si si-info" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2m0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8"></path></svg>
+</span><p id="receiving-status" class="task-status" data-tone="progress" role="status" aria-live="polite">Getting ready for your code…</p></div>
 </section></main><script type="module" src="./main.js"></script></body></html>

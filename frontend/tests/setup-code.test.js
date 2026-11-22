@@ -52,8 +52,16 @@ describe('setup code entry states', () => {
       .toBe('Code from the other computer or browser');
     expect(document.querySelector('#receiving-submit').textContent).toBe('Continue');
     expect(document.querySelector('#receiving-status').textContent).toBe('');
-    expect(document.querySelector('#receiving-status'))
-      .toBe(document.querySelector('.setup-card').lastElementChild);
+    expect(document.querySelector('.status-line')).toBe(document.querySelector('.setup-card').lastElementChild);
+    expect(document.querySelector('.status-line:has(> #receiving-status:empty)')).not.toBeNull();
+    expect(document.querySelector('.si-pending').getAttribute('width')).toBe('20');
+    expect(shellCss).toMatch(/\.setup-code-page \.setup-code-card \{[^}]*border-color: var\(--dipsy-intent-surface-dominant-border\)/u);
+    expect(shellCss).toMatch(/\.setup-code-page \.setup-code-card \{[^}]*box-shadow: var\(--dipsy-intent-surface-dominant-elevation\)/u);
+    expect(shellCss).toMatch(/\.setup-code-page \.setup-code-card > \* \{ margin-block: 0; \}/u);
+    expect(shellCss).toMatch(/\.setup-code-page #receiving-actions:empty \{ display: none; \}/u);
+    expect(shellCss).toMatch(/\.setup-code-page \.setup-brand \{[^}]*overflow-wrap: anywhere/u);
+    expect(shellCss).toMatch(/\.setup-code-page \.setup-code-card \.setup-form \{ margin-block-start: 24px; \}/u);
+    expect(shellCss).toMatch(/@media \(max-width: 420px\) \{ \.setup-code-page \.setup-code-card \{ padding-inline: 20px; \} \}/u);
     page.window.close();
   });
 
@@ -71,6 +79,11 @@ describe('setup code entry states', () => {
     await settle();
     expect(page.requests.filter(([path]) => path === '/api/v1/setup-code/consume')).toHaveLength(0);
     expect(document.querySelector('#receiving-status').textContent).toBe('Enter the 12-character setup code.');
+    expect(document.querySelector('#receiving-status').dataset.tone).toBe('error');
+    expect(document.querySelector('.status-line:has(> [data-tone="error"]) .si-error').getAttribute('width')).toBe('20');
+    expect(shellCss).toMatch(/\.status-line:has\(> \[data-tone="error"\]\) \.si-error \{ display: block; color: var\(--dipsy-color-error\); \}/u);
+    expect(shellCss).toMatch(/\.setup-code-page \.status-line > \.task-status \{[^}]*color: var\(--dipsy-color-text\)/u);
+    expect(shellCss).toMatch(/\.setup-code-page \.status-line > \.task-status::before, \.setup-code-page \.status-line > \.task-status::after \{ content: none !important; \}/u);
     code.value = '0123456789ab';
     submit();
     await settle();
@@ -82,10 +95,14 @@ describe('setup code entry states', () => {
     expect(code.value).toBe('');
     expect(button.textContent).toBe('Checking the code…');
     expect(button.disabled).toBe(true);
-    expect(button.parentElement.classList.contains('setup-actions')).toBe(true);
-    expect(shellCss).toMatch(/\.setup-code-card \.setup-actions > button \{ min-block-size: var\(--dipsy-static-control-height\); \}/u);
+    expect(button.hidden).toBe(true);
     expect(document.querySelector('#receiving-guidance').isConnected).toBe(true);
     expect(document.querySelector('#receiving-status').textContent).toBe('Checking the code…');
+    expect(document.querySelector('.status-line').getAttribute('class')).toBe('status-line');
+    expect(document.querySelector('.si-pending').isConnected).toBe(true);
+    expect(shellCss).toMatch(/\.setup-code-page \.status-line:has\(> \[data-tone="progress"\]\) \{ min-block-size: var\(--dipsy-static-control-height\)/u);
+    expect(shellCss).toMatch(/\.setup-code-page \.setup-code-card\[data-state="checking"\] #receiving-form \.setup-actions \{ display: none; \}/u);
+    expect(shellCss).toMatch(/\.setup-code-page \.setup-code-card\[data-state="checking"\] \.status-line \{ margin-block-start: calc\(2\.5 \* var\(--dipsy-space-unit\)\); \}/u);
     submit();
     await settle();
     expect(page.receivingOptions).toHaveLength(1);
