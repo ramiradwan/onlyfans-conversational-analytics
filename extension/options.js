@@ -42,12 +42,10 @@ function render(model) {
   const fullFamily = status.consent.mode === 'full' || status.consent.mode === 'paused' && status.consent.resume_mode === 'full';
   const canAllowHistory = fullFamily && !status.history_permission;
   show('history', canAllowHistory);
-  element('history').closest('.settings-row').classList.toggle('reserved-empty', false);
   text('history', 'Allow browser access');
   if (location.hash === '#history' && status.history_permission) void finishHandoff();
-  text('history-status', status.history_permission
-    ? 'Browser access allowed.'
-    : 'Allow the extension to read earlier messages for the history collection you enabled in the desktop app.');
+  text('history-status', status.history_permission ? 'Browser access allowed.' : canAllowHistory
+    ? 'You turned on message history in the desktop app. Allow the extension to read your older messages.' : '');
   text('pending-count', new Intl.NumberFormat().format(status.delivery?.pending_entries ?? 0));
   const drops = Object.values(status.delivery?.capture_drop_counts ?? {}).reduce((sum, count) => sum + (Number.isSafeInteger(count) ? count : 0), 0);
   text('capture-health', status.delivery?.startup_error_code ? 'Full analytics could not start. Open the desktop app, then retry in setup.'
@@ -88,7 +86,6 @@ page.bind('open-setup', () => openSurface('setup'));
 page.bind('open-dashboard', () => chrome.tabs.create({ url: client.model.config.dashboard_url }));
 page.bind('manage-desktop-data', () => chrome.tabs.create({ url: client.model.config.history_settings_url }));
 element('open-connection-details').addEventListener('click', () => element('connection-details-dialog').showModal());
-page.bind('retry-runtime', () => client.sync());
 text('version-label', `Conversation Analytics · version ${chrome.runtime.getManifest().version}`);
 for (const id of mutations) page.lock(id, true);
 function focusSection() {

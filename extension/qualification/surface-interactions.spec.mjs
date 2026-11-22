@@ -137,6 +137,12 @@ test('the pinned popup keeps its Full summary, primary action and disclosure', a
   await expect(page.locator('footer')).toContainText('Independent software. It is not affiliated with or endorsed by OnlyFans.');
   await expect(page.locator('footer #privacy-link')).toHaveText('Extension Privacy Notice');
   expect((await action.boundingBox()).y).toBeLessThan((await page.locator('footer').boundingBox()).y);
+  expect(await page.locator('body').evaluate((body) => body.scrollHeight)).toBeGreaterThanOrEqual(await page.locator('body').evaluate((body) => body.clientHeight));
+  expect(await page.evaluate(() => document.scrollingElement === document.documentElement)).toBe(true);
+  expect(await page.locator('main, .popup-content').evaluateAll((nodes) => nodes.some(node => {
+    const style = getComputedStyle(node);
+    return ['auto', 'scroll'].includes(style.overflowY) && node.scrollHeight > node.clientHeight;
+  }))).toBe(false);
 });
 
 test('unknown extension connection does not ask for another creator sign-in', async ({ page }) => {
@@ -211,6 +217,14 @@ test('popup reports an unavailable status without claiming reconnection is still
   await renderSurfaceState(page, { ...SURFACE_STATES.runtime_unavailable, surface: 'popup' });
   await expect(page.locator('#runtime-title')).toHaveText('Extension status is unavailable');
   await expect(page.locator('#retry-runtime')).toHaveCount(0);
+});
+
+test('options keeps its unavailable heading without offering a retry action', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.connection, surface: 'options', runtimeUnavailable: true });
+  await expect(page.locator('#runtime-unavailable')).toBeVisible();
+  await expect(page.locator('#runtime-title')).toHaveText('The extension is reconnecting');
+  await expect(page.locator('#runtime-unavailable button, #runtime-unavailable p')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toHaveCount(0);
 });
 
 test('popup uses pause and resume commands without changing the selected mode', async ({ page }) => {
@@ -302,6 +316,20 @@ test('history recovery does not promise collection is ready after waking the tab
 test('options offers no second pause control', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.preview, surface: 'options' });
   await expect(page.locator('#pause')).toHaveCount(0);
+});
+
+test('options history permission uses the approved copy and preserves denied access state', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.connection, hash: 'history', permissionGranted: false });
+  await expect(page.locator('#history-status')).toHaveText('You turned on message history in the desktop app. Allow the extension to read your older messages.');
+  await expect(page.locator('#history')).toHaveText('Allow browser access');
+  await expect(page.locator('#history')).toBeVisible();
+  await expect(page.locator('#history-row')).not.toHaveClass(/reserved-empty/u);
+  await page.locator('#history').click();
+  await expect(page.locator('#feedback')).toContainText('Message history access was not allowed');
+  await expect(page.locator('#history-status')).toHaveText('You turned on message history in the desktop app. Allow the extension to read your older messages.');
+  const permission = (await calls(page)).find(call => call.type === 'permission');
+  expect(permission.request).toEqual({ permissions: ['webRequest'], origins: ['https://onlyfans.com/*'] });
+  expect(permission.userGesture).toBe(true);
 });
 
 for (const [name, state] of [['connection', SURFACE_STATES.connection], ['manage', SURFACE_STATES.manage],

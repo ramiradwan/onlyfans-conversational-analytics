@@ -706,4 +706,4 @@ main[data-permission-handoff="true"] .options-frame { height: auto; min-height: 
 main[data-permission-handoff="true"] #connection { min-height: 0; }
 main[data-permission-handoff="true"] #history-row { min-height: 0; display: grid; gap: 16px; }
 main[data-permission-handoff="true"] #history-title { display: none; }
-main[data-permission-handoff="true"] #history-status { min-height: 4.5em; }
+main[data-permission-handoff="true"] #history-status + .reserved-empty { display: none; }

@@ -643,11 +643,17 @@ test('a restarted worker removes waiting windows it can no longer adopt', async 
   assert.deepEqual(apis.session[BROWSER_AUTH_WAITING_KEY], {});
 });
 
-test('the waiting page shows only a spinner and announces loading to assistive technology', () => {
+test('the waiting page announces sign-in and uses the local reduced-motion design', () => {
   const page = readFileSync(new URL('../sign-in-waiting.html', import.meta.url), 'utf8');
-  const body = page.slice(page.indexOf('<body>'), page.indexOf('</body>'));
+  const body = page.slice(page.indexOf('<body'), page.indexOf('</body>'));
+  const styles = readFileSync(new URL('../popup.css', import.meta.url), 'utf8');
   assert.match(page, /<title>Sign in<\/title>/u);
-  assert.match(body, /<div class="spinner" role="status"><span class="visually-hidden">Loading<\/span><\/div>/u);
-  assert.equal(body.replace(/<span class="visually-hidden">Loading<\/span>/u, '').replace(/<[^>]+>/gu, '').trim(), '');
-  assert.match(page, /\.visually-hidden \{[^}]*clip-path: inset\(50%\)/u);
+  assert.match(body, /<p class="waiting-status" role="status">Opening sign-in…<\/p>/u);
+  assert.match(page, /<link rel="stylesheet" href="popup\.css">/u);
+  assert.match(styles, /font-family: 'Inter Variable'/u);
+  assert.match(page, /\.waiting-arc\s*\{[^}]*animation:\s*waiting-pending/u);
+  assert.match(page, /@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\.waiting-arc\s*\{\s*animation:\s*none/su);
+  assert.doesNotMatch(page, /animation-duration:\s*3s/u);
+  assert.match(page, /var\(--dipsy-intent-text-primary\)/u);
+  assert.match(page, /var\(--dipsy-intent-surface-canvas\)/u);
 });
