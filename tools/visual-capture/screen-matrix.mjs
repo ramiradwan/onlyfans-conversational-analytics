@@ -6,6 +6,7 @@ export const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'narrow', width: 390, height: 844 },
   { name: 'tablet', width: 820, height: 900, targetedOnly: true },
+  { name: 'narrow-2x', width: 320, height: 900, targetedOnly: true },
 ];
 
 const heading = (name) => (page) => page.getByRole('heading', { level: 1, name });
@@ -15,9 +16,84 @@ const openPairingComparison = async page => {
   await page.getByRole('dialog').getByRole('button', { name: 'Compare connection codes', exact: true }).click();
 };
 
+const findingHeadline = 'Pricing questions come up in 50% of fully checked messages';
+const findingsDialog = page => page.getByRole('dialog', { name: 'All topics', exact: true });
+const findingsTrigger = page => page.getByRole('button', { name: 'See all topics', exact: true });
+
+async function openFindings(page) {
+  await page.route('**/src/story-only/findingsFixtures.ts*', async route => {
+    const response = await route.fetch();
+    const source = await response.text();
+    if (!source.includes('Example topic')) throw new Error('Synthetic findings label is missing');
+    await route.fulfill({ response, body: source.replace('Example topic', 'Pricing questions') });
+  });
+  const url = new URL(page.url());
+  url.searchParams.delete('workspace');
+  url.searchParams.set('stability', 'findings');
+  await page.goto(url.href, { waitUntil: 'networkidle' });
+  if (page.viewportSize().width === 320) {
+    await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+  }
+  await page.evaluate(() => document.fonts.ready);
+}
+
+async function assertFindingTitle(locator, viewport) {
+  const layout = await locator.evaluate(node => {
+    const css = getComputedStyle(node);
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    return { lines: new Set([...range.getClientRects()].map(rect => rect.top)).size,
+      width: node.clientWidth, font: css.fontFamily, fontSize: parseFloat(css.fontSize), clamp: css.webkitLineClamp };
+  });
+  if (!layout.font.includes('Inter Variable') || layout.clamp !== 'none') throw new Error('Finding title lost its wrapping or font');
+  if (viewport.width === 1440 && layout.lines !== 1) {
+    throw new Error(`Finding title uses ${layout.lines} lines in ${layout.width}px and has a one-line budget`);
+  }
+  if (viewport.width === 320 && (layout.lines < 2 || layout.fontSize < 48)) throw new Error('Finding title did not wrap at 2×');
+}
+
 /** Each screen names the locator that proves its state rendered before capture. */
 export function createScreens({ assertMaxWidth, assertCentered, assertLoadingGeometry, assertMetricHierarchy } = {}) {
 return [
+  {
+    workspace: 'findings', state: 'first-insights', viewports: ['desktop', 'narrow-2x'],
+    act: openFindings,
+    ready: page => page.getByRole('heading', { name: findingHeadline, exact: true }),
+    assert: async (page, viewport) => {
+      await assertFindingTitle(page.getByRole('heading', { name: findingHeadline, exact: true }), viewport);
+      const bar = await page.locator('[data-visual="finding-bar"]').first().evaluate(node => ({
+        animation: getComputedStyle(node).animationName,
+        fill: node.getBoundingClientRect().width / node.parentElement.getBoundingClientRect().width,
+      }));
+      if (bar.animation !== 'none' || Math.abs(bar.fill - 0.5) > 0.005) throw new Error('Finding bar missed its reduced-motion end state');
+    },
+  },
+  {
+    workspace: 'findings', state: 'all-topics', viewports: ['desktop', 'narrow-2x'],
+    act: async page => {
+      await openFindings(page);
+      await findingsTrigger(page).press('Enter');
+      const close = findingsDialog(page).getByRole('button', { name: 'Close', exact: true });
+      await close.waitFor({ state: 'visible' });
+      await page.keyboard.press('Escape');
+      await findingsDialog(page).waitFor({ state: 'hidden' });
+      if (!await findingsTrigger(page).evaluate(node => node === document.activeElement && node.matches(':focus-visible'))) {
+        throw new Error('All topics did not return keyboard focus');
+      }
+      await page.keyboard.press('Enter');
+    },
+    ready: findingsDialog,
+    assert: async page => {
+      const dialog = findingsDialog(page);
+      await dialog.getByText('Based on 2 fully checked messages.', { exact: true }).waitFor({ state: 'visible' });
+      await dialog.getByRole('heading', { name: 'Mentions', exact: true }).waitFor({ state: 'visible' });
+      const close = dialog.getByRole('button', { name: 'Close', exact: true });
+      await page.keyboard.press('Shift+Tab');
+      if (!await close.evaluate(node => node === document.activeElement && node.matches(':focus-visible'))) {
+        throw new Error('All topics did not show keyboard focus on Close');
+      }
+    },
+  },
   ...['current', 'pending', 'unavailable', 'degraded'].map((state) => ({ workspace: 'graph', state,
     ready: heading('Graph explorer'), act: (page) => page.evaluate((status) => window.__workspaceFixture.projection(status), state) })),
   { workspace: 'home', state: 'loading', ready: (page) => page.getByRole('region', { name: 'Overview', busy: true }) },

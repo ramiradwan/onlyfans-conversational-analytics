@@ -5,7 +5,10 @@ import { ConversationQuestions } from '../components/analytics/ConversationQuest
 import { TaskFindings } from '../components/analytics/TaskFindings';
 import { TextAnalysisPreviews } from '../components/analytics/TextAnalysisPreviews';
 import { analyticsStoreActions, useAnalyticsStore } from '../store/analyticsStore';
+import { createFindingsPresentation } from '../store/findingsStore';
 import { bridgeTransportStore } from '../store/transportStore';
+
+const findingsPresentation = createFindingsPresentation();
 
 export default function AnalyticsView() {
   const account = useSyncExternalStore(bridgeTransportStore.subscribe, () => bridgeTransportStore.getState().creatorAccountId);
@@ -17,7 +20,7 @@ export default function AnalyticsView() {
   return (
     <AnalyticsPresentation
       questions={<ConversationQuestions />}
-      findings={<><TaskFindings baseline={baseline} onRefreshBaseline={analyticsStoreActions.refresh} /><TextAnalysisPreviews creatorAccountId={account} /></>}
+      findings={<><TaskFindings baseline={baseline} presentation={findingsPresentation} onRefreshBaseline={analyticsStoreActions.refresh} /><TextAnalysisPreviews creatorAccountId={account} /></>}
       state={state}
       dateRange={dateRange}
       onDateRangeChange={(range) => void analyticsStoreActions.setDateRange(range)}
