@@ -1,5 +1,20 @@
-:root { color-scheme: dark; color: #e9eeeb; background: #141916; font-family: system-ui, sans-serif; }
-body { margin: 0; min-height: 100vh; }
-header { display: flex; align-items: center; gap: 1rem; padding: 1rem 1.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent); font-weight: 600; }
-main { max-width: 38rem; padding: 2rem; margin: 8vh auto; }
-p { line-height: 1.6; }
+@import url("./onboarding-theme.css");
+
+:root { color-scheme: light dark; font-family: var(--dipsy-font-family); color: var(--dipsy-color-text); background: var(--dipsy-color-background); }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 0; min-height: 100vh; background: var(--dipsy-color-background); }
+header { height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px 0 20px; border-bottom: 1px solid var(--dipsy-color-divider); font-size: 13px; font-weight: 600; }
+header[data-desktop-drag-region] { app-region: drag; -webkit-app-region: drag; }
+desktop-window-controls { app-region: no-drag; -webkit-app-region: no-drag; }
+main { min-height: calc(100vh - 48px); display: grid; place-items: center; padding: 24px; }
+.startup-card { width: min(100%, 640px); padding: 36px; border: 1px solid var(--dipsy-color-divider); border-radius: 20px; background: var(--dipsy-color-paper); box-shadow: var(--dipsy-shadow-raised); }
+.spot { width: 48px; height: 48px; display: grid; place-items: center; margin-bottom: 24px; border: 1px solid var(--dipsy-color-divider); border-radius: 14px; background: var(--dipsy-color-surface-subtle); color: var(--dipsy-color-text-secondary); }
+.spot span { width: 18px; height: 14px; border: 2px solid currentColor; border-radius: 3px; position: relative; }
+.spot span::after { content: ""; position: absolute; width: 8px; height: 2px; left: 3px; bottom: -5px; background: currentColor; }
+h1 { margin: 0 0 12px; font-size: 26px; line-height: 1.24; font-weight: 600; letter-spacing: -0.025em; }
+p { margin: 0; color: var(--dipsy-color-text-secondary); font-size: 16px; line-height: 1.5; }
+.status-line { display: flex; align-items: center; gap: 10px; }
+.status-line p { color: var(--dipsy-color-text-secondary); }
+.pending { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--dipsy-color-primary); }
+@media (max-width: 480px) { main { padding: 16px; } .startup-card { padding: 24px; } h1 { font-size: 23px; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
