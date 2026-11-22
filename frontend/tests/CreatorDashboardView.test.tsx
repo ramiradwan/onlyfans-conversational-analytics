@@ -203,6 +203,29 @@ afterEach(() => {
 });
 
 describe('CreatorDashboardView', () => {
+  it('reviews the shared Full analytics offer over the dashboard without accepting it', async () => {
+    const store = readyStore();
+    const source = readinessSource(false);
+    source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['activation.confirm'],
+      decision: { operation_id: '11111111-1111-4111-8111-111111111111', action: 'activate-complimentary', expires_at: AS_OF,
+        offer: { offer_version_id: 'test-offer', description: 'Full conversation analytics', funding: 'complimentary-pilot',
+          pilot_credit_cost: 1, capability: 'analysis-run', licensed_major_version: 2, compatible_artifact_family: 'analysis-artifact',
+          update_rights: true, fallback_major_versions: [1] } } } });
+    mountDashboard(store, source);
+    const region = within(screen.getByRole('region', { name: 'Turn on Full analytics' }));
+    expect(region.getByText('Conversation insights, like your most common topics, stored on this computer.')).toBeTruthy();
+    const review = region.getByRole('button', { name: 'Review offer' });
+    review.focus();
+    fireEvent.click(review);
+    const offer = within(await screen.findByRole('dialog', { name: 'Activate Full analytics' }));
+    expect(offer.getByText('Uses 1 pilot credit')).toBeTruthy();
+    expect(offer.getByRole('button', { name: 'Activate for free' })).toHaveProperty('disabled', false);
+    fireEvent.click(offer.getByRole('button', { name: 'Not now' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(document.activeElement).toBe(review);
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
   it('opens without actions until the account is bound, then shows count placeholders', () => {
     const store = createBridgeTransportStore();
     mountDashboard(store, readinessSource(null));
@@ -457,7 +480,7 @@ describe('CreatorDashboardView', () => {
     const api: BrowserControlApi = { setCapture: vi.fn(async () => 'delivered'), open: vi.fn(async () => 'delivered') };
     mountDashboard(store, source, api);
     expect(screen.getByRole('heading', { name: 'Allow OnlyFans access' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Full analytics' }).getAttribute('href')).toBe('/settings#full-analytics');
+    expect(screen.getByRole('button', { name: 'Review offer' })).toBeTruthy();
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(source.api.begin).not.toHaveBeenCalled();
     expectStat('Messages', '19');
@@ -470,11 +493,11 @@ describe('CreatorDashboardView', () => {
     expect(screen.getByRole('heading', { name: 'Allow OnlyFans access' })).toBeTruthy();
     expect(screen.getByText('The browser review has not been confirmed.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Review in Chrome' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Full analytics' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Review offer' })).toBeNull();
     await act(async () => source.publish({ pending: null, pendingAction: undefined, error: null }));
     await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, capture: 'active', site_access: 'granted' } }));
     expect(screen.queryByRole('heading', { name: 'Allow OnlyFans access' })).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Full analytics' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Turn on Full analytics' })).toBeTruthy();
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(source.api.begin).toHaveBeenCalledOnce();
   });
@@ -487,7 +510,7 @@ describe('CreatorDashboardView', () => {
     source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['activation.review'] } });
     mountDashboard(store, source);
     expect(screen.queryByRole('button', { name: 'Review in Chrome' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Set up Full analytics' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Review offer' })).toBeTruthy();
     expect(source.api.begin).not.toHaveBeenCalled();
   });
 
@@ -531,7 +554,7 @@ describe('CreatorDashboardView', () => {
     const source = readinessSource(false);
     source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['activation.review'] } });
     mountDashboard(store, source);
-    expect(screen.getByRole('button', { name: 'Set up Full analytics' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Review offer' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Set up Chrome to see your message counts' })).toBeNull();
     expect(source.api.begin).not.toHaveBeenCalled();
   });

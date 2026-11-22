@@ -33,5 +33,5 @@ export async function publishActivation(page, state) {
 
 export async function openActivationReview(page) {
   await publishActivation(page, 'review');
-  await page.getByRole('button', { name: 'Review activation offer', exact: true }).click();
+  await page.getByRole('button', { name: 'Review offer', exact: true }).click();
 }

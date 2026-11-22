@@ -97,7 +97,7 @@ return [
   {
     workspace: 'dashboard-continuation',
     state: 'activating-full-analytics',
-    ready: text('Activation accepted. Checking Full analytics…'),
+    ready: text('Checking your activation…'),
   },
   {
     workspace: 'dashboard-continuation',

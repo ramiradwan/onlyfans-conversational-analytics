@@ -242,7 +242,7 @@ describe('critical accessibility gates', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
-    await screen.findByRole('heading', { name: 'Full analytics' });
+    await screen.findByRole('heading', { name: 'Turn on Full analytics' });
     expect(screen.queryByRole('region', { name: 'Set up Chrome to see your message counts' })).toBeNull();
     expect(screen.getByRole('heading', { name: 'Recent conversations' })).toBeTruthy();
     await expectNoCriticalOrSeriousViolations(document.body);
@@ -569,7 +569,7 @@ describe('critical accessibility gates', () => {
     await screen.findByRole('heading', { name: 'Browser extension' });
     await screen.findByRole('button', { name: 'Connect extension' });
     await screen.findByRole('heading', { name: 'Full analytics' });
-    await screen.findByRole('button', { name: 'Set up Full analytics' });
+    await screen.findByRole('button', { name: 'Review offer' });
     await screen.findByRole('heading', { name: 'Stored messages' });
     await expectNoCriticalOrSeriousViolations(document.body);
   });

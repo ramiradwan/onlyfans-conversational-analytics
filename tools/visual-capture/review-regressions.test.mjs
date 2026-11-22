@@ -311,7 +311,7 @@ for (const width of [390, 1440]) for (const fontScale of [1, 1.25]) test(`activa
     await push('connection', 'connected');
     for (const key of await push('pending')) await push('release', key, 'populated');
     const section = page.locator('[data-reserved-region="settings-activation"]');
-    const chip = section.locator('.MuiChip-root');
+    const chip = section.locator('.onboarding-pill');
     await chip.waitFor();
     await page.evaluate(() => document.fonts.ready);
     await settle(page);
@@ -325,15 +325,22 @@ for (const width of [390, 1440]) for (const fontScale of [1, 1.25]) test(`activa
       for (const key of await push('pending')) await push('release', key, 'populated', key === 'onboarding.readiness'
         ? { schema: 'ofca-analysis-readiness/v1', commercial_authority, analysis_admission } : undefined);
       await settle(page);
-      const geometry = { slot: await section.locator('[aria-live]').boundingBox(), heading: await section.locator('h2').boundingBox() };
+      const geometry = await section.getByRole('heading', { name: 'Full analytics', exact: true }).boundingBox();
       initial ??= geometry;
-      assert.deepEqual(geometry, initial, 'Status changes move the reserved slot or heading');
-      const bounds = await section.boundingBox(), summary = await section.locator('#activation-notice p[data-region-content]').boundingBox();
-      assert(summary.y >= bounds.y && summary.y + summary.height <= bounds.y + bounds.height, 'Summary escapes its reserved section');
+      assert.deepEqual(geometry, initial, 'Status changes move the persistent heading');
+      const bounds = await section.boundingBox();
+      const content = await section.getByRole('status').or(section.getByRole('alert')).or(section.getByRole('button')).all();
+      assert(content.length > 0, 'The section needs visible status or an available action');
+      for (const row of content) {
+        const summary = await row.boundingBox();
+        assert(summary.y >= bounds.y && summary.y + summary.height <= bounds.y + bounds.height, 'Content escapes the section');
+      }
       if (label) {
         assert.equal(await chip.innerText(), label);
-        initialChip ??= await chip.boundingBox();
-        assert.deepEqual(await chip.boundingBox(), initialChip, 'Status chip moves inside its slot');
+        const { x, y, width, height } = await chip.boundingBox();
+        assert(x >= bounds.x && x + width <= bounds.x + bounds.width, 'The pill escapes the section');
+        initialChip ??= { y, height };
+        assert.deepEqual({ y, height }, initialChip, 'Status pills change vertical geometry');
       } else assert.equal(await chip.count(), 0);
     }
   } finally { await page.close(); }
@@ -614,10 +621,10 @@ for (const width of [320, 390, 600]) test(`essential activation content stays se
       const bounds = node.getBoundingClientRect();
       const content = node.querySelector('[data-region-content]').getBoundingClientRect();
       const next = document.querySelector('[data-reserved-region="settings-history"]').getBoundingClientRect();
-      const notice = node.querySelector('[data-reserved-region="activation-notice"]').getBoundingClientRect();
+      const notice = node.querySelector('[role="status"]').getBoundingClientRect();
       const title = node.querySelector('h2');
       const header = title.parentElement;
-      const status = header.nextElementSibling.getBoundingClientRect();
+      const status = header.querySelector('.onboarding-pill').getBoundingClientRect();
       const range = document.createRange(); range.selectNodeContents(header);
       const titleRange = document.createRange(); titleRange.selectNodeContents(title);
       return { minimum: parseFloat(getComputedStyle(node).minBlockSize), height: bounds.height, bottom: bounds.bottom,
@@ -658,19 +665,18 @@ for (const width of [320, 390, 600]) test(`supported activation recovery grows b
     await notice.scrollIntoViewIfNeeded();
     await settle(page);
     const geometry = await section.evaluate(node => {
-      const notice = node.querySelector('[data-reserved-region="activation-offer-feedback"]');
-      const content = notice.querySelector('[data-region-content]');
+      const notice = node.querySelector('[role="alert"]');
       const box = notice.getBoundingClientRect();
       const action = node.querySelector('.MuiDialogActions-root').getBoundingClientRect();
-      const range = document.createRange(); range.selectNodeContents(content);
-      return { height: box.height, minimum: parseFloat(getComputedStyle(notice).minHeight),
+      const range = document.createRange(); range.selectNodeContents(notice);
+      return { height: box.height,
         fits: [...range.getClientRects()].every(text => text.left >= box.left && text.right <= box.right && text.bottom <= box.bottom),
-        actionFollows: action.top >= box.bottom && action.bottom <= node.getBoundingClientRect().bottom,
+        actionPrecedes: action.bottom <= box.top && box.bottom <= node.getBoundingClientRect().bottom,
         modalFits: node.getBoundingClientRect().left >= 0 && node.getBoundingClientRect().right <= innerWidth,
         pageFits: document.documentElement.scrollWidth <= innerWidth + 1 };
     });
-    assert(geometry.height >= geometry.minimum, 'Recovery must preserve the reserved minimum while allowing complete text');
-    assert(geometry.fits && geometry.actionFollows && geometry.modalFits && geometry.pageFits, 'The complete modal recovery and its action must remain separate and reachable: ' + JSON.stringify(geometry));
+    assert(geometry.height > 0, 'Recovery must occupy a readable row');
+    assert(geometry.fits && geometry.actionPrecedes && geometry.modalFits && geometry.pageFits, 'The complete modal recovery and its action must remain separate and reachable: ' + JSON.stringify(geometry));
     assert.equal(await notice.getByRole('button', { name: 'Show details' }).count(), 0);
   } finally { await page.close(); }
 });

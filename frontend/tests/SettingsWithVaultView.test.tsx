@@ -1,5 +1,5 @@
 import { ThemeProvider } from '@mui/material/styles';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { HistorySettings } from '../src/protocol';
@@ -114,6 +114,30 @@ afterEach(() => {
 });
 
 describe('SettingsWithVaultView', () => {
+  it('keeps code entry primary without an offer and uses the same offer dialog when one arrives', async () => {
+    const { release, ...props } = apis('vault');
+    const desktop = desktopFixture();
+    desktop.readiness(readiness, 'creator-1');
+    const { container } = render(<ThemeProvider theme={theme}><SettingsWithVaultView {...props} onboardingApi={desktop.api} /></ThemeProvider>);
+    await act(async () => release());
+    const section = within(container.querySelector<HTMLElement>('#full-analytics')!);
+    const code = section.getByRole('button', { name: 'Use an activation code' });
+    expect(code.className).toContain('MuiButton-contained');
+    await act(async () => desktop.publish({ snapshot: { ...desktop.api.getState().snapshot!, allowed_actions: ['activation.confirm'],
+      decision: { operation_id: '11111111-1111-4111-8111-111111111111', action: 'activate-complimentary', expires_at: '2030-01-01T12:00:00Z',
+        offer: { offer_version_id: 'test-offer', description: 'Full conversation analytics', funding: 'complimentary-pilot',
+          pilot_credit_cost: 1, capability: 'analysis-run', licensed_major_version: 2, compatible_artifact_family: 'analysis-artifact',
+          update_rights: true, fallback_major_versions: [1] } } } }));
+    expect(section.queryByRole('button', { name: 'Use an activation code' })).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(section.getByRole('button', { name: 'Review offer' }));
+    const offer = within(await screen.findByRole('dialog', { name: 'Activate Full analytics' }));
+    expect(offer.getByText('Uses 1 pilot credit')).toBeTruthy();
+    expect(offer.getByRole('button', { name: 'Use an activation code' })).toBeTruthy();
+    expect(desktop.api.begin).not.toHaveBeenCalled();
+    expect(props.activationApi.redeem).not.toHaveBeenCalled();
+  });
+
   it('keeps the pending connection action and the surrounding Settings sections mounted', async () => {
     const { release, onboardingApi, ...props } = apis('vault');
     const desktop = desktopFixture();
@@ -155,7 +179,7 @@ describe('SettingsWithVaultView', () => {
       expect(screen.queryByText('Loading settings…')).toBeNull();
       expect(screen.getByRole('button', { name: 'Connect extension' })).toBeTruthy();
       expect(screen.getByRole('heading', { name: 'Message history' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Set up Full analytics' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Review offer' })).toBeTruthy();
       expect(screen.getByRole('heading', { name: 'Stored messages' })).toBeTruthy();
     },
   );

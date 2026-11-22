@@ -8,13 +8,13 @@ import {
   Stack,
   TextField,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 
 import { ProviderSignInButtons, type SignInProvider } from './ProviderSignInButtons';
-import { Panel, SectionHeader, useRevealHold, type SectionStatus } from './ui';
+import { Panel, useRevealHold } from './ui';
 import type { FullPresentationIntent } from '../protocol';
-import { StatusLine } from './ui/ReservedRegion';
 import {
   capabilityLicenseApi,
   CAPABILITY_LICENSE_CONTINUATION_PATTERN,
@@ -22,8 +22,13 @@ import {
   type CapabilityLicenseApi,
 } from '../services/capabilityLicenseApi';
 import { desktopOnboardingApi, selectAnalysisReadiness, type DesktopOnboardingApi } from '../services/desktopOnboarding';
-import { componentTokens } from '../theme';
+import { componentTokens, typography } from '../theme';
+import { OnboardingAction, OnboardingPill, OnboardingStatus } from './ui/OnboardingCard';
 
+const ACTIVATION_BODY = 'Conversation insights, like your most common topics, stored on this computer.';
+const ACTIVATION_PENDING = 'Checking your activation…';
+const SIGN_IN_SWITCH = 'Use a different sign-in for Full analytics';
+const CONTROL_HEIGHT = componentTokens.staticUi.controlHeight;
 const dismissedOfferScopes = new Set<string>();
 const DISMISSED_OFFER_KEY = 'full-analytics-review-dismissals-v1';
 function dismissedIntent(scope: string) {
@@ -54,17 +59,26 @@ export function CommercialActivationControls({
   embedded = false,
   creatorAccountId,
   presentationIntent,
+  dashboard = false,
+  savedMessageCount,
 }: {
   api?: CapabilityLicenseApi;
   onboarding?: DesktopOnboardingApi;
   embedded?: boolean;
   creatorAccountId?: string | null;
   presentationIntent?: FullPresentationIntent;
+  dashboard?: boolean;
+  savedMessageCount?: number;
 }) {
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const sectionTitleId = useId();
+  const dialogTitleId = useId();
+  const feedbackId = useId();
   const [entryError, setEntryError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
   const [openingAction, setOpeningAction] = useState<string | null>(null);
   const [codeOpen, setCodeOpen] = useState(false);
+  const [dismissedPrompt, setDismissedPrompt] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
   const [codeBusy, setCodeBusy] = useState(false);
@@ -76,8 +90,14 @@ export function CommercialActivationControls({
   const codeOperation = useRef<AbortController | null>(null);
   const codeScope = useRef<string | null>(null);
   const codeCreator = useRef<string | null>(null);
-  const codeInput = useRef<HTMLInputElement | null>(null);
+  const offerCodeButton = useRef<HTMLButtonElement | null>(null);
+  const previousCodeOpen = useRef(false);
+  const sectionHeading = useRef<HTMLHeadingElement | null>(null);
+  const returnFocus = useRef<HTMLButtonElement | null>(null);
   const codeFormId = useId();
+  const focusCodeForm = useCallback((form: HTMLFormElement | null) => {
+    form?.querySelector<HTMLElement>('input:enabled, button:enabled')?.focus();
+  }, []);
   // Only an action in this presentation opens a review. A pending offer can
   // be reviewed again explicitly after navigation or dismissal.
   const [openReviewScope, setOpenReviewScope] = useState<string | null>(null);
@@ -120,7 +140,6 @@ export function CommercialActivationControls({
   const unresolvedCommand = unprojectedOperation || pendingConfirmation;
   const codeInProgress = codeBusy || codePending || codeUnconfirmed;
   const canSelect = !accepted && !unresolvedCommand && !codeInProgress && authentication?.actions.select && allowed.includes('auth.select');
-  const accountLabel = sameCreator ? snapshot?.facts.authenticated_account_label : null;
   const canSwitch = !accepted && !unresolvedCommand && !codeInProgress && authentication?.state === 'admitted'
     && authentication.actions.switch_account && allowed.includes('auth.switch');
   const choosingProvider = Boolean(canSelect || (choosingAccount && canSwitch));
@@ -161,7 +180,6 @@ export function CommercialActivationControls({
   useRevealHold(checking);
 
   useEffect(() => () => { entryOperation.current?.abort(); codeOperation.current?.abort(); }, []);
-  useEffect(() => { if (codeOpen) codeInput.current?.focus(); }, [codeOpen]);
   useEffect(() => { setChoosingAccount(false); }, [authentication?.authentication_attempt?.authentication_attempt_id]);
   useEffect(() => {
     const previous = previousReviewScope.current;
@@ -311,24 +329,27 @@ export function CommercialActivationControls({
   const browserLaunchError = desktop.error === 'browser_unavailable' ? 'The browser action could not be confirmed.'
     : desktop.error === 'chrome_unavailable' ? 'Chrome could not be opened.' : null;
   const noticeError = (entryScope.current === reviewScope ? entryError : null) ?? error ?? (!codeOpen ? codeError : null) ?? browserLaunchError;
-  const status: SectionStatus | null = checking && readiness === null
-    ? null
-    : fullReady
-      ? { label: 'On', tone: 'success' }
-      : activeButBlocked
-        ? { label: 'Needs attention', tone: 'warning' }
-        : activationRequired
-          ? { label: 'Off', tone: 'default' }
-          : null;
-
   const offer = decision?.offer;
+  const codeChecking = codeBusy || codePending;
+  const activationChecking = currentAuthority && activationRequired && accepted;
+  const mismatch = activationRequired && (activationOutcome?.reason === 'account_mismatch'
+    || desktop.error === 'account_mismatch' && (decisionStatus === 'unavailable' || desktop.pendingAction === 'activation.review'
+      || desktop.pendingAction === 'activation.confirm'));
+  const expectedCreator = snapshot?.creator_label;
+  const expectedLabel = mismatch && currentAuthority && snapshot?.facts.account === 'verified' && expectedCreator?.creator_id === ownerCreator
+    ? expectedCreator?.display_name || (expectedCreator?.username ? `@${expectedCreator.username}` : null) : null;
+  const terminalUnknown = currentAuthority && activationRequired && !mismatch && !unresolvedCommand && !codeInProgress && !authentication
+    && decisionStatus === 'unavailable' && !offer && (!activationOutcome || activationOutcome.state === 'refused'
+      || activationOutcome.state === 'accepted' && activationOutcome.reason === 'none');
+  const classifiedMismatch = Boolean(expectedLabel);
   const feedback = noticeError || (!desktop.connected ? desktop.error === 'session_unavailable' ? 'The setup session ended. Reconnecting…' : 'Activation status could not be received.'
     : fullReady ? null : opening ? openingAction === 'activation.confirm' ? 'Confirming activation…'
       : openingAction === 'activation.review' ? 'Preparing activation…' : 'Opening Chrome…'
-        : accepted ? 'Activation accepted. Checking Full analytics…'
+        : expectedLabel ? `You’re signed in to a different OnlyFans account. Switch to ${expectedLabel} in Chrome to continue.`
+          : terminalUnknown ? 'Activation couldn’t finish.'
           : replacementAvailable ? 'Activation was not completed.'
           : unresolvedCommand ? 'Activation has not been confirmed.'
-          : choosingProvider ? choosingAccount ? 'Choose how to sign in with another account.' : 'Choose how to sign in.'
+          : choosingProvider ? choosingAccount ? 'Choose a different sign-in.' : 'Choose how to sign in.'
             : activationOutcome?.state === 'waiting' && activationOutcome.reason === 'activation_unavailable' ? 'Checking the activation offer.'
               : activationOutcome?.state === 'outcome_unknown' ? 'Activation has not been confirmed.'
             : authentication?.state === 'admitted' && authentication.actions.open_browser ? 'The activation offer is unavailable.'
@@ -340,78 +361,105 @@ export function CommercialActivationControls({
                       : checking && !decision ? 'Checking activation…'
               : activeButBlocked ? "New messages aren't being analyzed"
                 : activationUnavailable || readiness === null ? "Activation couldn't be checked." : null);
+  const showOfferDialog = Boolean(offer && offerOpen && sameCreator && !fullReady);
+  const showCodeDialog = codeOpen && !fullReady && (codeCreator.current === null
+    || ((creatorAccountId === undefined || codeCreator.current === creatorAccountId)
+      && (ownerCreator == null || codeCreator.current === ownerCreator)));
+  const dialogOpen = showCodeDialog || showOfferDialog;
+  const closeCode = () => {
+    if (codeChecking) dismissOffer();
+    setCodeOpen(false);
+  };
+  useEffect(() => {
+    if (!showCodeDialog && previousCodeOpen.current && showOfferDialog) {
+      offerCodeButton.current?.focus();
+    }
+    previousCodeOpen.current = showCodeDialog;
+  }, [showCodeDialog, showOfferDialog]);
 
-  return <Panel emphasis={embedded ? 'quiet' : 'secondary'} sx={{ gap: 1.5, minWidth: 0, ...(embedded ? { p: 0 } : {}) }}>
-    {!embedded && <SectionHeader title="Full analytics" status={status}
-      sx={{ minHeight: { xs: '4rem', sm: '1.5rem' }, position: 'relative', flexDirection: { xs: 'column', sm: 'row' }, rowGap: { xs: 1, sm: 0 },
-        '& > :first-child': { width: '100%' }, '& h2': { pr: { xs: 0, sm: '9rem' } },
-        '& > [aria-live]': { display: 'flex', position: { xs: 'static', sm: 'absolute' }, top: 0, right: 0, m: 0, width: '100%', maxWidth: '8rem', minHeight: '1.5rem',
-          '& .MuiChip-root': { width: '100%', height: 'auto', minHeight: '1.5rem' },
-          '& .MuiChip-label': { width: '100%', textAlign: 'left', whiteSpace: 'normal' } } }} />}
-    <Box data-journey-state="desktop.full_analytics_activation">
-      {(feedback || !embedded) && <Box id="activation-notice"><StatusLine essential id="activation-notice" text={offer && offerOpen ? null : feedback ?? (!embedded ? 'Tone, reply, and topic insights.' : null)}
-        tone={noticeError ? 'error' : 'secondary'} /></Box>}
+  const canEnterCode = !fullReady && !terminalUnknown && !classifiedMismatch && !choosingProvider
+    && (!dashboard && !offer && activationRequired && (!pendingActivation || accepted) || codeUnconfirmed);
+  const showReview = !fullReady && !accepted && (!codeChecking || showCodeDialog) && (!terminalUnknown || replacementAvailable) && !classifiedMismatch && !choosingProvider
+    && Boolean(offer || (activationRequired && canOpen || showCodeDialog && !offer) && (!pendingActivation || replacementAvailable));
+  const promptDismissed = ownerScope !== null && dismissedPrompt === ownerScope;
+  const showPrompt = dashboard && !promptDismissed && !replacementAvailable && !activationChecking && showReview;
+  const pending = activationChecking || codeChecking && !showCodeDialog;
+  const title = pending ? 'Activating Full analytics' : terminalUnknown ? 'Full analytics isn’t on'
+    : classifiedMismatch ? 'Full analytics unavailable' : showPrompt ? 'Turn on Full analytics' : 'Full analytics';
+  const status = fullReady ? 'On' : activeButBlocked ? 'Needs attention' : activationRequired && !pending && !terminalUnknown ? 'Off' : null;
+  const unavailable = !decision && !authentication && !accepted && activationRequired && !allowed.includes('activation.review') && !pendingActivation && desktop.connected;
+  const inlineFeedback = !dialogOpen && !pending ? feedback || (unavailable ? 'The activation request is unavailable.'
+    : fullReady && !embedded ? 'Tone, reply, and topic insights.' : null) : null;
+  const codeFeedback = codeError || (canRedeem ? null : feedback);
+  const offerFeedback = !desktop.connected ? feedback : noticeError || (opening ? feedback : null);
+  const buttonSx = { minHeight: CONTROL_HEIGHT, maxWidth: '100%', overflowWrap: 'anywhere' } as const;
+  const showSwitch = canSwitch && !choosingAccount;
+  const showBrowser = !accepted && !unresolvedCommand && !codeInProgress && !choosingProvider && authentication?.actions.open_browser
+    && authentication.browser_operation_id && currentAuthority && !desktop.browserLaunchPending
+    && (authentication.state === 'admitted' || browserLaunchError !== null);
+  const hasActions = pending || canEnterCode || showReview || showBrowser || showSwitch || choosingAccount;
+  const inlineStatus = inlineFeedback && <Box id={feedbackId} role={noticeError || terminalUnknown ? 'alert' : undefined}>
+    <OnboardingStatus tone={noticeError || terminalUnknown ? 'error' : 'neutral'} live={!noticeError && !terminalUnknown}>{inlineFeedback}</OnboardingStatus>
+  </Box>;
+
+  if (dashboard && promptDismissed && !dialogOpen && !pending && !inlineFeedback && !authentication && !pendingActivation) return null;
+
+  return <Panel component="section" aria-labelledby={embedded ? undefined : sectionTitleId} emphasis="quiet"
+    sx={{ gap: 1, minWidth: 0, overflowWrap: 'anywhere', ...(embedded ? { p: 0 } : dashboard ? { bgcolor: 'background.paper', border: 1, borderColor: 'divider', boxShadow: 'none' } : {}) }}>
+    {!embedded && <Stack direction="row" useFlexGap sx={{ gap: 1, flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <Typography ref={sectionHeading} id={sectionTitleId} component="h2" variant="h6" tabIndex={-1}>{title}</Typography>
+      {!dashboard && status && <Box aria-live="polite"><OnboardingPill tone={fullReady ? 'progress' : 'neutral'}>{status}</OnboardingPill></Box>}
+    </Stack>}
+    {showPrompt && <Typography color="text.secondary" sx={{ maxWidth: '60ch' }}>{ACTIVATION_BODY}</Typography>}
+    <Stack data-journey-state="desktop.full_analytics_activation" spacing={1}>
       {choosingProvider && !offer && !fullReady && <Box ref={choicesElement}><ProviderSignInButtons providers={providers}
-        disabled={!desktop.connected || opening || codeBusy || codePending} describedBy="activation-notice"
+        disabled={opening} describedBy={inlineFeedback ? feedbackId : sectionTitleId}
         onSelect={provider => void openSetup(choosingAccount ? 'auth.switch' : 'auth.select', provider)} /></Box>}
-      {offer && !fullReady && <>
-        <Button onClick={() => { if (currentPresentation()) setOfferOpen(true); }} disabled={!currentAuthority} aria-haspopup="dialog" variant="outlined">Review activation offer</Button>
-        <Dialog open={offerOpen && sameCreator} onClose={dismissOffer} aria-labelledby="activation-offer-title" fullWidth maxWidth="sm"
-          slotProps={{ backdrop: { sx: theme => ({ ...theme.effects.glassmorphism(theme) }) } }}>
-        <DialogTitle id="activation-offer-title">{choosingAccount ? 'Sign in to Full analytics with another account' : offer.description}</DialogTitle>
-        <DialogContent>{choosingAccount ? <Stack spacing={2}>
-          <Typography id="activation-switch-note" variant="body2">Sign in again to review activation with a different account.</Typography>
-          <Box ref={choicesElement}><ProviderSignInButtons providers={providers}
-            disabled={!desktop.connected || opening || codeBusy || codePending} describedBy="activation-switch-note"
-            onSelect={provider => void openSetup('auth.switch', provider)} /></Box>
-          <Button onClick={() => setChoosingAccount(false)} disabled={opening}>Back</Button>
-        </Stack> : <Stack spacing={2} useFlexGap>
-        {accountLabel && <Typography variant="body2">Full analytics account: {accountLabel}</Typography>}
-        <Box component="dl" sx={{
-          display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(8rem, 1fr) minmax(0, 2fr)' },
-          gap: 1, m: 0, p: 2, border: 1, borderColor: 'divider', borderRadius: 1,
-          '& dt': { color: 'text.secondary' }, '& dd': { m: 0, overflowWrap: 'anywhere', mb: { xs: 1, sm: 0 } },
-        }}>
-          <Typography component="dt">Funding</Typography><Typography component="dd">Complimentary pilot</Typography>
-          <Typography component="dt">Price</Typography><Typography component="dd">Free
-            <Typography component="span" variant="body2" sx={{ display: 'block', color: 'text.secondary' }}>
-              Uses {new Intl.NumberFormat().format(offer.pilot_credit_cost)} {offer.pilot_credit_cost === 1 ? 'pilot credit' : 'pilot credits'}
-            </Typography>
-          </Typography>
-          <Typography component="dt">Licensed version</Typography><Typography component="dd">{offer.licensed_major_version}.x</Typography>
-          <Typography component="dt">Update rights</Typography><Typography component="dd">{offer.update_rights ? 'Included' : 'Not included'}</Typography>
-          {offer.fallback_major_versions.length > 0 && <><Typography component="dt">Earlier versions</Typography><Typography component="dd">{offer.fallback_major_versions.map(version => `${version}.x`).join(', ')}</Typography></>}
-        </Box>
-        <Box id="activation-offer-feedback"><StatusLine essential id="activation-offer-feedback" text={!desktop.connected ? 'Activation status could not be received.' : noticeError || (opening ? 'Confirming activation…' : null)} tone={noticeError ? 'error' : 'secondary'} /></Box>
-        {canSwitch && <Button ref={switchElement} onClick={() => setChoosingAccount(true)} disabled={!desktop.connected || opening || codeBusy || codePending}
-          sx={{ justifyContent: 'flex-start', minHeight: componentTokens.staticUi.controlHeight, mx: -1, textAlign: 'start', '&, &:hover': { textDecoration: 'underline' } }}>Sign in to Full analytics with another account</Button>}
-        <Button onClick={() => {
-          if (currentPresentation() && canRedeem && !codeInProgress) { dismissOffer(); setCodeOpen(true); }
-        }} disabled={opening || !canRedeem || codeInProgress} sx={{ justifyContent: 'flex-start', alignSelf: 'flex-start', visibility: canRedeem && !codeInProgress ? 'visible' : 'hidden' }}>Other activation options</Button>
-        </Stack>}</DialogContent><DialogActions><Button onClick={dismissOffer}>Not now</Button>
-        {!choosingAccount && <Button onClick={() => void openSetup('activation.confirm')} disabled={!canConfirm || opening || codeBusy || codePending}
-          aria-describedby="activation-offer-feedback" variant="contained" sx={{ alignSelf: 'flex-start' }}>Activate for free</Button>}
-        </DialogActions></Dialog></>}
-      {!decision && !fullReady && !choosingProvider && ((activationRequired && canOpen) || codeOpen) && (!pendingActivation || replacementAvailable) && <Button
-        onClick={() => void openSetup()} disabled={!canOpen || (!canRedeem && !replacementAvailable) || opening || checking || codeBusy || codePending}
-        aria-describedby="activation-notice" variant="outlined">{replacementAvailable ? 'Review offer again' : 'Set up Full analytics'}</Button>}
-      {!fullReady && <Stack direction="row" useFlexGap sx={{ flexWrap: 'wrap', ml: -1 }} spacing={1}>
-        {!accepted && !unresolvedCommand && !codeInProgress && !choosingProvider && authentication?.actions.open_browser && authentication.browser_operation_id
-          && currentAuthority && !desktop.browserLaunchPending
-          && (authentication.state === 'admitted' || browserLaunchError !== null) && <Button
-          onClick={() => void reopenBrowser()} disabled={!currentAuthority || opening}>Open Chrome</Button>}
-        {canSwitch && !offer && !choosingAccount && <Button ref={switchElement} onClick={() => setChoosingAccount(true)} disabled={!desktop.connected || opening || codeBusy || codePending}>Sign in to Full analytics with another account</Button>}
-        {choosingAccount && !offer && <Button onClick={() => setChoosingAccount(false)} disabled={opening}>Back</Button>}
-      </Stack>}
-      {!decision && !authentication && !accepted && activationRequired && !allowed.includes('activation.review') && !pendingActivation && desktop.connected && <Typography variant="body2">The activation request is unavailable.</Typography>}
-      {!fullReady && ((!offer && activationRequired) || codeOpen || codeInProgress) && <Box sx={{ mt: 2 }}>
-        <Button type="button" aria-expanded={codeOpen} aria-controls={codeFormId}
-          onClick={() => setCodeOpen(value => !value)} sx={{ ml: -1 }}>Use an activation code</Button>
-        {codeOpen && <Stack id={codeFormId} component="form" spacing={2} sx={{ mt: 2, maxWidth: 480 }}
-          onSubmit={event => { event.preventDefault(); void redeemCode(); }}>
-          <TextField inputRef={codeInput} label="Activation code" autoComplete="off" fullWidth size="small" value={code}
-            disabled={!canRedeem || codeBusy || codePending || codeUnconfirmed || opening}
-            slotProps={{ htmlInput: { spellCheck: false, maxLength: 256, 'aria-describedby': `${codeFormId}-status` } }}
+      <OnboardingAction>
+        {pending && !showCodeDialog && <OnboardingStatus tone="pending">{ACTIVATION_PENDING}</OnboardingStatus>}
+        {canEnterCode && (!codeChecking || showCodeDialog) && <Button type="button" aria-haspopup="dialog" variant="contained" sx={buttonSx}
+          disabled={!canRedeem || opening || codeChecking} onClick={event => {
+            if (!currentPresentation()) return;
+            returnFocus.current = event.currentTarget;
+            setCodeOpen(true);
+          }}>Use an activation code</Button>}
+        {showReview && (!dashboard || !promptDismissed) && <Button type="button" aria-haspopup="dialog" variant={showPrompt ? 'contained' : 'outlined'}
+          disabled={offer ? !currentAuthority : !canOpen || (!canRedeem && !replacementAvailable) || opening || checking}
+          sx={buttonSx} onClick={event => {
+            if (!currentPresentation()) return;
+            returnFocus.current = event.currentTarget;
+            if (offer) setOfferOpen(true);
+            else void openSetup();
+          }}>{replacementAvailable ? 'Review offer again' : 'Review offer'}</Button>}
+        {showPrompt && <Button sx={buttonSx} onClick={() => { dismissOffer(); setDismissedPrompt(ownerScope); }}>Not now</Button>}
+        {!fullReady && showBrowser && <Button onClick={() => void reopenBrowser()} disabled={opening} sx={buttonSx}>Open Chrome</Button>}
+        {showSwitch && !offer && <Button ref={switchElement} onClick={() => setChoosingAccount(true)} disabled={opening} sx={buttonSx}>{SIGN_IN_SWITCH}</Button>}
+        {choosingAccount && !offer && <Button onClick={() => setChoosingAccount(false)} disabled={opening} sx={buttonSx}>Back</Button>}
+        {!hasActions && inlineStatus}
+      </OnboardingAction>
+      {hasActions && inlineStatus}
+    </Stack>
+
+    <Dialog open={dialogOpen} onClose={showCodeDialog ? closeCode : dismissOffer} aria-labelledby={dialogTitleId} fullWidth maxWidth="sm"
+      transitionDuration={reducedMotion ? 0 : 200}
+      onTransitionExited={() => {
+        const target = returnFocus.current;
+        if (target?.isConnected && !target.disabled) target.focus();
+        else sectionHeading.current?.focus();
+        returnFocus.current = null;
+      }}
+      slotProps={{ paper: { sx: { bgcolor: 'background.paper', backgroundImage: 'none', boxShadow: 'none', overflowWrap: 'anywhere',
+        m: { xs: 2, sm: 4 }, width: { xs: 'calc(100% - 32px)', sm: 'calc(100% - 64px)' } } } }}>
+      <DialogTitle id={dialogTitleId} sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' }, lineHeight: 1.25, fontWeight: 600 }}>
+        {showCodeDialog ? codeChecking ? 'Activating Full analytics' : 'Use an activation code' : choosingAccount ? SIGN_IN_SWITCH : 'Activate Full analytics'}
+      </DialogTitle>
+      {showCodeDialog ? <Box component="form" ref={focusCodeForm} onSubmit={event => { event.preventDefault(); void redeemCode(); }}>
+        <DialogContent sx={{ pt: '8px !important' }}>
+          <Typography component="label" htmlFor={codeFormId} variant="body2" sx={{ display: 'block', mb: 1 }}>Activation code</Typography>
+          <TextField id={codeFormId} autoComplete="off" fullWidth variant="outlined" value={code}
+            disabled={!canRedeem || codeChecking || codeUnconfirmed || opening}
+            slotProps={{ htmlInput: { spellCheck: false, maxLength: 256, 'aria-describedby': codeFeedback ? `${codeFormId}-status` : undefined },
+              input: { sx: { fontFamily: typography.numericBody.fontFamily, fontVariantNumeric: 'tabular-nums' } } }}
             onChange={event => {
               if (!codeUnconfirmed && ownerScope !== null) {
                 codeScope.current = ownerScope;
@@ -419,16 +467,69 @@ export function CommercialActivationControls({
                 setCode(event.target.value); setCodeError(null);
               }
             }} />
-          <Box id={`${codeFormId}-status`}><StatusLine essential id="activation-code-feedback"
-            text={codeBusy || codePending ? 'Checking activation…' : codeError} tone={codeError ? 'error' : 'secondary'} /></Box>
-          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-            <Button type="submit" variant="outlined" disabled={!canRedeem || codeBusy || codePending || opening || !code.trim() || refusedCode === code.trim()
-              || codeUnconfirmed && (codeScope.current !== ownerScope || attemptedCode.current !== code.trim())}>
-              {codeUnconfirmed ? 'Resume activation' : 'Activate'}
-            </Button>
-          </Stack>
-        </Stack>}
-      </Box>}
-    </Box>
+        </DialogContent>
+        <DialogActions sx={{ justifyContent: 'flex-start', px: 3 }}>
+          <OnboardingAction swap={codeChecking ? 'pending' : 'ready'}>
+            {codeChecking ? <OnboardingStatus tone="pending">{ACTIVATION_PENDING}</OnboardingStatus>
+              : <Button type="submit" variant="contained" sx={buttonSx} disabled={!canRedeem || opening || !code.trim() || refusedCode === code.trim()
+                || codeUnconfirmed && (codeScope.current !== ownerScope || attemptedCode.current !== code.trim())}>
+                {codeUnconfirmed ? 'Resume activation' : 'Activate'}
+              </Button>}
+            <Button onClick={closeCode} sx={buttonSx}>Cancel</Button>
+          </OnboardingAction>
+        </DialogActions>
+        {!codeChecking && codeFeedback && <Box id={`${codeFormId}-status`} role={codeError ? 'alert' : undefined} sx={{ px: 3, pb: 2 }}>
+          <OnboardingStatus tone={codeError ? 'error' : 'neutral'} live={!codeError}>{codeFeedback}</OnboardingStatus>
+        </Box>}
+      </Box> : offer && <>
+        <DialogContent>
+          {choosingAccount ? <Stack spacing={2}>
+            <Typography id={`${feedbackId}-switch`} variant="body2">Choose a different sign-in.</Typography>
+            <Box ref={choicesElement}><ProviderSignInButtons providers={providers} disabled={opening || !canSwitch} describedBy={`${feedbackId}-switch`}
+              onSelect={provider => void openSetup('auth.switch', provider)} /></Box>
+            <Button onClick={() => setChoosingAccount(false)} disabled={opening}>Back</Button>
+          </Stack> : <Stack spacing={2} useFlexGap>
+            <Typography color="text.secondary" sx={{ maxWidth: '60ch' }}>{ACTIVATION_BODY}</Typography>
+            {dashboard && currentAuthority && savedMessageCount !== undefined && <Typography variant="body2" color="text.secondary">
+              Based on {new Intl.NumberFormat().format(savedMessageCount)} messages saved on this computer so far.
+            </Typography>}
+            <Box component="dl" sx={{ m: 0, '& > div': { display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(8rem, 1fr) minmax(0, 2fr)' },
+              columnGap: 2, py: 1, borderBottom: 1, borderColor: 'divider' }, '& dt': { color: 'text.secondary' }, '& dd': { m: 0 } }}>
+              <div><Typography component="dt">Funding</Typography><Typography component="dd">Complimentary pilot</Typography></div>
+              <div><Typography component="dt">Price</Typography><Typography component="dd" sx={{ color: 'text.primary' }}>
+                <Typography component="span" sx={{ color: 'text.primary' }}>Free</Typography>{' · '}
+                <Typography component="span" sx={{ color: 'text.primary' }}>
+                  Uses {new Intl.NumberFormat().format(offer.pilot_credit_cost)} {offer.pilot_credit_cost === 1 ? 'pilot credit' : 'pilot credits'}
+                </Typography>
+              </Typography></div>
+              <div><Typography component="dt">Licensed version</Typography><Typography component="dd">{offer.licensed_major_version}.x</Typography></div>
+              <div><Typography component="dt">Update rights</Typography><Typography component="dd">{offer.update_rights ? 'Included' : 'Not included'}</Typography></div>
+              <div><Typography component="dt">Earlier versions</Typography><Typography component="dd">
+                {offer.fallback_major_versions.length ? offer.fallback_major_versions.map(version => `${version}.x`).join(', ') : 'Not included'}
+              </Typography></div>
+            </Box>
+            {showSwitch && <Button ref={switchElement} onClick={() => setChoosingAccount(true)} disabled={opening}
+              sx={{ ...buttonSx, alignSelf: 'flex-start', textAlign: 'start' }}>{SIGN_IN_SWITCH}</Button>}
+          </Stack>}
+        </DialogContent>
+        <DialogActions sx={{ justifyContent: 'flex-start', px: 3 }}>
+          <OnboardingAction>
+            {!choosingAccount && <Button onClick={() => void openSetup('activation.confirm')} disabled={!canConfirm || opening}
+              aria-describedby={offerFeedback ? `${feedbackId}-offer` : undefined} variant="contained" sx={buttonSx}>Activate for free</Button>}
+            <Button onClick={dismissOffer} sx={buttonSx}>Not now</Button>
+            {!choosingAccount && <Button ref={offerCodeButton} aria-haspopup="dialog" disabled={opening || !canRedeem || codeChecking}
+              onClick={() => {
+                if (!currentPresentation()) return;
+                if (intentScope) dismissIntent(intentScope);
+                promotedIntent.current = null;
+                setCodeOpen(true);
+              }} sx={buttonSx}>Use an activation code</Button>}
+          </OnboardingAction>
+        </DialogActions>
+        {offerFeedback && <Box id={`${feedbackId}-offer`} role={noticeError ? 'alert' : undefined} sx={{ px: 3, pb: 2 }}>
+          <OnboardingStatus tone={noticeError ? 'error' : 'neutral'} live={!noticeError}>{offerFeedback}</OnboardingStatus>
+        </Box>}
+      </>}
+    </Dialog>
   </Panel>;
 }

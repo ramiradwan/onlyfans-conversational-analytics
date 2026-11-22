@@ -66,7 +66,7 @@ describe('owner-driven onboarding controls', () => {
       redeem: vi.fn(),
     };
     render(<ThemeProvider theme={theme}><CommercialActivationControls api={api} onboarding={{ ...desktop.api, begin }} /></ThemeProvider>);
-    fireEvent.click(await screen.findByRole('button', { name: 'Review activation offer' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review offer' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Activate for free' }));
     expect(begin).toHaveBeenCalledExactlyOnceWith('activation.confirm');
     await act(async () => desktop.publish({ snapshot: { ...desktop.api.getState().snapshot!, revision: 1, decision: null,
@@ -76,7 +76,7 @@ describe('owner-driven onboarding controls', () => {
     expect(begin).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('button', { name: 'Activate for free' })).toBeNull();
     expect(screen.queryByText('Activation could not be confirmed.')).toBeNull();
-    expect(screen.getByText('Activation accepted. Checking Full analytics…')).toBeTruthy();
+    expect(screen.getByText('Checking your activation…')).toBeTruthy();
   });
 
   it('refreshes activation on owner commits and removes certainty when the owner disconnects', async () => {

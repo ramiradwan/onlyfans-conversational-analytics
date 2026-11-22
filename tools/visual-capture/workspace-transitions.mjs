@@ -181,15 +181,16 @@ export async function driveWorkspaceDetails(page, view, step, unseen) {
   });
   for (const outcome of ['unconfirmed', 'network', 'success']) {
     await step.fixture('fixture:refresh:onboarding.readiness', () => refresh('onboarding.readiness', { schema: 'ofca-analysis-readiness/v1', commercial_authority: 'required', analysis_admission: 'blocked' }));
-    const toggle = page.getByRole('button', { name: 'Use an activation code', exact: true });
-    if (await toggle.getAttribute('aria-expanded') !== 'true') await step('redemption:' + outcome + ':open', () => toggle.click());
+    const opener = page.getByRole('button', { name: 'Use an activation code', exact: true });
+    const dialog = page.getByRole('dialog');
+    if (!await dialog.isVisible()) await step('redemption:' + outcome + ':open', () => opener.click());
     // An unconfirmed redemption keeps its code, so later outcomes resume it.
-    const input = page.getByRole('textbox', { name: 'Activation code' });
+    const input = dialog.getByRole('textbox', { name: 'Activation code' });
     if (await input.isEnabled()) await step.fixture('fixture:activation-code-input', () => input.fill('clr1.' + 'a'.repeat(43)));
-    await step('redemption:' + outcome + ':pending', () => page.getByRole('button', { name: /^(Activate|Resume activation)$/ }).click());
+    await step('redemption:' + outcome + ':pending', () => dialog.getByRole('button', { name: /^(Activate|Resume activation)$/ }).click());
     await step('redemption:' + outcome + ':response', () => outcome === 'success' ? push('resolve', 'activation.redeem', { state: 'checking' }) : push('reject', 'activation.redeem', 'Error'));
     await step('redemption:' + outcome + ':readiness', () => outcome === 'network' ? push('reject', 'onboarding.readiness', 'Error') : push('resolve', 'onboarding.readiness', { schema: 'ofca-analysis-readiness/v1', commercial_authority: outcome === 'success' ? 'active' : 'required', analysis_admission: outcome === 'success' ? 'admitted' : 'blocked' }));
-    if (outcome !== 'success') await step.fixture('fixture:activation-code-close', () => toggle.click());
+    if (outcome !== 'success') await step.fixture('fixture:activation-code-close', () => dialog.getByRole('button', { name: 'Cancel', exact: true }).click());
   }
   for (const outcome of ['failure', 'success']) {
     await step.fixture('fixture:refresh:vault.get', () => refresh('vault.get', vault));

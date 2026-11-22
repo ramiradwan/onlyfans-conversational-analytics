@@ -6,7 +6,6 @@ import {
   Typography,
 } from '@mui/material';
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
 
 import { BrowserExtensionControls } from '../components/BrowserExtensionControls';
 import { CommercialActivationControls } from '../components/CommercialActivationControls';
@@ -463,18 +462,17 @@ export default function CreatorDashboardView({
     && (allZero || state.projection.canonical_revision === 0);
   const connectionSummary = <DashboardConnection browser={browser} connection={connection}
     desktopConnected={state.connection === 'connected'} />;
-  const continuation = collectionReview ? <Stack spacing={0.5}>
-    {collectionReview}
-    {activationAdmitted && fullAnalyticsReady !== true && !desktop.pending && !collection.reviewOperation && <Button component={RouterLink} to="/settings#full-analytics"
-      sx={{ alignSelf: 'flex-start' }}>Full analytics</Button>}
-  </Stack> : historyPrompt ?? (showSetup
-    ? showCommercial
-      ? <CommercialActivationControls api={activationApi} onboarding={onboardingApi} creatorAccountId={state.creatorAccountId} presentationIntent={fullIntent} />
-      : <SetupPrompt title="Set up Chrome to see your message counts" compact />
-    : completeEmpty || waitingForMessages ? <OnboardingEmptyActivity waitingForMessages={waitingForMessages} collectionOn={collectionOn} />
-      : hasSnapshot && fullAnalyticsReady === true ? connectionSummary : null);
   const hideEmptyOverview = completeEmpty || waitingForMessages || !hasActivity && (collectionReview !== null || Boolean(showSetup && !showCommercial));
   const overviewLoading = !hasSnapshot || allZero;
+  const showActivation = showCommercial && (showSetup
+    || collectionReview && activationAdmitted && !desktop.pending && !collection.reviewOperation);
+  const continuation = collectionReview || showActivation ? <Stack spacing={1}>
+    {collectionReview}
+    {showActivation && <CommercialActivationControls api={activationApi} onboarding={onboardingApi} creatorAccountId={state.creatorAccountId}
+      presentationIntent={fullIntent} dashboard savedMessageCount={!overviewLoading && !hideEmptyOverview ? split?.sample?.count : undefined} />}
+  </Stack> : historyPrompt ?? (showSetup ? <SetupPrompt title="Set up Chrome to see your message counts" compact />
+    : completeEmpty || waitingForMessages ? <OnboardingEmptyActivity waitingForMessages={waitingForMessages} collectionOn={collectionOn} />
+      : hasSnapshot && fullAnalyticsReady === true ? connectionSummary : null);
   const opening = !state.creatorAccountId && !hasSnapshot && issue === null;
   const updatesStopped = Boolean(collection.current && collection.paused || issue?.updatesStopped);
 
