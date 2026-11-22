@@ -56,7 +56,7 @@ async function assertFindingTitle(locator, viewport) {
 export function createScreens({ assertMaxWidth, assertCentered, assertLoadingGeometry, assertMetricHierarchy } = {}) {
 return [
   {
-    workspace: 'findings', state: 'first-insights', viewports: ['desktop', 'narrow-2x'],
+    workspace: 'findings', state: 'first-insights', viewports: ['desktop', 'narrow', 'narrow-2x'],
     act: openFindings,
     ready: page => page.getByRole('heading', { name: findingHeadline, exact: true }),
     assert: async (page, viewport) => {
@@ -69,7 +69,7 @@ return [
     },
   },
   {
-    workspace: 'findings', state: 'all-topics', viewports: ['desktop', 'narrow-2x'],
+    workspace: 'findings', state: 'all-topics', viewports: ['desktop', 'narrow', 'narrow-2x'],
     act: async page => {
       await openFindings(page);
       await findingsTrigger(page).press('Enter');
@@ -83,11 +83,31 @@ return [
       await page.keyboard.press('Enter');
     },
     ready: findingsDialog,
-    assert: async page => {
+    assert: async (page, viewport) => {
       const dialog = findingsDialog(page);
-      await dialog.getByText('Based on 2 fully checked messages.', { exact: true }).waitFor({ state: 'visible' });
+      const basis = dialog.getByText('Based on 2 fully checked messages.', { exact: true });
+      await basis.waitFor({ state: 'visible' });
       await dialog.getByRole('heading', { name: 'Mentions', exact: true }).waitFor({ state: 'visible' });
       const close = dialog.getByRole('button', { name: 'Close', exact: true });
+      if (Math.abs((await close.boundingBox()).x - (await basis.boundingBox()).x) > 1) {
+        throw new Error('All topics actions and content lost their shared left edge');
+      }
+      const tableArea = dialog.getByRole('group', { name: 'Topics findings · Subjects scroll area', exact: true });
+      const table = await tableArea.evaluate(node => {
+        const header = node.querySelector('thead').getBoundingClientRect();
+        const data = node.querySelector('tbody tr').getBoundingClientRect();
+        const view = node.getBoundingClientRect();
+        return { horizontal: node.scrollWidth > node.clientWidth, headerHeight: header.height,
+          visibleRow: data.top >= header.bottom && data.top < view.bottom };
+      });
+      if (!table.visibleRow) throw new Error(`All topics header (${table.headerHeight}px) obscures the first data row`);
+      if (viewport.width <= 390) {
+        if (!table.horizontal) throw new Error('All topics table lost its horizontal scroll area');
+        await tableArea.press('ArrowRight');
+        await page.waitForFunction(node => node.scrollLeft > 0, await tableArea.elementHandle(), { timeout: 3000 });
+        await tableArea.evaluate(node => { node.scrollLeft = 0; });
+        await dialog.focus();
+      }
       await page.keyboard.press('Shift+Tab');
       if (!await close.evaluate(node => node === document.activeElement && node.matches(':focus-visible'))) {
         throw new Error('All topics did not show keyboard focus on Close');

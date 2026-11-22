@@ -69,6 +69,9 @@ describe('TaskFindings', () => {
       return parseFindings(pricingFinding(request), request);
     } });
     await waitFor(() => expect(store.getState().status).toBe('loading'));
+    const loading = screen.getByRole('region', { name: 'Insights', busy: true });
+    expect(loading.querySelectorAll('.MuiSkeleton-root')).toHaveLength(4);
+    expect(within(loading).queryByText('Loading saved text analysis…')).toBeNull();
     expect(screen.queryByText('Your first insights are ready')).toBeNull();
     expect(screen.queryByRole('button', { name: 'See all topics' })).toBeNull();
     await act(async () => { release(); await pending; });
@@ -83,6 +86,9 @@ describe('TaskFindings', () => {
     expect(screen.getAllByText(/Unassessed or uncertain messages do not count as confirmed absence/)).toHaveLength(4);
     expect(screen.getByRole('button', { name: /Topics source .*Pricing questions/ })).toBeTruthy();
     const summary = screen.getByRole('region', { name: 'Your first insights are ready' });
+    const head = within(summary).getByRole('heading', { name: 'Your first insights are ready' }).closest('.onboarding-surface-head');
+    expect(head?.querySelector('.onboarding-spot svg')).toBeTruthy();
+    expect(summary.getAttribute('data-composition')).toBe('first-value');
     expect(within(summary).getByText(/^50\s*%$/)).toBeTruthy();
   });
 
@@ -124,10 +130,12 @@ describe('TaskFindings', () => {
   });
 
   it('provides a 240 ms transform-only entrance and a reduced-motion end state', async () => {
-    setup();
+    setup({ read: async request => parseGroupedFindings(await groupedFindingsResponse(request), request) }, 'grouped');
     const summary = await screen.findByRole('region', { name: 'Your first insights are ready' });
-    const bar = summary.querySelector<HTMLElement>('[data-visual="finding-bar"]')!;
+    const [bar, second] = summary.querySelectorAll<HTMLElement>('[data-visual="finding-bar"]');
     expect(getComputedStyle(bar).animation).toContain('240ms');
+    expect(getComputedStyle(bar).animationDelay).toBe('0ms');
+    expect(getComputedStyle(second).animationDelay).toBe('40ms');
     const rules = Array.from(document.styleSheets).flatMap(sheet => Array.from(sheet.cssRules));
     expect(rules.some(rule => rule.cssText.includes('prefers-reduced-motion: reduce')
       && rule.cssText.includes(bar.classList[bar.classList.length - 1])
@@ -140,6 +148,7 @@ describe('TaskFindings', () => {
   it('opens All topics with keyboard focus, includes grouped and ungrouped rows, and restores focus', async () => {
     setup({ read: async request => parseGroupedFindings(await groupedFindingsResponse(request), request) }, 'grouped');
     const trigger = await screen.findByRole('button', { name: 'See all topics' });
+    expect(trigger.matches('.MuiButton-contained.MuiButton-colorPrimary')).toBe(true);
     trigger.focus();
     fireEvent.click(trigger, { detail: 0 });
     const dialog = await screen.findByRole('dialog', { name: 'All topics' });
@@ -149,6 +158,7 @@ describe('TaskFindings', () => {
     expect(within(dialog).getByRole('table', { name: 'Topics findings · Formats café 😀' })).toBeTruthy();
     expect(within(dialog).getByRole('table', { name: 'Mentions findings · Ungrouped categories' })).toBeTruthy();
     const close = within(dialog).getByRole('button', { name: 'Close' });
+    expect(close.matches('.MuiButton-contained.MuiButton-colorPrimary')).toBe(true);
     expect(document.activeElement).toBe(dialog);
     fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
     expect(document.activeElement).toBe(close);
@@ -172,6 +182,11 @@ describe('TaskFindings', () => {
   it('shows unavailable copy without implying active work or a retry for a failed first read', async () => {
     setup({ read: async () => { throw new FindingsClientError('error', 'Text analysis results could not be loaded.'); } });
     expect(await screen.findByText('Insights aren’t available right now.')).toBeTruthy();
+    const card = screen.getByRole('region', { name: 'Insights' });
+    expect(card.getAttribute('data-composition')).toBe('first-value');
+    const status = within(card).getByRole('status');
+    expect(status.getAttribute('data-tone')).toBe('attention');
+    expect(status.querySelector('svg')).toBeTruthy();
     expect(screen.queryByText('Insights couldn’t load. This page tries again by itself.')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Refresh saved findings' })).toBeNull();
   });

@@ -1,6 +1,6 @@
 import { keyframes } from '@emotion/react';
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography, useMediaQuery } from '@mui/material';
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Skeleton, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography, useMediaQuery } from '@mui/material';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { ChartPanel } from './ChartPanel';
@@ -12,7 +12,8 @@ import { formatCount, formatRatioPercent } from '../../analytics/formatAnalytics
 import { createFindingsStore, findingsBinding, type createFindingsPresentation, type FindingsStore } from '../../store/findingsStore';
 import type { LiteralsStore } from '../../store/literalsStore';
 import { bridgeTransportStore, type BridgeTransportStore } from '../../store/transportStore';
-import { effectTokens } from '../../theme';
+import { componentTokens, effectTokens } from '../../theme';
+import { OnboardingAction, OnboardingSpot, OnboardingStatus } from '../ui/OnboardingCard';
 
 const taskLabel = (task: FindingsTask['task']) => task === 'message_topics' ? 'Topics' : 'Mentions';
 const windowLabel = (window: { start?: string | null; end?: string | null }, empty = 'All available saved dates') =>
@@ -22,12 +23,17 @@ const windowLabel = (window: { start?: string | null; end?: string | null }, emp
 type CategoryAction = (category: FindingsCategoryFilter, label: string) => void;
 type TaskNavigation = { declaration: NavigationDeclaration; rows: NavigationGroupRow[] };
 const findingBarArrival = keyframes(effectTokens.motion.keyframes.barArrival);
+const primaryButtonSx = { minHeight: componentTokens.staticUi.controlHeight, maxWidth: '100%' };
 
 function CategoryTable({ task, rows, title, onCategory, selected }: { task: FindingsTask; rows: FindingsTask['rows'];
   title: string; onCategory?: CategoryAction; selected?: FindingsCategoryFilter | null }) {
   const topics = task.task === 'message_topics';
-  return <TableContainer tabIndex={0} role="group" aria-label={`${title} scroll area`} sx={{ maxHeight: '24rem' }}>
-    <Table stickyHeader size="small" aria-label={title}>
+  return <TableContainer tabIndex={0} role="group" aria-label={`${title} scroll area`} sx={{ maxHeight: '24rem', overflow: 'auto' }}>
+    <Table stickyHeader size="small" aria-label={title} sx={{
+      overflowWrap: 'normal',
+      '& .MuiTableCell-head': { minWidth: '6.5rem' },
+      '& .MuiTableCell-body:first-of-type': { maxWidth: '16rem', overflowWrap: 'anywhere' },
+    }}>
       <TableHead><TableRow><TableCell>Category</TableCell>{!topics && <TableCell>Exact occurrences</TableCell>}<TableCell>Distinct messages</TableCell><TableCell>Distinct conversations</TableCell><TableCell>Complete / partial support</TableCell><TableCell>Share of complete messages</TableCell>{onCategory && <TableCell>Sources</TableCell>}</TableRow></TableHead>
       <TableBody>{rows.map((row) => <TableRow key={row.category_id}>
         <TableCell>{row.display_label}{row.label_status === 'id_only' && <Typography variant="caption" component="p">Display name unavailable; category ID shown.</Typography>}</TableCell>
@@ -77,9 +83,37 @@ function TaskSection({ task, previous = false, onCategory, selected, navigation 
   </ChartPanel>;
 }
 
+function FindingsCard({ title, first = false, state, children }: {
+  title: string; first?: boolean; state?: 'loading' | 'unavailable'; children?: ReactNode;
+}) {
+  const titleId = useId();
+  const busy = state === 'loading';
+  return <Box component="section" className="onboarding-surface" data-composition="first-value"
+    aria-label={busy ? title : undefined} aria-labelledby={busy ? undefined : titleId} aria-busy={busy || undefined}
+    data-visual="findings-summary" data-journey-state={state && `findings.${state}`}
+    sx={(theme) => ({ width: '100%', maxWidth: '68rem', fontFamily: theme.typography.fontFamily,
+      ...(first && { '&.onboarding-surface': theme.effects.ambientGlow(theme) }),
+      '& > .onboarding-surface-head:last-child, & > .onboarding-surface-head:has(+ .onboarding-status)': { mb: 0 },
+    })}>
+    {busy ? <>
+      <Box className="onboarding-surface-head" aria-hidden="true">
+        <Skeleton animation={false} variant="rounded" width={40} height={40} sx={{ flexShrink: 0 }} />
+        <Skeleton animation={false} variant="rounded" width="6rem" height="1em" />
+      </Box>
+      <Stack spacing={1} aria-hidden="true">
+        <Skeleton animation={false} variant="rounded" className="onboarding-surface-title" width="92%" height="1em" />
+        <Skeleton animation={false} variant="rounded" width="58%" height="1em" />
+      </Stack>
+    </> : <Box className="onboarding-surface-head">
+      <OnboardingSpot icon="insights" />
+      <Box component="h2" id={titleId} sx={{ m: 0, font: 'inherit', letterSpacing: 'inherit', minWidth: 0 }}>{title}</Box>
+    </Box>}
+    {children}
+  </Box>;
+}
+
 function FindingsSummary({ tasks, title, first, navigation, onCategory, selected }: { tasks: FindingsTask[]; title: string; first: boolean;
   navigation: TaskNavigation | null; onCategory: CategoryAction; selected?: FindingsCategoryFilter }) {
-  const titleId = useId();
   const dialogTitleId = useId();
   const basisId = useId();
   const [open, setOpen] = useState(false);
@@ -99,18 +133,14 @@ function FindingsSummary({ tasks, title, first, navigation, onCategory, selected
     onCategory(filter, label);
   };
 
-  return <Paper component="section" aria-labelledby={titleId} variant="outlined" data-visual="findings-summary"
-    sx={(theme) => ({ width: '100%', maxWidth: '68rem', minWidth: 0, p: { xs: 2, sm: 4 },
-      overflowWrap: 'anywhere', ...(first && theme.effects.ambientGlow(theme)) })}>
-    <Stack spacing={2}>
-      <Typography id={titleId} component="h2" variant={pricingShare ? 'subtitle1' : 'h4'}>{title}</Typography>
-      {pricingShare !== null && pricingShare > 0 && <Typography component="h3" variant="h2" data-visual="findings-headline"
-        sx={(theme) => ({ fontSize: { xs: theme.typography.h4.fontSize, sm: theme.typography.h3.fontSize, md: theme.typography.h2.fontSize } })}>
+  return <>
+    <FindingsCard title={title} first={first}>
+      {pricingShare !== null && pricingShare > 0 && <h3 className="onboarding-surface-title" data-visual="findings-headline">
         Pricing questions come up in {formatRatioPercent(pricingShare)} of fully checked messages
-      </Typography>}
+      </h3>}
       {measuredTask && <Stack component="ul" aria-label={`${taskLabel(measuredTask.task)} shares of fully checked messages`}
-        spacing={1} sx={{ listStyle: 'none', p: 0, m: 0 }}>
-        {bars.map(row => {
+        spacing={1} sx={{ listStyle: 'none', p: 0, m: 0, '.onboarding-surface-title + &': { mt: 2 } }}>
+        {bars.map((row, index) => {
           const share = row.share_of_complete_messages!;
           return <Box component="li" key={row.category_id} sx={{ display: 'grid',
             gridTemplateColumns: { xs: 'minmax(0, 1fr) auto', sm: 'minmax(0, 14rem) minmax(0, 1fr) auto' },
@@ -120,7 +150,7 @@ function FindingsSummary({ tasks, title, first, navigation, onCategory, selected
               borderRadius: '999px', overflow: 'hidden', bgcolor: 'surface.subtle', height: 8 }}>
               <Box data-visual="finding-bar" sx={{ width: `${share * 100}%`, height: '100%', bgcolor: 'measurement.main',
                 borderRadius: 'inherit', transformOrigin: 'left center',
-                ...(first && { animation: `${findingBarArrival} 240ms ${effectTokens.motion.easing.enter} both` }),
+                ...(first && { animation: `${findingBarArrival} 240ms ${effectTokens.motion.easing.enter} both`, animationDelay: `${index * 40}ms` }),
                 '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }} />
             </Box>
             <Typography variant="numericBody" sx={{ gridColumn: { xs: 2, sm: 3 }, gridRow: 1, textAlign: 'end' }}>
@@ -129,13 +159,18 @@ function FindingsSummary({ tasks, title, first, navigation, onCategory, selected
           </Box>;
         })}
       </Stack>}
-      {topicDenominator !== null && <Box><Button variant="outlined" onClick={() => setOpen(true)}>See all topics</Button></Box>}
-    </Stack>
+      {topicDenominator !== null && <OnboardingAction>
+        <Button variant="contained" aria-haspopup="dialog" sx={primaryButtonSx} onClick={() => setOpen(true)}>See all topics</Button>
+      </OnboardingAction>}
+    </FindingsCard>
     {topicDenominator !== null && <Dialog open={open} onClose={() => setOpen(false)} maxWidth="lg" fullWidth
       transitionDuration={reducedMotion ? 0 : 200} aria-labelledby={dialogTitleId} aria-describedby={basisId}
       slotProps={{ paper: { sx: { m: { xs: 2, sm: 4 }, width: { xs: 'calc(100% - 32px)', sm: 'calc(100% - 64px)' },
         minWidth: 0, overflowWrap: 'anywhere' } } }}>
-      <DialogTitle id={dialogTitleId}>All topics</DialogTitle>
+      <DialogTitle id={dialogTitleId}
+        sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' }, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-.015em', textWrap: 'balance' }}>
+        All topics
+      </DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2}>
           <Typography id={basisId}>Based on {formatCount(topicDenominator)} fully checked messages.</Typography>
@@ -143,9 +178,11 @@ function FindingsSummary({ tasks, title, first, navigation, onCategory, selected
             selected={selected} navigation={navigation} />)}
         </Stack>
       </DialogContent>
-      <DialogActions><Button onClick={() => setOpen(false)}>Close</Button></DialogActions>
+      <DialogActions sx={{ justifyContent: 'flex-start', px: 3, py: 2 }}>
+        <Button variant="contained" sx={primaryButtonSx} onClick={() => setOpen(false)}>Close</Button>
+      </DialogActions>
     </Dialog>}
-  </Paper>;
+  </>;
 }
 
 interface Props {
@@ -290,10 +327,11 @@ function FindingsSession({ baseline, controller, literalsController, presentatio
       <Typography>The category narrows conversation and source lists. Summaries retain the selected dates, direction and conversation population. Choosing or clearing a category returns to all conversations.</Typography>
       <Button onClick={() => selectCategory(null)}>Clear category filter</Button></Alert>}
     {state.established && (baseline || refreshing) && <Button disabled={refreshing || state.status === 'loading'} onClick={() => void refresh()}>Refresh saved findings</Button>}
-    {!result && <Paper variant="outlined" data-journey-state="findings.unavailable" sx={{ p: { xs: 2, sm: 4 } }}>
-      <Typography component="h3" variant="h4">{insightTitle}</Typography>
-      <Typography role="status">{state.status === 'loading' ? 'Loading saved text analysis…' : 'Insights aren’t available right now.'}</Typography>
-    </Paper>}
+    {!result && (state.status === 'loading'
+      ? <FindingsCard title={insightTitle} state="loading" />
+      : <FindingsCard title={insightTitle} state="unavailable">
+        <OnboardingStatus tone="attention">Insights aren’t available right now.</OnboardingStatus>
+      </FindingsCard>)}
     {result && <Stack spacing={2} data-journey-state="findings.results">
       <FindingsSummary tasks={result.tasks} title={insightTitle} first={firstInsight} navigation={currentNavigation}
         onCategory={(filter, label) => { focusCategory.current = true; selectCategory(filter, label); }} selected={category?.filter} />
