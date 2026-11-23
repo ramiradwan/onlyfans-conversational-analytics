@@ -20,16 +20,13 @@ const findingHeadline = 'One topic appears in 50% of fully checked messages';
 const findingsDialog = page => page.getByRole('dialog', { name: 'All topics', exact: true });
 const findingsTrigger = page => page.getByRole('button', { name: 'See all topics', exact: true });
 
-async function openFindings(page) {
+async function prepareFindings(page) {
   await page.route('**/src/story-only/findingsFixtures.ts*', async route => {
     const response = await route.fetch();
     const source = await response.text();
     if (!source.includes('Example topic')) throw new Error('Synthetic findings label is missing');
     await route.fulfill({ response, body: source.replace('Example topic', 'Pricing questions') });
   });
-  const url = new URL(page.url());
-  url.searchParams.delete('workspace');
-  url.searchParams.set('stability', 'findings');
   if (page.viewportSize().width === 320) {
     await page.addInitScript(() => {
       const root = new MutationObserver(() => {
@@ -40,8 +37,6 @@ async function openFindings(page) {
       root.observe(document, { childList: true, subtree: true });
     });
   }
-  await page.goto(url.href, { waitUntil: 'networkidle' });
-  await page.evaluate(() => document.fonts.ready);
 }
 
 async function assertFindingTitle(locator, viewport) {
@@ -64,7 +59,7 @@ export function createScreens({ assertMaxWidth, assertCentered, assertLoadingGeo
 return [
   {
     workspace: 'findings', state: 'first-insights', viewports: ['desktop', 'narrow', 'narrow-2x'],
-    act: openFindings,
+    query: { stability: 'findings' }, prepare: prepareFindings,
     ready: page => page.getByRole('heading', { name: findingHeadline, exact: true }),
     assert: async (page, viewport) => {
       await assertFindingTitle(page.getByRole('heading', { name: findingHeadline, exact: true }), viewport);
@@ -77,8 +72,8 @@ return [
   },
   {
     workspace: 'findings', state: 'all-topics', viewports: ['desktop', 'narrow', 'narrow-2x'],
+    query: { stability: 'findings' }, prepare: prepareFindings,
     act: async page => {
-      await openFindings(page);
       await findingsTrigger(page).press('Enter');
       const close = findingsDialog(page).getByRole('button', { name: 'Close', exact: true });
       await close.waitFor({ state: 'visible' });

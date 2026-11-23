@@ -289,7 +289,7 @@ test('reading audit follows the document scroll owner', async () => {
 });
 
 for (const state of ['loading', 'fresh', 'syncing', 'populated']) test('numeric baselines follow inline glyphs during ' + state, async () => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await page.goto(harness.base + '?workspace=home&state=' + state);
     if (state === 'fresh') {
@@ -300,10 +300,7 @@ for (const state of ['loading', 'fresh', 'syncing', 'populated']) test('numeric 
     await page.locator('[data-visual="conversation-total"]').waitFor();
     await page.evaluate(() => document.fonts.ready);
     await assertNumericTypography(page, { width: 1440 });
-    await page.locator('[data-visual="message-total"]').evaluate((element) => {
-      element.style.position = 'relative';
-      element.style.top = '2px';
-    });
+    await page.locator('[data-visual="message-total"]').evaluate((element) => { element.style.transform = 'translateY(2px)'; });
     await assert.rejects(() => assertNumericTypography(page, { width: 1440 }), /baselines diverged/);
   } finally { await page.close(); }
 });

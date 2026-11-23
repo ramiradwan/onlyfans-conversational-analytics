@@ -53,30 +53,56 @@ test('a task boundary covers its next paint and cannot excuse a later shift', ()
 
 test('passkey task changes allow trailing feedback while retaining the card origin and width', () => {
   const first = { ...frame(), task: 'passkey:sign-in', at: 110, nativeAt: 10,
-    regions: [{ id: 'passkey-card', rect: [16, 80, 358, 240] }] };
+    regions: [{ id: 'passkey-card', rect: [16, 80, 358, 240] },
+      { id: 'passkey-heading', rect: [40, 142, 310, 30] }, { id: 'passkey-feedback', rect: [40, 296, 310, 0] }] };
   const next = { ...first, task: 'passkey:sign-in:feedback', at: 120, nativeAt: 20,
-    regions: [{ id: 'passkey-card', rect: [16, 80, 358, 276] }],
-    shifts: [{ value: 0.1, at: 16 }] };
+    regions: [{ id: 'passkey-card', rect: [16, 80, 358, 276] }, first.regions[1],
+      { id: 'passkey-feedback', rect: [40, 296, 310, 36] }],
+    shifts: [{ value: 0.1, at: 16, sources: [{ region: 'passkey-feedback' }] }] };
   assert.deepEqual(inspectFrames([first, next]), []);
-  assert(inspectFrames([first, { ...next, regions: [{ id: 'passkey-card', rect: [17, 80, 358, 276] }] }])
+  assert(inspectFrames([first, { ...next, regions: [{ id: 'passkey-card', rect: [17, 80, 358, 276] }, ...next.regions.slice(1)] }])
     .includes('passkey-card: moved across task change'));
   assert(inspectFrames([first, { ...next, task: first.task }]).includes('passkey-card: moved or resized'));
+  const shiftedFeedback = { ...next.regions[2], rect: [40, 300, 310, 36] };
+  assert(inspectFrames([first, { ...next, regions: [...next.regions.slice(0, 2), shiftedFeedback] }])
+    .includes('passkey-feedback: moved across task change'));
+  const shiftedHeading = { ...next.regions[1], rect: [40, 143, 310, 30] };
+  assert(inspectFrames([first, { ...next, regions: [next.regions[0], shiftedHeading, next.regions[2]] }])
+    .includes('passkey-heading: moved across task change'));
+  assert(inspectFrames([first, { ...next, shifts: [{ value: 0.1, at: 16, sources: [{ tag: 'HEADER', region: null }] }] }])
+    .includes('layout shift after first paint'));
 });
 
-test('dashboard task changes retain fixed chrome and section columns', () => {
-  const first = { task: 'dashboard:setup', at: 10, shifts: [], regions: [
+test('dashboard task changes preserve unaffected sections and only displace their successors', () => {
+  const task = (notice) => `dashboard:${JSON.stringify(['true:false', 'true', notice, 'true', 'setup'])}`;
+  const metrics = [
+    { id: 'metric-conversations', rect: [40, 119, 310, 20] },
+    { id: 'metric-messages', rect: [40, 179, 310, 20] },
+    { id: 'metric-Received', rect: [40, 219, 80, 20] },
+    { id: 'metric-Sent', rect: [160, 219, 80, 20] },
+  ];
+  const first = { task: task(''), at: 10, shifts: [], regions: [
     { id: 'dashboard-title', rect: [16, 50, 358, 40] },
     { id: 'freshness-status', rect: [16, 16, 358, 24] },
-    { id: 'dashboard-setup', rect: [16, 90, 358, 180] },
+    { id: 'dashboard-overview', rect: [16, 90, 358, 180] },
+    { id: 'dashboard-basis', rect: [16, 270, 358, 40] },
+    { id: 'dashboard-notice', rect: [16, 310, 358, 0] },
+    { id: 'dashboard-recent', rect: [16, 310, 358, 100] },
+    { id: 'dashboard-setup', rect: [16, 410, 358, 30] },
+    ...metrics,
   ] };
-  const next = { ...first, task: 'dashboard:overview', at: 20, regions: [
-    ...first.regions.slice(0, 2), { id: 'dashboard-setup', rect: [16, 200, 358, 240] },
-  ] };
+  const resized = (snapshot, id, rect) => snapshot.regions.map(region => region.id === id ? { ...region, rect } : region);
+  const next = { ...first, task: task('Reconnecting'), at: 20, regions: [
+    ...first.regions.slice(0, 4), { id: 'dashboard-notice', rect: [16, 310, 358, 24] },
+    { id: 'dashboard-recent', rect: [16, 334, 358, 100] }, { id: 'dashboard-setup', rect: [16, 434, 358, 30] },
+    ...metrics,
+  ], shifts: [{ at: 15, value: 0.1, sources: [{ region: 'dashboard-recent' }] }] };
   assert.deepEqual(inspectFrames([first, next]), []);
-  assert(inspectFrames([first, { ...next, regions: next.regions.map(region => ({ ...region,
-    rect: region.id === 'freshness-status' ? [16, 17, 358, 24] : region.rect,
-  })) }]).includes('freshness-status: moved across task change'));
-  assert(inspectFrames([first, { ...next, regions: next.regions.map(region => ({ ...region,
-    rect: region.id === 'dashboard-setup' ? [17, 200, 358, 240] : region.rect,
-  })) }]).includes('dashboard-setup: moved across task change'));
+  for (const [id, rect] of [['freshness-status', [16, 17, 358, 24]], ['dashboard-basis', [16, 271, 358, 40]],
+    ['dashboard-recent', [16, 334, 358, 101]], ['dashboard-setup', [16, 435, 358, 30]],
+    ['metric-Received', [40, 220, 80, 20]]]) {
+    assert(inspectFrames([first, { ...next, regions: resized(next, id, rect) }]).includes(`${id}: moved across task change`));
+  }
+  assert(inspectFrames([first, { ...next, shifts: [{ at: 15, value: 0.1, sources: [{ region: 'freshness-status' }] }] }])
+    .includes('layout shift after first paint'));
 });

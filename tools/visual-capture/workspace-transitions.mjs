@@ -184,6 +184,7 @@ export async function driveWorkspaceDetails(page, view, step, unseen) {
   await step.fixture('fixture:reset-activation-task', async () => {
     await push('desktopActionError', null);
     await push('desktopSnapshot', { decision: null, decision_status: null, authentication: null, allowed_actions: ['activation.review'], pending_operations: [] });
+    await page.getByRole('button', { name: 'Use an activation code', exact: true }).waitFor();
   });
   for (const outcome of ['unconfirmed', 'network', 'success']) {
     await step.fixture('fixture:refresh:onboarding.readiness', () => refresh('onboarding.readiness', { schema: 'ofca-analysis-readiness/v1', commercial_authority: 'required', analysis_admission: 'blocked' }));

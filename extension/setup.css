@@ -620,8 +620,10 @@ body.onboarding-workspace > main { max-width: none; padding: 28px; }
 .onboarding-workspace section { margin-bottom: 20px; }
 .onboarding-workspace section::before { display: none; }
 .onboarding-workspace .onboarding-card { box-shadow: var(--dipsy-intent-surface-dominant-elevation); }
-.onboarding-workspace .onboarding-card:not(#pre-mode, #mode-choice) > h2 { margin-block-end: 8px; text-wrap: balance; }
+.onboarding-workspace .onboarding-card:not(#pre-mode, #mode-choice) > h2,
+.onboarding-workspace #desktop-entry-title { margin-block-end: 8px; text-wrap: balance; }
 .onboarding-workspace .onboarding-card > p:not(.state-badge, .fine-print, .pairing-code) { font-size: var(--dipsy-static-body-size); }
+.desktop-entry-heading { display: flow-root; font-size: var(--dipsy-static-task-heading-size); line-height: 1.25; }
 .onboarding-workspace button { transition: opacity var(--dipsy-motion-standard), transform var(--dipsy-motion-standard); }
 .onboarding-workspace .journey-card[data-tone] { background: var(--dipsy-color-paper); border-color: var(--dipsy-intent-surface-dominant-border); }
 .onboarding-workspace .journey-card > .journey-actions:has(> :not(.hidden)) { margin-block-start: 20px; }
@@ -679,7 +681,10 @@ body.onboarding-workspace > main { max-width: none; padding: 28px; }
 @media (max-width: 600px) {
   body.onboarding-workspace > main { padding: 20px 16px; }
   .onboarding-workspace .onboarding-loading { width: calc(100% - 32px); margin-top: 20px; }
-  .onboarding-workspace [data-requirement="desktop-handoff"] #desktop-entry[data-composition="guided"] > h2 { min-block-size: 3lh; }
+  .desktop-entry-heading { font-size: 1.5rem; }
+  .onboarding-workspace [data-requirement="desktop-handoff"] #desktop-entry[data-composition="guided"] .desktop-entry-heading {
+    min-block-size: calc(3lh + 8px);
+  }
   .onboarding-workspace [data-requirement="desktop-handoff"] #desktop-entry[data-composition="guided"] #desktop-entry-body { min-block-size: 5lh; }
   .onboarding-workspace [data-requirement="desktop-handoff"] #desktop-entry[data-composition="guided"] :is(#desktop-setup-code, #download-desktop).hidden {
     display: block !important;
@@ -687,7 +692,9 @@ body.onboarding-workspace > main { max-width: none; padding: 28px; }
   }
 }
 @container onboarding-layout (max-width: 14rem) {
-  .onboarding-workspace [data-requirement="desktop-handoff"] #desktop-entry[data-composition="guided"] > h2 { min-block-size: 5lh; }
+  .onboarding-workspace [data-requirement="desktop-handoff"] #desktop-entry[data-composition="guided"] .desktop-entry-heading {
+    min-block-size: calc(5lh + 8px);
+  }
   .onboarding-workspace [data-requirement="desktop-handoff"] #desktop-entry[data-composition="guided"] #desktop-entry-body { min-block-size: 7lh; }
 }
 @media (max-width: 360px) {

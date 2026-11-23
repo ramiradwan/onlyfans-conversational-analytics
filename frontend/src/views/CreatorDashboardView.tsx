@@ -479,28 +479,27 @@ export default function CreatorDashboardView({
   const showOverview = !opening && !hideEmptyOverview;
   const showBasis = !overviewLoading && !hideEmptyOverview && evidence !== null;
   const showRecent = hasSnapshot && state.conversations.length > 0;
-  const dashboardTask = [opening ? 'opening' : hideEmptyOverview ? 'setup' : 'overview',
-    Boolean(progress), showBasis, showRecent, issue?.title ?? '',
-    showSetup, showActivation, Boolean(collectionReview), Boolean(historyPrompt), Boolean(continuation)].join('|');
+  const setupTask = [opening, showSetup, showActivation, Boolean(collectionReview),
+    Boolean(historyPrompt), Boolean(continuation)].join(':');
 
   return (
     <Box data-scroll-container sx={{ flex: 1, minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable', pb: 3 }}>
-      <Stack data-dashboard-task={dashboardTask} sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}>
+      <Stack data-dashboard-task sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}>
         <Typography component="h1" variant="h4" data-dashboard-heading>Dashboard</Typography>
-        <Box data-reserved-region="dashboard-overview">
+        <Box data-reserved-region="dashboard-overview" data-dashboard-section={`${showOverview}:${Boolean(progress)}`}>
           {showOverview && <Box data-region-content style={{ paddingBlockStart: 20 }}>
             <DashboardOverview key={state.creatorAccountId} isLoading={overviewLoading} conversations={format(analytics?.total_conversations)}
               messages={format(analytics?.total_messages)} progress={progress} received={format(analytics?.inbound_messages)}
               sent={format(analytics?.outbound_messages)} split={split} />
           </Box>}
         </Box>
-        <Box data-reserved-region="dashboard-basis">
+        <Box data-reserved-region="dashboard-basis" data-dashboard-section={String(showBasis)}>
           {showBasis && <Box data-region-content style={{ paddingBlockStart: 20 }}>
             <NumbersBasis evidence={evidence} messagesCounted={visibleMetrics.includes(analytics?.total_messages)
               ? analytics?.total_messages?.sample_size ?? null : null} sample={split?.sample ?? null} updatesStopped={updatesStopped} />
           </Box>}
         </Box>
-        <Box data-reserved-region="dashboard-notice"
+        <Box data-reserved-region="dashboard-notice" data-dashboard-section={issue?.title ?? ''}
           sx={{ '& .onboarding-status > svg': { inlineSize: 20, blockSize: 20, flexShrink: 0 },
             '& .onboarding-status[data-tone="pending"] > svg': {
               animation: 'none',
@@ -513,12 +512,13 @@ export default function CreatorDashboardView({
             </OnboardingStatus>
           </Box>}
         </Box>
-        <Box data-reserved-region="dashboard-recent">
+        <Box data-reserved-region="dashboard-recent" data-dashboard-section={String(showRecent)}>
           {showRecent && <Box data-region-content style={{ paddingBlockStart: 20 }}>
             <RecentConversations conversations={state.conversations} showInboxLink={canViewInbox} />
           </Box>}
         </Box>
-        <Box data-reserved-region="dashboard-setup" sx={{ '& [data-surface-emphasis]': surfaceArrival(0, true) }}>
+        <Box data-reserved-region="dashboard-setup" data-dashboard-section={setupTask}
+          sx={{ '& [data-surface-emphasis]': surfaceArrival(0, true) }}>
           {opening ? <Box data-region-content style={{ paddingBlockStart: 20 }} sx={{ maxWidth: 760 }}><OnboardingCard title="Opening Dipsy" spot={<OnboardingSpot icon="app" />}
             status={<OnboardingStatus tone="pending">Checking your connection.</OnboardingStatus>} /></Box>
             : continuation && <Box data-region-content style={{ paddingBlockStart: 20 }}>{continuation}</Box>}

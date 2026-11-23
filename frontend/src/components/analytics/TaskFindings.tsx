@@ -316,8 +316,8 @@ function FindingsSession({ baseline, controller, literalsController, presentatio
   }
   return <Stack component="section" spacing={2} aria-label="Profile text analysis" data-journey-state="findings.controls"
     sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-    <Box><Typography component="h2" variant="h6">Profile text analysis</Typography>
-      <Typography>Available topic and mention findings from the selected analysis profile. These are separate from the baseline topics in Summary. Viewing results does not download files or run analysis.</Typography></Box>
+    <Box data-reserved-region="findings-intro"><Typography component="h2" variant="h6" data-region-content>Profile text analysis</Typography>
+      <Typography data-region-content>Available topic and mention findings from the selected analysis profile. These are separate from the baseline topics in Summary. Viewing results does not download files or run analysis.</Typography></Box>
     <TextField select label="Message direction" value={direction} onChange={(event) => { store.actions.invalidate(); setDirection(event.target.value as FindingsDirection); }} sx={{ maxWidth: '20rem' }}>
       <MenuItem value="all">All messages</MenuItem><MenuItem value="inbound">Received messages</MenuItem><MenuItem value="outbound">Sent messages</MenuItem>
     </TextField>

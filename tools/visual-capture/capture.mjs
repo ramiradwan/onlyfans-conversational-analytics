@@ -186,9 +186,10 @@ export async function captureOrdinaryScreens(browser, base, outDir, selectedScre
     const errors = [];
     page.on('pageerror', (error) => errors.push(String(error)));
     await page.clock.setFixedTime(FIXED_NOW);
-    const url = `${base}?workspace=${screen.workspace}&state=${screen.state}&mode=${mode}`;
+    const query = new URLSearchParams({ state: screen.state, mode, ...(screen.query ?? { workspace: screen.workspace }) });
     try {
-      await page.goto(url, { waitUntil: 'networkidle' });
+      await screen.prepare?.(page);
+      await page.goto(`${base}?${query}`, { waitUntil: 'networkidle' });
       await page.evaluate(() => document.fonts.ready);
       if (settings) {
         const before = await page.evaluate(() => ({ at: 0, frame: 0,
