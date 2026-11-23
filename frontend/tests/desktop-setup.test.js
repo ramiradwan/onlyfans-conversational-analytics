@@ -189,6 +189,20 @@ describe('desktop setup projection', () => {
     expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ error: 'activation_unavailable', connected: true }));
     client.stop();
   });
+  it('retires an expired pairing notice when the same desktop becomes ready', async () => {
+    const value = { ...initial(), journey_id: operationId, next_task: 'finish-setup', allowed_actions: ['browser.pair'] };
+    let publish;
+    const receive = vi.fn(), request = async path => response(path.endsWith('/session') ? session
+      : { ...record, action: 'browser.pair', state: 'refused', reason: 'operation_expired' });
+    const client = new DesktopSetupClient({ generation, request, receive, storage: storage(),
+      stream: async (_request, _headers, _signal, listener) => { publish = next => listener(JSON.stringify(next)); publish(value); } });
+    await client.connect(); client.remember(operationId); await client.receipt();
+    expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ error: 'operation_expired', failedAction: 'browser.pair' }));
+    publish({ ...value, revision: 1, local_ready: true, next_task: 'complete', allowed_actions: [],
+      facts: Object.fromEntries(Object.keys(value.facts).map(key => [key, 'verified'])) });
+    expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ error: null }));
+    client.stop();
+  });
   it.each(['same-admission', 'same-review', 'foreign-review'])('retires authentication feedback only for %s', async result => {
     let publish;
     const parent = '33333333-3333-4333-8333-333333333333';
@@ -1494,6 +1508,20 @@ describe('desktop setup presentation', () => {
     expect(get('task-pending').textContent).toBe('Keep the browser open. This window continues by itself.');
     expect(get('task-status').textContent).toBe('');
   });
+  it('offers a fresh connection after the previous pairing expired or was refused', () => {
+    mount();
+    const snapshot = { ...initial(), next_task: 'finish-setup', allowed_actions: ['browser.pair'] };
+    const button = document.getElementById('task-action');
+    for (const error of ['operation_expired', 'operation_refused']) {
+      renderSetup(document, { snapshot, connected: true, error, failedAction: 'browser.pair' });
+      expect(button.hidden).toBe(false);
+      expect(button.disabled).toBe(false);
+      expect(button.dataset.action).toBe('browser.pair');
+      expect(document.getElementById('task-status').textContent).toContain('Try again');
+      renderSetup(document, { snapshot, connected: true, error, failedAction: 'account.connect' });
+      expect(button.hidden).toBe(true);
+    }
+  });
   it.each([
     ['renewing', 'Renewing access on this computer', 'This page updates when renewal finishes.', 'Renewal needs an internet connection.'],
     ['expired', 'Account authorization has expired', 'New capture and analysis are paused on this computer.', ''],
@@ -1604,6 +1632,13 @@ describe('helper notices in the desktop', () => {
     await client.connect();
     notices(JSON.stringify({ notices: [{ task_id: crypto.randomUUID(), reason: 'profile_mismatch' }] }));
     expect(received.at(-1).error).toBe('profile_mismatch');
+    const priorStream = notices;
+    await client.connect();
+    expect(received.at(-1).error).toBe(null);
+    priorStream(JSON.stringify({ notices: [{ task_id: crypto.randomUUID(), reason: 'unavailable' }] }));
+    expect(received.at(-1).error).toBe(null);
+    notices(JSON.stringify({ notices: [{ task_id: crypto.randomUUID(), reason: 'unavailable' }] }));
+    expect(received.at(-1).error).toBe('browser_unavailable');
     notices(JSON.stringify({ notices: [] }));
     expect(received.at(-1).error).toBe(null);
     expect(() => notices(JSON.stringify({ notices: [{ task_id: 'x', reason: 'profile_mismatch' }] }))).toThrow('invalid_snapshot');

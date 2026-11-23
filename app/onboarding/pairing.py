@@ -60,6 +60,13 @@ class DesktopPairing:
             return dict(row)
 
     def observe(self, operation):
+        return self._observe(operation, include_confirmed=False)
+
+    def confirmation_deadline(self, operation):
+        row = self._row(operation["operation_id"])
+        return None if row is None else row["expires_at"]
+
+    def _observe(self, operation, *, include_confirmed):
         row = self._row(operation["operation_id"])
         if row is None:
             return None
@@ -73,7 +80,13 @@ class DesktopPairing:
                 if (current.pin.creator_account_id != selected["creator_account_id"]
                         or current.pin.installation_id != selected["installation_id"]):
                     raise HostedGrantUnavailable("Pairing scope changed")
-                result = OperationResult("completed")
+                configured = current.pin.first_configuration_at
+                if configured is not None and configured.timestamp() < row["expires_at"]:
+                    result = OperationResult("completed")
+                elif row["expires_at"] <= self.store._now().timestamp():
+                    result = OperationResult("refused", "operation_expired")
+                elif include_confirmed:
+                    result = OperationResult("waiting")
             except (CompanionPairingPersistenceError, AuthenticationStateError, HostedGrantUnavailable):
                 result = OperationResult("refused", "operation_refused")
         else:
@@ -87,7 +100,7 @@ class DesktopPairing:
         return result
 
     async def execute(self, operation, *, authorize, can_prepare):
-        observed = self.observe(operation)
+        observed = self._observe(operation, include_confirmed=True)
         if observed is not None:
             return observed
         if not can_prepare:
@@ -105,7 +118,7 @@ class DesktopPairing:
         reservation = PairingReservation(row["pairing_id"], datetime.fromtimestamp(row["opened_at"], timezone.utc),
             datetime.fromtimestamp(row["expires_at"], timezone.utc))
         self.service.open(policy, selected["creator_account_id"], reservation=reservation, authorize=guard)
-        observed = self.observe(operation)
+        observed = self._observe(operation, include_confirmed=True)
         if observed is not None:
             return observed
         now = self.store._now().timestamp()
@@ -118,9 +131,11 @@ class DesktopPairing:
         if (not isinstance(value, dict) or set(value) != {"comparison_code"}
                 or not isinstance(value["comparison_code"], str) or re.fullmatch(r"[0-9]{6}", value["comparison_code"]) is None):
             raise AdmissionRefused("browser_comparison_invalid")
-        observed = self.observe(operation)
+        observed = self._observe(operation, include_confirmed=True)
         if observed is not None:
-            if observed.state == "completed":
+            # The comparison may already have committed while the extension
+            # is still saving its pin and applying configuration.
+            if observed.state in {"waiting", "completed"}:
                 return
             raise AdmissionRefused("task_scope_changed")
         saved = self._row(operation["operation_id"])

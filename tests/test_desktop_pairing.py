@@ -1,6 +1,8 @@
 import asyncio
 import json
 from datetime import timedelta
+from pathlib import Path
+from shutil import copyfile
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -8,18 +10,26 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+from app.api.endpoints.companion_session import ProtectedSocket
+from app.core.config import settings
 from app.onboarding.admission import AdmissionRefused, ScopedAdmissions, csrf_token
 from app.onboarding.browser_routes import browser_router
 from app.onboarding.browser_tasks import BrowserTasks
 from app.onboarding.coordinator import DesktopOnboardingCoordinator
 from app.onboarding.pairing import DesktopPairing
 from app.onboarding.runtime import RuntimeActor, RuntimeSetupOwner
+from app.persistence import auth
 from app.persistence.auth import RevocationKey, RevocationScopeType
+from app.persistence.factory import create_canonical_repositories
 from app.provisioning.events import events
 from app.security.companion_pairing import CompanionPairingError, encode_pairing_id
 from app.security.companion_pairing_proof import comparison_code
+from app.security.companion_session_authority import CompanionSessionAuthority, CompanionSessionError
 from app.security.hosted_grants import HostedGrantUnavailable
+from app.transport.account_bound_manager import AccountBoundTransportManager
+from test_companion_onboarding_progress import _bind, _config_applied
 from test_companion_pairing_service import _agent_confirmation, contract as contract, grant_references as grant_references, local as local
+from test_companion_session_authority import _hello
 from test_desktop_coordinator import command
 
 pytestmark = [pytest.mark.ci_tier("fast"), pytest.mark.windows_compat]
@@ -62,8 +72,14 @@ def awaiting(setup):
     return window.pairing_id, {"comparison_code": comparison_code(window.pairing_digest)}
 
 
+def apply_initial_configuration(setup, pairing_id):
+    session = setup.local.service.persistence.session_authority(pairing_id).binding("configured-companion")
+    assert setup.local.store.record_companion_configuration(session)
+    assert not setup.local.store.record_companion_configuration(session)
+
+
 @pytest.mark.asyncio
-async def test_real_pairing_commits_only_the_independent_code_for_this_operator_task(setup):
+async def test_real_pairing_commits_only_the_independent_code_for_this_operator_task(setup, monkeypatch):
     operation, helper = await begin(setup)
     pairing_id, code = awaiting(setup)
     assert setup.pairing.observe(operation) is None
@@ -77,6 +93,29 @@ async def test_real_pairing_commits_only_the_independent_code_for_this_operator_
     # authority being discarded during a Brain restart.
     restored = DesktopPairing(setup.local.store, browser_tasks=setup.tasks, service=setup.local.service)
     setup.owner.pairing = restored
+    assert restored.observe(operation) is None
+    assert not setup.coordinator.read(setup.native, actor=setup.actor)["local_ready"]
+    await restored.compare(helper, operation, code)
+    # The live transport can finish local setup even without a hosted progress reporter.
+    store = setup.local.store
+    monkeypatch.setattr(settings, "auth_database_path", str(store.database.path))
+    # The signed contract vectors and both configuration resolvers share the fixture clock.
+    monkeypatch.setattr("app.transport.manager.utc_now", store._now)
+    monkeypatch.setattr("app.transport.account_bound_manager.datetime", SimpleNamespace(now=lambda _zone: store._now()))
+    manager = AccountBoundTransportManager(create_canonical_repositories(), onboarding_progress=None)
+    authority = CompanionSessionAuthority(store)
+    snapshot = authority.prepare(pairing_id)
+    session = authority.authorize(snapshot)
+    with pytest.raises(CompanionSessionError):
+        session.record_initial_configuration()
+    _hello((setup.local, authority, snapshot, session))
+    socket = ProtectedSocket(SimpleNamespace(authority=session, websocket=SimpleNamespace(client=None)))
+    lease = await _bind(manager, socket, session.binding)
+    required = manager.required_config_document(session.binding.creator_account_id)
+    await manager.record_config_applied(lease, _config_applied(lease, required.config_revision, required.digest, 'degraded'))
+    assert restored.observe(operation) is None
+    await manager.record_config_applied(lease, _config_applied(lease, required.config_revision, required.digest))
+    assert not session.record_initial_configuration()
     await setup.coordinator.reconcile(setup.native, operation["operation_id"])
     await setup.coordinator.drain()
     assert setup.coordinator.receipt(setup.native, operation["operation_id"])["state"] == "completed"
@@ -102,7 +141,35 @@ async def test_restart_requires_fresh_operator_then_recovers_the_same_pairing_wi
     await setup.coordinator.drain()
     assert setup.local.service.persistence.window(pairing_id) == original
     await restored.compare(helper, operation, code)
+    assert restored.observe(operation) is None
+    apply_initial_configuration(setup, pairing_id)
     assert restored.observe(operation).state == "completed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("echo_at_deadline", [False, True])
+async def test_interrupted_extension_can_retry_without_disconnecting_a_confirmed_pin(setup, echo_at_deadline):
+    operation, helper = await begin(setup)
+    original_id, code = awaiting(setup)
+    await setup.pairing.compare(helper, operation, code)
+    assert setup.pairing.observe(operation) is None
+    deadline = setup.owner.confirmation_deadline(operation)
+    assert deadline == setup.local.clock.now.timestamp() + 300
+    setup.local.clock.now += timedelta(seconds=300)
+    if echo_at_deadline:
+        apply_initial_configuration(setup, original_id)
+        assert setup.pairing.observe(operation).reason == "operation_expired"
+        return
+    await setup.coordinator.reconcile(setup.native, operation["operation_id"], actor=setup.actor)
+    await setup.coordinator.drain()
+    assert setup.coordinator.receipt(setup.native, operation["operation_id"])["reason"] == "operation_expired"
+    assert not setup.coordinator.read(setup.native, actor=setup.actor)["local_ready"]
+    retry, next_helper = await begin(setup)
+    next_id, next_code = awaiting(setup)
+    assert next_id != original_id
+    await setup.pairing.compare(next_helper, retry, next_code)
+    apply_initial_configuration(setup, next_id)
+    assert setup.pairing.observe(retry).state == "completed"
 
 
 @pytest.mark.asyncio
@@ -228,4 +295,47 @@ async def test_browser_route_requires_admission_and_csrf_and_returns_no_brain_co
     assert response.headers["Cache-Control"] == "no-store"
     assert code["comparison_code"] not in response.text
     await setup.coordinator.drain()
+    assert setup.coordinator.receipt(setup.native, operation["operation_id"])["state"] == "waiting"
+    apply_initial_configuration(setup, pairing_id)
+    await setup.coordinator.reconcile(setup.native, operation["operation_id"])
+    await setup.coordinator.drain()
     assert setup.coordinator.receipt(setup.native, operation["operation_id"])["state"] == "completed"
+
+
+@pytest.mark.parametrize(('confirmation', 'other_revocation', 'ready'), [
+    ('099999', None, True),
+    ('100900', None, False),
+    ('099999', '100200', False),
+    ('099999', '099999', True),
+])
+def test_upgrade_matches_whole_millisecond_to_one_pin(tmp_path, confirmation, other_revocation, ready):
+    catalog = Path(auth.__file__).with_name('auth_sql')
+    previous = tmp_path / 'version54'
+    previous.mkdir()
+    for source in catalog.glob('*.sql'):
+        if int(source.name[:4]) <= 54:
+            copyfile(source, previous / source.name)
+    path = tmp_path / 'auth.sqlite3'
+    old = auth.SQLiteAuthenticationStore(path, migrations_dir=previous)
+    prefix = '2026-03-15T10:00:00.'
+    with old.database.transaction() as connection:
+        for key, confirmed, revoked in [('active', confirmation, None), ('old', '000000', other_revocation)]:
+            if key == 'old' and revoked is None:
+                continue
+            connection.execute(
+                'INSERT INTO agent_pairings (pairing_id,key_id,principal_id,creator_account_id,agent_installation_id,'
+                'external_issuer,external_subject,installation_id,public_key,key_fingerprint,created_at,confirmed_at,'
+                'revoked_at,companion_confirmation_method) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                (key, key, 'agent', 'creator', key, 'issuer', 'subject', 'install', b'key', 'fingerprint',
+                 prefix + '000000+00:00', prefix + confirmed + '+00:00',
+                 None if revoked is None else prefix + revoked + '+00:00', 'browser_verified'),
+            )
+        connection.execute(
+            'INSERT INTO onboarding_progress_outbox (milestone,event_id,occurred_at,onboarding_transaction_id,'
+            'organization_id,installation_id,correlation_id,next_attempt_at) VALUES (?,?,?,?,?,?,?,?)',
+            ('first-capture-ready', 'event', prefix + '100Z', 'transaction', 'org', 'install', 'request', prefix + '100Z'),
+        )
+    current = auth.SQLiteAuthenticationStore(path)
+    with current.database.read() as connection:
+        stamp = connection.execute("SELECT first_configuration_at FROM agent_pairings WHERE pairing_id='active'").fetchone()[0]
+    assert stamp == (prefix + '100999+00:00' if ready else None)

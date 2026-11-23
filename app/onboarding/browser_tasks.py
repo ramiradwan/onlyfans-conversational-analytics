@@ -181,6 +181,12 @@ class BrowserTasks:
                 "ORDER BY o.created_at,t.task_id", (parent["journey_id"], self.admissions._now())).fetchall()
             return [self.public(task) for task in tasks]
 
+    def current_notices(self, session):
+        # A completed browser task may still belong to a waiting native decision.
+        # Its helper can no longer offer an actionable recovery.
+        active = {task["task_id"] for task in self.current_native(session) if task["state"] != "completed"}
+        return self.helpers.notices(active)
+
     @staticmethod
     def public(task):
         return {name: task[name] for name in ("task_id", "journey_id", "operation_id", "purpose", "scope_digest",

@@ -60,16 +60,21 @@ export class DesktopSetupClient {
   notify(error = null, deliberate = false) {
     this.receive({ snapshot: this.value, pending: this.pending, connected: this.connected,
       error: error || this.protectedLaunchError || this.operationError?.reason || this.browserNotice || null, deliberate,
+      failedAction: !error && !this.protectedLaunchError ? this.operationError?.action : null,
       ...(this.intent?.operationId === this.pending ? { pendingAction: this.intent.action } : {}),
       browserLaunchPending: Boolean(this.launchOperation || this.protectedOpening),
       recoverySignInPending: Boolean(this.recoverySignIn),
       continuingProvider: this.providerContinuation?.provider ?? null });
   }
 
-  retireAuthenticationError() {
+  retireCompletedFeedback() {
     const feedback = this.operationError, value = this.value;
-    if (!feedback || !value || !['auth.select', 'auth.switch', 'account.connect'].includes(feedback.action)
-      || feedback.journey !== value.journey_id) return;
+    if (!feedback || !value || feedback.journey !== value.journey_id) return;
+    if (feedback.action === 'browser.pair' && value.local_ready && value.facts.pairing === 'verified') {
+      this.operationError = null;
+      return;
+    }
+    if (!['auth.select', 'auth.switch', 'account.connect'].includes(feedback.action)) return;
     const authentication = value.authentication;
     const sameChild = authentication?.browser_operation_id === feedback.operationId;
     const sameParent = feedback.parent !== null && authentication?.operation_id === feedback.parent;
@@ -87,7 +92,7 @@ export class DesktopSetupClient {
     this.operationError = { reason, action, operationId, journey: this.value?.journey_id,
       parent: authentication?.browser_operation_id === operationId ? authentication.operation_id
         : action === 'account.connect' ? operationId : null };
-    this.retireAuthenticationError();
+    this.retireCompletedFeedback();
   }
 
   returnFocus(completedOperation = null, terminalAuthentication = false) {
@@ -266,6 +271,8 @@ export class DesktopSetupClient {
       if (session.role !== 'desktop' || session.generation !== this.generation || !['setup', 'runtime'].includes(session.stage)
         || !/^[A-Za-z0-9_-]{43}$/u.test(session.csrf_token)) throw new Error('session_unavailable');
       this.session = session;
+      // A new stream sends only current helper notices. It may begin with none.
+      this.browserNotice = null;
       // The server subscribes before its first complete authoritative snapshot.
       await this.stream(this.request, this.headers(), controller.signal, (text) => {
         if (controller.signal.aborted) return;
@@ -276,7 +283,7 @@ export class DesktopSetupClient {
         if (this.value?.authentication?.authentication_attempt?.authentication_attempt_id !== value.authentication?.authentication_attempt?.authentication_attempt_id
           || value.authority_recovery_browser !== 'ready') this.protectedLaunchError = null;
         this.value = value;
-        this.retireAuthenticationError();
+        this.retireCompletedFeedback();
         const preparingSelection = this.intent?.initialAuthentication === true
           && this.intent.operationId === this.pending && this.launchOperation === this.pending
           && value.authentication?.state === 'selection-required' && value.authentication.authentication_attempt === null;

@@ -143,11 +143,8 @@ def attach_desktop_setup(application, *, core, launcher_token,
         return tasks.consume_protected(code,resolve=getattr(coordinator.owner,"resolve_browser_launch",None))
     protected_entry=consume_protected_entry if getattr(coordinator.owner,"resolve_browser_launch",None) is not None else None
     application.include_router(admission_router(admissions, launcher_token=launcher_token,protected_entry=protected_entry))
-    def notices(session):
-        return tasks.helpers.notices({task["task_id"] for task in tasks.current_native(session)})
-
     warm = None if ceremonies is None else getattr(ceremonies.client.transport, "warm", None)
-    application.include_router(desktop_router(coordinator, actor=actor, next_expiry=expiry, notices=notices, warm=warm))
+    application.include_router(desktop_router(coordinator, actor=actor, next_expiry=expiry, notices=tasks.current_notices, warm=warm))
     application.include_router(browser_router(coordinator, tasks, ceremonies, pairing=pairing))
     application.include_router(setup_surface_router())
     return coordinator

@@ -230,6 +230,8 @@ class RuntimeSetupOwner:
             else value.ceremonies.authentication.probe_interval(operation["operation_id"]))
 
     def confirmation_deadline(self, operation):
+        if operation["action"] == "browser.pair" and self.pairing is not None:
+            return self.pairing.confirmation_deadline(operation)
         owner = self._probe_owner(operation)
         if owner is None:
             return None

@@ -441,6 +441,23 @@ function manualScheduler() {
   };
 }
 
+test('a new pairing starts Full on its existing connection and a later consent change invalidates it', async () => {
+  const h = harness({ scheduler: manualScheduler() });
+  let connected = false;
+  h.controller.adapter.invalidate = () => { connected = false; };
+  h.controller.adapter.loadBrainBinding = async () => { if (!connected) throw Error('no live pairing'); };
+  h.permissionState.onlyFans = true;
+  await h.controller.setMode('full');
+  assert.equal(h.controller.phase, 'identity');
+  connected = true;
+  await h.controller.pairingCompleted();
+  assert.equal(h.controller.phase, 'full');
+  assert.equal(h.counters.starts, 1);
+  await h.controller.setMode('pause');
+  assert.equal(connected, false);
+  assert.equal(h.controller.allowsFullCapture(), false);
+});
+
 test('saved pairing retries binding with capped backoff without leaving identity, then starts full', async () => {
   const scheduler = manualScheduler();
   const h = harness({ scheduler, hasSavedPairing: async () => true });

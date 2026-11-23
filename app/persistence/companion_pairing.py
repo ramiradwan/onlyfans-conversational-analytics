@@ -143,6 +143,8 @@ class CompanionPin:
     confirmed_at: datetime
     opened_at: datetime
     expires_at: datetime
+    confirmation_method: str | None
+    first_configuration_at: datetime | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -885,13 +887,13 @@ class CompanionPairingPersistence:
             return self._optional_pin_in_transaction(connection, pairing_id)
 
     def current_pairing_state(
-        self, creator_account_id: str, *, connection=None
+        self, creator_account_id: str, *, connection=None, for_setup: bool = False
     ) -> Literal["missing", "unknown", "verified"]:
         """Report an account's pairing through the owning authority checks."""
         with (self.database.transaction() if connection is None else nullcontext(connection)) as current:
             now = self.authentication._now()
             rows = current.execute(
-                "SELECT pairing_id, pairing_generation FROM agent_pairings "
+                "SELECT pairing_id, pairing_generation, companion_confirmation_method, first_configuration_at FROM agent_pairings "
                 "WHERE creator_account_id = ? AND revoked_at IS NULL",
                 (creator_account_id,),
             ).fetchall()
@@ -909,6 +911,8 @@ class CompanionPairingPersistence:
                 return "verified"
         for row in rows:
             if row["pairing_generation"] is None:
+                continue
+            if for_setup and row["companion_confirmation_method"] == "browser_verified" and row["first_configuration_at"] is None:
                 continue
             try:
                 self.session_authority(
@@ -1405,6 +1409,8 @@ class CompanionPairingPersistence:
             confirmed_at=_parse_time(str(row["confirmed_at"])),
             opened_at=_parse_time(str(row["created_at"])),
             expires_at=_parse_time(str(row["companion_window_expires_at"])),
+            confirmation_method=row["companion_confirmation_method"],
+            first_configuration_at=_parse_time(row["first_configuration_at"]) if row["first_configuration_at"] else None,
         )
 
     def _pin_in_transaction(
