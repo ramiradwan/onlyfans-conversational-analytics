@@ -1152,6 +1152,33 @@ def ready_for_finalization(coordinator, owner, session):
 
 
 @pytest.mark.asyncio
+async def test_verified_setup_resumes_when_reopened_after_the_watcher_is_idle(setup, monkeypatch):
+    coordinator, owner, first, now = setup
+    journey = ready_for_finalization(coordinator, owner, first)
+    now[0] += timedelta(hours=1)
+    checked = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    original = coordinator._admit_automatic_finalization
+
+    def observe_first_check():
+        result = original()
+        loop.call_soon_threadsafe(checked.set)
+        return result
+
+    monkeypatch.setattr(coordinator, "_admit_automatic_finalization", observe_first_check)
+    coordinator.start()
+    try:
+        await asyncio.wait_for(checked.wait(), timeout=3)
+        assert not owner.calls
+        entry = coordinator.admissions.prepare_desktop(journey)
+        coordinator.admissions.consume(entry, role="desktop")
+        await asyncio.wait_for(owner.started.wait(), timeout=3)
+        assert [call[0]["action"] for call in owner.calls] == ["setup.finalize"]
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
 async def test_automatically_finalizes_verified_account_once_without_renderer_action(setup):
     from app.provisioning.events import events
     coordinator, owner, session, _ = setup
