@@ -8,7 +8,7 @@ import { FIXED_NOW, startHarness } from './capture.mjs';
 import { auditScrolling, installWatcher, readWatcher } from './shift-watcher.mjs';
 import { renderSurfaceState, SURFACE_STATES } from '../../extension/qualification/surface-fixtures.mjs';
 import { openActivationReview, publishActivation } from './desktop-decision-fixtures.mjs';
-import { measureDashboardMismatch, measureFindingsStates } from './review-contracts.mjs';
+import { measureDashboardMismatch, measureFindingsStates, measureOfferPrice } from './review-contracts.mjs';
 import { prepareFindings } from './screen-matrix.mjs';
 
 let browser, harness;
@@ -797,12 +797,18 @@ for (const mode of ['light', 'dark']) for (const width of [320, 390, 1440]) test
     assert.equal(geometry.trailingDivider, '0px');
     assert(geometry.quiet.length >= 2 && geometry.quiet.every(([color, padding, align]) => color === geometry.ink && padding === '0px' && align === 'start'));
     assert(geometry.fits);
+    await measureOfferPrice(offer, mode);
     if (width === 320) {
       assert(geometry.valuesShareLeftEdge);
       const title = offer.getByRole('heading');
       const before = await title.boundingBox();
       await offer.getByRole('button', { name: 'Use an activation code' }).scrollIntoViewIfNeeded();
       assert((await title.boundingBox()).y < before.y, 'Scrolling to the code entry moves the title with the rest of the offer');
+    }
+    await offer.getByRole('button', { name: 'Activate for free' }).focus();
+    for (const name of ['Not now', 'Use an activation code']) {
+      await page.keyboard.press('Tab');
+      assert(await offer.getByRole('button', { name }).evaluate(button => button === document.activeElement));
     }
     await offer.getByRole('button', { name: 'Use an activation code' }).click();
     const code = page.getByRole('dialog', { name: 'Use an activation code' });

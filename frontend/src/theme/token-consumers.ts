@@ -5,6 +5,34 @@ import ts from 'typescript';
 
 const buildModules = ['generate-theme', 'intent-contracts', 'color-validation', 'chart-qualification', 'token-consumers'];
 const financialCss = /--(?:bridge-palette|dipsy-intent|dipsy-color)-financial(?:-|\b)/;
+const offerPriceBinding = 'offerPriceColors';
+
+function isDefinitionElement(node: ts.Node, component: string): node is ts.JsxElement {
+  return ts.isJsxElement(node) && node.openingElement.attributes.properties.some(attribute =>
+    ts.isJsxAttribute(attribute) && attribute.name.getText() === 'component'
+      && attribute.initializer && ts.isStringLiteral(attribute.initializer) && attribute.initializer.text === component);
+}
+
+function isOfferPriceConsumer(node: ts.Identifier, filename: string): boolean {
+  if (!/(?:^|\/)src\/components\/CommercialActivationControls\.tsx$/.test(filename.replaceAll('\\', '/'))) return false;
+  const parent = node.parent;
+  if (ts.isImportSpecifier(parent)) {
+    const statement = parent.parent.parent.parent;
+    return !parent.propertyName && ts.isImportDeclaration(statement)
+      && ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text === '../theme/generated/tokens';
+  }
+  for (let ancestor = parent; ancestor; ancestor = ancestor.parent) {
+    if (!ts.isJsxAttribute(ancestor)) continue;
+    const tag = ancestor.parent.parent;
+    if (ancestor.name.getText() !== 'sx' || !ts.isJsxOpeningElement(tag)) return false;
+    const value = tag.parent, field = value.parent, row = field.parent;
+    return isDefinitionElement(value, 'span') && isDefinitionElement(field, 'dd') && ts.isJsxElement(row)
+      && row.children.some(child => isDefinitionElement(child, 'dt') && child.children.some(text =>
+        ts.isJsxText(text) && text.getText().trim() === 'Price'))
+      && value.children.some(child => ts.isJsxText(child) && child.getText().trim() === 'Free');
+  }
+  return false;
+}
 
 export function validateConsumerSource(source: string, filename: string): void {
   const fail = (message: string): never => { throw new Error(filename + ': ' + message); };
@@ -13,6 +41,8 @@ export function validateConsumerSource(source: string, filename: string): void {
   if (!/\.[cm]?[jt]sx?$/.test(filename)) return;
   const file = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, /[jt]sx$/.test(filename) ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   function visit(node: ts.Node): void {
+    if ((ts.isIdentifier(node) || ts.isStringLiteralLike(node)) && node.text === offerPriceBinding
+      && !(ts.isIdentifier(node) && isOfferPriceConsumer(node, filename))) fail('offer price tokens are local');
     if (ts.isPropertyAccessExpression(node) && ['accent', 'calm'].includes(node.name.text)
       && /(?:^|\.)palette$/.test(node.expression.getText(file))) fail('deprecated palette alias: use a product intent');
     if (ts.isStringLiteralLike(node) && /^(accent|calm)\./.test(node.text)) fail('deprecated palette alias: use a product intent');

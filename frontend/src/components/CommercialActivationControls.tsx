@@ -24,6 +24,7 @@ import {
 import { desktopOnboardingApi, selectAnalysisReadiness, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import { componentTokens, typography } from '../theme';
 import { OnboardingAction, OnboardingPill, OnboardingSpot, OnboardingStatus } from './ui/OnboardingCard';
+import { offerPriceColors } from '../theme/generated/tokens';
 
 const ACTIVATION_BODY = 'Conversation insights, like your most common topics, stored on this computer.';
 const ACTIVATION_PENDING = 'Checking your activation…';
@@ -529,7 +530,10 @@ export function CommercialActivationControls({
             }}>
               <div><Typography component="dt" variant="body2">Funding</Typography><Typography component="dd" variant="body2">Complimentary pilot</Typography></div>
               <div><Typography component="dt" variant="body2">Price</Typography><Typography component="dd" variant="body2">
-                <Typography component="span" variant="inherit" sx={{ color: 'text.primary' }}>Free</Typography>
+                <Typography component="span" variant="inherit" sx={[
+                  { display: 'inline-block', px: 0.75, borderRadius: '6px', bgcolor: offerPriceColors.light.fill, color: offerPriceColors.light.ink },
+                  theme => theme.applyStyles('dark', { bgcolor: offerPriceColors.dark.fill, color: offerPriceColors.dark.ink }),
+                ]}>Free</Typography>
                 <Typography component="span" variant="inherit" sx={{ display: 'block', color: 'text.secondary', fontWeight: 400 }}>
                   Uses {new Intl.NumberFormat().format(offer.pilot_credit_cost)} {offer.pilot_credit_cost === 1 ? 'pilot credit' : 'pilot credits'}
                 </Typography>

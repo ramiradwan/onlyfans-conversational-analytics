@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { reviewCases } from './ci/inventory.mjs';
+import { activationDecision, openActivationReview } from './desktop-decision-fixtures.mjs';
 import { measureFindingCopy, prepareFindings } from './screen-matrix.mjs';
 
 export function contrastAgainst(foreground, backdrop) {
@@ -16,6 +17,67 @@ export function assertStateHierarchy(rest, hovered, selected, paper) {
     const ranks = [rest, hovered, selected].map((state) => contrastAgainst(state[property], paper));
     assert(ranks[2] > ranks[1] && ranks[1] > ranks[0], `${property}: selected > hover > rest failed: ${ranks}`);
   }
+}
+
+export async function measureOfferPrice(dialog, mode) {
+  const authored = JSON.parse(await readFile(new URL('../../frontend/src/theme/tokens.json', import.meta.url), 'utf8'));
+  const measurement = await dialog.evaluate((node, expected) => {
+    const label = [...node.querySelectorAll('dt')].find(dt => dt.textContent === 'Price');
+    const field = label?.nextElementSibling;
+    if (field?.tagName !== 'DD' || field.children.length !== 2) throw new Error('Expected a price and credit count in the Price definition');
+    const [value, credits] = field.children;
+    const probe = document.createElement('span');
+    probe.hidden = true;
+    node.append(probe);
+    const srgb = color => {
+      probe.style.color = `color(from ${color} srgb r g b / alpha)`;
+      const resolved = getComputedStyle(probe).color;
+      const match = /^color\(srgb ([\d.e+-]+) ([\d.e+-]+) ([\d.e+-]+)(?: \/ ([\d.e+-]+))?\)$/.exec(resolved);
+      if (!match) throw new Error('Expected computed sRGB for the offer field');
+      return [...match.slice(1, 4).map(channel => Number(channel) * 255), Number(match[4] ?? 1)];
+    };
+    try {
+      const style = getComputedStyle(value), quiet = getComputedStyle(credits);
+      const fieldStyle = getComputedStyle(field), paper = getComputedStyle(node);
+      const box = value.getBoundingClientRect(), caption = credits.getBoundingClientRect(), area = field.getBoundingClientRect();
+      const text = document.createRange();
+      text.selectNodeContents(value);
+      return {
+        value: value.textContent, credits: credits.textContent,
+        ink: srgb(style.color), fill: srgb(style.backgroundColor),
+        expected: expected && { ink: srgb(expected.ink), fill: srgb(expected.fill) },
+        creditInk: srgb(quiet.color), creditFill: srgb(quiet.backgroundColor),
+        labelInk: srgb(getComputedStyle(label).color),
+        fieldFill: srgb(fieldStyle.backgroundColor), paper: srgb(paper.backgroundColor),
+        fieldGradient: fieldStyle.backgroundImage, paperGradient: paper.backgroundImage,
+        valueGradient: style.backgroundImage, creditGradient: quiet.backgroundImage,
+        fits: box.left >= area.left && box.right <= area.right && box.bottom <= caption.top
+          && credits.scrollWidth <= credits.clientWidth,
+        padding: box.width - text.getBoundingClientRect().width,
+        cursor: style.cursor, decoration: style.textDecorationLine,
+        noninteractive: value.tagName === 'SPAN'
+          && !field.querySelector('a, button, input, select, textarea, [role], [tabindex], [contenteditable]'),
+      };
+    } finally { probe.remove(); }
+  }, authored.tier3.offerPrice?.[mode]);
+  assert.equal(measurement.value, 'Free');
+  assert.equal(measurement.credits, `Uses ${activationDecision.offer.pilot_credit_cost} pilot credit`);
+  assert.equal(measurement.fill[3], 1, 'Price value must have an opaque fill');
+  assert.equal(measurement.ink[3], 1);
+  assert.equal(measurement.paper[3], 1);
+  assert.equal(measurement.creditFill[3], 0, 'Credits must sit on paper');
+  assert.equal(measurement.fieldFill[3], 0, 'The Price definition must sit on paper');
+  for (const key of ['fieldGradient', 'paperGradient', 'valueGradient', 'creditGradient']) assert.equal(measurement[key], 'none');
+  assert.deepEqual(measurement.creditInk, measurement.labelInk, 'Credit text must use the surrounding muted ink');
+  assert(measurement.fits && measurement.padding > 0 && measurement.padding <= 16, 'Price value and credit count fit separately');
+  assert(measurement.noninteractive && measurement.cursor === 'auto' && measurement.decoration === 'none', 'Price is display-only');
+  const priceContrast = contrastAgainst(measurement.ink, measurement.fill);
+  const creditContrast = contrastAgainst(measurement.creditInk, measurement.paper);
+  assert(priceContrast >= 11, `${mode} offer price field contrast ${priceContrast}:1 is below 11:1`);
+  assert(creditContrast >= 4.5, `${mode} offer credit text contrast ${creditContrast}:1 is below 4.5:1`);
+  const { expected, ...rendered } = measurement;
+  assert.deepEqual({ ink: rendered.ink, fill: rendered.fill }, expected, `Offer price must render the ${mode} pair`);
+  return { mode, ...rendered, priceContrast, creditContrast };
 }
 export const near = (value, expected, label, tolerance = 0.6) => assert(Math.abs(value - expected) <= tolerance, `${label}: ${value}, expected ${expected}`);
 async function appearance(locator) {
@@ -576,7 +638,18 @@ export async function captureReviewChecks(browser, base, outDir, recorder = null
         assert.equal((await appearance(page.locator('[data-freshness-glyph="dot"]').filter({ visible: true }))).animation, 'none');
         const passkeyLayouts = await measureTrustPasskeys(page, open, mode, screenshot);
         const dashboardLayouts = await measureDashboardOnboarding(page, open);
-        return { avatar, timestamp, status, passkeyLayouts, dashboardLayouts };
+        const offerPrices = [];
+        const previousViewport = page.viewportSize();
+        for (const [width, height, scale] of [[1440, 900, 1], [390, 844, 1], [320, 900, 2]]) {
+          await page.setViewportSize({ width, height });
+          await open('settings', 'fresh');
+          if (scale === 2) await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+          await openActivationReview(page);
+          const dialog = page.getByRole('dialog', { name: 'Activate Full analytics' });
+          offerPrices.push({ width, height, scale, ...await measureOfferPrice(dialog, mode) });
+        }
+        await page.setViewportSize(previousViewport);
+        return { avatar, timestamp, status, passkeyLayouts, dashboardLayouts, offerPrices };
       });
       await record(`${mode}: bounded motion and reduced-motion suppression`, async () => {
         await page.emulateMedia({ reducedMotion: 'no-preference' }); await open('analytics', 'model');

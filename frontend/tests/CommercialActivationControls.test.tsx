@@ -58,7 +58,7 @@ it('opens a focused activation code dialog and returns focus on cancel and Escap
   expect(api.redeem).not.toHaveBeenCalled();
 });
 
-it('uses admitted offer terms and ordinary ink in both schemes without exposing sign-in identity', async () => {
+it('fills only the admitted price value and preserves terms and sign-in privacy', async () => {
   const fixture = withDecision();
   const snapshot = fixture.api.getState().snapshot!;
   const label = { creator_id: 'offer-creator-id', display_name: 'Offer name sentinel', username: 'offer-handle-sentinel', initials: 'ZZ' };
@@ -90,8 +90,20 @@ it('uses admitted offer terms and ordinary ink in both schemes without exposing 
     expect(new Color(text.primary).contrast(background.paper, 'WCAG21')).toBeGreaterThanOrEqual(4.5);
     expect(new Color(text.secondary).contrast(background.paper, 'WCAG21')).toBeGreaterThanOrEqual(4.5);
   }
-  expect(getComputedStyle(price).color).toBe('var(--bridge-palette-text-primary)');
-  expect(getComputedStyle(dialog.getByText('Uses 3 pilot credits')).color).toBe('var(--bridge-palette-text-secondary)');
+  const priceField = price.closest('dd')!;
+  const credits = dialog.getByText('Uses 3 pilot credits');
+  expect(priceField.previousElementSibling?.textContent).toBe('Price');
+  expect(Array.from(priceField.children)).toEqual([price, credits]);
+  expect(priceField.querySelector('a, button, [role], [tabindex], [contenteditable]')).toBeNull();
+  expect(price.tagName).toBe('SPAN');
+  expect(getComputedStyle(priceField).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+  expect(getComputedStyle(credits).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+  expect(getComputedStyle(credits).color).toBe('var(--bridge-palette-text-secondary)');
+  const priceStyle = getComputedStyle(price);
+  expect(priceStyle.backgroundColor).toMatch(/^oklch\(/);
+  expect(priceStyle.color).toMatch(/^oklch\(/);
+  expect(priceStyle.display).toBe('inline-block');
+  expect(priceStyle.borderRadius).toBe('6px');
   expect(getComputedStyle(price.closest('.MuiDialog-paper')!).backgroundColor).toBe('var(--bridge-palette-background-paper)');
 });
 
