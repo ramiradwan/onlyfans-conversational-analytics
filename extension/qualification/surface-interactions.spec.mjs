@@ -222,9 +222,19 @@ test('popup reports an unavailable status without claiming reconnection is still
 test('options keeps its unavailable heading without offering a retry action', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.connection, surface: 'options', runtimeUnavailable: true });
   await expect(page.locator('#runtime-unavailable')).toBeVisible();
-  await expect(page.locator('#runtime-title')).toHaveText('The extension is reconnecting');
+  await expect(page.locator('#runtime-title')).toHaveText('Extension status is unavailable');
   await expect(page.locator('#runtime-unavailable button, #runtime-unavailable p')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Try again', exact: true })).toHaveCount(0);
+});
+
+test('options describes reconnection only while the current port recovery is running', async ({ page }) => {
+  await page.clock.install();
+  await renderSurfaceState(page, { ...SURFACE_STATES.connection, runtimeUnavailable: true, portUnavailable: true });
+  const title = page.locator('#runtime-title');
+  await expect(title).toHaveText('The extension is reconnecting');
+  await page.clock.runFor(1700);
+  await expect(title).toHaveText('Extension status is unavailable');
+  await expect(page.locator('#runtime-unavailable button')).toHaveCount(0);
 });
 
 test('popup uses pause and resume commands without changing the selected mode', async ({ page }) => {
@@ -394,6 +404,7 @@ for (const width of [320, 390, 600]) {
       }, scale);
       await page.locator('#open-connection-details').click();
       const dialog = page.locator('#connection-details-dialog');
+      await expect(page.locator('#capture-health + .reserved-empty')).toHaveText('Full analytics could not start. Open the desktop app.');
       const boxes = () => dialog.evaluate((node) => [node, ...node.querySelectorAll('h2, dl, dt, dd, p, form, button')]
         .map((element) => {
           const rect = element.getBoundingClientRect();
@@ -405,7 +416,7 @@ for (const width of [320, 390, 600]) {
         [{ startup_error_code: null, capture_drop_counts: { unavailable: Number.MAX_SAFE_INTEGER } },
           `${new Intl.NumberFormat('en-US').format(Number.MAX_SAFE_INTEGER)} updates could not be recorded.`],
         [{ startup_error_code: 'startup_failed', capture_drop_counts: {} },
-          'Full analytics could not start. Open the desktop app, then retry in setup.'],
+          'Full analytics could not start. Open the desktop app.'],
       ];
       const historyStates = [
         [{ browser_tab_sleeping: false, history_error_code: null }, ''],
@@ -643,6 +654,29 @@ test('blocked analysis offers the desktop app without a competing repair workflo
   await expect(page.locator('#desktop-entry')).toBeVisible();
   await expect(page.locator('#open-desktop')).toBeEnabled();
   await expect(page.locator('#journey-card')).toBeHidden();
+});
+
+test('a failed popup command reports the failure without a generic retry instruction', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.full_ready);
+  await page.evaluate(() => {
+    const send = chrome.runtime.sendMessage;
+    chrome.runtime.sendMessage = async (message) => message.type === 'ofca.ui.open-surface'
+      ? { ok: false } : send(message);
+  });
+  await page.locator('#journey-primary').click();
+  await expect(page.locator('#feedback')).toHaveText('That did not complete.');
+});
+
+test('unavailable popup activation keeps its setup route and never offers a retry', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.full_ready, commercial: 'unavailable', ready: false });
+  await expect(page.locator('#journey-title')).toHaveText('Needs attention');
+  await expect(page.locator('#journey-body')).toHaveText('Activation could not be checked.');
+  await expect(page.getByRole('button', { name: 'Check again', exact: true })).toHaveCount(0);
+  await expect(page.locator('#journey-primary')).toHaveText('Continue in the desktop app');
+  await page.locator('#journey-primary').click();
+  expect((await calls(page)).filter(call => call.type === 'ofca.ui.open-surface')).toEqual([
+    { type: 'ofca.ui.open-surface', surface: 'setup', section: 'full' },
+  ]);
 });
 
 test('popup readiness follows connection loss without leaving a stale ready claim', async ({ page }) => {

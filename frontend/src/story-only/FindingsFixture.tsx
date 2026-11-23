@@ -9,6 +9,7 @@ import publishedEvidence from '../../../shared/analytics/findings-evidence.v1.js
 import publishedResponse from '../../../shared/analytics/findings-response.v1.json';
 import type { AccountRef } from '../analytics/analyticsContract';
 import type { FindingsBaseline } from '../analytics/analyticsReadModel';
+import { FindingsClientError } from '../analytics/findingsClient';
 import { parseFindings, parseGroupedFindings } from '../analytics/findingsContract';
 import { parseLiterals } from '../analytics/literalsContract';
 import { parseSourceEvidence } from '../analytics/questionContract';
@@ -17,7 +18,7 @@ import { createFindingsStore } from '../store/findingsStore';
 import { createLiteralsStore } from '../store/literalsStore';
 import { createBridgeTransportStore } from '../store/transportStore';
 
-export function FindingsFixture({ kind = 'synthetic' }: { kind?: 'synthetic' | 'published' | 'comparison' }) {
+export function FindingsFixture({ kind = 'synthetic', pending = false }: { kind?: 'synthetic' | 'published' | 'comparison'; pending?: boolean }) {
   const wire = kind === 'comparison' ? publishedComparison : publishedResponse;
   const baseline: FindingsBaseline = useMemo(() => kind === 'synthetic' ? findingsBaselineFixture : {
     account_ref: wire.account_ref as AccountRef, source_revision: wire.source_revision,
@@ -28,12 +29,15 @@ export function FindingsFixture({ kind = 'synthetic' }: { kind?: 'synthetic' | '
     requested_window: { scope: 'requested', start: wire.requested_window.start, end: wire.requested_window.end },
   }, [kind, wire]);
   const controller = useMemo(() => createFindingsStore({
-    read: async (request) => request.view === 'grouped'
-      ? parseGroupedFindings(await groupedFindingsResponse(request), request)
-      : parseFindings(kind === 'synthetic' ? (request.category_filter ? findingsFilteredResponse(request) : findingsResponse(request)) : wire, request),
+    read: async (request) => {
+      if (pending) throw new FindingsClientError('building', 'Saved findings aren’t ready yet.');
+      return request.view === 'grouped'
+        ? parseGroupedFindings(await groupedFindingsResponse(request), request)
+        : parseFindings(kind === 'synthetic' ? (request.category_filter ? findingsFilteredResponse(request) : findingsResponse(request)) : wire, request);
+    },
     context: async () => { throw new Error('Surrounding messages are unavailable in this fixture.'); },
     evidence: async (reference) => kind === 'synthetic' ? findingsSource(reference) : parseSourceEvidence(publishedEvidence.resolved_evidence, reference),
-  }, { view: kind === 'synthetic' ? 'grouped' : null }), [kind, wire]);
+  }, { view: kind === 'synthetic' ? 'grouped' : null }), [kind, pending, wire]);
   const literalsController = useMemo(() => createLiteralsStore({
     read: async (request) => {
       if (kind !== 'synthetic') throw new Error('Only recorded findings are available in this fixture.');

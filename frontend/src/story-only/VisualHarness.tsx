@@ -178,7 +178,7 @@ document.documentElement.setAttribute('data-mui-color-scheme', mode);
 export function VisualHarness() {
   if (params.get('stability') === 'notice') return <ThemeProvider theme={theme} defaultMode={mode} disableTransitionOnChange><CssBaseline /><NoticeFixture /></ThemeProvider>;
   if (params.get('stability') === 'freshness') return <ThemeProvider theme={theme} defaultMode={mode} disableTransitionOnChange><CssBaseline /><FreshnessFixture /></ThemeProvider>;
-  if (params.get('stability') === 'findings') return <ThemeProvider theme={theme} defaultMode={mode} disableTransitionOnChange><CssBaseline /><FindingsFixture /></ThemeProvider>;
+  if (params.get('stability') === 'findings') return <ThemeProvider theme={theme} defaultMode={mode} disableTransitionOnChange><CssBaseline /><FindingsFixture pending={params.get('state') === 'pending'} /></ThemeProvider>;
   if (params.get('stability') === 'findings-published') return <ThemeProvider theme={theme} defaultMode={mode} disableTransitionOnChange><CssBaseline /><FindingsFixture kind="published" /></ThemeProvider>;
   if (params.get('stability') === 'findings-comparison') return <ThemeProvider theme={theme} defaultMode={mode} disableTransitionOnChange><CssBaseline /><FindingsFixture kind="comparison" /></ThemeProvider>;
   if (workspace) {

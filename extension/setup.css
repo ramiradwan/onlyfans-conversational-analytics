@@ -499,6 +499,11 @@
 .onboarding-icon[data-icon="error"], .onboarding-icon[data-icon="attention"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M11%2015h2v2h-2zm0-8h2v6h-2zm.99-5C6.47%202%202%206.48%202%2012s4.47%2010%209.99%2010C17.52%2022%2022%2017.52%2022%2012S17.52%202%2011.99%202M12%2020c-4.42%200-8-3.58-8-8s3.58-8%208-8%208%203.58%208%208-3.58%208-8%208%22%2F%3E%3C%2Fsvg%3E"); }
 .onboarding-icon[data-icon="info"] { --onboarding-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M11%207h2v2h-2zm0%204h2v6h-2zm1-9C6.48%202%202%206.48%202%2012s4.48%2010%2010%2010%2010-4.48%2010-10S17.52%202%2012%202m0%2018c-4.41%200-8-3.59-8-8s3.59-8%208-8%208%203.59%208%208-3.59%208-8%208%22%2F%3E%3C%2Fsvg%3E"); }
 /* onboarding-layout:end */
+[data-support-help] { min-inline-size: 0; overflow-wrap: anywhere; }
+[data-support-help] > h3 { margin: 0 0 8px; font-size: var(--dipsy-static-body-size); }
+[data-support-help] > ul { margin: 0; padding: 0; list-style: none; }
+[data-support-help] li > span { user-select: text; }
+
 body[data-surface="setup"], body[data-surface="options"] {
   width: auto; min-width: 0; max-width: none;
   padding: 40px 32px; overflow-wrap: anywhere;
@@ -660,6 +665,12 @@ body.onboarding-workspace > main { max-width: none; padding: 28px; }
 }
 .onboarding-workspace #background-tab-note .onboarding-icon { margin-block-start: max(0px, calc((1lh - 20px) / 2)); }
 .onboarding-workspace #reopen-background-tab { padding: 8px 12px; }
+@media (min-width: 800px) {
+  .onboarding-workspace .background-tab-row { display: grid; }
+  .onboarding-workspace #reopen-background-tab {
+    padding-block: clamp(0px, calc((var(--dipsy-static-control-height) - 1lh) / 2 - var(--dipsy-border-thin)), 8px);
+  }
+}
 .onboarding-workspace #pause { width: auto; padding-inline: 4px; border: 0; background: transparent; color: var(--dipsy-color-primary); }
 .onboarding-workspace .start-option { padding-block: 16px; }
 .onboarding-workspace .start-option + .start-option { border-block-start: var(--dipsy-border-thin) solid var(--dipsy-color-divider); }

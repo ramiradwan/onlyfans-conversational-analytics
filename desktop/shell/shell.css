@@ -17,6 +17,10 @@ desktop-window-controls { flex: 0 0 auto; margin-inline-start: auto; app-region:
 .spot-tile svg { display: block; inline-size: 20px; block-size: 20px; }
 h1 { margin: 0; font-size: clamp(1.375rem, 1.1rem + .9vw, 1.75rem); font-weight: 600; line-height: 1.25; letter-spacing: -.015em; text-wrap: balance; }
 .startup-card > p { max-inline-size: 60ch; margin: 8px 0 0; color: var(--dipsy-color-text-secondary); font-size: 1rem; line-height: 1.5; }
+.startup-card > [data-support-help] { margin-block-start: 16px; min-inline-size: 0; overflow-wrap: anywhere; }
+[data-support-help] > h2 { margin: 0 0 8px; font-size: 1rem; font-weight: var(--dipsy-font-weight-semibold); }
+[data-support-help] > ul { margin: 0; padding: 0; list-style: none; }
+[data-support-help] li > span { user-select: text; }
 .status-line { display: flex; align-items: flex-start; gap: 10px; min-block-size: var(--dipsy-static-control-height); margin-block-start: 16px; padding-block: max(0px, calc((var(--dipsy-static-control-height) - 1lh) / 2)); font-size: .9375rem; line-height: 1.5; }
 .status-icon { display: grid; place-items: center; flex: none; inline-size: 20px; block-size: 1lh; color: var(--dipsy-color-primary); }
 .status-icon .si-pending { display: block; inline-size: 20px; block-size: 20px; animation: status-rotate 1s linear infinite; }

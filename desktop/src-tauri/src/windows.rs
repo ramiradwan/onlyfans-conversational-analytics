@@ -296,6 +296,21 @@ impl RootOwnership {
     pub fn primary(&self) -> bool {
         self.owned
     }
+
+    pub fn continue_startup(
+        &self,
+        names: &crate::deployment::InstanceNames,
+        executable: &Path,
+        activation: Option<&[String]>,
+    ) -> Result<bool> {
+        if self.primary() {
+            return Ok(true);
+        }
+        if let Some(args) = activation {
+            forward_instance(names, executable, args)?;
+        }
+        Ok(false)
+    }
 }
 impl Drop for RootOwnership {
     fn drop(&mut self) {

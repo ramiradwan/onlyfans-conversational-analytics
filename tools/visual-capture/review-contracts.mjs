@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { reviewCases } from './ci/inventory.mjs';
+import { activationDecision, openActivationReview } from './desktop-decision-fixtures.mjs';
+import { measureFindingCopy, prepareFindings } from './screen-matrix.mjs';
 
 export function contrastAgainst(foreground, backdrop) {
   const rgb = foreground.slice(0, 3).map((c, i) => (c * foreground[3] + backdrop[i] * (1 - foreground[3])) / 255);
@@ -15,6 +17,67 @@ export function assertStateHierarchy(rest, hovered, selected, paper) {
     const ranks = [rest, hovered, selected].map((state) => contrastAgainst(state[property], paper));
     assert(ranks[2] > ranks[1] && ranks[1] > ranks[0], `${property}: selected > hover > rest failed: ${ranks}`);
   }
+}
+
+export async function measureOfferPrice(dialog, mode) {
+  const authored = JSON.parse(await readFile(new URL('../../frontend/src/theme/tokens.json', import.meta.url), 'utf8'));
+  const measurement = await dialog.evaluate((node, expected) => {
+    const label = [...node.querySelectorAll('dt')].find(dt => dt.textContent === 'Price');
+    const field = label?.nextElementSibling;
+    if (field?.tagName !== 'DD' || field.children.length !== 2) throw new Error('Expected a price and credit count in the Price definition');
+    const [value, credits] = field.children;
+    const probe = document.createElement('span');
+    probe.hidden = true;
+    node.append(probe);
+    const srgb = color => {
+      probe.style.color = `color(from ${color} srgb r g b / alpha)`;
+      const resolved = getComputedStyle(probe).color;
+      const match = /^color\(srgb ([\d.e+-]+) ([\d.e+-]+) ([\d.e+-]+)(?: \/ ([\d.e+-]+))?\)$/.exec(resolved);
+      if (!match) throw new Error('Expected computed sRGB for the offer field');
+      return [...match.slice(1, 4).map(channel => Number(channel) * 255), Number(match[4] ?? 1)];
+    };
+    try {
+      const style = getComputedStyle(value), quiet = getComputedStyle(credits);
+      const fieldStyle = getComputedStyle(field), paper = getComputedStyle(node);
+      const box = value.getBoundingClientRect(), caption = credits.getBoundingClientRect(), area = field.getBoundingClientRect();
+      const text = document.createRange();
+      text.selectNodeContents(value);
+      return {
+        value: value.textContent, credits: credits.textContent,
+        ink: srgb(style.color), fill: srgb(style.backgroundColor),
+        expected: expected && { ink: srgb(expected.ink), fill: srgb(expected.fill) },
+        creditInk: srgb(quiet.color), creditFill: srgb(quiet.backgroundColor),
+        labelInk: srgb(getComputedStyle(label).color),
+        fieldFill: srgb(fieldStyle.backgroundColor), paper: srgb(paper.backgroundColor),
+        fieldGradient: fieldStyle.backgroundImage, paperGradient: paper.backgroundImage,
+        valueGradient: style.backgroundImage, creditGradient: quiet.backgroundImage,
+        fits: box.left >= area.left && box.right <= area.right && box.bottom <= caption.top
+          && credits.scrollWidth <= credits.clientWidth,
+        padding: box.width - text.getBoundingClientRect().width,
+        cursor: style.cursor, decoration: style.textDecorationLine,
+        noninteractive: value.tagName === 'SPAN'
+          && !field.querySelector('a, button, input, select, textarea, [role], [tabindex], [contenteditable]'),
+      };
+    } finally { probe.remove(); }
+  }, authored.tier3.offerPrice?.[mode]);
+  assert.equal(measurement.value, 'Free');
+  assert.equal(measurement.credits, `Uses ${activationDecision.offer.pilot_credit_cost} pilot credit`);
+  assert.equal(measurement.fill[3], 1, 'Price value must have an opaque fill');
+  assert.equal(measurement.ink[3], 1);
+  assert.equal(measurement.paper[3], 1);
+  assert.equal(measurement.creditFill[3], 0, 'Credits must sit on paper');
+  assert.equal(measurement.fieldFill[3], 0, 'The Price definition must sit on paper');
+  for (const key of ['fieldGradient', 'paperGradient', 'valueGradient', 'creditGradient']) assert.equal(measurement[key], 'none');
+  assert.deepEqual(measurement.creditInk, measurement.labelInk, 'Credit text must use the surrounding muted ink');
+  assert(measurement.fits && measurement.padding > 0 && measurement.padding <= 16, 'Price value and credit count fit separately');
+  assert(measurement.noninteractive && measurement.cursor === 'auto' && measurement.decoration === 'none', 'Price is display-only');
+  const priceContrast = contrastAgainst(measurement.ink, measurement.fill);
+  const creditContrast = contrastAgainst(measurement.creditInk, measurement.paper);
+  assert(priceContrast >= 11, `${mode} offer price field contrast ${priceContrast}:1 is below 11:1`);
+  assert(creditContrast >= 4.5, `${mode} offer credit text contrast ${creditContrast}:1 is below 4.5:1`);
+  const { expected, ...rendered } = measurement;
+  assert.deepEqual({ ink: rendered.ink, fill: rendered.fill }, expected, `Offer price must render the ${mode} pair`);
+  return { mode, ...rendered, priceContrast, creditContrast };
 }
 export const near = (value, expected, label, tolerance = 0.6) => assert(Math.abs(value - expected) <= tolerance, `${label}: ${value}, expected ${expected}`);
 async function appearance(locator) {
@@ -198,6 +261,88 @@ async function textLines(locator) {
   });
 }
 
+export async function measureFindingsStates(page, base, mode, viewport) {
+  const open = async state => {
+    await page.goto(`${base}?stability=findings&state=${state}&mode=${mode}`);
+    await page.evaluate(() => document.fonts.ready);
+  };
+  await open('saved');
+  const first = await measureFindingCopy(page, viewport);
+  const card = page.locator('[data-visual="findings-summary"]');
+  const cardAnchor = () => card.evaluate(node => {
+    const { x, y, width } = node.getBoundingClientRect();
+    return { x, y: y + scrollY, width };
+  });
+  const firstCard = await cardAnchor();
+  const refresh = page.getByRole('button', { name: 'Refresh saved findings', exact: true });
+  await refresh.press('Enter');
+  const seen = await measureFindingCopy(page, viewport, 'seen');
+  assert(await refresh.evaluate(node => node === document.activeElement && node.matches(':focus-visible')));
+  const seenCard = await cardAnchor();
+  for (const axis of ['x', 'y', 'width']) near(seenCard[axis], firstCard[axis], `Seen findings card ${axis}`);
+  for (const part of Object.keys(first)) {
+    near(seen[part].x, first[part].x, `Seen findings ${part} x`);
+    if (viewport.width === 1440) near(seen[part].y, first[part].y, `Seen findings ${part} y`);
+  }
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await open('pending');
+  const pending = await measureFindingCopy(page, viewport, 'pending');
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  return { width: viewport.width, first, seen, pending };
+}
+
+export async function measureDashboardMismatch(page, open, width, scale) {
+  await page.setViewportSize({ width, height: 900 });
+  await open('home');
+  await page.evaluate(value => { document.documentElement.style.fontSize = `${value * 100}%`; }, scale);
+  const overview = page.getByRole('region', { name: 'Overview', exact: true });
+  const overviewBefore = await appearance(overview);
+  const dashboard = page.getByRole('heading', { name: 'Dashboard', level: 1, exact: true });
+  const dashboardBefore = await appearance(dashboard);
+  const task = page.locator('[data-reserved-region="dashboard-setup"] [data-dashboard-task-part^="activation:"]');
+  const heading = task.getByRole('heading', { name: 'Full analytics unavailable', exact: true });
+  const status = task.locator('.onboarding-status[role="status"]');
+  const metrics = [];
+  for (const [account, message] of [
+    ['verified', 'Switch to the OnlyFans account you used for setup.'],
+    ['unknown', 'Sign in to the OnlyFans account you want to connect.'],
+  ]) {
+    await page.evaluate(account => window.__workspaceFixture.desktopSnapshot({
+      facts: { account }, creator_label: null, decision: null, decision_status: null, allowed_actions: ['activation.review'],
+      analysis_readiness: { availability: 'current', creator_account_id: window.__workspaceFixture.state().creatorAccountId,
+        value: { schema: 'ofca-analysis-readiness/v1', commercial_authority: 'required', analysis_admission: 'blocked' } },
+      pending_operations: [{ operation_id: '22222222-2222-4222-8222-222222222222', action: 'activation.review',
+        state: 'outcome_unknown', reason: 'account_mismatch' }],
+    }), account);
+    await heading.waitFor({ timeout: 5000 });
+    const messageNode = status.getByText(message, { exact: true });
+    await messageNode.waitFor();
+    const titleLines = await textLines(heading);
+    const body = await task.locator(':scope > p').all();
+    const bodies = await Promise.all(body.map(textLines));
+    const bodyLines = bodies.reduce((sum, lines) => sum + lines.count, 0);
+    const statusLines = await textLines(messageNode);
+    assert(titleLines.fits && bodies.every(lines => lines.fits) && statusLines.fits, 'Dashboard mismatch copy clips');
+    assert(await status.evaluate(node => node.scrollWidth <= node.clientWidth && node.scrollHeight <= node.clientHeight), 'Dashboard mismatch status clips');
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Dashboard mismatch overflows the page');
+    assert.equal(await task.getByRole('button').count(), 0);
+    near((await appearance(task)).x, dashboardBefore.x, 'Mismatch card left edge');
+    const overviewAfter = await appearance(overview);
+    const dashboardAfter = await appearance(dashboard);
+    for (const dimension of ['x', 'y', 'width', 'height']) {
+      near(overviewAfter[dimension], overviewBefore[dimension], `Overview ${dimension} after mismatch`);
+      near(dashboardAfter[dimension], dashboardBefore[dimension], `Dashboard heading ${dimension} after mismatch`);
+    }
+    if (width === 1440) {
+      assert.equal(titleLines.count, 1);
+      assert(bodyLines <= 2);
+      assert.equal(statusLines.count, 1);
+    } else if (scale === 2) assert(statusLines.count > 1, 'Narrow Dashboard mismatch must wrap');
+    metrics.push({ account, title: titleLines.count, body: bodyLines, status: statusLines.count });
+  }
+  return metrics;
+}
+
 export async function measureDashboardOnboarding(page, open) {
   const layouts = [];
   for (const [width, scale] of [[1440, 1], [390, 1], [320, 2]]) {
@@ -307,7 +452,8 @@ export async function measureDashboardOnboarding(page, open) {
       await page.evaluate(() => window.__workspaceFixture.browser({ history_error_code: 'software_update_required' }));
       await verifyStatus('Update Conversation Analytics to continue.', 'attention');
     }
-    layouts.push({ width, scale, titleLines, bodyLines, basisLines });
+    const mismatch = await measureDashboardMismatch(page, open, width, scale);
+    layouts.push({ width, scale, titleLines, bodyLines, basisLines, mismatch });
   }
 
   await page.emulateMedia({ reducedMotion: 'no-preference' });
@@ -492,7 +638,18 @@ export async function captureReviewChecks(browser, base, outDir, recorder = null
         assert.equal((await appearance(page.locator('[data-freshness-glyph="dot"]').filter({ visible: true }))).animation, 'none');
         const passkeyLayouts = await measureTrustPasskeys(page, open, mode, screenshot);
         const dashboardLayouts = await measureDashboardOnboarding(page, open);
-        return { avatar, timestamp, status, passkeyLayouts, dashboardLayouts };
+        const offerPrices = [];
+        const previousViewport = page.viewportSize();
+        for (const [width, height, scale] of [[1440, 900, 1], [390, 844, 1], [320, 900, 2]]) {
+          await page.setViewportSize({ width, height });
+          await open('settings', 'fresh');
+          if (scale === 2) await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+          await openActivationReview(page);
+          const dialog = page.getByRole('dialog', { name: 'Activate Full analytics' });
+          offerPrices.push({ width, height, scale, ...await measureOfferPrice(dialog, mode) });
+        }
+        await page.setViewportSize(previousViewport);
+        return { avatar, timestamp, status, passkeyLayouts, dashboardLayouts, offerPrices };
       });
       await record(`${mode}: bounded motion and reduced-motion suppression`, async () => {
         await page.emulateMedia({ reducedMotion: 'no-preference' }); await open('analytics', 'model');
@@ -502,7 +659,14 @@ export async function captureReviewChecks(browser, base, outDir, recorder = null
           assert(parseFloat(style.duration) + parseFloat(style.delay) <= 0.321, 'motion exceeds spatial duration'); }
         await page.emulateMedia({ reducedMotion: 'reduce' });
         for (const selector of selectors) assert.equal((await appearance(page.locator(selector).first())).animation, 'none');
-        return animations;
+        const findings = [];
+        await prepareFindings(page, true);
+        for (const [width, height] of [[1440, 900], [390, 844], [320, 900]]) {
+          const viewport = { width, height };
+          await page.setViewportSize(viewport);
+          findings.push(await measureFindingsStates(page, base, mode, viewport));
+        }
+        return { animations, findings };
       });
     } finally { await context.close(); }
   }

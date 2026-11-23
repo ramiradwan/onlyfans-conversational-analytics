@@ -228,6 +228,14 @@ pub fn show_recovery(reason: RecoveryReason) -> Result<RecoveryAction, &'static 
     }
 }
 
+pub(super) fn failure_dialog_config() -> windows_sys::Win32::UI::Controls::TASKDIALOGCONFIG {
+    use windows_sys::Win32::UI::Controls::{TASKDIALOGCONFIG, TDCBF_CLOSE_BUTTON};
+    let mut config: TASKDIALOGCONFIG = unsafe { std::mem::zeroed() };
+    config.cbSize = std::mem::size_of::<TASKDIALOGCONFIG>() as u32;
+    config.dwCommonButtons = TDCBF_CLOSE_BUTTON;
+    config
+}
+
 pub fn show_failure(reason: &'static str) {
     if reason == "runtime_installation_conflict" {
         show_installation_conflict();
@@ -235,27 +243,35 @@ pub fn show_failure(reason: &'static str) {
     }
     use windows_sys::Win32::UI::{Controls::*, WindowsAndMessaging::*};
     let (heading, message) = match reason {
-        "data_directory_unavailable" | "invalid_data_directory" | "servicing_storage_invalid" | "servicing_intent_invalid" => (
+        "data_directory_unavailable" | "invalid_data_directory" => (
             "Your data folder is unavailable",
-            "Close Conversation Analytics and ask your administrator to check your data folder's permissions and location. Keep your existing data and keys. After access is restored, reopen the app.",
+            "The app stopped to protect your saved data.",
         ),
-        "servicing_pending" => ("Finishing the update", "Conversation Analytics is finishing an update. Wait a moment, then open it again from the Start menu. Keep your existing data and keys."),
+        "servicing_storage_invalid" | "servicing_intent_invalid" => (
+            "The update couldn’t be verified",
+            "The app stopped before opening your saved data.",
+        ),
+        "servicing_pending" => (
+            "The update couldn’t finish",
+            "The app stopped before opening your saved data.",
+        ),
         "webview_acquisition_unavailable" => ("WebView2 could not be acquired", "Microsoft's download page could not be opened. Use your browser to get Microsoft Edge WebView2 from Microsoft's website, or ask your administrator. After installation, open Conversation Analytics again."),
         "webview_recovery_unavailable" => ("WebView2 recovery is unavailable", "Conversation Analytics could not open its WebView2 recovery window. Get Microsoft Edge WebView2 from Microsoft's website or ask your administrator, then open the app again."),
-        _ => ("This installation could not be verified", "Conversation Analytics could not verify this installation. Repair or reinstall the app from its approved source, or contact your administrator."),
+        _ => ("This installation could not be verified", "The app stopped before opening your saved data."),
     };
     let title = wide("Conversation Analytics");
     let heading = wide(heading);
-    let message = wide(message);
+    let message = wide(&crate::support_channels::dialog_content(
+        message,
+        crate::support_channels::COMPILED_CHANNELS,
+    ));
     // The property contains only a source-selected static error code. No
     // paths, activation arguments, account data or credentials are exposed.
     let code = wide(&format!("OFCA.StartupFailure.{reason}"));
-    let mut config: TASKDIALOGCONFIG = unsafe { std::mem::zeroed() };
-    config.cbSize = std::mem::size_of::<TASKDIALOGCONFIG>() as u32;
+    let mut config = failure_dialog_config();
     config.pszWindowTitle = title.as_ptr();
     config.pszMainInstruction = heading.as_ptr();
     config.pszContent = message.as_ptr();
-    config.dwCommonButtons = TDCBF_CLOSE_BUTTON;
     config.pfCallback = Some(failure_callback);
     config.lpCallbackData = code.as_ptr() as isize;
     if unsafe {
@@ -333,13 +349,14 @@ fn show_installation_conflict() {
     use windows_sys::Win32::UI::{Controls::*, WindowsAndMessaging::*};
     let title = wide("Conversation Analytics");
     let heading = wide("Another installation may be using your data folder");
-    let guidance = wide("Quit the other Conversation Analytics installation from its tray menu, then reopen this one. If it is still blocked, use your existing installation and contact support. Your files were left unchanged.");
-    let mut config: TASKDIALOGCONFIG = unsafe { std::mem::zeroed() };
-    config.cbSize = std::mem::size_of::<TASKDIALOGCONFIG>() as u32;
+    let guidance = wide(&crate::support_channels::dialog_content(
+        "The app stopped to protect your saved data. Your files were left unchanged.",
+        crate::support_channels::COMPILED_CHANNELS,
+    ));
+    let mut config = failure_dialog_config();
     config.pszWindowTitle = title.as_ptr();
     config.pszMainInstruction = heading.as_ptr();
     config.pszContent = guidance.as_ptr();
-    config.dwCommonButtons = TDCBF_CLOSE_BUTTON;
     config.pfCallback = Some(conflict_callback);
     if unsafe {
         TaskDialogIndirect(

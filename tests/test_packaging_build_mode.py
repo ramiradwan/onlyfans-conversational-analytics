@@ -32,18 +32,35 @@ def test_pyinstaller_child_receives_selected_mode_and_failure_restores_environme
     """
     source = BUILD_SCRIPT.read_text(encoding="utf-8")
     command = re.search(r"^function Invoke-RequiredCommand \{.*?^\}", source, re.M | re.S)
-    selection = re.search(r"^\$ReleaseMode = .*?$", source, re.M)
-    assert command is not None and selection is not None
+    assignments = [
+        re.search(rf"^\${name} = .*?$", source, re.M)
+        for name in ("ReleaseMode", "buildMode", "CustomerReleaseConfigPath")
+    ]
+    assert command is not None
+    assert all(assignments)
+    invocation_inputs = "\n".join(match.group() for match in assignments if match is not None)
     start = source.index("$previousProjectRoot = ")
     stop = source.index("$stagingRoot = ", start)
     invocation = source[start:stop]
     child_result = tmp_path / "child.json"
     parent_result = tmp_path / "parent.json"
+    mode = "development" if development else "release"
+    output_root = tmp_path / "output"
+    staged_config = output_root / "release-input" / "customer-release.json"
+    staged_config.parent.mkdir(parents=True)
+    staged_document = {"fixture": mode}
+    staged_config.write_text(json.dumps(staged_document), encoding="utf-8")
+    ambient_config = tmp_path / "ambient-release.json" if ambient is not None else None
+    if ambient_config is not None:
+        ambient_config.write_text(json.dumps({"fixture": ambient}), encoding="utf-8")
     child = tmp_path / "PyInstaller.py"
     child.write_text(
         "import json, os\nfrom pathlib import Path\n"
+        "config = os.environ.get('BRAIN_BUILD_CUSTOMER_RELEASE_CONFIG')\n"
         f"Path({str(child_result)!r}).write_text(json.dumps({{"
-        "'mode': os.environ.get('BRAIN_BUILD_MODE')}), encoding='utf-8')\n"
+        "'mode': os.environ.get('BRAIN_BUILD_MODE'), 'config': config, "
+        "'document': json.loads(Path(config).read_text(encoding='utf-8')) if config else None"
+        "}), encoding='utf-8')\n"
         "raise SystemExit(17)\n",
         encoding="utf-8",
     )
@@ -60,19 +77,22 @@ def test_pyinstaller_child_receives_selected_mode_and_failure_restores_environme
         "Set-StrictMode -Version Latest\n$ErrorActionPreference = 'Stop'\n"
         f"$DevelopmentAgentBundle = ${str(development).lower()}\n"
         f"$ProjectRoot = {literal(tmp_path)}\n"
+        f"$OutputRoot = {literal(output_root)}\n"
         "$packagingSource = [pscustomobject]@{SourceRoot = $ProjectRoot}\n"
         "$distPath = Join-Path $ProjectRoot 'dist'\n"
         "$workPath = Join-Path $ProjectRoot 'work'\n"
         "$SpecPath = Join-Path $ProjectRoot 'brain.spec'\n"
         f"$BuildPython = {literal(sys.executable)}\n"
         f"$PyInstallerExecutable = {literal(executable) if external_executable else '$null'}\n"
-        f"{command.group()}\n{selection.group()}\n"
+        f"{command.group()}\n{invocation_inputs}\n"
         "$failure = $null\ntry {\n"
         f"{invocation}\n"
         "} catch { $failure = $_.Exception.Message }\n"
         "[pscustomobject]@{\n"
         "    mode = $env:BRAIN_BUILD_MODE\n"
         "    present = Test-Path Env:BRAIN_BUILD_MODE\n"
+        "    config = $env:BRAIN_BUILD_CUSTOMER_RELEASE_CONFIG\n"
+        "    configPresent = Test-Path Env:BRAIN_BUILD_CUSTOMER_RELEASE_CONFIG\n"
         "    failure = $failure\n"
         "} | ConvertTo-Json -Compress | Set-Content -Encoding utf8 "
         f"-LiteralPath {literal(parent_result)}\n",
@@ -84,6 +104,10 @@ def test_pyinstaller_child_receives_selected_mode_and_failure_restores_environme
         environment.pop("BRAIN_BUILD_MODE", None)
     else:
         environment["BRAIN_BUILD_MODE"] = ambient
+    if ambient_config is None:
+        environment.pop("BRAIN_BUILD_CUSTOMER_RELEASE_CONFIG", None)
+    else:
+        environment["BRAIN_BUILD_CUSTOMER_RELEASE_CONFIG"] = str(ambient_config)
     result = subprocess.run(
         ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
          "-File", str(harness)],
@@ -91,12 +115,17 @@ def test_pyinstaller_child_receives_selected_mode_and_failure_restores_environme
         creationflags=subprocess.CREATE_NO_WINDOW,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert json.loads(child_result.read_text(encoding="utf-8")) == {
-        "mode": "development" if development else "release",
-    }
     restored = json.loads(parent_result.read_text(encoding="utf-8-sig"))
+    assert child_result.is_file(), restored["failure"]
+    assert json.loads(child_result.read_text(encoding="utf-8")) == {
+        "mode": mode,
+        "config": str(staged_config),
+        "document": staged_document,
+    }
     assert restored["mode"] == ambient
     assert restored["present"] is (ambient is not None)
+    assert restored["config"] == environment.get("BRAIN_BUILD_CUSTOMER_RELEASE_CONFIG")
+    assert restored["configPresent"] is (ambient_config is not None)
     assert "Command failed (17)" in restored["failure"]
 
 

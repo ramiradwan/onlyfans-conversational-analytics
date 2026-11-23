@@ -13,7 +13,20 @@ import {
   validateExtensionConfig,
   validateOnboardingReleaseConfig,
   validateSigningRuleDocument,
+  projectSupportChannels,
 } from '../build.mjs';
+
+test('support projection matches the Brain vectors', () => {
+  const vectors = JSON.parse(readFileSync(new URL('./fixtures/support-channels.json', import.meta.url), 'utf8'));
+  const release = { schema: 'ofca-customer-release/v2', setup_transfer_receiver_url: '',
+    hosted_api_origin: '', authentication_providers: ['default'] };
+  for (const { input, expected } of vectors) {
+    const selected = { ...release, ...input };
+    assert.equal(validateOnboardingReleaseConfig(selected), null);
+    assert.deepEqual(Object.entries(projectSupportChannels(selected.support_channels)), Object.entries(expected));
+  }
+  assert.deepEqual(projectSupportChannels({ tiktok: 'https://video.example.com/' + 'x'.repeat(1024) }), {});
+});
 
 test('Agent packaging consumes the current desktop release document and closed provider choices', () => {
   const source = JSON.parse(readFileSync(new URL('../../app/core/customer-release.json', import.meta.url), 'utf8'));

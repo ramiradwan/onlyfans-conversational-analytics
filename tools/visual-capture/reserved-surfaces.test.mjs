@@ -154,8 +154,8 @@ test('desktop status draws the outlined mark for each owner tone', async () => {
   });
 });
 
-test('desktop step labels and branding fit at 320px and 2× text', async () => {
-  await withDesktop(320, 2, 'dark', 'browser_access_needed', async (page, render) => {
+for (const mode of ['light', 'dark']) test(`desktop step labels and branding fit at 320px and 2× text in ${mode}`, async () => {
+  await withDesktop(320, 2, mode, 'browser_access_needed', async (page, render) => {
     for (const state of [DESKTOP_ONBOARDING_STATES.browser_access_needed, DESKTOP_ONBOARDING_STATES.account_confirm,
       DESKTOP_ONBOARDING_STATES.finish_secure_app_setup]) {
       await render(state);
@@ -164,15 +164,13 @@ test('desktop step labels and branding fit at 320px and 2× text', async () => {
         const number = steps[0].querySelector('.setup-step-badge span');
         const labels = steps.map(step => [step.matches('[aria-current="step"]'),
           getComputedStyle(step.querySelector('.setup-step-label')).clipPath === 'none']);
-        const markCenters = steps.map(step => {
-          const mark = step.querySelector('.setup-step-badge').getBoundingClientRect();
-          return mark.y + mark.height / 2;
-        });
-        return { labels, markCenters, digitHeight: number.getBoundingClientRect().height,
+        const marks = steps.map(step => step.querySelector('.setup-step-badge').getBoundingClientRect().toJSON());
+        return { labels, marks, digitHeight: number.getBoundingClientRect().height,
           pageFits: document.documentElement.scrollWidth <= innerWidth };
       });
       assert(geometry.labels.every(([current, visible]) => current === visible));
-      assert(geometry.markCenters.every(center => center === geometry.markCenters[0]));
+      assert(geometry.marks.every(mark => mark.width === 28 && mark.height === 28 && mark.y === geometry.marks[0].y));
+      assert(geometry.marks.slice(1).every((mark, index) => mark.left > geometry.marks[index].right), 'Stepper marks overlap');
       assert(geometry.digitHeight <= 24);
       assert(geometry.pageFits);
     }

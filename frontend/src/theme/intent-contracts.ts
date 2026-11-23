@@ -35,6 +35,7 @@ const matches = (value: string, rule: string): boolean =>
 const isFinancialPath = (path: string): boolean =>
   /^tier2\.intents\.(light|dark)\.financial(?:\.|$)/.test(path)
   || /^tier1\.colorFamily\.financial(?:\.|$)/.test(path);
+export const isOfferPricePath = (path: string): boolean => /^tier3\.offerPrice(?:\.|$)/.test(path);
 export const bridgeIntentRoles = {
   measurement: 'palette', financial: 'palette', brand: 'palette',
   'action.primary': 'palette', 'action.secondary': 'palette', 'action.state': 'roles',
@@ -177,6 +178,7 @@ export function buildTokenGraph(raw: JsonObject): TokenGraph {
     if (ref(value)) {
       for (const dependency of result.dependencies) {
         if (isFinancialPath(dependency) && !isFinancialPath(path)) throw new Error(path + ': financial tokens are reserved');
+        if (isOfferPricePath(dependency) && !isOfferPricePath(path)) throw new Error(path + ': offer price tokens are local');
         const target = owner(dependency);
         if (target) {
           const consumer = consumerSemantic(path);

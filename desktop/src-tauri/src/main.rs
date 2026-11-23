@@ -26,10 +26,52 @@ mod servicing;
 mod servicing_feed;
 #[cfg(windows)]
 mod servicing_handoff;
+#[cfg(any(windows, test))]
+mod support_channels;
 #[cfg(windows)]
 mod windows;
 mod worker_diagnostics;
 mod worker_host;
+
+#[cfg(test)]
+mod support_channels_tests {
+    use super::support_channels::{dialog_content, initialization_script, COMPILED_CHANNELS};
+
+    #[test]
+    fn support_channels_formats_one_plain_text_block_in_provider_order() {
+        let projection = r#"{"tiktok":"https://video.example.com/a&b","whatsapp":"https://msg.example.com/help"}"#;
+        assert_eq!(
+            dialog_content("Setup ended.", projection),
+            "Setup ended.\n\nGet help\nWhatsApp https://msg.example.com/help\nTikTok https://video.example.com/a&b"
+        );
+        assert_eq!(dialog_content("Setup ended.", "{}"), "Setup ended.");
+    }
+
+    #[test]
+    fn support_channels_binds_the_compiled_projection_and_omits_empty_script() {
+        assert!(initialization_script("{}").is_empty());
+        let projection = r#"{"telegram":"https://chat.example.com/help"}"#;
+        let script = initialization_script(projection);
+        assert!(script.contains(projection));
+        assert!(script.contains("/data-recovery.html"));
+        assert!(script.contains("/unavailable.html"));
+        assert!(!script.contains("clipboard"));
+        assert!(!script.contains("invoke"));
+        let expected = std::env::var("OFCA_TEST_SUPPORT_CHANNELS").unwrap_or_else(|_| "{}".into());
+        assert_eq!(COMPILED_CHANNELS, expected);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn support_channels_keeps_native_close_and_disables_hyperlinks() {
+        use windows_sys::Win32::UI::Controls::{TDCBF_CLOSE_BUTTON, TDF_ENABLE_HYPERLINKS};
+        let config = super::prerequisite::failure_dialog_config();
+        let buttons = config.dwCommonButtons;
+        assert_eq!(buttons, TDCBF_CLOSE_BUTTON);
+        assert_eq!(config.dwFlags & TDF_ENABLE_HYPERLINKS, 0);
+        assert!(config.hwndParent.is_null());
+    }
+}
 
 #[cfg(windows)]
 #[tauri::command]
@@ -278,14 +320,17 @@ fn main() {
             return;
         }
     };
-    if !_ownership.primary() {
-        if servicing_session.is_some() {
+    match _ownership.continue_startup(
+        &names,
+        &executable,
+        servicing_session.is_none().then_some(args.as_slice()),
+    ) {
+        Ok(true) => (),
+        Ok(false) => return,
+        Err(reason) => {
+            prerequisite::show_failure(reason);
             return;
         }
-        if let Err(reason) = windows::forward_instance(&names, &executable, &args) {
-            prerequisite::show_failure(reason);
-        }
-        return;
     }
     let startup = windows::package_identity().and_then(|identity| {
         servicing_handoff::startup(
@@ -327,6 +372,7 @@ fn main() {
     let (sender, receiver) = mpsc::sync_channel(8);
     let state = Arc::new(host::Host {
         admitted: AtomicBool::new(false),
+        retained_recovery: AtomicBool::new(false),
         stopped: AtomicBool::new(false),
         quitting: AtomicBool::new(false),
         update_check_active: AtomicBool::new(false),
@@ -347,7 +393,7 @@ fn main() {
                     if activation.quitting.load(Ordering::SeqCst) {
                         return;
                     }
-                    let _ = activation.actions.try_send(host::Action::Activate(journey));
+                    activation.activate(journey);
                     frame::show_main(app);
                 }
             },
@@ -382,21 +428,27 @@ fn main() {
                     .min_inner_size(640.0, 480.0)
                     .decorations(false)
                     .initialization_script(include_str!("../../window-frame.js"))
+                    .initialization_script(support_channels::initialization_script(
+                        support_channels::COMPILED_CHANNELS,
+                    ))
                     .devtools(false)
                     .disable_drag_drop_handler()
                     .on_navigation(move |url| {
-                        policy::shell_document(url)
-                            || (navigation.admitted.load(Ordering::SeqCst)
-                                && policy::local_document(url))
+                        policy::startup_navigation(
+                            url,
+                            navigation.admitted.load(Ordering::SeqCst),
+                            navigation.retained_recovery.load(Ordering::SeqCst),
+                        )
                     })
                     .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
                     .on_download(|_, _| false)
                     .build()?;
             let close = window.clone();
+            let close_state = setup.clone();
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
-                    let _ = close.hide();
+                    let _ = frame::close_main(&close, &close_state, close.url().ok().as_ref());
                 }
             });
             let open = MenuItem::with_id(
@@ -414,7 +466,7 @@ fn main() {
                 .tooltip("Conversation Analytics")
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "open" => {
-                        let _ = quit_state.actions.try_send(host::Action::Activate(None));
+                        quit_state.activate(None);
                         frame::show_main(app);
                     }
                     "quit" => quit_state.quit(),

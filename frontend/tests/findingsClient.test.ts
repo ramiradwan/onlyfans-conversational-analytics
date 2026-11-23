@@ -41,11 +41,19 @@ describe('findings client', () => {
     await createFindingsClient({ fetcher, csrf: () => 'synthetic-token' }).evidence(reference);
     expect(fetcher).toHaveBeenCalledWith('/api/v1/insights/questions/evidence', expect.objectContaining({ method: 'POST', body: JSON.stringify(reference), headers: expect.objectContaining({ 'X-CSRF-Token': 'synthetic-token' }) }));
   });
-  it.each([['analytics_projection_building', 'building'], ['analytics_projection_unavailable', 'unavailable']])('maps %s to fixed safe copy', async (code, state) => {
-    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: { code, message: 'untrusted exception text' } }), { status: 503 }));
-    await expect(createFindingsClient({ fetcher }).read(findingsRequest)).rejects.toMatchObject({ state });
-    fetcher.mockResolvedValue(new Response(JSON.stringify({ detail: { code, message: 'untrusted exception text' } }), { status: 503 }));
-    await expect(createFindingsClient({ fetcher }).read(findingsRequest)).rejects.not.toThrow('untrusted exception text');
+  it.each([
+    ['analytics_projection_building', 'building', 'Saved findings aren’t ready yet.'],
+    ['analytics_projection_unavailable', 'unavailable', 'Text analysis is unavailable for this saved analysis. Other analytics remain available.'],
+    [null, 'unavailable', 'Text analysis is unavailable for this saved analysis. Other analytics remain available.'],
+  ])('maps %s to fixed saved-state copy without claiming progress', async (code, state, message) => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ detail: { code, message: 'untrusted exception text',
+      phase: 'processing', checked: 27, total: 100, automatic: true } }, { status: 503 }));
+    await expect(createFindingsClient({ fetcher }).read(findingsRequest)).rejects.toMatchObject({ state, message });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it('rejects an unsupported legacy result without turning its counts into saved evidence', async () => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ schema_version: 'legacy', checked: 27, total: 100 }));
+    await expect(createFindingsClient({ fetcher }).read(findingsRequest)).rejects.toThrow(/could not be verified/);
   });
   it('rejects oversized response bodies', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(' '.repeat(1_048_577)));

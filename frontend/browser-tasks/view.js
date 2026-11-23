@@ -1,5 +1,6 @@
 import { recoveryTone, setStatus } from '../shared-setup/presentation.js';
 import { browserRecovery, recoveryClass } from '../shared-setup/recovery.js';
+import { renderSupportHelp } from '../shared-setup/support-help.js';
 const journeyStates = { loading: 'loading', unavailable: 'unavailable', profile_mismatch: 'profile_mismatch',
   account_mismatch: 'account_mismatch', auth_idle: 'auth_idle', auth_opening: 'auth_opening', auth_checking: 'auth_checking',
   auth_unconfirmed: 'auth_unconfirmed', auth_access_required: 'auth_access_required', auth_closed: 'auth_closed',
@@ -16,7 +17,7 @@ const status = {
   unavailable: ['Set up the extension', 'Install or turn on the extension in this browser profile.'],
   extension_disconnected: [handoff, 'Dipsy couldn’t connect to the extension.', 'desktop-handoff'],
   profile_mismatch: ['Switch browser profile', 'This isn’t the profile you used for setup.'],
-  account_mismatch: ['Switch creator account', 'Sign in with the creator account you want to connect.'],
+  account_mismatch: ['Switch OnlyFans account', 'Sign in to the OnlyFans account you want to connect.'],
   auth_idle: ['Finish signing in', '', 'sign-in'],
   auth_opening: ['Signing in…', 'Finish in the sign-in window.', 'sign-in'],
   auth_checking: [null, 'Checking the sign-in outcome…', 'sign-in-check'],
@@ -123,6 +124,8 @@ export function renderBrowserTask(document, value) {
     : ['auth_unconfirmed', 'paused'].includes(state) ? 'progress' : recoveryTone(classification);
   get('task-status').dataset.tone = text && !quietStatuses.includes(state) ? tone : 'none';
   setStatus(get('task-message'), text);
+  renderSupportHelp(card.querySelector('.task-actions-slot > [data-region-content]'),
+    value.state === 'service_unavailable' && failure && !hasAction);
   if (card !== previous && actions[focused?.id]) {
     focused.focus({ preventScroll: true });
   }

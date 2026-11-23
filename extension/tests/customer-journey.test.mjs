@@ -196,11 +196,13 @@ test('pairing progress explains comparison and never claims success early', () =
   assert.match(compare.body, /confirm there/);
 });
 
-test('pairing failure has a concrete retry path', () => {
+test('pairing failure gives the explicit Connect instruction', () => {
   const result = deriveCustomerJourney({
     status: status(), pairing: pairing('pairing_failed'), desktopRuntimeReachable: true,
   });
   assert.equal(result.id, CUSTOMER_STATES.PAIRING_FAILED);
+  assert.equal(result.body, 'In the desktop app, choose Connect extension.');
+  assert.equal(result.primaryAction, 'pair');
   assert.equal(result.primaryLabel, 'Try connection again');
 });
 
@@ -265,17 +267,25 @@ test('commercial status never removes desktop access after the browser is connec
   }
 });
 
-test('commercial authority failure is distinct and recoverable', () => {
-  const result = deriveCustomerJourney({
+test('unavailable analysis offers only the desktop action without promising an update', () => {
+  const input = {
     status: status({ phase: 'full', transport: 'authenticated' }),
     pairing: pairing('paired'),
     desktopRuntimeReachable: true,
-    analysisReadiness: readiness('unavailable'),
-  });
-  assert.equal(result.id, CUSTOMER_STATES.ACTIVATION_UNAVAILABLE);
-  assert.equal(result.primaryLabel, 'Check again');
-  assert.equal(result.body, '');
-  assert.doesNotMatch(result.body, /invalid license|saved data is unchanged/i);
+  };
+  for (const [analysisReadiness, id, title, setupTitle] of [
+    [readiness('unavailable'), CUSTOMER_STATES.ACTIVATION_UNAVAILABLE, "Couldn't check activation", 'Can’t check Full analytics right now'],
+    [{ commercial_authority: 'active' }, CUSTOMER_STATES.FULL_UNAVAILABLE, 'Analysis status unavailable', 'Can’t check analysis right now'],
+  ]) {
+    for (const setup of [false, true]) {
+      assert.deepEqual(deriveCustomerJourney({ ...input, analysisReadiness }, { setup }), {
+        id, title: setup ? setupTitle : title,
+        tone: id === CUSTOMER_STATES.ACTIVATION_UNAVAILABLE ? 'error' : 'warning',
+        body: '', primaryAction: 'open_dashboard', primaryLabel: 'Open desktop app',
+        secondaryAction: null, secondaryLabel: null,
+      });
+    }
+  }
 });
 
 test('commercial authority alone renders activation active but not Full-ready', () => {

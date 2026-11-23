@@ -5,6 +5,7 @@ import { customerReleaseConfig } from '../runtime/customer-release-config.mjs';
 import { probeDesktopRuntime } from '../runtime/customer-journey.mjs';
 import { LOCAL_SERVICE_ORIGIN, assertLocalServiceUrl } from '../transport/local-service-endpoints.mjs';
 import { DESKTOP_LINK_STORAGE_KEY } from '../runtime/desktop-port.mjs';
+import { projectSupportChannels } from './support-channels.mjs';
 
 const unknownReadiness = () => ({ commercial_authority: 'unknown', analysis_admission: 'blocked' });
 export function isFullFamilyStatus(status) {
@@ -212,7 +213,8 @@ export function createSurfaceClient(onChange, onError) {
       if (value.schema === 'ofca-extension-config/v1') {
         model.config = { ...model.config,
           dashboard_url: assertLocalServiceUrl(value.dashboard_url).href,
-          history_settings_url: assertLocalServiceUrl(value.history_settings_url).href };
+          history_settings_url: assertLocalServiceUrl(value.history_settings_url).href,
+          support_channels: projectSupportChannels(value.support_channels) };
       }
     } catch { /* Keep the pinned same-computer destinations. */ }
     connectPort(); await refresh();

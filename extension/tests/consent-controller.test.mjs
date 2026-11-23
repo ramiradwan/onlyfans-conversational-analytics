@@ -266,6 +266,46 @@ test('observer status messages receive a reply without accepting stale or foreig
   }
 });
 
+test('observer readiness follows current consent and host access without granting Full capture', async () => {
+  const h = harness();
+  const sender = { id: h.chromeApi.runtime.id, frameId: 0, tab: { id: 7 },
+    url: ONLYFANS_ORIGIN_PATTERN.replace('*', ''), documentId: 'document-7', documentLifecycle: 'active' };
+  const message = { type: OBSERVER_STATE_TYPE,
+    status: { mode: 'identity', active: true, forwarding: false, ws2_socket_open: false } };
+  const tabWrites = [];
+  h.chromeApi.tabs.create = () => { tabWrites.push('create'); throw Error('Unexpected tab creation'); };
+  h.chromeApi.tabs.update = () => { tabWrites.push('update'); throw Error('Unexpected tab update'); };
+  const acceptsStatus = () => {
+    let result;
+    h.chromeApi.runtime.onMessage.listeners[0](message, sender, reply => { result = reply; });
+    return result?.ok;
+  };
+
+  h.permissionState.onlyFans = true;
+  await h.controller.initialize();
+  assert.equal(acceptsStatus(), false);
+  assert.equal(h.controller.allowsFullCapture(), false);
+
+  await h.controller.setMode('full');
+  assert.equal(acceptsStatus(), true);
+  assert.equal((await h.controller.status()).observer.attachment, 'ready');
+  assert.equal(h.controller.allowsFullCapture(), false, 'An active hook cannot prove the binding');
+
+  h.permissionState.onlyFans = false;
+  await h.controller.reconcile();
+  assert.equal((await h.controller.status()).phase, 'permission_required');
+  assert.equal(acceptsStatus(), false);
+  assert.equal(h.controller.allowsFullCapture(), false);
+  await h.controller.setMode('revoked');
+  h.permissionState.onlyFans = true;
+  await h.controller.reconcile();
+  assert.equal(acceptsStatus(), false);
+  assert.equal((await h.controller.status()).observer.attachment, 'blocked');
+  assert.equal(h.controller.allowsFullCapture(), false);
+  assert.equal(h.counters.reloads, 0);
+  assert.deepEqual(tabWrites, []);
+});
+
 test('permission-removal reconciliation after deletion cannot recreate an active helper record', async () => {
   const h = harness(); h.permissionState.onlyFans = true;
   h.onlyFansTabs.length = 0;

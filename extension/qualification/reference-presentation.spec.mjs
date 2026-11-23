@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { SURFACE_STATES, renderSurfaceState } from './surface-fixtures.mjs';
+import { assertBackgroundTabLayout, backgroundTabLayoutCases, measureBackgroundTabLayout } from './setup-background-tab-layout.mjs';
 
 for (const request of ['ofca.ui.status', 'ofca.legal-activation.status']) {
   test(`initial ${request} delay keeps setup status visible until the Full task is ready`, async ({ page }) => {
@@ -48,6 +49,103 @@ for (const name of ['legal_unavailable', 'runtime_unavailable']) {
     await expect(page.locator('.onboarding-footer')).toBeVisible();
     await expect(page.locator('#loading')).toBeHidden();
     await expect(page.locator(name === 'legal_unavailable' ? '#legal-unavailable' : '#runtime-unavailable')).toBeVisible();
+  });
+}
+
+for (const theme of ['light', 'dark']) {
+  for (const [width, scale] of [[1440, 1], [390, 1], [390, 2], [320, 1], [320, 2]]) {
+    test(`support stays in the exhausted action slot at ${width}px, ${scale * 100}% text, ${theme}`, async ({ page, context }, info) => {
+      await page.emulateMedia({ colorScheme: theme });
+      await page.setViewportSize({ width, height: 960 });
+      await page.addInitScript(size => {
+        document.addEventListener('DOMContentLoaded', () => { document.documentElement.style.fontSize = size + 'px'; });
+        window.__supportClipboardWrites = 0;
+        Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {
+          window.__supportClipboardWrites++;
+          throw new DOMException('Clipboard unavailable', 'NotAllowedError');
+        } } });
+      }, 16 * scale);
+      const supportChannels = { telegram: 'https://chat.example.com/help-and-setup', tiktok: 'https://video.example.com/a&copy;b',
+        whatsapp: 'https://help.example.com/<script>', extra: 'https://example.com/' };
+      const outbound = [], newPages = [];
+      page.on('request', request => { if (!request.url().startsWith('http://extension-ui.test/')) outbound.push(request.url()); });
+      context.on('page', opened => { if (opened !== page) newPages.push(opened); });
+      await page.clock.install();
+      await renderSurfaceState(page, { ...SURFACE_STATES.runtime_unavailable, portUnavailable: true, supportChannels });
+      const card = page.locator('#runtime-unavailable');
+      const help = card.locator('[data-support-help]');
+      const title = card.locator('h2').first(), body = card.locator('#runtime-body'), footer = page.locator('.onboarding-footer');
+      await expect(body).toHaveText('Connection interrupted. Reconnecting…');
+      await expect(help).toBeHidden();
+      const titleBefore = await title.boundingBox(), footerBefore = await footer.boundingBox();
+      await page.clock.runFor(1800);
+      await expect(help.getByRole('heading', { name: 'Get help' })).toBeVisible();
+      await expect(help.getByRole('listitem')).toHaveText([
+        'Telegram https://chat.example.com/help-and-setup', 'TikTok https://video.example.com/a&copy;b',
+      ]);
+      await expect(help.locator('a, button, input, script')).toHaveCount(0);
+      const helpLayout = await help.evaluate(element => {
+        const title = document.querySelector('#runtime-title').getBoundingClientRect();
+        const heading = element.querySelector('h3');
+        return {
+          weight: getComputedStyle(heading).fontWeight,
+          markers: getComputedStyle(element.querySelector('ul')).listStyleType,
+          offsets: [heading, ...element.querySelectorAll('li')].map(node => node.getBoundingClientRect().left - title.left),
+        };
+      });
+      expect(helpLayout).toEqual({ weight: '600', markers: 'none', offsets: [0, 0, 0] });
+      expect(await title.boundingBox()).toEqual(titleBefore);
+      const main = await page.locator('main').boundingBox();
+      expect(await footer.boundingBox()).toEqual({
+        ...footerBefore, y: Math.max(960 - footerBefore.height, main.y + main.height),
+      });
+      if (width === 1440) {
+        const lines = await card.evaluate(element => [...element.querySelectorAll('#runtime-title, #runtime-body')].map(node => {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          return range.getClientRects().length;
+        }));
+        expect(lines).toEqual([1, 1]);
+      }
+      expect(await footer.getByText('Privacy information unavailable')).toBeVisible();
+      const geometry = await help.evaluate(element => {
+        const address = element.querySelector('li:last-child span');
+        const range = document.createRange();
+        range.selectNodeContents(address);
+        getSelection().removeAllRanges();
+        getSelection().addRange(range);
+        return { selected: String(getSelection()), selectable: getComputedStyle(address).userSelect,
+          viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth };
+      });
+      expect(geometry).toMatchObject({ selected: supportChannels.tiktok, selectable: 'text', viewport: geometry.content });
+      await help.scrollIntoViewIfNeeded();
+      await expect(help).toBeInViewport();
+      await footer.scrollIntoViewIfNeeded();
+      await expect(footer).toBeInViewport();
+      const safeReads = await page.evaluate(() => window.__surfaceFixture.calls.every(({ type, action }) =>
+        type === 'ofca.ui.status' || type === 'ofca.legal-activation.status'
+        || type === 'ofca.workspace.v1' && ['read', 'browser_task', 'desktop_adoption'].includes(action)));
+      expect(safeReads).toBe(true);
+      expect(await page.evaluate(() => window.__supportClipboardWrites)).toBe(0);
+      expect(outbound).toEqual([]);
+      expect(newPages).toEqual([]);
+      await page.screenshot({ path: info.outputPath('terminal-help.png'), fullPage: true });
+    });
+  }
+}
+
+for (const [state, action] of [
+  [{ ...SURFACE_STATES.runtime_unavailable, portUnavailable: true }, '#runtime-title'],
+  [{ ...SURFACE_STATES.legal_unavailable, portUnavailable: true, supportChannels: { telegram: 'https://chat.example.com/help' } }, '#legal-unavailable'],
+  [{ ...SURFACE_STATES.desktop_app_needed, portUnavailable: true, supportChannels: { telegram: 'https://chat.example.com/help' } }, '#open-desktop'],
+]) {
+  test(`support stays omitted with an empty projection or the ${action} remedy`, async ({ page }) => {
+    await page.clock.install();
+    await renderSurfaceState(page, state);
+    await page.clock.runFor(1800);
+    await expect(page.locator(action)).toBeVisible();
+    await expect(page.locator('[data-support-help]')).toHaveCount(0);
+    if (action === '#legal-unavailable') await expect(page.getByText('Update the extension to continue.')).toBeVisible();
   });
 }
 
@@ -349,7 +447,7 @@ test('D1 setup shows the admitted state through the persistent entry view', asyn
   await expect(page.locator('#journey-badge')).toBeHidden();
 });
 
-for (const [width, scale, theme] of [[1440, 16, 'light'], [480, 16, 'dark'], [320, 32, 'light'], [320, 32, 'dark']]) {
+for (const [width, scale, theme] of backgroundTabLayoutCases) {
   test(`D2 preserves Preview controls and metrics at ${width}px with ${scale}px text in ${theme}`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 960 });
     await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
@@ -359,6 +457,7 @@ for (const [width, scale, theme] of [[1440, 16, 'light'], [480, 16, 'dark'], [32
     const reopen = page.locator('#reopen-background-tab');
     const badge = page.locator('#journey-badge');
     const action = page.locator('#journey-primary');
+    const privacy = page.locator('.onboarding-footer #privacy-link');
     const box = (id) => page.locator(id).evaluate((element) => {
       const card = element.closest('#journey-card').getBoundingClientRect();
       const { x, y, width, height } = element.getBoundingClientRect();
@@ -387,9 +486,15 @@ for (const [width, scale, theme] of [[1440, 16, 'light'], [480, 16, 'dark'], [32
     await expect(reopen).toBeHidden();
     const open = await box('#background-tab-note');
     expect((await box('.background-tab-row')).height).toBe(open.height);
+    const openLayout = await measureBackgroundTabLayout(page);
+    const openScreenshot = info.outputPath(`preview-counting-${theme}.png`);
+    await page.screenshot({ path: openScreenshot, fullPage: true });
+    await page.keyboard.press('Tab');
+    await expect(privacy).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(action).toBeFocused();
     if (width === 320) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-      await page.screenshot({ path: info.outputPath(`preview-counting-${theme}.png`), fullPage: true });
     }
     const before = [await box('#journey-primary'), await box('#preview-metrics')];
     const badgeBefore = await box('#journey-badge');
@@ -401,19 +506,26 @@ for (const [width, scale, theme] of [[1440, 16, 'light'], [480, 16, 'dark'], [32
     await expect(action).toBeFocused();
     const badgeAfter = await box('#journey-badge');
     const delta = badgeAfter.height - badgeBefore.height;
-    if (width > 320) expect(delta).toBe(0);
+    if (width > 390 || scale === 16) expect(delta).toBe(0);
     expect([await box('#journey-primary'), await box('#preview-metrics')]).toEqual(before.map(({ y, ...rect }) => ({ ...rect, y: y + delta })));
     const closed = await box('#reopen-background-tab');
     expect((await box('.background-tab-row')).height).toBe(closed.height);
     expect(closed.y).toBe(open.y + delta);
-    if (width > 320) expect(closed.height).toBe(open.height);
-    else {
+    if (width === 320) {
       expect(open.height).toBeGreaterThan(closed.height);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-      await info.attach('D2 row geometry', { body: JSON.stringify({ open, closed, badgeBefore, badgeAfter }), contentType: 'application/json' });
-      await page.screenshot({ path: info.outputPath(`preview-stopped-${theme}.png`), fullPage: true });
     }
+    const closedLayout = await measureBackgroundTabLayout(page);
+    const closedScreenshot = info.outputPath(`preview-stopped-${theme}.png`);
+    await page.screenshot({ path: closedScreenshot, fullPage: true });
+    await info.attach('D2 row geometry', { body: JSON.stringify({ width, scale, theme, open: openLayout, closed: closedLayout,
+      screenshots: [openScreenshot, closedScreenshot] }), contentType: 'application/json' });
     const reopenCalls = () => page.evaluate(() => window.__surfaceFixture.calls.filter(({ type }) => type === 'ofca.ui.reopen-background-tab').length);
+    expect(await reopenCalls()).toBe(0);
+    await page.keyboard.press('Tab');
+    await expect(reopen).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(privacy).toBeFocused();
     expect(await reopenCalls()).toBe(0);
     await reopen.click();
     await expect.poll(reopenCalls).toBe(1);
@@ -422,6 +534,7 @@ for (const [width, scale, theme] of [[1440, 16, 'light'], [480, 16, 'dark'], [32
     await expect(note).toBeHidden();
     await expect(badge).toHaveText('Counting messages');
     expect(await reopenCalls()).toBe(1);
+    assertBackgroundTabLayout(openLayout, closedLayout, width, scale);
   });
 }
 

@@ -16,6 +16,8 @@ mod servicing;
 mod servicing_feed;
 #[path = "../../src/servicing_handoff.rs"]
 mod servicing_handoff;
+#[path = "../../src/support_channels.rs"]
+mod support_channels;
 #[path = "../../src/windows.rs"]
 mod windows;
 #[path = "../../src/worker_diagnostics.rs"]
@@ -47,7 +49,66 @@ unsafe extern "system" fn find(hwnd: HWND, data: isize) -> i32 {
     1
 }
 
-fn close_failure(state: &'static str, code: Option<&'static str>) {
+#[derive(Default)]
+struct FailureLabels {
+    close: bool,
+    heading: bool,
+    guidance: bool,
+}
+
+fn failure_labels(
+    hwnd: HWND,
+    heading: &str,
+    guidance: &str,
+) -> windows_runtime::core::Result<FailureLabels> {
+    use windows_runtime::Win32::{
+        Foundation::HWND as AutomationHwnd,
+        System::Com::{
+            CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
+            COINIT_MULTITHREADED,
+        },
+        UI::Accessibility::{
+            CUIAutomation, IUIAutomation, TreeScope_Descendants, UIA_ButtonControlTypeId,
+        },
+    };
+
+    unsafe {
+        CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
+        let result = (|| {
+            let automation: IUIAutomation =
+                CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER)?;
+            let dialog = automation.ElementFromHandle(AutomationHwnd(hwnd))?;
+            // The TaskDialog text controls expose their content through UI Automation.
+            let controls =
+                dialog.FindAll(TreeScope_Descendants, &automation.CreateTrueCondition()?)?;
+            let mut labels = FailureLabels::default();
+            for index in 0..controls.Length()? {
+                let control = controls.GetElement(index)?;
+                if control.CurrentIsOffscreen()?.as_bool() {
+                    continue;
+                }
+                match control.CurrentName()?.to_string().as_str() {
+                    "Close" if control.CurrentControlType()? == UIA_ButtonControlTypeId => {
+                        labels.close = true;
+                    }
+                    name if name == heading => labels.heading = true,
+                    name if name.lines().eq(guidance.lines()) => labels.guidance = true,
+                    _ => {}
+                }
+            }
+            Ok(labels)
+        })();
+        CoUninitialize();
+        result
+    }
+}
+
+fn close_failure(
+    state: &'static str,
+    code: Option<&'static str>,
+    heading: &'static str,
+    message: &'static str,
+) -> (usize, FailureLabels) {
     struct Expected {
         hwnd: usize,
         state: &'static str,
@@ -106,6 +167,10 @@ fn close_failure(state: &'static str, code: Option<&'static str>) {
                 );
             }
             if observed == [true; 2] {
+                let guidance =
+                    support_channels::dialog_content(message, support_channels::COMPILED_CHANNELS);
+                let labels =
+                    failure_labels(found.hwnd as HWND, heading, &guidance).unwrap_or_default();
                 unsafe {
                     SendMessageW(
                         found.hwnd as HWND,
@@ -114,7 +179,7 @@ fn close_failure(state: &'static str, code: Option<&'static str>) {
                         0,
                     );
                 }
-                return;
+                return (found.hwnd, labels);
             }
         }
         assert!(
@@ -350,30 +415,66 @@ fn main() {
         return;
     }
     if scenario == "installation-conflict" {
-        let closer =
-            std::thread::spawn(|| close_failure(prerequisite::INSTALLATION_CONFLICT_STATE, None));
+        let closer = std::thread::spawn(|| {
+            close_failure(
+                prerequisite::INSTALLATION_CONFLICT_STATE,
+                None,
+                "Another installation may be using your data folder",
+                "The app stopped to protect your saved data. Your files were left unchanged.",
+            )
+        });
         prerequisite::show_failure("runtime_installation_conflict");
-        closer.join().unwrap();
+        let (hwnd, labels) = closer.join().unwrap();
         println!(
             "{}",
-            serde_json::json!({"state":prerequisite::INSTALLATION_CONFLICT_STATE,"close_and_guidance_observed":true})
+            serde_json::json!({
+                "state": prerequisite::INSTALLATION_CONFLICT_STATE,
+                "conflict_guidance_observed": labels.heading && labels.guidance,
+                "close_label_observed": labels.close,
+                "close_action_observed": unsafe { IsWindow(hwnd as HWND) == 0 },
+            })
         );
         return;
     }
-    if scenario == "data-unavailable" || scenario == "installation-invalid" {
-        let reason = if scenario == "data-unavailable" {
-            "data_directory_unavailable"
-        } else {
-            "invalid_installation"
-        };
-        let closer =
-            std::thread::spawn(move || close_failure(prerequisite::FAILURE_STATE, Some(reason)));
+    let failure = match scenario.as_str() {
+        "data-unavailable" => Some((
+            "data_directory_unavailable",
+            "Your data folder is unavailable",
+            "The app stopped to protect your saved data.",
+        )),
+        "installation-invalid" => Some((
+            "invalid_installation",
+            "This installation could not be verified",
+            "The app stopped before opening your saved data.",
+        )),
+        "servicing-invalid" => Some((
+            "servicing_intent_invalid",
+            "The update couldn’t be verified",
+            "The app stopped before opening your saved data.",
+        )),
+        "servicing-storage-invalid" => Some((
+            "servicing_storage_invalid",
+            "The update couldn’t be verified",
+            "The app stopped before opening your saved data.",
+        )),
+        "servicing-pending" => Some((
+            "servicing_pending",
+            "The update couldn’t finish",
+            "The app stopped before opening your saved data.",
+        )),
+        _ => None,
+    };
+    if let Some((reason, heading, message)) = failure {
+        let closer = std::thread::spawn(move || {
+            close_failure(prerequisite::FAILURE_STATE, Some(reason), heading, message)
+        });
         prerequisite::show_failure(reason);
-        closer.join().unwrap();
+        let (hwnd, labels) = closer.join().unwrap();
         println!(
             "{}",
             serde_json::json!({"state": prerequisite::FAILURE_STATE,
-                  "code": reason, "close_and_guidance_observed": true})
+                  "code": reason, "close_and_guidance_observed": labels.close && labels.heading && labels.guidance,
+                  "close_action_observed": unsafe { IsWindow(hwnd as HWND) == 0 }})
         );
         return;
     }

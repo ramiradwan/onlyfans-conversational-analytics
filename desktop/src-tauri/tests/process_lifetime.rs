@@ -64,7 +64,6 @@ fn native_root_owner_fixture() {
             let bytes = std::slice::from_raw_parts(data.lpData.cast::<u8>(), data.cbData as usize);
             let root = PathBuf::from(std::env::var_os("OFCA_ROOT_OWNER_TEST_DIRECTORY").unwrap());
             std::fs::write(root.join("forwarded"), bytes).unwrap();
-            PostQuitMessage(0);
             return 1;
         }
         DefWindowProcW(hwnd, message, wparam, lparam)
@@ -128,34 +127,54 @@ fn native_root_ownership_fences_other_namespaces_and_forwards_only_verified_peer
         ])
         .env("OFCA_ROOT_OWNER_TEST_DIRECTORY", &root.0);
     let mut child = process.spawn().unwrap();
-    assert_eq!(started(&root.0), child.id());
     let names =
         deployment::instance_names(&root.0, &windows::current_sid().unwrap(), None).unwrap();
-    let secondary = windows::claim_runtime_root(&names, &executable).unwrap();
-    assert!(!secondary.primary());
-    let mut other = names.clone();
-    other.plugin_id.push_str(".another-family");
-    assert!(windows::claim_runtime_root(&other, &executable).is_err());
-    assert!(
-        windows::claim_runtime_root(&names, Path::new(env!("CARGO_BIN_EXE_brain-fixture")))
-            .is_err()
-    );
-    let arguments = vec![
-        executable.to_string_lossy().into_owned(),
-        "--open-workspace".into(),
-        "ofca://onboarding/?journey=00000000-0000-0000-0000-000000000001".into(),
-    ];
-    windows::forward_instance(&names, &executable, &arguments).unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while child.try_wait().unwrap().is_none() {
-        assert!(Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(20));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        assert_eq!(started(&root.0), child.id());
+        let secondary = windows::claim_runtime_root(&names, &executable).unwrap();
+        assert!(!secondary.primary());
+        let mut other = names.clone();
+        other.plugin_id.push_str(".another-family");
+        let foreign = Path::new(env!("CARGO_BIN_EXE_brain-fixture"));
+        let arguments = vec![
+            executable.to_string_lossy().into_owned(),
+            "--open-workspace".into(),
+            "ofca://onboarding/?journey=00000000-0000-4000-8000-000000000001".into(),
+        ];
+        let mut downstream = 0;
+        for (candidate, image) in [(&other, executable.as_path()), (&names, foreign)] {
+            let result = windows::claim_runtime_root(candidate, image)
+                .and_then(|owner| owner.continue_startup(candidate, image, Some(&arguments)));
+            if result == Ok(true) {
+                downstream += 1;
+            }
+            assert_eq!(result, Err("runtime_installation_conflict"));
+        }
+        assert!(!root.0.join("forwarded").exists());
+        if secondary
+            .continue_startup(&names, &executable, Some(&arguments))
+            .unwrap()
+        {
+            downstream += 1;
+        }
+        assert_eq!(downstream, 0, "secondary reached the primary startup path");
+        let forwarded = std::fs::read_to_string(root.0.join("forwarded")).unwrap();
+        assert!(forwarded.ends_with(&format!("|{}\0", arguments[1..].join("|"))));
+        assert!(child.try_wait().unwrap().is_none());
+        assert_eq!(started(&root.0), child.id());
+        assert!(!windows::claim_runtime_root(&names, &executable)
+            .unwrap()
+            .primary());
+        assert!(!root.0.join("auth.sqlite3").exists());
+        assert!(!root.0.join("webview").exists());
+    }));
+    if child.try_wait().unwrap().is_none() {
+        child.kill().unwrap();
     }
-    let forwarded = std::fs::read_to_string(root.0.join("forwarded")).unwrap();
-    assert!(
-        forwarded.ends_with("ofca://onboarding/?journey=00000000-0000-0000-0000-000000000001\0")
-    );
-    drop(secondary);
+    child.wait().unwrap();
+    if let Err(error) = result {
+        std::panic::resume_unwind(error);
+    }
     assert!(windows::claim_runtime_root(&names, &executable)
         .unwrap()
         .primary());

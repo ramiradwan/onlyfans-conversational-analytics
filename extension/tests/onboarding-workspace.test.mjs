@@ -110,6 +110,11 @@ test('packaged document contexts restore ownership when Chrome withholds tabs.ge
   await f.workspace.saveDraft(sender, { scope_id: scope.scope_id, draft: checked });
   await assert.rejects(f.workspace.saveDraft({ ...sender, documentId: 'old-document' },
     { scope_id: scope.scope_id, draft: checked }), /workspace_sender_stale/);
+  const beforeRepeat = f.calls.length;
+  assert.deepEqual(await f.open(), { journey_id: journey, tab_id: sender.tab.id, route: 'extension' });
+  assert.equal(f.tabs.length, 1);
+  assert.deepEqual(f.calls.slice(beforeRepeat), [['update', sender.tab.id, { active: true }], ['window', 1, { focused: true }]]);
+  assert.deepEqual((await f.workspace.read()).draft, checked);
 });
 
 test('idle expiry retires unfinished drafts without recreating tabs', async () => {

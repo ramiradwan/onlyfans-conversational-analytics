@@ -75,7 +75,7 @@ export function FreshnessStatus({ freshness, bridge, snapshotUsable, now = new D
         {navigationError && <Typography data-journey-state="desktop.browser_action_unavailable" role="alert" variant="body2">The browser action could not be opened. Open Chrome and try again.</Typography>}
         <Box component="dl" sx={{ display: 'grid', gap: 1, m: 0 }}>{[...(note ? [{ label: 'Connection', value: note }] : []), ...rows].slice(0, 3).map((row) => <Box key={row.label}><Typography component="dt" variant="caption">{row.label}</Typography><Typography component="dd" variant="body2" sx={{ m: 0, fontVariantNumeric: 'tabular-nums' }}>{row.value}</Typography></Box>)}</Box>
         {current.action && <Button size="small" variant="outlined" component={current.action.destination === 'settings' ? 'a' : 'button'} href={current.action.destination === 'settings' ? '/settings#browser-extension' : undefined}
-          onClick={() => { const destination = current.action?.destination; if (destination === 'reload') window.location.reload(); else if (destination === 'creator' || destination === 'setup') void open(destination); }} sx={{ alignSelf: 'flex-start' }}>{current.action.label}</Button>}
+          onClick={() => { const destination = current.action?.destination; if (destination === 'creator' || destination === 'setup') void open(destination); }} sx={{ alignSelf: 'flex-start' }}>{current.action.label}</Button>}
       </Stack>
     </Popover>
   </>;

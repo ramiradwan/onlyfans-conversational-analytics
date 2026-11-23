@@ -8,11 +8,43 @@ import { FIXED_NOW, startHarness } from './capture.mjs';
 import { auditScrolling, installWatcher, readWatcher } from './shift-watcher.mjs';
 import { renderSurfaceState, SURFACE_STATES } from '../../extension/qualification/surface-fixtures.mjs';
 import { openActivationReview, publishActivation } from './desktop-decision-fixtures.mjs';
+import { measureDashboardMismatch, measureFindingsStates, measureOfferPrice } from './review-contracts.mjs';
+import { prepareFindings } from './screen-matrix.mjs';
 
 let browser, harness;
 before(async () => { browser = await chromium.launch(); harness = await startHarness(); });
 after(async () => { await browser?.close(); harness?.vite.kill(); });
 const settle = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+
+test('parallel visual harnesses use separate Vite dependency caches', async () => {
+  const second = await startHarness();
+  try {
+    const dependencyPath = async ({ base }) => {
+      const response = await fetch(new URL('/src/story-only/VisualHarness.tsx', base));
+      assert.equal(response.status, 200);
+      const match = (await response.text()).match(/"([^"]+\/deps\/react-dom_client\.js)\?/u);
+      assert(match, 'The harness entry must import the optimized React dependency');
+      return new URL(match[1], base).pathname;
+    };
+    const [firstPath, secondPath] = await Promise.all([dependencyPath(harness), dependencyPath(second)]);
+    assert.notEqual(firstPath, secondPath, 'Concurrent Vite servers share an optimizer cache');
+  } finally {
+    second.vite.kill();
+  }
+});
+
+for (const mode of ['light', 'dark']) for (const reducedMotion of ['reduce', 'no-preference']) {
+  for (const [width, height] of [[1440, 900], [390, 844], [320, 900]]) {
+    test(`first and seen findings copy fits at ${width} in ${mode} with motion ${reducedMotion}`, async () => {
+      const viewport = { width, height };
+      const page = await browser.newPage({ viewport, colorScheme: mode, reducedMotion, locale: 'en-US', timezoneId: 'UTC' });
+      try {
+        await prepareFindings(page, true);
+        await measureFindingsStates(page, harness.base, mode, viewport);
+      } finally { await page.close(); }
+    });
+  }
+}
 
 for (const mode of ['light', 'dark']) for (const scale of [1, 1.5]) {
   test(`native window controls and compact Settings fit 640x480 in ${mode} at ${scale}x text`, async () => {
@@ -648,6 +680,32 @@ for (const width of [320, 390, 600]) test(`essential activation content stays se
   } finally { await page.close(); }
 });
 
+for (const mode of ['light', 'dark']) for (const [width, scale] of [[1440, 1], [390, 1], [320, 2]]) {
+  test(`Dashboard mismatch V03 at ${width} with ${scale}x text in ${mode}`, async t => {
+    const page = await browser.newPage({ colorScheme: mode, reducedMotion: 'reduce' });
+    try {
+      await page.addInitScript(value => {
+        const setFontSize = () => {
+          const root = document.documentElement;
+          if (!root) return;
+          root.style.fontSize = `${value * 100}%`;
+          observer.disconnect();
+        };
+        const observer = new MutationObserver(setFontSize);
+        observer.observe(document, { childList: true });
+        setFontSize();
+      }, scale);
+      const open = async workspace => {
+        await page.goto(harness.base + `?workspace=${workspace}&mode=${mode}`);
+        await page.waitForFunction(() => window.__workspaceFixture);
+        await page.evaluate(() => document.fonts.ready);
+        await settle(page);
+      };
+      t.diagnostic(JSON.stringify(await measureDashboardMismatch(page, open, width, scale)));
+    } finally { await page.close(); }
+  });
+}
+
 test('activation Dashboard prompt uses Guided task geometry at 1440', async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   try {
@@ -682,6 +740,46 @@ test('activation Dashboard prompt uses Guided task geometry at 1440', async () =
   } finally { await page.close(); }
 });
 
+for (const mode of ['light', 'dark']) for (const width of [320, 390, 1440]) {
+  test(`Dashboard collection continuation uses Guided task geometry at ${width} in ${mode}`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 900 }, colorScheme: mode, reducedMotion: 'reduce' });
+    try {
+      for (const [state, title] of [
+        ['allow-message-collection', 'Allow OnlyFans activity collection'],
+        ['allow-onlyfans-access', 'Allow site access'],
+        ['message-collection-off', 'OnlyFans activity collection is off'],
+      ]) {
+        await page.goto(harness.base + `?workspace=dashboard-continuation&state=${state}&mode=${mode}`);
+        if (width === 320) await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+        const task = page.getByRole('region', { name: title, exact: true });
+        await task.waitFor();
+        await page.evaluate(() => document.fonts.ready);
+        const geometry = await task.evaluate(node => {
+          const title = node.querySelector('h2');
+          const headingStyle = getComputedStyle(title);
+          const bounds = node.getBoundingClientRect();
+          const spot = node.querySelector('.onboarding-spot')?.getBoundingClientRect();
+          const region = node.closest('[data-reserved-region="dashboard-setup"]').getBoundingClientRect();
+          return { width: bounds.width, left: bounds.left, regionLeft: region.left, spot: spot?.width,
+            padding: getComputedStyle(node).padding, fontSize: headingStyle.fontSize,
+            titleHeight: title.getBoundingClientRect().height, lineHeight: parseFloat(headingStyle.lineHeight),
+            fits: node.scrollWidth <= node.clientWidth && bounds.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth };
+        });
+        assert.equal(geometry.spot, 40);
+        assert.equal(geometry.left, geometry.regionLeft);
+        assert(geometry.fits);
+        assert.equal(await task.getByRole('button', { name: 'Review in browser', exact: true }).count(), 1);
+        if (width === 1440) {
+          assert.equal(geometry.width, 760);
+          assert.equal(geometry.padding, '32px');
+          assert.equal(geometry.fontSize, '22px');
+          assert.equal(geometry.titleHeight, geometry.lineHeight);
+        }
+      }
+    } finally { await page.close(); }
+  });
+}
+
 for (const mode of ['light', 'dark']) for (const width of [320, 390, 1440]) test(`activation offer scroll and styling at ${width} in ${mode}`, async () => {
   const page = await browser.newPage({ viewport: { width, height: 640 }, reducedMotion: 'reduce', colorScheme: mode });
   try {
@@ -704,6 +802,9 @@ for (const mode of ['light', 'dark']) for (const width of [320, 390, 1440]) test
         shadow: style.boxShadow,
         spot: node.querySelector('.onboarding-spot')?.getBoundingClientRect().width,
         rowCount: rows.length,
+        valueAlignments: rows.map(row => getComputedStyle(row.querySelector('dd')).textAlign),
+        valuesShareLeftEdge: rows.every(row => row.querySelector('dt').getBoundingClientRect().left
+          === row.querySelector('dd').getBoundingClientRect().left),
         valueStyle: [getComputedStyle(price).fontWeight, getComputedStyle(price).fontVariantNumeric, getComputedStyle(price).textAlign],
         captionStyle: [getComputedStyle(caption).color, getComputedStyle(caption).display, getComputedStyle(caption).fontWeight],
         secondaryInk: getComputedStyle(rows[0].querySelector('dt')).color,
@@ -717,17 +818,25 @@ for (const mode of ['light', 'dark']) for (const width of [320, 390, 1440]) test
     assert.notEqual(geometry.shadow, 'none');
     assert.equal(geometry.spot, 40);
     assert.equal(geometry.rowCount, 5);
-    assert.deepEqual(geometry.valueStyle, ['600', 'tabular-nums', 'end']);
+    assert.deepEqual(geometry.valueStyle, ['600', 'tabular-nums', width === 320 ? 'start' : 'end']);
+    assert(geometry.valueAlignments.every(align => align === (width === 320 ? 'start' : 'end')));
     assert.deepEqual(geometry.captionStyle, [geometry.secondaryInk, 'block', '400']);
     assert.notEqual(geometry.secondaryInk, geometry.ink);
     assert.equal(geometry.trailingDivider, '0px');
     assert(geometry.quiet.length >= 2 && geometry.quiet.every(([color, padding, align]) => color === geometry.ink && padding === '0px' && align === 'start'));
     assert(geometry.fits);
+    await measureOfferPrice(offer, mode);
     if (width === 320) {
+      assert(geometry.valuesShareLeftEdge);
       const title = offer.getByRole('heading');
       const before = await title.boundingBox();
       await offer.getByRole('button', { name: 'Use an activation code' }).scrollIntoViewIfNeeded();
       assert((await title.boundingBox()).y < before.y, 'Scrolling to the code entry moves the title with the rest of the offer');
+    }
+    await offer.getByRole('button', { name: 'Activate for free' }).focus();
+    for (const name of ['Not now', 'Use an activation code']) {
+      await page.keyboard.press('Tab');
+      assert(await offer.getByRole('button', { name }).evaluate(button => button === document.activeElement));
     }
     await offer.getByRole('button', { name: 'Use an activation code' }).click();
     const code = page.getByRole('dialog', { name: 'Use an activation code' });

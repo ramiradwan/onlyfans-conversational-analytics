@@ -97,6 +97,7 @@ export function installSurfaceFixture(input) {
         return { ok: true, status: status() };
       },
       connect() {
+        if (state.portUnavailable) throw Error('Fixture port unavailable');
         const port = { onMessage: event(), onDisconnect: event(),
           postMessage(message) {
             if (message.type === 'readiness') {
@@ -119,7 +120,8 @@ export function installSurfaceFixture(input) {
   };
   const originalFetch = window.fetch;
   window.fetch = (url, options) => String(url).endsWith('/extension-config.json')
-    ? Promise.resolve({ json: async () => ({ schema: 'ofca-extension-config/v1', dashboard_url: 'http://bridge.localhost:17871/', history_settings_url: 'http://bridge.localhost:17871/settings' }) })
+    ? Promise.resolve({ json: async () => ({ schema: 'ofca-extension-config/v1', dashboard_url: 'http://bridge.localhost:17871/', history_settings_url: 'http://bridge.localhost:17871/settings',
+      support_channels: state.supportChannels }) })
     : originalFetch(url, options);
   window.WebSocket = class { constructor() { queueMicrotask(() => state.reachable ? this.onopen?.() : this.onerror?.()); } close() {} };
 }

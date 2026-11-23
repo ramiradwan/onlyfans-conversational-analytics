@@ -61,7 +61,7 @@ export function createFindingsClient(options: { fetcher?: typeof fetch; csrf?: (
           const code = value && typeof value === 'object' && 'detail' in value && value.detail
             && typeof value.detail === 'object' && 'code' in value.detail ? value.detail.code : null;
           const classification = recoveryClass(findingsRecovery, code);
-          if (classification === 'operation_pending') throw new FindingsClientError('building', 'Your saved analysis is being updated.');
+          if (classification === 'operation_pending') throw new FindingsClientError('building', 'Saved findings aren’t ready yet.');
           if (result.status === 401 || result.status === 403) throw new FindingsClientError('unavailable', 'Your session changed. Reload the app to sign in again.');
           if (classification === 'invariant_failed') throw new FindingsClientError('error', 'The saved text analysis could not be verified.');
           if (classification === 'owner_unavailable' || result.status === 503 && classification === null) throw new FindingsClientError('unavailable', 'Text analysis is unavailable for this saved analysis. Other analytics remain available.');

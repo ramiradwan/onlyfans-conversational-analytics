@@ -22,6 +22,7 @@ pub enum Action {
 }
 pub struct Host {
     pub admitted: AtomicBool,
+    pub retained_recovery: AtomicBool,
     pub stopped: AtomicBool,
     pub quitting: AtomicBool,
     pub update_check_active: AtomicBool,
@@ -32,6 +33,33 @@ pub struct Host {
 }
 
 impl Host {
+    pub fn activate(&self, journey: Option<String>) {
+        if !self.retained_recovery.load(Ordering::SeqCst) {
+            let _ = self.actions.try_send(Action::Activate(journey));
+        }
+    }
+
+    fn startup_failure_document(&self, reason: &'static str) -> &'static str {
+        if reason == "child_recovery_required" && !self.admitted.load(Ordering::SeqCst) {
+            self.retained_recovery.store(true, Ordering::SeqCst);
+            policy::failure_document(reason)
+        } else {
+            policy::failure_document("child_unavailable")
+        }
+    }
+
+    pub fn close_retained_recovery(&self, label: &str, url: &url::Url) -> bool {
+        if label == "main"
+            && self.retained_recovery.load(Ordering::SeqCst)
+            && !self.admitted.load(Ordering::SeqCst)
+            && policy::retained_recovery_document(url)
+        {
+            self.quit();
+            return true;
+        }
+        false
+    }
+
     pub fn quit(&self) {
         self.quitting.store(true, Ordering::SeqCst);
         self.engine_acquisition.request_stop();
@@ -48,11 +76,11 @@ impl Host {
     }
 }
 
-fn unavailable(app: &AppHandle, state: &Host, reason: &'static str) {
+fn unavailable(app: &AppHandle, state: &Host, document: &'static str) {
     state.admitted.store(false, Ordering::SeqCst);
     state.engine_acquisition.request_stop();
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.navigate(policy::failure_document(reason).parse().expect("fixed URL"));
+        let _ = window.navigate(document.parse().expect("fixed URL"));
         let _ = window.show();
     }
 }
@@ -84,7 +112,10 @@ pub fn supervise(
             });
             return;
         }
-        Err(reason) => unavailable(&app, &state, reason),
+        Err(reason) => {
+            let document = state.startup_failure_document(reason);
+            unavailable(&app, &state, document);
+        }
         Ok(false) => (),
     }
     let acquisition_drained = state.engine_acquisition.drain();
@@ -302,7 +333,7 @@ fn run(
                         _ => observe_servicing(&window, "servicing_cancelled"),
                     }
                     drop(pending);
-                    unavailable(app, state, "servicing_failed");
+                    unavailable(app, state, policy::failure_document("servicing_failed"));
                     // Retain the owned Brain and Job Object on refusal. A servicing
                     // deadline never becomes forced cleanup or normal admission.
                     while !state.quitting.load(Ordering::SeqCst) {
@@ -392,4 +423,82 @@ fn prepare_update(state: &Arc<Host>) -> bool {
         let _ = owner.actions.try_send(Action::Prepared(result));
     });
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc::{sync_channel, TryRecvError};
+
+    fn startup_owner() -> (Host, Receiver<Action>) {
+        let (actions, receiver) = sync_channel(8);
+        let state = Host {
+            admitted: AtomicBool::new(false),
+            retained_recovery: AtomicBool::new(false),
+            stopped: AtomicBool::new(false),
+            quitting: AtomicBool::new(false),
+            update_check_active: AtomicBool::new(false),
+            servicing_cancel: Mutex::new(None),
+            engine_acquisition: crate::engine_acquisition::Owner::new(PathBuf::new()),
+            release: None,
+            actions,
+        };
+        (state, receiver)
+    }
+
+    #[test]
+    fn retained_recovery_close_requires_the_owned_failure_and_exact_main_document() {
+        let (state, receiver) = startup_owner();
+        let recovery = policy::failure_document("child_recovery_required");
+        let url = recovery.parse().unwrap();
+        assert!(!state.close_retained_recovery("main", &url));
+        assert!(crate::frame::close_or_hide(&state, "main", Some(&url), || Ok(true)).unwrap());
+        state.activate(None);
+        assert!(matches!(receiver.try_recv(), Ok(Action::Activate(None))));
+        assert_eq!(
+            state.startup_failure_document("servicing_failed"),
+            policy::failure_document("servicing_failed")
+        );
+        assert!(!state.close_retained_recovery("main", &url));
+        state.admitted.store(true, Ordering::SeqCst);
+        assert_ne!(
+            state.startup_failure_document("child_recovery_required"),
+            recovery
+        );
+        assert!(!state.close_retained_recovery("main", &url));
+        state.admitted.store(false, Ordering::SeqCst);
+        assert!(!state.close_retained_recovery("main", &url));
+        assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
+
+        assert_eq!(
+            state.startup_failure_document("child_recovery_required"),
+            recovery
+        );
+        for wrong in [
+            "http://tauri.localhost/index.html",
+            "http://tauri.localhost/unavailable.html",
+            "http://tauri.localhost/data-recovery.html?unexpected=1",
+            policy::ORIGIN,
+        ] {
+            assert!(
+                !state.close_retained_recovery("main", &wrong.parse().unwrap()),
+                "{wrong}"
+            );
+        }
+        assert!(!state.close_retained_recovery("other", &url));
+        state.admitted.store(true, Ordering::SeqCst);
+        assert!(!state.close_retained_recovery("main", &url));
+        state.admitted.store(false, Ordering::SeqCst);
+        state.activate(Some("synthetic-journey".into()));
+        assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
+        assert!(
+            !crate::frame::close_or_hide(&state, "main", Some(&url), || {
+                panic!("terminal retained recovery fell back to hide")
+            })
+            .unwrap()
+        );
+        assert!(state.quitting.load(Ordering::SeqCst));
+        assert!(!state.stopped.load(Ordering::SeqCst));
+        assert!(matches!(receiver.try_recv(), Ok(Action::Quit)));
+    }
 }

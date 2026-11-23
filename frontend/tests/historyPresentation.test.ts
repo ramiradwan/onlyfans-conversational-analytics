@@ -31,10 +31,11 @@ describe('owner-scoped acquisition and saved history', () => {
     expect(presentHistory(settings, waiting, { ...coverage, status: 'complete' }).label).toBe('Saved');
     const incompatible = { ...agent, browser: { ...agent.browser!, history_error_code: 'software_update_required' as const } };
     expect(presentHistory(settings, incompatible, coverage)).toMatchObject({ label: 'Update needed',
-      detail: 'History collection is waiting for a compatible app update.' });
+      detail: 'Update Conversation Analytics to continue.' });
   });
   it('distinguishes unsupported signing from permission and saved coverage', () => {
-    expect(presentHistory(settings, agent, coverage)).toMatchObject({ label: 'Needs attention', tone: 'warning' });
+    expect(presentHistory(settings, agent, coverage)).toEqual({ label: 'Needs attention', tone: 'warning',
+      detail: 'The last history check could not read this site version.' });
     expect(presentHistory(settings, { ...agent, browser: { ...agent.browser!, history_permission: 'missing' } }, coverage).label).toBe('Permission needed');
     expect(presentHistory(settings, agent, { ...coverage, status: 'complete', phase: 'complete',
       discovered_conversations: 11, complete_conversations: 11 })).toMatchObject({ label: 'Saved', tone: 'success' });

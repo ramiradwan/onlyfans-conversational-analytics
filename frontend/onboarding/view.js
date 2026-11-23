@@ -3,6 +3,7 @@ import { browserRecoveryTarget } from './browser-task.js';
 import { authorityRecoveryView } from '../shared-setup/authority-recovery.js';
 import { desktopRecovery, passkeyRecovery, recoveryClass } from '../shared-setup/recovery.js';
 import { expiredAccessDescription, expiredAccessTitle } from '../shared-setup/saved-data-entry.js';
+import { renderSupportHelp } from '../shared-setup/support-help.js';
 
 const tasks = {
   'browser-access': ['Bring in your conversations', 'Set up browser access', 'setup_browser_access'],
@@ -11,7 +12,7 @@ const tasks = {
   complete: ['Setup complete', 'Desktop setup', 'setup_complete'],
 };
 const actions = { 'browser.access': 'Continue in browser', 'account.connect': 'Sign in', 'account.confirm': 'Connect account', 'browser.pair': 'Connect extension' };
-const namedProviders = new Set(['google', 'microsoft-personal', 'telegram', 'tiktok']);
+const namedProviders = new Map([['google', 'Google'], ['microsoft-personal', 'Microsoft'], ['telegram', 'Telegram'], ['tiktok', 'TikTok']]);
 const chromeInstruction = 'Finish setup in your browser. This window updates by itself.';
 const chooseSignIn = 'Choose how to sign in. You’ll confirm the connection here next.';
 const finishSignIn = 'Finish signing in in your browser. This window continues by itself.';
@@ -29,7 +30,7 @@ const errors = {
   browser_preparing: 'The browser task is being prepared.',
   extension_unavailable: 'Install or turn on the extension in your browser to continue setup.',
   profile_mismatch: 'Switch to the browser profile that has the extension.',
-  account_mismatch: 'Switch to the creator account you want to connect in your browser.',
+  account_mismatch: 'Sign in to the OnlyFans account you want to connect.',
   browser_needs_account: 'Sign in to your creator account in your browser.',
   browser_needs_consent: 'Browser access is not turned on in the extension. Turn it on in your browser.',
   browser_needs_permission: 'Allow access to the creator site in the extension.',
@@ -63,6 +64,7 @@ const statusIcons = { neutral: 'info', progress: 'pending', success: 'done', war
 export function renderSetup(document, state) {
   const get = id => document.getElementById(id);
   const value = state.snapshot;
+  const snapshotLive = state.connected && value?.expires_at * 1000 > Date.now();
   const recovery = authorityRecoveryView(state, state.acting);
   const main = document.querySelector('main');
   const card = main.querySelector('.setup-task-card');
@@ -79,6 +81,7 @@ export function renderSetup(document, state) {
     if (kind) element.prepend(get('desktop-status-icons').content.querySelector(`[data-status-icon="${kind}"]`).cloneNode(true));
   };
   const taskStatus = get('task-status');
+  const actionSlot = card.querySelector('.task-actions-slot > [data-region-content]');
   Object.assign(card.style, { inlineSize: recovery ? '100%' : '', maxInlineSize: recovery ? '560px' : '',
     marginInline: recovery ? 'auto' : '' });
   for (const control of [get('task-action'), get('protected-cancel'), get('task-pending'), card.querySelector('.desktop-loading-action')]) {
@@ -91,6 +94,7 @@ export function renderSetup(document, state) {
   get('protected-cancel').hidden = true;
   get('task-action').dataset.protectedRecovery = '';
   if (recovery) {
+    renderSupportHelp(actionSlot, false);
     main.dataset.journeyState = 'desktop.' + 'setup_authority_recovery';
     main.dataset.task = 'authority-recovery';
     get('task-title').textContent = recovery.title || 'Checking access';
@@ -101,6 +105,7 @@ export function renderSetup(document, state) {
     pendingRow.hidden = !pending;
     updateStatus(pendingRow, pending ? recovery.status : '', 'progress');
     updateStatus(taskStatus, pending ? '' : recovery.status, recovery.tone);
+    for (const id of ['header-account-avatar', 'header-account-name', 'header-account-handle', 'decision-provider']) get(id).textContent = '';
     for (const id of ['local-access', 'local-authenticate', 'decision-details', 'decision-sign-in', 'decision-provider', 'header-account', 'sign-in-options',
       'browser-reopen', 'sign-in-switch', 'sign-in-back', 'setup-code-open']) get(id).hidden = true;
     const primary = get('task-action'), cancel = get('protected-cancel');
@@ -244,7 +249,7 @@ export function renderSetup(document, state) {
   } else if (showingProviders || ['selected', 'retired', 'expired'].includes(signIn?.state)) taskDescription = chooseSignIn;
   else if (canReplace) taskDescription = 'Sign in to connect your account.';
   else if (!accepted && !confirmingUnknown) {
-    if (decision) taskDescription = 'Check the creator account and this computer, then connect them.';
+    if (decision) taskDescription = 'Connect your OnlyFans account to this computer';
     else if (task === 'account-connection') taskDescription = 'Sign in, then confirm the account connection here.';
     else if (task === 'finish-setup') taskDescription = 'Set up access to this computer and connect the browser.';
   }
@@ -252,27 +257,13 @@ export function renderSetup(document, state) {
   get('task-description').textContent = taskDescription;
   get('task-description').hidden = !taskDescription;
   get('decision-details').hidden = !accountDecision || choosingAccount || terminal;
-  const label = accountDecision && value.creator_label?.creator_id === accountDecision.creator_id ? value.creator_label : null;
-  get('decision-account').textContent = accountDecision ? accountName(label) || 'creator account ' + accountDecision.creator_id : '';
-  // Unlabelled accounts show a generic glyph.
-  get('decision-account-avatar').textContent = initial(label);
-  get('decision-account-avatar').hidden = !get('decision-account-avatar').textContent;
-  get('decision-account-glyph').hidden = !get('decision-account-avatar').hidden;
-  // A helper mismatch can name the observed account before the owner has a binding.
-  const scopedLabel = !terminal && (!value?.decision || value.decision.creator_id === value.creator_label?.creator_id)
-    ? value?.creator_label : null;
-  const expectedLabel = value?.decision || value?.facts.account === 'verified' ? scopedLabel : null;
-  const account = reason === 'account_mismatch' ? expectedLabel : scopedLabel;
+  const account = !terminal && !accountDecision && !(task === 'account-connection' && accepted) && reason !== 'account_mismatch'
+    && (!value?.decision || value.decision.creator_id === value.creator_label?.creator_id) ? value?.creator_label : null;
   get('header-account').hidden = !accountName(account);
   get('header-account-avatar').textContent = initial(account);
   get('header-account-name').textContent = accountName(account);
   get('header-account-handle').textContent = account?.display_name && account.username ? '@' + account.username : '';
   get('header-account-handle').hidden = !get('header-account-handle').textContent;
-  // A display name may be shared, so the handle or account number follows it.
-  get('decision-account-identifier').textContent = !label?.display_name ? ''
-    : label.username ? '@' + label.username : 'creator account ' + accountDecision.creator_id;
-  get('decision-account-identifier').hidden = !get('decision-account-identifier').textContent;
-  get('decision-computer').textContent = accountDecision?.computer_name || '';
   get('task-step').textContent = task && task !== 'complete' ? `Step ${Object.keys(tasks).indexOf(task) + 1} of 3 · ${stepLabel}`
     : stepLabel || (terminal ? 'Desktop setup' : '');
   const pending = Boolean(state.pending || value?.pending_operations.length || startingChrome);
@@ -283,8 +274,8 @@ export function renderSetup(document, state) {
       ? `${expiredAccessTitle}. ${expiredAccessDescription}`
     : reason === 'connection_unavailable' && value?.journey_id
       ? 'Dipsy can’t connect right now. Your setup progress is saved.'
-      : reason === 'account_mismatch' && accountName(expectedLabel)
-        ? `You’re signed in to a different creator account. Switch to ${accountName(expectedLabel)} in your browser to continue.`
+      : reason === 'account_mismatch' && snapshotLive && value.facts.account === 'verified'
+        ? 'Switch to the OnlyFans account you used for setup.'
         : reportedReason === 'browser_unavailable' && inChrome && recoveryTarget
           ? 'The browser closed or lost its connection.' : reasonClass ? errors[reason] : null;
   if (unavailable || reason === 'chrome_unavailable') get('setup-code-open').hidden = true;
@@ -301,11 +292,13 @@ export function renderSetup(document, state) {
     && item.state === 'outcome_unknown');
   const switching = state.choosingAccount || [state.acting, state.pendingAction].some(action => ['auth.switch', 'auth.select', 'auth.cancel'].includes(action))
     || value?.pending_operations.some(item => ['auth.switch', 'auth.select', 'auth.cancel'].includes(item.action));
-  const hasConfirmedProvider = decision && allowed.includes('account.confirm') && state.connected && !reason && !confirmingUnknown && !replacing && !switching
+  const confirmedProvider = namedProviders.get(signIn?.authentication_attempt?.provider);
+  const hasConfirmedProvider = decision && allowed.includes('account.confirm') && snapshotLive && Date.parse(decision.expires_at) > Date.now()
+    && !reason && !confirmingUnknown && !replacing && !switching
     && signIn?.state === 'admitted' && signIn.operation_id === decision.operation_id && !signIn.actions.open_browser
     && (!value.decision_status || decisionStatus === 'confirmation-required' && value.decision_status.operation_id === decision.operation_id)
-    && namedProviders.has(signIn.authentication_attempt?.provider);
-  get('decision-provider').textContent = hasConfirmedProvider ? 'Sign-in confirmed' : '';
+    && Boolean(confirmedProvider);
+  get('decision-provider').textContent = hasConfirmedProvider ? `Signed in with ${confirmedProvider}` : '';
   get('decision-provider').hidden = !hasConfirmedProvider;
   const progress = task === 'complete' ? state.continuing ? 'Opening dashboard…' : ''
     : replacing ? (replacementUnknown ? 'Checking sign-in\u2026' : 'Preparing sign-in\u2026')
@@ -377,6 +370,9 @@ export function renderSetup(document, state) {
   for (const group of document.querySelectorAll('.setup-actions')) {
     group.hidden = [...group.children].every(child => child.hidden);
   }
+  renderSupportHelp(actionSlot, terminal && Object.hasOwn(desktopRecovery, reason)
+    && !loading && !state.acting && !state.pending && !state.pendingAction && !state.browserLaunchPending
+    && !actionSlot.querySelector(':scope > :not([hidden], [aria-hidden="true"], [data-support-help])'));
   for (const step of document.querySelectorAll('[data-step]')) {
     if (step.dataset.step === task) step.setAttribute('aria-current', 'step');
     else step.removeAttribute('aria-current');

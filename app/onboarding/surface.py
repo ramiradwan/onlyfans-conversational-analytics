@@ -1,12 +1,27 @@
 """Generated setup presentation, independent of runtime settings and analytics."""
 import json
+from html import escape
 from pathlib import PurePosixPath
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 
+from app.core.customer_release import CustomerReleaseConfigurationError, load_customer_release_config
 from app.core.resource_paths import ResourcePathError, resource_path
 from app.onboarding.admission_routes import HEADERS, _host
+
+_SUPPORT_TEMPLATE = '<template id="support-channels"></template>'
+
+
+def _with_support(document: str) -> str:
+    if _SUPPORT_TEMPLATE not in document:
+        return document
+    try:
+        channels = load_customer_release_config().support_channels
+    except CustomerReleaseConfigurationError:
+        return document
+    entries = "".join(f'<span data-channel="{channel}">{escape(address)}</span>' for channel, address in channels)
+    return document.replace(_SUPPORT_TEMPLATE, f'<template id="support-channels">{entries}</template>', 1)
 
 
 def _assets(entry_name="onboarding/index.html"):
@@ -47,6 +62,8 @@ def setup_shell(request: Request, *, browser=False, receiving_origin=None):
         document = (root / entry).read_text(encoding="utf-8")
     except OSError:
         raise HTTPException(503, "Setup assets are unavailable") from None
+    if not receiving_origin:
+        document = _with_support(document)
     return HTMLResponse(document, headers=HEADERS | {"Content-Security-Policy":
         "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self' data:; "
         "img-src 'self' data:; connect-src 'self' " + ("; " if browser or receiving_origin else "ipc: http://ipc.localhost; ") +

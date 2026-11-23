@@ -24,6 +24,7 @@ import {
 import { desktopOnboardingApi, selectAnalysisReadiness, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import { componentTokens, typography } from '../theme';
 import { OnboardingAction, OnboardingPill, OnboardingSpot, OnboardingStatus } from './ui/OnboardingCard';
+import { offerPriceColors } from '../theme/generated/tokens';
 
 const ACTIVATION_BODY = 'Conversation insights, like your most common topics, stored on this computer.';
 const ACTIVATION_PENDING = 'Checking your activation…';
@@ -149,6 +150,18 @@ export function CommercialActivationControls({
   const canConfirm = currentAuthority && decision !== null && allowed.includes('activation.confirm')
     && unconfirmedOffer !== offerIdentity && !unresolvedCommand && !codeInProgress;
   const activationOutcome = sameCreator ? snapshot?.pending_operations.find(value => value.action === 'activation.review') : undefined;
+  const activationRequired = readiness?.commercial_authority === 'required';
+  const reviewOperationId = snapshot?.decision_status?.operation_id ?? decision?.operation_id ?? authentication?.operation_id;
+  const mismatchOperations = currentAuthority && activationRequired ? snapshot?.pending_operations.filter(operation =>
+    operation.action === 'activation.review' && (!reviewOperationId || operation.operation_id === reviewOperationId)
+    || operation.action === 'activation.confirm' && operation.operation_id === desktop.pending) ?? [] : [];
+  const mismatchOperation = mismatchOperations.length === 1 ? mismatchOperations[0] : undefined;
+  const classifiedMismatch = mismatchOperation !== undefined && (mismatchOperation.reason === 'account_mismatch'
+    || desktop.error === 'account_mismatch' && desktop.pending === mismatchOperation.operation_id
+      && desktop.pendingAction === mismatchOperation.action);
+  const mismatchMessage = classifiedMismatch ? snapshot?.facts.account === 'verified'
+    ? 'Switch to the OnlyFans account you used for setup.'
+    : 'Sign in to the OnlyFans account you want to connect.' : null;
   const pendingActivation = Boolean(activationOutcome);
   const replacementAvailable = pendingActivation && allowed.includes('activation.review');
   const canOpen = currentAuthority && (!pendingActivation || replacementAvailable)
@@ -177,7 +190,7 @@ export function CommercialActivationControls({
     promotedIntent.current = null;
     setOfferOpen(false);
   };
-  const canRedeem = currentAuthority && !unresolvedCommand && (!pendingActivation || accepted || decision !== null)
+  const canRedeem = currentAuthority && !classifiedMismatch && !unresolvedCommand && (!pendingActivation || accepted || decision !== null)
     && (!unconfirmedOffer || unconfirmedOffer !== offerIdentity);
   useRevealHold(checking);
 
@@ -326,7 +339,6 @@ export function CommercialActivationControls({
     && readiness.analysis_admission === 'admitted';
   const activeButBlocked = readiness?.commercial_authority === 'active'
     && readiness.analysis_admission === 'blocked';
-  const activationRequired = readiness?.commercial_authority === 'required';
   const activationUnavailable = readiness?.commercial_authority === 'unavailable';
   const browserLaunchError = desktop.error === 'browser_unavailable' ? 'The browser action could not be confirmed.'
     : desktop.error === 'chrome_unavailable' ? 'The browser could not be opened.' : null;
@@ -334,20 +346,13 @@ export function CommercialActivationControls({
   const offer = decision?.offer;
   const codeChecking = codeBusy || codePending;
   const activationChecking = currentAuthority && activationRequired && accepted;
-  const mismatch = activationRequired && (activationOutcome?.reason === 'account_mismatch'
-    || desktop.error === 'account_mismatch' && (decisionStatus === 'unavailable' || desktop.pendingAction === 'activation.review'
-      || desktop.pendingAction === 'activation.confirm'));
-  const expectedCreator = snapshot?.creator_label;
-  const expectedLabel = mismatch && currentAuthority && snapshot?.facts.account === 'verified' && expectedCreator?.creator_id === ownerCreator
-    ? expectedCreator?.display_name || (expectedCreator?.username ? `@${expectedCreator.username}` : null) : null;
-  const terminalUnknown = currentAuthority && activationRequired && !mismatch && !unresolvedCommand && !codeInProgress && !authentication
+  const terminalUnknown = currentAuthority && activationRequired && !classifiedMismatch && !unresolvedCommand && !codeInProgress && !authentication
     && decisionStatus === 'unavailable' && !offer && (!activationOutcome || activationOutcome.state === 'refused'
       || activationOutcome.state === 'accepted' && activationOutcome.reason === 'none');
-  const classifiedMismatch = Boolean(expectedLabel);
   const feedback = noticeError || (!desktop.connected ? desktop.error === 'session_unavailable' ? 'The setup session ended. Reconnecting…' : 'Activation status could not be received.'
     : fullReady ? null : opening ? openingAction === 'activation.confirm' ? 'Confirming activation…'
       : openingAction === 'activation.review' ? 'Preparing activation…' : 'Opening browser…'
-        : expectedLabel ? `You’re signed in to a different creator account. Switch to ${expectedLabel} in your browser to continue.`
+        : mismatchMessage ? mismatchMessage
           : terminalUnknown ? 'Activation couldn’t finish.'
           : replacementAvailable ? 'Activation was not completed.'
           : unresolvedCommand ? 'Activation has not been confirmed.'
@@ -518,11 +523,17 @@ export function CommercialActivationControls({
               '& > div + div': { borderTop: 1, borderColor: 'divider' },
               '& dt': { color: 'text.secondary' },
               '& dd': { m: 0, color: 'text.primary', fontWeight: 600, fontVariantNumeric: 'tabular-nums', textAlign: 'end', maxWidth: '24ch' },
-              '@media (max-width: 359px)': { '& > div': { gridTemplateColumns: '1fr' } },
+              '@media (max-width: 359px)': {
+                '& > div': { gridTemplateColumns: '1fr' },
+                '& dd': { textAlign: 'start' },
+              },
             }}>
               <div><Typography component="dt" variant="body2">Funding</Typography><Typography component="dd" variant="body2">Complimentary pilot</Typography></div>
               <div><Typography component="dt" variant="body2">Price</Typography><Typography component="dd" variant="body2">
-                <Typography component="span" variant="inherit" sx={{ color: 'text.primary' }}>Free</Typography>
+                <Typography component="span" variant="inherit" sx={[
+                  { display: 'inline-block', px: 0.75, borderRadius: '6px', bgcolor: offerPriceColors.light.fill, color: offerPriceColors.light.ink },
+                  theme => theme.applyStyles('dark', { bgcolor: offerPriceColors.dark.fill, color: offerPriceColors.dark.ink }),
+                ]}>Free</Typography>
                 <Typography component="span" variant="inherit" sx={{ display: 'block', color: 'text.secondary', fontWeight: 400 }}>
                   Uses {new Intl.NumberFormat().format(offer.pilot_credit_cost)} {offer.pilot_credit_cost === 1 ? 'pilot credit' : 'pilot credits'}
                 </Typography>

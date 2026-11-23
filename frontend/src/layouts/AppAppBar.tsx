@@ -22,7 +22,7 @@ function appBarFreshness(state: Readonly<BridgeTransportState>): FreshnessPresen
   const input = { freshness: state.catchupFreshness, bridge: state.connection,
     snapshotUsable: state.viewRevision !== null && state.readModelState === 'realtime', now: new Date(), timeZone: viewerTimeZone() };
   if (state.protocolError?.fatal) return { label: 'Action needed', title: 'Action needed', sentence: protocolErrorText(state.protocolError),
-    icon: 'dot', tone: 'error', action: { label: 'Reload page', destination: 'reload' } };
+    icon: 'dot', tone: 'error' };
   // A saved catch-up result describes past observation. Current, account-
   // matched collection restrictions take precedence over a settled result.
   const agent = state.agent;

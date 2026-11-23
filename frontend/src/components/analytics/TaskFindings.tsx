@@ -7,7 +7,7 @@ import { ChartPanel } from './ChartPanel';
 import { LiteralFindings } from './LiteralFindings';
 import { MentionEvidenceDialog } from './MentionEvidenceDialog';
 import type { FindingsBaseline } from '../../analytics/analyticsReadModel';
-import { findingsTaskAvailability, type FindingsCategoryFilter, type FindingsDirection, type FindingsTask, type NavigationDeclaration, type NavigationGroupRow } from '../../analytics/findingsContract';
+import { findingsTaskAvailability, type FindingsCategoryFilter, type FindingsDirection, type FindingsResponse, type FindingsTask, type NavigationDeclaration, type NavigationGroupRow } from '../../analytics/findingsContract';
 import { formatCount, formatRatioPercent } from '../../analytics/formatAnalytics';
 import { createFindingsStore, findingsBinding, type createFindingsPresentation, type FindingsStore } from '../../store/findingsStore';
 import type { LiteralsStore } from '../../store/literalsStore';
@@ -62,7 +62,9 @@ function TaskSection({ task, previous = false, onCategory, selected, navigation 
       <Typography>{task.availability === 'current' ? 'Current saved findings' : task.availability === 'partial' ? 'Partially assessed' : 'Assessment pending'}{!task.scan_complete && ' · Scan incomplete'}</Typography>
       <Typography>Eligible: {formatCount(task.eligible_messages)} · Complete: {formatCount(task.complete_messages)} · Partial: {formatCount(task.partial_messages)} · Pending: {formatCount(task.pending_messages)}</Typography>
       <Typography>Failed: {formatCount(task.failed_messages)} · Unsupported: {formatCount(task.unsupported_messages)} · Uncertain: {formatCount(task.uncertain_messages)}</Typography>
-      <Typography variant="body2">Unassessed or uncertain messages do not count as confirmed absence. Shares use only the {formatCount(task.complete_messages)} completely assessed messages; partial support is shown separately.</Typography>
+      <Typography variant="body2">Unassessed or uncertain messages do not count as confirmed absence. {task.complete_messages > 0
+        ? `Shares use only the ${formatCount(task.complete_messages)} completely assessed messages; partial support is shown separately.`
+        : 'No fully checked messages in this saved result.'}</Typography>
       {task.rows.length === 0 ? <Typography>{task.eligible_messages === 0 && task.scan_complete ? 'No eligible saved messages in this window.' : 'No supported categories are listed. Check the assessment coverage above.'}</Typography>
         : !navigation ? <CategoryTable task={task} rows={task.rows} title={title} onCategory={onCategory} selected={selected} />
           : <>
@@ -111,12 +113,13 @@ function FindingsCard({ title, first = false, busy = false, 'data-journey-state'
   </Box>;
 }
 
-function FindingsSummary({ tasks, title, first, navigation, onCategory, selected }: { tasks: FindingsTask[]; title: string; first: boolean;
+function FindingsSummary({ result, title, first, navigation, onCategory, selected }: { result: FindingsResponse; title: string; first: boolean;
   navigation: TaskNavigation | null; onCategory: CategoryAction; selected?: FindingsCategoryFilter }) {
   const dialogTitleId = useId();
   const basisId = useId();
   const [open, setOpen] = useState(false);
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const { tasks } = result;
   const topics = tasks.find(task => task.task === 'message_topics');
   const topicDenominator = topics?.complete_messages || null;
   const pricing = topics?.rows.filter(row => row.label_status === 'resolved' && row.display_label === 'Pricing questions');
@@ -142,7 +145,7 @@ function FindingsSummary({ tasks, title, first, navigation, onCategory, selected
         {bars.map((row, index) => {
           const share = row.share_of_complete_messages!;
           return <Box component="li" key={row.category_id} sx={{ display: 'grid',
-            gridTemplateColumns: { xs: 'minmax(0, 1fr) auto', sm: 'minmax(0, 14rem) minmax(0, 1fr) auto' },
+            gridTemplateColumns: { xs: 'minmax(0, 1fr) auto', sm: 'minmax(0, 14rem) minmax(0, 1fr) auto', lg: 'minmax(0, 22rem) minmax(0, 1fr) auto' },
             alignItems: 'center', columnGap: 2, rowGap: 0.5 }}>
             <Typography variant="body2">{row.display_label}</Typography>
             <Box aria-hidden="true" sx={{ gridColumn: { xs: '1 / -1', sm: '2' }, gridRow: { xs: 2, sm: 1 },
@@ -158,6 +161,11 @@ function FindingsSummary({ tasks, title, first, navigation, onCategory, selected
           </Box>;
         })}
       </Stack>}
+      <Stack sx={{ mt: 2, rowGap: '0.5rem', color: 'text.secondary' }}>
+        <Typography variant="body2">Available message dates: {windowLabel(result.effective_window, 'No message dates in this selection')} · {result.direction === 'all' ? 'All directions' : result.direction === 'inbound' ? 'Received messages' : 'Sent messages'} · {result.conversation_ref ? 'Selected conversation' : 'All conversations'}</Typography>
+        {measuredTask && <Typography variant="body2">{taskLabel(measuredTask.task)} are based on {formatCount(measuredTask.complete_messages)} fully checked messages.</Typography>}
+        <Typography variant="body2">Processing state when saved: {result.processing_mode === 'paused' ? 'paused; these saved findings remain visible' : 'enabled'}.</Typography>
+      </Stack>
       {topicDenominator !== null && <OnboardingAction>
         <Button variant="contained" aria-haspopup="dialog" sx={primaryButtonSx} onClick={() => setOpen(true)}>See all topics</Button>
       </OnboardingAction>}
@@ -329,13 +337,13 @@ function FindingsSession({ baseline, controller, literalsController, presentatio
     {!result && (state.status === 'loading'
       ? <FindingsCard title={insightTitle} busy />
       : <FindingsCard title={insightTitle} data-journey-state="findings.unavailable">
-        <OnboardingStatus tone="attention">Insights aren’t available right now.</OnboardingStatus>
+        {state.status === 'building'
+          ? <OnboardingStatus tone="neutral">{state.message}</OnboardingStatus>
+          : <OnboardingStatus tone="attention">Insights aren’t available right now.</OnboardingStatus>}
       </FindingsCard>)}
     {result && <Stack spacing={2} data-journey-state="findings.results">
-      <FindingsSummary tasks={result.tasks} title={insightTitle} first={firstInsight} navigation={currentNavigation}
+      <FindingsSummary result={result} title={insightTitle} first={firstInsight} navigation={currentNavigation}
         onCategory={(filter, label) => { focusCategory.current = true; selectCategory(filter, label); }} selected={category?.filter} />
-      <Typography>Available message dates: {windowLabel(result.effective_window, 'No message dates in this selection')} · {result.direction === 'all' ? 'All directions' : result.direction === 'inbound' ? 'Received messages' : 'Sent messages'}</Typography>
-      <Typography>Processing state when saved: {result.processing_mode === 'paused' ? 'paused; these saved findings remain visible' : 'enabled'}.</Typography>
       <TextField select label="Conversation" value={conversation ?? 'all'} onChange={(event) => { store.actions.invalidate(); setConversation(event.target.value === 'all' ? null : event.target.value); }} sx={{ maxWidth: '30rem' }}>
         <MenuItem value="all">All conversations</MenuItem>
         {conversation && !result.conversation_page.items.some((item) => item.conversation_ref === conversation) && <MenuItem value={conversation}>Selected conversation</MenuItem>}
