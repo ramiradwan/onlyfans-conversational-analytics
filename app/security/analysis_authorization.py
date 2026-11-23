@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, replace
 from threading import RLock
 from typing import Literal
 
@@ -17,6 +19,8 @@ from app.security.runtime_policy import (
     RuntimeAuthorizationDenied,
     RuntimePolicy,
     require_analysis_run,
+    require_identity,
+    require_role,
 )
 
 _ANALYSIS_CAPABILITY = "analysis-run"
@@ -24,6 +28,7 @@ _ANALYSIS_ARTIFACT_FAMILY = "analysis-artifact"
 _ANALYSIS_MAJOR_VERSION = 3
 _ANALYSIS_POLICIES: dict[str, RuntimePolicy] = {}
 _ANALYSIS_POLICIES_LOCK = RLock()
+_CREATOR_REBUILD: ContextVar[RuntimePolicy | None] = ContextVar("creator_rebuild", default=None)
 
 CommercialReadiness = Literal["required", "active", "unavailable"]
 AnalysisAdmissionReadiness = Literal["blocked", "admitted"]
@@ -345,12 +350,52 @@ def build_current_analysis_policy(
     return policy
 
 
+def creator_rebuild_policy(store: SQLiteAuthenticationStore, session: RuntimePolicy) -> RuntimePolicy:
+    """Bind one explicit rebuild to the live creator session and its exact grants."""
+    require_role(session, "creator")
+    identity = require_identity(session)
+    # A queued request may span an unrelated epoch change. Check the original
+    # session, expiry and revocation observations against the current epoch.
+    session = replace(session, authorization_epoch=store.read_epoch())
+    if not session.signed_object_reference_ids or not store.bridge_session_is_current(session):
+        raise _denied("Current creator session is required")
+    try:
+        identity_policy = store.build_runtime_policy_from_grants(identity, session.signed_object_reference_ids)
+    except (AuthenticationStateError, ValueError) as error:
+        raise _denied("Current identity/account authority is required") from error
+    admitted = _current_commercial_policy(store, identity, identity_policy)
+    if (set(admitted.signed_object_reference_ids) != set(session.signed_object_reference_ids)
+            or admitted.authorization_epoch != session.authorization_epoch
+            or session.expires_at is None or admitted.expires_at is None
+            or not store.bridge_session_is_current(session)):
+        raise _denied("Creator rebuild authority has changed")
+    return replace(admitted, expires_at=min(session.expires_at, admitted.expires_at),
+                   revocations=tuple(dict.fromkeys((*admitted.revocations, *session.revocations))))
+
+
+@contextmanager
+def creator_rebuild_scope(store: SQLiteAuthenticationStore, session: RuntimePolicy):
+    """Make the creator's authority available only within this worker operation."""
+    token = _CREATOR_REBUILD.set(creator_rebuild_policy(store, session))
+    try:
+        yield
+    finally:
+        _CREATOR_REBUILD.reset(token)
+
+
 def require_cached_analysis_run(
     store: SQLiteAuthenticationStore,
     creator_account_id: str,
 ) -> RuntimePolicy:
     """Revalidate the admitted policy immediately before candidate construction."""
 
+    creator = _CREATOR_REBUILD.get()
+    if creator is not None:
+        if (require_identity(creator).creator_account_id != creator_account_id
+                or not store.runtime_policy_is_current(creator)):
+            raise _denied("Creator rebuild authority has changed")
+        require_current_analysis_run(creator)
+        return creator
     with _ANALYSIS_POLICIES_LOCK:
         policy = _ANALYSIS_POLICIES.get(creator_account_id)
     if policy is None:

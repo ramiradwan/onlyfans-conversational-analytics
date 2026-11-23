@@ -48,6 +48,7 @@ LOCAL_ARCHIVE_SURFACES = {
     "POST /api/v1/saved-data/delete",
     "POST /api/v1/saved-data/messages/delete",
     "POST /api/v1/saved-data/results",
+    "POST /api/v1/saved-data/metrics",
     "POST /api/v1/saved-data/results/{kind}/{identifier}",
     "POST /api/v1/saved-data/lock",
 }
