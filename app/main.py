@@ -19,6 +19,7 @@ from app.api.endpoints import (
     history,
     insights,
     nlp_dependencies,
+    saved_data,
     text_analysis_execution,
     text_analysis_preview,
     text_analysis_client,
@@ -241,6 +242,7 @@ app.include_router(text_analysis_client.router)
 app.include_router(text_analysis_reissue.router)
 app.include_router(webauthn.router)
 app.include_router(creator_vault.router)
+app.include_router(saved_data.router)
 app.include_router(companion_pairing.router)
 app.include_router(capability_license.router)
 

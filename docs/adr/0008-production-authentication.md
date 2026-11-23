@@ -1,6 +1,7 @@
 # ADR 0008: Separate hosted customer provisioning from local runtime authentication
 
 - Status: accepted
+- Proposed amendment, 23 November 2026. Qualify local access to saved Creator Vault data under OFF-04.
 
 ## Context and problem statement
 
@@ -166,6 +167,14 @@ The protocol-v1 schemas remain unchanged:
 - `protocol.error` provides fatal non-retryable unauthorized behavior.
 
 Provisioning, grant refresh, WebAuthn, pairing, and ticket issuance use separate HTTP contracts and add no WebSocket operation.
+
+### Local access to the saved Creator Vault
+
+An enrolled creator can open the archive already stored on this computer after the hosted session, signed grants and renewal windows expire. The local service identifies one owner from a previously committed enrollment or full login and its verified creator-account receipt. It checks the enrolled credential, the current installation key, the last verified owner role and the account binding. Locally known withdrawals, conflicting owners and changed keys keep the archive locked. Commercial entitlement expiry alone leaves the archive accessible.
+
+Windows Hello must verify the user and sign a new challenge for this purpose. The challenge binds the credential, principal, account, organization and installation key. Success opens a separate local session for viewing, exporting and deleting the owner's archive. Each operation checks the owner again. The session ends when the service restarts, the creator locks it, or its fixed lifetime ends. Its maximum lifetime is 15 minutes. Deletions use the existing confirmation and durable deletion process.
+
+Capture, new analysis, pairing, account changes and runtime tickets continue to require their established authorization. The saved-data session carries no authority for those operations.
 
 ## Consequences
 

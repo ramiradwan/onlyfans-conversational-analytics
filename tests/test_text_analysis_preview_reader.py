@@ -35,6 +35,30 @@ def shown(tmp_path):
         close_preview_fixture(x)
 
 
+def test_saved_data_owner_can_read_existing_preview_after_execution_authority_ends(shown):
+    from dataclasses import replace
+    from app.persistence.auth import SavedDataOwner
+    from app.services.saved_results import saved_result_document, saved_result_page
+
+    x = shown
+    policy = x.http_policy()
+    identity, authority = policy.identity, x.context
+    owner = SavedDataOwner("previously-verified-passkey", identity.principal_id, identity.creator_account_id,
+                          authority.installation_id, authority.installation_key_id,
+                          authority.installation_key_jkt, authority.organization_id)
+    contribution = x.receipt.contribution_id
+    expected = x.service.read_saved_view(policy, contribution).model_dump(mode="json")
+    x.authority.revoke(x.reference.reference_id)
+    assert saved_result_page(x.repository.database, owner)["items"] == [
+        {"contribution_id": contribution, "kind": "Preview"}]
+    other = replace(owner, creator_account_id="different-account")
+    assert saved_result_page(x.repository.database, other)["items"] == []
+    with x.auth.database.transaction() as auth_db:
+        assert saved_result_document(x.repository.database, x.auth, auth_db, owner, contribution, "Preview") == expected
+        with pytest.raises(ValueError):
+            saved_result_document(x.repository.database, x.auth, auth_db, other, contribution, "Preview")
+
+
 @pytest.mark.parametrize('side,change', [
     ('auth', 'invalid'), ('auth', 'missing'), ('auth', 'mismatch'),
     ('canonical', 'invalid'), ('canonical', 'missing'), ('canonical', 'mismatch'),

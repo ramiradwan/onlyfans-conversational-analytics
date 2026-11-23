@@ -12,7 +12,7 @@ interface RegistrationOptions {
   attestation?: AttestationConveyancePreference;
 }
 
-interface LoginOptions {
+export interface LoginOptions {
   challenge: string;
   rpId: string;
   allowCredentials: Array<PublicKeyCredentialDescriptor & { id: string }>;
@@ -111,6 +111,21 @@ function loginCredential(credential: PublicKeyCredential) {
       userHandle: response.userHandle === null ? null : arrayBufferToBase64url(response.userHandle),
     },
   };
+}
+
+export async function requestLocalAssertion(options: LoginOptions, signal?: AbortSignal) {
+  const selected = await navigator.credentials.get({
+    signal,
+    publicKey: {
+      ...options,
+      challenge: base64urlToArrayBuffer(options.challenge),
+      allowCredentials: options.allowCredentials.map(allowed => ({
+        ...allowed, id: base64urlToArrayBuffer(allowed.id),
+      })),
+    },
+  }) as PublicKeyCredential | null;
+  if (selected === null) throw new Error('No passkey selected');
+  return loginCredential(selected);
 }
 
 export class LoginOutcomeError extends Error {
@@ -333,23 +348,12 @@ export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi
     let loginOptions: LoginOptions;
     try { loginOptions = await post<LoginOptions>('/login/begin', undefined, signal); }
     catch { throw new LoginOutcomeError('begin'); }
-    let credential: PublicKeyCredential;
+    let assertion: ReturnType<typeof loginCredential>;
     try {
-      const selected = await bounded((ceremonySignal) => navigator.credentials.get({
-        signal: ceremonySignal,
-        publicKey: {
-          ...loginOptions,
-          challenge: base64urlToArrayBuffer(loginOptions.challenge),
-          allowCredentials: loginOptions.allowCredentials.map((allowed) => ({
-            ...allowed, id: base64urlToArrayBuffer(allowed.id),
-          })),
-        },
-      }), signal, 120_000) as PublicKeyCredential | null;
-      if (selected === null) throw new Error('No passkey selected');
-      credential = selected;
+      assertion = await bounded(ceremonySignal => requestLocalAssertion(loginOptions, ceremonySignal), signal, 120_000);
     } catch { throw new LoginOutcomeError('credential'); }
     try {
-      const result = await post<unknown>('/login/finish', loginCredential(credential), signal);
+      const result = await post<unknown>('/login/finish', assertion, signal);
       if (typeof result !== 'object' || result === null || Object.keys(result).length !== 1
         || !('csrf_token' in result) || typeof result.csrf_token !== 'string' || !result.csrf_token) {
         throw new Error('Sign-in response unavailable');

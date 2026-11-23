@@ -5,9 +5,14 @@ import { DesktopSetupClient } from './client.js';
 import { renderSetup } from './view.js';
 import { openBrowserTask, openSetupCode } from './browser-task.js';
 import { DesktopEnrollment } from './enrollment.js';
+import { savedDataAvailable, savedDataUrl } from '../shared-setup/saved-data-entry';
 import { authorityRecoveryView, authorityRecoveryOptions } from '../shared-setup/authority-recovery.js';
 
 applyTheme(document);
+const savedDataLink = document.getElementById('saved-data-open');
+if (savedDataLink) void savedDataAvailable().then(available => {
+  if (available) { savedDataLink.href = savedDataUrl; savedDataLink.hidden = false; }
+});
 const fields = new URLSearchParams(location.hash.slice(1));
 let client;
 try {

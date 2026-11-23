@@ -1,4 +1,4 @@
-import { CssBaseline, GlobalStyles } from '@mui/material';
+import { Box, CssBaseline, GlobalStyles, Link } from '@mui/material';
 import { ThemeProvider } from '@mui/material/styles';
 import { useEffect, useState } from 'react';
 import { BrowserRouter } from 'react-router-dom';
@@ -14,7 +14,9 @@ import { AppRouter } from './routing/AppRouter';
 import { authorityRecoveryApi } from './services/desktopOnboarding';
 import { colorSchemeProps, theme } from './theme';
 import { protocolErrorText } from './utils/statusCopy';
+import { SavedDataView } from './views/SavedDataView';
 import { WebAuthnAccessView } from './views/WebAuthnAccessView';
+import { savedDataAvailable, savedDataUrl } from '../shared-setup/saved-data-entry';
 
 const globalStyles = (
   <GlobalStyles
@@ -37,6 +39,28 @@ const globalStyles = (
 );
 
 export function App() {
+  const saved = new URLSearchParams(window.location.search).get('view') === 'saved-data';
+  return <ThemeProvider theme={theme} {...colorSchemeProps} disableTransitionOnChange>
+    <CssBaseline />{globalStyles}
+    {saved ? <SavedDataView /> : <RuntimeApp />}
+  </ThemeProvider>;
+}
+
+function SavedDataLink() {
+  const [available, setAvailable] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    void savedDataAvailable(controller.signal).then(value => {
+      if (!controller.signal.aborted) setAvailable(value);
+    });
+    return () => controller.abort();
+  }, []);
+  return available
+    ? <Box sx={{ textAlign: 'center', py: 2 }}><Link href={savedDataUrl}>Open saved data</Link></Box>
+    : null;
+}
+
+function RuntimeApp() {
   const config = getConfig();
   const [endedSession, setEndedSession] = useState<ProtocolErrorPayload | null>(null);
   const userRole = config.BRIDGE_ROLE === 'creator'
@@ -85,15 +109,13 @@ export function App() {
   try { nativePresentation = Boolean(sessionStorage.getItem('desktop-presentation')); } catch { /* No native presentation. */ }
 
   return (
-    <ThemeProvider theme={theme} {...colorSchemeProps} disableTransitionOnChange>
-      <CssBaseline />
-      {globalStyles}
+    <>
       {hasSessionIdentity && !endedSession ? (
         <BrowserRouter>
           <AppRouter />
         </BrowserRouter>
-      ) : <WebAuthnAccessView recoveryApi={nativePresentation ? authorityRecoveryApi : undefined}
-        sessionNotice={endedSession ? protocolErrorText(endedSession) : undefined} />}
-    </ThemeProvider>
+      ) : <><WebAuthnAccessView recoveryApi={nativePresentation ? authorityRecoveryApi : undefined}
+        sessionNotice={endedSession ? protocolErrorText(endedSession) : undefined} /><SavedDataLink /></>}
+    </>
   );
 }

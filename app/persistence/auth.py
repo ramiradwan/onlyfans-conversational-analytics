@@ -275,6 +275,28 @@ class WebAuthnChallengeBinding:
     credential_id: str | None
     relying_party_id: str
     expected_origin: str
+    saved_data_binding: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SavedDataOwner:
+    """An enrolled local owner. This value cannot authorize a runtime operation."""
+
+    credential_id: str
+    principal_id: str
+    creator_account_id: str
+    installation_id: str
+    installation_key_id: str
+    installation_key_jkt: str
+    organization_id: str
+
+    @property
+    def binding(self) -> str:
+        return _secret_digest(json.dumps((
+            "saved-data-v1", self.credential_id, self.principal_id, self.creator_account_id,
+            self.installation_id, self.installation_key_id, self.installation_key_jkt,
+            self.organization_id,
+        ), separators=(",", ":")))
 
 
 @dataclass(frozen=True, slots=True)
@@ -1821,9 +1843,9 @@ class SQLiteAuthenticationStore:
                 """
                 INSERT INTO auth_challenges (
                     challenge_id, challenge_kind, secret_digest, principal_id,
-                    credential_id, relying_party_id, expected_origin,
+                    credential_id, relying_party_id, expected_origin, saved_data_binding,
                     issued_at, expires_at
-                ) VALUES (?, 'webauthn', ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, 'webauthn', ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     challenge_id,
@@ -1832,6 +1854,7 @@ class SQLiteAuthenticationStore:
                     binding.credential_id,
                     binding.relying_party_id,
                     binding.expected_origin,
+                    binding.saved_data_binding,
                     _time_text(now),
                     _time_text(expires_at),
                 ),
@@ -1940,6 +1963,7 @@ class SQLiteAuthenticationStore:
             "credential_id": binding.credential_id,
             "relying_party_id": binding.relying_party_id,
             "expected_origin": binding.expected_origin,
+            "saved_data_binding": binding.saved_data_binding,
         }
         return self._consume_challenge(value, expected, ())
 
@@ -1984,6 +2008,76 @@ class SQLiteAuthenticationStore:
                 else companion.grant_reference_ids
             )
         return self._consume_challenge(value, expected, grants, companion=companion)
+
+    def saved_data_owner(self, connection: sqlite3.Connection) -> SavedDataOwner | None:
+        """Read retained proof of ownership; the old session secret is never accepted.
+
+        Enrollment and successful full logins already commit the credential, account
+        and verified grant receipts together. Older installations have the same proof.
+        A later refusal, account reassignment or key change takes precedence.
+        """
+        owners = connection.execute("""
+            SELECT DISTINCT s.credential_id, s.principal_id, s.creator_account_id,
+                   c.installation_id, k.installation_key_id, k.installation_key_jkt,
+                   g.organization_id, c.external_issuer, c.external_subject
+            FROM bridge_sessions s
+            JOIN webauthn_credentials c ON c.credential_id=s.credential_id
+              AND c.principal_id=s.principal_id AND c.revoked_at IS NULL
+            JOIN bridge_session_grants sg ON sg.session_id=s.session_id
+            JOIN verified_grant_references g ON g.reference_id=sg.grant_reference_id
+              AND g.creator_account_id=s.creator_account_id AND g.installation_id=c.installation_id
+              AND g.issuer=c.external_issuer AND g.subject=c.external_subject
+            JOIN installation_key_reference k ON k.singleton=1 AND k.activated_at IS NOT NULL
+              AND k.installation_key_id=g.installation_key_id AND k.installation_key_jkt=g.installation_key_jkt
+            WHERE s.role='creator' AND g.grant_type=? AND g.organization_id IS NOT NULL
+              AND g.valid_from <= s.issued_at AND s.issued_at < g.expires_at
+        """, (CREATOR_ACCOUNT_BINDING,)).fetchall()
+        if len(owners) != 1:
+            return None
+        row = owners[0]
+        owner = SavedDataOwner(row["credential_id"], row["principal_id"], row["creator_account_id"],
+            row["installation_id"], row["installation_key_id"], row["installation_key_jkt"], row["organization_id"])
+        account = connection.execute(
+            "SELECT installation_id, revoked_at FROM authorized_account_bindings WHERE creator_account_id=?",
+            (owner.creator_account_id,),
+        ).fetchone()
+        if account and (account["installation_id"] != owner.installation_id or account["revoked_at"]):
+            return None
+        scopes = (
+            (RevocationScopeType.PRINCIPAL, owner.principal_id),
+            (RevocationScopeType.PRINCIPAL, row["external_subject"]),
+            (RevocationScopeType.CREATOR_ACCOUNT, owner.creator_account_id),
+            (RevocationScopeType.INSTALLATION, owner.installation_id),
+            (RevocationScopeType.WEBAUTHN_CREDENTIAL, owner.credential_id),
+        )
+        if any(self._scope_is_revoked(connection, RevocationKey(kind, value)) for kind, value in scopes):
+            return None
+        # Inspect the latest effective decision, even if it has since expired.
+        # A role reduction or withdrawal must never uncover an older owner grant.
+        now = _time_text(self._now())
+        for kind in ACCOUNT_AUTHORITY_GRANT_TYPES:
+            rows = connection.execute("""
+                SELECT * FROM verified_grant_references
+                WHERE installation_id=? AND grant_type=? AND valid_from <= ?
+                  AND (grant_type != ? OR creator_account_id=?)
+                ORDER BY valid_from DESC, verified_at DESC LIMIT 2
+            """, (owner.installation_id, kind, now, CREATOR_ACCOUNT_BINDING, owner.creator_account_id)).fetchall()
+            if not rows or (len(rows) > 1 and (rows[0]["valid_from"], rows[0]["verified_at"]) ==
+                            (rows[1]["valid_from"], rows[1]["verified_at"])):
+                return None
+            grant = _verified_grant_reference(rows[0])
+            if (rows[0]["revoked_at"] is not None or self._grant_is_withdrawn(connection, grant)
+                or (grant.issuer, grant.subject) != (row["external_issuer"], row["external_subject"])
+                or grant.organization_id != owner.organization_id
+                or (grant.installation_key_id, grant.installation_key_jkt) !=
+                   (owner.installation_key_id, owner.installation_key_jkt)):
+                return None
+            if kind == MEMBERSHIP_SNAPSHOT and (
+                "owner" not in (grant.membership_roles or ())
+                or owner.creator_account_id not in (grant.allowed_creator_account_ids or ())
+            ):
+                return None
+        return owner
 
     def issue_bridge_session(self, issue: BridgeSessionIssue) -> IssuedBridgeSession:
         with self.database.transaction() as connection:
