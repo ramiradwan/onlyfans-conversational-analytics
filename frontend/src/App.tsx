@@ -16,7 +16,7 @@ import { colorSchemeProps, theme } from './theme';
 import { protocolErrorText } from './utils/statusCopy';
 import { SavedDataView } from './views/SavedDataView';
 import { WebAuthnAccessView } from './views/WebAuthnAccessView';
-import { savedDataAvailable, savedDataUrl } from '../shared-setup/saved-data-entry';
+import { savedDataEntry, savedDataLinkText, savedDataUrl } from '../shared-setup/saved-data-entry';
 
 const globalStyles = (
   <GlobalStyles
@@ -50,13 +50,13 @@ function SavedDataLink() {
   const [available, setAvailable] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    void savedDataAvailable(controller.signal).then(value => {
-      if (!controller.signal.aborted) setAvailable(value);
+    void savedDataEntry(controller.signal).then(value => {
+      if (!controller.signal.aborted) setAvailable(value !== 'unavailable');
     });
     return () => controller.abort();
   }, []);
   return available
-    ? <Box sx={{ textAlign: 'center', py: 2 }}><Link href={savedDataUrl}>Open saved data</Link></Box>
+    ? <Box sx={{ textAlign: 'center', py: 2 }}><Link href={savedDataUrl}>{savedDataLinkText}</Link></Box>
     : null;
 }
 

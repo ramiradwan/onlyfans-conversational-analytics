@@ -1,6 +1,7 @@
 // eslint-disable-next-line import/extensions -- Runtime .mjs has a matching .d.mts declaration.
 import { parseOnboardingJson } from '../../shared/onboarding/json.mjs';
 import { validateEnrollment } from './generated-enrollment.js';
+import { savedDataEntry } from './saved-data-entry';
 
 interface RegistrationOptions {
   challenge: string;
@@ -309,6 +310,8 @@ export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi
       signal: requestSignal, credentials: 'same-origin', cache: 'no-store', redirect: 'error', headers: { Accept: 'application/json' },
     });
     if (response.status === 409) throw await refusal(response);
+    if (response.status === 503 && await savedDataEntry(requestSignal, request) === 'authorization-expired')
+      throw new WebAuthnStatusError('access', 503, 'expired');
     if (!response.ok) throw new WebAuthnStatusError(response.status === 401 ? 'session'
       : response.status === 403 ? 'forbidden' : response.status >= 500 ? 'unavailable' : 'invalid', response.status);
     let value: unknown;

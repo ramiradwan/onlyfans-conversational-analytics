@@ -2,6 +2,7 @@ import { focusTransition, recoveryTone, setStatus } from '../shared-setup/presen
 import { browserRecoveryTarget } from './browser-task.js';
 import { authorityRecoveryView } from '../shared-setup/authority-recovery.js';
 import { desktopRecovery, passkeyRecovery, recoveryClass } from '../shared-setup/recovery.js';
+import { expiredAccessDescription, expiredAccessTitle } from '../shared-setup/saved-data-entry';
 
 const tasks = {
   'browser-access': ['Bring in your conversations', 'Set up browser access', 'setup_browser_access'],
@@ -48,7 +49,7 @@ const passkeyErrors = {
 // No action here can restore access. Pushed updates replace this copy.
 const accessCopy = {
   renewing: ['Renewing access on this computer', 'This page updates when renewal finishes.', 'Renewal needs an internet connection.'],
-  expired: ['Access on this computer isn’t active', 'This page updates by itself if you can sign in again.'],
+  expired: [expiredAccessTitle, expiredAccessDescription],
   removed: ['Access removed from this computer', 'This computer can no longer open analytics.'],
 };
 
@@ -278,6 +279,8 @@ export function renderSetup(document, state) {
   get('setup-code-open').hidden = !value || pending || opening || value.facts.installation === 'verified' || Boolean(authentication);
   get('setup-code-open').disabled = !state.connected || pending || opening;
   const reasonMessage = reasonClass === 'invariant_failed' ? ''
+    : reason === 'authority_unavailable' && state.savedAuthorizationExpired
+      ? `${expiredAccessTitle}. ${expiredAccessDescription}`
     : reason === 'connection_unavailable' && value?.journey_id
       ? 'Dipsy can’t connect right now. Your setup progress is saved.'
       : reason === 'account_mismatch' && accountName(expectedLabel)

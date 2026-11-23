@@ -67,7 +67,11 @@ def _owner(store: SQLiteAuthenticationStore) -> SavedDataOwner:
 @router.post("/available")
 def available(store: SQLiteAuthenticationStore = Depends(authentication_store)) -> dict[str, bool]:
     with store.database.transaction(immediate=False) as connection:
-        return {"available": store.saved_data_owner(connection) is not None}
+        if store.saved_data_owner(connection) is None:
+            return {"available": False}
+        if store.lapsed_account_authority(connection) == "expired":
+            return {"available": True, "authorization_expired": True}
+        return {"available": True}
 
 
 @router.post("/login/begin")

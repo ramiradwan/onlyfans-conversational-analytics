@@ -64,10 +64,11 @@ def workspace(tmp_path, monkeypatch):
 
 def test_saved_owner_can_view_export_delete_beyond_grace(workspace, monkeypatch):
     client, store, key, clock = workspace
+    assert client.post(saved_data.PREFIX + "/available").json() == {"available": True}
     clock[0] += timedelta(days=30)
     api = saved_data.PREFIX
     assert client.post("/api/v1/webauthn/login/begin").status_code == 403
-    assert client.post(api + "/available").json() == {"available": True}
+    assert client.post(api + "/available").json() == {"available": True, "authorization_expired": True}
     assert client.post(api + "/view").status_code == 403
     options = client.post(api + "/login/begin").json()
     assert options["userVerification"] == "required"

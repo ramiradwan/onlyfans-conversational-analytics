@@ -1541,7 +1541,7 @@ class SQLiteAuthenticationStore:
         ).fetchone() is not None
 
     def lapsed_account_authority(
-        self, connection: sqlite3.Connection, now: datetime
+        self, connection: sqlite3.Connection, now: datetime | None = None
     ) -> Literal["renewing", "expired", "removed"] | None:
         """Name why account authority has no current grant, inside ``connection``.
 
@@ -1550,6 +1550,8 @@ class SQLiteAuthenticationStore:
         lapsed one still has an open refresh window on the activated key.
         None means the state is not a lapse this method can name.
         """
+        if now is None:
+            now = self._now()
         key = connection.execute(
             """
             SELECT installation_key_id, installation_key_jkt
