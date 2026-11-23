@@ -2,7 +2,7 @@
 // themes and widths. Usage: node capture.mjs [outDir]
 // VISUAL_CAPTURE_ONLY=home,settings limits the run to the named workspaces.
 import { spawn } from 'node:child_process';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -45,11 +45,17 @@ function freePort() {
 
 export async function startHarness() {
   const port = await freePort();
+  const cacheDir = await mkdtemp(join(frontend, 'node_modules/.vite-visual-'));
   const vite = spawn(
     process.execPath,
-    [join(frontend, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(port), '--strictPort', '--base', '/'],
-    { cwd: frontend, env: { ...process.env, BROWSER: 'none' }, stdio: ['ignore', 'pipe', 'pipe'] },
+    [join(frontend, 'node_modules/vite/bin/vite.js'), '--config', join(here, 'vite-harness.config.mjs'),
+      '--host', '127.0.0.1', '--port', String(port), '--strictPort', '--base', '/'],
+    { cwd: frontend, env: { ...process.env, BROWSER: 'none', VISUAL_HARNESS_CACHE_DIR: cacheDir }, stdio: ['ignore', 'pipe', 'pipe'] },
   );
+  vite.once('close', () => {
+    void rm(cacheDir, { recursive: true, force: true, maxRetries: 3 })
+      .catch(() => console.warn('Could not remove the visual harness cache'));
+  });
   let log = '';
   vite.stdout.on('data', (chunk) => { log += chunk; });
   vite.stderr.on('data', (chunk) => { log += chunk; });

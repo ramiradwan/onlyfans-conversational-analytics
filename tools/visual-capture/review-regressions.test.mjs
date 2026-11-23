@@ -16,6 +16,23 @@ before(async () => { browser = await chromium.launch(); harness = await startHar
 after(async () => { await browser?.close(); harness?.vite.kill(); });
 const settle = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 
+test('parallel visual harnesses use separate Vite dependency caches', async () => {
+  const second = await startHarness();
+  try {
+    const dependencyPath = async ({ base }) => {
+      const response = await fetch(new URL('/src/story-only/VisualHarness.tsx', base));
+      assert.equal(response.status, 200);
+      const match = (await response.text()).match(/"([^"]+\/deps\/react-dom_client\.js)\?/u);
+      assert(match, 'The harness entry must import the optimized React dependency');
+      return new URL(match[1], base).pathname;
+    };
+    const [firstPath, secondPath] = await Promise.all([dependencyPath(harness), dependencyPath(second)]);
+    assert.notEqual(firstPath, secondPath, 'Concurrent Vite servers share an optimizer cache');
+  } finally {
+    second.vite.kill();
+  }
+});
+
 for (const mode of ['light', 'dark']) for (const reducedMotion of ['reduce', 'no-preference']) {
   for (const [width, height] of [[1440, 900], [390, 844], [320, 900]]) {
     test(`first and seen findings copy fits at ${width} in ${mode} with motion ${reducedMotion}`, async () => {
