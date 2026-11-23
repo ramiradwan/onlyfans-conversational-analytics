@@ -278,6 +278,16 @@ class TextAnalysisPreviewStore:
         budget.check()
         return output
 
+    def validate_saved_reference_in(self, authority, auth_db, db, output):
+        intent = self.repository._module_intent(db, output.job_id)
+        admission = db.execute('SELECT * FROM text_analysis_preview_admissions WHERE reference_id=?',
+            (intent['reference_id'],)).fetchone()
+        if admission is None:
+            raise ValueError('preview_reference_corrupt')
+        authority.validate_saved_preview_reference_in(auth_db,
+            reference_id=intent['reference_id'], compact_jws_sha256=intent['compact_jws_sha256'],
+            permit_id=admission['permit_id'], issuance_id=admission['issuance_id'])
+
     def saved_view_in(self, db, output, *, policy):
         from app.models.text_analysis_preview_execution import (
             PreviewSavedEnvelope,

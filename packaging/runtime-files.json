@@ -151,7 +151,8 @@
         "0050_protected_recovery_desktop.sql": "652422ca223e7ba57e7fa7a43157feb1df00e4898535a7dac0a6594f8652712d",
         "0051_protected_recovery_browser_dispatch.sql": "06a67109881193549b267c8ed038ca74305c371c7b32ce80d8660677ac10e851",
         "0052_lost_enrollment_evidence.sql": "35240165cd5a4dfa83d7a53e52813713a08a96b71b41f2dcac93369f37b1e1a3",
-        "0053_protected_recovery_retirement.sql": "b69dacf80c45b2f066df26ffa499408beaac5cc5d326d516cf45c72a347564d6"
+        "0053_protected_recovery_retirement.sql": "b69dacf80c45b2f066df26ffa499408beaac5cc5d326d516cf45c72a347564d6",
+        "0054_saved_data_challenges.sql": "afe2f86dca74f664cddc05545112010c3e534e0befa0598a1d261d653fec242f"
       }
     },
     {

@@ -215,6 +215,19 @@ it('classifies a failed passkey status connection', async () => {
   const api = createWebAuthnApi({ fetch: vi.fn(async () => { throw new TypeError('offline'); }) as typeof fetch });
   await expect(api.state!(new AbortController().signal)).rejects.toMatchObject({ name: 'WebAuthnStatusError', kind: 'network' });
 });
+it.each([
+  [{ available: true, authorization_expired: true }, 'access', 'expired'],
+  [{ available: true }, 'unavailable', null],
+  [{ available: false, authorization_expired: true }, 'unavailable', null],
+] as const)('uses the local saved-data proof to explain an unavailable runtime', async (entry, kind, access) => {
+  const request = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response('', { status: 503 }))
+    .mockResolvedValueOnce(json(entry));
+  const api = createWebAuthnApi({ fetch: request });
+  await expect(api.state!(new AbortController().signal)).rejects.toMatchObject({ kind, status: 503, access });
+  expect(request).toHaveBeenNthCalledWith(2, '/api/v1/saved-data/available', expect.objectContaining({
+    method: 'POST', credentials: 'same-origin', cache: 'no-store',
+  }));
+});
 
 const refused = (body: string) => createWebAuthnApi({ fetch: vi.fn(async () => new Response(body, { status: 409 })) as typeof fetch })
   .state!(new AbortController().signal).catch((error: unknown) => error);

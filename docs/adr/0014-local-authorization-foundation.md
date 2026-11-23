@@ -1,6 +1,7 @@
 # ADR 0014: Define the local authorization foundation
 
 - Status: accepted
+- Proposed amendment, 23 November 2026. The saved-data session in ADR 0008 authorizes the enrolled owner to use the existing-data controls after grant expiry. Its immutable account and installation scope cannot enter the ordinary runtime or authorize a new execution.
 
 ## Context and problem statement
 

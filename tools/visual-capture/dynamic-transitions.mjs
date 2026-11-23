@@ -195,6 +195,7 @@ async function driveProduction(page, step) {
   await page.route('**/*', async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/v1/webauthn/session-state') return route.fulfill({ status: stateAvailable ? 200 : 503, contentType: 'application/json', body: JSON.stringify({ enrolled, authenticated: false, csrf_token: null }) });
+    if (path === '/api/v1/saved-data/available' && route.request().method() === 'POST') return route.fulfill({ json: { available: false } });
     if (route.request().method() === 'POST') requests.push(path);
     if (path.startsWith('/api/')) return route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
     const assetPath = path.replace(/^\/static\/dist\//u, '/');

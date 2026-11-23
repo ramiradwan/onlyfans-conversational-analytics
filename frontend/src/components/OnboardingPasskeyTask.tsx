@@ -3,12 +3,13 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { OnboardingWorkspace, TrustTask } from './OnboardingWorkspace';
 import { OnboardingAction, OnboardingStatus } from './ui/OnboardingCard';
+import { expiredAccessDescription, expiredAccessTitle } from '../../shared-setup/saved-data-entry';
 import type { AccessState } from '../../shared-setup/webauthn';
 import { componentTokens, effectTokens } from '../theme';
 
 const accessCopy = {
   renewing: { title: 'Renewing access on this computer', body: 'This page updates when renewal finishes.', status: 'Renewal needs an internet connection.' },
-  expired: { title: 'Access on this computer isn’t active', body: 'This page updates by itself if you can sign in again.', status: null },
+  expired: { title: expiredAccessTitle, body: expiredAccessDescription, status: null },
   removed: { title: 'Access removed from this computer', body: 'This computer can no longer open analytics.', status: null },
 };
 

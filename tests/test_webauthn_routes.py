@@ -756,6 +756,7 @@ def _registration_payload(
 def _authentication_payload(
     private_key: ec.EllipticCurvePrivateKey,
     challenge: str,
+    *, counter: int = 1,
 ) -> dict[str, object]:
     encoded_client_data = _client_data("webauthn.get", challenge)
     raw_client_data = _decode(encoded_client_data)
@@ -763,7 +764,7 @@ def _authentication_payload(
         (
             hashlib.sha256(RP_ID.encode()).digest(),
             b"\x05",
-            (1).to_bytes(4, "big"),
+            counter.to_bytes(4, "big"),
         )
     )
     signature = private_key.sign(

@@ -479,6 +479,7 @@
     "tests/test_retired_onboarding.py": 8,
     "tests/test_runtime_activation_entry.py": 2,
     "tests/test_runtime_policy_capability_license.py": 4,
+    "tests/test_saved_data_access.py": 4,
     "tests/test_selected_graph_content.py": 6,
     "tests/test_selected_graph_reader.py": 2,
     "tests/test_shared_conversation_pages.py": 7,
@@ -628,6 +629,7 @@
     "tests/test_redemption_journal_workspace.py": 5,
     "tests/test_release_signing.py": 3,
     "tests/test_resource_paths.py": 3,
+    "tests/test_saved_data_access.py": 3,
     "tests/test_source_replacement_reservations.py": 1,
     "tests/test_sqlcipher_runtime_supply.py": 5,
     "tests/test_sqlite_backup.py": 3,
@@ -694,23 +696,18 @@
   },
   "maintenance": {
     "method": "preserve existing owners; allocate new files by selected node count",
-    "inventory_sha256": "3ab58ac1cee9e70e1722f7c2e5e37f01121ffe03e2621c291f1ef35c56ecf406",
+    "inventory_sha256": "f4c351d6549ad7df76659c122d940787243958bbe171f9414ba48edd27b68991",
     "changes": {
       "full": {
         "added": [
-          "tests/test_installation_authority_recovery_client.py",
-          "tests/test_installation_authority_recovery_owner.py",
-          "tests/test_lost_enrollment_evidence.py",
-          "tests/test_protected_authority_setup.py",
-          "tests/test_protected_browser_recovery_client.py",
-          "tests/test_protected_browser_recovery_owner.py"
+          "tests/test_saved_data_access.py"
         ],
         "removed": [],
         "modeled_load": {
           "1": 1321,
           "2": 1113,
           "3": 2406,
-          "4": 1105,
+          "4": 1104,
           "5": 2434,
           "6": 1362,
           "7": 3379,
@@ -719,18 +716,15 @@
       },
       "platform": {
         "added": [
-          "tests/test_installation_authority_recovery_owner.py",
-          "tests/test_lost_enrollment_evidence.py",
-          "tests/test_protected_authority_setup.py",
-          "tests/test_protected_browser_recovery_owner.py"
+          "tests/test_saved_data_access.py"
         ],
         "removed": [],
         "modeled_load": {
-          "1": 419,
-          "2": 408,
-          "3": 400,
-          "4": 470,
-          "5": 405
+          "1": 417,
+          "2": 407,
+          "3": 409,
+          "4": 475,
+          "5": 406
         }
       },
       "analytics": {

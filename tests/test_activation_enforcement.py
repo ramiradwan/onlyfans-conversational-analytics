@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 
 import app.main as main_module
 from app.api.activation import require_activated_runtime
+from app.api.endpoints.saved_data import require_local_installation
 from app.persistence.factory import create_canonical_repositories
 from app.security.activation_gate import (
     ActivationDecision,
@@ -35,6 +36,21 @@ pytestmark = [pytest.mark.ci_tier('integration')]
 ACCOUNT = "creator-account-1"
 PRINCIPAL = "principal-1"
 REFUSAL = "The local runtime is not activated"
+
+# Only these archive operations may use the independent local installation
+# check when the ordinary signed grants have lapsed.
+LOCAL_ARCHIVE_SURFACES = {
+    "POST /api/v1/saved-data/available",
+    "POST /api/v1/saved-data/login/begin",
+    "POST /api/v1/saved-data/login/finish",
+    "POST /api/v1/saved-data/view",
+    "POST /api/v1/saved-data/export",
+    "POST /api/v1/saved-data/delete",
+    "POST /api/v1/saved-data/messages/delete",
+    "POST /api/v1/saved-data/results",
+    "POST /api/v1/saved-data/results/{kind}/{identifier}",
+    "POST /api/v1/saved-data/lock",
+}
 
 # Every mounted surface that is deliberately reachable before activation, with
 # the reason it is. A surface absent from this mapping must carry the
@@ -138,9 +154,10 @@ def _is_gated(route: BaseRoute) -> bool:
     dependant = getattr(route, "dependant", None)
     if dependant is None:
         return False
+    gate = require_local_installation if _surface(route) in LOCAL_ARCHIVE_SURFACES else require_activated_runtime
 
     def resolves_gate(node: object) -> bool:
-        if getattr(node, "call", None) is require_activated_runtime:
+        if getattr(node, "call", None) is gate:
             return True
         return any(
             resolves_gate(sub) for sub in getattr(node, "dependencies", ())

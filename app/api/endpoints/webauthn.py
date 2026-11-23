@@ -83,6 +83,13 @@ class LoginFinishRequest(_StrictModel):
     credential_type: Literal["public-key"] = Field(alias="type")
     response: AuthenticationResponse
 
+    def assertion(self) -> AuthenticationCredential:
+        return AuthenticationCredential(
+            credential_id=self.credential_id, raw_id=self.raw_id, credential_type=self.credential_type,
+            client_data_json=self.response.client_data_json, authenticator_data=self.response.authenticator_data,
+            signature=self.response.signature, user_handle=self.response.user_handle,
+        )
+
 
 FinishRequest = TypeVar("FinishRequest", bound=_StrictModel)
 
@@ -441,18 +448,7 @@ async def finish_login(
     if not isinstance(authority, SessionAuthority):
         raise RuntimeError("Session authority port returned the wrong authority type")
     try:
-        issued = service.complete_authentication(
-            authority,
-            AuthenticationCredential(
-                credential_id=body.credential_id,
-                raw_id=body.raw_id,
-                credential_type=body.credential_type,
-                client_data_json=body.response.client_data_json,
-                authenticator_data=body.response.authenticator_data,
-                signature=body.response.signature,
-                user_handle=body.response.user_handle,
-            ),
-        )
+        issued = service.complete_authentication(authority, body.assertion())
     except WebAuthnVerificationError as error:
         _verification_refusal(error, operation="login_finish")
     session_identity = AuthContext(

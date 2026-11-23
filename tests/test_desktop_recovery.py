@@ -143,10 +143,12 @@ async def test_ended_decision_is_idle_for_ten_minutes_with_the_old_session_deadl
         await _until(lambda: authentication._projection(operation["operation_id"])["state"] == "reauthentication-required"
             and not coordinator._workers)
         await coordinator.drain()
-        await asyncio.sleep(0.04)
+        settled_timer = await virtual.wait_for_recovery_timer(coordinator)
         if end == "deadline":
             native = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(
                 replacing_generation=native.generation), role="desktop")
+            # Opening a new presentation wakes setup once. Measure idleness after it settles.
+            await virtual.wait_for_recovery_timer(coordinator, previous=settled_timer)
         snapshot = coordinator.read(native)
         assert snapshot["decision"] is None
         assert snapshot["authentication"]["actions"]["select"]

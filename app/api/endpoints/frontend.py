@@ -168,7 +168,7 @@ async def serve_frontend(
     )
     ws_url = f"{base_ws_url}/ws/bridge"
 
-    identity = policy.identity
+    identity = None if request.query_params.get("view") == "saved-data" else policy.identity
     config = {
         "EXTENSION_ID": settings.extension_id,
         "FASTAPI_WS_URL": ws_url,

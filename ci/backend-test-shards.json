@@ -612,6 +612,7 @@
     "tests/test_retention_phase_b_supplement_workflow.py": 4,
     "tests/test_retention_restore_authority.py": 4,
     "tests/test_runtime_activation_entry.py": 2,
+    "tests/test_saved_data_access.py": 3,
     "tests/test_selected_graph_content.py": 1,
     "tests/test_selected_graph_reader.py": 1,
     "tests/test_shared_conversation_pages.py": 2,
@@ -1040,6 +1041,10 @@
         "reason": "Original lost-enrollment proof, retained identity, and signed delivery must preserve the Windows encrypted authentication journal across interruption."
       },
       {
+        "selector": "tests/test_saved_data_access.py",
+        "reason": "Owner-bound saved-data access and targeted deletion after grant expiry exercise the Windows authentication journal and persisted Creator Vault."
+      },
+      {
         "selector": "tests/test_protected_browser_recovery_owner.py",
         "reason": "Protected browser recovery and fresh authentication selection use the encrypted Windows authentication journal."
       }
@@ -1425,6 +1430,7 @@
     "tests/test_redemption_journal_workspace.py": 3,
     "tests/test_release_signing.py": 2,
     "tests/test_resource_paths.py": 3,
+    "tests/test_saved_data_access.py": 1,
     "tests/test_source_replacement_reservations.py": 1,
     "tests/test_sqlcipher_runtime_supply.py": 2,
     "tests/test_sqlite_backup.py": 2,
@@ -1558,6 +1564,7 @@
       "tests/test_lost_enrollment_evidence.py",
       "tests/test_protected_authority_setup.py",
       "tests/test_protected_browser_recovery_owner.py",
+      "tests/test_saved_data_access.py",
       "tests/test_source_replacement_reservations.py"
     ]
   }

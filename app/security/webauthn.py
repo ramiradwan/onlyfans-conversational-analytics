@@ -27,6 +27,7 @@ from app.persistence.auth import (
     AuthenticationStore,
     BridgeSessionIssue,
     IssuedBridgeSession,
+    SavedDataOwner,
     SQLiteAuthenticationStore,
     WebAuthnChallengeBinding,
     WebAuthnCredential,
@@ -531,15 +532,25 @@ class WebAuthnService:
     ) -> dict[str, object]:
         _require_session_authority(authority)
         credential_id = _canonical_credential_id(authority.credential_id)
+        return self._assertion_options(self._authentication_binding(authority, credential_id))
+
+    def begin_saved_data(self, owner: SavedDataOwner) -> dict[str, object]:
+        return self._assertion_options(self._saved_data_binding(owner))
+
+    def _saved_data_binding(self, owner: SavedDataOwner) -> WebAuthnChallengeBinding:
+        return WebAuthnChallengeBinding(owner.principal_id, _canonical_credential_id(owner.credential_id),
+            self._relying_party_id, self._expected_origin, saved_data_binding=owner.binding)
+
+    def _assertion_options(self, binding: WebAuthnChallengeBinding) -> dict[str, object]:
         challenge = self._store.issue_webauthn_challenge(
-            self._authentication_binding(authority, credential_id),
+            binding,
             expires_at=self._challenge_expiry(),
         )
         return {
             "challenge": challenge.value,
             "rpId": self._relying_party_id,
             "allowCredentials": [
-                {"type": "public-key", "id": credential_id}
+                {"type": "public-key", "id": binding.credential_id}
             ],
             "timeout": self._challenge_ttl_seconds * 1_000,
             "userVerification": "required",
@@ -552,14 +563,31 @@ class WebAuthnService:
     ) -> IssuedBridgeSession:
         """Verify an assertion, advance its counter, and mint an opaque session."""
         _require_session_authority(authority)
+        credential_id = _canonical_credential_id(authority.credential_id)
+        self._verify_assertion(self._authentication_binding(authority, credential_id), response)
+        return self._store.issue_bridge_session(
+            BridgeSessionIssue(
+                credential_id=credential_id,
+                principal_id=authority.principal_id,
+                creator_account_id=authority.creator_account_id,
+                role=authority.role,
+                expires_at=self._now() + timedelta(seconds=self._session_ttl_seconds),
+                grant_reference_ids=authority.grant_reference_ids,
+            )
+        )
+
+    def verify_saved_data(self, owner: SavedDataOwner, response: AuthenticationCredential) -> None:
+        self._verify_assertion(self._saved_data_binding(owner), response)
+
+    def _verify_assertion(self, binding: WebAuthnChallengeBinding, response: AuthenticationCredential) -> None:
         raw_credential_id = _credential_id(
             response.credential_id, response.raw_id, response.credential_type
         )
         credential_id = _base64url(raw_credential_id)
-        if credential_id != _canonical_credential_id(authority.credential_id):
+        if credential_id != binding.credential_id:
             raise WebAuthnVerificationError("WebAuthn credential does not match")
         credential = self._store.webauthn_credential(
-            credential_id, principal_id=authority.principal_id
+            credential_id, principal_id=binding.principal_id
         )
         if credential is None:
             raise WebAuthnVerificationError("WebAuthn credential is not active")
@@ -572,7 +600,7 @@ class WebAuthnService:
             None if response.user_handle is None else _base64url_decode(response.user_handle)
         )
         if user_handle is not None and not hmac.compare_digest(
-            user_handle, _user_handle(authority.principal_id)
+            user_handle, _user_handle(binding.principal_id)
         ):
             raise WebAuthnVerificationError("WebAuthn user handle does not match")
         authenticator_data = _assertion_authenticator_data(
@@ -586,26 +614,15 @@ class WebAuthnService:
             hashlib.sha256(client_data).digest(),
             signature,
         )
-        binding = self._authentication_binding(authority, credential_id)
         if self._store.consume_webauthn_challenge(challenge, binding) is None:
             raise WebAuthnVerificationError("WebAuthn challenge is invalid or expired")
         if not self._store.advance_webauthn_signature_count(
             credential_id,
-            principal_id=authority.principal_id,
+            principal_id=binding.principal_id,
             expected_count=credential.signature_count,
             asserted_count=authenticator_data.signature_count,
         ):
             raise WebAuthnVerificationError("WebAuthn signature counter did not advance")
-        return self._store.issue_bridge_session(
-            BridgeSessionIssue(
-                credential_id=credential_id,
-                principal_id=authority.principal_id,
-                creator_account_id=authority.creator_account_id,
-                role=authority.role,
-                expires_at=self._now() + timedelta(seconds=self._session_ttl_seconds),
-                grant_reference_ids=authority.grant_reference_ids,
-            )
-        )
 
     def _registration_binding(
         self, authority: RegistrationAuthority

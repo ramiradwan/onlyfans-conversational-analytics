@@ -1152,6 +1152,33 @@ def ready_for_finalization(coordinator, owner, session):
 
 
 @pytest.mark.asyncio
+async def test_verified_setup_resumes_when_reopened_after_the_watcher_is_idle(setup, monkeypatch):
+    coordinator, owner, first, now = setup
+    journey = ready_for_finalization(coordinator, owner, first)
+    now[0] += timedelta(hours=1)
+    checked = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    original = coordinator._admit_automatic_finalization
+
+    def observe_first_check():
+        result = original()
+        loop.call_soon_threadsafe(checked.set)
+        return result
+
+    monkeypatch.setattr(coordinator, "_admit_automatic_finalization", observe_first_check)
+    coordinator.start()
+    try:
+        await asyncio.wait_for(checked.wait(), timeout=3)
+        assert not owner.calls
+        entry = coordinator.admissions.prepare_desktop(journey)
+        coordinator.admissions.consume(entry, role="desktop")
+        await asyncio.wait_for(owner.started.wait(), timeout=3)
+        assert [call[0]["action"] for call in owner.calls] == ["setup.finalize"]
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
 async def test_automatically_finalizes_verified_account_once_without_renderer_action(setup):
     from app.provisioning.events import events
     coordinator, owner, session, _ = setup
@@ -1183,7 +1210,7 @@ async def test_automatically_finalizes_verified_account_once_without_renderer_ac
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("block", ["no-account", "no-key", "recovery", "expired", "pending", "confirmation", "runtime"])
+@pytest.mark.parametrize("block", ["no-account", "no-key", "recovery", "expired", "pending", "confirmation", "sign-in", "runtime"])
 async def test_automatic_finalization_never_creates_new_authority(setup, block):
     coordinator, owner, session, now = setup
     ready_for_finalization(coordinator, owner, session)
@@ -1202,6 +1229,13 @@ async def test_automatic_finalization_never_creates_new_authority(setup, block):
         owner.facts["account"] = "verified"
     elif block == "confirmation":
         owner.scope["desktop_decision_status"] = {"operation_id": str(uuid4()), "state": "confirmation-required"}
+    elif block == "sign-in":
+        owner.scope["desktop_authentication"] = {
+            "operation_id": str(uuid4()), "browser_operation_id": None, "state": "selection-required",
+            "choices": {"google": False, "microsoft-personal": False, "telegram": False, "tiktok": False, "default": True},
+            "actions": {"select": True, "cancel": False, "open_browser": False, "switch_account": False},
+            "authentication_attempt": None,
+        }
     elif block == "runtime":
         coordinator = DesktopOnboardingCoordinator(ScopedAdmissions(coordinator.store, stage="runtime"), owner)
     before = table_counts(coordinator)

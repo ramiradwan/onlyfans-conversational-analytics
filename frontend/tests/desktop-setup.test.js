@@ -1264,6 +1264,9 @@ describe('desktop setup presentation', () => {
     renderSetup(document, { snapshot: { ...value, allowed_actions: [], reason: 'authority_unavailable' }, connected: true });
     expect(document.getElementById('task-action').hidden).toBe(true);
     expect(document.getElementById('task-status').textContent).toBe('Account authorization is unavailable.');
+    renderSetup(document, { snapshot: { ...value, allowed_actions: [], reason: 'authority_unavailable' }, connected: true,
+      savedAuthorizationExpired: true });
+    expect(document.getElementById('task-status').textContent).toBe('Account authorization has expired. New capture and analysis are paused on this computer.');
   });
 
   it('renders the three local setup tasks and optional activation from one projection', () => {
@@ -1453,7 +1456,7 @@ describe('desktop setup presentation', () => {
   });
   it.each([
     ['renewing', 'Renewing access on this computer', 'This page updates when renewal finishes.', 'Renewal needs an internet connection.'],
-    ['expired', 'Access on this computer isn’t active', 'This page updates by itself if you can sign in again.', ''],
+    ['expired', 'Account authorization has expired', 'New capture and analysis are paused on this computer.', ''],
     ['removed', 'Access removed from this computer', 'This computer can no longer open analytics.', ''],
   ])('names %s access on this computer instead of offering another attempt', (access, heading, description, guidance) => {
     mount();
