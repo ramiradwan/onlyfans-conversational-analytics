@@ -198,6 +198,58 @@ async function textLines(locator) {
   });
 }
 
+export async function measureDashboardMismatch(page, open, width, scale) {
+  await page.setViewportSize({ width, height: 900 });
+  await open('home');
+  await page.evaluate(value => { document.documentElement.style.fontSize = `${value * 100}%`; }, scale);
+  const overview = page.getByRole('region', { name: 'Overview', exact: true });
+  const overviewBefore = await appearance(overview);
+  const dashboard = page.getByRole('heading', { name: 'Dashboard', level: 1, exact: true });
+  const dashboardBefore = await appearance(dashboard);
+  const task = page.locator('[data-reserved-region="dashboard-setup"] [data-dashboard-task-part^="activation:"]');
+  const heading = task.getByRole('heading', { name: 'Full analytics unavailable', exact: true });
+  const status = task.locator('.onboarding-status[role="status"]');
+  const metrics = [];
+  for (const [account, message] of [
+    ['verified', 'Switch to the OnlyFans account you used for setup.'],
+    ['unknown', 'Sign in to the OnlyFans account you want to connect.'],
+  ]) {
+    await page.evaluate(account => window.__workspaceFixture.desktopSnapshot({
+      facts: { account }, creator_label: null, decision: null, decision_status: null, allowed_actions: ['activation.review'],
+      analysis_readiness: { availability: 'current', creator_account_id: window.__workspaceFixture.state().creatorAccountId,
+        value: { schema: 'ofca-analysis-readiness/v1', commercial_authority: 'required', analysis_admission: 'blocked' } },
+      pending_operations: [{ operation_id: '22222222-2222-4222-8222-222222222222', action: 'activation.review',
+        state: 'outcome_unknown', reason: 'account_mismatch' }],
+    }), account);
+    await heading.waitFor({ timeout: 5000 });
+    const messageNode = status.getByText(message, { exact: true });
+    await messageNode.waitFor();
+    const titleLines = await textLines(heading);
+    const body = await task.locator(':scope > p').all();
+    const bodies = await Promise.all(body.map(textLines));
+    const bodyLines = bodies.reduce((sum, lines) => sum + lines.count, 0);
+    const statusLines = await textLines(messageNode);
+    assert(titleLines.fits && bodies.every(lines => lines.fits) && statusLines.fits, 'Dashboard mismatch copy clips');
+    assert(await status.evaluate(node => node.scrollWidth <= node.clientWidth && node.scrollHeight <= node.clientHeight), 'Dashboard mismatch status clips');
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Dashboard mismatch overflows the page');
+    assert.equal(await task.getByRole('button').count(), 0);
+    near((await appearance(task)).x, dashboardBefore.x, 'Mismatch card left edge');
+    const overviewAfter = await appearance(overview);
+    const dashboardAfter = await appearance(dashboard);
+    for (const dimension of ['x', 'y', 'width', 'height']) {
+      near(overviewAfter[dimension], overviewBefore[dimension], `Overview ${dimension} after mismatch`);
+      near(dashboardAfter[dimension], dashboardBefore[dimension], `Dashboard heading ${dimension} after mismatch`);
+    }
+    if (width === 1440) {
+      assert.equal(titleLines.count, 1);
+      assert(bodyLines <= 2);
+      assert.equal(statusLines.count, 1);
+    } else if (scale === 2) assert(statusLines.count > 1, 'Narrow Dashboard mismatch must wrap');
+    metrics.push({ account, title: titleLines.count, body: bodyLines, status: statusLines.count });
+  }
+  return metrics;
+}
+
 export async function measureDashboardOnboarding(page, open) {
   const layouts = [];
   for (const [width, scale] of [[1440, 1], [390, 1], [320, 2]]) {
@@ -307,7 +359,8 @@ export async function measureDashboardOnboarding(page, open) {
       await page.evaluate(() => window.__workspaceFixture.browser({ history_error_code: 'software_update_required' }));
       await verifyStatus('Update Conversation Analytics to continue.', 'attention');
     }
-    layouts.push({ width, scale, titleLines, bodyLines, basisLines });
+    const mismatch = await measureDashboardMismatch(page, open, width, scale);
+    layouts.push({ width, scale, titleLines, bodyLines, basisLines, mismatch });
   }
 
   await page.emulateMedia({ reducedMotion: 'no-preference' });

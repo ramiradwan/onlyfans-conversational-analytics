@@ -61,12 +61,24 @@ it('opens a focused activation code dialog and returns focus on cancel and Escap
 it('uses admitted offer terms and ordinary ink in both schemes without exposing sign-in identity', async () => {
   const fixture = withDecision();
   const snapshot = fixture.api.getState().snapshot!;
+  const label = { creator_id: 'offer-creator-id', display_name: 'Offer name sentinel', username: 'offer-handle-sentinel', initials: 'ZZ' };
   fixture.publish({ snapshot: { ...snapshot, facts: { ...snapshot.facts, authenticated_account_label: 'Private sign-in' },
+    creator_label: label,
+    analysis_readiness: { ...snapshot.analysis_readiness, creator_account_id: 'offer-creator-id' },
     decision: { ...decision, offer: { ...decision.offer, pilot_credit_cost: 3, licensed_major_version: 4,
       update_rights: false, fallback_major_versions: [] } } } });
   mount(makeApi(), fixture.api);
   fireEvent.click(screen.getByRole('button', { name: 'Review offer' }));
-  const dialog = within(await screen.findByRole('dialog', { name: 'Activate Full analytics' }));
+  const tree = await screen.findByRole('dialog', { name: 'Activate Full analytics' });
+  const dialog = within(tree);
+  expect(Array.from(tree.querySelectorAll('dl > div'), row => Array.from(row.children, cell => cell.textContent))).toEqual([
+    ['Funding', 'Complimentary pilot'], ['Price', 'FreeUses 3 pilot credits'], ['Licensed version', '4.x'],
+    ['Update rights', 'Not included'], ['Earlier versions', 'Not included'],
+  ]);
+  expect(tree.outerHTML).not.toMatch(/Full analytics account|Private sign-in|Offer name sentinel|offer-handle-sentinel|offer-creator-id|\bZZ\b/);
+  expect(dialog.getByRole('heading', { name: 'Activate Full analytics', level: 2 })).toBeTruthy();
+  expect(dialog.getAllByRole('button')).toEqual(['Activate for free', 'Not now', 'Use an activation code']
+    .map(name => dialog.getByRole('button', { name, exact: true })));
   const price = dialog.getByText('Free', { exact: true });
   expect(price).toBeTruthy();
   expect(dialog.getByText('Uses 3 pilot credits')).toBeTruthy();
@@ -127,23 +139,46 @@ it('shows accepted activation as pending while leaving stale consent actions ina
   expect(screen.getByText('On')).toBeTruthy();
 });
 
-it('names the expected creator account only after the owner verifies its label', async () => {
+it('gates mismatch independently of identity labels and uses only current binding proof', async () => {
   const fixture = desktopFixture(false);
-  const snapshot = { ...fixture.api.getState().snapshot!, facts: { account: 'verified', authenticated_account_label: 'Provider sign-in' },
+  const snapshot = { ...fixture.api.getState().snapshot!, facts: { account: 'unknown', authenticated_account_label: 'Provider sign-in' },
     pending_operations: [{ operation_id: decision.operation_id, action: 'activation.review', state: 'outcome_unknown', reason: 'account_mismatch' }] };
   fixture.publish({ snapshot: { ...snapshot, creator_label: { creator_id: 'other-creator', display_name: 'Observed account', username: null } } });
-  mount(makeApi(), fixture.api);
-  expect(screen.getByText('Activation has not been confirmed.')).toBeTruthy();
+  const api = makeApi();
+  render(<ThemeProvider theme={theme}><CommercialActivationControls api={api} onboarding={fixture.api}
+    creatorAccountId="creator-account" /></ThemeProvider>);
+  expect(screen.getByText('Sign in to the OnlyFans account you want to connect.')).toBeTruthy();
   expect(screen.queryByText(/Observed account|Provider sign-in/)).toBeNull();
   await act(async () => fixture.publish({ snapshot: { ...snapshot,
-    creator_label: { creator_id: 'creator-account', display_name: 'Expected account', username: null } } }));
+    facts: { ...snapshot.facts, account: 'verified' },
+    creator_label: { creator_id: 'creator-account', display_name: null, username: null },
+    allowed_actions: ['activation.review'] } }));
   expect(screen.getByRole('heading', { name: 'Full analytics unavailable' })).toBeTruthy();
   const status = screen.getByRole('status');
-  expect(status.textContent).toBe('You’re signed in to a different creator account. Switch to Expected account in your browser to continue.');
+  expect(status.textContent).toBe('Switch to the OnlyFans account you used for setup.');
   expect(status.getAttribute('data-tone')).toBe('attention');
   expect(within(status).getByTestId('ErrorOutlineOutlinedIcon')).toBeTruthy();
-  expect(screen.queryByRole('button', { name: /activate|review/i })).toBeNull();
+  expect(screen.queryByRole('button', { name: /activate|review|activation code/i })).toBeNull();
+  await act(async () => fixture.publish({ connected: false }));
+  expect(screen.queryByText('Switch to the OnlyFans account you used for setup.')).toBeNull();
+  await act(async () => { fixture.readiness(required, 'another-creator'); fixture.publish({ connected: true }); });
+  expect(screen.queryByText('Switch to the OnlyFans account you used for setup.')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Review offer' })).toBeNull();
   expect(fixture.api.begin).not.toHaveBeenCalled();
+});
+
+it.each(['stale', 'ambiguous'] as const)('does not claim a verified binding from %s mismatch operations', kind => {
+  const fixture = desktopFixture(false);
+  const outcome = { operation_id: decision.operation_id, action: 'activation.review', state: 'outcome_unknown', reason: 'account_mismatch' };
+  const currentId = '33333333-3333-4333-8333-333333333333';
+  fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, facts: { account: 'verified' },
+    creator_label: { creator_id: 'creator-account', display_name: 'Stale name sentinel', username: null },
+    decision_status: kind === 'stale' ? { operation_id: currentId, state: 'unavailable' } : undefined,
+    pending_operations: kind === 'stale' ? [outcome] : [outcome, { ...outcome, operation_id: currentId, reason: 'none' }] } });
+  mount(makeApi(), fixture.api);
+  expect(screen.queryByRole('heading', { name: 'Full analytics unavailable' })).toBeNull();
+  expect(screen.queryByText(/Stale name sentinel|OnlyFans account you used for setup/)).toBeNull();
+  expect(screen.queryByRole('button', { name: /Review offer|Use an activation code/ })).toBeNull();
 });
 
 it('keeps offer review in a modal and closing it does not accept or reopen it on passive updates', async () => {
@@ -617,17 +652,31 @@ describe('native commercial activation', () => {
     expect(fixture.api.begin).not.toHaveBeenCalled();
   });
 
-  it('rejects a click from an outdated rendered offer before sending a command', async () => {
+  it.each(['decision', 'owner'])('rejects an outdated rendered offer after a change of %s', async changed => {
     const fixture = withDecision();
     let current = fixture.api.getState();
     const onboarding = { ...fixture.api, getState: () => current };
     mount(makeApi(), onboarding);
-    openReview();
+    const review = screen.getByRole('button', { name: 'Review offer' });
+    fireEvent.click(review);
     const confirm = screen.getByRole('button', { name: 'Activate for free' });
     current = { ...current, snapshot: { ...current.snapshot!,
       revision: current.snapshot!.revision + 1,
-      decision: { ...decision, operation_id: '33333333-3333-4333-8333-333333333333' } } };
+      ...(changed === 'decision' ? { decision: { ...decision, operation_id: '33333333-3333-4333-8333-333333333333' } }
+        : { analysis_readiness: { ...current.snapshot!.analysis_readiness, creator_account_id: 'another-creator' } }) } };
     fireEvent.click(confirm);
+    expect(fixture.api.begin).not.toHaveBeenCalled();
+  });
+
+  it('rejects the old review trigger before the owner change is painted', () => {
+    const fixture = withDecision();
+    let current = fixture.api.getState();
+    mount(makeApi(), { ...fixture.api, getState: () => current });
+    const review = screen.getByRole('button', { name: 'Review offer' });
+    current = { ...current, snapshot: { ...current.snapshot!,
+      analysis_readiness: { ...current.snapshot!.analysis_readiness, creator_account_id: 'another-creator' } } };
+    fireEvent.click(review);
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(fixture.api.begin).not.toHaveBeenCalled();
   });
 

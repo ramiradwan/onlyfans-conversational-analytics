@@ -1,9 +1,9 @@
 import PauseCircleOutlinedIcon from '@mui/icons-material/PauseCircleOutlined';
 import PlayCircleOutlinedIcon from '@mui/icons-material/PlayCircleOutlined';
-import { Box, Button, Stack, Typography } from '@mui/material';
+import { Box, Button, Stack } from '@mui/material';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
-import { Panel, SettingRow } from './ui';
+import { SettingRow } from './ui';
 
 import { captureRecovery, recoveryClass } from '../../shared-setup/recovery.js';
 import type { BrowserSurfacePayload } from '../protocol';
@@ -15,6 +15,7 @@ import {
 import { captureOperation } from '../services/captureOperation';
 import { desktopOnboardingApi, selectCollectionContinuation, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import type { ExtensionConnection } from '../utils/statusCopy';
+import { OnboardingAction, OnboardingCard, OnboardingSpot } from './ui/OnboardingCard';
 import { StatusLine } from './ui/ReservedRegion';
 
 type Notice = 'unreachable' | 'failed' | null;
@@ -98,7 +99,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   const captureFailure = recoveryClass(captureRecovery, pending?.status);
   const feedbackText = browser === null ? null
     : captureFailure === 'outcome_unknown' ? "Your change hasn't been confirmed."
-      : captureFailure === 'authorization_refused' ? "Dipsy couldn't change message collection."
+      : captureFailure === 'authorization_refused' ? "Dipsy couldn't change collection of OnlyFans activity."
         : captureFailure === 'browser_disconnected' || notice === 'unreachable' ? 'The browser extension is not connected right now.'
           : notice === 'failed' ? 'The change was not confirmed.' : null;
   useEffect(() => { onFeedback?.(feedbackText); }, [feedbackText, onFeedback]);
@@ -111,30 +112,30 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   if (continuation) {
     if (browser === null || !currentAuthority) return null;
     if (!reviewNeeded && !continuationPaused) return null;
-    const title = browser.legal_review_required ? 'Allow message collection'
+    const title = browser.legal_review_required ? 'Allow OnlyFans activity collection'
       : browser.site_access !== 'granted' ? 'Allow site access'
-        : browser.capture === 'off' ? 'Message collection is off' : 'Message collection is paused';
-    const description = browser.legal_review_required ? 'Review how Dipsy uses your messages in your browser.'
-      : browser.site_access !== 'granted' ? 'Your browser needs permission before Dipsy can collect messages.'
-        : browser.capture === 'off' ? 'Review collection options in your browser.' : 'New messages are not being collected.';
+        : browser.capture === 'off' ? 'OnlyFans activity collection is off' : 'OnlyFans activity collection is paused';
+    const description = browser.legal_review_required ? 'Review how Dipsy uses your OnlyFans activity in your browser.'
+      : browser.site_access !== 'granted' ? 'Your browser needs permission before Dipsy can collect OnlyFans activity.'
+        : browser.capture === 'off' ? 'Review how to collect OnlyFans activity in your browser.' : 'Collection of new OnlyFans activity is paused.';
     const waiting = openingReview || desktop.browserLaunchPending || Boolean(reviewOperation) || localReviewPending;
     const progress = openingReview || desktop.browserLaunchPending ? 'Opening browser…'
       : reviewOperation?.state === 'outcome_unknown' || localReviewPending && desktop.error === 'operation_unconfirmed'
         ? 'The browser review has not been confirmed.'
         : reviewOperation ? 'Complete the review in your browser.'
           : localReviewPending ? 'Preparing browser review.' : null;
-    return <Panel component="section" emphasis="dominant" aria-labelledby="collection-review-title"
-      data-journey-state="desktop.message_collection_review">
-      <Typography component="h2" id="collection-review-title" variant="h5">{title}</Typography>
-      <Typography variant="body2" sx={{ color: 'text.secondary' }}>{description}</Typography>
-      {reviewNeeded && canReview && !waiting && <Button onClick={() => void open('setup')}
-        variant="contained" sx={{ alignSelf: 'flex-start' }}>Review in browser</Button>}
-      {continuationPaused && canResume && !waiting && <Button onClick={() => void setCapture('resume')}
-        disabled={captureBlocked} variant="contained" sx={{ alignSelf: 'flex-start' }}>
-        {pending?.status === 'waiting' && pending.action === 'resume' ? 'Resuming…' : 'Resume collecting'}</Button>}
-      {(progress || feedbackText) && <StatusLine id="collection-review-feedback" essential
-        text={feedbackText ?? progress} tone={feedbackText ? 'error' : 'secondary'} />}
-    </Panel>;
+    return <Box sx={{ maxWidth: 760 }} data-journey-state="desktop.message_collection_review">
+      <OnboardingCard title={title} body={description} spot={<OnboardingSpot icon="extension" />}
+        actions={<OnboardingAction>
+          {reviewNeeded && canReview && !waiting && <Button onClick={() => void open('setup')} variant="contained">Review in browser</Button>}
+          {continuationPaused && canResume && !waiting && <Button onClick={() => void setCapture('resume')}
+            disabled={captureBlocked} variant="contained">
+            {pending?.status === 'waiting' && pending.action === 'resume' ? 'Resuming…' : 'Resume collecting'}</Button>}
+        </OnboardingAction>}
+        status={(progress || feedbackText) && <Box sx={{ mt: 2 }}>
+          <StatusLine id="collection-review-feedback" essential text={feedbackText ?? progress} tone={feedbackText ? 'error' : 'secondary'} />
+        </Box>} />
+    </Box>;
   }
   if (browser === null) {
     return <Stack spacing={1.5} useFlexGap sx={{ minWidth: 0 }} data-browser-controls="waiting">

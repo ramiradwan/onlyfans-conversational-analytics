@@ -32,7 +32,7 @@ const browserTaskCases = [
   ['unavailable', 'Set up the extension', 'Install or turn on the extension in this browser profile.', ['extension-install', ...desktop]],
   ['extension_disconnected', 'Continue in the desktop app', 'Dipsy couldn’t connect to the extension.', desktop],
   ['profile_mismatch', 'Switch browser profile', 'This isn’t the profile you used for setup.', desktop],
-  ['account_mismatch', 'Switch creator account', 'Sign in with the creator account you want to connect.', desktop, pairingPayload],
+  ['account_mismatch', 'Switch OnlyFans account', 'Sign in to the OnlyFans account you want to connect.', desktop, pairingPayload],
   ['needs-consent', 'Review the extension', 'See what it collects before you turn it on.', ['extension-open']],
   ['needs-permission', 'Allow site access', 'The extension needs it to read activity from your creator account.', ['extension-open']],
   ['needs-account', 'Sign in to your creator account', 'Use your creator account in this browser profile.', ['extension-open']],
@@ -84,6 +84,21 @@ describe('Browser task presentation', () => {
     renderBrowserTask(document, { state: 'needs-permission', payload: payload() });
     expect(document.querySelector('.setup-task-card').getAttribute('aria-busy')).toBeNull();
     expect(document.querySelector('.setup-eyebrow').textContent).toBe('Browser setup');
+  });
+
+  it('keeps account and profile mismatch separate without treating observed identity as a binding', () => {
+    document.documentElement.innerHTML = browserTaskHtml;
+    const value = { ...pairingPayload(), creator_account_id: 'chrome-id-sentinel',
+      creator_label: { display_name: 'Chrome name sentinel', username: 'chrome-handle-sentinel', initials: 'ZZ' } };
+    for (const [state, message] of [
+      ['account_mismatch', 'Sign in to the OnlyFans account you want to connect.'],
+      ['profile_mismatch', 'This isn’t the profile you used for setup.'],
+    ]) {
+      renderBrowserTask(document, { state, payload: value });
+      expect(document.querySelector('#task-status').textContent).toBe(message);
+      expect(document.querySelector('main').outerHTML).not.toMatch(/chrome-(id|handle)-sentinel|Chrome name sentinel|\bZZ\b/);
+      expect(taskControls.filter(id => !document.getElementById(id).hidden)).toEqual(desktop);
+    }
   });
 
   it.each(['unavailable', 'needs-permission', 'auth_idle', 'pairing_saved', 'service_unavailable'])(

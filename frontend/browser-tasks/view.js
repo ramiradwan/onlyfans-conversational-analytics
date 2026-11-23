@@ -16,7 +16,7 @@ const status = {
   unavailable: ['Set up the extension', 'Install or turn on the extension in this browser profile.'],
   extension_disconnected: [handoff, 'Dipsy couldn’t connect to the extension.', 'desktop-handoff'],
   profile_mismatch: ['Switch browser profile', 'This isn’t the profile you used for setup.'],
-  account_mismatch: ['Switch creator account', 'Sign in with the creator account you want to connect.'],
+  account_mismatch: ['Switch OnlyFans account', 'Sign in to the OnlyFans account you want to connect.'],
   auth_idle: ['Finish signing in', '', 'sign-in'],
   auth_opening: ['Signing in…', 'Finish in the sign-in window.', 'sign-in'],
   auth_checking: [null, 'Checking the sign-in outcome…', 'sign-in-check'],

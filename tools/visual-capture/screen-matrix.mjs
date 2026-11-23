@@ -147,7 +147,7 @@ return [
   {
     workspace: 'dashboard-continuation',
     state: 'allow-message-collection',
-    ready: (page) => page.getByRole('heading', { name: 'Allow message collection', exact: true }),
+    ready: (page) => page.getByRole('heading', { name: 'Allow OnlyFans activity collection', exact: true }),
     assert: async (page) => {
       await page.getByRole('button', { name: 'Review in browser', exact: true }).waitFor({ state: 'visible' });
     },
@@ -164,7 +164,7 @@ return [
   {
     workspace: 'dashboard-continuation',
     state: 'message-collection-off',
-    ready: (page) => page.getByRole('heading', { name: 'Message collection is off', exact: true }),
+    ready: (page) => page.getByRole('heading', { name: 'OnlyFans activity collection is off', exact: true }),
     assert: async (page) => {
       await page.getByRole('button', { name: 'Review in browser', exact: true }).waitFor({ state: 'visible' });
     },

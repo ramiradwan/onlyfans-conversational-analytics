@@ -239,6 +239,7 @@ h1:focus { outline: none; }
 @media (max-width: 600px) {
   .desktop-setup { padding-block: 24px 48px; }
   .desktop-setup .setup-steps { margin-block-end: 24px; }
+  .desktop-setup .setup-steps li { min-inline-size: min-content; }
   .desktop-setup .setup-steps li[aria-current="step"] { flex: 0 1 auto; }
   .desktop-setup .setup-steps [aria-current="step"] .setup-step-label { min-inline-size: 0; overflow-wrap: anywhere; }
   .desktop-setup .setup-steps li:not([aria-current="step"]) .setup-step-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

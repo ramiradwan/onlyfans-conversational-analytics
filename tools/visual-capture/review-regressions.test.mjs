@@ -8,6 +8,7 @@ import { FIXED_NOW, startHarness } from './capture.mjs';
 import { auditScrolling, installWatcher, readWatcher } from './shift-watcher.mjs';
 import { renderSurfaceState, SURFACE_STATES } from '../../extension/qualification/surface-fixtures.mjs';
 import { openActivationReview, publishActivation } from './desktop-decision-fixtures.mjs';
+import { measureDashboardMismatch } from './review-contracts.mjs';
 
 let browser, harness;
 before(async () => { browser = await chromium.launch(); harness = await startHarness(); });
@@ -648,6 +649,21 @@ for (const width of [320, 390, 600]) test(`essential activation content stays se
   } finally { await page.close(); }
 });
 
+for (const mode of ['light', 'dark']) for (const [width, scale] of [[1440, 1], [390, 1], [320, 2]]) {
+  test(`Dashboard mismatch V03 at ${width} with ${scale}x text in ${mode}`, async t => {
+    const page = await browser.newPage({ colorScheme: mode, reducedMotion: 'reduce' });
+    try {
+      const open = async workspace => {
+        await page.goto(harness.base + `?workspace=${workspace}&mode=${mode}`);
+        await page.waitForFunction(() => window.__workspaceFixture);
+        await page.evaluate(() => document.fonts.ready);
+        await settle(page);
+      };
+      t.diagnostic(JSON.stringify(await measureDashboardMismatch(page, open, width, scale)));
+    } finally { await page.close(); }
+  });
+}
+
 test('activation Dashboard prompt uses Guided task geometry at 1440', async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   try {
@@ -682,6 +698,46 @@ test('activation Dashboard prompt uses Guided task geometry at 1440', async () =
   } finally { await page.close(); }
 });
 
+for (const mode of ['light', 'dark']) for (const width of [320, 390, 1440]) {
+  test(`Dashboard collection continuation uses Guided task geometry at ${width} in ${mode}`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 900 }, colorScheme: mode, reducedMotion: 'reduce' });
+    try {
+      for (const [state, title] of [
+        ['allow-message-collection', 'Allow OnlyFans activity collection'],
+        ['allow-onlyfans-access', 'Allow site access'],
+        ['message-collection-off', 'OnlyFans activity collection is off'],
+      ]) {
+        await page.goto(harness.base + `?workspace=dashboard-continuation&state=${state}&mode=${mode}`);
+        if (width === 320) await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+        const task = page.getByRole('region', { name: title, exact: true });
+        await task.waitFor();
+        await page.evaluate(() => document.fonts.ready);
+        const geometry = await task.evaluate(node => {
+          const title = node.querySelector('h2');
+          const headingStyle = getComputedStyle(title);
+          const bounds = node.getBoundingClientRect();
+          const spot = node.querySelector('.onboarding-spot')?.getBoundingClientRect();
+          const region = node.closest('[data-reserved-region="dashboard-setup"]').getBoundingClientRect();
+          return { width: bounds.width, left: bounds.left, regionLeft: region.left, spot: spot?.width,
+            padding: getComputedStyle(node).padding, fontSize: headingStyle.fontSize,
+            titleHeight: title.getBoundingClientRect().height, lineHeight: parseFloat(headingStyle.lineHeight),
+            fits: node.scrollWidth <= node.clientWidth && bounds.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth };
+        });
+        assert.equal(geometry.spot, 40);
+        assert.equal(geometry.left, geometry.regionLeft);
+        assert(geometry.fits);
+        assert.equal(await task.getByRole('button', { name: 'Review in browser', exact: true }).count(), 1);
+        if (width === 1440) {
+          assert.equal(geometry.width, 760);
+          assert.equal(geometry.padding, '32px');
+          assert.equal(geometry.fontSize, '22px');
+          assert.equal(geometry.titleHeight, geometry.lineHeight);
+        }
+      }
+    } finally { await page.close(); }
+  });
+}
+
 for (const mode of ['light', 'dark']) for (const width of [320, 390, 1440]) test(`activation offer scroll and styling at ${width} in ${mode}`, async () => {
   const page = await browser.newPage({ viewport: { width, height: 640 }, reducedMotion: 'reduce', colorScheme: mode });
   try {
@@ -704,6 +760,9 @@ for (const mode of ['light', 'dark']) for (const width of [320, 390, 1440]) test
         shadow: style.boxShadow,
         spot: node.querySelector('.onboarding-spot')?.getBoundingClientRect().width,
         rowCount: rows.length,
+        valueAlignments: rows.map(row => getComputedStyle(row.querySelector('dd')).textAlign),
+        valuesShareLeftEdge: rows.every(row => row.querySelector('dt').getBoundingClientRect().left
+          === row.querySelector('dd').getBoundingClientRect().left),
         valueStyle: [getComputedStyle(price).fontWeight, getComputedStyle(price).fontVariantNumeric, getComputedStyle(price).textAlign],
         captionStyle: [getComputedStyle(caption).color, getComputedStyle(caption).display, getComputedStyle(caption).fontWeight],
         secondaryInk: getComputedStyle(rows[0].querySelector('dt')).color,
@@ -717,13 +776,15 @@ for (const mode of ['light', 'dark']) for (const width of [320, 390, 1440]) test
     assert.notEqual(geometry.shadow, 'none');
     assert.equal(geometry.spot, 40);
     assert.equal(geometry.rowCount, 5);
-    assert.deepEqual(geometry.valueStyle, ['600', 'tabular-nums', 'end']);
+    assert.deepEqual(geometry.valueStyle, ['600', 'tabular-nums', width === 320 ? 'start' : 'end']);
+    assert(geometry.valueAlignments.every(align => align === (width === 320 ? 'start' : 'end')));
     assert.deepEqual(geometry.captionStyle, [geometry.secondaryInk, 'block', '400']);
     assert.notEqual(geometry.secondaryInk, geometry.ink);
     assert.equal(geometry.trailingDivider, '0px');
     assert(geometry.quiet.length >= 2 && geometry.quiet.every(([color, padding, align]) => color === geometry.ink && padding === '0px' && align === 'start'));
     assert(geometry.fits);
     if (width === 320) {
+      assert(geometry.valuesShareLeftEdge);
       const title = offer.getByRole('heading');
       const before = await title.boundingBox();
       await offer.getByRole('button', { name: 'Use an activation code' }).scrollIntoViewIfNeeded();

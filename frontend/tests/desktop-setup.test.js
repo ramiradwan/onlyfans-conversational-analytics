@@ -838,20 +838,26 @@ describe('desktop setup presentation', () => {
         authentication_attempt: provider && { authentication_attempt_id: generation, provider, mode: 'sign-in' } },
     });
     const proof = () => document.getElementById('decision-provider');
-    for (const provider of ['google', 'microsoft-personal', 'telegram', 'tiktok']) {
+    for (const [provider, name] of [['google', 'Google'], ['microsoft-personal', 'Microsoft'], ['telegram', 'Telegram'], ['tiktok', 'TikTok']]) {
       mount();
       renderSetup(document, { snapshot: makeSnapshot(provider), connected: true });
-      expect(proof().textContent).toBe('Sign-in confirmed');
+      expect(proof().textContent, provider).toBe(`Signed in with ${name}`);
       expect(proof().hidden).toBe(false);
       expect(document.getElementById('sign-in-switch').textContent).toBe('Change sign-in');
-      expect(document.getElementById('task-description').textContent).toBe('Check the creator account and this computer, then connect them.');
+      expect(document.getElementById('task-description').textContent).toBe('Connect your OnlyFans account to this computer');
     }
     const current = makeSnapshot('google');
     for (const state of [
       { snapshot: makeSnapshot(null), provider: 'google' },
       { snapshot: makeSnapshot('default') },
+      { snapshot: makeSnapshot('toString') },
+      { snapshot: current, connected: false },
+      { snapshot: { ...current, decision: { ...current.decision, expires_at: '2000-01-01T00:00:00Z' } } },
       { snapshot: { ...current, authentication: { ...current.authentication, operation_id: generation } } },
       { snapshot: { ...current, authentication: { ...current.authentication, state: 'selected' } } },
+      { snapshot: { ...current, authentication: { ...current.authentication, state: 'expired' } } },
+      { snapshot: { ...current, authentication: { ...current.authentication, actions: { ...current.authentication.actions, open_browser: true } } } },
+      { snapshot: { ...current, allowed_actions: ['auth.switch'] } },
       { snapshot: { ...current, decision_status: { operation_id: generation, state: 'confirmation-required' } } },
       { snapshot: current, choosingAccount: true },
       { snapshot: current, acting: 'auth.switch' },
@@ -862,27 +868,40 @@ describe('desktop setup presentation', () => {
       expect(proof().hidden).toBe(true);
       expect(proof().textContent).toBe('');
     }
+    for (const provider of [null, 'default']) {
+      renderSetup(document, { snapshot: makeSnapshot(provider), connected: true });
+      const change = document.getElementById('sign-in-switch');
+      expect(change.hidden).toBe(false);
+      expect(change.disabled).toBe(false);
+      expect(document.getElementById('decision-sign-in').textContent.trim()).toBe('Change sign-in');
+    }
+    renderSetup(document, { snapshot: { ...makeSnapshot('default'), allowed_actions: ['account.confirm'] }, connected: true });
+    expect(document.getElementById('decision-sign-in').hidden).toBe(true);
   });
 
-  it('names only a verified expected account in mismatch copy', () => {
+  it('uses current binding evidence for mismatch copy without exposing any identity', () => {
     mount();
     const get = id => document.getElementById(id);
     const value = { ...initial(), allowed_actions: [], reason: 'account_mismatch',
       pending_operations: [{ ...record, reason: 'account_mismatch' }] };
-    const label = { creator_id: 'expected', display_name: 'Expected studio', username: null };
+    const label = { creator_id: 'mismatch-id-sentinel', display_name: 'Mismatch name sentinel', username: 'mismatch-handle-sentinel' };
+    renderSetup(document, { connected: true, snapshot: { ...initial(), creator_label: label } });
     renderSetup(document, { connected: true, snapshot: { ...value,
-      facts: { ...value.facts, account: 'verified' }, creator_label: label } });
-    expect(get('task-status').textContent).toBe('You’re signed in to a different creator account. Switch to Expected studio in your browser to continue.');
+      facts: { ...value.facts, account: 'verified' }, creator_label: null } });
+    expect(get('task-status').textContent).toBe('Switch to the OnlyFans account you used for setup.');
+    expect(document.documentElement.outerHTML).not.toMatch(/mismatch-(id|handle)-sentinel|Mismatch name sentinel|>M</);
     renderSetup(document, { connected: true, error: 'account_mismatch', snapshot: { ...value,
-      reason: 'none', creator_label: { ...label, creator_id: 'observed', display_name: 'Wrong studio' } } });
-    expect(get('task-status').textContent).toBe('Switch to the creator account you want to connect in your browser.');
-    expect(get('header-account').hidden).toBe(true);
-    expect(document.querySelector('main').textContent).not.toContain('Wrong studio');
+      reason: 'none', creator_label: label } });
+    expect(get('task-status').textContent).toBe('Sign in to the OnlyFans account you want to connect.');
+    expect(document.documentElement.outerHTML).not.toMatch(/mismatch-(id|handle)-sentinel|Mismatch name sentinel|>M</);
     renderSetup(document, { connected: true, snapshot: { ...value, next_task: 'account-connection',
-      facts: { ...value.facts, account: 'verified' }, creator_label: { ...label, creator_id: 'observed', display_name: 'Wrong studio' },
-      decision: { operation_id: operationId, action: 'connect-account', creator_id: 'expected', computer_name: 'Test computer' } } });
-    expect(get('task-status').textContent).toBe('Switch to the creator account you want to connect in your browser.');
-    expect(document.querySelector('main').textContent).not.toContain('Wrong studio');
+      creator_label: label, decision: { operation_id: operationId, action: 'connect-account', creator_id: label.creator_id,
+        computer_name: 'Mismatch machine sentinel', expires_at: '2030-01-01T00:00:00Z' } } });
+    expect(get('task-status').textContent).toBe('Sign in to the OnlyFans account you want to connect.');
+    expect(document.documentElement.outerHTML).not.toMatch(/mismatch-(id|handle)-sentinel|Mismatch (name|machine) sentinel|>M</);
+    renderSetup(document, { connected: false, error: 'account_mismatch', snapshot: { ...value,
+      facts: { ...value.facts, account: 'verified' }, creator_label: label } });
+    expect(get('task-status').textContent).toBe('Sign in to the OnlyFans account you want to connect.');
   });
 
   it('uses the passkey attempt outcome and swaps pairing only after owner acceptance', () => {
@@ -1192,8 +1211,9 @@ describe('desktop setup presentation', () => {
         computer_name: 'Studio computer', expires_at: '2030-01-01T00:00:00Z' } };
     renderSetup(document, { snapshot: value, connected: true });
     expect(document.getElementById('decision-details').hidden).toBe(false);
-    expect(document.getElementById('decision-account').textContent).toContain('creator-selected');
-    expect(document.getElementById('decision-computer').textContent).toBe('Studio computer');
+    expect([...document.querySelectorAll('#decision-details dt')].map(term => term.textContent)).toEqual(['Account', 'Computer']);
+    expect(document.getElementById('decision-account').textContent).toBe('OnlyFans account');
+    expect(document.getElementById('decision-computer').textContent).toBe('This computer');
     expect(document.getElementById('task-action').dataset.action).toBe('account.confirm');
     expect(document.getElementById('task-action').disabled).toBe(false);
     expect(document.getElementById('browser-reopen').hidden).toBe(true);
@@ -1202,22 +1222,20 @@ describe('desktop setup presentation', () => {
   });
 
   it.each([
-    [{ display_name: 'Mia Studio', username: 'mia.studio' }, 'Mia Studio', '@mia.studio', 'M'],
-    [{ display_name: 'Mia Studio', username: null }, 'Mia Studio', 'creator account creator-selected', 'M'],
-    [{ display_name: null, username: 'mia.studio' }, '@mia.studio', '', 'M'],
-    [null, 'creator account creator-selected', '', ''],
-  ])('shows the account number only when no handle identifies the creator account', (label, name, identifier, letter) => {
+    [{ display_name: 'Mia Studio', username: 'mia.studio' }],
+    [{ display_name: 'Mia Studio', username: null }],
+    [{ display_name: null, username: 'mia.studio' }],
+    [null],
+  ])('keeps identity out of the confirmation DOM with label %j', label => {
     mount();
+    renderSetup(document, { snapshot: { ...initial(), creator_label: { creator_id: 'creator-selected',
+      display_name: 'Mia Studio', username: 'mia.studio' } }, connected: true });
     renderSetup(document, { snapshot: { ...initial(), next_task: 'account-connection', allowed_actions: ['account.confirm'],
       pending_operations: [{ ...record, action: 'account.connect' }], creator_label: label && { creator_id: 'creator-selected', ...label },
       decision: { operation_id: operationId, action: 'connect-account', creator_id: 'creator-selected',
         computer_name: 'Studio computer', expires_at: '2030-01-01T00:00:00Z' } }, connected: true });
-    expect(document.getElementById('decision-account').textContent).toBe(name);
-    expect(document.getElementById('decision-account-identifier').textContent).toBe(identifier);
-    expect(document.getElementById('decision-account-identifier').hidden).toBe(!identifier);
-    expect(document.getElementById('decision-account-avatar').textContent).toBe(letter);
-    expect(document.getElementById('decision-account-glyph').hidden).toBe(Boolean(letter));
-    if (label?.username) expect(document.getElementById('decision-details').textContent).not.toContain('creator-selected');
+    expect(document.documentElement.outerHTML).not.toMatch(/Mia Studio|mia\.studio|creator-selected|Studio computer|>M</);
+    expect(document.getElementById('decision-account-glyph').hidden).toBe(false);
   });
 
   it.each([
