@@ -55,7 +55,7 @@ def _assets(entry_name="onboarding/index.html"):
         raise HTTPException(503, "Setup assets are unavailable") from None
 
 
-def setup_shell(request: Request, *, browser=False, receiving_origin=None):
+def setup_shell(request: Request, *, browser=False, receiving_origin=None, access_ticket=None):
     _host(request)
     if request.url.query:
         raise HTTPException(400, "Invalid setup request")
@@ -67,9 +67,12 @@ def setup_shell(request: Request, *, browser=False, receiving_origin=None):
         raise HTTPException(503, "Setup assets are unavailable") from None
     if not receiving_origin:
         document = _with_release_presentation(document)
+    if access_ticket is not None:
+        document = document.replace("</body>", f'<template id="access-document-entry">{escape(access_ticket)}</template></body>', 1)
     return HTMLResponse(document, headers=HEADERS | {"Content-Security-Policy":
         "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self' data:; "
-        "img-src 'self' data:; connect-src 'self' " + ("; " if browser or receiving_origin else "ipc: http://ipc.localhost; ") +
+        "img-src 'self' data:; connect-src 'self' " + ("ws://bridge.localhost:17871/api/v1/browser-tasks/access-document; "
+        if access_ticket is not None else "; " if browser or receiving_origin else "ipc: http://ipc.localhost; ") +
         "frame-ancestors 'none'; base-uri 'none'; form-action " + (receiving_origin or "'none'")})
 
 

@@ -27,10 +27,11 @@ class AdmissionRefused(ValueError):
     """Expired, replaced or mismatched local presentation authority."""
 
 
-def _digest(value: str) -> str:
+def _digest(value: str, *, access_document=False) -> str:
     if not isinstance(value, str) or TOKEN.fullmatch(value) is None:
         raise AdmissionRefused("admission_invalid")
-    return hashlib.sha256(b"desktop-admission-v1\0" + value.encode()).hexdigest()
+    domain = b"browser-access-document-v1\0" if access_document else b"desktop-admission-v1\0"
+    return hashlib.sha256(domain + value.encode()).hexdigest()
 
 
 def csrf_token(identifier: str) -> str:
@@ -124,20 +125,22 @@ class ScopedAdmissions:
                                (generation, journey_id, self.stage, now + 1800, entry_source, replacing_generation))
             return self._entry(connection, "desktop", generation, generation, now + 1800, now)
 
-    def _entry(self, connection, role, reference_id, generation, deadline, now):
+    def _entry(self, connection, role, reference_id, generation, deadline, now, *, access_document=False):
         code = secrets.token_urlsafe(32)
         connection.execute("INSERT INTO desktop_admission_entries VALUES (?, ?, ?, ?, ?, ?)",
-                           (_digest(code), role, reference_id, generation, self.stage, min(now + 300, deadline)))
+                           (_digest(code, access_document=access_document), role, reference_id, generation, self.stage, min(now + 300, deadline)))
         return code
 
-    def consume(self, code: str, *, role: Role) -> AdmittedSession:
+    def consume(self, code: str, *, role: Role, access_document=False) -> AdmittedSession:
         with self.authentication.database.transaction() as connection:
             now = self._now()
-            row = connection.execute("SELECT * FROM desktop_admission_entries WHERE code_digest=?",
-                                     (_digest(code),)).fetchone()
+            entry_digest = _digest(code, access_document=access_document)
+            row = connection.execute("SELECT * FROM desktop_admission_entries WHERE code_digest=?", (entry_digest,)).fetchone()
             if row is None or row["role"] != role or row["stage"] != self.stage or row["expires_at"] <= now:
                 raise AdmissionRefused("entry_invalid")
             reference = self._reference(connection, row, now, pending_desktop=True)
+            if access_document and (role != "browser_task" or reference["purpose"] != "browser.access"):
+                raise AdmissionRefused("task_scope_invalid")
             if role == "browser_task" and self._protected_task(connection,reference["task_id"]):
                 raise AdmissionRefused("task_scope_invalid")
             if role == "desktop":
@@ -147,7 +150,7 @@ class ScopedAdmissions:
                 connection.execute("DELETE FROM desktop_admission_entries WHERE role='desktop'")
                 connection.execute("DELETE FROM desktop_admission_sessions WHERE role='desktop'")
             else:
-                connection.execute("DELETE FROM desktop_admission_entries WHERE code_digest=?", (_digest(code),))
+                connection.execute("DELETE FROM desktop_admission_entries WHERE code_digest=?", (entry_digest,))
             identifier = secrets.token_urlsafe(32)
             connection.execute("INSERT INTO desktop_admission_sessions VALUES (?, ?, ?, ?, ?, ?)",
                                (_digest(identifier), role, row["reference_id"], row["generation"], self.stage, reference["expires_at"]))
@@ -296,11 +299,14 @@ class ScopedAdmissions:
     def reissue_task_entry(self, identifier: str, *, generation: str, task_id: str) -> str:
         return self._rebind_task(identifier, generation=generation, task_id=task_id, browser_entry=True)
 
+    def reissue_access_document(self, identifier: str, *, generation: str, task_id: str) -> tuple[str, str]:
+        return self._rebind_task(identifier, generation=generation, task_id=task_id, browser_entry=True, access_document=True)
+
     def rebind_paired_task(self, identifier: str, *, generation: str, task_id: str) -> str:
         """Fence an old helper without minting a browser credential for a paired session."""
         return self._rebind_task(identifier, generation=generation, task_id=task_id, browser_entry=False)
 
-    def _rebind_task(self, identifier, *, generation, task_id, browser_entry):
+    def _rebind_task(self, identifier, *, generation, task_id, browser_entry, access_document=False):
         require_journey(task_id)
         with self.authentication.database.transaction() as connection:
             _, parent = self._require(connection, identifier, role="desktop", generation=generation)
@@ -311,6 +317,8 @@ class ScopedAdmissions:
                 raise AdmissionRefused("browser_task_unavailable")
             if self._protected_task(connection,task_id):
                 raise AdmissionRefused("task_scope_invalid")
+            if access_document and task["purpose"] != "browser.access":
+                raise AdmissionRefused("task_scope_invalid")
             next_generation = str(uuid4())
             # Reattachment changes presentation only, never the accepted operation or deadline.
             connection.execute("UPDATE desktop_browser_tasks SET desktop_generation=?, admission_generation=?, expires_at=? WHERE task_id=?",
@@ -319,8 +327,9 @@ class ScopedAdmissions:
             connection.execute("DELETE FROM desktop_admission_sessions WHERE role='browser_task' AND reference_id=?", (task_id,))
             if not browser_entry:
                 return next_generation
-            return self._entry(connection, "browser_task", task_id, next_generation,
-                               min(task["expires_at"], parent["expires_at"]), now)
+            code = self._entry(connection, "browser_task", task_id, next_generation,
+                               min(task["expires_at"], parent["expires_at"]), now, access_document=access_document)
+            return (code, next_generation) if access_document else code
 
     def prepare_accepted_task(self, operation_id: str, *, purpose: str, deadline: float) -> str:
         """Continue a durable coordinator command, without a renderer credential.

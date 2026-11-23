@@ -38,8 +38,8 @@ export async function openSetupCode(client, invoke = code =>
 }
 
 /** Brain chooses the route: the paired session, the live helper, then one Chrome tab with a fresh code. */
-export async function openBrowserTask(client, operationId, invoke = (code) =>
-  globalThis.__TAURI__.core.invoke('desktop_browser_task', { entryCode: code }), current = () => client.connected !== false) {
+export async function openBrowserTask(client, operationId, invoke = (code, presentation) =>
+  globalThis.__TAURI__.core.invoke('desktop_browser_task', { entryCode: code, presentation }), current = () => client.connected !== false) {
   if (!current()) return false;
   const value = await client.json('/api/v1/desktop/browser-tasks');
   if (!current()) return false;
@@ -52,10 +52,13 @@ export async function openBrowserTask(client, operationId, invoke = (code) =>
   if (!current()) return false;
   if (exact(result, ['state']) && ['dispatched', 'focused'].includes(result.state)) return true;
   if (exact(result, ['state']) && result.state === 'unavailable') return false;
-  if (!exact(result, ['state', 'entry_code']) || result.state !== 'entry' || !/^[A-Za-z0-9_-]{43}$/u.test(result.entry_code)) {
+  const access = matches[0].purpose === 'browser.access';
+  if (!exact(result, access ? ['state', 'entry_code', 'presentation'] : ['state', 'entry_code']) || result.state !== 'entry'
+    || !/^[A-Za-z0-9_-]{43}$/u.test(result.entry_code) || access && !UUID.test(result.presentation)) {
     throw Error('browser_unavailable');
   }
-  await invoke(result.entry_code);
+  if (access) await invoke(result.entry_code, result.presentation);
+  else await invoke(result.entry_code);
   return true;
 }
 

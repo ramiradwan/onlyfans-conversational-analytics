@@ -503,11 +503,11 @@ describe('scoped browser helper', () => {
     expect(requests[2][1].headers['X-Desktop-Generation']).toBe(id(4));
     expect(received.at(-1).state).toBe('reported'); client.stop();
   });
-  it('opens only one prepared task through the native code-only command', async () => {
+  it('opens one prepared access review with its fresh native entry and public generation', async () => {
     const value = payload(), invoke = vi.fn();
-    const client = { json: vi.fn(async path => path.endsWith('/open') ? { state: 'entry', entry_code: 'A'.repeat(43) } : { tasks: [value.task] }) };
+    const client = { json: vi.fn(async path => path.endsWith('/open') ? { state: 'entry', entry_code: 'A'.repeat(43), presentation: id(9) } : { tasks: [value.task] }) };
     expect(await openBrowserTask(client, value.task.operation_id, invoke)).toBe(true);
-    expect(invoke).toHaveBeenCalledExactlyOnceWith('A'.repeat(43));
+    expect(invoke).toHaveBeenCalledExactlyOnceWith('A'.repeat(43), id(9));
     client.json.mockResolvedValue({ tasks: [value.task, value.task] });
     await expect(openBrowserTask(client, value.task.operation_id, invoke)).rejects.toThrow();
     expect(invoke).toHaveBeenCalledOnce();

@@ -36,6 +36,15 @@ function render(model) {
   for (const id of ['capture', 'connection', 'data']) show(id, status !== null || id === 'connection' && historyHandoff && !failed);
   for (const id of mutations) page.lock(id, !status);
   renderLegalLinks(legal);
+  const historyChosen = Boolean(status?.history_choice_revision) && model.pairing.state === 'paired';
+  const canAllowHistory = historyChosen && !status.history_permission;
+  show('history', canAllowHistory);
+  page.lock('history', !canAllowHistory);
+  text('history-status', historyChosen
+    ? status.history_permission ? 'Browser access allowed.'
+      : 'You turned on message history in the desktop app. Allow the extension to read your older messages.'
+    : status && historyHandoff ? 'Check your message history setting in the desktop app.' : '');
+  if (historyHandoff && historyChosen && status.history_permission) void finishHandoff();
   if (!status) return;
   document.querySelector('main').dataset.ready = 'true';
   text('mode-label', phaseLabel(status));
@@ -49,13 +58,6 @@ function render(model) {
   const forgettable = model.pairing.state === 'paired' && model.pairing.desktop_control !== true;
   show('forget-companion', forgettable);
   element('forget-companion').closest('.settings-row').classList.toggle('reserved-empty', !forgettable);
-  const fullFamily = status.consent.mode === 'full' || status.consent.mode === 'paused' && status.consent.resume_mode === 'full';
-  const canAllowHistory = fullFamily && !status.history_permission;
-  show('history', canAllowHistory);
-  text('history', 'Allow browser access');
-  if (location.hash === '#history' && status.history_permission) void finishHandoff();
-  text('history-status', status.history_permission ? 'Browser access allowed.' : canAllowHistory
-    ? 'You turned on message history in the desktop app. Allow the extension to read your older messages.' : '');
   text('pending-count', new Intl.NumberFormat().format(status.delivery?.pending_entries ?? 0));
   const drops = Object.values(status.delivery?.capture_drop_counts ?? {}).reduce((sum, count) => sum + (Number.isSafeInteger(count) ? count : 0), 0);
   text('capture-health', status.delivery?.startup_error_code ? 'Full analytics could not start. Open the desktop app.'
@@ -91,7 +93,7 @@ destructive('delete-local-data', 'Delete extension data?',
   'Delete extension data', () => send({ type: UI_DELETE_LOCAL_DATA_MESSAGE_TYPE }), 'Extension data deleted.');
 page.bind('clear-preview', () => send({ type: UI_CLEAR_PREVIEW_MESSAGE_TYPE }), 'Preview counts cleared.');
 page.bind('restore-access', () => restoreAccess(client.model));
-page.bind('history', () => allowHistory());
+page.bind('history', () => allowHistory(client.model.status?.history_choice_revision));
 page.bind('open-setup', () => openSurface('setup'));
 page.bind('open-dashboard', () => chrome.tabs.create({ url: client.model.config.dashboard_url }));
 page.bind('manage-desktop-data', () => chrome.tabs.create({ url: client.model.config.history_settings_url }));
@@ -107,6 +109,7 @@ function focusSection() {
 window.addEventListener('hashchange', focusSection);
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'session' && changes[DESKTOP_HANDOFF_WINDOW_KEY]
-    && location.hash === '#history' && client.model.status?.history_permission) void finishHandoff();
+    && location.hash === '#history' && client.model.pairing.state === 'paired'
+    && client.model.status?.history_choice_revision && client.model.status.history_permission) void finishHandoff();
 });
 void client.start().then(focusSection);

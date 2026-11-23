@@ -29,7 +29,7 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
     })().finally(() => { scopePromise = null; });
     return scopePromise;
   }
-  function reconcileAccount() {
+  function reconcileAccount(expectedAccountId) {
     const operation = identityQueue.then(async () => {
       await consentController.initialize();
       for (;;) {
@@ -43,8 +43,13 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
           .map((value) => value.toString(16).padStart(2, '0')).join('');
         if (revision !== identityRevision) continue;
         await scope();
-        await workspace.reconcileIdentity({ account_digest });
-        if (revision === identityRevision) return revision;
+        const record = await workspace.reconcileIdentity({ account_digest });
+        if (revision !== identityRevision) continue;
+        if (expectedAccountId !== undefined) {
+          if (observed !== expectedAccountId || await identityBridge.currentAccountId() !== expectedAccountId) throw Error('task_changed');
+          if (revision !== identityRevision) continue;
+        }
+        return record;
       }
     });
     identityQueue = operation.catch(() => undefined);
@@ -112,15 +117,14 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
       await scope();
       return workspace.fullPresentationIntent(account);
     },
-    async browserTaskContext(journeyId, { adopt = false, canAdopt = () => false, authorize = async () => {}, reconcile = true } = {}) {
+    async browserTaskContext(journeyId, { adopt = false, canAdopt = () => false, authorize = async () => {},
+      reconcile = true, expectedAccountId } = {}) {
       // Without reconciliation this is a pure read. An identity change still reconciles through onAccountChange.
-      if (reconcile) await reconcileAccount();
-      else if (adopt) throw Error('task_changed');
-      let record = await workspace.read();
+      if (!reconcile && (adopt || expectedAccountId !== undefined)) throw Error('task_changed');
+      let record = reconcile ? await reconcileAccount(expectedAccountId) : await workspace.read();
       if (adopt) {
         await workspace.adoptBrowserTask({ journey_id: journeyId, draft_scope: await scope() }, canAdopt, authorize);
-        await reconcileAccount();
-        record = await workspace.read();
+        record = await reconcileAccount(expectedAccountId);
       }
       if (record && record.journey_id !== journeyId) throw Error('task_changed');
       return { record, draft_scope: record?.draft_scope ?? await scope() };

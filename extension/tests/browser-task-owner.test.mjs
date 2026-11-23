@@ -8,6 +8,57 @@ import { NATIVE_LAUNCH_KEY } from '../runtime/onboarding-native-launch.mjs';
 import { isObservation } from '../../shared/browser-tasks/wire.mjs';
 import { BROWSER_TASK_INSTANCE_KEY, BROWSER_TASK_ADOPTION_KEY } from '../runtime/browser-task-entry.mjs';
 
+for (const change of ['same creator', 'different creator', 'signed out', 'consent withdrawn', 'changed while reporting access']) {
+  test(`first sign-in after Full consent requires the reviewed creator and scope (${change})`, async t => {
+    const h = identityNavigation();
+    t.after(() => h.identity.unregister());
+    h.consent.mode = 'off';
+    const access = payload();
+    let discover = true;
+    const owner = createBrowserTaskOwner({ chromeApi: h.chromeApi, onboarding: h.onboarding,
+      consentController: { async status() { return { consent: { ...h.consent }, onlyfans_permission: true }; } },
+      legalActivationController: { async status() { return { configured: true, requires_reauthorization: false }; } },
+      identityBridge: { ...h.identity, async currentAccountId() {
+        // The already signed-in tab first confirms its creator after Full activates its hook.
+        if (discover) { discover = false; await h.confirm(); }
+        return h.identity.currentAccountId();
+      }, async currentProfile() {
+        const profile = await h.identity.currentProfile();
+        if (change === 'changed while reporting access') await h.confirm('next-creator');
+        return profile;
+      } } });
+    const accessOwner = await owner.attach(access);
+    const before = await owner.read(accessOwner);
+    assert.equal(before.state, 'needs-consent');
+    h.consent.mode = 'full';
+    if (change === 'changed while reporting access') {
+      await assert.rejects(owner.read(accessOwner), /task_changed/);
+      return;
+    }
+    const ready = await owner.read(accessOwner);
+    assert.equal(ready.state, 'ready');
+    assert.equal(ready.creator_account_id, 'synthetic-creator');
+    const auth = payload();
+    auth.task = { ...auth.task, task_id: id(13), purpose: 'browser.authentication' };
+    auth.creator_account_id = ready.creator_account_id;
+    auth.participant = Object.fromEntries(['instance_id', 'draft_scope_id', 'disclosure_bundle_id'].map(key => [key, ready[key]]));
+    assert.notEqual(auth.participant.draft_scope_id, before.draft_scope_id);
+    assert.equal(auth.participant.draft_scope_id, h.local[BROWSER_TASK_ADOPTION_KEY].draft_scope.scope_id);
+    for (const stale of [{ draft_scope_id: before.draft_scope_id }, { disclosure_bundle_id: '0'.repeat(64) }]) {
+      await assert.rejects(owner.attach({ ...auth, participant: { ...auth.participant, ...stale } }), /task_changed/);
+    }
+    if (change === 'different creator' || change === 'signed out') {
+      await h.confirm(change === 'signed out' ? null : 'next-creator');
+      await assert.rejects(owner.attach(auth), /task_changed/);
+    } else {
+      if (change === 'consent withdrawn') h.consent.mode = 'off';
+      const next = await owner.read(await owner.attach(auth));
+      assert.equal(next.state, change === 'same creator' ? 'ready' : 'needs-consent');
+      assert.equal(next.creator_account_id, change === 'same creator' ? ready.creator_account_id : null);
+    }
+  });
+}
+
 for (const purpose of ['browser.authentication', 'browser.access', 'browser.identity', 'browser.pairing-confirmation']) {
   test(`${purpose} reads pending identity only for an existing sign-in`, async () => {
     const h = identityNavigation(); await h.confirm();
@@ -142,11 +193,25 @@ test('install arrival refreshes only exact helper URLs without closing or focusi
   assert.equal(await attachInstalledHelpers(chromeApi), true);
   assert.equal(scripts.length, 1); assert.deepEqual(scripts[0].target, { tabId: 1, frameIds: [0] });
   let reloads = 0;
-  const run = Function('window', 'location', `return (${scripts[0].func})(...${JSON.stringify(scripts[0].args)})`);
-  const window = {}; window.top = window;
-  run(window, { href: 'https://onlyfans.com/', reload() { reloads++; } });
+  const run = Function('window', 'location', 'document', `return (${scripts[0].func})(...${JSON.stringify(scripts[0].args)})`);
+  const window = new EventTarget();
+  window.top = window;
+  const document = { documentElement: { dataset: {} } };
+  let arrivals = 0;
+  window.addEventListener('ofca-access-extension-installed', () => { arrivals++; });
+  const location = { href: helper, reload() { reloads++; } };
+  run(window, { ...location, href: 'https://onlyfans.com/' }, document);
   assert.equal(reloads, 0, 'a navigated tab is not touched');
-  run(window, { href: helper, reload() { reloads++; } }); assert.equal(reloads, 1);
+  assert.equal(arrivals, 0);
+  run(window, location, document);
+  assert.equal(reloads, 1);
+  assert.equal(arrivals, 0);
+  document.documentElement.dataset.accessDocument = 'true';
+  run(window, location, document);
+  assert.equal(reloads, 1, 'the active access document survives extension installation');
+  assert.equal(arrivals, 1);
+  run({ top: window }, location, document);
+  assert.equal(arrivals, 1, 'a subframe cannot announce installation');
 });
 
 test('a prepared owner reads without writing and attaches with the adoption write', async () => {
