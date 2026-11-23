@@ -114,3 +114,21 @@ def test_real_compiled_entries_load_before_admission(entry, configured):
         assert "set-cookie" not in theme.headers
         assert client.get("/static/dist/setup-theme-init.js", headers={"Host": "outside.example"}).status_code == 421
         assert client.get("/static/dist/manifest.json").status_code == 404
+
+
+@pytest.mark.parametrize("origin,expected", [
+    ("https://onboarding-dev.dipsy.fi", "true"),
+    ("https://another.example.test", "false"),
+])
+def test_native_microsoft_picker_label_uses_the_release_origin(tmp_path, monkeypatch, origin, expected):
+    config = tmp_path / "customer-release.json"
+    config.write_text(json.dumps({
+        "schema": "ofca-customer-release/v2", "setup_transfer_receiver_url": "",
+        "hosted_api_origin": origin, "authentication_providers": ["default"],
+    }), encoding="utf-8")
+    monkeypatch.setenv("LOCAL_CUSTOMER_RELEASE_CONFIG", str(config))
+    app = FastAPI()
+    app.include_router(surface.setup_surface_router())
+    page = TestClient(app, base_url=ORIGIN).get("/onboarding")
+    assert page.status_code == 200
+    assert f'data-microsoft-picker="{expected}"' in page.text

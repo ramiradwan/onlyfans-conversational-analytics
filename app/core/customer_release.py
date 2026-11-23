@@ -141,6 +141,14 @@ def resolve_hosted_api_origin(config: CustomerReleaseConfig | None = None) -> st
     return config.hosted_api_origin or os.environ.get(HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, "")
 
 
+def release_has_microsoft_picker() -> bool:
+    """Show Microsoft in the picker label only on the release origin where it was verified."""
+    try:
+        return load_customer_release_config().hosted_api_origin == "https://onboarding-dev.dipsy.fi"
+    except CustomerReleaseConfigurationError:
+        return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, default=CUSTOMER_RELEASE_PATH)

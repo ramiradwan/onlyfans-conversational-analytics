@@ -1043,7 +1043,7 @@ export function validateOnboardingReleaseConfig(document, { required = false } =
   const providers = document.authentication_providers;
   assert.ok(Array.isArray(providers) && providers.length > 0
     && new Set(providers).size === providers.length && providers.includes('default')
-    && providers.every(provider => ['google', 'microsoft-personal', 'default'].includes(provider)),
+    && providers.every(provider => ['google', 'microsoft-personal', 'telegram', 'tiktok', 'default'].includes(provider)),
   'Customer authentication providers must be distinct approved choices and include default');
   if (document.hosted_api_origin === '') {
     assert.equal(document.setup_transfer_receiver_url, '', 'Setup transfer requires a hosted API origin');

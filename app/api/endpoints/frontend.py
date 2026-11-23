@@ -20,6 +20,7 @@ from app.core.config import settings
 from app.core.customer_release import (
     CustomerReleaseConfigurationError,
     load_customer_release_config,
+    release_has_microsoft_picker,
 )
 from app.core.resource_paths import ResourcePathError, resource_path
 from app.api.security import (
@@ -213,6 +214,7 @@ async def serve_frontend(
             "css_files": [f"/static/dist/{c}" for c in css_files],
             "font_preloads": [f"/static/dist/{f}" for f in font_files],
             "config": config,
+            "microsoft_picker": release_has_microsoft_picker(),
             "csrf_token": None if identity is None else csrf_token(policy),
         },
     )

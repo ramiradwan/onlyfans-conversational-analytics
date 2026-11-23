@@ -5,6 +5,7 @@ from pathlib import PurePosixPath
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 
+from app.core.customer_release import release_has_microsoft_picker
 from app.core.resource_paths import ResourcePathError, resource_path
 from app.onboarding.admission_routes import HEADERS, _host
 
@@ -47,6 +48,8 @@ def setup_shell(request: Request, *, browser=False, receiving_origin=None):
         document = (root / entry).read_text(encoding="utf-8")
     except OSError:
         raise HTTPException(503, "Setup assets are unavailable") from None
+    if not browser and not receiving_origin and release_has_microsoft_picker():
+        document = document.replace('data-microsoft-picker="false"', 'data-microsoft-picker="true"', 1)
     return HTMLResponse(document, headers=HEADERS | {"Content-Security-Policy":
         "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self' data:; "
         "img-src 'self' data:; connect-src 'self' " + ("; " if browser or receiving_origin else "ipc: http://ipc.localhost; ") +

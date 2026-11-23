@@ -2,5 +2,5 @@
   "schema": "ofca-customer-release/v2",
   "setup_transfer_receiver_url": "https://onboarding-dev.dipsy.fi/public/onboarding/setup",
   "hosted_api_origin": "https://onboarding-dev.dipsy.fi",
-  "authentication_providers": ["google", "microsoft-personal", "default"]
+  "authentication_providers": ["google", "telegram", "tiktok", "default"]
 }
