@@ -3,9 +3,13 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { ProviderSignInButtons } from '../src/components/ProviderSignInButtons';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  delete document.documentElement.dataset.microsoftPicker;
+});
 
 it('shows only configured providers with official named controls and decorative logos', () => {
+  document.documentElement.dataset.microsoftPicker = 'true';
   const select = vi.fn();
   render(<><p id="sign-in-guidance">Continue in Chrome.</p><ProviderSignInButtons
     providers={['google', 'microsoft-personal', 'default']} disabled={false}
@@ -20,6 +24,16 @@ it('shows only configured providers with official named controls and decorative 
   }
   expect(select.mock.calls).toEqual([['google'], ['microsoft-personal'], ['default']]);
   for (const image of document.querySelectorAll('img')) expect(image.alt).toBe('');
+});
+
+it('offers Microsoft through the verified picker and sends a default selection', () => {
+  document.documentElement.dataset.microsoftPicker = 'true';
+  const select = vi.fn();
+  render(<ProviderSignInButtons providers={['google', 'telegram', 'tiktok', 'default']}
+    disabled={false} onSelect={select} describedBy="status" />);
+  expect(screen.queryByRole('button', { name: 'Continue with Microsoft' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Microsoft or other sign-in options' }));
+  expect(select.mock.calls).toEqual([['default']]);
 });
 
 it('does not render unavailable provider choices or dispatch a disabled choice', () => {

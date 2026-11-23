@@ -34,6 +34,8 @@ test('Agent packaging consumes the current desktop release document and closed p
   const configured = { ...source, setup_transfer_receiver_url: 'https://setup.example.test/public/onboarding/setup',
     hosted_api_origin: 'https://setup.example.test', authentication_providers: ['google', 'microsoft-personal', 'default'] };
   assert.equal(validateOnboardingReleaseConfig(configured, { required: true }), 'https://setup.example.test');
+  assert.equal(validateOnboardingReleaseConfig({ ...configured,
+    authentication_providers: ['google', 'microsoft-personal', 'telegram', 'tiktok', 'default'] }), configured.hosted_api_origin);
   for (const authentication_providers of [undefined, null, [], ['google'], ['default', 'default'],
     ['https://identity.example.test', 'default'], 'default', [true, 'default']]) {
     assert.throws(() => validateOnboardingReleaseConfig({ ...configured, authentication_providers }));

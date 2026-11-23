@@ -1,5 +1,6 @@
 import { focusTransition, recoveryTone, setStatus } from '../shared-setup/presentation.js';
 import { browserRecoveryTarget } from './browser-task.js';
+import { pickerLabel } from '../shared-setup/picker-label.js';
 import { authorityRecoveryView } from '../shared-setup/authority-recovery.js';
 import { desktopRecovery, passkeyRecovery, recoveryClass } from '../shared-setup/recovery.js';
 import { expiredAccessDescription, expiredAccessTitle } from '../shared-setup/saved-data-entry.js';
@@ -319,7 +320,12 @@ export function renderSetup(document, state) {
   get('sign-in-options').hidden = !showingProviders || unavailable;
   for (const button of get('sign-in-options').querySelectorAll('[data-provider]')) {
     // Without a projection with choices, the opening choices keep the visibility they were clicked in.
-    if (hasChoices || !opening) button.hidden = !signIn?.choices[button.dataset.provider];
+    if (hasChoices || !opening) {
+      button.hidden = !signIn?.choices[button.dataset.provider];
+      if (button.dataset.provider === 'default' && !button.hidden) {
+        button.textContent = pickerLabel(document, signIn.choices['microsoft-personal']);
+      }
+    }
     button.disabled = controlsDisabled || opening || unavailable;
     if (opening && button.dataset.provider === activeProvider) button.setAttribute('aria-busy', 'true');
     else button.removeAttribute('aria-busy');

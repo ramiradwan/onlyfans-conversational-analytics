@@ -53,6 +53,11 @@ class CustomerReleaseConfig:
     def setup_transfer_configured(self) -> bool:
         return bool(self.setup_transfer_receiver_url)
 
+    @property
+    def has_microsoft_picker(self) -> bool:
+        """The ordinary sign-in page at this release origin was verified to offer Microsoft."""
+        return self.hosted_api_origin == "https://onboarding-dev.dipsy.fi"
+
 
 def _https_url(value: object, *, name: str, origin_only: bool) -> str:
     if not isinstance(value, str):

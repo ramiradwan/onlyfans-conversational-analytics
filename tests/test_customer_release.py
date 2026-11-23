@@ -39,7 +39,7 @@ def test_checked_in_release_binds_the_selected_working_api_and_transfer_receiver
     config = load_customer_release_config(CUSTOMER_RELEASE_PATH, require_hosted=True)
     assert config.hosted_api_origin == "https://onboarding-dev.dipsy.fi"
     assert config.setup_transfer_receiver_url == config.hosted_api_origin + "/public/onboarding/setup"
-    assert config.authentication_providers == ("google", "microsoft-personal", "default")
+    assert config.authentication_providers == ("google", "telegram", "tiktok", "default")
 
 
 def test_api_origin_alone_supports_browser_ceremonies_without_a_generic_page() -> None:
