@@ -83,6 +83,7 @@
     "tests/stateful/test_analytics_equivalence.py": 4,
     "tests/stateful/test_brain_ingestion.py": 8,
     "tests/stateful/test_brain_persistent_ingestion.py": 2,
+    "tests/test_access_document.py": 4,
     "tests/test_account_binding_resolver.py": 3,
     "tests/test_activation_delivery_recovery.py": 8,
     "tests/test_activation_enforcement.py": 5,
@@ -561,6 +562,7 @@
     "tests/test_workflow_contexts.py": 3
   },
   "platform": {
+    "tests/test_access_document.py": 2,
     "tests/test_activation_gate.py": 3,
     "tests/test_activation_reconciliation_owner.py": 1,
     "tests/test_activation_review_replacement_owner.py": 1,
@@ -697,42 +699,42 @@
   },
   "maintenance": {
     "method": "preserve existing owners; allocate new files by selected node count",
-    "inventory_sha256": "f4c351d6549ad7df76659c122d940787243958bbe171f9414ba48edd27b68991",
+    "inventory_sha256": "de23de3c2b0b64efeef7f68ea6a5b1c031528afcc809b13f5934dd38d9477680",
     "changes": {
       "full": {
         "added": [
-          "tests/test_saved_data_access.py"
+          "tests/test_access_document.py"
         ],
         "removed": [],
         "modeled_load": {
-          "1": 1321,
+          "1": 1324,
           "2": 1113,
-          "3": 2406,
+          "3": 2408,
           "4": 1104,
           "5": 2434,
-          "6": 1362,
+          "6": 1365,
           "7": 3379,
           "8": 2939
         }
       },
       "platform": {
         "added": [
-          "tests/test_saved_data_access.py"
+          "tests/test_access_document.py"
         ],
         "removed": [],
         "modeled_load": {
           "1": 417,
-          "2": 407,
+          "2": 410,
           "3": 409,
-          "4": 475,
-          "5": 406
+          "4": 476,
+          "5": 418
         }
       },
       "analytics": {
         "added": [],
         "removed": [],
         "modeled_load": {
-          "1": 327,
+          "1": 328,
           "2": 307
         }
       }

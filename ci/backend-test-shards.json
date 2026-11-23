@@ -793,6 +793,10 @@
         "reason": "Helper and desktop task event streams read the Windows encrypted admission and task journals."
       },
       {
+        "selector": "tests/test_access_document.py",
+        "reason": "The one-use browser access entry and its observation depend on the Windows encrypted admission store."
+      },
+      {
         "selector": "tests/test_desktop_browser_tasks.py",
         "reason": "Browser observations, generations and expiry use the Windows encrypted authentication database."
       },
@@ -1366,6 +1370,7 @@
     "agent_generated_defaults": "Hypothesis Agent TestCase aliases do not inherit the source state-machine marker. Both currently run in the legacy default population with the default profile as well as in explicit Agent profile lanes; preserve both obligations during this migration."
   },
   "windows_platform_shards": {
+    "tests/test_access_document.py": 1,
     "tests/test_activation_gate.py": 3,
     "tests/test_activation_reconciliation_owner.py": 1,
     "tests/test_activation_review_replacement_owner.py": 3,
