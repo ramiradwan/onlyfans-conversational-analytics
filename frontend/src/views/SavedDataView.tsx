@@ -16,6 +16,11 @@ interface ResultRef { contribution_id: string; kind: 'Full' | 'Preview' }
 interface ResultPage { items: ResultRef[]; next: string | null }
 
 class Locked extends Error {}
+class NoSavedMetrics extends Error {}
+
+interface SavedMetrics {
+  creator_metrics: { conversation_count: number; message_count: number; inbound_message_count: number; outbound_message_count: number };
+}
 
 async function post(path: string, signal: AbortSignal, csrf?: string, body?: object) {
   const response = await fetch(`/api/v1/saved-data/${path}`, {
@@ -24,6 +29,7 @@ async function post(path: string, signal: AbortSignal, csrf?: string, body?: obj
     body: body && JSON.stringify(body),
   });
   if ([401, 403, 503].includes(response.status)) throw new Locked();
+  if (path === 'metrics' && response.status === 404) throw new NoSavedMetrics();
   if (!response.ok) throw new Error('Request failed');
   return response;
 }
@@ -35,13 +41,14 @@ export function SavedDataView() {
   const [confirming, setConfirming] = useState<'all' | { message: string } | null>(null);
   const [results, setResults] = useState<ResultPage | null>(null);
   const [shownResult, setShownResult] = useState<string | null>(null);
+  const [metrics, setMetrics] = useState<SavedMetrics | null>(null);
   const [notice, setNotice] = useState('');
   const current = useRef<AbortController | null>(null);
   const lock = useCallback(() => {
     current.current?.abort();
     current.current = null;
     setBusy(false); setConfirming(null); setArchive(null); setSession(null); setNotice('');
-    setResults(null); setShownResult(null);
+    setResults(null); setShownResult(null); setMetrics(null);
   }, []);
   useEffect(() => {
     window.addEventListener('pagehide', lock);
@@ -53,7 +60,7 @@ export function SavedDataView() {
     return () => window.clearTimeout(timer);
   }, [session, lock]);
 
-  async function act(action: 'unlock' | 'export' | 'delete' | 'lock' | 'more' | 'results' | 'open-result' | 'export-result',
+  async function act(action: 'unlock' | 'export' | 'delete' | 'lock' | 'more' | 'results' | 'open-result' | 'export-result' | 'metrics' | 'export-metrics',
     resultRef?: ResultRef) {
     if (current.current) return;
     const controller = new AbortController();
@@ -79,6 +86,12 @@ export function SavedDataView() {
       } else if (action === 'more' && archive?.next) {
         const page: Archive = await (await post(`view?after=${encodeURIComponent(archive.next)}`, signal, csrf)).json();
         if (!signal.aborted) setArchive({ ...page, messages: [...archive.messages, ...page.messages] });
+      } else if (action === 'metrics') {
+        const document: SavedMetrics = await (await post('metrics', signal, csrf)).json();
+        if (!signal.aborted) setMetrics(document);
+      } else if (action === 'export-metrics') {
+        await exportSavedJson('saved-analytics-metrics.json', () => post('metrics', signal, csrf), signal);
+        if (!signal.aborted) setNotice('Saved metrics exported.');
       } else if (action === 'results') {
         const cursor = results?.next ? `?after=${encodeURIComponent(results.next)}` : '';
         const page: ResultPage = await (await post(`results${cursor}`, signal, csrf)).json();
@@ -100,7 +113,7 @@ export function SavedDataView() {
         if (action === 'delete' && confirming) {
           const path = confirming === 'all' ? 'delete' : `messages/delete?message_id=${encodeURIComponent(confirming.message)}`;
           result = await (await post(path, signal, csrf)).json();
-          setResults(null); setShownResult(null);
+          setResults(null); setShownResult(null); setMetrics(null);
         }
         const saved: Archive = await (await post('view', signal, csrf)).json();
         if (signal.aborted) return;
@@ -110,9 +123,14 @@ export function SavedDataView() {
       }
     } catch (error) {
       if (signal.aborted) return;
-      if ((action === 'export' || action === 'export-result') && error instanceof DOMException && error.name === 'AbortError') return;
+      if ((action === 'export' || action === 'export-result' || action === 'export-metrics') && error instanceof DOMException && error.name === 'AbortError') return;
       if (error instanceof Locked || action === 'lock' || action === 'unlock') lock();
       setShownResult(null);
+      setMetrics(null);
+      if (error instanceof NoSavedMetrics) {
+        setNotice('No saved metrics are available for this account.');
+        return;
+      }
       setNotice(action === 'unlock'
         ? 'Saved data is locked. Try your existing passkey. If Windows has blocked passkeys for this app, allow them in Windows Settings and try again.'
         : error instanceof Locked ? 'Unlock your saved data again.' : 'The request did not finish. Open your saved data again to check it.');
@@ -136,12 +154,22 @@ export function SavedDataView() {
           </List> : <Typography>No saved messages.</Typography>}
           {archive.next && <Button disabled={busy} onClick={() => void act('more')}>Show more messages</Button>}
           <Typography component="h2" variant="h6">Saved analysis</Typography>
+          <Stack direction="row" spacing={1}>
+            <Button disabled={busy} onClick={() => void act('metrics')}>View saved metrics</Button>
+            <Button disabled={busy} onClick={() => void act('export-metrics')}>Export saved metrics</Button>
+          </Stack>
+          {metrics && <Stack role="region" aria-label="Saved metrics">
+            <Typography>Conversations: {metrics.creator_metrics.conversation_count}</Typography>
+            <Typography>Messages: {metrics.creator_metrics.message_count}</Typography>
+            <Typography>Received: {metrics.creator_metrics.inbound_message_count}</Typography>
+            <Typography>Sent: {metrics.creator_metrics.outbound_message_count}</Typography>
+          </Stack>}
           {results?.items.map(item => <Stack key={item.contribution_id} direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
             <Typography sx={{ overflowWrap: 'anywhere' }}>{item.kind} · {item.contribution_id}</Typography>
             <Button disabled={busy} onClick={() => void act('open-result', item)}>View result</Button>
             <Button disabled={busy} onClick={() => void act('export-result', item)}>Export result</Button>
           </Stack>)}
-          {results && !results.items.length && <Typography>No saved analysis results.</Typography>}
+          {results && !results.items.length && <Typography>No saved text analysis results.</Typography>}
           {(!results || results.next) && <Button disabled={busy} onClick={() => void act('results')}>
             {results ? 'Show more results' : 'Show saved results'}</Button>}
           {shownResult && <Typography component="pre" aria-label="Saved analysis result"

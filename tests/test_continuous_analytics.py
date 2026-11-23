@@ -34,6 +34,31 @@ def test_catalog_matches_canonical_identity_without_materializing_an_account(rea
         assert catalog.conversation(chat) == raw.conversations[chat]
 
 
+def test_saved_metrics_read_only_retained_current_publication(ready, monkeypatch):
+    from types import SimpleNamespace
+    from app.services import insights_service
+
+    runtime = SimpleNamespace(source=ready.source, pipeline=ready.pipeline)
+    monkeypatch.setattr(insights_service, "analytics_runtime", lambda: runtime)
+    assert insights_service.saved_metrics(ACCOUNT) is None
+    projection = ready.pipeline.project_account(ACCOUNT).artifact.projection
+    calls = [analyzer.calls for analyzer in ready.analyzers]
+    expected = projection.model_dump(mode="json", include={
+        "source_revision", "projection_generation", "projection_digest", "creator_metrics", "conversation_metrics",
+    })
+    assert insights_service.saved_metrics(ACCOUNT) == expected
+    assert expected["creator_metrics"]["message_count"] == 9
+    assert not insights_service.saved_metrics("other-creator")
+    with monkeypatch.context() as scoped:
+        scoped.setattr(ready.pipeline, "_retention_clock", lambda: NOW + timedelta(days=91))
+        assert insights_service.saved_metrics(ACCOUNT) is None
+    with ready.repositories.database.transaction() as db:
+        db.execute("DELETE FROM account_messages WHERE message_id='m-0-0'")
+        advance(db)
+    assert insights_service.saved_metrics(ACCOUNT) is None
+    assert [analyzer.calls for analyzer in ready.analyzers] == calls
+
+
 def test_append_recomputes_one_conversation_and_preserves_independent_enrichment(ready, monkeypatch):
     first = ready.pipeline.project_account(ACCOUNT)
     assert ready.source.loaded == ['chat-0', 'chat-1', 'chat-2']

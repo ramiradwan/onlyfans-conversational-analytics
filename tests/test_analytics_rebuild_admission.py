@@ -2,13 +2,14 @@
 
 from types import SimpleNamespace
 from dataclasses import replace
+from datetime import timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from app.core.config import settings
-from app.persistence.auth import SQLiteAuthenticationStore
-from app.security.analysis_authorization import build_current_analysis_policy, clear_analysis_policies
+from app.persistence.auth import BridgeSessionIssue, RevocationKey, RevocationScopeType, SQLiteAuthenticationStore, WebAuthnCredential
+from app.security.analysis_authorization import build_current_analysis_policy, clear_analysis_policies, require_cached_analysis_run
 from app.security.runtime_policy import AuthContext, RuntimeAuthorizationDenied
 from app.services import insights_service
 from tests.test_analysis_restart_offline import ACCOUNT, PRINCIPAL, _seed_durable_authority
@@ -43,6 +44,43 @@ async def test_creator_rebuild_revalidates_admitted_agent_authority(admitted):
     runtime.scheduler.canonical_revision.assert_awaited_once_with(ACCOUNT)
     runtime.scheduler.schedule.assert_awaited_once_with(ACCOUNT, 7, retry_failed=True, force=True)
     runtime.questions.discard.assert_called_once_with(ACCOUNT)
+
+
+@pytest.mark.asyncio
+async def test_cold_creator_rebuild_has_only_its_own_live_session_scope(admitted):
+    store, _, runtime = admitted
+    clear_analysis_policies()
+    binding, = store.authorized_account_bindings()
+    now = store._now()
+    store.register_webauthn_credential(WebAuthnCredential(
+        credential_id="creator-rebuild", principal_id=PRINCIPAL,
+        external_issuer="urn:bridge-clean:commercial-control-plane", external_subject=PRINCIPAL,
+        installation_id=binding.installation_id, public_key=b"test-public-key",
+        signature_count=0, enrolled_at=now,
+    ))
+    issued = store.issue_bridge_session(BridgeSessionIssue(
+        credential_id="creator-rebuild", principal_id=PRINCIPAL, creator_account_id=ACCOUNT,
+        role="creator", expires_at=now + timedelta(minutes=5), grant_reference_ids=binding.grant_reference_ids,
+    ))
+    session = store.read_bridge_session(issued.session_value).policy
+    await insights_service.rebuild_projection(session)
+    scope = runtime.scheduler.schedule.await_args.kwargs["rebuild_scope"]
+    store.close_companion_session("unrelated")
+    with scope():
+        result = require_cached_analysis_run(store, ACCOUNT)
+        assert result.identity == session.identity
+        assert result.commercial_authority.capability == "analysis-run"
+        assert result.expires_at == session.expires_at
+        with pytest.raises(RuntimeAuthorizationDenied):
+            require_cached_analysis_run(store, "different-account")
+    with pytest.raises(RuntimeAuthorizationDenied):
+        require_cached_analysis_run(store, ACCOUNT)
+    store.revoke(RevocationKey(RevocationScopeType.BRIDGE_SESSION, issued.session_id))
+    with pytest.raises(RuntimeAuthorizationDenied), scope():
+        pytest.fail("Revoked creator session admitted at publication")
+    with pytest.raises(RuntimeAuthorizationDenied):
+        await insights_service.rebuild_projection(session)
+    runtime.scheduler.schedule.assert_awaited_once()
 
 
 @pytest.mark.asyncio
