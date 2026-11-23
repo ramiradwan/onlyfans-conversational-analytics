@@ -1183,7 +1183,7 @@ async def test_automatically_finalizes_verified_account_once_without_renderer_ac
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("block", ["no-account", "no-key", "recovery", "expired", "pending", "confirmation", "runtime"])
+@pytest.mark.parametrize("block", ["no-account", "no-key", "recovery", "expired", "pending", "confirmation", "sign-in", "runtime"])
 async def test_automatic_finalization_never_creates_new_authority(setup, block):
     coordinator, owner, session, now = setup
     ready_for_finalization(coordinator, owner, session)
@@ -1202,6 +1202,13 @@ async def test_automatic_finalization_never_creates_new_authority(setup, block):
         owner.facts["account"] = "verified"
     elif block == "confirmation":
         owner.scope["desktop_decision_status"] = {"operation_id": str(uuid4()), "state": "confirmation-required"}
+    elif block == "sign-in":
+        owner.scope["desktop_authentication"] = {
+            "operation_id": str(uuid4()), "browser_operation_id": None, "state": "selection-required",
+            "choices": {"google": False, "microsoft-personal": False, "telegram": False, "tiktok": False, "default": True},
+            "actions": {"select": True, "cancel": False, "open_browser": False, "switch_account": False},
+            "authentication_attempt": None,
+        }
     elif block == "runtime":
         coordinator = DesktopOnboardingCoordinator(ScopedAdmissions(coordinator.store, stage="runtime"), owner)
     before = table_counts(coordinator)
