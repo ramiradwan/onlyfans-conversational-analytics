@@ -5,6 +5,7 @@ import {
   presentedInstruments,
   validateLegalInstrumentBindings,
 } from './legal-instruments.mjs';
+import { extensionDatabaseNames } from './local-data.mjs';
 
 export const ACTIVATION_EVIDENCE_DATABASE_NAME = 'ofca_legal_evidence_v1';
 export const ACTIVATION_EVIDENCE_DATABASE_VERSION = 1;
@@ -311,6 +312,8 @@ export class ActivationEvidenceStore {
   async preModeEvent(transactionId, key) {
     validateUuid(transactionId, 'transactionId');
     if (key !== 'terms' && key !== 'risk') throw new TypeError('Unknown acknowledgment');
+    if (this.databasePromise === null && typeof this.indexedDb?.databases === 'function'
+        && !(await extensionDatabaseNames(this.indexedDb)).includes(ACTIVATION_EVIDENCE_DATABASE_NAME)) return null;
     const record = await this.#readRecord(`${key}:${transactionId}`);
     return record && validatePreModeRecord(record, key === 'terms' ? key : 'risk_disclosure');
   }

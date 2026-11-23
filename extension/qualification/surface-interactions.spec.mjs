@@ -3,6 +3,24 @@ import { SURFACE_STATES, renderSurfaceState } from './surface-fixtures.mjs';
 import { readFileSync } from 'node:fs';
 const calls = (page) => page.evaluate(() => window.__surfaceFixture.calls.filter(call => !(call.type === 'ofca.workspace.v1' && ['read', 'draft', 'browser_task', 'desktop_adoption', 'dismiss_browser_task', 'full_presentation_intent'].includes(call.action)) && !(call.type === 'ofca.setup-transfer.v1' && call.action === 'context')));
 
+test('replacing an admitted setup fixture clears the previous browser task', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.mode_choice_full);
+  await expect(page.locator('#enable-full')).toBeVisible();
+  await page.evaluate(state => window.__surfaceFixture.change(state, true), SURFACE_STATES.start_choice);
+  await expect(page.locator('main')).toHaveAttribute('data-task', 'start');
+  await expect(page.locator('#start-preview')).toBeVisible();
+  await expect(page.locator('#enable-full')).toBeHidden();
+  expect(await reviewActions(page)).toEqual([]);
+});
+
+test('the reauthorization fixture returns to review for the paused mode', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.reauthorization);
+  await expect(page.locator('main')).toHaveAttribute('data-requirement', 'consent:reauthorization:preview');
+  await expect(page.locator('#review-notice')).toBeVisible();
+  await expect(page.locator('#enable-preview')).toBeVisible();
+  await expect(page.locator('#enable-preview')).toBeDisabled();
+});
+
 test('Preview keeps its status and Full review action visible in the reserved frames', async ({ page }) => {
   await renderSurfaceState(page, SURFACE_STATES.preview);
   await expect(page.locator('#journey-title')).toBeVisible();

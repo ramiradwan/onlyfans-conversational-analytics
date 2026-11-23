@@ -45,7 +45,7 @@ export function installSurfaceFixture(input) {
     comparison_code: state.pairing === 'compare' && state.surface === 'setup' ? '483217' : null,
     owns_attempt: state.surface === 'setup' && ['pairing', 'compare'].includes(state.pairing),
     desktop_control: state.desktopControl === true });
-  const status = () => ({ consent: { mode: state.mode, resume_mode: state.resume ?? null, consent_epoch: 'fixture-epoch',
+  const status = () => ({ consent: { mode: state.mode, resume_mode: state.resume ?? (state.mode === 'paused' ? 'preview' : null), consent_epoch: 'fixture-epoch',
     authorization_event_id: state.authorizationEventId ?? null },
     brain_reachable: state.reachable === true,
     phase: state.phase ?? (state.mode === 'full' ? (state.paired ? 'full' : 'identity') : state.mode),
@@ -65,6 +65,7 @@ export function installSurfaceFixture(input) {
       completed_event_id: state.completedEventId ?? null,
       stage: state.agreement ? 'pre_mode' : 'mode_selection' } });
   window.__surfaceFixture = { state, calls, change(next, replace = false) {
+    const previousBrowserTask = state.browserTask;
     if (replace) for (const key of Object.keys(state)) delete state[key];
     Object.assign(state, next);
     if (next.draftScope) {
@@ -74,7 +75,9 @@ export function installSurfaceFixture(input) {
     }
     for (const port of ports) port.onMessage.emit(pairState());
     window.chrome.storage.onChanged.emit({ fixture: { newValue: true } }, 'local');
-    if ('browserTask' in next) storageChanged.emit({ browser_task_entry_v1: { newValue: next.browserTask } }, 'session');
+    if ('browserTask' in next || (replace && previousBrowserTask)) {
+      storageChanged.emit({ browser_task_entry_v1: { oldValue: previousBrowserTask, newValue: state.browserTask } }, 'session');
+    }
   } };
   window.chrome = {
     runtime: { id: 'fixture', getURL: (name) => `${location.origin}/${name}`, getManifest: () => ({ version: '2.0.3' }),
