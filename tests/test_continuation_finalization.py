@@ -164,9 +164,11 @@ def test_expired_membership_can_still_enter_automatic_finalization_refresh(owner
 @pytest.mark.asyncio
 async def test_automatic_setup_finalization_uses_real_verified_grant_and_configuration_writes(owner, tmp_path):
     import asyncio
+    from types import SimpleNamespace
     from uuid import uuid4
     from app.onboarding.admission import ScopedAdmissions
     from app.onboarding.browser_tasks import BrowserTasks
+    from app.onboarding.ceremonies import BrowserCeremonies
     from app.onboarding.coordinator import DesktopOnboardingCoordinator
     from app.provisioning.completion import durable_completion_reader, durable_finalize_action
     from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
@@ -181,13 +183,19 @@ async def test_automatic_setup_finalization_uses_real_verified_grant_and_configu
     tasks = BrowserTasks(admissions, extension_id="abcdefghijklmnopabcdefghijklmnop")
     completion = durable_completion_reader(lambda: owner.store, data_directory=tmp_path)
     finalized = asyncio.Event()
-    setup_owner = ProvisioningSetupOwner(owner.store, browser_tasks=tasks, ceremonies=None,
+    local_client = SimpleNamespace(transport=None)
+    ceremonies = BrowserCeremonies(owner.store, local_client, hosted_origin="https://provider.example.test",
+        authentication_client=local_client, decision_client=local_client)
+    setup_owner = ProvisioningSetupOwner(owner.store, browser_tasks=tasks, ceremonies=ceremonies,
         initial=None, registered=None, key=owner.key,
         finalize=durable_finalize_action(lambda: owner.store, extension_id=tasks.extension_id,
             data_directory=tmp_path, now=lambda: owner.clock[0]),
         completion_ready=completion, completed=finalized.set)
     coordinator = DesktopOnboardingCoordinator(admissions, setup_owner)
-    assert coordinator.read(native)["facts"]["account"] == "verified"
+    snapshot = coordinator.read(native)
+    assert snapshot["facts"]["account"] == "verified"
+    assert ceremonies.authentication.presentation(root, "account.connect")["operation_id"] is None
+    assert snapshot["authentication"] is None
     assert not completion()
     coordinator.start()
     try:
@@ -203,3 +211,4 @@ async def test_automatic_setup_finalization_uses_real_verified_grant_and_configu
     finally:
         await coordinator.stop()
         await setup_owner.stop()
+        await ceremonies.stop()

@@ -12,6 +12,7 @@ from typing import Literal
 from uuid import uuid4
 
 from app.persistence.onboarding import require_journey
+from app.provisioning.events import events
 
 Role = Literal["desktop", "browser_task"]
 Stage = Literal["setup", "runtime"]
@@ -150,7 +151,12 @@ class ScopedAdmissions:
             identifier = secrets.token_urlsafe(32)
             connection.execute("INSERT INTO desktop_admission_sessions VALUES (?, ?, ?, ?, ?, ?)",
                                (_digest(identifier), role, row["reference_id"], row["generation"], self.stage, reference["expires_at"]))
-            return self._session(identifier, row, reference)
+            session = self._session(identifier, row, reference)
+        if role == "desktop" and self.stage == "setup":
+            # A reopened native window can resume an already verified setup.
+            # Wake the coordinator only after its presentation is committed.
+            events.publish()
+        return session
 
     def require(self, identifier: str, *, role: Role, generation: str | None = None) -> AdmittedSession:
         with self.authentication.database.read() as connection:

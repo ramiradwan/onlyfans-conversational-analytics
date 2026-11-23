@@ -350,14 +350,7 @@ class TextAnalysisPreviewService:
             direction=source.direction, checked_at=self.authentication._clock(), browser_span=browser_span)
 
     def _saved_reference_in(self, auth_db, db, output):
-        intent = self.repository._module_intent(db, output.job_id)
-        admission = db.execute('SELECT * FROM text_analysis_preview_admissions WHERE reference_id=?',
-            (intent['reference_id'],)).fetchone()
-        if admission is None:
-            raise ValueError('preview_reference_corrupt')
-        self.selection.authority.validate_saved_preview_reference_in(auth_db,
-            reference_id=intent['reference_id'], compact_jws_sha256=intent['compact_jws_sha256'],
-            permit_id=admission['permit_id'], issuance_id=admission['issuance_id'])
+        self.store.validate_saved_reference_in(self.selection.authority, auth_db, db, output)
 
 
 _service = None

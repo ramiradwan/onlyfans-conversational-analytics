@@ -188,6 +188,11 @@ class DesktopOnboardingCoordinator:
                 reason = refusal["reason"]
         selected_decision = view.scope.get("desktop_decision")
         authentication = view.scope.get("desktop_authentication")
+        # With no account operation the chooser offers to start one. Once the
+        # account is verified that offer no longer belongs to the current task.
+        if (task == "finish-setup" and facts["account"] == "verified" and authentication is not None
+                and authentication["state"] == "selection-required" and authentication["operation_id"] is None):
+            authentication = None
         replacement = view.scope.get("ceremony_replacement")
         if replacement is not None and task == "account-connection":
             choices = (dict(authentication["choices"])

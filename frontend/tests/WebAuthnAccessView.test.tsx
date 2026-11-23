@@ -329,7 +329,7 @@ const lapsed = (access: 'renewing' | 'expired' | 'removed') => new WebAuthnStatu
 describe('lapsed access on this computer', () => {
   it.each([
     ['renewing', 'Renewing access on this computer', 'Renewal needs an internet connection.'],
-    ['expired', 'Access on this computer isn’t active', null],
+    ['expired', 'Account authorization has expired', null],
     ['removed', 'Access removed from this computer', null],
   ] as const)('names %s access with guidance and no action to retry', async (access, heading, guidance) => {
     vi.useFakeTimers();
@@ -338,7 +338,7 @@ describe('lapsed access on this computer', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(10 * 60_000); });
     expect(screen.getByRole('heading', { level: 1, name: heading })).toBeTruthy();
     if (guidance) expect(screen.getByRole('status').textContent).toBe(guidance);
-    else expect(screen.getByText(access === 'expired' ? 'This page updates by itself if you can sign in again.'
+    else expect(screen.getByText(access === 'expired' ? 'New capture and analysis are paused on this computer.'
       : 'This computer can no longer open analytics.')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryAllByRole('button')).toHaveLength(0);

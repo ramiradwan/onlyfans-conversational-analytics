@@ -5,9 +5,28 @@ import { DesktopSetupClient } from './client.js';
 import { renderSetup } from './view.js';
 import { openBrowserTask, openSetupCode } from './browser-task.js';
 import { DesktopEnrollment } from './enrollment.js';
+import { savedDataEntry, savedDataLinkText, savedDataUrl } from '../shared-setup/saved-data-entry.js';
 import { authorityRecoveryView, authorityRecoveryOptions } from '../shared-setup/authority-recovery.js';
 
 applyTheme(document);
+const savedDataLink = document.getElementById('saved-data-open');
+let entry = 'unavailable';
+let updateEntryView = () => {};
+let entryRead;
+function checkSavedData() {
+  entryRead?.abort();
+  const controller = new AbortController();
+  entryRead = controller;
+  void savedDataEntry(controller.signal).then(result => {
+    if (controller.signal.aborted || result === entry) return;
+    entry = result;
+    savedDataLink.href = savedDataUrl;
+    savedDataLink.textContent = savedDataLinkText;
+    savedDataLink.hidden = result === 'unavailable';
+    updateEntryView();
+  });
+}
+checkSavedData();
 const fields = new URLSearchParams(location.hash.slice(1));
 let client;
 try {
@@ -48,7 +67,8 @@ try {
       && current.snapshot?.next_task === 'complete' && current.snapshot.local_ready === true
       && authentication?.checked === true && authentication.authenticated === true
       && !authentication.busy && !authentication.error;
-    renderSetup(document, { ...current, choosingAccount, acting, provider, authentication, continuing, chromeAvailable, replacingCeremony });
+    renderSetup(document, { ...current, choosingAccount, acting, provider, authentication, continuing, chromeAvailable, replacingCeremony,
+      savedAuthorizationExpired: entry === 'authorization-expired' });
     if (continuing) {
       finished = true;
       location.replace('/');
@@ -160,6 +180,7 @@ try {
   document.getElementById('local-authenticate').addEventListener('click', () => { void enrollment.authenticate(); });
   const onWake = () => {
     if (finished) return;
+    checkSavedData();
     void checkChrome();
     client.wake?.();
   };
@@ -168,12 +189,14 @@ try {
   document.addEventListener('visibilitychange', onVisibility);
   window.addEventListener('pagehide', () => {
     finished = true;
+    entryRead?.abort();
     chromeCheck++;
     window.removeEventListener('focus', onWake);
     document.removeEventListener('visibilitychange', onVisibility);
     client.stop();
     enrollment.stop();
   });
+  updateEntryView = render;
   void client.connect();
 } catch {
   renderSetup(document, { snapshot: null, pending: null, connected: false, error: 'session_unavailable', deliberate: false });
