@@ -1070,6 +1070,7 @@ describe('desktop setup presentation', () => {
 
   it('renders only configured provider choices with the governed initial action', () => {
     mount();
+    document.documentElement.dataset.microsoftPicker = 'true';
     const value = { ...initial(), next_task: 'account-connection', allowed_actions: ['account.connect'],
       authentication: { ...signIn(), choices: { google: true, 'microsoft-personal': false, telegram: false, tiktok: false, default: true } } };
     renderSetup(document, { snapshot: value, connected: true });
@@ -1078,6 +1079,9 @@ describe('desktop setup presentation', () => {
     expect(document.querySelector('[data-provider="google"]').disabled).toBe(false);
     expect(document.querySelector('[data-provider="microsoft-personal"]').hidden).toBe(true);
     expect(document.querySelector('[data-provider="default"]').hidden).toBe(false);
+    expect(document.querySelector('[data-provider="default"]').textContent).toBe('Microsoft or other sign-in options');
+    expect(document.querySelector('[data-provider="default"]').dataset.action).toBe('account.connect');
+    delete document.documentElement.dataset.microsoftPicker;
     expect(document.getElementById('task-action').hidden).toBe(true);
     renderSetup(document, { snapshot: value, connected: false });
     expect([...document.querySelectorAll('[data-provider]')].every(button => button.disabled)).toBe(true);

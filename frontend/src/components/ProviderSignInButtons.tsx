@@ -1,4 +1,5 @@
 import type { SignInProvider } from '../../onboarding/client.js';
+import { pickerLabel } from '../../shared-setup/picker-label.js';
 import googleLogo from '../../shared-setup/providers/google.png';
 import microsoftLogo from '../../shared-setup/providers/microsoft.svg';
 import '../../shared-setup/providers.css';
@@ -24,7 +25,7 @@ export function ProviderSignInButtons({ providers, disabled, onSelect, described
       disabled={disabled} aria-describedby={describedBy} onClick={() => onSelect(choice.provider)}
     >
       {choice.logo && <img src={choice.logo} alt="" width="20" height="20" />}
-      <span>{choice.label}</span>
+      <span>{choice.provider === 'default' ? pickerLabel(document, providers.includes('microsoft-personal')) : choice.label}</span>
     </button>)}
   </div>;
 }

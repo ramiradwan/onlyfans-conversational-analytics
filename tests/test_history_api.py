@@ -202,31 +202,35 @@ def test_runtime_exposes_only_bridge_ticket() -> None:
         assert DEV_AGENT_AUTH_TICKET not in root.text
 
 
-def test_runtime_exposes_release_setup_transfer_receiver_url(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runtime_exposes_verified_release_presentation(monkeypatch: pytest.MonkeyPatch) -> None:
     frontend = importlib.import_module("app.api.endpoints.frontend")
-    onboarding_url = "https://setup.example.test/public/onboarding/setup"
+    onboarding_url = "https://onboarding-dev.dipsy.fi/public/onboarding/setup"
 
     def configured() -> CustomerReleaseConfig:
         return CustomerReleaseConfig(
             setup_transfer_receiver_url=onboarding_url,
-            hosted_api_origin="https://api.example.test",
+            hosted_api_origin="https://onboarding-dev.dipsy.fi",
         )
 
     def unavailable() -> CustomerReleaseConfig:
         raise CustomerReleaseConfigurationError("customer release configuration is unavailable")
 
-    frontend._setup_transfer_receiver_url.cache_clear()
+    frontend._presentation_release.cache_clear()
     monkeypatch.setattr(frontend, "load_customer_release_config", configured)
     try:
         with TestClient(app) as client:
-            assert f'"SETUP_TRANSFER_RECEIVER_URL": "{onboarding_url}"' in client.get("/").text
+            page = client.get("/").text
+            assert f'"SETUP_TRANSFER_RECEIVER_URL": "{onboarding_url}"' in page
+            assert 'data-microsoft-picker="true"' in page
 
-        frontend._setup_transfer_receiver_url.cache_clear()
+        frontend._presentation_release.cache_clear()
         monkeypatch.setattr(frontend, "load_customer_release_config", unavailable)
         with TestClient(app) as client:
-            assert '"SETUP_TRANSFER_RECEIVER_URL": ""' in client.get("/").text
+            page = client.get("/").text
+            assert '"SETUP_TRANSFER_RECEIVER_URL": ""' in page
+            assert 'data-microsoft-picker="true"' not in page
     finally:
-        frontend._setup_transfer_receiver_url.cache_clear()
+        frontend._presentation_release.cache_clear()
 
 
 def test_settings_are_csrf_cas_and_matching_config_revision_bound() -> None:
