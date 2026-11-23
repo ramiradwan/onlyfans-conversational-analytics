@@ -80,6 +80,17 @@ pub fn failure_document(reason: &str) -> &'static str {
     }
 }
 
+pub fn retained_recovery_document(url: &Url) -> bool {
+    url.as_str() == failure_document("child_recovery_required")
+}
+
+pub fn startup_navigation(url: &Url, admitted: bool, retained_recovery: bool) -> bool {
+    if retained_recovery_document(url) {
+        return retained_recovery && !admitted;
+    }
+    shell_document(url) || (admitted && local_document(url))
+}
+
 pub fn window_controls(label: &str, url: &Url, admitted: bool, quitting: bool) -> bool {
     label == "main" && !quitting && (shell_document(url) || (admitted && local_document(url)))
 }
@@ -477,6 +488,28 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn retained_recovery_navigation_needs_the_closed_startup_owner() {
+        let recovery = Url::parse(failure_document("child_recovery_required")).unwrap();
+        let waiting = Url::parse("http://tauri.localhost/index.html").unwrap();
+        let unavailable = Url::parse(failure_document("servicing_failed")).unwrap();
+        let protected = Url::parse(ORIGIN).unwrap();
+        let malformed =
+            Url::parse("http://tauri.localhost/data-recovery.html?unexpected=1").unwrap();
+        assert!(!startup_navigation(&recovery, false, false));
+        assert!(!startup_navigation(&recovery, true, false));
+        assert!(!startup_navigation(&recovery, true, true));
+        assert!(startup_navigation(&recovery, false, true));
+        assert!(!startup_navigation(&malformed, false, true));
+        for shell in [waiting, unavailable] {
+            assert!(startup_navigation(&shell, false, false));
+            assert!(startup_navigation(&shell, false, true));
+        }
+        assert!(!startup_navigation(&protected, false, true));
+        assert!(startup_navigation(&protected, true, false));
+    }
+
     #[test]
     fn only_one_completed_configuration_restart_is_allowed() {
         let mut policy = RestartPolicy::default();

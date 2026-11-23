@@ -1,11 +1,13 @@
 """Exercise early retained-state classification and actual writer lifetimes."""
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -239,6 +241,92 @@ def test_parent_observation_precedes_root_inspection_or_application_import(monke
     monkeypatch.setattr(startup_maintenance, "acquire_runtime_ownership", forbidden)
     monkeypatch.setattr(packaged_entry, "select_brain_application", forbidden)
     assert packaged_entry.run_brain() == 1
+
+
+@pytest.mark.parametrize("incompatible", [False, True])
+def test_owned_startup_admits_retained_schemas_before_graph_or_listener(tmp_path, monkeypatch, incompatible):
+    import uvicorn
+    from app.core import bootstrap_status, process_lifetime, startup_maintenance
+    from app.onboarding import timing
+    from app.persistence import upgrade_lifecycle
+    from app.persistence.migrations import MigrationRunner
+
+    root = tmp_path / "retained"
+    catalog = sorted((ROOT / "app/persistence/auth_sql").glob("*.sql"))
+    prefix = tmp_path / "prefix"
+    prefix.mkdir()
+    for migration in catalog[:-1]:
+        shutil.copyfile(migration, prefix / migration.name)
+    database = AuthSQLite(root / "auth.sqlite3")
+    assert MigrationRunner(database, migrations_dir=prefix).run()
+    if incompatible:
+        with database.transaction() as connection:
+            connection.execute("UPDATE schema_migrations SET checksum = 'changed' WHERE version = 1")
+
+    events = []
+    statuses = []
+    status = SimpleNamespace(
+        cancelled=lambda: False, maintenance_phase=lambda phase: events.append(phase),
+        emit=lambda *frame: statuses.append(frame), heartbeats=nullcontext, phase=None,
+    )
+
+    @contextmanager
+    def parent(*args, **kwargs):
+        events.append("parent")
+        yield
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("fixture reached key creation or a real server")
+
+    def select_application(*args, **kwargs):
+        assert not incompatible, "refused schema reached application construction"
+        lease = startup_maintenance.runtime_root_lease()
+        assert lease.root == root
+        assert events[0] == "parent" and events[-1] == "complete"
+        journal = upgrade_lifecycle._read_protected(root / upgrade_lifecycle.JOURNAL_FILENAME)
+        assert journal["phase"] == "complete"
+        events.append("graph")
+        return SimpleNamespace(state=SimpleNamespace(completion_requested=False))
+
+    def run_stub():
+        assert events[-1] == "graph"
+        events.append("server-stub")
+
+    monkeypatch.setattr(uvicorn.Server, "run", forbidden)
+    monkeypatch.setattr(uvicorn.Server, "serve", forbidden)
+    monkeypatch.setattr(packaged_entry, "supervised_server", lambda *_: SimpleNamespace(run=run_stub))
+    monkeypatch.setattr(packaged_entry, "uvicorn_loop", lambda: "asyncio")
+    monkeypatch.setattr(packaged_entry, "select_brain_application", select_application)
+    monkeypatch.setattr(process_lifetime, "parent_lifetime", parent)
+    monkeypatch.setattr(bootstrap_status, "bootstrap_status", lambda _: nullcontext(status))
+    monkeypatch.setattr(timing, "record_to", lambda _: None)
+    monkeypatch.setattr(local_data_key, "_load_or_create_master_key", forbidden)
+    monkeypatch.setattr(startup_maintenance, "_held_lease", None)
+    monkeypatch.setenv("LOCAL_ANALYTICS_DATA_DIR", str(root))
+    writer = root / startup_maintenance.WRITER_LOCK_FILENAME
+    writer.touch()
+    before = snapshot(root)
+    try:
+        if incompatible:
+            with pytest.raises(StartupRefused):
+                packaged_entry.run_brain()
+            assert statuses == [("recovery-required", "maintenance")]
+            assert "graph" not in events and "server-stub" not in events
+        else:
+            assert packaged_entry.run_brain() == 0
+            assert events[-2:] == ["graph", "server-stub"]
+            assert statuses == [("validating",)]
+            with database.transaction() as connection:
+                assert connection.execute("PRAGMA user_version").fetchone()[0] == int(catalog[-1].name[:4])
+    finally:
+        if startup_maintenance._held_lease is not None:
+            startup_maintenance._held_lease.__exit__(None, None, None)
+    if incompatible:
+        after = snapshot(root)
+        for name in (writer.name, ".bridge-installation-migration.lock"):
+            before.pop(name, None)
+            after.pop(name, None)
+        assert after == before
 
 
 _LEASE_PROBE = '''

@@ -320,14 +320,17 @@ fn main() {
             return;
         }
     };
-    if !_ownership.primary() {
-        if servicing_session.is_some() {
+    match _ownership.continue_startup(
+        &names,
+        &executable,
+        servicing_session.is_none().then_some(args.as_slice()),
+    ) {
+        Ok(true) => (),
+        Ok(false) => return,
+        Err(reason) => {
+            prerequisite::show_failure(reason);
             return;
         }
-        if let Err(reason) = windows::forward_instance(&names, &executable, &args) {
-            prerequisite::show_failure(reason);
-        }
-        return;
     }
     let startup = windows::package_identity().and_then(|identity| {
         servicing_handoff::startup(
@@ -369,6 +372,7 @@ fn main() {
     let (sender, receiver) = mpsc::sync_channel(8);
     let state = Arc::new(host::Host {
         admitted: AtomicBool::new(false),
+        retained_recovery: AtomicBool::new(false),
         stopped: AtomicBool::new(false),
         quitting: AtomicBool::new(false),
         update_check_active: AtomicBool::new(false),
@@ -389,7 +393,7 @@ fn main() {
                     if activation.quitting.load(Ordering::SeqCst) {
                         return;
                     }
-                    let _ = activation.actions.try_send(host::Action::Activate(journey));
+                    activation.activate(journey);
                     frame::show_main(app);
                 }
             },
@@ -430,18 +434,21 @@ fn main() {
                     .devtools(false)
                     .disable_drag_drop_handler()
                     .on_navigation(move |url| {
-                        policy::shell_document(url)
-                            || (navigation.admitted.load(Ordering::SeqCst)
-                                && policy::local_document(url))
+                        policy::startup_navigation(
+                            url,
+                            navigation.admitted.load(Ordering::SeqCst),
+                            navigation.retained_recovery.load(Ordering::SeqCst),
+                        )
                     })
                     .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
                     .on_download(|_, _| false)
                     .build()?;
             let close = window.clone();
+            let close_state = setup.clone();
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
-                    let _ = close.hide();
+                    let _ = frame::close_main(&close, &close_state, close.url().ok().as_ref());
                 }
             });
             let open = MenuItem::with_id(
@@ -459,7 +466,7 @@ fn main() {
                 .tooltip("Conversation Analytics")
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "open" => {
-                        let _ = quit_state.actions.try_send(host::Action::Activate(None));
+                        quit_state.activate(None);
                         frame::show_main(app);
                     }
                     "quit" => quit_state.quit(),

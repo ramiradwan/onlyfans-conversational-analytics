@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,9 +31,10 @@ async function supportGeometry(page, title, body, status) {
   }, { title, body, status });
 }
 
-test('terminal support shares the title column and keeps Chrome status after the action slot', async t => {
+test('retained data recovery and terminal support fit the title column with native Close', async () => {
   const desktop = new URL('../../desktop/', import.meta.url);
   const source = await readFile(new URL('startup-help.js', desktop), 'utf8');
+  const windowFrame = await readFile(new URL('window-frame.js', desktop), 'utf8');
   const shell = Object.fromEntries(await Promise.all([
     'index.html', 'data-recovery.html', 'unavailable.html', 'shell.css',
     'onboarding-theme.css', 'inter-latin-opsz-normal.woff2',
@@ -45,6 +46,7 @@ test('terminal support shares the title column and keeps Chrome status after the
   const fixtures = await onboardingStaticFixtures();
   const screenshotDirectory = process.env.OFCA_TERMINAL_HELP_SCREENSHOTS;
   if (screenshotDirectory) await mkdir(screenshotDirectory, { recursive: true });
+  const recoveryMeasurements = [];
   const browser = await chromium.launch();
   const routes = [
     { name: 'native-data-recovery', path: '/data-recovery.html', origin: 'http://tauri.localhost', shell: true },
@@ -58,21 +60,44 @@ test('terminal support shares the title column and keeps Chrome status after the
   ];
   try {
     for (const colorScheme of ['light', 'dark']) {
-      for (const [width, scale] of [[1440, 1], [390, 1], [390, 2], [320, 1], [320, 2]]) {
-        const context = await browser.newContext({ colorScheme, viewport: { width, height: 810 } });
+      for (const [width, scale] of [[1440, 1], [1440, 2], [640, 1], [390, 1], [390, 2], [320, 1], [320, 2]]) {
+        const context = await browser.newContext({ colorScheme, viewport: { width, height: width === 640 ? 480 : 810 } });
         try {
           for (const route of routes) {
+            if (!route.shell && (width === 640 || (width === 1440 && scale === 2))) continue;
             const anchors = [];
             for (const configured of [false, true]) {
               const page = await context.newPage();
               const otherRequests = [];
               await page.addInitScript(({ size, state, native }) => {
-                if (native) customElements.define('desktop-window-controls', class extends HTMLElement {});
+                if (native) {
+                  window.nativeCalls = [];
+                  window.nativeShifts = [];
+                  window.__TAURI__ = { core: { invoke: async (command, args) => {
+                    window.nativeCalls.push([command, args.action]);
+                    return false;
+                  } } };
+                  new PerformanceObserver(list => {
+                    window.nativeShifts.push(...list.getEntries().filter(entry => !entry.hadRecentInput && entry.value > 0));
+                  }).observe({ type: 'layout-shift', buffered: true });
+                  function sampleFrame() {
+                    const header = document.querySelector('.setup-header');
+                    if (!header || getComputedStyle(header).display !== 'flex') {
+                      requestAnimationFrame(sampleFrame);
+                      return;
+                    }
+                    const root = header.querySelector('desktop-window-controls')?.shadowRoot;
+                    window.firstNativeFrame = [...(root?.querySelectorAll('button') ?? [])]
+                      .map(button => button.getAttribute('aria-label'));
+                  }
+                  requestAnimationFrame(sampleFrame);
+                }
                 window.__staticSurfaceFixture = state;
                 document.addEventListener('DOMContentLoaded', () => { document.documentElement.style.fontSize = size + 'px'; });
               }, { size: scale * 16, state: route.state ?? null, native: route.shell ?? false });
-              if (route.shell && configured) {
-                await page.addInitScript({ content: `(${source})(${JSON.stringify(supportProjection)});` });
+              if (route.shell) {
+                await page.addInitScript({ content: windowFrame });
+                await page.addInitScript({ content: `(${source})(${JSON.stringify(configured ? supportProjection : {})});` });
               }
               await page.route('**/*', request => {
                 const url = new URL(request.request().url());
@@ -137,19 +162,69 @@ test('terminal support shares the title column and keeps Chrome status after the
                 } else assert.equal(action.height, 0);
               }
               assert.equal(position.overflow, 0, route.path);
-              if (width === 1440) {
+              if (width === 1440 && scale === 1) {
                 assert.equal(position.title.lines, 1);
-                if (route.path !== '/data-recovery.html') assert.ok((position.body?.lines ?? 0) <= 2, route.path);
-                else if (colorScheme === 'light' && !configured) t.diagnostic(`Existing saved-data body uses ${position.body.lines} lines at 1440px`);
+                assert.ok((position.body?.lines ?? 0) <= 2, route.path);
                 assert.ok((position.status?.lines ?? 0) <= 1, route.path);
               }
-              if (configured) await help.scrollIntoViewIfNeeded();
-              if (configured && screenshotDirectory) {
-                await page.screenshot({ path: join(screenshotDirectory, `${route.name}-${colorScheme}-${width}-${scale}x.png`), fullPage: true });
+              if (route.shell) {
+                await page.waitForFunction(() => window.firstNativeFrame !== undefined);
+                assert.deepEqual(await page.evaluate(() => window.firstNativeFrame),
+                  ['Minimize', 'Maximize', 'Close window'], route.path);
+                const shifts = await page.evaluate(() => window.nativeShifts.map(entry => ({
+                  value: entry.value,
+                  sources: entry.sources.map(source => source.node?.className || source.node?.nodeName),
+                })));
+                assert.deepEqual(shifts, [], `${route.path} ${colorScheme} ${width} ${scale}x help=${configured}`);
+                const close = page.getByRole('button', { name: 'Close window', exact: true });
+                const { x, y, width: targetWidth, height: targetHeight } = await close.boundingBox();
+                assert.deepEqual([targetWidth, targetHeight], [44, 40]);
+                assert.equal(x + targetWidth, width - (width <= 600 ? 8 : 24));
+                assert.equal(y, (position.header.height - targetHeight - 1) / 2);
+                if (scale === 1 || width <= 600) assert.equal(position.header.height, 72);
+                assert.equal(await page.evaluate(() => document.fonts.check('16px "Inter Variable"')), true);
+                assert.deepEqual(await page.evaluate(() => window.nativeCalls.filter(([, action]) => action !== 'state')), []);
+                for (const name of ['Minimize', 'Maximize', 'Close window']) {
+                  await page.keyboard.press('Tab');
+                  assert.equal(await page.getByRole('button', { name, exact: true }).evaluate(button =>
+                    button === button.getRootNode().activeElement && button.matches(':focus-visible')), true, name);
+                }
+                await page.keyboard.press('Enter');
+                assert.deepEqual(await page.evaluate(() => window.nativeCalls.filter(([, action]) => action !== 'state')),
+                  [['desktop_window', 'close']]);
+                assert.equal(page.url(), route.origin + route.path);
+                assert.equal(context.pages().length, 1);
+              }
+              if (configured) {
+                await help.scrollIntoViewIfNeeded();
+                if (route.shell) {
+                  assert.ok(await help.evaluate(node =>
+                    node.scrollWidth === node.clientWidth && node.scrollHeight === node.clientHeight), route.path);
+                  for (const row of await help.getByRole('listitem').all()) {
+                    await row.scrollIntoViewIfNeeded();
+                    assert.ok(await row.evaluate(node => {
+                      const range = document.createRange();
+                      range.selectNodeContents(node);
+                      return [...range.getClientRects()].every(rect => rect.left >= 0 &&
+                        rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight);
+                    }), route.path);
+                  }
+                }
+              }
+              if (route.path === '/data-recovery.html') {
+                recoveryMeasurements.push({
+                  colorScheme, width, scale, configured, ...position, help: configured ? await help.boundingBox() : null,
+                  close: await page.getByRole('button', { name: 'Close window', exact: true }).boundingBox(),
+                });
+              }
+              if (screenshotDirectory && (configured || route.path === '/data-recovery.html')) {
+                const suffix = configured ? '' : '-no-help';
+                await page.screenshot({ path: join(screenshotDirectory, `${route.name}-${colorScheme}-${width}-${scale}x${suffix}.png`), fullPage: true });
               }
               if (route.shell && configured && width === 1440) {
                 await page.goto(route.origin + route.path + '?unsupported=1');
                 assert.equal(await help.count(), 0);
+                assert.equal(await page.getByRole('button', { name: 'Close window', exact: true }).count(), 0);
                 await page.goto(route.origin + '/index.html');
                 assert.equal(await help.count(), 0);
               }
@@ -163,6 +238,9 @@ test('terminal support shares the title column and keeps Chrome status after the
       }
     }
   } finally { await browser.close(); }
+  if (screenshotDirectory) {
+    await writeFile(join(screenshotDirectory, 'recovery-measurements.json'), JSON.stringify(recoveryMeasurements, null, 2) + '\n');
+  }
 });
 
 test('native startup documents expose settled copy and preserve native semantics', async () => {
@@ -178,11 +256,11 @@ test('native startup documents expose settled copy and preserve native semantics
   assert.match(waiting, /<h1 id="startup-title">Opening Conversation Analytics<\/h1>/);
   assert.match(waiting, /role="status"[^>]*>Getting things ready on this computer…<\/p>/);
   assert.match(unavailable, /<h1>Conversation Analytics can’t start right now<\/h1>/);
-  assert.match(unavailable, /Quit Conversation Analytics from its icon in the system tray, then open it again\./);
+  assert.doesNotMatch(unavailable, /<p>|system tray|open it again/);
   assert.match(recovery, /<h1>Can’t open your saved data<\/h1>/);
   assert.match(recovery, /role="alert"/);
-  assert.match(recovery, /Keep your existing data and keys\./);
-  assert.match(recovery, /If the problem continues, contact your administrator\./);
+  assert.deepEqual([...recovery.matchAll(/<p>(.*?)<\/p>/g)].map(match => match[1]),
+    ['The app stopped to protect your saved data.']);
   for (const html of [waiting, unavailable, recovery]) {
     assert.match(html, /class="setup-header"/);
     assert.match(html, /class="brand-mark"/);

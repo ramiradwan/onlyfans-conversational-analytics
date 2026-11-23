@@ -77,11 +77,15 @@ fn real_native_startup_failure_identifies_data_access_and_installation_errors() 
     for (scenario, code) in [
         ("data-unavailable", "data_directory_unavailable"),
         ("installation-invalid", "invalid_installation"),
+        ("servicing-invalid", "servicing_intent_invalid"),
+        ("servicing-storage-invalid", "servicing_storage_invalid"),
+        ("servicing-pending", "servicing_pending"),
     ] {
         let value = run(scenario);
         assert_eq!(value["state"], "desktop.installation_unavailable");
         assert_eq!(value["code"], code);
-        assert_eq!(value["close_and_guidance_observed"], true);
+        assert_eq!(value["close_and_guidance_observed"], true, "{scenario}");
+        assert_eq!(value["close_action_observed"], true, "{scenario}");
     }
 }
 

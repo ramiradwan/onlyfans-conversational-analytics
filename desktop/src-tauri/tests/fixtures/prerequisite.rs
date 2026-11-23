@@ -50,12 +50,17 @@ unsafe extern "system" fn find(hwnd: HWND, data: isize) -> i32 {
 }
 
 #[derive(Default)]
-struct ConflictLabels {
+struct FailureLabels {
     close: bool,
+    heading: bool,
     guidance: bool,
 }
 
-fn conflict_labels(hwnd: HWND) -> windows_runtime::core::Result<ConflictLabels> {
+fn failure_labels(
+    hwnd: HWND,
+    heading: &str,
+    guidance: &str,
+) -> windows_runtime::core::Result<FailureLabels> {
     use windows_runtime::Win32::{
         Foundation::HWND as AutomationHwnd,
         System::Com::{
@@ -74,8 +79,9 @@ fn conflict_labels(hwnd: HWND) -> windows_runtime::core::Result<ConflictLabels> 
                 CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER)?;
             let dialog = automation.ElementFromHandle(AutomationHwnd(hwnd))?;
             // The TaskDialog text controls expose their content through UI Automation.
-            let controls = dialog.FindAll(TreeScope_Descendants, &automation.CreateTrueCondition()?)?;
-            let mut labels = ConflictLabels::default();
+            let controls =
+                dialog.FindAll(TreeScope_Descendants, &automation.CreateTrueCondition()?)?;
+            let mut labels = FailureLabels::default();
             for index in 0..controls.Length()? {
                 let control = controls.GetElement(index)?;
                 if control.CurrentIsOffscreen()?.as_bool() {
@@ -85,9 +91,8 @@ fn conflict_labels(hwnd: HWND) -> windows_runtime::core::Result<ConflictLabels> 
                     "Close" if control.CurrentControlType()? == UIA_ButtonControlTypeId => {
                         labels.close = true;
                     }
-                    "Quit the other Conversation Analytics installation from its icon near the Windows clock, then reopen this one. If it is still blocked, use your existing installation. Your files were left unchanged." => {
-                        labels.guidance = true;
-                    }
+                    name if name == heading => labels.heading = true,
+                    name if name.lines().eq(guidance.lines()) => labels.guidance = true,
                     _ => {}
                 }
             }
@@ -98,7 +103,12 @@ fn conflict_labels(hwnd: HWND) -> windows_runtime::core::Result<ConflictLabels> 
     }
 }
 
-fn close_failure(state: &'static str, code: Option<&'static str>) -> (usize, ConflictLabels) {
+fn close_failure(
+    state: &'static str,
+    code: Option<&'static str>,
+    heading: &'static str,
+    message: &'static str,
+) -> (usize, FailureLabels) {
     struct Expected {
         hwnd: usize,
         state: &'static str,
@@ -157,11 +167,10 @@ fn close_failure(state: &'static str, code: Option<&'static str>) -> (usize, Con
                 );
             }
             if observed == [true; 2] {
-                let labels = if state == prerequisite::INSTALLATION_CONFLICT_STATE {
-                    conflict_labels(found.hwnd as HWND).unwrap_or_default()
-                } else {
-                    ConflictLabels::default()
-                };
+                let guidance =
+                    support_channels::dialog_content(message, support_channels::COMPILED_CHANNELS);
+                let labels =
+                    failure_labels(found.hwnd as HWND, heading, &guidance).unwrap_or_default();
                 unsafe {
                     SendMessageW(
                         found.hwnd as HWND,
@@ -406,35 +415,66 @@ fn main() {
         return;
     }
     if scenario == "installation-conflict" {
-        let closer =
-            std::thread::spawn(|| close_failure(prerequisite::INSTALLATION_CONFLICT_STATE, None));
+        let closer = std::thread::spawn(|| {
+            close_failure(
+                prerequisite::INSTALLATION_CONFLICT_STATE,
+                None,
+                "Another installation may be using your data folder",
+                "The app stopped to protect your saved data. Your files were left unchanged.",
+            )
+        });
         prerequisite::show_failure("runtime_installation_conflict");
         let (hwnd, labels) = closer.join().unwrap();
         println!(
             "{}",
             serde_json::json!({
                 "state": prerequisite::INSTALLATION_CONFLICT_STATE,
-                "conflict_guidance_observed": labels.guidance,
+                "conflict_guidance_observed": labels.heading && labels.guidance,
                 "close_label_observed": labels.close,
                 "close_action_observed": unsafe { IsWindow(hwnd as HWND) == 0 },
             })
         );
         return;
     }
-    if scenario == "data-unavailable" || scenario == "installation-invalid" {
-        let reason = if scenario == "data-unavailable" {
-            "data_directory_unavailable"
-        } else {
-            "invalid_installation"
-        };
-        let closer =
-            std::thread::spawn(move || close_failure(prerequisite::FAILURE_STATE, Some(reason)));
+    let failure = match scenario.as_str() {
+        "data-unavailable" => Some((
+            "data_directory_unavailable",
+            "Your data folder is unavailable",
+            "The app stopped to protect your saved data.",
+        )),
+        "installation-invalid" => Some((
+            "invalid_installation",
+            "This installation could not be verified",
+            "The app stopped before opening your saved data.",
+        )),
+        "servicing-invalid" => Some((
+            "servicing_intent_invalid",
+            "The update couldn’t be verified",
+            "The app stopped before opening your saved data.",
+        )),
+        "servicing-storage-invalid" => Some((
+            "servicing_storage_invalid",
+            "The update couldn’t be verified",
+            "The app stopped before opening your saved data.",
+        )),
+        "servicing-pending" => Some((
+            "servicing_pending",
+            "The update couldn’t finish",
+            "The app stopped before opening your saved data.",
+        )),
+        _ => None,
+    };
+    if let Some((reason, heading, message)) = failure {
+        let closer = std::thread::spawn(move || {
+            close_failure(prerequisite::FAILURE_STATE, Some(reason), heading, message)
+        });
         prerequisite::show_failure(reason);
-        closer.join().unwrap();
+        let (hwnd, labels) = closer.join().unwrap();
         println!(
             "{}",
             serde_json::json!({"state": prerequisite::FAILURE_STATE,
-                  "code": reason, "close_and_guidance_observed": true})
+                  "code": reason, "close_and_guidance_observed": labels.close && labels.heading && labels.guidance,
+                  "close_action_observed": unsafe { IsWindow(hwnd as HWND) == 0 }})
         );
         return;
     }

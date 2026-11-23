@@ -23,7 +23,30 @@ pub enum WindowAction {
     Focus,
 }
 
-/// Window presentation only; never a process, navigation or filesystem command.
+pub fn close_main(
+    window: &tauri::WebviewWindow,
+    state: &Host,
+    url: Option<&url::Url>,
+) -> tauri::Result<bool> {
+    close_or_hide(state, window.label(), url, || {
+        window.hide()?;
+        window.is_maximized()
+    })
+}
+
+pub(crate) fn close_or_hide(
+    state: &Host,
+    label: &str,
+    url: Option<&url::Url>,
+    hide: impl FnOnce() -> tauri::Result<bool>,
+) -> tauri::Result<bool> {
+    if url.is_some_and(|url| state.close_retained_recovery(label, url)) {
+        return Ok(false);
+    }
+    hide()
+}
+
+/// Window presentation, including the retained-data Close gesture.
 #[tauri::command]
 pub fn desktop_window(
     window: tauri::WebviewWindow,
@@ -49,7 +72,9 @@ pub fn desktop_window(
                 window.maximize()
             }
         }
-        WindowAction::Close => window.hide(),
+        WindowAction::Close => {
+            return close_main(&window, &state, Some(&url)).map_err(|_| "window_unavailable");
+        }
         WindowAction::StartDragging => window.start_dragging(),
         WindowAction::Focus => {
             if !window.is_focused().unwrap_or(false)
