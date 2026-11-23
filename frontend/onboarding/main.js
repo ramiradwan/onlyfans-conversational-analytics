@@ -5,7 +5,7 @@ import { DesktopSetupClient } from './client.js';
 import { renderSetup } from './view.js';
 import { openBrowserTask, openSetupCode } from './browser-task.js';
 import { DesktopEnrollment } from './enrollment.js';
-import { savedDataEntry, savedDataLinkText, savedDataUrl } from '../shared-setup/saved-data-entry';
+import { savedDataEntry, savedDataLinkText, savedDataUrl } from '../shared-setup/saved-data-entry.js';
 import { authorityRecoveryView, authorityRecoveryOptions } from '../shared-setup/authority-recovery.js';
 
 applyTheme(document);

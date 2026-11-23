@@ -856,6 +856,7 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) for (const
       }).observe(document, { childList: true, subtree: true }); });
       await page.route('**/*', async route => {
         const path = new URL(route.request().url()).pathname.replace(/^\/static\/dist(?=\/)/u, '');
+        if (path === '/api/v1/saved-data/available' && route.request().method() === 'POST') return route.fulfill({ json: { available: false } });
         if (route.request().method() === 'POST') protectedRequests++;
         if (path === '/api/v1/webauthn/session-state') {
           statusReads++;
@@ -908,6 +909,7 @@ for (const width of [320, 390, 1440]) for (const mode of ['light', 'dark']) for 
       await installWatcher(page, { requiredRegions: ['passkey-card', 'passkey-feedback'], taskTransitions: 'passkey' });
       await page.route('**/*', async route => {
         const path = new URL(route.request().url()).pathname.replace(/^\/static\/dist(?=\/)/u, '');
+        if (path === '/api/v1/saved-data/available' && route.request().method() === 'POST') return route.fulfill({ json: { available: false } });
         if (route.request().method() === 'POST') protectedRequests++;
         if (path === '/api/v1/webauthn/session-state') {
           statusReads++;
@@ -942,6 +944,7 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) for (const
       await installWatcher(page, { requiredRegions: ['passkey-card', 'passkey-feedback'], taskTransitions: 'passkey' });
       await page.route('**/*', async route => {
         const path = new URL(route.request().url()).pathname.replace(/^\/static\/dist(?=\/)/u, '');
+        if (path === '/api/v1/saved-data/available' && route.request().method() === 'POST') return route.fulfill({ json: { available: false } });
         if (route.request().method() === 'POST') protectedRequests++;
         if (path === '/api/v1/webauthn/session-state') {
           statusReads++;

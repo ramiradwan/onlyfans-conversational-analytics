@@ -2,7 +2,7 @@ import { focusTransition, recoveryTone, setStatus } from '../shared-setup/presen
 import { browserRecoveryTarget } from './browser-task.js';
 import { authorityRecoveryView } from '../shared-setup/authority-recovery.js';
 import { desktopRecovery, passkeyRecovery, recoveryClass } from '../shared-setup/recovery.js';
-import { expiredAccessDescription, expiredAccessTitle } from '../shared-setup/saved-data-entry';
+import { expiredAccessDescription, expiredAccessTitle } from '../shared-setup/saved-data-entry.js';
 
 const tasks = {
   'browser-access': ['Bring in your conversations', 'Set up browser access', 'setup_browser_access'],
