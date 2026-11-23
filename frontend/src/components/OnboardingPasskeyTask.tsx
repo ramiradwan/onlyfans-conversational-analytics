@@ -67,9 +67,8 @@ export function OnboardingPasskeyTask({
   return <>
     {fontState === 'loading' && <Typography role="status" data-surface-loading sx={{ position: 'fixed', top: 16, left: 16, fontFamily: 'Arial, sans-serif' }}>Loading…</Typography>}
     <Box data-passkey-font={fontState} data-passkey-task={fontState === 'loading' ? undefined : `passkey:${family}${status ? ':feedback' : ''}`}
-      aria-hidden={fontState === 'loading' ? true : undefined} inert={fontState === 'loading' ? true : undefined}
-      sx={{ visibility: fontState === 'loading' ? 'hidden' : 'visible',
-        ...(fontState === 'fallback' && { '& *': { fontFamily: 'Arial, sans-serif !important' } }) }}>
+      hidden={fontState === 'loading'}
+      sx={fontState === 'fallback' ? { '& *': { fontFamily: 'Arial, sans-serif !important' } } : undefined}>
       {fontState !== 'loading' && <OnboardingWorkspace trust>
         <TrustTask data-journey-state="desktop.passkey_sign_in" spot="passkey" visual="passkey-card" family={family} busy={busy || checking || readingStatus}
           title={title} body={body} placeholder={checking}
