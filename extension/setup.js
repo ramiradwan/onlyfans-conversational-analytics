@@ -9,7 +9,7 @@ import { createSurfaceClient, openSurface, send, secureExternalUrl, NoticeError 
 import { customerJourney, needsAgreement, modeChoiceAvailable } from './ui/presentation.mjs';
 import { element, show, text, renderLoading, renderJourney, renderLegalLinks, createPageActions } from './ui/dom.mjs';
 import { chooseMode, transition, restoreAccess, openCreatorAccount } from './ui/actions.mjs';
-import { createDesktopLaunch, desktopLaunchPresentation } from './ui/desktop-launch.mjs';
+import { createDesktopLaunch } from './ui/desktop-launch.mjs';
 import { BROWSER_TASK_ENTRY_KEY, BROWSER_TASK_ADOPTION_KEY } from './runtime/browser-task-entry.mjs';
 import { createSetupChoice } from './ui/setup-choice.mjs';
 import { previewCounts } from './ui/preview-counts.mjs';
@@ -46,6 +46,7 @@ const page = createPageActions(client, render, {
   },
 });
 let currentJourney = null;
+let previewValueShown = false;
 let workspaceRecord = null;
 const choicePersistence = createSetupChoice();
 let setupChoice = null;
@@ -135,6 +136,44 @@ function setFullReview(value) {
       draft: { ...workspaceRecord.draft } }).catch(() => undefined);
   }
 }
+function renderDesktop(model, journey) {
+  const launch = desktopLaunch.state;
+  const opening = launch === 'opening';
+  const comparison = model.pairing?.state === 'compare' && model.pairing.owns_attempt && model.pairing.comparison_code;
+  const compare = journey?.id === 'pairing_in_progress' && comparison;
+  const passiveConnection = journey?.id === 'setup_incomplete' && model.pairing?.state === 'unavailable';
+  const launchUnconfirmed = launch === 'unconfirmed' && (!journey || journey.id === 'desktop_app_needed');
+  const fullReady = journey?.id === 'full_ready';
+  const openOnlyFans = journey?.primaryAction === 'open_creator_account';
+  const status = passiveConnection ? '' : opening ? 'Waiting for the desktop app…'
+    : launch === 'adopted' && !journey ? 'The desktop app has this browser’s setup request. Continue there.'
+      : launchUnconfirmed ? 'Desktop connection not confirmed' : '';
+  const tone = journey?.tone ?? 'info';
+  const icon = compare ? 'link' : fullReady || journey?.id === 'activation_required' ? 'insights'
+    : openOnlyFans ? journey.id === 'full_unavailable' ? 'pause' : 'browser'
+      : journey?.id === 'activation_unavailable' || passiveConnection && tone === 'warning' ? 'offline'
+        : ({ progress: opening && status ? 'app' : 'pending', success: 'done', error: 'error', warning: 'attention' })[tone] ?? 'app';
+  element('desktop-entry').dataset.tone = tone;
+  element('desktop-entry').dataset.journeyState = journey?.id ?? 'extension.full_handoff';
+  element('desktop-entry').dataset.launchState = launch;
+  element('desktop-entry').dataset.composition = compare ? 'decision' : 'guided';
+  element('desktop-icon-mark').dataset.icon = icon;
+  text('desktop-entry-title', journey?.title ?? 'Full analytics uses the desktop app');
+  text('desktop-entry-body', journey?.body
+    ?? 'Your conversation insights are stored on this computer. Open the desktop app to continue setup.');
+  text('desktop-launch-message', status);
+  element('desktop-launch-mark').dataset.icon = opening ? 'pending' : launchUnconfirmed ? 'attention' : 'done';
+  show('desktop-launch-status', Boolean(status));
+  const desktopResources = !passiveConnection && !fullReady && !openOnlyFans && !compare && !model.desktopRuntimeReachable;
+  show('desktop-setup-code', desktopResources && !model.pairing?.desktop_control);
+  text('desktop-comparison-code', compare ? `${comparison.slice(0, 3)} ${comparison.slice(3)}` : '');
+  show('desktop-comparison-code', Boolean(compare));
+  element('open-desktop').dataset.action = openOnlyFans ? 'open_creator_account' : 'open_desktop';
+  text('open-desktop', fullReady || openOnlyFans ? journey.primaryLabel : 'Open desktop app');
+  show('open-desktop', !passiveConnection);
+  page.lock('open-desktop', opening || !workspaceRecord);
+  show('download-desktop', desktopResources && secureExternalUrl(model.config.desktop_app_download_url) !== null);
+}
 function render(model) {
   desktopLaunch.observe(desktopAdoption);
   const { status, legal } = model;
@@ -144,7 +183,7 @@ function render(model) {
     document.querySelector('main').dataset.presentationReady = 'true';
   }
   for (const id of ['start-choice', 'desktop-entry', 'pre-mode', 'mode-choice', 'access-card', 'journey-card', 'legal-unavailable']) show(id, false);
-  renderLoading(status && legal && !waitingForWorkspace ? status : null, failed, model.connectionRecovery);
+  renderLoading(status && legal && !waitingForWorkspace ? status : null, failed, model.connectionRecovery, { setup: true });
   renderLegalLinks(legal);
   if (!status || !legal || waitingForWorkspace) {
     currentTask = failed ? 'unavailable' : null;
@@ -181,7 +220,7 @@ function render(model) {
   const view = full && !browserTask ? 'desktop'
     : agreement ? selected ? 'agree' : 'start'
       : pendingAccess ? 'access' : choose ? 'mode' : access ? 'access' : 'journey';
-  currentJourney = customerJourney(model);
+  currentJourney = customerJourney(model, { setup: true });
   const browserAccessReady = full && browserTask && view === 'journey';
   currentTask = browserAccessReady ? 'browser-access-ready' : view === 'journey' ? `journey:${currentJourney.id}`
     : ['agree', 'mode'].includes(view) ? `${view}:${selected ?? fullReviewRequested}` : view;
@@ -192,10 +231,9 @@ function render(model) {
     : view === 'access' ? 'access-title' : view === 'mode'
       ? fullReviewRequested || browserTask ? 'full-choice-title' : 'preview-choice-title'
       : 'journey-title';
-  const icon = currentJourney.id === 'full_ready' || (currentJourney.id === 'preview_available' && status.observer?.attachment === 'ready') ? '✓'
-    : currentJourney.id === 'paused' ? 'Ⅱ'
-      : currentJourney.tone === 'progress' ? '↻' : currentJourney.tone === 'warning' || currentJourney.tone === 'error' ? '!' : '…';
-  text('journey-icon', icon);
+  const icon = ['paused', 'analytics_off'].includes(currentJourney.id) ? 'pause' :
+    ({ success: 'done', progress: 'pending', warning: 'attention', error: 'error' })[currentJourney.tone] ?? 'info';
+  element('journey-icon-mark').dataset.icon = icon;
   document.querySelector('main').dataset.step = view;
   const summary = view === 'desktop' ? 'Continue in the desktop app'
     : view === 'start' ? 'Choose Preview or Full analytics' : view === 'agree' ? 'Review terms and risk disclosure'
@@ -204,15 +242,7 @@ function render(model) {
   show('desktop-entry', view === 'desktop');
   const fullWorkspace = mode === 'full' || mode === 'paused' && status.consent.resume_mode === 'full';
   const desktopJourney = fullWorkspace && !legal.requires_reauthorization ? currentJourney : null;
-  const desktop = desktopLaunchPresentation(desktopLaunch.state, desktopJourney);
-  text('desktop-entry-title', desktop.title); text('desktop-entry-body', desktop.body);
-  element('desktop-entry').dataset.tone = desktopLaunch.state === 'opening' ? 'progress'
-    : desktopLaunch.state === 'unconfirmed' ? 'warning' : desktopJourney?.tone ?? 'info';
-  const desktopReady = desktopJourney?.id === 'full_ready';
-  show('desktop-setup-code', !desktopReady && !model.pairing?.desktop_control && !model.desktopRuntimeReachable);
-  text('open-desktop', desktopReady ? currentJourney.primaryLabel : 'Open desktop app');
-  page.lock('open-desktop', desktopLaunch.state === 'opening' || !workspaceRecord);
-  show('download-desktop', !desktopReady && !model.desktopRuntimeReachable && secureExternalUrl(model.config.desktop_app_download_url) !== null);
+  renderDesktop(model, desktopJourney);
   show('desktop-back', mode !== 'full' && status.consent.resume_mode !== 'full');
   text('desktop-back', mode === 'preview' ? 'Keep Preview' : 'Back');
   show('pre-mode', view === 'agree'); show('mode-choice', view === 'mode');
@@ -251,29 +281,39 @@ function render(model) {
   }
   show('enable-preview', !active); show('enable-full', mode !== 'full' || legal.requires_reauthorization);
   text('full-secondary', mode === 'preview' ? 'Keep Preview' : 'Not now');
-  text('access-title', 'Allow site access');
-  text('access-body', 'Allow the extension to read activity from your creator account.');
+  text('access-title', pendingAccess ? 'Allow site access' : 'Site access needed');
+  text('access-body', pendingAccess ? 'Allow the extension to read activity from your creator account.'
+    : 'Allow site access to receive activity from your creator account.');
+  element('access-icon-mark').dataset.icon = pendingAccess ? 'extension' : 'attention';
   show('restore-access', Boolean(pendingAccess) || status.phase === 'permission_required');
   renderJourney(currentJourney, model);
   const preview = mode === 'preview' || (mode === 'paused' && status.consent.resume_mode === 'preview');
-  element('journey-card').classList.toggle('preview-journey', preview && view === 'journey');
+  const stopped = mode !== 'paused' && status.observer?.helper === 'closed' && status.observer?.attachment !== 'ready';
+  const counting = status.observer?.attachment === 'ready' && !status.reload_required;
+  const previewValue = currentJourney.id === 'preview_available' && view === 'journey';
+  element('journey-card').dataset.composition = previewValue ? 'value' : 'guided';
   show('preview-metrics', preview && view === 'journey');
   show('pause', mode === 'preview' && view === 'journey');
   show('background-tab-note', mode !== 'paused' && status.observer?.helper === 'open');
-  show('reopen-background-tab', mode !== 'paused' && status.observer?.helper === 'closed' && status.observer?.attachment !== 'ready');
+  show('reopen-background-tab', stopped);
   const daily = previewCounts(status.preview);
   text('metrics-range', daily.label);
   for (const [id, key] of [['messages-count', 'message_observations'], ['inbound-count', 'inbound_observations'], ['outbound-count', 'outbound_observations']]) text(id, new Intl.NumberFormat().format(daily.counts[key] ?? 0));
-  if (currentJourney.id === 'analytics_off') {
-    text('journey-icon', 'Ⅱ'); text('journey-badge', '');
+  if (['analytics_off', 'paused'].includes(currentJourney.id)) {
+    text('journey-badge', '');
   }
   if (currentJourney.id === 'preview_available') {
-    const ready = status.observer?.attachment === 'ready' && !status.reload_required;
-    if (!ready) text('journey-icon', '…');
-    text('journey-title', ready ? 'Preview is ready' : 'Waiting for OnlyFans activity');
-    text('journey-badge', ready ? 'Counting as you use OnlyFans' : '');
-    text('journey-body', '');
+    const ready = counting || stopped;
+    element('journey-icon-mark').dataset.icon = ready ? 'insights' : 'pending';
+    text('journey-title', ready ? currentJourney.title : 'Waiting for messages');
+    text('journey-badge', stopped ? 'Updates stopped' : counting ? 'Counting messages' : '');
+    text('journey-body', ready ? currentJourney.body : '');
   }
+  element('journey-badge').dataset.tone = previewValue && counting ? 'success' : 'neutral';
+  if (previewValue && counting && !previewValueShown) {
+    previewValueShown = true;
+    element('preview-metrics').dataset.arrive = 'true';
+  } else if (!previewValue) delete element('preview-metrics').dataset.arrive;
   for (const [id, action, label] of [['journey-primary', currentJourney.primaryAction,
     currentJourney.primaryAction === 'resume' ? 'Resume' : currentJourney.primaryLabel],
     ['journey-secondary', currentJourney.secondaryAction, currentJourney.secondaryLabel]]) {
@@ -282,7 +322,7 @@ function render(model) {
   }
   if (browserAccessReady) {
     text('journey-title', 'Browser access is ready'); text('journey-badge', '');
-    text('journey-body', 'Continue in the desktop app.'); text('journey-icon', '✓');
+    text('journey-body', 'Continue in the desktop app.'); element('journey-icon-mark').dataset.icon = 'done';
     text('journey-primary', 'Open desktop app'); show('journey-primary', true);
     element('journey-primary').dataset.action = 'open_desktop'; show('journey-secondary', false);
     show('background-tab-note', false); show('reopen-background-tab', false);
@@ -306,7 +346,6 @@ async function runJourneyAction(action) {
   }
   if (action === 'open_desktop') return desktopLaunch.launch(client.model);
   if (action === 'open_creator_account') return openCreatorAccount();
-  if (action === 'retry_readiness') return client.sync();
   if (action === 'restore_access') return restoreAccess(client.model);
   if (action === 'resume') return transition('resume', client.model);
   if (action === 'install_desktop') {
@@ -356,7 +395,7 @@ page.bind('start-back', async () => {
   await recordFullChoice(false);
   setupChoice = null; choicePersistence.write(workspaceRecord, null); setFullReview(false); render(client.model);
 });
-page.bind('open-desktop', () => desktopLaunch.launch());
+page.bind('open-desktop', () => runJourneyAction(element('open-desktop').dataset.action));
 page.bind('download-desktop', () => runJourneyAction('install_desktop'));
 page.bind('desktop-back', async () => {
   await recordFullChoice(false);
@@ -379,5 +418,8 @@ page.bind('pause', () => transition('pause', client.model));
 page.bind('journey-primary', () => runJourneyAction(element('journey-primary').dataset.action));
 page.bind('journey-secondary', () => runJourneyAction(element('journey-secondary').dataset.action));
 page.bind('open-options', () => openSurface('options'));
+element('preview-metrics').addEventListener('animationend', ({ animationName }) => {
+  if (animationName === 'onboarding-arrive') delete element('preview-metrics').dataset.arrive;
+});
 for (const heading of document.querySelectorAll('h2')) heading.setAttribute('tabindex', '-1');
 void Promise.all([initialWorkspace, client.start()]).catch(() => undefined);

@@ -51,7 +51,7 @@ function mount(api: CompanionPairingApi, onboarding: DesktopOnboardingApi = desk
 }
 
 async function click(name: string) {
-  if (name === 'Pair manually in another Chrome profile') {
+  if (name === 'Pair manually in another browser profile') {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Connection options' })));
     name = 'Compare connection codes';
   }
@@ -122,8 +122,9 @@ describe('companion pairing controls', () => {
     const api = makeApi({ pins: vi.fn(async () => [{ ...awaiting, state: 'admitted', creator_account_id: 'other' }]) });
     mount(api);
     await act(async () => {});
-    expect(screen.getByText("Connected extensions couldn't be checked.")).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Disconnect browser extension 1' })).toBeNull();
+    await click('Browser alert');
+    expect(screen.getByRole('alert').textContent).toBe("Connected extensions couldn't be checked.");
   });
 
   it('keeps simultaneous browser and connection-list errors in one feedback region with an explicit scoped retry', async () => {
@@ -145,6 +146,7 @@ describe('companion pairing controls', () => {
     expect(document.querySelector('[data-reserved-region="pairing-result"], [data-reserved-region="pairing-links-feedback"]')).toBeNull();
     await click('Pause collecting');
     await brainNotice();
+    await click('Browser alert');
     const feedback = screen.getByRole('alert');
     expect(feedback.textContent).toContain('The browser extension is not connected right now.');
     expect(feedback.textContent).toContain("Connected extensions couldn't be checked.");
@@ -165,35 +167,61 @@ describe('companion pairing controls', () => {
 
   it('requires explicit code comparison before versioned confirmation without exposing the identity thumbprint', async () => {
     const api = makeApi();
-    mount(api);
-    await click('Pair manually in another Chrome profile');
+    const desktop = desktopFixture(false);
+    desktop.publish({ snapshot: { ...desktop.api.getState().snapshot!,
+      creator_label: { creator_id: 'creator-1', display_name: 'Creator label', username: null } } });
+    mount(api, desktop.api);
+    await click('Pair manually in another browser profile');
     expect(api.open).toHaveBeenCalledWith('creator-1', expect.any(AbortSignal));
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
-    expect(screen.getByText(/Connection window expires in 5:00/)).toBeTruthy();
+    expect(screen.getByText('This attempt expires in 5:00.')).toBeTruthy();
+    expect(screen.getByText('Waiting for the extension…')).toBeTruthy();
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect(api.get).not.toHaveBeenCalled();
     await brainNotice();
     expect(screen.getByLabelText('Connection comparison code').textContent).toBe('012 345');
+    await act(async () => desktop.publish({ snapshot: { ...desktop.api.getState().snapshot!,
+      creator_label: { creator_id: 'another-creator', display_name: 'Other label', username: null } } }));
+    expect(screen.getByText('Creator account: Creator label')).toBeTruthy();
+    expect(screen.queryByText(/Other label/)).toBeNull();
     expect(screen.getByText(/Code expires in 4:59/)).toBeTruthy();
     expect(screen.queryByText(awaiting.agent_identity_thumbprint!)).toBeNull();
     expect(screen.queryByText(/Extension identity:/)).toBeNull();
     expect((screen.getByRole('button', { name: 'Confirm connection' }) as HTMLButtonElement).disabled).toBe(true);
+    await click('Confirm connection');
+    expect(api.change).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: 'Confirm the connection' })).toBeTruthy();
     fireEvent.click(screen.getByRole('checkbox'));
     await click('Confirm connection');
     expect(api.change).toHaveBeenCalledWith(open.pairing_id, 'confirm', 3, expect.any(AbortSignal));
     expect(screen.getByText(/Connection approved. Waiting for the extension./)).toBeTruthy();
-    expect(screen.getByText(/Waiting for the extension/)).toBeTruthy();
     await act(async () => vi.advanceTimersByTimeAsync(300_000));
     await brainNotice();
     expect(api.get).toHaveBeenCalledTimes(1);
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
   });
 
+  it('does not restart the original countdown when the comparison becomes available', async () => {
+    const api = makeApi({
+      open: vi.fn(async () => ({ ...open, expires_at: '2026-09-12T12:00:02Z' })),
+      get: vi.fn(async () => awaiting),
+    });
+    mount(api);
+    await click('Pair manually in another browser profile');
+    expect(screen.getByText('This attempt expires in 0:02.')).toBeTruthy();
+    await brainNotice();
+    expect(screen.getByLabelText('Connection comparison code').textContent).toBe('012 345');
+    await act(async () => vi.advanceTimersByTimeAsync(2000));
+    expect(screen.getByText('Time ran out before the connection finished.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Confirm connection' })).toBeNull();
+    expect(api.change).not.toHaveBeenCalled();
+  });
+
   it('declines mismatched codes without requiring acceptance', async () => {
     const api = makeApi({ open: vi.fn(async () => awaiting) });
     mount(api);
-    await click('Pair manually in another Chrome profile');
-    await click("Codes don't match");
+    await click('Pair manually in another browser profile');
+    await click('Codes don’t match');
     expect(api.change).toHaveBeenCalledWith(open.pairing_id, 'decline', 3, expect.any(AbortSignal));
     expect(screen.getByText(/Connection declined/)).toBeTruthy();
   });
@@ -204,7 +232,7 @@ describe('companion pairing controls', () => {
       .mockResolvedValueOnce({ ...awaiting, comparison_code: '987654' });
     const api = makeApi({ open: vi.fn(async () => awaiting), get });
     mount(api);
-    await click('Pair manually in another Chrome profile');
+    await click('Pair manually in another browser profile');
     fireEvent.click(screen.getByRole('checkbox'));
     await brainNotice();
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true);
@@ -217,7 +245,7 @@ describe('companion pairing controls', () => {
   it('cancels a pending window and ignores later notices', async () => {
     const api = makeApi();
     mount(api);
-    await click('Pair manually in another Chrome profile');
+    await click('Pair manually in another browser profile');
     await click('Cancel');
     expect(api.change).toHaveBeenCalledWith(open.pairing_id, 'cancel', 0, expect.any(AbortSignal));
     await brainNotice();
@@ -235,10 +263,10 @@ describe('companion pairing controls', () => {
       }),
     });
     mount(api);
-    await click('Pair manually in another Chrome profile');
+    await click('Pair manually in another browser profile');
     await brainNotice();
     await act(async () => vi.advanceTimersByTimeAsync(2000));
-    expect(screen.getByText('Time ran out before the connection finished. Try again.')).toBeTruthy();
+    expect(screen.getByText('Time ran out before the connection finished.')).toBeTruthy();
     expect(signal?.aborted).toBe(true);
     await act(async () => resolve(awaiting));
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
@@ -252,7 +280,7 @@ describe('companion pairing controls', () => {
       return new Promise((done) => { resolve = done; });
     }) });
     mount(api);
-    await click('Pair manually in another Chrome profile');
+    await click('Pair manually in another browser profile');
     await brainNotice();
     await act(async () => bridgeTransportStore.bindAccount('creator-2'));
     expect(signal?.aborted).toBe(true);
@@ -270,7 +298,7 @@ describe('companion pairing controls', () => {
       return new Promise((done) => { resolve = done; });
     }) });
     const view = mount(api);
-    await click('Pair manually in another Chrome profile');
+    await click('Pair manually in another browser profile');
     view.unmount();
     expect(signal?.aborted).toBe(true);
     await act(async () => resolve(awaiting));
@@ -282,15 +310,15 @@ describe('companion pairing controls', () => {
     const get = vi.fn().mockRejectedValueOnce(new Error('untrusted error body')).mockResolvedValue(awaiting);
     const api = makeApi({ open: vi.fn(async () => awaiting), get });
     mount(api);
-    await click('Pair manually in another Chrome profile');
+    await click('Pair manually in another browser profile');
     fireEvent.click(screen.getByRole('checkbox'));
     await brainNotice();
-    expect(screen.getByRole('alert').textContent).toContain("The connection couldn't be checked");
+    expect(screen.getByRole('alert').textContent).toContain('Dipsy can’t check the connection right now.');
     expect(screen.queryByText('untrusted error body')).toBeNull();
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
     await brainNotice();
     expect(get).toHaveBeenCalledTimes(1);
-    await click('Try again');
+    await click('Check connection');
     expect(screen.getByLabelText('Connection comparison code')).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Confirm connection' }) as HTMLButtonElement).disabled).toBe(true);
   });
@@ -298,7 +326,7 @@ describe('companion pairing controls', () => {
   it('rejects status reads for another account before showing their code', async () => {
     const api = makeApi({ get: vi.fn(async () => ({ ...awaiting, creator_account_id: 'other-account' })) });
     mount(api);
-    await click('Pair manually in another Chrome profile');
+    await click('Pair manually in another browser profile');
     await brainNotice();
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
     expect(screen.getByRole('alert')).toBeTruthy();
@@ -327,7 +355,7 @@ describe('companion pairing controls', () => {
     await act(async () => desktop.publish({ snapshot: { ...desktop.api.getState().snapshot!, pending_operations: [{
       operation_id: '33333333-3333-4333-8333-333333333333', action: 'browser.pair', state: 'waiting', reason: 'none',
     }] } }));
-    expect(screen.getByText('Connecting the browser extension…')).toBeTruthy();
+    expect(screen.getByText('Waiting for the extension…')).toBeTruthy();
     expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Check connection status' })).toBeNull();
     expect(desktop.api.begin).toHaveBeenCalledTimes(1);
@@ -343,7 +371,7 @@ describe('companion pairing controls', () => {
       return new Promise<CompanionPairingStatus>((resolve) => { finish = resolve; });
     }) });
     const view = mount(api);
-    await click('Pair manually in another Chrome profile');
+    await click('Pair manually in another browser profile');
     await brainNotice();
     await act(async () => fireEvent.click(screen.getByRole('checkbox', { name: 'The codes match' })));
     await click('Confirm connection');

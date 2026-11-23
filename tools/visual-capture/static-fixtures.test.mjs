@@ -79,7 +79,9 @@ test('static capture covers extension surfaces, desktop onboarding, and every br
     try {
       renderBrowserTask(dom.window.document, fixture.state);
       assert(dom.window.document.querySelector('main').dataset.journeyState.startsWith('browser.'));
-      assert(dom.window.document.getElementById('task-status').textContent.trim().length > 0);
+      assert(['loading', 'auth_idle', 'ready'].includes(fixture.state.state)
+        ? dom.window.document.getElementById('task-status').textContent === ''
+        : dom.window.document.getElementById('task-status').textContent.trim().length > 0);
     } finally {
       dom.window.close();
     }
@@ -114,7 +116,7 @@ test('native recovery and uncertain operations preserve authority and linked fee
     const state = nativeState('account-connection', { allowed_actions: ['account.connect'] });
     for (const error of ['status_unavailable', 'session_unavailable', 'operation_unconfirmed']) {
       renderSetup(document, { ...state, connected: false, error });
-      assert(document.querySelector('#task-status').textContent.trim());
+      assert(document.querySelector('main[data-task="unavailable"] #task-title, main:not([data-task="unavailable"]) #task-status').textContent.trim());
       assert.equal(document.querySelector('#task-status').getAttribute('aria-live'), 'polite');
       assert.equal(document.querySelector('#task-action').disabled, true);
       assert.equal(document.querySelector('#recovery-package'), null);
@@ -123,7 +125,7 @@ test('native recovery and uncertain operations preserve authority and linked fee
       pending_operations: [{ operation_id: 'op', action: 'account.connect', reason: 'none' }],
       decision_status: { operation_id: 'op', state: 'accepted' },
     }));
-    assert.equal(document.querySelector('#task-status').textContent, 'Account connection accepted. Finishing setup…');
+    assert.equal(document.querySelector('#task-pending').textContent, 'Account connected. Moving to the next step…');
     for (const id of ['task-action', 'sign-in-options', 'sign-in-switch', 'browser-reopen', 'setup-code-open']) {
       assert.equal(document.getElementById(id).hidden, true, `Accepted setup exposes another action: ${id}`);
     }

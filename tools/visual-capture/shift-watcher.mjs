@@ -1,3 +1,86 @@
+const dashboardSections = ['dashboard-overview', 'dashboard-basis', 'dashboard-notice', 'dashboard-recent', 'dashboard-setup'];
+
+function checkDashboardChange(previous, frame, issues) {
+  const oldTask = JSON.parse(previous.task.slice('dashboard:'.length));
+  const newTask = JSON.parse(frame.task.slice('dashboard:'.length));
+  const shifted = new Set();
+  let offset = 0;
+  let overviewShift = 0;
+  const check = (id, matches, required = true) => {
+    const before = previous.regions.find(region => region.id === id)?.rect;
+    const after = frame.regions.find(region => region.id === id)?.rect;
+    if (!required && !before && !after) return;
+    if (!before || !after || !matches(before, after)) issues.add(`${id}: moved across task change`);
+  };
+  for (const id of ['dashboard-title', 'freshness-row', 'freshness-status']) {
+    check(id, (before, after) => before.every((value, index) => value === after[index]), id === 'dashboard-title');
+  }
+  dashboardSections.forEach((id, index) => {
+    const changed = oldTask[index] !== newTask[index];
+    if (changed || offset) shifted.add(id);
+    check(id, (before, after) => {
+      const growth = after[3] - before[3];
+      const matches = before[0] === after[0] && before[1] + offset === after[1]
+        && before[2] === after[2] && (changed || growth === 0);
+      if (index === 0 && changed) overviewShift = growth;
+      if (changed) offset += growth;
+      return matches;
+    });
+  });
+  const oldOverview = oldTask[0].split(':')[0];
+  const newOverview = newTask[0].split(':')[0];
+  const conversations = frame.regions.find(region => region.id === 'metric-conversations');
+  const messages = frame.regions.find(region => region.id === 'metric-messages');
+  const narrow = conversations && messages && conversations.rect[0] === messages.rect[0];
+  for (const id of ['metric-conversations', 'metric-messages', 'metric-Received', 'metric-Sent']) {
+    if (oldOverview !== newOverview) {
+      shifted.add(id);
+      if (previous.regions.some(region => region.id === id) !== (oldOverview === 'true')
+        || frame.regions.some(region => region.id === id) !== (newOverview === 'true')) {
+        issues.add(`${id}: missing or present outside its overview`);
+      }
+    } else if (newOverview === 'true') {
+      const delta = narrow && id !== 'metric-conversations' ? overviewShift : 0;
+      if (delta) shifted.add(id);
+      check(id, (before, after) => before[1] + delta === after[1]
+        && [0, 2, 3].every(index => before[index] === after[index]));
+    }
+  }
+  return { shifted, sources: source => shifted.has(source.region) };
+}
+
+function checkPasskeyChange(previous, frame, issues) {
+  const sameFamily = previous.task.split(':')[1] === frame.task.split(':')[1];
+  const before = Object.fromEntries(previous.regions.map(region => [region.id, region.rect]));
+  const after = Object.fromEntries(frame.regions.map(region => [region.id, region.rect]));
+  for (const [id, fixed] of [['passkey-card', [0, 1, 2]], ['passkey-heading', sameFamily ? [0, 1, 2, 3] : [0, 1, 2]],
+    ['passkey-feedback', sameFamily ? [0, 1, 2] : [0, 2]]]) {
+    if (!before[id] || !after[id] || fixed.some(index => before[id][index] !== after[id][index])) {
+      issues.add(`${id}: moved across task change`);
+    }
+  }
+  if (before['passkey-card'] && after['passkey-card'] && before['passkey-feedback'] && after['passkey-feedback']) {
+    const trailing = (card, feedback) => card[1] + card[3] - feedback[1] - feedback[3];
+    if (trailing(before['passkey-card'], before['passkey-feedback']) !== trailing(after['passkey-card'], after['passkey-feedback'])) {
+      issues.add('passkey-feedback: moved across task change');
+    }
+  }
+  const shifted = new Set(['passkey-card', 'passkey-feedback']);
+  if (!sameFamily) shifted.add('passkey-heading');
+  let footerMoved = false;
+  for (const region of frame.regions.filter(region => region.flowY !== undefined)) {
+    const prior = before[region.id];
+    if (!prior || region.rect[1] !== region.flowY || [0, 2, 3].some(index => prior[index] !== region.rect[index])) {
+      issues.add(`${region.id}: moved across task change`);
+    } else if (prior[1] !== region.rect[1]) {
+      shifted.add(region.id);
+      footerMoved = true;
+    }
+  }
+  return { shifted, sources: source => source.region === 'passkey-feedback'
+    || (!sameFamily && source.region === 'passkey-card') || (footerMoved && source.tag === 'FOOTER' && !source.region) };
+}
+
 export function inspectFrames(frames) {
   const baseline = new Map();
   const overlays = new Set();
@@ -6,9 +89,20 @@ export function inspectFrames(frames) {
   let previous;
   for (const frame of frames) {
     if (previous && typeof frame.task === 'string' && typeof previous.task === 'string' && frame.task !== previous.task) {
-      baseline.clear();
-      overlays.clear();
-      taskTransitions.push([previous.at, frame.paintThrough ?? frame.at]);
+      let change;
+      if (previous.task.startsWith('passkey:') && frame.task.startsWith('passkey:')) {
+        change = checkPasskeyChange(previous, frame, issues);
+      } else if (previous.task.startsWith('dashboard:') && frame.task.startsWith('dashboard:')) {
+        change = checkDashboardChange(previous, frame, issues);
+      }
+      if (change) {
+        for (const id of change.shifted) { baseline.delete(id); overlays.delete(id); }
+      } else {
+        baseline.clear();
+        overlays.clear();
+      }
+      taskTransitions.push({ start: previous.nativeAt ?? previous.at,
+        end: frame.nativePaintThrough ?? frame.nativeAt ?? frame.paintThrough ?? frame.at, sources: change?.sources });
     }
     for (const issue of frame.errors ?? []) issues.add(issue);
     const present = new Set();
@@ -24,7 +118,10 @@ export function inspectFrames(frames) {
       if (overlays.has(id)) baseline.delete(id);
       else issues.add(`${id}: removed`);
     }
-    if (frame.shifts?.some((entry) => entry.value > 0 && !taskTransitions.some(([start, end]) => entry.at >= start && entry.at <= end))) issues.add('layout shift after first paint');
+    if (frame.shifts?.some(entry => entry.value > 0 && !taskTransitions.some(({ start, end, sources }) =>
+      entry.at >= start && entry.at <= end && (!sources || entry.sources?.length && entry.sources.every(sources))))) {
+      issues.add('layout shift after first paint');
+    }
     previous = frame;
   }
   return [...issues];
@@ -93,6 +190,13 @@ export function observeRegions({ requiredRegions = [], taskTransitions = false, 
   function sample() {
     const regions = [];
     const ids = new Set();
+    if (taskTransitions === 'dashboard') {
+      const heading = document.querySelector('[data-dashboard-heading]');
+      if (heading && visible(heading)) regions.push({ id: 'dashboard-title', rect: layoutPosition(heading, heading.getBoundingClientRect()) });
+    } else if (taskTransitions === 'passkey') {
+      const heading = document.querySelector('[data-passkey-task] main h1');
+      if (heading && visible(heading)) regions.push({ id: 'passkey-heading', rect: layoutPosition(heading, heading.getBoundingClientRect()) });
+    }
     for (const node of document.querySelectorAll('[data-reserved-region]')) {
       if (!node.getClientRects().length) continue;
       const id = node.dataset.reservedRegion;
@@ -191,7 +295,17 @@ export function observeRegions({ requiredRegions = [], taskTransitions = false, 
       }
     }
     for (const [node, id] of anchors) {
-      if (node.isConnected && visible(node)) regions.push({ id, rect: layoutPosition(node, node.getBoundingClientRect()), overflow: false });
+      if (!node.isConnected || !visible(node)) continue;
+      const bounds = node.getBoundingClientRect();
+      const entry = { id, rect: layoutPosition(node, bounds), overflow: false };
+      if (taskTransitions === 'passkey' && node.matches('[data-passkey-task] footer')) {
+        const card = regions.find(region => region.id === 'passkey-card')?.rect;
+        if (card && node.previousElementSibling) {
+          const padding = parseFloat(getComputedStyle(node.previousElementSibling).paddingBlockEnd);
+          entry.flowY = Math.max(innerHeight - bounds.height, card[1] + card[3] + padding);
+        }
+      }
+      regions.push(entry);
     }
     const surface = [...document.querySelectorAll('main, #root > *, [data-reserved-region]')].some(node => !node.matches('[data-surface-loading]') && visible(node));
     if (surface || state.startedAt !== null) {
@@ -205,6 +319,15 @@ export function observeRegions({ requiredRegions = [], taskTransitions = false, 
           : document.querySelector('.provisioning-stage .step[aria-current="step"]')?.dataset.step ?? null
         : taskTransitions === 'popup'
           ? [...document.querySelectorAll('.popup-content > [data-region-content] > *')].filter(visible).map(node => node.id || node.dataset.reservedRegion).join(' ')
+          : taskTransitions === 'passkey'
+            ? document.querySelector('[data-passkey-task]')?.dataset.passkeyTask ?? null
+          : taskTransitions === 'dashboard'
+            ? (() => {
+              const dashboard = document.querySelector('[data-dashboard-task]');
+              const sections = dashboard?.querySelectorAll('[data-dashboard-section]');
+              return sections ? `dashboard:${JSON.stringify([...sections].map(section => [section.dataset.dashboardSection,
+                ...[...section.querySelectorAll('[data-dashboard-task-part]')].map(part => part.dataset.dashboardTaskPart)].join('|')))}` : null;
+            })()
           : taskTransitions ? document.querySelector('main[data-presentation-ready="true"]')?.dataset.requirement ?? null : null;
       const signature = JSON.stringify({ task, regions });
       if (signature !== state.signature || state.shifts.length) {

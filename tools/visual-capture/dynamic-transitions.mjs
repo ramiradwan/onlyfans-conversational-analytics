@@ -43,8 +43,10 @@ const unseen = seed + 'W'.repeat(4096) + ' 界文字 '.repeat(32);
 const permutations = (values) => values.length ? values.flatMap((value) => permutations(values.filter((item) => item !== value)).map((rest) => [value, ...rest])) : [[]];
 const stable = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 
-async function prepare(page, { fontScale, mode, view }) {
-  await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[view], taskTransitions: view === 'popup' ? 'popup' : view === 'setup', nativeTimeline: view === 'settings' });
+async function prepare(page, { fontScale, mode, view, nativeTimeline }) {
+  const taskTransitions = ['passkey', 'production-boot'].includes(view) ? 'passkey'
+    : view === 'home' ? 'dashboard' : view === 'popup' ? 'popup' : view === 'setup';
+  await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[view], taskTransitions, nativeTimeline });
   await page.addInitScript(({ fontScale, mode }) => {
     localStorage.setItem('mui-mode', mode);
     new MutationObserver(() => {
@@ -202,27 +204,27 @@ async function driveProduction(page, step) {
     await route.fulfill({ body, contentType: path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : path.endsWith('.woff2') ? 'font/woff2' : 'text/html' });
   });
   await page.goto('http://production-fixture.localhost/');
-  await page.getByRole('heading', { name: 'Sign in on this computer' }).waitFor();
+  await page.getByRole('heading', { name: 'Confirm it’s you' }).waitFor();
   await step('delayed-renderer-and-fonts', () => stable(page));
   await step('request-error:Sign in with passkey', async () => {
     await page.getByRole('button', { name: 'Sign in with passkey', exact: true }).click();
-    await page.getByRole('alert').filter({ hasText: 'Sign-in could not start.' }).waitFor();
+    await page.getByRole('alert').filter({ hasText: 'Sign-in didn’t finish.' }).waitFor();
   });
   segments.push({ state: 'enrolled', ...await readWatcher(page) });
   assert.deepEqual(segments.at(-1).failures, []);
   await step('request-error:Create passkey', async () => {
     enrolled = false;
     await page.reload();
-    await page.getByRole('heading', { name: 'Create a passkey on this computer' }).waitFor();
+    await page.getByRole('heading', { name: 'Protect your analytics on this computer' }).waitFor();
     await page.getByRole('button', { name: 'Create passkey', exact: true }).click();
-    await page.getByRole('alert').filter({ hasText: 'Passkey setup could not be confirmed.' }).waitFor();
+    await page.getByRole('alert').filter({ hasText: 'Passkey setup didn’t finish.' }).waitFor();
   });
   segments.push({ state: 'not-enrolled', ...await readWatcher(page) });
   assert.deepEqual(segments.at(-1).failures, []);
   await step('session-status-unavailable', async () => {
     stateAvailable = false;
     await page.reload();
-    await page.getByRole('heading', { name: 'Can’t check passkey access', exact: true }).waitFor();
+    await page.getByRole('heading', { name: 'Can’t check your passkey right now', exact: true }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Try again', exact: true }).count(), 0, 'Unavailable status offers no manual retry');
     assert.equal(await page.getByRole('button', { name: /Sign in with passkey|Create passkey/ }).count(), 0);
     assert.equal(requests.length, 2, 'Each known profile gets one ceremony attempt; unavailable status cannot start one');
@@ -242,17 +244,18 @@ export async function captureDynamicTransitions(browser, base, outDir, only = DY
       const page = await browser.newPage({ viewport, colorScheme: mode, reducedMotion: motion });
       const transitions = [], auxiliary = [], errors = [];
       let scrolling = [], segments = [];
-      await prepare(page, { fontScale, mode, view });
+      const nativeTimeline = view === 'settings' || view === 'home';
+      await prepare(page, { fontScale, mode, view, nativeTimeline });
       let observing = false;
       const observe = async (id, action, destination) => {
         if (observing) throw new Error('Overlapping driver observation: ' + id);
         observing = true;
         try {
-          const boundary = () => view === 'settings' ? nativeBoundary(page)
+          const boundary = () => nativeTimeline ? nativeBoundary(page)
             : page.evaluate(() => ({ at: performance.now(), frame: window.__regionWatcher.frames.length, boxes: window.__regionWatcher.frames.at(-1)?.regions }));
           const before = await boundary();
           await action();
-          if (view === 'settings') await settleNativeWatcher(page); else await stable(page);
+          if (nativeTimeline) await settleNativeWatcher(page); else await stable(page);
           const taskGeometry = view === 'setup' ? await assertSetupTaskGeometry(page) : null;
           destination.push({ id, before, after: await boundary(), taskGeometry });
         } finally { observing = false; }

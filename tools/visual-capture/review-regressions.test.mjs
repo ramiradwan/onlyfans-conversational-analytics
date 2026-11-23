@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 import { FIXED_NOW, startHarness } from './capture.mjs';
 import { auditScrolling, installWatcher, readWatcher } from './shift-watcher.mjs';
 import { renderSurfaceState, SURFACE_STATES } from '../../extension/qualification/surface-fixtures.mjs';
-import { openActivationReview } from './desktop-decision-fixtures.mjs';
+import { openActivationReview, publishActivation } from './desktop-decision-fixtures.mjs';
 
 let browser, harness;
 before(async () => { browser = await chromium.launch(); harness = await startHarness(); });
@@ -292,6 +292,11 @@ for (const state of ['loading', 'fresh', 'syncing', 'populated']) test('numeric 
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await page.goto(harness.base + '?workspace=home&state=' + state);
+    if (state === 'fresh') {
+      await page.getByRole('heading', { name: 'Set up your browser to see your message counts', exact: true }).waitFor();
+      assert.equal(await page.locator('[data-visual="conversation-total"]').count(), 0);
+      await page.evaluate(() => window.__workspaceFixture.snapshot('populated'));
+    }
     await page.locator('[data-visual="conversation-total"]').waitFor();
     await page.evaluate(() => document.fonts.ready);
     await assertNumericTypography(page, { width: 1440 });
@@ -311,7 +316,7 @@ for (const width of [390, 1440]) for (const fontScale of [1, 1.25]) test(`activa
     await push('connection', 'connected');
     for (const key of await push('pending')) await push('release', key, 'populated');
     const section = page.locator('[data-reserved-region="settings-activation"]');
-    const chip = section.locator('.MuiChip-root');
+    const chip = section.locator('.onboarding-pill');
     await chip.waitFor();
     await page.evaluate(() => document.fonts.ready);
     await settle(page);
@@ -325,15 +330,22 @@ for (const width of [390, 1440]) for (const fontScale of [1, 1.25]) test(`activa
       for (const key of await push('pending')) await push('release', key, 'populated', key === 'onboarding.readiness'
         ? { schema: 'ofca-analysis-readiness/v1', commercial_authority, analysis_admission } : undefined);
       await settle(page);
-      const geometry = { slot: await section.locator('[aria-live]').boundingBox(), heading: await section.locator('h2').boundingBox() };
+      const geometry = await section.getByRole('heading', { name: 'Full analytics', exact: true }).boundingBox();
       initial ??= geometry;
-      assert.deepEqual(geometry, initial, 'Status changes move the reserved slot or heading');
-      const bounds = await section.boundingBox(), summary = await section.locator('#activation-notice p[data-region-content]').boundingBox();
-      assert(summary.y >= bounds.y && summary.y + summary.height <= bounds.y + bounds.height, 'Summary escapes its reserved section');
+      assert.deepEqual(geometry, initial, 'Status changes move the persistent heading');
+      const bounds = await section.boundingBox();
+      const content = await section.getByRole('status').or(section.getByRole('alert')).or(section.getByRole('button')).all();
+      assert(content.length > 0, 'The section needs visible status or an available action');
+      for (const row of content) {
+        const summary = await row.boundingBox();
+        assert(summary.y >= bounds.y && summary.y + summary.height <= bounds.y + bounds.height, 'Content escapes the section');
+      }
       if (label) {
         assert.equal(await chip.innerText(), label);
-        initialChip ??= await chip.boundingBox();
-        assert.deepEqual(await chip.boundingBox(), initialChip, 'Status chip moves inside its slot');
+        const { x, y, width, height } = await chip.boundingBox();
+        assert(x >= bounds.x && x + width <= bounds.x + bounds.width, 'The pill escapes the section');
+        initialChip ??= { y, height };
+        assert.deepEqual({ y, height }, initialChip, 'Status pills change vertical geometry');
       } else assert.equal(await chip.count(), 0);
     }
   } finally { await page.close(); }
@@ -583,7 +595,7 @@ for (const width of [320, 390]) test(`combined browser recovery follows its cont
     assert(previous && previous.y + previous.height <= geometry.feedback.top, 'Connection facts must finish before shared feedback');
     const next = await page.locator('#full-analytics').boundingBox();
     assert(next && next.y >= geometry.feedback.bottom, 'The next section must follow recovery');
-    const details = feedback.getByRole('button', { name: 'Show details' });
+    const details = feedback.getByRole('button', { name: 'Browser alert' });
     if (await details.count()) {
       await details.click();
       assert.equal(await page.getByRole('dialog').getByRole('alert').innerText(), 'The browser extension is not connected right now.');
@@ -614,10 +626,10 @@ for (const width of [320, 390, 600]) test(`essential activation content stays se
       const bounds = node.getBoundingClientRect();
       const content = node.querySelector('[data-region-content]').getBoundingClientRect();
       const next = document.querySelector('[data-reserved-region="settings-history"]').getBoundingClientRect();
-      const notice = node.querySelector('[data-reserved-region="activation-notice"]').getBoundingClientRect();
+      const notice = node.querySelector('[role="status"]').getBoundingClientRect();
       const title = node.querySelector('h2');
       const header = title.parentElement;
-      const status = header.nextElementSibling.getBoundingClientRect();
+      const status = header.querySelector('.onboarding-pill').getBoundingClientRect();
       const range = document.createRange(); range.selectNodeContents(header);
       const titleRange = document.createRange(); titleRange.selectNodeContents(title);
       return { minimum: parseFloat(getComputedStyle(node).minBlockSize), height: bounds.height, bottom: bounds.bottom,
@@ -633,6 +645,94 @@ for (const width of [320, 390, 600]) test(`essential activation content stays se
     assert(geometry.statusFits && geometry.titleStatusSeparate, 'The status must fit the section and remain separate from its title');
     assert(!geometry.horizontalOverflow, 'Expanded essential copy must not require horizontal scrolling');
     assert.equal(await notice.getByRole('button', { name: 'Show details' }).count(), 0);
+  } finally { await page.close(); }
+});
+
+test('activation Dashboard prompt uses Guided task geometry at 1440', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  try {
+    await page.goto(harness.base + '?workspace=dashboard-continuation&state=activating-full-analytics');
+    await page.waitForFunction(() => window.__workspaceFixture);
+    await publishActivation(page, 'review');
+    const prompt = page.getByRole('region', { name: 'Turn on Full analytics' });
+    await prompt.waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await settle(page);
+    const geometry = await prompt.evaluate(node => {
+      const title = node.querySelector('h2');
+      const body = node.querySelector('p');
+      const action = node.querySelector('.onboarding-action');
+      const style = getComputedStyle(title);
+      return {
+        width: node.getBoundingClientRect().width,
+        padding: getComputedStyle(node).padding,
+        fontSize: style.fontSize,
+        titleLines: title.getClientRects().length,
+        titleHeight: parseFloat(style.height),
+        lineHeight: parseFloat(style.lineHeight),
+        actionGap: action.getBoundingClientRect().top - body.getBoundingClientRect().bottom,
+      };
+    });
+    assert.equal(geometry.width, 760);
+    assert.equal(geometry.padding, '32px');
+    assert.equal(geometry.fontSize, '22px');
+    assert.equal(geometry.titleLines, 1);
+    assert.equal(geometry.titleHeight, geometry.lineHeight);
+    assert.equal(geometry.actionGap, 24);
+  } finally { await page.close(); }
+});
+
+for (const mode of ['light', 'dark']) for (const width of [320, 390, 1440]) test(`activation offer scroll and styling at ${width} in ${mode}`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 640 }, reducedMotion: 'reduce', colorScheme: mode });
+  try {
+    await page.goto(harness.base + `?workspace=settings&state=fresh&mode=${mode}`);
+    await page.waitForFunction(() => window.__workspaceFixture);
+    if (width === 320) await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+    await openActivationReview(page);
+    const offer = page.getByRole('dialog', { name: 'Activate Full analytics' });
+    await page.evaluate(() => document.fonts.ready);
+    await settle(page);
+    const geometry = await offer.evaluate(node => {
+      const content = node.querySelector('.MuiDialogContent-root');
+      const rows = [...node.querySelectorAll('dl > div')];
+      const price = rows[1].querySelector('dd');
+      const caption = price.lastElementChild;
+      const quiet = [...node.querySelectorAll('.MuiButton-text')];
+      const style = getComputedStyle(node);
+      return {
+        clipped: content.scrollHeight > content.clientHeight,
+        shadow: style.boxShadow,
+        spot: node.querySelector('.onboarding-spot')?.getBoundingClientRect().width,
+        rowCount: rows.length,
+        valueStyle: [getComputedStyle(price).fontWeight, getComputedStyle(price).fontVariantNumeric, getComputedStyle(price).textAlign],
+        captionStyle: [getComputedStyle(caption).color, getComputedStyle(caption).display, getComputedStyle(caption).fontWeight],
+        secondaryInk: getComputedStyle(rows[0].querySelector('dt')).color,
+        trailingDivider: getComputedStyle(rows.at(-1)).borderBottomWidth,
+        quiet: quiet.map(button => [getComputedStyle(button).color, getComputedStyle(button).paddingInlineStart, getComputedStyle(button).textAlign]),
+        ink: getComputedStyle(price).color,
+        fits: node.getBoundingClientRect().left >= 0 && node.getBoundingClientRect().right <= innerWidth && node.scrollWidth <= node.clientWidth,
+      };
+    });
+    assert(!geometry.clipped, 'The offer content must scroll with the title and actions');
+    assert.notEqual(geometry.shadow, 'none');
+    assert.equal(geometry.spot, 40);
+    assert.equal(geometry.rowCount, 5);
+    assert.deepEqual(geometry.valueStyle, ['600', 'tabular-nums', 'end']);
+    assert.deepEqual(geometry.captionStyle, [geometry.secondaryInk, 'block', '400']);
+    assert.notEqual(geometry.secondaryInk, geometry.ink);
+    assert.equal(geometry.trailingDivider, '0px');
+    assert(geometry.quiet.length >= 2 && geometry.quiet.every(([color, padding, align]) => color === geometry.ink && padding === '0px' && align === 'start'));
+    assert(geometry.fits);
+    if (width === 320) {
+      const title = offer.getByRole('heading');
+      const before = await title.boundingBox();
+      await offer.getByRole('button', { name: 'Use an activation code' }).scrollIntoViewIfNeeded();
+      assert((await title.boundingBox()).y < before.y, 'Scrolling to the code entry moves the title with the rest of the offer');
+    }
+    await offer.getByRole('button', { name: 'Use an activation code' }).click();
+    const code = page.getByRole('dialog', { name: 'Use an activation code' });
+    assert.equal(await code.locator('.onboarding-spot').count(), 1);
+    assert(await code.getByRole('textbox', { name: 'Activation code' }).evaluate(input => input === document.activeElement));
   } finally { await page.close(); }
 });
 
@@ -658,25 +758,25 @@ for (const width of [320, 390, 600]) test(`supported activation recovery grows b
     await notice.scrollIntoViewIfNeeded();
     await settle(page);
     const geometry = await section.evaluate(node => {
-      const notice = node.querySelector('[data-reserved-region="activation-offer-feedback"]');
-      const content = notice.querySelector('[data-region-content]');
+      const notice = node.querySelector('[role="alert"]');
       const box = notice.getBoundingClientRect();
       const action = node.querySelector('.MuiDialogActions-root').getBoundingClientRect();
-      const range = document.createRange(); range.selectNodeContents(content);
-      return { height: box.height, minimum: parseFloat(getComputedStyle(notice).minHeight),
+      const range = document.createRange(); range.selectNodeContents(notice);
+      return { height: box.height,
         fits: [...range.getClientRects()].every(text => text.left >= box.left && text.right <= box.right && text.bottom <= box.bottom),
-        actionFollows: action.top >= box.bottom && action.bottom <= node.getBoundingClientRect().bottom,
+        actionPrecedes: action.bottom <= box.top && box.bottom <= node.getBoundingClientRect().bottom,
         modalFits: node.getBoundingClientRect().left >= 0 && node.getBoundingClientRect().right <= innerWidth,
         pageFits: document.documentElement.scrollWidth <= innerWidth + 1 };
     });
-    assert(geometry.height >= geometry.minimum, 'Recovery must preserve the reserved minimum while allowing complete text');
-    assert(geometry.fits && geometry.actionFollows && geometry.modalFits && geometry.pageFits, 'The complete modal recovery and its action must remain separate and reachable: ' + JSON.stringify(geometry));
+    assert(geometry.height > 0, 'Recovery must occupy a readable row');
+    assert(geometry.fits && geometry.actionPrecedes && geometry.modalFits && geometry.pageFits, 'The complete modal recovery and its action must remain separate and reachable: ' + JSON.stringify(geometry));
     assert.equal(await notice.getByRole('button', { name: 'Show details' }).count(), 0);
   } finally { await page.close(); }
 });
 
 for (const width of [320, 390]) for (const mode of ['light', 'dark']) test(`passkey pending and recovery fit at ${width} with doubled text in ${mode}`, async () => {
-  const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: 'reduce', colorScheme: mode });
+  const height = width === 320 ? 640 : 900;
+  const page = await browser.newPage({ viewport: { width, height }, reducedMotion: 'reduce', colorScheme: mode });
   try {
     await page.addInitScript(() => { new MutationObserver(() => {
       if (document.documentElement && !document.documentElement.style.fontSize) document.documentElement.style.fontSize = '200%';
@@ -684,15 +784,50 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) test(`pass
     await page.goto(harness.base + `?workspace=passkey&state=loading&transitions=1&mode=${mode}`);
     await page.waitForFunction(() => window.__workspaceFixture);
     await page.evaluate(() => document.fonts.ready); await settle(page);
-    const keyBoxes = () => Promise.all([page.getByRole('heading', { level: 1 }), page.getByRole('button', { name: 'Sign in with passkey', exact: true }), page.locator('[data-reserved-region="passkey-feedback"]')].map(node => node.boundingBox()));
-    const before = await keyBoxes();
-    await page.getByRole('button', { name: 'Sign in with passkey', exact: true }).click();
+    const main = page.getByRole('main');
+    const action = main.getByRole('button', { name: 'Sign in with passkey', exact: true });
+    const flowBox = locator => locator.evaluate(node => {
+      const { x, y, width, height } = node.getBoundingClientRect();
+      return { x, y: y + window.scrollY, width, height };
+    });
+    const anchors = () => Promise.all([
+      main.getByRole('heading', { level: 1 }), main.locator('.onboarding-surface-body'),
+      main.locator('.onboarding-action-content'), main.getByRole('button', { name: 'Set up a passkey', exact: true }),
+      page.getByRole('banner'),
+    ].map(flowBox));
+    const footer = page.getByRole('contentinfo');
+    const restingFooter = await flowBox(footer);
+    const before = await anchors();
+    const buttonBox = await flowBox(action);
+    const card = main.locator('[data-composition="trust"]');
+    const restCard = await flowBox(card);
+    const feedback = main.locator('[data-visual="passkey-feedback"]');
+    assert.equal((await flowBox(feedback)).height, 0, 'Resting feedback has no reserved height');
+    await action.click();
+    const pendingRow = main.getByRole('status').filter({ hasText: 'Waiting for your passkey…' });
+    await pendingRow.waitFor();
     await settle(page);
-    const pending = await keyBoxes();
-    assert.deepEqual(pending, before, 'Pending feedback must not move the task or its action');
+    assert.equal(await action.count(), 0, 'The pending row replaces the button');
+    const pendingBox = await flowBox(pendingRow);
+    assert.deepEqual([pendingBox.x, pendingBox.y, pendingBox.height], [buttonBox.x, buttonBox.y, buttonBox.height],
+      'The pending row must start where the button starts and occupy its height');
+    assert.deepEqual(await anchors(), before, 'Pending feedback must preserve layout anchors');
+    assert.deepEqual(await flowBox(card), restCard, 'The pending row must preserve the card geometry');
+    assert.deepEqual(await flowBox(footer), restingFooter, 'The pending row must preserve the footer geometry');
+    assert.equal((await flowBox(feedback)).height, 0, 'Pending feedback has no reserved height');
     await page.evaluate(() => window.__workspaceFixture.reject('passkey.login', 'NotAllowedError'));
-    await page.getByRole('alert').filter({ hasText: 'Sign-in did not finish.' }).waitFor(); await settle(page);
-    assert.deepEqual(await keyBoxes(), before, 'Incomplete sign-in must not move the task or its action');
+    await page.getByRole('alert').filter({ hasText: 'Sign-in didn’t finish.' }).waitFor(); await settle(page);
+    assert.deepEqual(await anchors(), before, 'Incomplete sign-in must preserve layout anchors');
+    assert.deepEqual(await flowBox(action), buttonBox, 'The restored action must return to its original geometry');
+    const feedbackBox = await flowBox(feedback);
+    assert(feedbackBox.height > 0 && feedbackBox.y >= before[3].y + before[3].height
+      && await feedback.evaluate(node => node === node.parentElement.lastElementChild),
+      'Visible feedback follows the content at the end of the card');
+    const finalCard = await flowBox(card);
+    const padding = await main.evaluate(node => parseFloat(getComputedStyle(node.parentElement).paddingBottom));
+    assert.deepEqual(await flowBox(footer), { ...restingFooter,
+      y: Math.max(restingFooter.y, finalCard.y + finalCard.height + padding) },
+    'The footer stays at the viewport foot or follows the enlarged card');
     const geometry = await page.locator('[data-reserved-region="passkey-card"]').evaluate(node => {
       const box = node.getBoundingClientRect();
       const alert = node.querySelector('[role="alert"]');
@@ -703,7 +838,8 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) test(`pass
     assert(geometry.textFits && geometry.pageFits, 'Passkey recovery must remain fully visible without horizontal scrolling');
     await page.getByRole('alert').scrollIntoViewIfNeeded();
     const box = await page.getByRole('alert').boundingBox();
-    assert(box.y >= 0 && box.y + box.height <= 901, 'Passkey recovery must be reachable by scrolling');
+    assert(box.y >= 0 && box.y + box.height <= height + 1, 'Passkey recovery must be reachable by scrolling');
+    if (width === 320) assert(await page.evaluate(() => window.scrollY > 0), 'Overflowing recovery scrolls the document');
   } finally { await page.close(); }
 });
 
@@ -714,7 +850,7 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) for (const
     const pending = new Promise(resolve => { release = resolve; });
     let protectedRequests = 0, statusReads = 0;
     try {
-      await installWatcher(page, { requiredRegions: ['passkey-card', 'passkey-feedback'] });
+      await installWatcher(page, { requiredRegions: ['passkey-card', 'passkey-feedback'], taskTransitions: 'passkey' });
       await page.addInitScript(() => { new MutationObserver(() => {
         if (document.documentElement && !document.documentElement.style.fontSize) document.documentElement.style.fontSize = '200%';
       }).observe(document, { childList: true, subtree: true }); });
@@ -735,21 +871,19 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) for (const
       await page.goto('http://production-status.localhost/', { waitUntil: 'domcontentloaded' });
       await page.getByRole('heading', { name: 'Checking this computer…', exact: true }).waitFor();
       await page.evaluate(() => document.fonts.ready); await settle(page);
-      const action = page.locator('button.MuiButton-contained');
-      const boxes = () => Promise.all([page.getByRole('heading', { level: 1 }), action,
-        page.locator('[data-reserved-region="passkey-feedback"]')].map(node => node.boundingBox()));
-      const before = await boxes();
+      const title = page.getByRole('heading', { level: 1 });
+      const start = await title.boundingBox();
       assert.equal(await page.getByRole('button').count(), 0, 'Unknown status cannot expose a passkey ceremony');
-      assert(await action.isDisabled(), 'Unknown status cannot start a passkey ceremony');
       release();
-      await page.getByRole('heading', { name: outcome === false ? 'Create a passkey on this computer'
-        : outcome === true ? 'Sign in on this computer' : 'Can’t check passkey access', exact: true }).waitFor();
+      await page.getByRole('heading', { name: outcome === false ? 'Protect your analytics on this computer'
+        : outcome === true ? 'Confirm it’s you' : 'Can’t check your passkey right now', exact: true }).waitFor();
       if (outcome === 'unavailable') {
         await page.waitForTimeout(1000);
-        await page.getByRole('heading', { name: 'Can’t check passkey access', exact: true }).waitFor();
+        await page.getByRole('heading', { name: 'Can’t check your passkey right now', exact: true }).waitFor();
       }
       await settle(page);
-      assert.deepEqual(await boxes(), before, 'A delayed status result must not move the heading, action or feedback');
+      const end = await title.boundingBox();
+      assert.deepEqual([end.x, end.y, end.width], [start.x, start.y, start.width], 'A delayed status result retains the heading anchor');
       assert.equal(await page.getByRole('button').count(), outcome === 'unavailable' ? 0 : 1,
         outcome === 'unavailable' ? 'Unavailable status must not expose a ceremony or manual retry button' : 'Only one passkey action is focusable');
       const geometry = await page.locator('[data-reserved-region="passkey-card"]').evaluate(node => {
@@ -771,7 +905,7 @@ for (const width of [320, 390, 1440]) for (const mode of ['light', 'dark']) for 
     const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: motion, colorScheme: mode });
     let protectedRequests = 0, statusReads = 0;
     try {
-      await installWatcher(page, { requiredRegions: ['passkey-card', 'passkey-feedback'] });
+      await installWatcher(page, { requiredRegions: ['passkey-card', 'passkey-feedback'], taskTransitions: 'passkey' });
       await page.route('**/*', async route => {
         const path = new URL(route.request().url()).pathname.replace(/^\/static\/dist(?=\/)/u, '');
         if (route.request().method() === 'POST') protectedRequests++;
@@ -785,7 +919,7 @@ for (const width of [320, 390, 1440]) for (const mode of ['light', 'dark']) for 
         return route.fulfill({ body, contentType: path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : path.endsWith('.woff2') ? 'font/woff2' : 'text/html' });
       });
       await page.goto('http://production-arrival.localhost/', { waitUntil: 'domcontentloaded' });
-      await page.getByRole('heading', { name: 'Sign in on this computer', exact: true }).waitFor();
+      await page.getByRole('heading', { name: 'Confirm it’s you', exact: true }).waitFor();
       assert.equal(await page.locator('main').evaluate(node => getComputedStyle(node).animationName), 'none');
       await page.waitForTimeout(350);
       await settle(page);
@@ -805,7 +939,7 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) for (const
     const pending = new Promise(resolve => { release = resolve; });
     let protectedRequests = 0, statusReads = 0;
     try {
-      await installWatcher(page, { requiredRegions: ['passkey-card', 'passkey-feedback'] });
+      await installWatcher(page, { requiredRegions: ['passkey-card', 'passkey-feedback'], taskTransitions: 'passkey' });
       await page.route('**/*', async route => {
         const path = new URL(route.request().url()).pathname.replace(/^\/static\/dist(?=\/)/u, '');
         if (route.request().method() === 'POST') protectedRequests++;
@@ -835,7 +969,7 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) for (const
       }
       const expected = fonts === 'delayed' ? 'ready' : 'fallback';
       await page.waitForFunction(expected => document.querySelector('[data-passkey-font]')?.dataset.passkeyFont === expected, expected);
-      await page.getByRole('heading', { name: 'Sign in on this computer', exact: true }).waitFor();
+      await page.getByRole('heading', { name: 'Confirm it’s you', exact: true }).waitFor();
       await settle(page);
       const action = page.getByRole('button', { name: 'Sign in with passkey', exact: true });
       const bounds = () => Promise.all([page.locator('header'), page.getByRole('heading', { level: 1 }), action,

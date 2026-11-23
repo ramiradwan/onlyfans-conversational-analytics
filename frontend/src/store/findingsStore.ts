@@ -12,6 +12,8 @@ export interface FindingsState {
   binding: string;
   result: FindingsResponse | null;
   message: string | null;
+  established: boolean;
+  firstInsight: boolean;
   sourceContext: EvidenceContext | null; contextLoading: boolean; contextError: string | null;
   source: SourceEvidence | null;
   sourceLoading: boolean;
@@ -19,12 +21,45 @@ export interface FindingsState {
 }
 const initial: FindingsState = { status: 'unavailable', binding: '', result: null,
   message: 'Text analysis is unavailable until a matching saved analysis is ready.',
+  established: false, firstInsight: false,
   sourceContext: null, contextLoading: false, contextError: null, source: null, sourceLoading: false, sourceError: null };
 export const findingsBinding = (baseline: FindingsBaseline | null, direction: FindingsDirection, conversation: string | null = null,
   category: FindingsCategoryFilter | null = null, view: 'grouped' | null = null) => JSON.stringify([baseline, direction, conversation, category?.task ?? null, category?.category_id ?? null, view]);
 
-export function createFindingsStore(api?: FindingsClient, options: { view?: 'grouped' | null } = {}) {
+export function createFindingsPresentation() {
+  let owner = '';
+  let scope = '';
+  let seen = false;
+  let established = false;
+  return {
+    setScope(nextOwner: string, nextScope: string | null) {
+      if (owner !== nextOwner) {
+        owner = nextOwner;
+        established = false;
+        scope = '';
+        seen = false;
+      }
+      if (nextScope !== null && scope !== nextScope) {
+        scope = nextScope;
+        seen = false;
+      }
+      return established;
+    },
+    admit(result: FindingsResponse) {
+      established = true;
+      if (seen || !result.tasks.some(task => task.rows.some(row => row.supporting_messages > 0))) return false;
+      seen = true;
+      return true;
+    },
+  };
+}
+
+export function createFindingsStore(api?: FindingsClient, options: {
+  view?: 'grouped' | null;
+  presentation?: ReturnType<typeof createFindingsPresentation>;
+} = {}) {
   const client = api ?? createFindingsClient();
+  const presentation = options.presentation ?? createFindingsPresentation();
   const view = options.view === undefined ? (api ? null : 'grouped') : options.view;
   const store = createStore<FindingsState>(() => ({ ...initial }));
   let contextKey = '';
@@ -38,7 +73,7 @@ export function createFindingsStore(api?: FindingsClient, options: { view?: 'gro
   const abort = () => { sequence += 1; controller?.abort(); controller = null; };
   const begin = () => { abort(); controller = new AbortController(); return { id: sequence, signal: controller.signal }; };
   const current = (id: number) => Boolean(selected && id === sequence);
-  function invalidate() { abort(); store.setState({ result: null, sourceContext: null, contextLoading: false, contextError: null, source: null, sourceLoading: false, sourceError: null }); }
+  function invalidate() { abort(); store.setState({ result: null, firstInsight: false, sourceContext: null, contextLoading: false, contextError: null, source: null, sourceLoading: false, sourceError: null }); }
   async function read(offset = 0, conversationOffset = 0) {
     if (!selected || !account) return;
     if (selected.view === 'grouped' && navigationPin === null && (offset > 0 || conversationOffset > 0)) return;
@@ -46,7 +81,7 @@ export function createFindingsStore(api?: FindingsClient, options: { view?: 'gro
       ...(selected.view === 'grouped' ? { expected_navigation_sha256: navigationPin } : {}) };
     const accountId = account;
     const run = begin();
-    store.setState({ status: 'loading', result: null, sourceContext: null, contextLoading: false, contextError: null, source: null, sourceLoading: false, sourceError: null, message: null });
+    store.setState({ status: 'loading', result: null, firstInsight: false, sourceContext: null, contextLoading: false, contextError: null, source: null, sourceLoading: false, sourceError: null, message: null });
     try {
       const expected = await expectedAccountRef(accountId);
       if (!current(run.id)) return;
@@ -62,7 +97,7 @@ export function createFindingsStore(api?: FindingsClient, options: { view?: 'gro
       const identity = findingsSnapshot(result);
       if ((offset > 0 || conversationOffset > 0) && snapshot !== identity) throw new Error('Snapshot changed');
       snapshot = identity;
-      store.setState({ result, status: 'ready', message: null });
+      store.setState({ result, status: 'ready', message: null, established: true, firstInsight: presentation.admit(result) });
     } catch (error) {
       if (current(run.id)) store.setState({ result: null, status: error instanceof FindingsClientError ? error.state : 'error',
         message: error instanceof FindingsClientError ? error.message : 'These text analysis results could not be verified.' });
@@ -85,7 +120,9 @@ export function createFindingsStore(api?: FindingsClient, options: { view?: 'gro
         category_filter: category ? { task: category.task, category_id: category.category_id } : null,
         ...(selectedView === 'grouped' ? { view: 'grouped' as const } : {}) } : null;
     if (!selected) navigationPin = null;
-    store.setState({ ...initial, binding });
+    const established = presentation.setScope(JSON.stringify([next.creatorAccountId, next.session]),
+      baseline ? JSON.stringify([baseline.requested_window, direction, conversation]) : null);
+    store.setState({ ...initial, binding, established });
     if (selected) void read();
   }
   async function openSource(reference: QuestionEvidence) {

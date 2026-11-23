@@ -1,5 +1,6 @@
-import { Alert, Box, Button, MenuItem, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from '@mui/material';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { keyframes } from '@emotion/react';
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Skeleton, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography, useMediaQuery } from '@mui/material';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { ChartPanel } from './ChartPanel';
@@ -8,9 +9,11 @@ import { MentionEvidenceDialog } from './MentionEvidenceDialog';
 import type { FindingsBaseline } from '../../analytics/analyticsReadModel';
 import { findingsTaskAvailability, type FindingsCategoryFilter, type FindingsDirection, type FindingsTask, type NavigationDeclaration, type NavigationGroupRow } from '../../analytics/findingsContract';
 import { formatCount, formatRatioPercent } from '../../analytics/formatAnalytics';
-import { createFindingsStore, findingsBinding, type FindingsStore } from '../../store/findingsStore';
+import { createFindingsStore, findingsBinding, type createFindingsPresentation, type FindingsStore } from '../../store/findingsStore';
 import type { LiteralsStore } from '../../store/literalsStore';
 import { bridgeTransportStore, type BridgeTransportStore } from '../../store/transportStore';
+import { componentTokens, effectTokens } from '../../theme';
+import { OnboardingAction, OnboardingSpot, OnboardingStatus } from '../ui/OnboardingCard';
 
 const taskLabel = (task: FindingsTask['task']) => task === 'message_topics' ? 'Topics' : 'Mentions';
 const windowLabel = (window: { start?: string | null; end?: string | null }, empty = 'All available saved dates') =>
@@ -18,11 +21,19 @@ const windowLabel = (window: { start?: string | null; end?: string | null }, emp
     : window.start ? `From ${new Date(window.start).toLocaleString()}` : window.end ? `Through ${new Date(window.end).toLocaleString()}` : empty;
 
 type CategoryAction = (category: FindingsCategoryFilter, label: string) => void;
+type TaskNavigation = { declaration: NavigationDeclaration; rows: NavigationGroupRow[] };
+const findingBarArrival = keyframes(effectTokens.motion.keyframes.barArrival);
+const primaryButtonSx = { minHeight: componentTokens.staticUi.controlHeight, maxWidth: '100%' };
+
 function CategoryTable({ task, rows, title, onCategory, selected }: { task: FindingsTask; rows: FindingsTask['rows'];
   title: string; onCategory?: CategoryAction; selected?: FindingsCategoryFilter | null }) {
   const topics = task.task === 'message_topics';
-  return <TableContainer sx={{ maxHeight: '24rem' }}>
-    <Table stickyHeader size="small" aria-label={title}>
+  return <TableContainer tabIndex={0} role="group" aria-label={`${title} scroll area`} sx={{ maxHeight: '24rem', overflow: 'auto' }}>
+    <Table stickyHeader size="small" aria-label={title} sx={{
+      overflowWrap: 'normal',
+      '& .MuiTableCell-head': { minWidth: '6.5rem' },
+      '& .MuiTableCell-body:first-of-type': { maxWidth: '16rem', overflowWrap: 'anywhere' },
+    }}>
       <TableHead><TableRow><TableCell>Category</TableCell>{!topics && <TableCell>Exact occurrences</TableCell>}<TableCell>Distinct messages</TableCell><TableCell>Distinct conversations</TableCell><TableCell>Complete / partial support</TableCell><TableCell>Share of complete messages</TableCell>{onCategory && <TableCell>Sources</TableCell>}</TableRow></TableHead>
       <TableBody>{rows.map((row) => <TableRow key={row.category_id}>
         <TableCell>{row.display_label}{row.label_status === 'id_only' && <Typography variant="caption" component="p">Display name unavailable; category ID shown.</Typography>}</TableCell>
@@ -40,7 +51,7 @@ function CategoryTable({ task, rows, title, onCategory, selected }: { task: Find
 
 function TaskSection({ task, previous = false, onCategory, selected, navigation }: { task: FindingsTask; previous?: boolean;
   onCategory?: CategoryAction; selected?: FindingsCategoryFilter | null;
-  navigation?: { declaration: NavigationDeclaration; rows: NavigationGroupRow[] } | null }) {
+  navigation?: TaskNavigation | null }) {
   const topics = task.task === 'message_topics';
   const title = `${previous ? 'Previous ' : ''}${taskLabel(task.task)} findings`;
   const groups = navigation?.declaration.groups.filter((group) => group.task === task.task) ?? [];
@@ -57,15 +68,13 @@ function TaskSection({ task, previous = false, onCategory, selected, navigation 
           : <>
             {groups.map((group) => {
               const row = navigation.rows.find((item) => item.group_id === group.group_id)!;
-              return <details key={group.group_id} open>
-                <summary>{group.display_label}</summary>
-                <Stack spacing={1} sx={{ mt: 1 }}>
+              return <Stack key={group.group_id} spacing={1}>
+                  <Typography component="h3" variant="subtitle1">{group.display_label}</Typography>
                   <Typography>Union support: {formatCount(row.supporting_messages)} messages · {formatCount(row.supporting_conversations)} conversations · Complete / partial: {formatCount(row.complete_supporting_messages)} / {formatCount(row.partial_supporting_messages)}</Typography>
                   <Typography>Share of complete messages: {row.share_of_complete_messages === null ? 'Unavailable' : formatRatioPercent(row.share_of_complete_messages)}</Typography>
                   <CategoryTable task={task} rows={group.member_ids.map((id) => task.rows.find((item) => item.category_id === id)!)}
                     title={`${title} · ${group.display_label}`} onCategory={onCategory} selected={selected} />
-                </Stack>
-              </details>;
+                </Stack>;
             })}
             {ungrouped.length > 0 && <Box><Typography component="h3" variant="subtitle1">Ungrouped categories</Typography>
               <CategoryTable task={task} rows={ungrouped} title={`${title} · Ungrouped categories`} onCategory={onCategory} selected={selected} /></Box>}
@@ -74,8 +83,110 @@ function TaskSection({ task, previous = false, onCategory, selected, navigation 
   </ChartPanel>;
 }
 
+function FindingsCard({ title, first = false, busy = false, 'data-journey-state': journeyState, children }: {
+  title: string; first?: boolean; busy?: boolean; 'data-journey-state'?: 'findings.unavailable'; children?: ReactNode;
+}) {
+  const titleId = useId();
+  return <Box component="section" className="onboarding-surface" data-composition="first-value"
+    aria-label={busy ? title : undefined} aria-labelledby={busy ? undefined : titleId} aria-busy={busy || undefined}
+    data-visual="findings-summary" data-journey-state={journeyState}
+    sx={(theme) => ({ width: '100%', maxWidth: '68rem', fontFamily: theme.typography.fontFamily,
+      ...(first && { '&.onboarding-surface': theme.effects.ambientGlow(theme) }),
+      '& > .onboarding-surface-head:last-child, & > .onboarding-surface-head:has(+ .onboarding-status)': { mb: 0 },
+    })}>
+    {busy ? <>
+      <Box className="onboarding-surface-head" aria-hidden="true">
+        <Skeleton animation={false} variant="rounded" width={40} height={40} sx={{ flexShrink: 0 }} />
+        <Skeleton animation={false} variant="rounded" width="6rem" height="1em" />
+      </Box>
+      <Stack spacing={1} aria-hidden="true">
+        <Skeleton animation={false} variant="rounded" className="onboarding-surface-title" width="92%" height="1em" />
+        <Skeleton animation={false} variant="rounded" width="58%" height="1em" />
+      </Stack>
+    </> : <Box className="onboarding-surface-head">
+      <OnboardingSpot icon="insights" />
+      <Box component="h2" id={titleId} sx={{ m: 0, font: 'inherit', letterSpacing: 'inherit', minWidth: 0 }}>{title}</Box>
+    </Box>}
+    {children}
+  </Box>;
+}
+
+function FindingsSummary({ tasks, title, first, navigation, onCategory, selected }: { tasks: FindingsTask[]; title: string; first: boolean;
+  navigation: TaskNavigation | null; onCategory: CategoryAction; selected?: FindingsCategoryFilter }) {
+  const dialogTitleId = useId();
+  const basisId = useId();
+  const [open, setOpen] = useState(false);
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const topics = tasks.find(task => task.task === 'message_topics');
+  const topicDenominator = topics?.complete_messages || null;
+  const pricing = topics?.rows.filter(row => row.label_status === 'resolved' && row.display_label === 'Pricing questions');
+  const pricingShare = pricing?.length === 1 ? pricing[0].share_of_complete_messages : null;
+  const measuredTask = tasks.find(task => task.task === 'message_topics' && task.rows.some(row => row.complete_supporting_messages > 0))
+    ?? tasks.find(task => task.rows.some(row => row.complete_supporting_messages > 0));
+  const bars = (measuredTask?.rows ?? [])
+    .filter(row => row.share_of_complete_messages !== null && row.complete_supporting_messages > 0)
+    .sort((a, b) => b.complete_supporting_messages - a.complete_supporting_messages)
+    .slice(0, 3);
+  const selectFromDialog: CategoryAction = (filter, label) => {
+    setOpen(false);
+    onCategory(filter, label);
+  };
+
+  return <>
+    <FindingsCard title={title} first={first}>
+      {pricingShare !== null && pricingShare > 0 && <h3 className="onboarding-surface-title" data-visual="findings-headline">
+        One topic appears in {formatRatioPercent(pricingShare)} of fully checked messages
+      </h3>}
+      {measuredTask && <Stack component="ul" aria-label={`${taskLabel(measuredTask.task)} shares of fully checked messages`}
+        spacing={1} sx={{ listStyle: 'none', p: 0, m: 0, '.onboarding-surface-title + &': { mt: 2 } }}>
+        {bars.map((row, index) => {
+          const share = row.share_of_complete_messages!;
+          return <Box component="li" key={row.category_id} sx={{ display: 'grid',
+            gridTemplateColumns: { xs: 'minmax(0, 1fr) auto', sm: 'minmax(0, 14rem) minmax(0, 1fr) auto' },
+            alignItems: 'center', columnGap: 2, rowGap: 0.5 }}>
+            <Typography variant="body2">{row.display_label}</Typography>
+            <Box aria-hidden="true" sx={{ gridColumn: { xs: '1 / -1', sm: '2' }, gridRow: { xs: 2, sm: 1 },
+              borderRadius: '999px', overflow: 'hidden', bgcolor: 'surface.subtle', height: 8 }}>
+              <Box data-visual="finding-bar" sx={{ width: `${share * 100}%`, height: '100%', bgcolor: 'measurement.main',
+                borderRadius: 'inherit', transformOrigin: 'left center',
+                ...(first && { animation: `${findingBarArrival} 240ms ${effectTokens.motion.easing.enter} both`, animationDelay: `${index * 40}ms` }),
+                '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }} />
+            </Box>
+            <Typography variant="numericBody" sx={{ gridColumn: { xs: 2, sm: 3 }, gridRow: 1, textAlign: 'end' }}>
+              {formatRatioPercent(share)}
+            </Typography>
+          </Box>;
+        })}
+      </Stack>}
+      {topicDenominator !== null && <OnboardingAction>
+        <Button variant="contained" aria-haspopup="dialog" sx={primaryButtonSx} onClick={() => setOpen(true)}>See all topics</Button>
+      </OnboardingAction>}
+    </FindingsCard>
+    {topicDenominator !== null && <Dialog open={open} onClose={() => setOpen(false)} maxWidth="lg" fullWidth
+      transitionDuration={reducedMotion ? 0 : 200} aria-labelledby={dialogTitleId} aria-describedby={basisId}
+      slotProps={{ paper: { sx: { m: { xs: 2, sm: 4 }, width: { xs: 'calc(100% - 32px)', sm: 'calc(100% - 64px)' },
+        minWidth: 0, overflowWrap: 'anywhere' } } }}>
+      <DialogTitle id={dialogTitleId}
+        sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' }, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-.015em', textWrap: 'balance' }}>
+        All topics
+      </DialogTitle>
+      <DialogContent dividers>
+        <Stack spacing={2}>
+          <Typography id={basisId}>Based on {formatCount(topicDenominator)} fully checked messages.</Typography>
+          {tasks.map(task => <TaskSection key={task.task} task={task} onCategory={selectFromDialog}
+            selected={selected} navigation={navigation} />)}
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ justifyContent: 'flex-start', px: 3, py: 2 }}>
+        <Button variant="contained" sx={primaryButtonSx} onClick={() => setOpen(false)}>Close</Button>
+      </DialogActions>
+    </Dialog>}
+  </>;
+}
+
 interface Props {
   baseline: FindingsBaseline | null; controller?: FindingsStore; literalsController?: LiteralsStore;
+  presentation?: ReturnType<typeof createFindingsPresentation>;
   transport?: Pick<BridgeTransportStore, 'getState' | 'subscribe'>;
   onRefreshBaseline?: () => Promise<void>;
 }
@@ -87,8 +198,8 @@ export function TaskFindings(props: Props) {
   const account = useSyncExternalStore(transport.subscribe, () => transport.getState().creatorAccountId);
   return <FindingsSession key={account ?? 'unbound'} {...props} transport={transport} />;
 }
-function FindingsSession({ baseline, controller, literalsController, transport = bridgeTransportStore, onRefreshBaseline }: Props) {
-  const store = useMemo(() => controller ?? createFindingsStore(), [controller]);
+function FindingsSession({ baseline, controller, literalsController, presentation, transport = bridgeTransportStore, onRefreshBaseline }: Props) {
+  const store = useMemo(() => controller ?? createFindingsStore(undefined, { presentation }), [controller, presentation]);
   const state = useStore(store);
   const [direction, setDirection] = useState<FindingsDirection>('all');
   const [conversation, setConversation] = useState<string | null>(null);
@@ -96,6 +207,8 @@ function FindingsSession({ baseline, controller, literalsController, transport =
   const [view, setView] = useState<'grouped' | null>(store.view);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshRevision, setRefreshRevision] = useState(0);
+  const categoryHeading = useRef<HTMLHeadingElement>(null);
+  const focusCategory = useRef(false);
   const refreshScope = useRef<object | null>(null);
   const pendingRefresh = useRef<RefreshRun | null>(null);
   const requestedWindow = baseline ? JSON.stringify(baseline.requested_window) : null;
@@ -131,11 +244,24 @@ function FindingsSession({ baseline, controller, literalsController, transport =
   }, [baseline, direction, conversation, category, view, store, transport, refreshRevision]);
   useEffect(() => () => store.actions.dispose(), [store]);
   const result = state.binding === binding ? state.result : null;
+  const firstInsight = result !== null && state.firstInsight;
+  const insightTitle = firstInsight ? 'Your first insights are ready' : 'Insights';
   const navigation = result?.schema_version === 'analytics-findings.v4' ? result.navigation : null;
+  const currentNavigation = navigation?.availability === 'available' && navigation.declaration
+    ? { declaration: navigation.declaration, rows: navigation.current } : null;
   const unpinned = navigation?.availability === 'not_declared';
   const selectCategory = (filter: FindingsCategoryFilter | null, label = '') => {
+    if (conversation === null && category?.filter.task === filter?.task && category?.filter.category_id === filter?.category_id) {
+      focusCategory.current = false;
+      return;
+    }
     store.actions.invalidate(); setConversation(null); setCategory(filter ? { filter, label } : null);
   };
+  useLayoutEffect(() => {
+    if (!focusCategory.current) return;
+    focusCategory.current = false;
+    categoryHeading.current?.focus();
+  }, [category]);
   async function refresh() {
     const scope = refreshScope.current;
     if (!scope || pendingRefresh.current) return;
@@ -188,20 +314,26 @@ function FindingsSession({ baseline, controller, literalsController, transport =
       if (!queued) run.finish();
     }
   }
-  return <Stack component="section" spacing={2} aria-label="Profile text analysis" data-journey-state="findings.controls">
-    <Box><Typography component="h2" variant="h6">Profile text analysis</Typography>
-      <Typography>Available topic and mention findings from the selected analysis profile. These are separate from the baseline topics in Summary. Viewing results does not download files or run analysis.</Typography></Box>
+  return <Stack component="section" spacing={2} aria-label="Profile text analysis" data-journey-state="findings.controls"
+    sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+    <Box data-reserved-region="findings-intro"><Typography component="h2" variant="h6" data-region-content>Profile text analysis</Typography>
+      <Typography data-region-content>Available topic and mention findings from the selected analysis profile. These are separate from the baseline topics in Summary. Viewing results does not download files or run analysis.</Typography></Box>
     <TextField select label="Message direction" value={direction} onChange={(event) => { store.actions.invalidate(); setDirection(event.target.value as FindingsDirection); }} sx={{ maxWidth: '20rem' }}>
       <MenuItem value="all">All messages</MenuItem><MenuItem value="inbound">Received messages</MenuItem><MenuItem value="outbound">Sent messages</MenuItem>
     </TextField>
     <Typography>Requested dates: {windowLabel(baseline?.requested_window ?? {})}</Typography>
-    {category && <Alert severity="info"><Typography>Selected category: {taskLabel(category.filter.task)} · {category.label}</Typography>
+    {category && <Alert severity="info"><Typography component="h3" ref={categoryHeading} tabIndex={-1}>Selected category: {taskLabel(category.filter.task)} · {category.label}</Typography>
       <Typography>The category narrows conversation and source lists. Summaries retain the selected dates, direction and conversation population. Choosing or clearing a category returns to all conversations.</Typography>
       <Button onClick={() => selectCategory(null)}>Clear category filter</Button></Alert>}
-    {state.status === 'loading' && <Typography role="status">Loading saved text analysis…</Typography>}
-    {!result && state.status !== 'loading' && <Alert severity={state.status === 'error' ? 'error' : 'info'} data-journey-state="findings.unavailable">{state.message ?? 'Text analysis is unavailable for the current analytics view.'}</Alert>}
-    {baseline && <Button disabled={refreshing || state.status === 'loading'} onClick={() => void refresh()}>Refresh saved findings</Button>}
+    {state.established && (baseline || refreshing) && <Button disabled={refreshing || state.status === 'loading'} onClick={() => void refresh()}>Refresh saved findings</Button>}
+    {!result && (state.status === 'loading'
+      ? <FindingsCard title={insightTitle} busy />
+      : <FindingsCard title={insightTitle} data-journey-state="findings.unavailable">
+        <OnboardingStatus tone="attention">Insights aren’t available right now.</OnboardingStatus>
+      </FindingsCard>)}
     {result && <Stack spacing={2} data-journey-state="findings.results">
+      <FindingsSummary tasks={result.tasks} title={insightTitle} first={firstInsight} navigation={currentNavigation}
+        onCategory={(filter, label) => { focusCategory.current = true; selectCategory(filter, label); }} selected={category?.filter} />
       <Typography>Available message dates: {windowLabel(result.effective_window, 'No message dates in this selection')} · {result.direction === 'all' ? 'All directions' : result.direction === 'inbound' ? 'Received messages' : 'Sent messages'}</Typography>
       <Typography>Processing state when saved: {result.processing_mode === 'paused' ? 'paused; these saved findings remain visible' : 'enabled'}.</Typography>
       <TextField select label="Conversation" value={conversation ?? 'all'} onChange={(event) => { store.actions.invalidate(); setConversation(event.target.value === 'all' ? null : event.target.value); }} sx={{ maxWidth: '30rem' }}>
@@ -211,7 +343,7 @@ function FindingsSession({ baseline, controller, literalsController, transport =
       </TextField>
       <Typography variant="body2">Conversation numbers identify this saved list; source messages provide the conversation context. The list counts messages before the conversation filter.</Typography>
       <Typography>Conversations {formatCount(result.conversation_page.offset + (result.conversation_page.items.length ? 1 : 0))}–{formatCount(result.conversation_page.offset + result.conversation_page.items.length)} of {formatCount(result.conversation_page.total)}.</Typography>
-      <Stack direction="row" spacing={1}>
+      <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
         <Button disabled={unpinned || result.conversation_page.offset === 0} onClick={() => void store.actions.read(0, Math.max(0, result.conversation_page.offset - result.conversation_page.limit))}>Previous conversations</Button>
         <Button disabled={unpinned || !result.conversation_page.has_more || result.conversation_page.offset + result.conversation_page.limit > 1_000_000} onClick={() => void store.actions.read(0, result.conversation_page.offset + result.conversation_page.limit)}>Next conversations</Button>
       </Stack>
@@ -222,7 +354,7 @@ function FindingsSession({ baseline, controller, literalsController, transport =
         <Button onClick={() => { store.actions.invalidate(); setView(null); }}>Use flat categories</Button></Box>}
       {findingsTaskAvailability(result).map((item) => item.availability === 'declared'
         ? <TaskSection key={item.task} task={result.tasks.find((task) => task.task === item.task)!} onCategory={selectCategory} selected={category?.filter}
-            navigation={navigation?.availability === 'available' ? { declaration: navigation.declaration!, rows: navigation.current } : null} />
+            navigation={currentNavigation} />
         : <ChartPanel key={item.task} title={taskLabel(item.task)}>
           <Typography>{taskLabel(item.task)} are unavailable for this analysis profile.</Typography>
         </ChartPanel>)}
@@ -245,7 +377,7 @@ function FindingsSession({ baseline, controller, literalsController, transport =
               {taskLabel(item.task)} source {result.evidence_page.offset + index + 1}: {row?.display_label ?? item.category_id} ({item.assessment})
             </Button>;
           })}
-          <Stack direction="row" spacing={1}>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
             <Button disabled={unpinned || result.evidence_page.offset === 0} onClick={() => void store.actions.read(Math.max(0, result.evidence_page.offset - result.evidence_page.limit))}>Previous sources</Button>
             <Button disabled={unpinned || !result.evidence_page.has_more || result.evidence_page.offset + result.evidence_page.limit > 1_000_000} onClick={() => void store.actions.read(result.evidence_page.offset + result.evidence_page.limit)}>Next sources</Button>
           </Stack>

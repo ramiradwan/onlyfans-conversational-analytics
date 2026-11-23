@@ -1,21 +1,38 @@
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
-import { Box, Stack, Typography } from '@mui/material';
+import { Box, Skeleton, Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 
 import { Panel } from './ui';
+import { OnboardingCard, OnboardingSpot, type OnboardingCardProps } from './ui/OnboardingCard';
 import { BrandMark } from '../layouts/BrandMark';
 import { DesktopWindowControls } from '../layouts/DesktopWindowControls';
 import { componentTokens } from '../theme';
 
 export interface SetupStep { label: string; complete?: boolean; current?: boolean }
 
+export function TrustTask({ family, spot, visual, busy, placeholder, 'data-journey-state': journeyState, ...content }:
+  Omit<OnboardingCardProps, 'composition' | 'spot' | 'heading'> & {
+    family: string; spot: 'lock' | 'passkey'; visual: 'passkey-card' | 'authority-recovery-card'; busy: boolean; placeholder?: boolean;
+    'data-journey-state': 'desktop.passkey_sign_in' | 'desktop.authority_recovery';
+  }) {
+  return <Box component="main" data-journey-state={journeyState}
+    data-visual={visual} data-reserved-region={visual === 'passkey-card' ? visual : undefined} aria-busy={busy}
+    sx={{ width: '100%', maxWidth: 560, justifySelf: 'center', minWidth: 0 }}>
+    <OnboardingCard key={family} {...content} composition="trust" heading="h1"
+      spot={<span data-visual={spot === 'passkey' ? 'passkey-lock' : undefined}><OnboardingSpot icon={spot} /></span>}
+      actions={placeholder ? <Box sx={{ mt: 3 }}><Skeleton aria-hidden="true" animation={false} variant="rounded"
+        sx={{ width: 'min(100%, 12rem)', height: componentTokens.staticUi.largeControlHeight }} /></Box> : content.actions} />
+  </Box>;
+}
+
 /** Common shell; the caller supplies only confirmed steps and account labels. */
-export function OnboardingWorkspace({ children, steps = [], creator }: {
-  children: ReactNode; steps?: SetupStep[]; creator?: string;
+export function OnboardingWorkspace({ children, steps = [], creator, trust = false }: {
+  children: ReactNode; steps?: SetupStep[]; creator?: string; trust?: boolean;
 }) {
   const roles = componentTokens.staticUi;
   return (
-    <Stack sx={{ minHeight: '100dvh', bgcolor: 'background.default', color: 'text.primary', overflowY: 'auto' }}>
+    <Stack sx={{ minHeight: '100dvh', bgcolor: 'background.default', color: 'text.primary',
+      overflowY: trust ? undefined : 'auto' }}>
       <Stack component="header" data-desktop-drag-region direction="row" sx={{ p: { xs: 2, sm: 3.5 }, alignItems: 'center', flexWrap: 'wrap', gap: 1.5, rowGap: 1,
         borderBottom: '1px solid', borderColor: 'divider',
         '& > :first-child .MuiTypography-root': { display: 'block', whiteSpace: 'normal' } }}>
@@ -25,6 +42,7 @@ export function OnboardingWorkspace({ children, steps = [], creator }: {
       </Stack>
       <Box sx={{ width: '100%', maxWidth: steps.length ? roles.fullWorkspaceWidth : roles.workspaceWidth,
         mx: 'auto', p: { xs: 2, sm: 3.5 }, display: 'grid', alignItems: 'start', gap: 3,
+        ...(trust && { flex: '1 0 auto' }),
         gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: steps.length ? `${roles.setupRailWidth} minmax(0, 1fr)` : 'minmax(0, 1fr)' } }}>
         {steps.length > 0 && <Box component="nav" aria-label="Setup progress">
           <Box component="ol" sx={{ m: 0, p: 0, listStyle: 'none', display: { xs: 'flex', md: 'block' }, flexWrap: 'wrap' }}>
@@ -41,7 +59,7 @@ export function OnboardingWorkspace({ children, steps = [], creator }: {
             </Stack>)}
           </Box>
         </Box>}
-        <Panel component="main" emphasis="dominant" sx={{ p: { xs: 2.5, sm: 3.5 }, gap: 2, animation: 'none' }}>{children}</Panel>
+        {trust ? children : <Panel component="main" emphasis="dominant" sx={{ p: { xs: 2.5, sm: 3.5 }, gap: 2, animation: 'none' }}>{children}</Panel>}
       </Box>
       <Box component="footer" sx={{ mt: 'auto', px: { xs: 2, sm: 3.5 }, py: 1.5, borderTop: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', color: 'text.secondary' }}>
         <Typography variant="caption" sx={{ display: 'block' }}>Use only with a creator account you are authorized to analyze.</Typography>

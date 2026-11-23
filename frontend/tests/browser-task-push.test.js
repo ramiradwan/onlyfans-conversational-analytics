@@ -511,7 +511,7 @@ describe('helper page', () => {
   it('opens the extension listing in place and offers no second Chrome route', () => {
     const html = readFileSync('browser-tasks/index.html', 'utf8');
     expect(html).not.toContain('target="_blank"');
-    expect(html).not.toContain('Continue in Chrome');
+    expect(html).not.toContain('Continue in browser');
     expect(readFileSync('browser-tasks/view.js', 'utf8')).not.toContain('#system-browser');
   });
 });

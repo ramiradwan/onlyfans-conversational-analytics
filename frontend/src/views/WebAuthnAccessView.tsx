@@ -19,20 +19,22 @@ function failureMessage(enroll: boolean): string {
   // NotAllowedError does not uniquely establish cancellation, expiry or why
   // the browser refused a ceremony. State only the observed incomplete step.
   return enroll
-    ? 'Passkey setup could not be confirmed.'
-    : 'Sign-in did not finish.';
+    ? 'Passkey setup didn’t finish.'
+    : 'Sign-in didn’t finish.';
 }
 
 interface WebAuthnAccessViewProps {
   api?: WebAuthnApi;
   onAuthenticated?: () => void;
   recoveryApi?: AuthorityRecoveryApi;
+  sessionNotice?: string;
 }
 
 export function WebAuthnAccessView({
   api = webauthnApi,
   onAuthenticated = () => window.location.reload(),
   recoveryApi,
+  sessionNotice,
 }: WebAuthnAccessViewProps) {
   const desktop = useSyncExternalStore(recoveryApi?.subscribe ?? noSubscribe, recoveryApi?.getState ?? noState);
   const [recoveryActing, setRecoveryActing] = useState<RecoveryAction | null>(null);
@@ -53,6 +55,7 @@ export function WebAuthnAccessView({
   const completed = useRef(false);
   const recovery = useRef(false);
   const recoveryWasEnrollment = useRef(false);
+  const sessionWasAuthenticated = useRef(false);
   const statusRetries = useRef(0);
   const ceremony = useRef<AbortController | null>(null);
   const authenticated = useRef(onAuthenticated);
@@ -75,12 +78,12 @@ export function WebAuthnAccessView({
     let settled = false;
     let retry: ReturnType<typeof setTimeout> | null = null;
     const finish = (outcome: PushedAccess | null) => { settled = true; follower.release(outcome); };
-    const retryStatus = (message: string) => {
+    const retryStatus = () => {
       const delay = PASSKEY_STATUS_RETRY_DELAYS[statusRetries.current];
       setRecoveringStatus(delay !== undefined);
-      if (delay === undefined) { setError(message); return; }
-      statusRetries.current += 1;
       setError(null);
+      if (delay === undefined) return;
+      statusRetries.current += 1;
       retry = setTimeout(() => setCheckAttempt(value => value + 1), delay);
     };
     const timeout = setTimeout(() => {
@@ -89,7 +92,7 @@ export function WebAuthnAccessView({
       reading.current = false;
       setReadingStatus(false);
       setChecking(false); setEnrolled(null); setAccess(null);
-      retryStatus('Dipsy can’t check access on this computer right now.');
+      retryStatus();
       finish(null);
     }, 8000);
     follower.hold();
@@ -101,13 +104,15 @@ export function WebAuthnAccessView({
       statusRetries.current = 0;
       setRecoveringStatus(false);
       // Reconcile a possibly committed ceremony without starting a new one.
-      if (recovery.current) {
-        setError(state.authenticated ? null : recoveryWasEnrollment.current && state.enrolled
-          ? 'Passkey created. Sign in to continue.' : failureMessage(recoveryWasEnrollment.current));
+      const reconciledCeremony = recovery.current;
+      const canRebootstrap = state.authenticated && (!sessionNotice || reconciledCeremony && !sessionWasAuthenticated.current);
+      sessionWasAuthenticated.current = state.authenticated;
+      if (reconciledCeremony) {
+        setError(canRebootstrap ? null : failureMessage(recoveryWasEnrollment.current));
         recovery.current = false;
       } else if (shownEnrolled.current === null) setError(null);
       setEnrolled(state.enrolled); setAccess(null);
-      if (state.authenticated && !protectedRef.current) {
+      if (canRebootstrap && !protectedRef.current) {
         completed.current = true;
         finish('available');
         authenticated.current();
@@ -119,7 +124,7 @@ export function WebAuthnAccessView({
       if (lapsed) { setRecoveringStatus(false); setError(null); finish(lapsed); return; }
       const kind = cause instanceof WebAuthnStatusError ? cause.kind : 'invalid';
       if (kind === 'network' || kind === 'unavailable') {
-        retryStatus('Dipsy can’t check access on this computer right now.');
+        retryStatus();
       } else {
         setRecoveringStatus(false);
         setError(kind === 'session' ? 'This app session is no longer authorized.'
@@ -143,7 +148,7 @@ export function WebAuthnAccessView({
       if (retry !== null) clearTimeout(retry);
       if (!settled) follower.abandon();
     };
-  }, [api, checkAttempt, follower]);
+  }, [api, checkAttempt, follower, sessionNotice]);
   useEffect(() => {
     if (!api.state || !api.watch) return;
     const controller = new AbortController();
@@ -207,8 +212,7 @@ export function WebAuthnAccessView({
         if (cause instanceof EnrollmentOutcomeError) setEnrolled(cause.enrolled);
         setError(cause instanceof EnrollmentOutcomeError && cause.enrolled
           ? 'Passkey created. Sign in to continue.'
-          : cause instanceof LoginOutcomeError && cause.stage === 'begin'
-            ? 'Sign-in could not start.' : failureMessage(enroll));
+          : failureMessage(enroll));
       }
     } finally {
       if (ceremony.current === controller) ceremony.current = null;
@@ -226,5 +230,5 @@ export function WebAuthnAccessView({
     || Boolean(recoveryApi && access === 'expired' && !desktop.connected && !desktop.error);
   return <OnboardingPasskeyTask statusUnavailable={Boolean(api.state) && enrolled === null && !checkingStatus && access === null}
     busy={busy} checking={checkingStatus} readingStatus={readingStatus} enrolled={enrolled}
-    error={error} access={access} authenticate={authenticate} />;
+    error={error} access={access} sessionNotice={sessionNotice} authenticate={authenticate} />;
 }

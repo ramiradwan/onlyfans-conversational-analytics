@@ -42,7 +42,9 @@ it('retries transient status reads within a bound without inventing enrollment',
   renderView(api);
   for (let attempt = 0; attempt < 4; attempt++) await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
   expect(state).toHaveBeenCalledTimes(4);
-  expect(screen.getByRole('alert').textContent).toContain('Dipsy can’t check access on this computer right now.');
+  expect(screen.getByRole('heading', { name: 'Can’t check your passkey right now' })).toBeTruthy();
+  expect(screen.getByRole('status').textContent).toBe('This page updates by itself.');
+  expect(screen.getByRole('main').querySelector('.onboarding-surface-body')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
   expect(state).toHaveBeenCalledTimes(4);
@@ -73,6 +75,8 @@ describe('WebAuthn access view', () => {
     const api = { state: vi.fn(async () => ({ enrolled: false, authenticated: false })), enroll: vi.fn(async () => {}), login: vi.fn(async () => {}) };
     const view = renderView(api);
     const create = await screen.findByRole('button', { name: 'Create passkey' });
+    expect(screen.getByRole('heading', { name: 'Protect your analytics on this computer' })).toBeTruthy();
+    expect(screen.getByText('Create a passkey. Your computer will ask you to confirm it’s you, so only you can open your analytics here.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
     fireEvent.click(create);
     await waitFor(() => expect(view.onAuthenticated).toHaveBeenCalledTimes(1));
@@ -90,8 +94,8 @@ describe('WebAuthn access view', () => {
   });
 
   it.each([
-    [new Error('Finish response lost'), 'Passkey setup could not be confirmed.'],
-    [{ name: 'NotAllowedError' }, 'Passkey setup could not be confirmed.'],
+    [new Error('Finish response lost'), 'Passkey setup didn’t finish.'],
+    [{ name: 'NotAllowedError' }, 'Passkey setup didn’t finish.'],
   ])('retains an unconfirmed enrollment without starting another ceremony', async (failure, message) => {
     const api = { enroll: vi.fn(() => Promise.reject(failure)), login: vi.fn(async () => {}) };
     const view = renderView(api);
@@ -150,7 +154,8 @@ describe('WebAuthn access view', () => {
     fireEvent.click(view.signIn());
 
     const alert = await readFailure();
-    expect(alert.textContent).toBe('Sign-in did not finish.');
+    expect(alert.textContent).toBe('Sign-in didn’t finish.');
+    expect(alert.querySelector('.onboarding-status')?.getAttribute('data-tone')).toBe('attention');
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
 
@@ -165,7 +170,7 @@ describe('WebAuthn access view', () => {
     fireEvent.click(view.signIn());
 
     const alert = await readFailure();
-    expect(alert.textContent).toBe('Sign-in did not finish.');
+    expect(alert.textContent).toBe('Sign-in didn’t finish.');
     expect(alert.closest('[data-visual="passkey-card"]')).not.toBeNull();
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
@@ -180,7 +185,7 @@ describe('WebAuthn access view', () => {
     fireEvent.click(view.enroll());
 
     const alert = await readFailure();
-    expect(alert.textContent).toBe('Passkey setup could not be confirmed.');
+    expect(alert.textContent).toBe('Passkey setup didn’t finish.');
     expect(api.login).not.toHaveBeenCalled();
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
@@ -192,7 +197,8 @@ describe('WebAuthn access view', () => {
 
     fireEvent.click(view.signIn());
 
-    await waitFor(() => expect(view.signIn().disabled).toBe(true));
+    expect(await screen.findByText('Waiting for your passkey…')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
     expect(view.enroll().disabled).toBe(true);
 
     fireEvent.click(view.enroll());
@@ -237,7 +243,7 @@ describe('WebAuthn access view', () => {
 
     fireEvent.click(view.signIn());
     expect(screen.queryByRole('button', { name: 'Show details' })).toBeNull();
-    expect(view.signIn().disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
     pending.resolve();
     expect((await readFailure()).textContent).toBe(message);
     expect(login).toHaveBeenCalledTimes(2);
@@ -262,7 +268,7 @@ it('recovers transient passkey status automatically without presenting a retry a
 it('stage-specific begin refusal does not claim the user cancelled a passkey', async () => {
   const view = renderView({ enroll: vi.fn(), login: vi.fn(async () => { throw new LoginOutcomeError('begin'); }) });
   fireEvent.click(view.signIn());
-  expect((await readFailure()).textContent).toBe('Sign-in could not start.');
+  expect((await readFailure()).textContent).toBe('Sign-in didn’t finish.');
 });
 it('an unmounted sign-in cannot navigate when its stale success resolves', async () => {
   const pending = deferred(); let signal: AbortSignal | undefined;
@@ -287,15 +293,17 @@ const lapsed = (access: 'renewing' | 'expired' | 'removed') => new WebAuthnStatu
 describe('lapsed access on this computer', () => {
   it.each([
     ['renewing', 'Renewing access on this computer', 'Renewal needs an internet connection.'],
-    ['expired', 'Access on this computer expired', 'Contact support to restore access.'],
-    ['removed', 'Access removed from this computer', 'Contact support if you did not expect this.'],
+    ['expired', 'Access on this computer isn’t active', null],
+    ['removed', 'Access removed from this computer', null],
   ] as const)('names %s access with guidance and no action to retry', async (access, heading, guidance) => {
     vi.useFakeTimers();
     const api = { state: vi.fn().mockRejectedValue(lapsed(access)), enroll: vi.fn(), login: vi.fn() };
     renderView(api);
     await act(async () => { await vi.advanceTimersByTimeAsync(10 * 60_000); });
     expect(screen.getByRole('heading', { level: 1, name: heading })).toBeTruthy();
-    expect(screen.getByRole('status').textContent).toBe(guidance);
+    if (guidance) expect(screen.getByRole('status').textContent).toBe(guidance);
+    else expect(screen.getByText(access === 'expired' ? 'This page updates by itself if you can sign in again.'
+      : 'This computer can no longer open analytics.')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryAllByRole('button')).toHaveLength(0);
     expect(api.state).toHaveBeenCalledOnce();
@@ -320,7 +328,7 @@ describe('lapsed access on this computer', () => {
     // The read keeps the current screen rather than flashing the checking state.
     expect(screen.getByRole('heading', { level: 1, name: 'Renewing access on this computer' })).toBeTruthy();
     await act(async () => { answer?.({ enrolled: true, authenticated: false }); await vi.advanceTimersByTimeAsync(0); });
-    expect(screen.getByRole('heading', { level: 1, name: 'Sign in on this computer' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: 'Confirm it’s you' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Sign in with passkey' })).toBeTruthy();
     stream.push('available');
     expect(state).toHaveBeenCalledTimes(2);
@@ -356,7 +364,7 @@ describe('lapsed access on this computer', () => {
     await screen.findByRole('heading', { level: 1, name: 'Access removed from this computer' });
     expect(state).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.getByText('Contact support if you did not expect this.')).toBeTruthy();
+    expect(screen.getByText('This computer can no longer open analytics.')).toBeTruthy();
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
 });
@@ -366,8 +374,46 @@ it('a confirmed created passkey with no session offers sign-in rather than anoth
     enroll: vi.fn(async () => { throw new EnrollmentOutcomeError(true); }), login: vi.fn() });
   fireEvent.click(await screen.findByRole('button', { name: 'Create passkey' }));
   await screen.findByRole('button', { name: 'Sign in with passkey' });
+  expect(screen.getByText('Passkey created. Sign in to continue.')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Create passkey' })).toBeNull();
   expect(view.onAuthenticated).not.toHaveBeenCalled();
+});
+
+it('keeps an uncertain creation distinct from sign-in and waits for a fresh gesture', async () => {
+  const state = vi.fn().mockResolvedValueOnce({ enrolled: false, authenticated: false })
+    .mockResolvedValueOnce({ enrolled: true, authenticated: false });
+  const enroll = vi.fn().mockRejectedValue(new EnrollmentOutcomeError(null));
+  const login = vi.fn().mockRejectedValue(new LoginOutcomeError('begin'));
+  renderView({ state, enroll, login });
+  fireEvent.click(await screen.findByRole('button', { name: 'Create passkey' }));
+  const signIn = await screen.findByRole('button', { name: 'Sign in with passkey' });
+  expect((await readFailure()).textContent).toBe('Passkey setup didn’t finish.');
+  expect(enroll).toHaveBeenCalledOnce();
+  expect(login).not.toHaveBeenCalled();
+  fireEvent.click(signIn);
+  expect((await readFailure()).textContent).toBe('Sign-in didn’t finish.');
+  expect(login).toHaveBeenCalledOnce();
+});
+
+it('requires a fresh gesture after a fatal session even if the cookie remains current', async () => {
+  const api = {
+    state: vi.fn(async () => ({ enrolled: true, authenticated: true })),
+    enroll: vi.fn(),
+    login: vi.fn().mockRejectedValueOnce(new LoginOutcomeError('finish', true)).mockResolvedValueOnce(undefined),
+  };
+  const onAuthenticated = vi.fn();
+  render(<ThemeProvider theme={theme}><WebAuthnAccessView api={api} onAuthenticated={onAuthenticated}
+    sessionNotice="Your session ended. Sign in to continue." /></ThemeProvider>);
+  const signIn = await screen.findByRole('button', { name: 'Sign in with passkey' });
+  expect(onAuthenticated).not.toHaveBeenCalled();
+  expect(api.login).not.toHaveBeenCalled();
+  fireEvent.click(signIn);
+  expect((await readFailure()).textContent).toBe('Sign-in didn’t finish.');
+  expect(onAuthenticated).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in with passkey' }));
+  await waitFor(() => expect(onAuthenticated).toHaveBeenCalledOnce());
+  expect(api.login).toHaveBeenCalledTimes(2);
+  expect(api.enroll).not.toHaveBeenCalled();
 });
 
 it('reconciles a lost registration finish without another passkey ceremony', async () => {
@@ -404,7 +450,7 @@ it('reconciles a lost sign-in finish before offering another ceremony', async ()
   expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
   expect(view.signIn().disabled).toBe(false);
-  expect(screen.getByRole('alert').textContent).toBe('Sign-in did not finish.');
+  expect(screen.getByRole('alert').textContent).toBe('Sign-in didn’t finish.');
   expect(view.onAuthenticated).not.toHaveBeenCalled();
   expect(login).toHaveBeenCalledOnce();
   expect(enroll).not.toHaveBeenCalled();
@@ -530,13 +576,16 @@ it('renders protected native recovery instead of passkey access and returns only
   const onAuthenticated = vi.fn();
   const api = { state: vi.fn(async () => ({ enrolled: true, authenticated: false })), enroll: vi.fn(), login: vi.fn() };
   render(<ThemeProvider theme={theme}><WebAuthnAccessView api={api} recoveryApi={recoveryApi} onAuthenticated={onAuthenticated} /></ThemeProvider>);
-  expect(await screen.findByRole('heading', { name: 'Restore access on this computer' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Sign in to open your analytics' })).toBeTruthy();
+  expect(screen.getByText('Use the same sign-in as before.')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
   expect(recoveryApi.act).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Restore access' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in', exact: true }));
   await waitFor(() => expect(recoveryApi.act).toHaveBeenCalledWith('account.connect'));
+  show({ ...initial, allowed_actions: [] });
+  expect(screen.queryByRole('button', { name: 'Sign in', exact: true })).toBeNull();
   show({ ...initial, authority_recovery: 'preparing', allowed_actions: [] });
-  expect(screen.queryByRole('button', { name: 'Restore access' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Sign in', exact: true })).toBeNull();
   show({ ...initial, authority_recovery: 'sign-in-required', authentication: auth, allowed_actions: ['auth.select'] });
   fireEvent.click(screen.getByRole('button', { name: 'Sign in', exact: true }));
   await waitFor(() => expect(recoveryApi.act).toHaveBeenCalledWith('auth.select'));
@@ -545,18 +594,22 @@ it('renders protected native recovery instead of passkey access and returns only
       authentication_attempt: { authentication_attempt_id: attempt, provider: 'default', mode: 'sign-in' },
       actions: { select: false, cancel: true, open_browser: true, switch_account: false } } };
   show(selected);
-  fireEvent.click(screen.getByRole('button', { name: 'Open Chrome' }));
+  expect(screen.getByRole('button', { name: 'Cancel sign-in' }).classList.contains('MuiButton-text')).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Open browser' }));
   await waitFor(() => expect(recoveryApi.act).toHaveBeenCalledWith('browser.open'));
   show({ ...selected, authority_recovery_browser: 'launch-claimed' });
-  expect(screen.queryByRole('button', { name: 'Open Chrome' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Open browser' })).toBeNull();
   show({ ...selected, authority_recovery_browser: 'handed-off' });
-  expect(screen.getByText('Waiting for sign-in\u2026')).toBeTruthy();
+  expect(screen.getByText('Waiting for sign-in\u2026').closest('.onboarding-action-content')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Cancel sign-in' }));
   await waitFor(() => expect(recoveryApi.act).toHaveBeenCalledWith('auth.cancel'));
+  show({ ...selected, authority_recovery_browser: 'unconfirmed' });
+  expect(screen.getByRole('button', { name: 'Cancel sign-in' }).classList.contains('MuiButton-contained')).toBe(true);
+  expect(screen.getByText('Sign-in isn’t confirmed.').closest('.onboarding-status')?.getAttribute('data-tone')).toBe('attention');
   show({ ...initial, authority_recovery: 'sign-in-required', authentication: { ...auth, state: 'retired' }, allowed_actions: ['auth.select'] });
-  expect(screen.getByRole('button', { name: 'Sign in again' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Sign in', exact: true })).toBeTruthy();
   show({ ...initial, authority_recovery: 'restoring', allowed_actions: [] });
-  expect(screen.getByText('Sign-in complete. Restoring access\u2026')).toBeTruthy();
+  expect(screen.getByText('Signed in. Getting this computer ready…').closest('.onboarding-action-content')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
   expect(onAuthenticated).not.toHaveBeenCalled();
   const before = api.state.mock.calls.length;
@@ -576,8 +629,9 @@ it('keeps a disconnected protected recovery passive and does not return to ordin
   const desktop: DesktopState = { snapshot, pending: null, connected: true, error: null };
   const recoveryApi: AuthorityRecoveryApi = { getState: () => desktop, subscribe: () => () => {}, act: vi.fn(async () => {}) };
   render(<ThemeProvider theme={theme}><WebAuthnAccessView recoveryApi={recoveryApi} api={{ enroll: vi.fn(), login: vi.fn() }} /></ThemeProvider>);
-  expect(await screen.findByRole('heading', { name: 'Access could not be restored' })).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Restore access' })).toBeNull();
+  expect(await screen.findByRole('heading', { name: 'Can’t open your analytics right now' })).toBeTruthy();
+  expect(screen.getByText('This page updates by itself if anything changes.')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Sign in', exact: true })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
   expect(recoveryApi.act).not.toHaveBeenCalled();
 });

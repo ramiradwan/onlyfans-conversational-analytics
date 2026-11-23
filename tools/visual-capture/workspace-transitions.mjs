@@ -9,15 +9,15 @@ export async function openPairingFallback(page) {
   const openedAt = await page.evaluate(() => Date.now());
   await dialog.getByRole('button', { name: 'Compare connection codes', exact: true }).click();
   await page.clock.fastForward(250);
-  await dialog.waitFor({ state: 'hidden' });
+  await dialog.getByRole('button', { name: 'Compare connection codes', exact: true }).waitFor({ state: 'hidden' });
   return openedAt;
 }
 
 export async function waitForPairingOpenPresentation(page) {
   // A resolved API promise and animation frames do not imply that React has
   // committed its task and countdown. Keep that render inside the open action.
-  await page.getByText('Waiting for the browser extension to connect.', { exact: true }).waitFor();
-  await page.getByText(/^Connection window expires in /).waitFor();
+  await page.getByText('Waiting for the extension…', { exact: true }).waitFor();
+  await page.getByText(/^This attempt expires in /).waitFor();
 }
 
 export async function drivePairingExpiry(page, pin, push, step, openedAt) {
@@ -33,12 +33,12 @@ export async function drivePairingExpiry(page, pin, push, step, openedAt) {
     // Keep the existing one-second boundary deterministic while native frame
     // observation continues. Real driver/render latency cannot consume it.
     await page.clock.pauseAt(new Date(Date.parse(initialExpiry) - 1000));
-    await page.getByText('Waiting for the browser extension to connect.', { exact: true }).waitFor();
+    await page.getByText('Waiting for the extension…', { exact: true }).waitFor();
   });
   await step('pairing:expired', async () => {
     const remaining = await page.evaluate(expiry => Date.parse(expiry) - Date.now(), initialExpiry);
     await page.clock.fastForward(Math.max(0, remaining));
-    await page.getByText('Time ran out before the connection finished. Try again.', { exact: true }).waitFor();
+    await page.getByText('Time ran out before the connection finished.', { exact: true }).waitFor();
     await page.clock.resume();
   });
 }
@@ -173,23 +173,31 @@ export async function driveWorkspaceDetails(page, view, step, unseen) {
     await push('desktopActionError', 'reply_lost');
     await page.getByRole('button', { name: 'Activate for free' }).click();
   });
-  await step('activation:accepted', () => publishActivation(page, 'accepted'));
-  await step('activation:unavailable', () => publishActivation(page, 'unavailable'));
+  await step('activation:accepted', async () => {
+    await publishActivation(page, 'accepted');
+    await page.getByRole('heading', { name: 'Activating Full analytics', exact: true }).waitFor();
+  });
+  await step('activation:unavailable', async () => {
+    await publishActivation(page, 'unavailable');
+    await page.getByRole('heading', { name: 'Full analytics isn’t on', exact: true }).waitFor();
+  });
   await step.fixture('fixture:reset-activation-task', async () => {
     await push('desktopActionError', null);
     await push('desktopSnapshot', { decision: null, decision_status: null, authentication: null, allowed_actions: ['activation.review'], pending_operations: [] });
+    await page.getByRole('button', { name: 'Use an activation code', exact: true }).waitFor();
   });
   for (const outcome of ['unconfirmed', 'network', 'success']) {
     await step.fixture('fixture:refresh:onboarding.readiness', () => refresh('onboarding.readiness', { schema: 'ofca-analysis-readiness/v1', commercial_authority: 'required', analysis_admission: 'blocked' }));
-    const toggle = page.getByRole('button', { name: 'Use an activation code', exact: true });
-    if (await toggle.getAttribute('aria-expanded') !== 'true') await step('redemption:' + outcome + ':open', () => toggle.click());
+    const opener = page.getByRole('button', { name: 'Use an activation code', exact: true });
+    const dialog = page.getByRole('dialog');
+    if (!await dialog.isVisible()) await step('redemption:' + outcome + ':open', () => opener.click());
     // An unconfirmed redemption keeps its code, so later outcomes resume it.
-    const input = page.getByRole('textbox', { name: 'Activation code' });
+    const input = dialog.getByRole('textbox', { name: 'Activation code' });
     if (await input.isEnabled()) await step.fixture('fixture:activation-code-input', () => input.fill('clr1.' + 'a'.repeat(43)));
-    await step('redemption:' + outcome + ':pending', () => page.getByRole('button', { name: /^(Activate|Resume activation)$/ }).click());
+    await step('redemption:' + outcome + ':pending', () => dialog.getByRole('button', { name: /^(Activate|Resume activation)$/ }).click());
     await step('redemption:' + outcome + ':response', () => outcome === 'success' ? push('resolve', 'activation.redeem', { state: 'checking' }) : push('reject', 'activation.redeem', 'Error'));
     await step('redemption:' + outcome + ':readiness', () => outcome === 'network' ? push('reject', 'onboarding.readiness', 'Error') : push('resolve', 'onboarding.readiness', { schema: 'ofca-analysis-readiness/v1', commercial_authority: outcome === 'success' ? 'active' : 'required', analysis_admission: outcome === 'success' ? 'admitted' : 'blocked' }));
-    if (outcome !== 'success') await step.fixture('fixture:activation-code-close', () => toggle.click());
+    if (outcome !== 'success') await step.fixture('fixture:activation-code-close', () => dialog.getByRole('button', { name: 'Cancel', exact: true }).click());
   }
   for (const outcome of ['failure', 'success']) {
     await step.fixture('fixture:refresh:vault.get', () => refresh('vault.get', vault));
@@ -236,7 +244,7 @@ export async function driveWorkspaceDetails(page, view, step, unseen) {
         }
       });
     } else {
-      await step(`pairing:${outcome}:action`, () => page.getByRole('button', { name: outcome === 'declined' ? "Codes don't match" : 'Cancel', exact: true }).click());
+      await step(`pairing:${outcome}:action`, () => page.getByRole('button', { name: outcome === 'declined' ? 'Codes don’t match' : 'Cancel', exact: true }).click());
       await step(`pairing:${outcome}:result`, async () => {
         await push('resolve', 'pairing.change', { ...pin, expires_at, state: outcome, version: 2 });
         await waitForPairingResultPresentation(page, outcome);

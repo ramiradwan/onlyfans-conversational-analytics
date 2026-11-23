@@ -35,12 +35,27 @@ describe('task-focused static copy', () => {
         const acknowledgements = read('extension/setup.html').match(/<label class="check-row">[\s\S]*?<\/label>/g);
         expect(acknowledgements).toHaveLength(2);
         expect(createHash('sha256').update(acknowledgements!.join('')).digest('hex')).toBe(baseline.acknowledgements_sha256);
+        expect([...element!.children].map(node => node.id || node.querySelector('input')?.id)).toEqual([
+          'start-back', 'activation-title', 'start-disclosure', 'terms-accepted', 'risk-acknowledged', 'activate-software',
+        ]);
         continue;
       }
       expect(createHash('sha256').update(disclosure.outerHTML).digest('hex')).toBe(item.element_sha256);
     }
   });
-  it.each(['extension/popup.html', 'extension/setup.html', 'extension/options.html', 'frontend/onboarding/index.html'])('has no semicolons in rendered copy in %s', (file) => {
+  it('keeps the release remedy outside the protected setup disclosures', () => {
+    const doc = parse('extension/setup.html');
+    const unavailable = doc.querySelector('#legal-unavailable');
+    expect(unavailable?.querySelector('h2')?.textContent).toBe('Setup is unavailable in this version');
+    expect(unavailable?.querySelector('p')?.textContent).toBe('Update the extension to continue.');
+    expect(unavailable?.nextElementSibling?.id).toBe('pre-mode');
+  });
+  it('describes browser setup without naming the browser vendor', () => {
+    const doc = parse('frontend/browser-tasks/index.html');
+    expect(doc.title).not.toMatch(/\bChrome\b/u);
+    expect(doc.querySelector('.setup-eyebrow')?.textContent).toBe('Browser setup');
+  });
+  it.each(['extension/popup.html', 'extension/setup.html', 'extension/options.html', 'frontend/onboarding/index.html', 'frontend/browser-tasks/index.html'])('has no semicolons in rendered copy in %s', (file) => {
     const doc = parse(file);
     doc.querySelectorAll('style,script').forEach((node) => node.remove());
     // Formatting rules cannot rewrite exact adopted text. Verify those bytes
@@ -54,7 +69,7 @@ describe('task-focused static copy', () => {
     }
     expect(doc.body.textContent).not.toContain(';');
   });
-  it.each(['extension/popup.js', 'extension/runtime/customer-journey.mjs', 'frontend/onboarding/view.js'])('has no semicolons in operational messages in %s', (file) => {
+  it.each(['extension/popup.js', 'extension/runtime/customer-journey.mjs', 'frontend/onboarding/view.js', 'frontend/browser-tasks/view.js'])('has no semicolons in operational messages in %s', (file) => {
     const source = ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
     const visit = (node: ts.Node) => {
       if (ts.isStringLiteralLike(node)) expect(node.text, file).not.toMatch(/[A-Za-z];\s/);
@@ -66,6 +81,9 @@ describe('task-focused static copy', () => {
     const doc = parse('frontend/onboarding/index.html');
     expect(doc.querySelector('#task-status')?.textContent).toBe('');
     expect(doc.querySelector('#task-title')?.textContent).toBe('Loading setup');
+    expect(doc.querySelector('.setup-task-card')?.getAttribute('aria-busy')).toBe('true');
+    expect(doc.querySelector('#task-description')?.textContent).toBe('');
+    expect(doc.querySelector('.desktop-loading-action')?.getAttribute('aria-hidden')).toBe('true');
     expect(doc.querySelector('#recovery-options')).toBeNull();
     for (const control of doc.querySelectorAll('[aria-describedby]')) {
       for (const id of control.getAttribute('aria-describedby')!.split(' ')) expect(doc.getElementById(id), id).not.toBeNull();

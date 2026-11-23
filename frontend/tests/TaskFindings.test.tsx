@@ -5,19 +5,23 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { useCallback, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { FindingsBaseline } from '../src/analytics/analyticsReadModel';
+import { findingsBaseline, type FindingsBaseline } from '../src/analytics/analyticsReadModel';
 import { FindingsClientError, type FindingsClient } from '../src/analytics/findingsClient';
-import { parseFindings, parseGroupedFindings } from '../src/analytics/findingsContract';
+import { parseFindings, parseGroupedFindings, type FindingsRequest } from '../src/analytics/findingsContract';
 import type { LiteralsClient } from '../src/analytics/literalsClient';
 import { parseLiterals } from '../src/analytics/literalsContract';
 import { AnalyticsPresentation } from '../src/components/analytics/AnalyticsPresentation';
 import { TaskFindings } from '../src/components/analytics/TaskFindings';
+import { FINDINGS } from '../src/config/endpoints';
+import { analyticsStore } from '../src/store/analyticsStore';
 import { createFindingsStore, type FindingsStore } from '../src/store/findingsStore';
 import { createLiteralsStore, type LiteralsStore } from '../src/store/literalsStore';
+import { bridgeTransportStore } from '../src/store/transportStore';
 import { findingsBaselineFixture as baseline, findingsResponse, findingsFilteredResponse, findingsSource, findingsSourceText, findingsSubsetResponse, groupedFindingsResponse } from '../src/story-only/findingsFixtures';
 import { storyBaselineState, storyDateRange } from '../src/story-only/analyticsFixtures';
 import { literalsResponse } from '../src/story-only/literalsFixtures';
 import { theme } from '../src/theme';
+import AnalyticsView from '../src/views/AnalyticsView';
 import { context } from './questionFixture';
 
 let store: FindingsStore;
@@ -45,10 +49,179 @@ function setup(overrides: Partial<FindingsClient> = {}, view: 'grouped' | null =
   const rendered = render(parentRefresh ? <Parent /> : panel(baseline));
   return { api, literalApi, rendered, transport,
     rerender: (nextBaseline: FindingsBaseline | null, nextStore = ownedStore, nextTransport = transport) => rendered.rerender(panel(nextBaseline, nextStore, nextTransport)),
+    revisit: () => render(panel(baseline)),
     update: (next: typeof state) => { state = next; listeners.forEach((listener) => listener()); } };
 }
 
+function pricingFinding(request: FindingsRequest) {
+  const result = findingsResponse(request);
+  result.tasks[0].rows[0].display_label = 'Pricing questions';
+  result.comparison.tasks[0].rows[0].display_label = 'Pricing questions';
+  return result;
+}
+
 describe('TaskFindings', () => {
+  it('shows no first value before admitted saved evidence', async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    setup({ read: async request => {
+      await pending;
+      return parseFindings(pricingFinding(request), request);
+    } });
+    await waitFor(() => expect(store.getState().status).toBe('loading'));
+    const loading = screen.getByRole('region', { name: 'Insights', busy: true });
+    expect(loading.querySelectorAll('.MuiSkeleton-root')).toHaveLength(4);
+    expect(within(loading).queryByText('Loading saved text analysis…')).toBeNull();
+    expect(screen.queryByText('Your first insights are ready')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'See all topics' })).toBeNull();
+    await act(async () => { release(); await pending; });
+    expect(await screen.findByText('Your first insights are ready')).toBeTruthy();
+  });
+
+  it('uses complete topic support and keeps saved-window evidence and uncertainty', async () => {
+    setup({ read: async request => parseFindings(pricingFinding(request), request) });
+    const headline = await screen.findByRole('heading', { name: /^One topic appears in 50\s*% of fully checked messages$/ });
+    expect(headline).toBeTruthy();
+    expect(screen.getByText(/Available message dates:.*All directions/)).toBeTruthy();
+    expect(screen.getAllByText(/Unassessed or uncertain messages do not count as confirmed absence/)).toHaveLength(4);
+    expect(screen.getByRole('button', { name: /Topics source .*Pricing questions/ })).toBeTruthy();
+    const summary = screen.getByRole('region', { name: 'Your first insights are ready' });
+    const head = within(summary).getByRole('heading', { name: 'Your first insights are ready' }).closest('.onboarding-surface-head');
+    expect(head?.querySelector('.onboarding-spot svg')).toBeTruthy();
+    expect(summary.getAttribute('data-composition')).toBe('first-value');
+    expect(within(summary).getByText(/^50\s*%$/)).toBeTruthy();
+  });
+
+  it('keeps previous-only findings and unknown coverage without showing first value', async () => {
+    setup({ read: async request => {
+      const result = pricingFinding(request);
+      const topics = result.tasks[0];
+      const previous = result.comparison.tasks[0];
+      result.comparison.tasks[0] = { ...topics };
+      result.comparison.effective_window = { scope: 'effective', start: result.comparison.requested_window!.start,
+        end: result.comparison.requested_window!.start };
+      result.tasks[0] = { ...previous, availability: 'pending', scan_complete: false };
+      result.tasks[1] = result.comparison.tasks[1];
+      result.evidence_page = { ...result.evidence_page, total: 0, items: [] };
+      return parseFindings(result, request);
+    } });
+    expect(await screen.findByRole('heading', { name: 'Insights' })).toBeTruthy();
+    expect(screen.queryByText('Your first insights are ready')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'See all topics' })).toBeNull();
+    expect(within(screen.getByRole('table', { name: 'Previous Topics findings' })).getByText(/^50\s*%$/)).toBeTruthy();
+    expect(within(screen.getByRole('table', { name: 'Topics findings' })).getByText('Unavailable')).toBeTruthy();
+    expect(screen.queryByText('Not enough messages yet')).toBeNull();
+  });
+
+  it('plays the glow and bar arrival once across visits and resets on a new window', async () => {
+    const h = setup();
+    const first = await screen.findByRole('region', { name: 'Your first insights are ready' });
+    expect(first.style.backgroundImage || getComputedStyle(first).backgroundImage).toContain('surface-glow');
+    h.rendered.unmount();
+    const revisit = h.revisit();
+    await screen.findByRole('table', { name: 'Topics findings' });
+    const later = screen.getByRole('region', { name: 'Insights' });
+    expect(getComputedStyle(later).backgroundImage).not.toContain('surface-glow');
+    expect(getComputedStyle(later.querySelector<HTMLElement>('[data-visual="finding-bar"]')!).animation).not.toContain('240ms');
+    revisit.rerender(<ThemeProvider theme={theme}><TaskFindings baseline={{ ...baseline, requested_window: {
+      ...baseline.requested_window, end: '2026-09-20T23:59:59.999Z' } }} controller={store}
+      literalsController={literalStore} transport={h.transport} /></ThemeProvider>);
+    expect(await screen.findByRole('region', { name: 'Your first insights are ready' })).toBeTruthy();
+  });
+
+  it('provides a 240 ms transform-only entrance and a reduced-motion end state', async () => {
+    setup({ read: async request => parseGroupedFindings(await groupedFindingsResponse(request), request) }, 'grouped');
+    const summary = await screen.findByRole('region', { name: 'Your first insights are ready' });
+    const [bar, second] = summary.querySelectorAll<HTMLElement>('[data-visual="finding-bar"]');
+    expect(getComputedStyle(bar).animation).toContain('240ms');
+    expect(getComputedStyle(bar).animationDelay).toBe('0ms');
+    expect(getComputedStyle(second).animationDelay).toBe('40ms');
+    const rules = Array.from(document.styleSheets).flatMap(sheet => Array.from(sheet.cssRules));
+    expect(rules.some(rule => rule.cssText.includes('prefers-reduced-motion: reduce')
+      && rule.cssText.includes(bar.classList[bar.classList.length - 1])
+      && /animation:\s*none/.test(rule.cssText))).toBe(true);
+    expect(getComputedStyle(bar).width).toBe('50%');
+    expect(rules.some(rule => rule.cssText.includes('@keyframes') && rule.cssText.includes('scaleX(0)')
+      && rule.cssText.includes('scaleX(1)'))).toBe(true);
+  });
+
+  it('opens All topics with keyboard focus, includes grouped and ungrouped rows, and restores focus', async () => {
+    setup({ read: async request => parseGroupedFindings(await groupedFindingsResponse(request), request) }, 'grouped');
+    const trigger = await screen.findByRole('button', { name: 'See all topics' });
+    expect(trigger.matches('.MuiButton-contained.MuiButton-colorPrimary')).toBe(true);
+    trigger.focus();
+    fireEvent.click(trigger, { detail: 0 });
+    const dialog = await screen.findByRole('dialog', { name: 'All topics' });
+    expect(within(dialog).getByText('Based on 2 fully checked messages.')).toBeTruthy();
+    expect(within(dialog).getByRole('heading', { name: 'Mentions', exact: true })).toBeTruthy();
+    expect(within(dialog).getByRole('table', { name: 'Topics findings · Subjects' })).toBeTruthy();
+    expect(within(dialog).getByRole('table', { name: 'Topics findings · Formats café 😀' })).toBeTruthy();
+    expect(within(dialog).getByRole('table', { name: 'Mentions findings · Ungrouped categories' })).toBeTruthy();
+    const close = within(dialog).getByRole('button', { name: 'Close' });
+    expect(close.matches('.MuiButton-contained.MuiButton-colorPrimary')).toBe(true);
+    expect(document.activeElement).toBe(dialog);
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(close);
+    fireEvent.keyDown(close, { key: 'Tab' });
+    screen.getByTestId('sentinelEnd').focus();
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(close, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'All topics' })).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+    fireEvent.click(trigger, { detail: 0 });
+    fireEvent.click(await screen.findByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    fireEvent.click(trigger, { detail: 0 });
+    const reopened = await screen.findByRole('dialog', { name: 'All topics' });
+    const group = within(reopened).getByRole('table', { name: 'Topics findings · Subjects' });
+    fireEvent.click(within(group).getByRole('button', { name: 'View sources for Topics: Second category' }));
+    expect(await screen.findByRole('heading', { name: 'Selected category: Topics · Second category' })).toBe(document.activeElement);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('shows unavailable copy without implying active work or a retry for a failed first read', async () => {
+    setup({ read: async () => { throw new FindingsClientError('error', 'Text analysis results could not be loaded.'); } });
+    expect(await screen.findByText('Insights aren’t available right now.')).toBeTruthy();
+    const card = screen.getByRole('region', { name: 'Insights' });
+    expect(card.getAttribute('data-composition')).toBe('first-value');
+    const status = within(card).getByRole('status');
+    expect(status.getAttribute('data-tone')).toBe('attention');
+    expect(status.querySelector('svg')).toBeTruthy();
+    expect(screen.queryByText('Insights couldn’t load. This page tries again by itself.')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Refresh saved findings' })).toBeNull();
+  });
+
+  it('shows first saved insights through the analytics entry and keeps them seen when revisiting', async () => {
+    const previous = analyticsStore.getState();
+    const transport = vi.spyOn(bridgeTransportStore, 'getState').mockReturnValue(context());
+    const dateRange = { startDate: '2026-09-18', endDate: '2026-09-19' };
+    const accepted = { ...storyBaselineState, data: { ...storyBaselineState.data!,
+      accountRef: baseline.account_ref, sourceRevision: baseline.source_revision } };
+    const request: FindingsRequest = {
+      baseline: findingsBaseline(accepted.data, dateRange), direction: 'all', conversation_ref: null,
+      conversation_offset: 0, conversation_limit: 50, evidence_offset: 0, evidence_limit: 50, view: 'grouped',
+    };
+    const response = await groupedFindingsResponse(request);
+    const fetcher = vi.fn(async (url: string) => url.startsWith(FINDINGS)
+      ? Response.json(response) : Response.json({}, { status: 503 }));
+    vi.stubGlobal('fetch', fetcher);
+    analyticsStore.setState({ state: accepted, dateRange });
+    try {
+      const firstVisit = render(<ThemeProvider theme={theme}><AnalyticsView /></ThemeProvider>);
+      fireEvent.click(screen.getByRole('tab', { name: 'Text analysis' }));
+      expect(await screen.findByRole('region', { name: 'Your first insights are ready' })).toBeTruthy();
+      firstVisit.unmount();
+      render(<ThemeProvider theme={theme}><AnalyticsView /></ThemeProvider>);
+      fireEvent.click(screen.getByRole('tab', { name: 'Text analysis' }));
+      expect(await screen.findByRole('region', { name: 'Insights', exact: true })).toBeTruthy();
+      expect(fetcher.mock.calls.filter(([url]) => url.startsWith(FINDINGS))).toHaveLength(2);
+    } finally {
+      cleanup();
+      analyticsStore.setState(previous);
+      transport.mockRestore();
+    }
+  });
+
   it('displays a newly published saved finding without another message or refresh click', async () => {
     const nextBaseline = { ...baseline, projection_generation: baseline.projection_generation + 1,
       projection_digest: `sha256:${'2'.repeat(64)}` };
@@ -60,8 +233,9 @@ describe('TaskFindings', () => {
       return parseFindings(findingsResponse(request), request);
     });
     const h = setup({ read }, null, refresh);
-    await screen.findByText('The saved analysis is being updated.');
+    await screen.findByText('Insights aren’t available right now.');
     expect(screen.queryByRole('table', { name: 'Topics findings' })).toBeNull();
+    expect(screen.queryByText('Your first insights are on the way')).toBeNull();
     h.rerender(nextBaseline);
     const table = await screen.findByRole('table', { name: 'Topics findings' });
     expect(within(table).getByText('Example topic')).toBeTruthy();
@@ -80,13 +254,10 @@ describe('TaskFindings', () => {
       setBaseline(nextBaseline);
     });
     const read = vi.fn<FindingsClient['read']>(async (request) => {
-      if (request.baseline.projection_generation === baseline.projection_generation) {
-        throw new FindingsClientError('building', 'The saved analysis is being updated.');
-      }
       return parseFindings(findingsResponse(request), request);
     });
     setup({ read }, null, undefined, refreshBaseline);
-    await screen.findByText('The saved analysis is being updated.');
+    await screen.findByRole('table', { name: 'Topics findings' });
     fireEvent.click(screen.getByRole('button', { name: 'Refresh saved findings' }));
     expect(refreshBaseline).toHaveBeenCalledTimes(1);
     expect(read).toHaveBeenCalledTimes(1);
@@ -114,16 +285,14 @@ describe('TaskFindings', () => {
   });
   it('does not reload the previous baseline when its refresh rejects', async () => {
     const refreshBaseline = vi.fn(async () => { throw new Error('Unavailable'); });
-    const { api } = setup({ read: vi.fn(async () => {
-      throw new FindingsClientError('building', 'The saved analysis is being updated.');
-    }) }, null, refreshBaseline);
-    await screen.findByText('The saved analysis is being updated.');
+    const { api } = setup({}, null, refreshBaseline);
+    await screen.findByRole('table', { name: 'Topics findings' });
     const button = screen.getByRole('button', { name: 'Refresh saved findings' });
     fireEvent.click(button);
     await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
     expect(refreshBaseline).toHaveBeenCalledTimes(1);
     expect(api.read).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('The saved analysis is being updated.')).toBeTruthy();
+    expect(screen.getByRole('table', { name: 'Topics findings' })).toBeTruthy();
   });
   it('releases a failed refresh subscription before accepting another explicit refresh', async () => {
     const refreshBaseline = vi.fn(async () => {});
@@ -364,7 +533,7 @@ describe('TaskFindings', () => {
   });
   it('keeps unavailable findings separate from baseline summary', async () => {
     setup({ read: async () => { throw new FindingsClientError('unavailable', 'Text analysis is unavailable for this saved analysis. Other analytics remain available.'); } });
-    expect(await screen.findByText(/Other analytics remain available/)).toBeTruthy();
+    expect(await screen.findByText('Insights aren’t available right now.')).toBeTruthy();
     expect(screen.queryByRole('table')).toBeNull(); cleanup();
     render(<ThemeProvider theme={theme}><AnalyticsPresentation state={storyBaselineState} dateRange={storyDateRange} onDateRangeChange={() => undefined}
       findings={<div>Profile findings panel</div>} /></ThemeProvider>);

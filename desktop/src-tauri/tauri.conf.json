@@ -8,7 +8,7 @@
     "windows": [],
     "withGlobalTauri": true,
     "security": {
-      "csp": "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; connect-src ipc: http://ipc.localhost",
+      "csp": "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; connect-src ipc: http://ipc.localhost; font-src 'self'",
       "capabilities": ["desktop", "window-frame"]
     }
   },

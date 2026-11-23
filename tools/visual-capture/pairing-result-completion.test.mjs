@@ -14,11 +14,11 @@ async function fixture() {
   await installWatcher(page, { requiredRegions: ['settings'], nativeTimeline: true });
   await page.addInitScript(() => { window.__nativeResultTask = setTimeout.bind(window); });
   await page.goto('data:text/html,' + encodeURIComponent(`
-    <style>html{font-size:16px}main{width:300px}#actions{min-height:2.5rem}.active #actions{min-height:5.5rem}</style>
+    <style>html{font-size:16px}main{width:300px}.active #actions{min-height:5.5rem}</style>
     <main data-reserved-region="settings">
       <section class="active" data-journey-state="desktop.extension_pairing" data-pairing-active="true" data-pairing-path="operator-compared">
         <div id="comparison"><input type="checkbox"><button>Confirm connection</button></div>
-        <div data-browser-feedback><div data-reserved-region="browser-feedback"><span role="status">Connecting</span></div><div><div id="actions"><button>Cancel</button></div></div></div>
+        <div data-browser-feedback><div><div id="actions" data-pairing-actions><button>Cancel</button></div></div><div data-reserved-region="browser-feedback"><span role="status">Connecting</span></div></div>
       </section><div id="following" style="height:40px;background:blue;color:white">Following content</div>
     </main>`));
   await settleNativeWatcher(page);
@@ -40,7 +40,7 @@ const terminal = (page, feedback, delayed = false) => page.evaluate(({ feedback,
 }, { feedback, delayed });
 
 for (const [outcome, feedback] of [
-  ['declined', 'Connection declined. Try again.'],
+  ['declined', 'Connection declined.'],
   ['cancelled', 'Connection cancelled.'],
   ['confirmed', 'Extension connected.'],
 ]) test(`explicit ${outcome} waits for its delayed terminal computed rule`, async () => {
@@ -50,7 +50,7 @@ for (const [outcome, feedback] of [
     await terminal(page, feedback, true);
     const completed = await waitForPairingResultPresentation(page, outcome);
     assert(completed.at - before.nativeAt >= 100, 'Terminal text alone must not complete the result');
-    assert.equal(completed.minHeight, 40); assert.equal(completed.height, 40);
+    assert.equal(completed.minHeight, 0); assert.equal(completed.height, 0);
     await settleNativeWatcher(page);
     const after = await nativeBoundary(page);
     const raw = await readWatcher(page);
@@ -67,7 +67,7 @@ test('wrong terminal feedback and rejected active result cannot satisfy cancella
   try {
     await page.evaluate(() => { document.querySelector('[role="status"]').textContent = "The connection couldn't be checked. Try again."; });
     await assert.rejects(waitForPairingResultPresentation(page, 'cancelled', 120), /did not complete/);
-    await terminal(page, 'Connection declined. Try again.');
+    await terminal(page, 'Connection declined.');
     await assert.rejects(waitForPairingResultPresentation(page, 'cancelled', 120), /did not complete/);
     await assert.rejects(waitForPairingResultPresentation(page, 'refused'), /Unsupported terminal/);
   } finally { await page.close(); }

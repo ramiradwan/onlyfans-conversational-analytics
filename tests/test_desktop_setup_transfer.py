@@ -47,10 +47,10 @@ def receiver(tmp_path):
     install_receiving(app,coordinator,transfer)
     sessions=app.state.receiving_sessions
     session=sessions.consume(sessions.issue(native))
-    client=TestClient(app,base_url="http://bridge.localhost:17871")
     headers={"cookie":f"{RECEIVING_COOKIE}={session.identifier}","origin":"http://bridge.localhost:17871","x-csrf-token":session.csrf_token}
-    return SimpleNamespace(store=store,journeys=journeys,transfer=transfer,sessions=sessions,session=session,
-        client=client,headers=headers,clock=clock,signed=signed,native=native,coordinator=coordinator)
+    with TestClient(app,base_url="http://bridge.localhost:17871") as client:
+        yield SimpleNamespace(store=store,journeys=journeys,transfer=transfer,sessions=sessions,session=session,
+            client=client,headers=headers,clock=clock,signed=signed,native=native,coordinator=coordinator)
 
 
 def test_preparation_needs_current_cookie_origin_and_csrf_and_retains_exact_intent(receiver):

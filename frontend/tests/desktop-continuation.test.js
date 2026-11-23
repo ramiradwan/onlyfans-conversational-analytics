@@ -221,8 +221,8 @@ it('renders R14 without a Retry button when the presentation fragment is missing
   vi.stubGlobal('location', { hash: '', replace });
   await import('../onboarding/main.js');
   expect(document.querySelector('main').dataset.journeyState).toBe('desktop.setup_unavailable');
-  expect(document.getElementById('task-status').textContent).toBe("Setup couldn't continue.");
-  expect(document.getElementById('task-status').dataset.tone).toBe('error');
+  expect(document.getElementById('task-title').textContent).toBe('Setup couldn’t continue');
+  expect(document.getElementById('task-status').dataset.tone).toBe('none');
   expect(document.getElementById('task-reconnect')).toBeNull();
 });
 

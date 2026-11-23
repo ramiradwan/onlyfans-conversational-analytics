@@ -32,12 +32,12 @@ describe('passkey task typography readiness', () => {
     installFonts(load);
     const view = task();
     expect(screen.getByRole('status').textContent).toBe('Loading…');
-    expect(screen.queryByRole('heading', { name: 'Sign in on this computer' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Confirm it’s you' })).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
     await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
     await act(async () => { finish(loaded); });
     expect(view.state()).toBe('ready');
-    expect(getComputedStyle(screen.getByRole('heading', { name: 'Sign in on this computer' })).visibility).toBe('visible');
+    expect(getComputedStyle(screen.getByRole('heading', { name: 'Confirm it’s you' })).visibility).toBe('visible');
     expect(view.authenticate).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Sign in with passkey' }));
     expect(view.authenticate).toHaveBeenCalledTimes(1);
@@ -50,9 +50,9 @@ describe('passkey task typography readiness', () => {
     }));
     const view = task();
     await waitFor(() => expect(view.state()).toBe('fallback'));
-    expect(getComputedStyle(screen.getByRole('heading', { name: 'Sign in on this computer' })).visibility).toBe('visible');
+    expect(getComputedStyle(screen.getByRole('heading', { name: 'Confirm it’s you' })).visibility).toBe('visible');
     expect(screen.getAllByRole('button', { name: 'Sign in with passkey' })).toHaveLength(1);
-    expect(getComputedStyle(screen.getByRole('heading', { name: 'Sign in on this computer' })).fontFamily).toContain('Arial');
+    expect(getComputedStyle(screen.getByRole('heading', { name: 'Confirm it’s you' })).fontFamily).toContain('Arial');
     expect(view.authenticate).not.toHaveBeenCalled();
   });
 
@@ -87,4 +87,11 @@ describe('passkey task typography readiness', () => {
     expect(view.container.childElementCount).toBe(0);
     expect(view.authenticate).not.toHaveBeenCalled();
   });
+});
+
+it('shows a checking placeholder without a mounted ceremony control', () => {
+  const { container } = render(<ThemeProvider theme={theme}><OnboardingPasskeyTask busy={false} checking
+    enrolled={null} error={null} authenticate={vi.fn()} /></ThemeProvider>);
+  expect(screen.getByRole('heading', { name: 'Checking this computer…' })).toBeTruthy();
+  expect(container.querySelector('[data-visual="passkey-card"] button')).toBeNull();
 });

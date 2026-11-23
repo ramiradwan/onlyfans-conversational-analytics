@@ -69,7 +69,7 @@ test('status and main journey agree on sleeping, pairing and connection recovery
   const sleeping = model();
   sleeping.status.delivery.browser_tab_sleeping = true;
   assert.equal(presentation.customerJourney({ ...sleeping, config: { desktop_app_download_url: null },
-    legal: { ...sleeping.legal, flow: { stage: 'complete' } } }).title, 'Open OnlyFans to continue');
+    legal: { ...sleeping.legal, flow: { stage: 'complete' } } }).title, 'Open the creator site to continue');
   assert.equal(presentation.statusPresentation(sleeping).label, 'Browser tab paused');
   assert.notEqual(presentation.readinessLabels(sleeping).analysis, 'Ready');
 

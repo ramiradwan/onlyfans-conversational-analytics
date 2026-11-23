@@ -16,8 +16,8 @@ const baseFacts = (verified = []) => Object.fromEntries(
 
 const creatorLabel = Object.freeze({
   creator_id: 'creator-selected',
-  display_name: 'Mia Studio',
-  username: 'mia.studio',
+  display_name: 'Sample Studio',
+  username: 'sample.studio',
 });
 
 const providerChoices = Object.freeze({
@@ -92,6 +92,7 @@ function localAuth(overrides = {}) {
     recoveringStatus: false,
     error: null,
     access: null,
+    attempt: null,
     ...overrides,
   };
 }
@@ -99,8 +100,50 @@ function localAuth(overrides = {}) {
 const finishSetupVerifiedFacts = baseFacts(['browser_access', 'installation', 'account', 'configuration']);
 const authenticatedLocal = localAuth({ enrolled: true, authenticated: true });
 
+function protectedRecovery(recovery, snapshot = {}, state = {}) {
+  return desktopState({
+    next_task: 'account-connection',
+    authority_recovery: recovery,
+    ...snapshot,
+  }, { authentication: localAuth({ access: 'expired', enrolled: null }), ...state });
+}
+
+function protectedBrowser(phase, state = {}) {
+  return protectedRecovery('sign-in-required', {
+    authority_recovery_browser: phase,
+    allowed_actions: ['auth.cancel'],
+    authentication: signInProjection({
+      operation_id: OPERATION_ID,
+      state: 'selected',
+      actions: { select: false, open_browser: phase === 'ready', cancel: true, switch_account: false },
+    }),
+  }, state);
+}
+
 export const DESKTOP_ONBOARDING_STATES = Object.freeze({
   loading: desktopState(null, { connected: false }),
+  recovery_status_pending: protectedRecovery('available', {}, { connected: false }),
+  recovery_blocked: protectedRecovery('blocked'),
+  recovery_available: protectedRecovery('available', { allowed_actions: ['account.connect'] }),
+  recovery_selection_required: protectedRecovery('sign-in-required', {
+    allowed_actions: ['auth.select'],
+    authentication: signInProjection({ operation_id: OPERATION_ID }),
+  }),
+  recovery_preparing: protectedRecovery('preparing'),
+  recovery_browser_ready: protectedBrowser('ready'),
+  recovery_browser_opening: protectedBrowser('ready', { acting: 'browser.open' }),
+  recovery_browser_unavailable: protectedBrowser('ready', { error: 'chrome_unavailable' }),
+  recovery_browser_claimed: protectedBrowser('launch-claimed'),
+  recovery_browser_handed_off: protectedBrowser('handed-off'),
+  recovery_canceling: protectedBrowser('handed-off', { acting: 'auth.cancel' }),
+  recovery_browser_unconfirmed: protectedBrowser('unconfirmed'),
+  recovery_checking: protectedRecovery('checking'),
+  recovery_retired: protectedRecovery('sign-in-required', {
+    allowed_actions: ['auth.select'],
+    authentication: signInProjection({ operation_id: OPERATION_ID, state: 'retired' }),
+  }),
+  recovery_restoring: protectedRecovery('restoring'),
+  recovery_connection_unavailable: protectedRecovery('available', {}, { connected: false, error: 'connection_unavailable' }),
 
   browser_access_needed: desktopState({
     journey_id: null,
@@ -111,6 +154,12 @@ export const DESKTOP_ONBOARDING_STATES = Object.freeze({
     next_task: 'browser-access',
     pending_operations: [pendingOp('browser.access', 'accepted')],
   }, { pending: OPERATION_ID, acting: 'browser.access' }),
+  browser_access_in_chrome: desktopState({
+    pending_operations: [pendingOp('browser.access', 'waiting')],
+  }),
+  browser_access_reconnecting: desktopState({
+    pending_operations: [pendingOp('browser.access', 'waiting')],
+  }, { connected: false, error: 'status_unavailable' }),
   browser_access_chrome_unavailable: desktopState({
     next_task: 'browser-access',
     pending_operations: [pendingOp('browser.access', 'waiting', 'chrome_unavailable')],
@@ -181,6 +230,7 @@ export const DESKTOP_ONBOARDING_STATES = Object.freeze({
       computer_name: 'Studio computer',
       expires_at: '2030-01-01T00:00:00Z',
     },
+    decision_status: { operation_id: OPERATION_ID, state: 'confirmation-required' },
     authentication: signInProjection({
       operation_id: OPERATION_ID,
       browser_operation_id: OPERATION_ID,
@@ -188,6 +238,19 @@ export const DESKTOP_ONBOARDING_STATES = Object.freeze({
       actions: { select: false, cancel: true, open_browser: false, switch_account: true },
       authentication_attempt: { authentication_attempt_id: ATTEMPT_ID, provider: 'google', mode: 'sign-in' },
     }),
+  }),
+  account_confirmed: desktopState({
+    next_task: 'account-connection',
+    facts: baseFacts(['browser_access']),
+    creator_label: creatorLabel,
+    decision_status: { operation_id: OPERATION_ID, state: 'accepted' },
+    pending_operations: [pendingOp('account.connect', 'waiting')],
+  }),
+  account_confirmation_unknown: desktopState({
+    next_task: 'account-connection',
+    facts: baseFacts(['browser_access']),
+    creator_label: creatorLabel,
+    pending_operations: [pendingOp('account.confirm', 'outcome_unknown', 'operation_unconfirmed')],
   }),
   account_sign_in_did_not_finish: desktopState({
     next_task: 'account-connection',
@@ -239,6 +302,16 @@ export const DESKTOP_ONBOARDING_STATES = Object.freeze({
     creator_label: creatorLabel,
     allowed_actions: ['browser.pair'],
   }, { authentication: localAuth({ enrolled: true, authenticated: false }) }),
+  finish_passkey_creating: desktopState({
+    next_task: 'finish-setup',
+    facts: finishSetupVerifiedFacts,
+    creator_label: creatorLabel,
+  }, { authentication: localAuth({ busy: true, attempt: 'create' }) }),
+  finish_passkey_sign_in_failed: desktopState({
+    next_task: 'finish-setup',
+    facts: finishSetupVerifiedFacts,
+    creator_label: creatorLabel,
+  }, { authentication: localAuth({ enrolled: true, error: 'passkey_unconfirmed', attempt: 'sign-in' }) }),
   finish_getting_ready: desktopState({
     next_task: 'finish-setup',
     facts: finishSetupVerifiedFacts,
@@ -371,9 +444,10 @@ function browserTaskPayload(purpose = 'browser.access') {
   return value;
 }
 
-const taskState = (state, purpose = 'browser.access') => Object.freeze({
+const taskState = (state, purpose = 'browser.access', recovery) => Object.freeze({
   state,
   payload: purpose === null ? null : browserTaskPayload(purpose),
+  ...(recovery ? { recovery } : {}),
 });
 
 export const BROWSER_TASK_STATES = Object.freeze({
@@ -381,7 +455,7 @@ export const BROWSER_TASK_STATES = Object.freeze({
   unavailable: taskState('unavailable', 'browser.access'),
   extension_disconnected: taskState('extension_disconnected', 'browser.access'),
   profile_mismatch: taskState('profile_mismatch', 'browser.access'),
-  account_mismatch: taskState('account_mismatch', 'browser.access'),
+  account_mismatch: taskState('account_mismatch', 'browser.pairing-confirmation'),
   auth_idle: taskState('auth_idle', 'browser.authentication'),
   auth_opening: taskState('auth_opening', 'browser.authentication'),
   auth_checking: taskState('auth_checking', 'browser.authentication'),
@@ -397,6 +471,8 @@ export const BROWSER_TASK_STATES = Object.freeze({
   task_changed: taskState('task_changed', 'browser.access'),
   task_completed: taskState('task_completed', 'browser.access'),
   service_unavailable: taskState('service_unavailable', 'browser.access'),
+  service_unavailable_invariant_failed: taskState('service_unavailable', 'browser.access', 'invariant_failed'),
+  service_unavailable_authorization_refused: taskState('service_unavailable', 'browser.access', 'authorization_refused'),
   service_unavailable_no_payload: taskState('service_unavailable', null),
   status_reconnecting: taskState('status_reconnecting', 'browser.access'),
   needs_consent: taskState('needs-consent', 'browser.access'),

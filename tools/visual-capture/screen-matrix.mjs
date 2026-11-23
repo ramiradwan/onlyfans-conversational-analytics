@@ -6,6 +6,7 @@ export const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'narrow', width: 390, height: 844 },
   { name: 'tablet', width: 820, height: 900, targetedOnly: true },
+  { name: 'narrow-2x', width: 320, height: 900, targetedOnly: true },
 ];
 
 const heading = (name) => (page) => page.getByRole('heading', { level: 1, name });
@@ -15,21 +16,119 @@ const openPairingComparison = async page => {
   await page.getByRole('dialog').getByRole('button', { name: 'Compare connection codes', exact: true }).click();
 };
 
+const findingHeadline = 'One topic appears in 50% of fully checked messages';
+const findingsDialog = page => page.getByRole('dialog', { name: 'All topics', exact: true });
+const findingsTrigger = page => page.getByRole('button', { name: 'See all topics', exact: true });
+
+async function prepareFindings(page) {
+  await page.route('**/src/story-only/findingsFixtures.ts*', async route => {
+    const response = await route.fetch();
+    const source = await response.text();
+    if (!source.includes('Example topic')) throw new Error('Synthetic findings label is missing');
+    await route.fulfill({ response, body: source.replace('Example topic', 'Pricing questions') });
+  });
+  if (page.viewportSize().width === 320) {
+    await page.addInitScript(() => {
+      const root = new MutationObserver(() => {
+        if (!document.documentElement) return;
+        document.documentElement.style.fontSize = '200%';
+        root.disconnect();
+      });
+      root.observe(document, { childList: true, subtree: true });
+    });
+  }
+}
+
+async function assertFindingTitle(locator, viewport) {
+  const layout = await locator.evaluate(node => {
+    const css = getComputedStyle(node);
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    return { lines: new Set([...range.getClientRects()].map(rect => rect.top)).size,
+      width: node.clientWidth, font: css.fontFamily, fontSize: parseFloat(css.fontSize), clamp: css.webkitLineClamp };
+  });
+  if (!layout.font.includes('Inter Variable') || layout.clamp !== 'none') throw new Error('Finding title lost its wrapping or font');
+  if (viewport.width === 1440 && layout.lines !== 1) {
+    throw new Error(`Finding title uses ${layout.lines} lines in ${layout.width}px and has a one-line budget`);
+  }
+  if (viewport.width === 320 && (layout.lines < 2 || layout.fontSize < 48)) throw new Error('Finding title did not wrap at 2×');
+}
+
 /** Each screen names the locator that proves its state rendered before capture. */
 export function createScreens({ assertMaxWidth, assertCentered, assertLoadingGeometry, assertMetricHierarchy } = {}) {
 return [
+  {
+    workspace: 'findings', state: 'first-insights', viewports: ['desktop', 'narrow', 'narrow-2x'],
+    query: { stability: 'findings' }, prepare: prepareFindings,
+    ready: page => page.getByRole('heading', { name: findingHeadline, exact: true }),
+    assert: async (page, viewport) => {
+      await assertFindingTitle(page.getByRole('heading', { name: findingHeadline, exact: true }), viewport);
+      const bar = await page.locator('[data-visual="finding-bar"]').first().evaluate(node => ({
+        animation: getComputedStyle(node).animationName,
+        fill: node.getBoundingClientRect().width / node.parentElement.getBoundingClientRect().width,
+      }));
+      if (bar.animation !== 'none' || Math.abs(bar.fill - 0.5) > 0.005) throw new Error('Finding bar missed its reduced-motion end state');
+    },
+  },
+  {
+    workspace: 'findings', state: 'all-topics', viewports: ['desktop', 'narrow', 'narrow-2x'],
+    query: { stability: 'findings' }, prepare: prepareFindings,
+    act: async page => {
+      await findingsTrigger(page).press('Enter');
+      const close = findingsDialog(page).getByRole('button', { name: 'Close', exact: true });
+      await close.waitFor({ state: 'visible' });
+      await page.keyboard.press('Escape');
+      await findingsDialog(page).waitFor({ state: 'hidden' });
+      if (!await findingsTrigger(page).evaluate(node => node === document.activeElement && node.matches(':focus-visible'))) {
+        throw new Error('All topics did not return keyboard focus');
+      }
+      await page.keyboard.press('Enter');
+    },
+    ready: findingsDialog,
+    assert: async (page, viewport) => {
+      const dialog = findingsDialog(page);
+      const basis = dialog.getByText('Based on 2 fully checked messages.', { exact: true });
+      await basis.waitFor({ state: 'visible' });
+      await dialog.getByRole('heading', { name: 'Mentions', exact: true }).waitFor({ state: 'visible' });
+      const close = dialog.getByRole('button', { name: 'Close', exact: true });
+      if (Math.abs((await close.boundingBox()).x - (await basis.boundingBox()).x) > 1) {
+        throw new Error('All topics actions and content lost their shared left edge');
+      }
+      const tableArea = dialog.getByRole('group', { name: 'Topics findings · Subjects scroll area', exact: true });
+      const table = await tableArea.evaluate(node => {
+        const header = node.querySelector('thead').getBoundingClientRect();
+        const data = node.querySelector('tbody tr').getBoundingClientRect();
+        const view = node.getBoundingClientRect();
+        return { horizontal: node.scrollWidth > node.clientWidth, headerHeight: header.height,
+          visibleRow: data.top >= header.bottom && data.top < view.bottom };
+      });
+      if (!table.visibleRow) throw new Error(`All topics header (${table.headerHeight}px) obscures the first data row`);
+      if (viewport.width <= 390) {
+        if (!table.horizontal) throw new Error('All topics table lost its horizontal scroll area');
+        await tableArea.press('ArrowRight');
+        await page.waitForFunction(node => node.scrollLeft > 0, await tableArea.elementHandle(), { timeout: 3000 });
+        await tableArea.evaluate(node => { node.scrollLeft = 0; });
+        await dialog.focus();
+      }
+      await page.keyboard.press('Shift+Tab');
+      if (!await close.evaluate(node => node === document.activeElement && node.matches(':focus-visible'))) {
+        throw new Error('All topics did not show keyboard focus on Close');
+      }
+    },
+  },
   ...['current', 'pending', 'unavailable', 'degraded'].map((state) => ({ workspace: 'graph', state,
     ready: heading('Graph explorer'), act: (page) => page.evaluate((status) => window.__workspaceFixture.projection(status), state) })),
-  { workspace: 'home', state: 'loading', ready: text('Loading dashboard…') },
+  { workspace: 'home', state: 'loading', ready: (page) => page.getByRole('region', { name: 'Overview', busy: true }) },
   {
     workspace: 'home',
     state: 'fresh',
-    ready: (page) => page.getByRole('link', { name: 'Continue setup' }),
+    ready: (page) => page.getByRole('link', { name: 'Continue in browser' }),
     assert: async (page, viewport) => {
       if (viewport.name !== 'desktop') return;
       const prompt = page.locator('[data-visual="setup-prompt"]');
       await assertMaxWidth(prompt, 560);
-      await assertCentered(prompt, page.getByRole('main'));
+      const [card, title] = await Promise.all([prompt.boundingBox(), heading('Dashboard')(page).boundingBox()]);
+      if (!card || !title || card.x !== title.x) throw new Error('Setup prompt and dashboard title must share a left edge');
     },
   },
   { workspace: 'home', state: 'syncing', ready: (page) => page.getByRole('progressbar', { name: /History \d+% synced/ }) },
@@ -50,15 +149,15 @@ return [
     state: 'allow-message-collection',
     ready: (page) => page.getByRole('heading', { name: 'Allow message collection', exact: true }),
     assert: async (page) => {
-      await page.getByRole('button', { name: 'Review in Chrome', exact: true }).waitFor({ state: 'visible' });
+      await page.getByRole('button', { name: 'Review in browser', exact: true }).waitFor({ state: 'visible' });
     },
   },
   {
     workspace: 'dashboard-continuation',
     state: 'allow-onlyfans-access',
-    ready: (page) => page.getByRole('heading', { name: 'Allow OnlyFans access', exact: true }),
+    ready: (page) => page.getByRole('heading', { name: 'Allow site access', exact: true }),
     assert: async (page) => {
-      await page.getByRole('button', { name: 'Review in Chrome', exact: true }).waitFor({ state: 'visible' });
+      await page.getByRole('button', { name: 'Review in browser', exact: true }).waitFor({ state: 'visible' });
       await page.getByRole('region', { name: 'Overview' }).waitFor({ state: 'visible' });
     },
   },
@@ -67,21 +166,21 @@ return [
     state: 'message-collection-off',
     ready: (page) => page.getByRole('heading', { name: 'Message collection is off', exact: true }),
     assert: async (page) => {
-      await page.getByRole('button', { name: 'Review in Chrome', exact: true }).waitFor({ state: 'visible' });
+      await page.getByRole('button', { name: 'Review in browser', exact: true }).waitFor({ state: 'visible' });
     },
   },
   {
     workspace: 'dashboard-continuation',
     state: 'message-collection-paused',
-    ready: (page) => page.getByRole('heading', { name: 'Message collection is paused', exact: true }),
+    ready: (page) => page.getByRole('heading', { name: 'Paused by you', exact: true }),
     assert: async (page) => {
-      await page.getByRole('button', { name: 'Resume collecting', exact: true }).waitFor({ state: 'visible' });
+      await page.getByRole('button', { name: 'Review in browser', exact: true }).waitFor({ state: 'visible' });
     },
   },
   {
     workspace: 'dashboard-continuation',
     state: 'add-older-conversations',
-    ready: (page) => page.getByRole('heading', { name: 'See your first conversations', exact: true }),
+    ready: (page) => page.getByRole('heading', { name: 'Add older conversations', exact: true }),
     assert: async (page) => {
       await page.getByRole('button', { name: 'Review message history', exact: true }).waitFor({ state: 'visible' });
     },
@@ -96,7 +195,7 @@ return [
   {
     workspace: 'dashboard-continuation',
     state: 'activating-full-analytics',
-    ready: text('Activation accepted. Checking Full analytics…'),
+    ready: text('Checking your activation…'),
   },
   {
     workspace: 'dashboard-continuation',
@@ -106,7 +205,8 @@ return [
   {
     workspace: 'dashboard-continuation',
     state: 'activation-unavailable',
-    ready: text('Full analytics activation could not be prepared.'),
+    ready: (page) => page.getByRole('heading', { name: 'Full analytics isn’t on', exact: true }),
+    assert: (page) => text('Activation couldn’t finish.')(page).waitFor({ state: 'visible' }),
   },
   {
     workspace: 'analytics',
@@ -152,11 +252,11 @@ return [
       await assertCentered(frame, page.getByRole('main'));
     },
   })),
-  { workspace: 'passkey', state: 'resting', ready: heading('Sign in on this computer') },
+  { workspace: 'passkey', state: 'resting', ready: heading('Confirm it’s you') },
   {
     workspace: 'passkey', state: 'cancelled',
     act: (page) => page.getByRole('button', { name: 'Sign in with passkey' }).click(),
-    ready: (page) => page.getByRole('alert').filter({ hasText: 'Sign-in did not finish.' }),
+    ready: (page) => page.getByRole('alert').filter({ hasText: 'Sign-in didn’t finish.' }),
   },
   {
     workspace: 'analytics', state: 'model', variant: 'date-popover', viewports: ['desktop', 'narrow'],
@@ -203,7 +303,7 @@ return [
       await publishActivation(page, 'waiting');
       await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
     },
-    ready: page => page.getByText('Finish signing in in Chrome.', { exact: true }),
+    ready: page => page.getByText('Finish signing in in your browser.', { exact: true }),
     assert: async (page) => {
       if (await page.getByRole('button', { name: 'Activate for free' }).count()) throw new Error('Authentication must precede consent');
       if ((await page.evaluate(() => window.__workspaceFixture.desktopActions())).length) throw new Error('Returning from Chrome must not submit a decision');
@@ -226,13 +326,13 @@ return [
   {
     workspace: 'settings', state: 'fresh', variant: 'pairing-comparison', viewports: ['narrow'], modes: ['light'],
     act: openPairingComparison,
-    ready: (page) => page.getByText('Check the code', { exact: true }),
+    ready: (page) => page.getByRole('heading', { name: 'Confirm the connection', exact: true }),
   },
   {
     workspace: 'settings', state: 'fresh', variant: 'history-consent', viewports: ['narrow'], modes: ['light'],
     act: async (page) => {
       await openPairingComparison(page);
-      await page.getByText('Check the code', { exact: true }).waitFor({ state: 'visible' });
+      await page.getByRole('heading', { name: 'Confirm the connection', exact: true }).waitFor({ state: 'visible' });
       await page.getByRole('checkbox', { name: 'The codes match' }).check();
       await page.getByRole('button', { name: 'Confirm connection' }).click();
     },

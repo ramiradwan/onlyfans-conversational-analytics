@@ -92,6 +92,9 @@ export async function inspectTaskCopy(page, fixture) {
       while (walker.nextNode()) {
         const text = walker.currentNode;
         if (!text.textContent.trim() || !visible(text.parentElement)) continue;
+        const textStyle = getComputedStyle(text.parentElement);
+        if (text.parentElement.id === 'local-access-title' && textStyle.position === 'absolute'
+          && textStyle.width === '1px' && textStyle.height === '1px' && textStyle.clipPath !== 'none') continue;
         const range = document.createRange();
         range.selectNodeContents(text);
         for (const box of range.getClientRects()) {
@@ -130,12 +133,17 @@ export async function inspectTaskCopy(page, fixture) {
     assert.equal(summary.brokenImages, 0, 'Provider images must load cleanly');
     assert(!summary.horizontalOverflow, 'Static onboarding surface must not overflow horizontally');
     if (fixture.surface === 'desktop-onboarding') {
+      const accessTitle = page.locator('#local-access-title');
+      if (await accessTitle.isVisible()) {
+        assert.equal(await page.getByRole('heading', { name: 'Access on this computer', exact: true }).count(), 1);
+      }
       assert(summary.journeyState?.startsWith('desktop.'), 'Desktop onboarding must declare a desktop journey state');
       assert.equal(summary.steps, 3, 'Desktop onboarding must keep its three-step progress list');
       assert.equal(summary.hasRecoveryInput, false, 'Desktop onboarding must not reintroduce recovery inputs');
     } else {
       assert.equal(summary.journeyState, 'browser.' + fixture.state.state.replaceAll('-', '_'), 'Browser task must declare its exact journey state');
-      assert(summary.statusText.length > 10, 'Browser task must render readable status copy');
+      assert(['loading', 'auth_idle', 'ready'].includes(fixture.state.state) ? summary.statusText === '' : summary.statusText.length > 10,
+        'Browser task must render readable status copy');
       assert.equal(summary.hasNav, false, 'Browser task must not render a second setup wizard');
     }
     return summary;

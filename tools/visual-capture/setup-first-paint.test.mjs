@@ -1,7 +1,240 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { extname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { chromium } from 'playwright';
+
+test('native startup documents expose settled copy and preserve native semantics', async () => {
+  const root = new URL('../../desktop/shell/', import.meta.url);
+  const files = await Promise.all([
+    'index.html', 'unavailable.html', 'data-recovery.html', 'shell.css', 'onboarding-theme.css'
+  ].map(async name => [name, await readFile(new URL(name, root), 'utf8')])).then(entries => Object.fromEntries(entries));
+  const waiting = files['index.html'];
+  const unavailable = files['unavailable.html'];
+  const recovery = files['data-recovery.html'];
+  const css = files['shell.css'];
+  const theme = files['onboarding-theme.css'];
+  assert.match(waiting, /<h1 id="startup-title">Opening Conversation Analytics<\/h1>/);
+  assert.match(waiting, /role="status"[^>]*>Getting things ready on this computer…<\/p>/);
+  assert.match(unavailable, /<h1>Conversation Analytics can’t start right now<\/h1>/);
+  assert.match(unavailable, /Quit Conversation Analytics from its icon in the system tray, then open it again\./);
+  assert.match(recovery, /<h1>Can’t open your saved data<\/h1>/);
+  assert.match(recovery, /role="alert"/);
+  assert.match(recovery, /Keep your existing data and keys\./);
+  assert.match(recovery, /If the problem continues, contact your administrator\./);
+  for (const html of [waiting, unavailable, recovery]) {
+    assert.match(html, /class="setup-header"/);
+    assert.match(html, /class="brand-mark"/);
+    assert.match(html, /class="spot-tile"[^>]*aria-hidden="true"><svg[^>]+width="20"[^>]+height="20"/);
+  }
+  assert.match(recovery, /StorageOutlined/);
+  assert.match(waiting, /class="status-icon"[^>]*aria-hidden="true"><svg[^>]*class="si-pending"/);
+  assert.match(css, /--dipsy-intent-surface-dominant-border/);
+  assert.match(css, /--dipsy-intent-surface-dominant-elevation/);
+  assert.match(css, /font-size:\s*clamp\(1\.375rem,\s*1\.1rem\s*\+\s*\.9vw,\s*1\.75rem\)/);
+  assert.match(css, /prefers-reduced-motion/);
+  assert.match(waiting, /data-desktop-drag-region/);
+  assert.match(waiting, /<desktop-window-controls><\/desktop-window-controls>/);
+  assert.match(css, /onboarding-theme\.css/);
+  assert.match(css, /prefers-reduced-motion/);
+  assert.match(theme, /prefers-color-scheme: dark/);
+  assert.match(theme, /inter-latin-opsz-normal\.woff2/);
+});
+
+test('native startup first paint uses local assets and fits narrow 2x viewports in both schemes', async () => {
+  const root = resolve(fileURLToPath(new URL('../../desktop/shell/', import.meta.url)));
+  const seen = [];
+  const types = { '.html': 'text/html', '.css': 'text/css', '.woff2': 'font/woff2' };
+  const server = createServer(async (request, response) => {
+    seen.push(request.url);
+    const name = request.url?.slice(1) ?? '';
+    if (!['index.html', 'unavailable.html', 'data-recovery.html', 'shell.css', 'onboarding-theme.css', 'inter-latin-opsz-normal.woff2'].includes(name)) {
+      response.writeHead(404).end(); return;
+    }
+    response.setHeader('content-type', types[extname(name)]);
+    response.end(await readFile(resolve(root, name)));
+  });
+  await new Promise(done => server.listen(0, '127.0.0.1', done));
+  const browser = await chromium.launch();
+  try {
+    const address = server.address();
+    for (const scheme of ['light', 'dark']) {
+      const context = await browser.newContext({ colorScheme: scheme, viewport: { width: 320, height: 640 }, deviceScaleFactor: 2 });
+      const page = await context.newPage();
+      await page.addInitScript(() => customElements.define('desktop-window-controls', class extends HTMLElement {}));
+      const errors = [];
+      page.on('request', request => { if (new URL(request.url()).origin !== `http://127.0.0.1:${address.port}`) errors.push('external request'); });
+      await page.goto(`http://127.0.0.1:${address.port}/index.html`, { waitUntil: 'networkidle' });
+      await page.evaluate(() => document.fonts.ready);
+      const metrics = await page.evaluate(() => ({
+        overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth,
+        bg: getComputedStyle(document.body).backgroundColor,
+        text: getComputedStyle(document.body).color,
+        font: document.fonts.check('16px "Inter Variable"'),
+        heading: document.querySelector('h1').getBoundingClientRect().height,
+        role: document.querySelector('[role="status"]')?.textContent,
+        headerHeight: document.querySelector('header').getBoundingClientRect().height,
+        tile: document.querySelector('.spot-tile').getBoundingClientRect().width,
+        titleSize: parseFloat(getComputedStyle(document.querySelector('h1')).fontSize),
+        bodySize: parseFloat(getComputedStyle(document.querySelector('body')).fontSize),
+        pendingAnimation: getComputedStyle(document.querySelector('.si-pending')).animationName,
+        statusColor: getComputedStyle(document.querySelector('[role="status"]')).color,
+        ink: getComputedStyle(document.body).color,
+        statusHeight: document.querySelector('.status-line').getBoundingClientRect().height,
+        statusTop: document.querySelector('.status-line').getBoundingClientRect().top,
+        titleBottom: document.querySelector('h1').getBoundingClientRect().bottom,
+      }));
+      assert.ok(metrics.overflow <= 1, `${scheme} 320px overflow: ${metrics.overflow}`);
+      assert.ok(metrics.font, 'local Inter font must load');
+      assert.ok(metrics.bg && metrics.text && metrics.heading > 0);
+      assert.equal(metrics.role, 'Getting things ready on this computer…');
+      assert.equal(metrics.headerHeight, 72);
+      assert.equal(metrics.tile, 40);
+      assert.equal(metrics.statusColor, metrics.ink);
+      assert.equal(metrics.pendingAnimation, 'status-rotate');
+      assert.ok(metrics.statusHeight >= 44);
+      assert.ok(metrics.statusTop - metrics.titleBottom >= 15);
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      assert.equal(await page.locator('.si-pending').evaluate(node => getComputedStyle(node).animationName), 'none');
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      await page.addStyleTag({ content: 'html { font-size: 32px !important; }' });
+      const zoomed = await page.evaluate(() => ({
+        title: parseFloat(getComputedStyle(document.querySelector('h1')).fontSize),
+        body: parseFloat(getComputedStyle(document.body).fontSize),
+        header: parseFloat(getComputedStyle(document.querySelector('.brand-name')).fontSize),
+        overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth,
+      }));
+      assert.ok(zoomed.title >= 44, `title must scale with text size: ${zoomed.title}`);
+      assert.equal(zoomed.body, 32);
+      assert.equal(zoomed.header, 32);
+      assert.ok(zoomed.overflow <= 1, `320px 2x text overflow: ${zoomed.overflow}`);
+      assert.deepEqual(errors, []);
+      for (const path of ['index.html', 'unavailable.html', 'data-recovery.html']) {
+        await page.setViewportSize({ width: 320, height: 640 });
+        await page.goto(`http://127.0.0.1:${address.port}/${path}`, { waitUntil: 'networkidle' });
+        await page.addStyleTag({ content: 'html { font-size: 32px !important; }' });
+        const narrow = await page.evaluate(() => ({
+          overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth,
+          title: parseFloat(getComputedStyle(document.querySelector('h1')).fontSize),
+        }));
+        assert.ok(narrow.overflow <= 1, `${scheme} ${path} 320px 2x text overflow: ${narrow.overflow}`);
+        assert.ok(narrow.title >= 44, `${scheme} ${path} title did not scale: ${narrow.title}`);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.goto(`http://127.0.0.1:${address.port}/${path}`, { waitUntil: 'networkidle' });
+        const titleLines = await page.locator('h1').evaluate(node => {
+          const range = document.createRange(); range.selectNodeContents(node);
+          return range.getClientRects().length;
+        });
+        assert.equal(titleLines, 1, `${scheme} ${path} title must occupy one line at 1440px`);
+      }
+      await context.close();
+    }
+    assert.ok(seen.includes('/inter-latin-opsz-normal.woff2'), 'the packaged font asset must be requested');
+  } finally {
+    await browser.close();
+    await new Promise(done => server.close(done));
+  }
+});
+
+test('native onboarding primitives render under the shell CSP', async () => {
+  const root = new URL('../../desktop/shell/', import.meta.url);
+  const config = JSON.parse(await readFile(new URL('../../desktop/src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
+  const layout = await readFile(new URL('../../frontend/src/theme/onboarding.css', import.meta.url), 'utf8');
+  const icons = [...layout.matchAll(/^\.onboarding-icon\[data-icon="([a-z-]+)"\].*?url\("data:image\/svg\+xml,/gm)]
+    .map(([, name]) => name);
+  assert.equal(icons.length, 19);
+  const icon = name => `<span class="onboarding-icon" data-icon="${name}" aria-hidden="true"></span>`;
+  const document = scaled => `<!doctype html><html data-large="${scaled}"><head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/shell.css"><link rel="stylesheet" href="/fixture.css">
+    </head><body><section class="onboarding-surface" data-composition="static">
+    <div class="onboarding-surface-head"><span class="onboarding-spot">${icon('passkey')}</span>Device setup</div>
+    <h1 class="onboarding-surface-title">Prepare this computer</h1>
+    <div class="onboarding-surface-body">Follow the setup instructions.</div>
+    <span class="onboarding-pill" data-tone="error"><span class="onboarding-tone-dot" aria-hidden="true"></span>Stopped</span>
+    <span class="onboarding-pill" data-tone="neutral"><span class="onboarding-tone-dot" aria-hidden="true"></span>Ready</span>
+    <div class="onboarding-status" data-tone="attention">${icon('attention')}<span>The status stays readable when the message wraps onto another line.</span></div>
+    <div class="onboarding-status" data-tone="neutral">${icon('info')}<span>Setup is ready.</span></div>
+    </section><div aria-hidden="true">${icons.map(icon).join('')}</div>
+    <span class="reference-secondary"></span><span class="reference-primary"></span><span class="reference-error"></span>
+    </body></html>`;
+  const origin = 'http://native-onboarding.test';
+  const types = { '.css': 'text/css', '.woff2': 'font/woff2', '.svg': 'image/svg+xml' };
+  const browser = await chromium.launch();
+  try {
+    for (const colorScheme of ['light', 'dark']) for (const width of [1440, 390, 320]) {
+      const page = await browser.newPage({ colorScheme, viewport: { width, height: 900 }, reducedMotion: 'reduce' });
+      const loadedIcons = new Set();
+      try {
+        await page.addInitScript(() => {
+          window.imageCspViolations = [];
+          document.addEventListener('securitypolicyviolation', event => {
+            if (event.effectiveDirective === 'img-src') window.imageCspViolations.push(event.blockedURI);
+          });
+        });
+        await page.route(origin + '/**', async route => {
+          const { pathname } = new URL(route.request().url());
+          if (pathname === '/') return route.fulfill({ contentType: 'text/html', body: document(width === 320),
+            headers: { 'content-security-policy': config.app.security.csp } });
+          if (pathname === '/fixture.css') return route.fulfill({ contentType: 'text/css', body: `
+            [data-large="true"] { font-size: 200%; }
+            .reference-secondary { color: var(--dipsy-color-text-secondary); }
+            .reference-primary { color: var(--dipsy-color-text); }
+            .reference-error { color: var(--dipsy-color-error); }
+            body > [aria-hidden] { position: absolute; inset-inline-start: 0; }
+            body > [aria-hidden] > .onboarding-icon { inline-size: 1px; block-size: 1px; }
+          ` });
+          const name = pathname.slice(1);
+          if (!['shell.css', 'onboarding-theme.css', 'inter-latin-opsz-normal.woff2'].includes(name)
+            && !icons.some(iconName => name === `onboarding-icons/${iconName}.svg`)) return route.abort();
+          const body = await readFile(new URL(name, root));
+          await route.fulfill({ contentType: types[extname(name)], body });
+          if (name.endsWith('.svg')) loadedIcons.add(name);
+        });
+        await page.goto(origin, { waitUntil: 'networkidle' });
+        assert.deepEqual(await page.evaluate(() => window.imageCspViolations), []);
+        assert.deepEqual([...loadedIcons].sort(), icons.map(name => `onboarding-icons/${name}.svg`).sort());
+        const sizes = await page.evaluate(() => {
+          const style = selector => getComputedStyle(document.querySelector(selector));
+          const status = document.querySelector('.onboarding-status');
+          const [mark, text] = status.children;
+          const markRect = mark.getBoundingClientRect();
+          return {
+            head: ['fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textTransform'].map(key => style('.onboarding-surface-head')[key]),
+            pill: ['fontSize', 'fontWeight', 'lineHeight', 'color'].map(key => style('.onboarding-pill')[key]),
+            dot: style('.onboarding-tone-dot').backgroundColor,
+            neutralDot: style('.onboarding-pill[data-tone="neutral"] .onboarding-tone-dot').backgroundColor,
+            secondary: style('.reference-secondary').color,
+            primary: style('.reference-primary').color,
+            error: style('.reference-error').color,
+            copy: getComputedStyle(text).color,
+            secondaryInk: ['.onboarding-surface-head', '.onboarding-surface-body', '.onboarding-spot',
+              '.onboarding-status .onboarding-icon', '.onboarding-status[data-tone="neutral"]'].map(selector => style(selector).color),
+            firstLineDelta: markRect.top + markRect.height / 2 - text.getBoundingClientRect().top
+              - parseFloat(getComputedStyle(text).lineHeight) / 2,
+            overflow: document.documentElement.scrollWidth - innerWidth,
+          };
+        });
+        const small = width === 320 ? 24 : 12;
+        assert.deepEqual(sizes.head, [small + 'px', '600', width === 320 ? '33.6px' : '16.8px',
+          width === 320 ? '1.92px' : '0.96px', 'uppercase']);
+        assert.deepEqual(sizes.pill, [small + 'px', '500', (small * 1.5) + 'px', sizes.primary]);
+        assert.equal(sizes.dot, sizes.error);
+        assert.equal(sizes.neutralDot, sizes.secondary);
+        assert.deepEqual(sizes.secondaryInk, Array(5).fill(sizes.secondary));
+        assert.equal(sizes.copy, sizes.primary);
+        assert.ok(Math.abs(sizes.firstLineDelta) < 0.1);
+        assert.equal(sizes.overflow, 0);
+      } finally {
+        await page.close();
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+});
 
 for (const selected of ['dark', 'light']) {
   test(`saved ${selected} setup theme selects the canvas before CSS arrives`, async () => {

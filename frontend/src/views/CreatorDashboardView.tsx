@@ -5,8 +5,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import { useId, useState, useSyncExternalStore } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 
 import { BrowserExtensionControls } from '../components/BrowserExtensionControls';
 import { CommercialActivationControls } from '../components/CommercialActivationControls';
@@ -15,7 +14,7 @@ import { RecentConversations } from '../components/dashboard/RecentConversations
 import { MessageHistoryControls } from '../components/MessageHistoryControls';
 import { DashboardConnection, OnboardingEmptyActivity } from '../components/OnboardingEmptyActivity';
 import { SetupPrompt } from '../components/SetupPrompt';
-import { LoadingFrame, ReservedRegion, StatusLine } from '../components/ui/ReservedRegion';
+import { OnboardingAction, OnboardingCard, OnboardingSpot, OnboardingStatus } from '../components/ui/OnboardingCard';
 import { usePermissions } from '../hooks/usePermissions';
 import type { AnalyticsMetric, HistoricalCoverage } from '../protocol';
 import { browserControlApi, type BrowserControlApi } from '../services/browserControlApi';
@@ -31,6 +30,8 @@ import {
   type BridgeTransportStore,
 } from '../store/transportStore';
 import { componentTokens, effectTokens } from '../theme/generated/tokens';
+import { surfaceArrival } from '../theme/presentationMotion';
+import { createConnectionGrace, type ConnectionPhase } from '../utils/connectionGrace';
 import {
   coverageProgressLabel,
   coverageProgressPercent,
@@ -38,6 +39,7 @@ import {
   humanizeCoverageReason,
   humanizeProjectionReason,
   isConfigurationAligned,
+  isFullyCurrent,
   summarizeMetricEvidence,
   type DataReadiness,
   type MetricEvidence,
@@ -50,18 +52,14 @@ import {
 } from '../utils/statusCopy';
 
 const NUMBER_FORMAT = new Intl.NumberFormat('en-US');
-const LOCAL_DATE_TIME_FORMAT = new Intl.DateTimeFormat(undefined, {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-});
+const LOCAL_TIME_FORMAT = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' });
 const LOCAL_DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
-// The scroll container clips left of the basis row's inset, so the label meets the text edge and focus draws inside.
 const DETAILS_BUTTON_SX = {
   justifyContent: 'flex-start',
-  ml: -0.5,
   px: 0.5,
   '&:focus-visible': { outlineOffset: '-' + effectTokens.focus.width },
 } as const;
+const ISSUE_TONE = { info: 'pending', warning: 'attention', error: 'error' } as const;
 
 
 type CreatorDashboardState = Omit<
@@ -110,15 +108,39 @@ interface CreatorDashboardViewProps {
   historyStore?: BridgeTransportStore;
 }
 
+type DashboardIssue = StatusMessage & { updatesStopped?: boolean };
+
 function getIssue(
   state: ReturnType<CreatorDashboardStore['getState']>,
   hasDisplayedNumbers: boolean,
-): StatusMessage | null {
+  connectionPhase: ConnectionPhase,
+  softwareUpdateRequired: boolean,
+): DashboardIssue | null {
+  if (softwareUpdateRequired) return {
+    title: 'Update Conversation Analytics to continue.', detail: '', severity: 'warning',
+  };
   if (state.protocolError !== null) {
+    if (state.protocolError.code === 'unsupported_version') return {
+      title: 'This page is out of date.', detail: '', severity: 'error', updatesStopped: state.protocolError.fatal,
+    };
+    if (!state.protocolError.fatal && hasDisplayedNumbers && state.readModelState !== 'resyncing') return {
+      title: 'Couldn’t check the latest update. Showing your saved counts.', detail: '', severity: 'warning',
+      updatesStopped: state.readModelState === 'degraded',
+    };
     return {
       detail: protocolErrorText(state.protocolError),
       severity: state.protocolError.fatal ? 'error' : 'warning',
       title: 'Connection problem',
+      updatesStopped: state.protocolError.fatal,
+    };
+  }
+  if (state.viewRevision !== null && connectionPhase === 'interrupted') {
+    if (state.connection === 'reconnecting' || state.connection === 'handshaking') return {
+      title: 'Reconnecting to the app…', detail: '', severity: 'info',
+    };
+    if (state.connection === 'disconnected' || state.connection === 'error') return {
+      title: hasDisplayedNumbers ? 'Dipsy can’t connect right now. Showing your saved counts.' : 'Dashboard connection interrupted',
+      detail: '', severity: hasDisplayedNumbers ? 'warning' : 'error', updatesStopped: true,
     };
   }
   if (state.readModelState === 'resyncing') {
@@ -129,17 +151,11 @@ function getIssue(
     };
   }
   if (state.readModelState === 'degraded' && state.connection === 'connected') {
-    return state.viewRevision === null
-      ? {
-          detail: '',
-          severity: 'warning',
-          title: 'Numbers unavailable',
-        }
-      : {
-          detail: hasDisplayedNumbers ? 'Showing your last numbers.' : '',
-          severity: 'warning',
-          title: 'Updates unavailable',
-        };
+    return {
+      detail: '', severity: 'warning', updatesStopped: true,
+      title: hasDisplayedNumbers ? 'Couldn’t check the latest update. Showing your saved counts.'
+        : state.viewRevision === null ? 'Numbers unavailable' : 'Updates unavailable',
+    };
   }
   if (
     state.viewRevision === null &&
@@ -151,10 +167,6 @@ function getIssue(
       title: 'Dashboard connection interrupted',
     };
   }
-  const waitingForFirstMessages = state.projection.canonical_revision === 0 && !hasDisplayedNumbers;
-  if (state.system?.readiness === 'unavailable' && waitingForFirstMessages) return {
-    title: 'Waiting for messages', detail: 'Counts appear when messages reach this app.', severity: 'info',
-  };
   if (state.system?.readiness === 'unavailable') {
     return {
       detail: humanizeProjectionReason(
@@ -166,9 +178,6 @@ function getIssue(
     };
   }
   if (state.viewRevision === null) return null;
-  if (state.projection.status === 'unavailable' && waitingForFirstMessages) return {
-    title: 'Waiting for messages', detail: 'Counts appear when messages reach this app.', severity: 'info',
-  };
   if (state.projection.status === 'unavailable') {
     return {
       detail: '',
@@ -211,29 +220,37 @@ function directionSplit(
   inbound: AnalyticsMetric | null | undefined,
   outbound: AnalyticsMetric | null | undefined,
   readiness: DataReadiness,
-): { received: number; sent: number } | null {
+): { received: number; sent: number; sample: { count: number; asOf: string } | null } | null {
   if (readiness.projection.status !== 'current') return null;
   if (typeof inbound?.value !== 'number' || typeof outbound?.value !== 'number'
     || inbound.projection_revision !== readiness.projection.projected_revision
     || outbound.projection_revision !== readiness.projection.projected_revision) return null;
-  return { received: inbound.value, sent: outbound.value };
+  const count = inbound.value + outbound.value;
+  const sameSample = Number.isSafeInteger(count) && count === inbound.sample_size && count === outbound.sample_size
+    && inbound.as_of === outbound.as_of && inbound.basis === outbound.basis
+    && inbound.observed_range.start === outbound.observed_range.start
+    && inbound.observed_range.end === outbound.observed_range.end
+    && inbound.complete_range?.start === outbound.complete_range?.start
+    && inbound.complete_range?.end === outbound.complete_range?.end;
+  return { received: inbound.value, sent: outbound.value, sample: sameSample ? { count, asOf: inbound.as_of } : null };
 }
 
 function NumbersBasis({
   evidence,
   messagesCounted,
-  syncing,
+  sample,
+  updatesStopped,
 }: {
   evidence: MetricEvidence;
   messagesCounted: number | null;
-  /** Sync progress is already on screen, so the partial basis needs no sentence of its own. */
-  syncing: boolean;
+  sample: NonNullable<ReturnType<typeof directionSplit>>['sample'];
+  updatesStopped: boolean;
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const open = anchor !== null;
   const detailsId = useId();
   const titleId = useId();
-  const updated = formatLocal(evidence.asOf, LOCAL_DATE_TIME_FORMAT);
+  const updated = updatesStopped ? formatLocal(sample?.asOf ?? null, LOCAL_TIME_FORMAT) : null;
   const start = formatLocal(evidence.observedStart, LOCAL_DATE_FORMAT);
   const end = formatLocal(evidence.observedEnd, LOCAL_DATE_FORMAT);
   const rows = [
@@ -254,18 +271,8 @@ function NumbersBasis({
   return (
     <Box>
       <Stack
-        sx={{ alignItems: 'flex-start', px: 0.5, rowGap: 0.5 }}
+        sx={{ alignItems: 'flex-start', rowGap: 0.5 }}
       >
-        <Typography variant="body2" sx={{ color: 'text.secondary', height: { xs: '3.75rem', sm: '2.5rem' } }}>
-          {[
-            evidence.partial
-              ? syncing ? null : 'Counts include messages synced so far.'
-              : 'Based on your full message history.',
-            updated ? `Updated ${updated}.` : null,
-          ]
-            .filter(Boolean)
-            .join(' ')}
-        </Typography>
         <Button
           aria-controls={open ? detailsId : undefined}
           aria-expanded={open}
@@ -276,6 +283,9 @@ function NumbersBasis({
         >
           Details
         </Button>
+        {sample && sample.count > 0 && <Typography data-dashboard-saved-basis variant="body2" sx={{ color: 'text.secondary' }}>
+          {`Based on ${NUMBER_FORMAT.format(sample.count)} messages saved on this computer so far.${updated ? ` Last updated ${updated}.` : ''}`}
+        </Typography>}
       </Stack>
       <Popover
         anchorEl={anchor}
@@ -321,6 +331,41 @@ function NumbersBasis({
   );
 }
 
+function PausedCollection({ api, canReview, current }: {
+  api: BrowserControlApi;
+  canReview: boolean;
+  current: () => boolean;
+}) {
+  const operation = useRef<AbortController | null>(null);
+  const [opening, setOpening] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  useEffect(() => () => operation.current?.abort(), []);
+
+  async function review() {
+    if (!canReview || !current() || operation.current) return;
+    const controller = new AbortController();
+    operation.current = controller;
+    setOpening(true);
+    setFeedback(null);
+    try {
+      const result = await api.open('setup', controller.signal);
+      if (!controller.signal.aborted && result === 'unreachable') setFeedback('The browser didn’t open. Open it to continue.');
+    } catch {
+      if (!controller.signal.aborted) setFeedback('The change was not confirmed.');
+    } finally {
+      operation.current = null;
+      if (!controller.signal.aborted) setOpening(false);
+    }
+  }
+
+  return <Box sx={{ maxWidth: 760 }}>
+    <OnboardingCard title="Paused by you" body="New messages aren’t being collected." spot={<OnboardingSpot icon="pause" />}
+      actions={canReview && <OnboardingAction><Button aria-disabled={opening || undefined} aria-busy={opening || undefined}
+        onClick={() => void review()} variant="contained">Review in browser</Button></OnboardingAction>}
+      status={feedback && <OnboardingStatus tone="attention">{feedback}</OnboardingStatus>} />
+  </Box>;
+}
+
 export default function CreatorDashboardView({
   store = bridgeTransportStore,
   activationApi = capabilityLicenseApi,
@@ -336,6 +381,12 @@ export default function CreatorDashboardView({
   const fullAnalyticsReady = analysis.checking ? undefined : analysis.value === null ? null
     : analysis.value.commercial_authority === 'active' && analysis.value.analysis_admission === 'admitted';
   const hasSnapshot = state.viewRevision !== null;
+  const [grace] = useState(createConnectionGrace);
+  const connectionPhase = useSyncExternalStore(grace.subscribe, grace.getSnapshot);
+  const interrupted = hasSnapshot && (state.connection === 'disconnected' || state.connection === 'error'
+    || state.connection === 'reconnecting' || state.connection === 'handshaking');
+  useEffect(() => () => grace.dispose(), [grace, state.creatorAccountId]);
+  useEffect(() => { grace.observe(!interrupted, interrupted); }, [grace, interrupted, state.creatorAccountId]);
 
   const readiness: DataReadiness = {
     coverage: state.coverage,
@@ -354,11 +405,11 @@ export default function CreatorDashboardView({
   ];
   const format = (metric: AnalyticsMetric | null | undefined) =>
     formatAdditiveMetric(metric, readiness, (value) => Number(value) > 9_999_999 ? '10M+' : NUMBER_FORMAT.format(value)).replace(/\+\+$/, '+');
-  const issue = getIssue(state, hasSnapshot && metrics.some((metric) => format(metric) !== '—'));
   const agent = state.agent as BridgeTransportState['agent'];
   const connection = extensionConnection(agent);
   const browser = connection === 'connected' && state.connection === 'connected'
     && agent?.creator_account_id === state.creatorAccountId ? agent?.browser ?? null : null;
+  const collectionOn = browser?.capture === 'active' && browser.site_access === 'granted' && !browser.legal_review_required;
   // The current browser owner can admit collection before commercial activation.
   // A reported off state is not Full intent or consent; review remains explicit.
   const collection = selectCollectionContinuation(desktop, state.creatorAccountId, browser, canManageHistorySync);
@@ -368,83 +419,110 @@ export default function CreatorDashboardView({
       || operation.action.startsWith('auth.'))
       || desktop.snapshot?.decision?.action === 'activate-complimentary' && analysis.value?.commercial_authority !== 'active'
       || desktop.snapshot?.decision_status?.state === 'accepted' && analysis.value?.commercial_authority !== 'active');
-  const collectionReview = collection.current && !activationInProgress && state.creatorAccountId && browser
+  const canShowCollection = collection.current && !activationInProgress && state.creatorAccountId && browser
     && (collection.reviewNeeded || collection.paused) && (collection.actionable || fullAnalyticsReady === true)
-    ? <BrowserExtensionControls key={state.creatorAccountId} browser={browser} api={browserApi}
+    ? state.creatorAccountId : null;
+  const collectionReview = canShowCollection ? collection.paused
+    ? <PausedCollection key={canShowCollection} api={browserApi} canReview={collection.canResume}
+      current={() => store.getState() === state && onboardingApi.getState() === desktop} />
+    : <BrowserExtensionControls key={canShowCollection} browser={browser} api={browserApi}
       onboarding={onboardingApi} connection={connection} canManage={canManageHistorySync}
-      continuationCreatorId={state.creatorAccountId} /> : null;
+      continuationCreatorId={canShowCollection} /> : null;
   const fullIntent = canManageHistorySync ? selectFullPresentationIntent(desktop, state.creatorAccountId, browser) : undefined;
   const activationAdmitted = analysis.availability === 'current' && desktop.snapshot?.local_ready
     && desktop.snapshot.allowed_actions.includes('activation.review');
   const showCommercial = fullAnalyticsReady !== true && (connection === 'connected' || activationAdmitted || activationInProgress);
-  const showSetup = !collectionReview && hasSnapshot && fullAnalyticsReady !== undefined
+  const showSetup = !collectionReview && hasSnapshot && state.creatorAccountId && fullAnalyticsReady !== undefined
     && (connection !== 'connected' || fullAnalyticsReady !== true);
 
   const historyScope = fullAnalyticsReady === true && analysis.availability === 'current'
-    && canManageHistorySync && state.creatorAccountId && browser?.capture === 'active'
-    && browser.site_access === 'granted' && !browser.legal_review_required
+    && canManageHistorySync && state.creatorAccountId && collectionOn
     && desktop.snapshot?.journey_id && desktop.snapshot.generation
     ? JSON.stringify([state.creatorAccountId, desktop.snapshot.journey_id]) : null;
   const visibleMetrics = metrics.filter(metric => metric?.value !== null && metric?.value !== undefined
     && metric.projection_revision === readiness.projection.projected_revision
     && readiness.projection.status === 'current');
-  const historyEligible = historyScope !== null && !collectionReview && state.conversations.length === 0
-    && !visibleMetrics.some(metric => typeof metric?.value === 'number' && metric.value > 0)
+  const hasActivity = state.conversations.length > 0 || visibleMetrics.some(metric => typeof metric?.value === 'number' && metric.value > 0);
+  const historyEligible = historyScope !== null && !collectionReview && !hasActivity
     && state.coverage.status !== 'complete';
   const historyPrompt = historyEligible && state.creatorAccountId
     ? <MessageHistoryControls key={historyScope} reviewCreatorId={state.creatorAccountId} store={historyStore}
       api={historyApi} browserApi={browserApi} desktopApi={onboardingApi} continuation /> : null;
 
   const evidence = summarizeMetricEvidence(visibleMetrics);
+  const split = directionSplit(analytics?.inbound_messages, analytics?.outbound_messages, readiness);
   const progress = hasSnapshot ? historyProgress(state.coverage) : null;
-  const emptySnapshot = hasSnapshot && state.conversations.length === 0 && issue === null
-    && fullAnalyticsReady === true && state.connection === 'connected' && state.readModelState === 'realtime'
-    && visibleMetrics.length === metrics.length && visibleMetrics.every(metric => metric?.value === 0);
-  const completeEmpty = state.coverage.status === 'complete' && metrics.every(metric => metric?.basis === 'complete');
-  const waitingForMessages = emptySnapshot && !completeEmpty && state.coverage.status !== 'complete'
-    && historyScope !== null;
-  const emptyOnboarding = emptySnapshot && (completeEmpty || waitingForMessages);
+  const allZero = !hasActivity && visibleMetrics.length === metrics.length && visibleMetrics.every(metric => metric?.value === 0);
+  const issue = getIssue(state, hasSnapshot && !allZero && visibleMetrics.length > 0,
+    connectionPhase, browser?.history_error_code === 'software_update_required');
+  const currentEmpty = hasSnapshot && !hasActivity && issue === null && collectionOn
+    && fullAnalyticsReady === true && analysis.availability === 'current' && state.readModelState === 'realtime';
+  const completeEmpty = currentEmpty && allZero && isFullyCurrent(readiness) && split?.sample?.count === 0
+    && metrics.every(metric => metric?.basis === 'complete' && metric.sample_size === 0 && metric.as_of === split.sample?.asOf);
+  const waitingForMessages = currentEmpty && setupIncomplete(state.coverage)
+    && (allZero || state.projection.canonical_revision === 0);
   const connectionSummary = <DashboardConnection browser={browser} connection={connection}
     desktopConnected={state.connection === 'connected'} />;
-  const continuation = collectionReview ? <Stack spacing={0.5}>
+  const hideEmptyOverview = completeEmpty || waitingForMessages || !hasActivity && (collectionReview !== null || Boolean(showSetup && !showCommercial));
+  const overviewLoading = !hasSnapshot || allZero;
+  const showActivation = showCommercial && (showSetup
+    || collectionReview && activationAdmitted && !desktop.pending && !collection.reviewOperation);
+  const continuation = collectionReview || showActivation ? <Stack spacing={1}>
     {collectionReview}
-    {activationAdmitted && fullAnalyticsReady !== true && !desktop.pending && !collection.reviewOperation && <Button component={RouterLink} to="/settings#full-analytics"
-      sx={{ alignSelf: 'flex-start' }}>Full analytics</Button>}
-  </Stack> : historyPrompt ?? (showSetup
-    ? showCommercial
-      ? <CommercialActivationControls api={activationApi} onboarding={onboardingApi} creatorAccountId={state.creatorAccountId} presentationIntent={fullIntent} />
-      : <SetupPrompt extensionConnected={false} fullAnalyticsReady={fullAnalyticsReady === true} title="Finish setup" compact />
-    : emptyOnboarding ? <OnboardingEmptyActivity waitingForMessages={waitingForMessages} />
+    {showActivation && <CommercialActivationControls api={activationApi} onboarding={onboardingApi} creatorAccountId={state.creatorAccountId}
+      presentationIntent={fullIntent} dashboard />}
+  </Stack> : historyPrompt ?? (showSetup ? <SetupPrompt title="Set up your browser to see your message counts" compact />
+    : completeEmpty || waitingForMessages ? <OnboardingEmptyActivity waitingForMessages={waitingForMessages} collectionOn={collectionOn} />
       : hasSnapshot && fullAnalyticsReady === true ? connectionSummary : null);
+  const opening = !state.creatorAccountId && !hasSnapshot && issue === null;
+  const updatesStopped = Boolean(collection.current && collection.paused || issue?.updatesStopped);
+  const showOverview = !opening && !hideEmptyOverview;
+  const showBasis = !overviewLoading && !hideEmptyOverview && evidence !== null;
+  const showRecent = hasSnapshot && state.conversations.length > 0;
+  const setupTask = [opening, showSetup, showActivation, Boolean(collectionReview),
+    Boolean(historyPrompt), Boolean(continuation)].join(':');
 
   return (
     <Box data-scroll-container sx={{ flex: 1, minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable', pb: 3 }}>
-      <Stack spacing={2.5} sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}>
-        <Box>
-          <Typography component="h1" variant="h4">Dashboard</Typography>
-          <Box role={issue ? 'alert' : undefined} sx={{ mt: 1 }}>
-            <StatusLine id="dashboard-notice" summary={issue?.title} text={issue
-              ? [issue.title, issue.detail].filter(Boolean).join('. ')
-              : fullAnalyticsReady === undefined ? 'Checking setup…' : null} />
-          </Box>
+      <Stack data-dashboard-task sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}>
+        <Typography component="h1" variant="h4" data-dashboard-heading>Dashboard</Typography>
+        <Box data-reserved-region="dashboard-overview" data-dashboard-section={`${showOverview}:${Boolean(progress)}`}>
+          {showOverview && <Box data-region-content style={{ paddingBlockStart: 20 }}>
+            <DashboardOverview key={state.creatorAccountId} isLoading={overviewLoading} conversations={format(analytics?.total_conversations)}
+              messages={format(analytics?.total_messages)} progress={progress} received={format(analytics?.inbound_messages)}
+              sent={format(analytics?.outbound_messages)} split={split} />
+          </Box>}
         </Box>
-        {/* One first-frame reservation for every continuation state. Content
-            may scroll inside it, but never changes the following metric geometry. */}
-        <ReservedRegion id="dashboard-setup" size={{ xs: 320, sm: 272 }} regionRole="scroll">
-          <Box data-region-content>{continuation}</Box>
-        </ReservedRegion>
-        {/* The overview stacks its counts until md, so the stacked reservation holds until then. */}
-        <ReservedRegion id="dashboard-overview" size={{ xs: 450, md: 300 }}>
-          <Box data-region-content>{emptyOnboarding ? connectionSummary
-            : <DashboardOverview isLoading={!hasSnapshot} conversations={format(analytics?.total_conversations)} messages={format(analytics?.total_messages)} progress={progress} received={format(analytics?.inbound_messages)} sent={format(analytics?.outbound_messages)} split={directionSplit(analytics?.inbound_messages, analytics?.outbound_messages, readiness)} />}</Box>
-        </ReservedRegion>
-        <ReservedRegion id="dashboard-basis" size={{ xs: 128, sm: 88 }}>
-          {hasSnapshot && !emptyOnboarding && evidence !== null && <Box data-region-content><NumbersBasis evidence={evidence} messagesCounted={visibleMetrics.includes(analytics?.total_messages) ? analytics?.total_messages?.sample_size ?? null : null} syncing={progress !== null && !progress.complete} /></Box>}
-        </ReservedRegion>
-        {/* Holds four conversations. Below sm the heading and the inbox link can take extra lines. */}
-        <ReservedRegion id="dashboard-recent" size={{ xs: 472, sm: 448 }} regionRole="scroll">
-          {hasSnapshot ? <Box data-region-content><RecentConversations conversations={state.conversations} showInboxLink={canViewInbox} /></Box> : <LoadingFrame label="Loading dashboard…" />}
-        </ReservedRegion>
+        <Box data-reserved-region="dashboard-basis" data-dashboard-section={String(showBasis)}>
+          {showBasis && <Box data-region-content style={{ paddingBlockStart: 20 }}>
+            <NumbersBasis evidence={evidence} messagesCounted={visibleMetrics.includes(analytics?.total_messages)
+              ? analytics?.total_messages?.sample_size ?? null : null} sample={split?.sample ?? null} updatesStopped={updatesStopped} />
+          </Box>}
+        </Box>
+        <Box data-reserved-region="dashboard-notice" data-dashboard-section={issue?.title ?? ''}
+          sx={{ '& .onboarding-status > svg': { inlineSize: 20, blockSize: 20, flexShrink: 0 },
+            '& .onboarding-status[data-tone="pending"] > svg': {
+              animation: 'none',
+              '& > circle': { animation: 'onboarding-pending 1s linear infinite', transformOrigin: 'center' },
+              '@media (prefers-reduced-motion: reduce)': { '& > circle': { animation: 'none' } },
+            } }}>
+          {issue && <Box data-region-content role="alert" style={{ paddingBlockStart: 20 }}>
+            <OnboardingStatus tone={ISSUE_TONE[issue.severity]} live={false}>
+              {[issue.title, issue.detail].filter(Boolean).join('. ')}
+            </OnboardingStatus>
+          </Box>}
+        </Box>
+        <Box data-reserved-region="dashboard-recent" data-dashboard-section={String(showRecent)}>
+          {showRecent && <Box data-region-content style={{ paddingBlockStart: 20 }}>
+            <RecentConversations conversations={state.conversations} showInboxLink={canViewInbox} />
+          </Box>}
+        </Box>
+        <Box data-reserved-region="dashboard-setup" data-dashboard-section={setupTask}
+          sx={{ '& [data-surface-emphasis]': surfaceArrival(0, true) }}>
+          {opening ? <Box data-region-content style={{ paddingBlockStart: 20 }} sx={{ maxWidth: 760 }}><OnboardingCard title="Opening Dipsy" spot={<OnboardingSpot icon="app" />}
+            status={<OnboardingStatus tone="pending">Checking your connection.</OnboardingStatus>} /></Box>
+            : continuation && <Box data-region-content style={{ paddingBlockStart: 20 }}>{continuation}</Box>}
+        </Box>
       </Stack>
     </Box>
   );

@@ -545,7 +545,7 @@ describe('desktop setup projection', () => {
       expect(document.getElementById('task-reconnect')).toBeNull();
       expect([...document.querySelectorAll('button')].filter(button => !button.closest('[hidden]'))).toEqual([]);
       renderSetup(document, { snapshot: { ...initial(), journey_id: operationId }, connected: false, error: 'connection_unavailable' });
-      expect(document.getElementById('task-status').textContent).toBe("Dipsy can't connect right now. Your setup progress is saved.");
+      expect(document.getElementById('task-status').textContent).toBe('Dipsy can’t connect right now. Your setup progress is saved.');
       expect([...document.querySelectorAll('button')].filter(button => !button.closest('[hidden]'))).toEqual([]);
 
       // After the budget, R13 stays active and reconnect repeats every 30s.
@@ -649,8 +649,8 @@ describe('desktop setup projection', () => {
         document.documentElement.innerHTML = markup;
         renderSetup(document, { snapshot: initial(), connected: false, error: 'session_unavailable' });
         expect(document.querySelector('main').dataset.journeyState).toBe('desktop.setup_unavailable');
-        expect(document.getElementById('task-status').textContent).toBe("Setup couldn't continue.");
-        expect(document.getElementById('task-status').dataset.tone).toBe('error');
+        expect(document.getElementById('task-title').textContent).toBe('Setup couldn’t continue');
+        expect(document.getElementById('task-action').hidden).toBe(true);
         expect(document.getElementById('task-reconnect')).toBeNull();
         expect([...document.querySelectorAll('button')].filter(button => !button.closest('[hidden]'))).toEqual([]);
       } finally { client.stop(); }
@@ -797,6 +797,119 @@ describe('desktop setup presentation', () => {
     choices: { google: true, 'microsoft-personal': true, telegram: false, tiktok: false, default: true },
     actions: { select: true, cancel: false, open_browser: false, switch_account: false }, authentication_attempt: null });
 
+  it('moves the browser launch gesture into one pending slot, then exposes only the owned launch', () => {
+    mount();
+    const get = id => document.getElementById(id);
+    const snapshot = initial();
+    renderSetup(document, { snapshot, connected: true });
+    expect(get('task-step').textContent).toBe('Step 1 of 3 · Set up browser access');
+    expect(get('task-title').textContent).toBe('Bring in your conversations');
+    expect(get('task-action').textContent).toBe('Continue in browser');
+    expect(get('task-action').dataset.action).toBe('browser.access');
+    expect(get('browser-reopen').hidden).toBe(true);
+    renderSetup(document, { snapshot, connected: true, acting: 'browser.access' });
+    expect(get('task-action').hidden).toBe(true);
+    expect(get('setup-code-open').hidden).toBe(true);
+    expect(get('task-pending').textContent).toBe('Getting the browser ready…');
+    const opened = { ...snapshot, allowed_actions: [], pending_operations: [record] };
+    renderSetup(document, { snapshot: opened, connected: true });
+    expect(get('task-pending').hidden).toBe(true);
+    expect(get('browser-reopen').dataset.operation).toBe(operationId);
+    expect(get('task-description').textContent).toBe('Finish setup in your browser. This window updates by itself.');
+    renderSetup(document, { snapshot: opened, connected: true, error: 'browser_needs_permission' });
+    expect(get('task-status').textContent).toBe('Allow access to the creator site in the extension.');
+    expect(get('browser-reopen').compareDocumentPosition(get('task-status')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    renderSetup(document, { snapshot: opened, connected: false, error: 'status_unavailable' });
+    expect(get('browser-reopen').hidden).toBe(true);
+    expect(get('task-pending').textContent).toBe('Reconnecting…');
+    renderSetup(document, { snapshot: { ...opened, next_task: 'account-connection', pending_operations: [] }, connected: true });
+    expect(get('task-step').textContent).toBe('Step 2 of 3 · Connect your account');
+    expect(get('task-action').hidden).toBe(true);
+  });
+
+  it('shows provider proof only from the current admitted confirmation, including a fresh mount', () => {
+    const makeSnapshot = provider => ({ ...initial(), next_task: 'account-connection',
+      allowed_actions: ['account.confirm', 'auth.switch'], pending_operations: [{ ...record, action: 'account.connect' }],
+      decision: { operation_id: operationId, action: 'connect-account', creator_id: 'expected',
+        computer_name: 'Test computer', expires_at: '2030-01-01T00:00:00Z' },
+      decision_status: { operation_id: operationId, state: 'confirmation-required' },
+      authentication: { ...signIn(), state: 'admitted', operation_id: operationId,
+        actions: { ...signIn().actions, select: false, switch_account: true },
+        authentication_attempt: provider && { authentication_attempt_id: generation, provider, mode: 'sign-in' } },
+    });
+    const proof = () => document.getElementById('decision-provider');
+    for (const provider of ['google', 'microsoft-personal', 'telegram', 'tiktok']) {
+      mount();
+      renderSetup(document, { snapshot: makeSnapshot(provider), connected: true });
+      expect(proof().textContent).toBe('Sign-in confirmed');
+      expect(proof().hidden).toBe(false);
+      expect(document.getElementById('sign-in-switch').textContent).toBe('Change sign-in');
+      expect(document.getElementById('task-description').textContent).toBe('Check the creator account and this computer, then connect them.');
+    }
+    const current = makeSnapshot('google');
+    for (const state of [
+      { snapshot: makeSnapshot(null), provider: 'google' },
+      { snapshot: makeSnapshot('default') },
+      { snapshot: { ...current, authentication: { ...current.authentication, operation_id: generation } } },
+      { snapshot: { ...current, authentication: { ...current.authentication, state: 'selected' } } },
+      { snapshot: { ...current, decision_status: { operation_id: generation, state: 'confirmation-required' } } },
+      { snapshot: current, choosingAccount: true },
+      { snapshot: current, acting: 'auth.switch' },
+      { snapshot: current, continuingProvider: 'telegram' },
+      { snapshot: { ...current, pending_operations: [{ ...record, action: 'auth.switch' }] } },
+    ]) {
+      renderSetup(document, { connected: true, ...state });
+      expect(proof().hidden).toBe(true);
+      expect(proof().textContent).toBe('');
+    }
+  });
+
+  it('names only a verified expected account in mismatch copy', () => {
+    mount();
+    const get = id => document.getElementById(id);
+    const value = { ...initial(), allowed_actions: [], reason: 'account_mismatch',
+      pending_operations: [{ ...record, reason: 'account_mismatch' }] };
+    const label = { creator_id: 'expected', display_name: 'Expected studio', username: null };
+    renderSetup(document, { connected: true, snapshot: { ...value,
+      facts: { ...value.facts, account: 'verified' }, creator_label: label } });
+    expect(get('task-status').textContent).toBe('You’re signed in to a different creator account. Switch to Expected studio in your browser to continue.');
+    renderSetup(document, { connected: true, error: 'account_mismatch', snapshot: { ...value,
+      reason: 'none', creator_label: { ...label, creator_id: 'observed', display_name: 'Wrong studio' } } });
+    expect(get('task-status').textContent).toBe('Switch to the creator account you want to connect in your browser.');
+    expect(get('header-account').hidden).toBe(true);
+    expect(document.querySelector('main').textContent).not.toContain('Wrong studio');
+    renderSetup(document, { connected: true, snapshot: { ...value, next_task: 'account-connection',
+      facts: { ...value.facts, account: 'verified' }, creator_label: { ...label, creator_id: 'observed', display_name: 'Wrong studio' },
+      decision: { operation_id: operationId, action: 'connect-account', creator_id: 'expected', computer_name: 'Test computer' } } });
+    expect(get('task-status').textContent).toBe('Switch to the creator account you want to connect in your browser.');
+    expect(document.querySelector('main').textContent).not.toContain('Wrong studio');
+  });
+
+  it('uses the passkey attempt outcome and swaps pairing only after owner acceptance', () => {
+    mount();
+    const get = id => document.getElementById(id);
+    const snapshot = { ...initial(), next_task: 'finish-setup', allowed_actions: ['browser.pair'] };
+    const authentication = { checked: true, authenticated: false, enrolled: false, busy: false, error: 'passkey_unconfirmed' };
+    renderSetup(document, { snapshot, connected: true, authentication: { ...authentication, attempt: 'create' } });
+    expect(get('task-title').textContent).toBe('Protect your analytics on this computer');
+    expect(get('local-auth-status').textContent).toBe('Passkey setup didn’t finish.');
+    expect(get('local-authenticate').textContent).toBe('Create passkey');
+    renderSetup(document, { snapshot, connected: true, authentication: { ...authentication, enrolled: true, attempt: 'sign-in' } });
+    expect(get('task-title').textContent).toBe('Confirm it’s you');
+    expect(get('local-auth-status').textContent).toBe('Sign-in didn’t finish.');
+    expect(get('local-authenticate').textContent).toBe('Sign in with passkey');
+    const ready = { ...authentication, enrolled: true, authenticated: true, error: null };
+    renderSetup(document, { snapshot, connected: true, authentication: ready, acting: 'browser.pair' });
+    expect(get('task-action').hidden).toBe(false);
+    expect(get('task-action').disabled).toBe(true);
+    const accepted = { ...snapshot, allowed_actions: [], pending_operations: [{ ...record, action: 'browser.pair' }] };
+    renderSetup(document, { snapshot: accepted, connected: true, authentication: ready, browserLaunchPending: true });
+    expect(get('task-action').hidden).toBe(true);
+    expect(get('task-step').textContent).toBe('Step 3 of 3 · Finish setup');
+    expect(get('task-description').textContent).toBe('New messages show up in your analytics once it’s connected.');
+    expect(get('task-pending').textContent).toBe('Keep the browser open. This window continues by itself.');
+  });
+
   it('offers one click sign-in choices and plain unfinished copy after the popup ends', () => {
     mount();
     const value = { ...initial(), next_task: 'account-connection', allowed_actions: ['auth.select'],
@@ -940,13 +1053,13 @@ describe('desktop setup presentation', () => {
         actions: { select: false, cancel: true, open_browser: true, switch_account: true } },
       pending_operations: [{ ...record, action: 'auth.select', state: 'waiting' }] };
     renderSetup(document, { snapshot: value, connected: true, pending: operationId });
-    expect(document.getElementById('task-status').textContent).toBe('Finish signing in in Chrome.');
+    expect(document.getElementById('task-status').textContent).toBe('Finish signing in in your browser. This window continues by itself.');
     expect(document.getElementById('sign-in-cancel')).toBeNull();
     expect(document.getElementById('browser-reopen').hidden).toBe(true);
     expect(document.getElementById('sign-in-switch').hidden).toBe(true);
     renderSetup(document, { snapshot: value, connected: true, error: 'browser_unavailable' });
     expect(document.getElementById('browser-reopen').hidden).toBe(false);
-    expect(document.getElementById('browser-reopen').textContent).toBe('Open Chrome');
+    expect(document.getElementById('browser-reopen').textContent).toBe('Open browser');
     expect(document.getElementById('browser-reopen').dataset.operation).toBe(operationId);
     const reviewed = { ...value, decision: { operation_id: operationId, action: 'connect-account', creator_id: 'selected', computer_name: 'This computer', expires_at: '2030-01-01T00:00:00.000Z' }, authentication: { ...value.authentication, state: 'admitted' } };
     renderSetup(document, { snapshot: reviewed, connected: true, choosingAccount: true });
@@ -969,10 +1082,10 @@ describe('desktop setup presentation', () => {
         pending_operations: [{ ...record, action: 'auth.select', state: 'waiting' }] };
       renderSetup(document, { snapshot: value, connected: true, error });
       const status = document.getElementById('task-status').textContent;
-      expect(status).not.toBe('Finish signing in in Chrome.');
+      expect(status).not.toContain('Finish signing in in your browser.');
       expect(status.length).toBeGreaterThan(10);
       expect(document.getElementById('browser-reopen').hidden).toBe(false);
-      expect(document.getElementById('browser-reopen').textContent).toBe('Open Chrome');
+      expect(document.getElementById('browser-reopen').textContent).toBe('Open browser');
       expect(document.getElementById('browser-reopen').dataset.operation).toBe(operationId);
     });
 
@@ -981,25 +1094,34 @@ describe('desktop setup presentation', () => {
     const choosing = { ...initial(), next_task: 'account-connection', allowed_actions: ['account.connect'], authentication: signIn() };
     const busy = () => [...document.querySelectorAll('[data-provider]')].filter(button => button.getAttribute('aria-busy') === 'true')
       .map(button => button.dataset.provider);
+    const setupCode = document.getElementById('setup-code-open');
+    renderSetup(document, { snapshot: choosing, connected: true });
+    expect(setupCode.hidden).toBe(false);
+    expect(setupCode.disabled).toBe(false);
     renderSetup(document, { snapshot: choosing, connected: true, acting: 'account.connect', provider: 'google' });
     expect(busy()).toEqual(['google']);
-    expect(document.getElementById('task-status').textContent).toBe('Opening Chrome…');
+    expect(setupCode.hidden).toBe(true);
+    expect(setupCode.disabled).toBe(true);
+    expect(document.getElementById('task-status').textContent).toBe('Finish signing in in your browser. This window continues by itself.');
     // While the command is pending and nothing is selected yet, Brain reports no sign-in projection.
     const accepted = { ...choosing, allowed_actions: [], pending_operations: [{ ...record, action: 'account.connect' }], authentication: null };
     renderSetup(document, { snapshot: accepted, connected: true, pending: operationId, provider: 'google' });
     expect(document.getElementById('sign-in-options').hidden).toBe(false);
     expect(busy()).toEqual(['google']);
     expect([...document.querySelectorAll('[data-provider]:not([hidden])')].every(button => button.disabled)).toBe(true);
-    expect(document.getElementById('task-status').textContent).toBe('Opening Chrome…');
+    expect(document.getElementById('task-status').textContent).toBe('Finish signing in in your browser. This window continues by itself.');
     for (const id of ['task-action', 'browser-reopen']) expect(document.getElementById(id).hidden).toBe(true);
     const selected = { ...accepted, authentication: { ...signIn(), operation_id: operationId, browser_operation_id: operationId,
       state: 'selected', actions: { select: false, cancel: true, open_browser: true, switch_account: false } } };
     renderSetup(document, { snapshot: selected, connected: true, pending: operationId, provider: 'google' });
     expect(document.getElementById('sign-in-options').hidden).toBe(true);
     expect(busy()).toEqual([]);
-    expect(document.getElementById('task-status').textContent).toBe('Finish signing in in Chrome.');
+    expect(document.getElementById('task-status').textContent).toBe('Finish signing in in your browser. This window continues by itself.');
     renderSetup(document, { snapshot: accepted, connected: true, pending: operationId, provider: 'google', error: 'browser_unavailable' });
     expect(busy()).toEqual([]);
+    renderSetup(document, { snapshot: choosing, connected: true });
+    expect(setupCode.hidden).toBe(false);
+    expect(setupCode.disabled).toBe(false);
   });
 
   it('requires the current authentication projection before offering account sign-in or browser retry', () => {
@@ -1017,7 +1139,7 @@ describe('desktop setup presentation', () => {
       connected: true, pending: operationId });
       expect(document.getElementById('browser-reopen').hidden).toBe(false);
       expect(document.getElementById('browser-reopen').disabled).toBe(false);
-      expect(document.getElementById('browser-reopen').textContent).toBe('Open Chrome');
+      expect(document.getElementById('browser-reopen').textContent).toBe('Open browser');
       expect(document.getElementById('browser-reopen').dataset.operation).toBe(operationId);
       expect(document.getElementById('sign-in-options').hidden).toBe(true);
       expect(document.getElementById('task-action').hidden).toBe(true);
@@ -1081,9 +1203,9 @@ describe('desktop setup presentation', () => {
 
   it.each([
     [{ display_name: 'Mia Studio', username: 'mia.studio' }, 'Mia Studio', '@mia.studio', 'M'],
-    [{ display_name: 'Mia Studio', username: null }, 'Mia Studio', 'OnlyFans account creator-selected', 'M'],
+    [{ display_name: 'Mia Studio', username: null }, 'Mia Studio', 'creator account creator-selected', 'M'],
     [{ display_name: null, username: 'mia.studio' }, '@mia.studio', '', 'M'],
-    [null, 'OnlyFans account creator-selected', '', ''],
+    [null, 'creator account creator-selected', '', ''],
   ])('shows the account number only when no handle identifies the creator account', (label, name, identifier, letter) => {
     mount();
     renderSetup(document, { snapshot: { ...initial(), next_task: 'account-connection', allowed_actions: ['account.confirm'],
@@ -1119,11 +1241,11 @@ describe('desktop setup presentation', () => {
 
   it('distinguishes browser sign-in from accepted work without declaring local readiness', () => {
     mount();
-    for (const [state, message] of [['awaiting-authentication', 'Finish signing in in Chrome.'],
-      ['accepted', 'Account connection accepted. Finishing setup…']]) {
+    for (const [state, slot, message] of [['awaiting-authentication', 'task-status', 'Finish signing in in your browser. This window continues by itself.'],
+      ['accepted', 'task-pending', 'Account connected. Moving to the next step…']]) {
       renderSetup(document, { snapshot: { ...initial(), next_task: 'account-connection', allowed_actions: [],
         decision_status: { operation_id: operationId, state }, pending_operations: [{ ...record, action: 'account.connect' }] }, connected: true });
-      expect(document.getElementById('task-status').textContent).toBe(message);
+      expect(document.getElementById(slot).textContent).toBe(message);
       expect(document.getElementById('task-action').hidden).toBe(true);
       expect(document.getElementById('open-dashboard')).toBeNull();
     }
@@ -1137,7 +1259,7 @@ describe('desktop setup presentation', () => {
       pending_operations: [{ ...record, action: 'setup.finalize' }] }]) {
       renderSetup(document, { snapshot, connected: true });
       expect(document.getElementById('task-action').hidden).toBe(true);
-      expect(document.getElementById('task-status').textContent).toBe('Preparing Dipsy on this computer…');
+      expect(document.getElementById('task-pending').textContent).toBe('Preparing this computer…');
     }
     renderSetup(document, { snapshot: { ...value, allowed_actions: [], reason: 'authority_unavailable' }, connected: true });
     expect(document.getElementById('task-action').hidden).toBe(true);
@@ -1260,12 +1382,16 @@ describe('desktop setup presentation', () => {
       error: 'passkey_status_network', recoveringStatus: true };
     const get = id => document.getElementById(id);
     renderSetup(document, { snapshot, connected: true, authentication });
-    expect(get('local-auth-status').textContent).toBe('Checking access automatically…');
+    expect(get('task-title').textContent).toBe('Checking this computer…');
+    expect(get('local-auth-status').textContent).toBe('');
+    expect(document.querySelector('.setup-task-card').getAttribute('aria-busy')).toBe('true');
     expect(get('local-authenticate').hidden).toBe(true);
     expect(get('local-auth-retry')).toBeNull();
     expect(get('task-action').disabled).toBe(true);
     renderSetup(document, { snapshot, connected: true, authentication: { ...authentication, recoveringStatus: false } });
-    expect(get('local-auth-status').textContent).toBe('Dipsy can’t check access on this computer right now.');
+    expect(get('task-description').hidden).toBe(true);
+    expect(get('local-auth-status').textContent).toBe('This page updates by itself.');
+    expect(get('local-auth-status').querySelector('[data-status-icon="attention"]')).toBeTruthy();
     expect(get('local-authenticate').hidden).toBe(true);
     renderSetup(document, { snapshot, connected: true, authentication: { ...authentication, enrolled: true, recoveringStatus: false, error: null } });
     expect(get('local-authenticate').hidden).toBe(false);
@@ -1279,10 +1405,10 @@ describe('desktop setup presentation', () => {
         authentication: { enrolled, checked: true, authenticated: false, busy: false } });
       expect(document.getElementById('local-access').hidden).toBe(false);
       expect(document.getElementById('local-access').dataset.journeyState).toBe('desktop.setup_local_access');
-      expect(document.getElementById('local-authenticate').textContent).toBe(enrolled ? 'Sign in with passkey' : 'Set up passkey');
+      expect(document.getElementById('local-authenticate').textContent).toBe(enrolled ? 'Sign in with passkey' : 'Create passkey');
       expect(document.getElementById('task-action').hidden).toBe(true);
       expect(document.getElementById('task-action').dataset.action).toBe('');
-      expect(document.getElementById('task-title').textContent).toBe('Secure your app');
+      expect(document.getElementById('task-title').textContent).toBe(enrolled ? 'Confirm it’s you' : 'Protect your analytics on this computer');
       expect(document.getElementById('task-action').disabled).toBe(true);
       expect(document.getElementById('open-dashboard')).toBeNull();
     }
@@ -1292,8 +1418,8 @@ describe('desktop setup presentation', () => {
     expect(document.getElementById('task-action').disabled).toBe(false);
     expect(document.getElementById('task-action').hidden).toBe(false);
     expect(document.getElementById('task-action').textContent).toBe('Connect extension');
-    expect(document.getElementById('task-title').textContent).toBe('Connect the browser extension');
-    expect(document.getElementById('task-description').textContent).toBe('Connect Chrome to Dipsy so they can work together.');
+    expect(document.getElementById('task-title').textContent).toBe('Connect the extension to this app');
+    expect(document.getElementById('task-description').textContent).toBe('New messages show up in your analytics once it’s connected.');
   });
   it('shows pairing as a single explicit action only after fresh local access and suppresses it during connection', () => {
     mount();
@@ -1312,31 +1438,35 @@ describe('desktop setup presentation', () => {
       expect(get('task-action').dataset.action).toBe('');
     }
     renderSetup(document, { snapshot, connected: true, authentication, acting: 'browser.pair' });
-    expect(get('task-action').hidden).toBe(true);
-    expect(get('task-title').textContent).toBe('Connecting the extension');
-    expect(get('task-status').textContent).toBe('Opening Chrome…');
+    expect(get('task-action').hidden).toBe(false);
+    expect(get('task-action').disabled).toBe(true);
+    expect(get('task-title').textContent).toBe('Connect the extension to this app');
     renderSetup(document, { snapshot: { ...snapshot, allowed_actions: [], pending_operations: [
       { ...record, action: 'browser.pair', state: 'waiting' },
     ] }, connected: true, authentication, browserLaunchPending: true });
     expect(get('task-action').hidden).toBe(true);
     expect(get('browser-reopen').hidden).toBe(true);
-    expect(get('task-description').textContent).toBe('Keep Chrome open while Dipsy connects.');
+    expect(get('task-title').textContent).toBe('Connecting the extension');
+    expect(get('task-description').textContent).toBe('New messages show up in your analytics once it’s connected.');
+    expect(get('task-pending').textContent).toBe('Keep the browser open. This window continues by itself.');
     expect(get('task-status').textContent).toBe('');
   });
   it.each([
-    ['renewing', 'Renewing access on this computer. This window updates when renewal finishes.', 'Renewal needs an internet connection.'],
-    ['expired', 'Access on this computer expired. It could not be renewed in time.', 'Contact support to restore access.'],
-    ['removed', 'Access was removed from this computer.', 'Contact support if you did not expect this.'],
-  ])('names %s access on this computer instead of offering another attempt', (access, description, guidance) => {
+    ['renewing', 'Renewing access on this computer', 'This page updates when renewal finishes.', 'Renewal needs an internet connection.'],
+    ['expired', 'Access on this computer isn’t active', 'This page updates by itself if you can sign in again.', ''],
+    ['removed', 'Access removed from this computer', 'This computer can no longer open analytics.', ''],
+  ])('names %s access on this computer instead of offering another attempt', (access, heading, description, guidance) => {
     mount();
     const snapshot = { ...initial(), next_task: 'finish-setup', allowed_actions: ['browser.pair'],
       pending_operations: [{ ...record, action: 'browser.pair', state: 'outcome_unknown', reason: 'authority_unavailable' }] };
     const authentication = { checked: true, enrolled: null, authenticated: false, busy: false, error: null, access };
     renderSetup(document, { snapshot, connected: true, authentication });
     const get = id => document.getElementById(id);
-    expect(get('local-access').hidden).toBe(false);
-    expect(get('local-access-description').textContent).toBe(description);
+    expect(get('local-access').hidden).toBe(!guidance);
+    expect(get('task-title').textContent).toBe(heading);
+    expect(get('task-description').textContent).toBe(description);
     expect(get('local-auth-status').textContent).toBe(guidance);
+    if (access === 'renewing') expect(get('local-auth-status').querySelector('[data-status-icon="info"]')).toBeTruthy();
     expect(get('local-authenticate').hidden).toBe(true);
     expect(get('local-auth-retry')).toBeNull();
     expect(get('task-status').textContent).toBe('');
@@ -1347,7 +1477,7 @@ describe('desktop setup presentation', () => {
     renderSetup(document, { snapshot, connected: false, error: 'status_unavailable', authentication });
     expect(get('task-status').textContent).toBe('The setup connection was interrupted. Reconnecting…');
     renderSetup(document, { snapshot, connected: true, authentication: { ...authentication, enrolled: true, access: null } });
-    expect(get('local-access-description').textContent).toBe('Use a passkey to sign in on this computer.');
+    expect(get('task-description').textContent).toBe('Your computer will ask you to confirm it’s you.');
     expect(get('local-auth-status').textContent).toBe('');
     expect(get('local-authenticate').hidden).toBe(false);
     expect(get('task-status').textContent).toBe('Account authorization is unavailable.');
@@ -1640,14 +1770,19 @@ it('renders the protected recovery sequence as one task and never exposes ordina
   const primary = document.getElementById('task-action'), cancel = document.getElementById('protected-cancel');
   const base = { ...initial(), next_task: 'account-connection', authority_recovery: 'available', allowed_actions: ['account.connect'] };
   render(base);
-  expect(primary.textContent).toBe('Restore access');
+  expect(document.getElementById('task-title').textContent).toBe('Sign in to open your analytics');
+  expect(document.getElementById('task-description').textContent).toBe('Use the same sign-in as before.');
+  expect(primary.textContent).toBe('Sign in');
   expect(primary.dataset.protectedRecovery).toBe('true');
   expect(primary.dataset.action).toBe('account.connect');
   expect(document.querySelector('main nav').hidden).toBe(true);
   for (const id of ['local-access', 'setup-code-open', 'sign-in-options', 'browser-reopen', 'decision-details']) expect(document.getElementById(id).hidden).toBe(true);
+  render({ ...base, allowed_actions: [] });
+  expect(primary.hidden).toBe(true);
   render({ ...base, authority_recovery: 'preparing', allowed_actions: [] });
   expect(primary.hidden).toBe(true);
-  expect(document.getElementById('task-status').textContent).toBe('Preparing sign-in\u2026');
+  expect(document.getElementById('task-pending').textContent).toBe('Preparing sign-in\u2026');
+  expect(document.getElementById('task-pending').querySelector('[data-status-icon="pending"] circle')).toBeTruthy();
   const selected = protectedSelected();
   const auth = { ...selected.authentication, choices: { default: true, google: false }, authentication_attempt: null,
     state: 'selection-required', actions: { select: true, cancel: false, open_browser: false, switch_account: false } };
@@ -1658,34 +1793,47 @@ it('renders the protected recovery sequence as one task and never exposes ordina
   // The explicit sign-in continues by itself, so neither later step offers a click.
   render({ ...selected, authentication: auth, allowed_actions: ['auth.select'] }, { recoverySignInPending: true });
   expect(primary.hidden).toBe(true);
-  expect(document.getElementById('task-status').textContent).toBe('Preparing sign-in\u2026');
+  expect(document.getElementById('task-pending').textContent).toBe('Preparing sign-in\u2026');
   render({ ...selected, authority_recovery_browser: 'ready', allowed_actions: ['auth.cancel'] }, { recoverySignInPending: true });
   expect(primary.hidden).toBe(true);
-  expect(document.getElementById('task-status').textContent).toBe('Opening Chrome\u2026');
+  expect(document.getElementById('task-pending').textContent).toBe('Opening browser\u2026');
   expect(cancel.hidden).toBe(true);
   render({ ...selected, authority_recovery_browser: 'ready', allowed_actions: ['auth.cancel'] });
-  expect(primary.textContent).toBe('Open Chrome');
+  expect(primary.textContent).toBe('Open browser');
   expect(primary.dataset.action).toBe('browser.open');
   expect(cancel.hidden).toBe(false);
+  expect(cancel.classList.contains('secondary')).toBe(true);
+  render({ ...selected, authority_recovery_browser: 'ready', allowed_actions: ['auth.cancel'] }, { error: 'chrome_unavailable' });
+  expect(document.getElementById('task-description').textContent).toBe('Sign in using your browser.');
+  expect(document.getElementById('task-status').textContent).toBe('Install the required browser to continue.');
   render({ ...selected, authority_recovery_browser: 'launch-claimed', allowed_actions: ['auth.cancel'] });
   expect(primary.hidden).toBe(true);
-  expect(document.getElementById('task-status').textContent).toBe('Waiting for Chrome\u2026');
+  expect(document.getElementById('task-pending').textContent).toBe('Waiting for browser\u2026');
+  expect(document.getElementById('task-status').textContent).toBe('');
   render({ ...selected, authority_recovery_browser: 'handed-off', allowed_actions: ['auth.cancel'] });
-  expect(document.getElementById('task-status').textContent).toBe('Waiting for sign-in\u2026');
+  expect(document.getElementById('task-description').textContent).toBe('Finish signing in in your browser. This page continues by itself.');
+  expect(document.getElementById('task-pending').textContent).toBe('Waiting for sign-in\u2026');
+  render({ ...selected, authority_recovery_browser: 'handed-off', allowed_actions: ['auth.cancel'] }, { acting: 'auth.cancel' });
+  expect(document.getElementById('task-pending').textContent).toBe('Canceling sign-in…');
+  expect(cancel.hidden).toBe(true);
   render({ ...selected, authority_recovery_browser: 'unconfirmed', allowed_actions: ['auth.cancel'] });
-  expect(document.getElementById('task-status').textContent).toBe('Sign-in is not confirmed.');
+  expect(document.getElementById('task-status').textContent).toBe('Sign-in isn’t confirmed.');
   expect(primary.hidden).toBe(true);
   expect(cancel.hidden).toBe(false);
+  expect(cancel.classList.contains('secondary')).toBe(false);
   render({ ...selected, authentication: { ...auth, state: 'retired' }, allowed_actions: ['auth.select'] });
-  expect(primary.textContent).toBe('Sign in again');
+  expect(primary.textContent).toBe('Sign in');
+  expect(document.getElementById('task-status').textContent).toBe('Sign-in didn’t finish.');
+  expect(document.getElementById('task-status').querySelector('[data-status-icon="info"]')).toBeTruthy();
   expect(cancel.hidden).toBe(true);
   render({ ...base, authority_recovery: 'restoring', allowed_actions: [] });
-  expect(document.getElementById('task-status').textContent).toBe('Sign-in complete. Restoring access\u2026');
+  expect(document.getElementById('task-pending').textContent).toBe('Signed in. Getting this computer ready…');
   expect(primary.hidden).toBe(true);
   expect(cancel.hidden).toBe(true);
   render({ ...base, authority_recovery: 'blocked', allowed_actions: [] });
-  expect(document.getElementById('task-title').textContent).toBe('Access could not be restored');
+  expect(document.getElementById('task-title').textContent).toBe('Can’t open your analytics right now');
   expect(primary.hidden).toBe(true);
+  expect(document.getElementById('task-description').textContent).toBe('This page updates by itself if anything changes.');
   render(initial(), { authentication: null });
   expect(document.querySelector('main nav').hidden).toBe(false);
   expect(primary.dataset.protectedRecovery).toBe('');
@@ -1698,13 +1846,13 @@ it('protected recovery never enables stale controls during a command or disconne
   expect(authorityRecoveryView({ snapshot: value, connected: false, error: 'session_unavailable' }))
     .toMatchObject({ status: "Setup couldn't continue.", tone: 'error', action: null, cancel: false });
   expect(authorityRecoveryView({ snapshot: { ...value, journey_id: operationId }, connected: false, error: 'connection_unavailable' }))
-    .toMatchObject({ status: "Dipsy can't connect right now. Your setup progress is saved.", tone: 'error', action: null, cancel: false });
+    .toMatchObject({ description: '', status: 'Dipsy can’t connect right now. Your setup progress is saved.', tone: 'warning', action: null, cancel: false });
   expect(authorityRecoveryView({ snapshot: { ...value, journey_id: null }, connected: false, error: 'connection_unavailable' }))
-    .toMatchObject({ status: "Dipsy can't connect right now.", tone: 'error', action: null, cancel: false });
+    .toMatchObject({ description: '', status: 'Dipsy can’t connect right now.', tone: 'warning', action: null, cancel: false });
   expect(authorityRecoveryView({ snapshot: value, connected: true }, 'auth.cancel').action).toBeNull();
   expect(authorityRecoveryView({ snapshot: value, connected: true, pending: 'new', pendingAction: 'auth.cancel' }).cancel).toBe(false);
   expect(authorityRecoveryView({ snapshot: value, connected: true, browserLaunchPending: true }).action).toBeNull();
-  expect(authorityRecoveryView({ snapshot: value, connected: true, error: 'chrome_unavailable' }).status).toBe('Install Chrome to continue.');
+  expect(authorityRecoveryView({ snapshot: value, connected: true, error: 'chrome_unavailable' }).status).toBe('Install the required browser to continue.');
 });
 
 it('preflights Chrome before spending a protected launch and never auto-opens a replacement', async () => {
@@ -1804,7 +1952,7 @@ describe('one explicit protected sign-in', () => {
       publish(ready(6));
       publish({ ...ready(7), authority_recovery_browser: undefined, allowed_actions: ['auth.select'],
         authentication: auth('retired', { select: true }, attempt) });
-      await vi.waitFor(() => expect(authorityRecoveryView(states.at(-1))).toMatchObject({ action: 'auth.select', label: 'Sign in again' }));
+      await vi.waitFor(() => expect(authorityRecoveryView(states.at(-1))).toMatchObject({ action: 'auth.select', label: 'Sign in' }));
       expect(commands).toHaveLength(2);
       expect(opens).toHaveLength(1);
       expect(subject.recoverySignIn).toBeNull();
@@ -1943,7 +2091,7 @@ describe('one-click provider sign-in across ceremony and source replacement', ()
       renderSetup(document, { snapshot: successor(2), connected: true, pending: selectOp, pendingAction: 'auth.select', provider: 'google' });
       expect(document.getElementById('sign-in-options').hidden).toBe(false);
       expect(busy()).toEqual(['google']);
-      expect(document.getElementById('task-status').textContent).toBe('Opening Chrome…');
+      expect(document.getElementById('task-status').textContent).toBe('Finish signing in in your browser. This window continues by itself.');
 
       renderSetup(document, { snapshot: { ...successor(3), allowed_actions: [],
         authentication: { ...successor(3).authentication, state: 'selected', browser_operation_id: selectOp,
@@ -1951,7 +2099,7 @@ describe('one-click provider sign-in across ceremony and source replacement', ()
       connected: true, pending: selectOp, provider: 'google' });
       expect(document.getElementById('sign-in-options').hidden).toBe(true);
       expect(busy()).toEqual([]);
-      expect(document.getElementById('task-status').textContent).toBe('Finish signing in in Chrome.');
+      expect(document.getElementById('task-status').textContent).toBe('Finish signing in in your browser. This window continues by itself.');
     });
 
     it('sends the replacement command then exactly one selection with the clicked provider and opens Chrome only through auth.select', async () => {

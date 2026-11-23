@@ -1,7 +1,8 @@
 import { keyframes } from '@emotion/react';
 import { Box, LinearProgress, Skeleton, Stack, Typography } from '@mui/material';
-import { Children, useId } from 'react';
+import { Children, useId, useState } from 'react';
 
+import { surfaceArrival } from '../../theme/presentationMotion';
 import { Panel } from '../ui/Panel';
 
 const indeterminateBar = keyframes({
@@ -25,6 +26,16 @@ export interface DashboardOverviewProps {
   sent: string;
   /** Raw counts for the received/sent bar; omitted when either is unknown. */
   split?: { received: number; sent: number } | null;
+}
+
+function CountValue({ value, step }: { value?: string; step: number }) {
+  const [arrived, setArrived] = useState(false);
+  const hasNumber = value !== undefined && /^\d/u.test(value);
+  if (!arrived && hasNumber) setArrived(true);
+  return <Box component="span" data-region-content sx={arrived ? surfaceArrival(step, true) : undefined}>
+    {value ?? <Skeleton component="span" animation={false} width="100%"
+      sx={{ display: 'inline-block', verticalAlign: 'baseline', height: '.72em' }} />}
+  </Box>;
 }
 
 function Stat({ children, label, divider = false }: {
@@ -63,8 +74,8 @@ function SplitLegend({ color, label, value }: { color: string; label: string; va
         alignSelf: 'center', bgcolor: color, borderRadius: '50%', flexShrink: 0, height: 8, width: 8,
       }} />
       <Typography variant="body2" sx={{ color: 'text.secondary' }}>{label}</Typography>
-      <Typography data-reserved-region={`metric-${label}`} variant="body2" sx={{ display: 'inline-block', width: '9ch', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
-        <span data-region-content>{value === undefined ? <Skeleton component="span" animation={false} width="8ch" sx={{ display: 'inline-block' }} /> : value}</span>
+      <Typography data-reserved-region={`metric-${label}`} variant="body2" sx={{ display: 'inline-block', width: '9ch', maxWidth: '100%', fontVariantNumeric: 'tabular-nums', fontWeight: 600, '& > span': { display: 'block' } }}>
+        <CountValue value={value} step={2} />
       </Typography>
     </Stack>
   );
@@ -72,6 +83,7 @@ function SplitLegend({ color, label, value }: { color: string; label: string; va
 
 const RECEIVED_COLOR = 'measurement.main';
 const SENT_COLOR = 'communication.outgoingBorder';
+const headlineCount = { width: 'min(9ch, 100%)', lineHeight: 1.4, '& > span': { display: 'block' } } as const;
 
 /** Headline counts share a baseline; narrow layouts keep the same reading order. */
 export function DashboardOverview({
@@ -89,13 +101,13 @@ export function DashboardOverview({
       sx={{
         display: 'grid', columnGap: { xs: 3, md: 5 }, rowGap: { xs: 3, md: 1 },
         gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 2fr) minmax(0, 3fr)' },
-        gridTemplateRows: { md: 'auto auto auto' }, p: { xs: 2.5, md: 3.5 },
+        gridTemplateRows: { md: 'auto auto auto' }, p: { xs: 2.5, md: 3.5 }, animation: 'none',
       }}
     >
       <Stat label="Conversations">
-        <Typography variant="kpi" data-reserved-region="metric-conversations" sx={{ width: 'min(9ch, 100%)', height: '1.4em', lineHeight: 1.4, fontVariantNumeric: 'tabular-nums', '& > span': { display: 'block', height: '100%' } }} data-visual="conversation-total"><span data-region-content>{isLoading ? <Skeleton component="span" animation={false} width="100%" sx={{ display: 'inline-block' }} /> : conversations}</span></Typography>
-        <Box sx={{ height: 48, alignSelf: 'start' }}> {progress && (
-          <Stack spacing={1} sx={{ maxWidth: 280, mt: 2.5 }}>
+        <Typography variant="kpi" data-reserved-region="metric-conversations" sx={headlineCount} data-visual="conversation-total"><CountValue value={isLoading ? undefined : conversations} step={0} /></Typography>
+        {progress && (
+          <Stack spacing={1} sx={{ maxWidth: 280, alignSelf: 'start' }}>
             <LinearProgress
               data-journey-state="desktop.history_syncing"
               sx={{ visibility: progress.complete ? 'hidden' : 'visible',
@@ -114,12 +126,12 @@ export function DashboardOverview({
               variant={progress.percent === null ? 'indeterminate' : 'determinate'}
               value={progress.percent ?? undefined}
             />
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>{progress.label}</Typography>
+            <Typography variant="caption" sx={{ color: 'text.secondary', minBlockSize: '2lh' }}>{progress.label}</Typography>
           </Stack>
-        )}</Box>
+        )}
       </Stat>
       <Stat label="Messages" divider>
-        <Typography variant="metric" data-reserved-region="metric-messages" sx={{ width: 'min(9ch, 100%)', height: '1.4em', lineHeight: 1.4, fontVariantNumeric: 'tabular-nums', '& > span': { display: 'block', height: '100%' } }} data-visual="message-total"><span data-region-content>{isLoading ? <Skeleton component="span" animation={false} width="100%" sx={{ display: 'inline-block' }} /> : messages}</span></Typography>
+        <Typography variant="metric" data-reserved-region="metric-messages" sx={headlineCount} data-visual="message-total"><CountValue value={isLoading ? undefined : messages} step={1} /></Typography>
         <Box sx={{ minWidth: 0, mt: 1, alignSelf: 'start' }}>
           <Box aria-hidden="true" sx={{
             bgcolor: 'action.hover', borderRadius: 999, position: 'relative', height: 8, overflow: 'hidden',

@@ -4,20 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in</title>
+<link rel="stylesheet" href="popup.css">
 <style>
-  :root { color-scheme: light dark; --bg: #ffffff; --fg: #1f2328; --muted: #d0d7de; --accent: #1f6feb; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #0d1117; --fg: #e6edf3; --muted: #30363d; --accent: #4493f8; } }
-  html, body { height: 100%; margin: 0; }
-  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
-    background: var(--bg); color: var(--fg); font: 15px/1.4 system-ui, sans-serif; }
-  .spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--muted); border-top-color: var(--accent);
-    animation: spin 0.9s linear infinite; }
-  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+  html, body { width: 100%; height: 100%; min-width: 0; max-width: none; margin: 0; }
+  body.sign-in-waiting { min-height: 100vh; height: auto; display: grid; place-content: center; justify-items: center; gap: 16px; padding: 24px;
+    text-align: center; background: var(--dipsy-intent-surface-canvas); color: var(--dipsy-intent-text-primary); font-family: var(--dipsy-font-family-ui); }
+  .waiting-status { margin: 0; color: var(--dipsy-intent-text-primary); font-size: var(--dipsy-static-body-size); }
+  .waiting-arc { display: block; width: 28px; height: 28px; color: var(--dipsy-color-primary); animation: waiting-pending 1s linear infinite; }
+  @keyframes waiting-pending { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .waiting-arc { animation: none; } }
 </style>
 </head>
-<body>
-<div class="spinner" role="status"><span class="visually-hidden">Loading</span></div>
+<body class="sign-in-waiting">
+<svg class="waiting-arc" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="33.5 50.3"></circle></svg>
+<p class="waiting-status" role="status">Opening sign-in…</p>
 </body>
 </html>

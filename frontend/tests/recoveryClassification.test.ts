@@ -86,12 +86,12 @@ describe('recovery classification', () => {
   it('renders a refused browser read differently from an unavailable owner without offering another sign-in', () => {
     document.documentElement.innerHTML = read('browser-tasks/index.html');
     renderBrowserTask(document, { state: 'service_unavailable', recovery: 'authorization_refused' });
-    expect(document.getElementById('task-status')?.textContent).toBe('This browser task is not authorized.');
+    expect(document.getElementById('task-status')?.textContent).toBe('This page can’t continue setup.');
     expect(document.getElementById('authentication-open')?.hidden).toBe(true);
     renderBrowserTask(document, { state: 'service_unavailable', recovery: 'owner_unavailable' });
     expect(document.getElementById('task-status')?.textContent).toContain('connect right now');
     renderBrowserTask(document, { state: 'private-owner-diagnostic' });
-    expect(document.getElementById('task-status')?.textContent).toBe("This browser task couldn't continue.");
+    expect(document.getElementById('task-status')?.textContent).toBe('This step couldn’t finish.');
     expect(document.getElementById('extension-open')?.hidden).toBe(true);
   });
 
@@ -100,7 +100,7 @@ describe('recovery classification', () => {
     renderSetup(document, { connected: true, error: 'private-owner-diagnostic', pending: null,
       snapshot: { generation: 'g', journey_id: 'j', next_task: 'browser-access', facts: { installation: 'missing' },
         allowed_actions: ['browser.access'], pending_operations: [], reason: 'none' } });
-    expect(document.getElementById('task-status')?.textContent).toBe("Setup couldn't continue.");
+    expect(document.getElementById('task-title')?.textContent).toBe('Setup couldn’t continue');
     expect(document.getElementById('task-action')?.hidden).toBe(true);
     expect(document.getElementById('setup-code-open')?.hidden).toBe(true);
   });

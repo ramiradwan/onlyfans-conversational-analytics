@@ -8,22 +8,37 @@ const SOURCES = [
   { package: '@fontsource-variable/space-grotesk', stylesheet: 'wght.css', file: 'space-grotesk-latin-wght-normal.woff2' },
 ] as const;
 
+function readFont(repositoryRoot: string, source: typeof SOURCES[number]) {
+  const root = path.join(repositoryRoot, 'frontend/node_modules', source.package);
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as { version: string };
+  const bytes = fs.readFileSync(path.join(root, 'files', source.file));
+  if (bytes.subarray(0, 4).toString() !== 'wOF2') throw new Error('Expected a WOFF2 font: ' + source.file);
+  const css = fs.readFileSync(path.join(root, source.stylesheet), 'utf8');
+  const faces = [...css.matchAll(/@font-face\s*\{[^}]*\}/g)]
+    .map(([face]) => face).filter((face) => face.includes('./files/' + source.file));
+  if (faces.length !== 1) throw new Error('Expected one latin font face: ' + source.package);
+  const license = fs.readFileSync(path.join(root, 'LICENSE'), 'utf8').trim().replaceAll('*/', '* /');
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const notice = `/* ${source.package}@${manifest.version} (${source.file}, sha256:${hash})\n${license}\n*/`;
+  return { bytes, face: faces[0], notice };
+}
+
+export function generateNativeInter(repositoryRoot: string) {
+  const { file: filename } = SOURCES[0];
+  const { bytes, face, notice } = readFont(repositoryRoot, SOURCES[0]);
+  return {
+    filename,
+    bytes,
+    css: [notice, face.replace('./files/' + filename, './' + filename)].join('\n\n').replace(/\r\n/g, '\n') + '\n',
+  };
+}
+
 /** Embed local font bytes so setup needs neither runtime assets nor a new network endpoint. */
 export function generateStaticFontsCss(repositoryRoot: string): string {
   const sections = ['/* Generated from the pinned Fontsource packages and frontend/src/index.css. Do not edit. */'];
   for (const source of SOURCES) {
-    const root = path.join(repositoryRoot, 'frontend/node_modules', source.package);
-    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as { version: string };
-    const bytes = fs.readFileSync(path.join(root, 'files', source.file));
-    if (bytes.subarray(0, 4).toString() !== 'wOF2') throw new Error('Expected a WOFF2 font: ' + source.file);
-    const css = fs.readFileSync(path.join(root, source.stylesheet), 'utf8');
-    const faces = [...css.matchAll(/@font-face\s*\{[^}]*\}/g)]
-      .map(([face]) => face).filter((face) => face.includes('./files/' + source.file));
-    if (faces.length !== 1) throw new Error('Expected one latin font face: ' + source.package);
-    const license = fs.readFileSync(path.join(root, 'LICENSE'), 'utf8').trim().replaceAll('*/', '* /');
-    const hash = createHash('sha256').update(bytes).digest('hex');
-    sections.push(`/* ${source.package}@${manifest.version}; ${source.file}; sha256:${hash}\n${license}\n*/`);
-    sections.push(faces[0].replace('./files/' + source.file, 'data:font/woff2;base64,' + bytes.toString('base64')));
+    const { bytes, face, notice } = readFont(repositoryRoot, source);
+    sections.push(notice, face.replace('./files/' + source.file, 'data:font/woff2;base64,' + bytes.toString('base64')));
   }
   // Reuse the owner's measured fallbacks verbatim instead of maintaining a second metric table.
   const indexCss = fs.readFileSync(path.join(repositoryRoot, 'frontend/src/index.css'), 'utf8');

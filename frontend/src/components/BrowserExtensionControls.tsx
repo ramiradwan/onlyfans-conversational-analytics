@@ -112,23 +112,23 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
     if (browser === null || !currentAuthority) return null;
     if (!reviewNeeded && !continuationPaused) return null;
     const title = browser.legal_review_required ? 'Allow message collection'
-      : browser.site_access !== 'granted' ? 'Allow OnlyFans access'
+      : browser.site_access !== 'granted' ? 'Allow site access'
         : browser.capture === 'off' ? 'Message collection is off' : 'Message collection is paused';
-    const description = browser.legal_review_required ? 'Review how Dipsy uses your messages in Chrome.'
-      : browser.site_access !== 'granted' ? 'Chrome needs your permission before Dipsy can collect messages.'
-        : browser.capture === 'off' ? 'Review collection options in Chrome.' : 'New messages are not being collected.';
+    const description = browser.legal_review_required ? 'Review how Dipsy uses your messages in your browser.'
+      : browser.site_access !== 'granted' ? 'Your browser needs permission before Dipsy can collect messages.'
+        : browser.capture === 'off' ? 'Review collection options in your browser.' : 'New messages are not being collected.';
     const waiting = openingReview || desktop.browserLaunchPending || Boolean(reviewOperation) || localReviewPending;
-    const progress = openingReview || desktop.browserLaunchPending ? 'Opening Chrome…'
+    const progress = openingReview || desktop.browserLaunchPending ? 'Opening browser…'
       : reviewOperation?.state === 'outcome_unknown' || localReviewPending && desktop.error === 'operation_unconfirmed'
         ? 'The browser review has not been confirmed.'
-        : reviewOperation ? 'Complete the review in Chrome.'
+        : reviewOperation ? 'Complete the review in your browser.'
           : localReviewPending ? 'Preparing browser review.' : null;
     return <Panel component="section" emphasis="dominant" aria-labelledby="collection-review-title"
       data-journey-state="desktop.message_collection_review">
       <Typography component="h2" id="collection-review-title" variant="h5">{title}</Typography>
       <Typography variant="body2" sx={{ color: 'text.secondary' }}>{description}</Typography>
       {reviewNeeded && canReview && !waiting && <Button onClick={() => void open('setup')}
-        variant="contained" sx={{ alignSelf: 'flex-start' }}>Review in Chrome</Button>}
+        variant="contained" sx={{ alignSelf: 'flex-start' }}>Review in browser</Button>}
       {continuationPaused && canResume && !waiting && <Button onClick={() => void setCapture('resume')}
         disabled={captureBlocked} variant="contained" sx={{ alignSelf: 'flex-start' }}>
         {pending?.status === 'waiting' && pending.action === 'resume' ? 'Resuming…' : 'Resume collecting'}</Button>}

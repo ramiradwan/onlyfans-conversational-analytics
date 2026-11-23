@@ -302,10 +302,10 @@ test('sleeping OnlyFans tab has a direct recovery action after activation', () =
     analysisReadiness: readiness('active', 'blocked'),
   });
   assert.equal(result.id, CUSTOMER_STATES.FULL_UNAVAILABLE);
-  assert.equal(result.title, 'Open OnlyFans to continue');
+  assert.equal(result.title, 'Open the creator site to continue');
   assert.equal(result.primaryAction, 'open_creator_account');
-  assert.equal(result.primaryLabel, 'Open OnlyFans');
-  assert.equal(result.body, 'Your browser paused the OnlyFans tab.');
+  assert.equal(result.primaryLabel, 'Open creator account');
+  assert.equal(result.body, 'Your browser paused the creator site tab.');
   assert.doesNotMatch(result.body, /resume automatically|ready/i);
 });
 
@@ -345,6 +345,44 @@ test('desktop runtime probe reports an opened loopback socket and closes it', as
   });
   assert.equal(reachable, true);
   assert.equal(closed, true);
+});
+
+test('D1 setup shows Full analytics is on with admission alone', () => {
+  const input = {
+    status: status({ phase: 'full', transport: 'authenticated' }),
+    pairing: pairing('paired'),
+    desktopRuntimeReachable: true,
+    analysisReadiness: readiness('active', 'admitted'),
+  };
+  const setup = { setup: true };
+  const result = deriveCustomerJourney(input, setup);
+  assert.equal(result.title, 'Full analytics is on');
+  assert.equal(result.body, 'Insights appear in the desktop app.');
+  assert.equal(result.primaryLabel, 'Open desktop app');
+  assert.equal(result.primaryAction, 'open_dashboard');
+  for (const evidence of [readiness('required'), readiness('active'), readiness('unavailable')]) {
+    assert.notEqual(deriveCustomerJourney({ ...input, analysisReadiness: evidence }, setup).id, CUSTOMER_STATES.FULL_READY);
+  }
+  const sleeping = deriveCustomerJourney({ ...input,
+    status: status({ phase: 'full', transport: 'authenticated', sleeping: true }) }, setup);
+  assert.equal(sleeping.title, 'Updates paused');
+  assert.equal(sleeping.body, 'Your browser paused the creator site tab.');
+  assert.equal(sleeping.primaryLabel, 'Open creator account');
+  assert.equal(sleeping.primaryAction, 'open_creator_account');
+});
+
+test('setup unavailable readiness reports a terminal state and keeps the desktop action', () => {
+  const result = deriveCustomerJourney({
+    status: status({ phase: 'full', transport: 'authenticated' }),
+    pairing: pairing('paired'),
+    desktopRuntimeReachable: true,
+    analysisReadiness: readiness('unavailable'),
+  }, { setup: true });
+  assert.equal(result.title, 'Can’t check Full analytics right now');
+  assert.equal(result.body, '');
+  assert.equal(result.primaryAction, 'open_dashboard');
+  assert.equal(result.primaryLabel, 'Open desktop app');
+  assert.equal(result.secondaryAction, null);
 });
 
 test('desktop runtime probe fails closed when no socket opens', async () => {

@@ -1,16 +1,19 @@
 import { CssBaseline, GlobalStyles } from '@mui/material';
 import { ThemeProvider } from '@mui/material/styles';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 
 import { getConfig } from '@/config/fastapiConfig';
 import { websocketService } from '@services/websocketService';
 import { analyticsStoreActions } from '@store/analyticsStore';
+import { bridgeTransportStore } from '@store/transportStore';
 import { useUserStore } from '@store/userStore';
 
+import type { ProtocolErrorPayload } from './protocol';
 import { AppRouter } from './routing/AppRouter';
 import { authorityRecoveryApi } from './services/desktopOnboarding';
 import { colorSchemeProps, theme } from './theme';
+import { protocolErrorText } from './utils/statusCopy';
 import { WebAuthnAccessView } from './views/WebAuthnAccessView';
 
 const globalStyles = (
@@ -35,6 +38,7 @@ const globalStyles = (
 
 export function App() {
   const config = getConfig();
+  const [endedSession, setEndedSession] = useState<ProtocolErrorPayload | null>(null);
   const userRole = config.BRIDGE_ROLE === 'creator'
     ? 'creator-ceo'
     : config.BRIDGE_ROLE === 'operator'
@@ -55,14 +59,26 @@ export function App() {
       return;
     }
     const creatorAccountId = CREATOR_ID;
-    websocketService.connect(FASTAPI_WS_URL, creatorAccountId, BRIDGE_AUTH_TICKET);
-    void analyticsStoreActions.activate();
-
-    return () => {
+    let active = true;
+    const unsubscribe = bridgeTransportStore.subscribe(() => {
+      const error = bridgeTransportStore.getState().protocolError;
+      if (error?.fatal && error.code === 'unauthorized') {
+        stopSession();
+        setEndedSession(error);
+      }
+    });
+    function stopSession() {
+      if (!active) return;
+      active = false;
+      unsubscribe();
       websocketService.disconnect();
       analyticsStoreActions.deactivate();
       useUserStore.getState().actions.setUserRole(null);
-    };
+    }
+    websocketService.connect(FASTAPI_WS_URL, creatorAccountId, BRIDGE_AUTH_TICKET);
+    if (active) void analyticsStoreActions.activate();
+
+    return stopSession;
   }, []);
 
   let nativePresentation = false;
@@ -72,11 +88,12 @@ export function App() {
     <ThemeProvider theme={theme} {...colorSchemeProps} disableTransitionOnChange>
       <CssBaseline />
       {globalStyles}
-      {hasSessionIdentity ? (
+      {hasSessionIdentity && !endedSession ? (
         <BrowserRouter>
           <AppRouter />
         </BrowserRouter>
-      ) : <WebAuthnAccessView recoveryApi={nativePresentation ? authorityRecoveryApi : undefined} />}
+      ) : <WebAuthnAccessView recoveryApi={nativePresentation ? authorityRecoveryApi : undefined}
+        sessionNotice={endedSession ? protocolErrorText(endedSession) : undefined} />}
     </ThemeProvider>
   );
 }

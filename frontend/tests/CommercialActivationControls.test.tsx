@@ -1,4 +1,5 @@
 import { ThemeProvider } from '@mui/material/styles';
+import Color from 'colorjs.io';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -26,7 +27,7 @@ function mount(api: CapabilityLicenseApi, onboarding: DesktopOnboardingApi = des
   return render(<ThemeProvider theme={theme}><CommercialActivationControls api={api} onboarding={onboarding} embedded={embedded} /></ThemeProvider>);
 }
 function openReview() {
-  fireEvent.click(screen.getByRole('button', { name: 'Review activation offer' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Review offer' }));
 }
 function withDecision() {
   const fixture = desktopFixture();
@@ -35,12 +36,122 @@ function withDecision() {
 }
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
+it('opens a focused activation code dialog and returns focus on cancel and Escape', async () => {
+  const api = makeApi();
+  mount(api);
+  const trigger = screen.getByRole('button', { name: 'Use an activation code' });
+  trigger.focus();
+  fireEvent.click(trigger);
+  const dialog = await screen.findByRole('dialog', { name: 'Use an activation code' });
+  expect(dialog.getAttribute('aria-modal')).toBe('true');
+  expect(dialog.querySelector('[data-testid="PasswordOutlinedIcon"]')).toBeTruthy();
+  expect(getComputedStyle(within(dialog).getByRole('button', { name: 'Cancel' })).color).toBe('var(--bridge-palette-text-primary)');
+  expect(document.activeElement).toBe(within(dialog).getByRole('textbox', { name: 'Activation code' }));
+  expect(within(dialog).getByRole('button', { name: 'Activate', exact: true })).toHaveProperty('disabled', true);
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(document.activeElement).toBe(trigger);
+  fireEvent.click(trigger);
+  fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(document.activeElement).toBe(trigger);
+  expect(api.redeem).not.toHaveBeenCalled();
+});
+
+it('uses admitted offer terms and ordinary ink in both schemes without exposing sign-in identity', async () => {
+  const fixture = withDecision();
+  const snapshot = fixture.api.getState().snapshot!;
+  fixture.publish({ snapshot: { ...snapshot, facts: { ...snapshot.facts, authenticated_account_label: 'Private sign-in' },
+    decision: { ...decision, offer: { ...decision.offer, pilot_credit_cost: 3, licensed_major_version: 4,
+      update_rights: false, fallback_major_versions: [] } } } });
+  mount(makeApi(), fixture.api);
+  fireEvent.click(screen.getByRole('button', { name: 'Review offer' }));
+  const dialog = within(await screen.findByRole('dialog', { name: 'Activate Full analytics' }));
+  const price = dialog.getByText('Free', { exact: true });
+  expect(price).toBeTruthy();
+  expect(dialog.getByText('Uses 3 pilot credits')).toBeTruthy();
+  expect(dialog.getByText('4.x')).toBeTruthy();
+  expect(dialog.getAllByText('Not included')).toHaveLength(2);
+  expect(dialog.queryByText(/Private sign-in|Full analytics account/)).toBeNull();
+  for (const mode of ['light', 'dark'] as const) {
+    const { text, background } = theme.colorSchemes[mode]!.palette;
+    expect(new Color(text.primary).contrast(background.paper, 'WCAG21')).toBeGreaterThanOrEqual(4.5);
+    expect(new Color(text.secondary).contrast(background.paper, 'WCAG21')).toBeGreaterThanOrEqual(4.5);
+  }
+  expect(getComputedStyle(price).color).toBe('var(--bridge-palette-text-primary)');
+  expect(getComputedStyle(dialog.getByText('Uses 3 pilot credits')).color).toBe('var(--bridge-palette-text-secondary)');
+  expect(getComputedStyle(price.closest('.MuiDialog-paper')!).backgroundColor).toBe('var(--bridge-palette-background-paper)');
+});
+
+it('swaps the code submit for a control-height pending row and waits for owner readiness', async () => {
+  const api = makeApi();
+  mount(api);
+  fireEvent.click(screen.getByRole('button', { name: 'Use an activation code' }));
+  const dialog = within(await screen.findByRole('dialog', { name: 'Use an activation code' }));
+  fireEvent.change(dialog.getByRole('textbox', { name: 'Activation code' }), { target: { value: 'clr1.' + 'A'.repeat(43) } });
+  const submit = dialog.getByRole('button', { name: 'Activate', exact: true });
+  const action = submit.closest('.onboarding-action')!;
+  expect(action).toBeTruthy();
+  fireEvent.click(submit);
+  const pending = await dialog.findByText('Checking your activation…');
+  expect(pending.closest('.onboarding-action')).toBe(action);
+  expect(dialog.getByRole('heading', { name: 'Activating Full analytics' })).toBeTruthy();
+  expect(dialog.queryByRole('button', { name: 'Activate', exact: true })).toBeNull();
+  expect(screen.queryByText('On')).toBeNull();
+  expect(api.redeem).toHaveBeenCalledOnce();
+});
+
+it('presents a terminal unknown blocker without a recovery promise or competing action', async () => {
+  const fixture = desktopFixture(false);
+  fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, decision_status: { operation_id: decision.operation_id, state: 'unavailable' } } });
+  mount(makeApi(), fixture.api);
+  expect(screen.getByRole('heading', { name: 'Full analytics isn’t on' })).toBeTruthy();
+  expect(screen.getByText('Full analytics', { exact: true }).closest('.onboarding-surface-head')).toBeTruthy();
+  expect(screen.getByText('Activation couldn’t finish.')).toBeTruthy();
+  expect(screen.queryByRole('button')).toBeNull();
+  expect(fixture.api.begin).not.toHaveBeenCalled();
+});
+
+it('shows accepted activation as pending while leaving stale consent actions inactive', async () => {
+  const fixture = withDecision();
+  const snapshot = fixture.api.getState().snapshot!;
+  fixture.publish({ snapshot: { ...snapshot, decision_status: { operation_id: decision.operation_id, state: 'accepted' } } });
+  mount(makeApi(), fixture.api);
+  expect(screen.getByRole('heading', { name: 'Activating Full analytics' })).toBeTruthy();
+  expect(screen.getByText('Full analytics', { exact: true }).closest('.onboarding-surface-head')).toBeTruthy();
+  expect(screen.getByText('Checking your activation…').closest('.onboarding-action')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Activate for free' })).toBeNull();
+  expect(screen.queryByText('On')).toBeNull();
+  expect(fixture.api.begin).not.toHaveBeenCalled();
+  await act(async () => fixture.readiness(active));
+  expect(screen.getByText('On')).toBeTruthy();
+});
+
+it('names the expected creator account only after the owner verifies its label', async () => {
+  const fixture = desktopFixture(false);
+  const snapshot = { ...fixture.api.getState().snapshot!, facts: { account: 'verified', authenticated_account_label: 'Provider sign-in' },
+    pending_operations: [{ operation_id: decision.operation_id, action: 'activation.review', state: 'outcome_unknown', reason: 'account_mismatch' }] };
+  fixture.publish({ snapshot: { ...snapshot, creator_label: { creator_id: 'other-creator', display_name: 'Observed account', username: null } } });
+  mount(makeApi(), fixture.api);
+  expect(screen.getByText('Activation has not been confirmed.')).toBeTruthy();
+  expect(screen.queryByText(/Observed account|Provider sign-in/)).toBeNull();
+  await act(async () => fixture.publish({ snapshot: { ...snapshot,
+    creator_label: { creator_id: 'creator-account', display_name: 'Expected account', username: null } } }));
+  expect(screen.getByRole('heading', { name: 'Full analytics unavailable' })).toBeTruthy();
+  const status = screen.getByRole('status');
+  expect(status.textContent).toBe('You’re signed in to a different creator account. Switch to Expected account in your browser to continue.');
+  expect(status.getAttribute('data-tone')).toBe('attention');
+  expect(within(status).getByTestId('ErrorOutlineOutlinedIcon')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /activate|review/i })).toBeNull();
+  expect(fixture.api.begin).not.toHaveBeenCalled();
+});
+
 it('keeps offer review in a modal and closing it does not accept or reopen it on passive updates', async () => {
   const fixture = withDecision();
   const view = mount(makeApi(), fixture.api);
   expect(screen.queryByRole('dialog')).toBeNull();
   openReview();
-  expect(await screen.findByRole('dialog', { name: 'Full conversation analytics' })).toBeTruthy();
+  expect(await screen.findByRole('dialog', { name: 'Activate Full analytics' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   await act(async () => fixture.publish());
@@ -50,7 +161,7 @@ it('keeps offer review in a modal and closing it does not accept or reopen it on
   mount(makeApi(), fixture.api);
   expect(screen.queryByRole('dialog')).toBeNull();
   openReview();
-  expect(screen.getByRole('dialog', { name: 'Full conversation analytics' })).toBeTruthy();
+  expect(screen.getByRole('dialog', { name: 'Activate Full analytics' })).toBeTruthy();
 });
 
 it('shows a refused activation result after its operation leaves the pending list', async () => {
@@ -68,12 +179,12 @@ it('observes an unavailable offer on the same operation and presents a later dec
     decision_status: { operation_id: decision.operation_id, state: 'unavailable' }, pending_operations: [pending], allowed_actions: [] } });
   mount(makeApi(), fixture.api);
   expect(await screen.findByText('Checking the activation offer.')).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Set up Full analytics' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Review offer' })).toBeNull();
   await act(async () => fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, decision,
     decision_status: { operation_id: decision.operation_id, state: 'confirmation-required' }, allowed_actions: ['activation.confirm'] } }));
   expect(screen.queryByRole('dialog')).toBeNull();
   openReview();
-  expect(screen.getByRole('dialog', { name: 'Full conversation analytics' })).toBeTruthy();
+  expect(screen.getByRole('dialog', { name: 'Activate Full analytics' })).toBeTruthy();
   expect(fixture.api.begin).not.toHaveBeenCalled();
 });
 
@@ -109,7 +220,7 @@ describe('native commercial activation', () => {
     const begin = vi.fn(() => new Promise<void>(() => {}));
     const api = makeApi();
     mount(api, { ...fixture.api, begin });
-    const button = await screen.findByRole('button', { name: 'Set up Full analytics' });
+    const button = await screen.findByRole('button', { name: 'Review offer' });
     await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
     expect(begin).not.toHaveBeenCalled();
     fireEvent.click(button); fireEvent.click(button);
@@ -126,7 +237,7 @@ describe('native commercial activation', () => {
     const api = makeApi();
     mount(api, { ...fixture.api, begin }, embedded);
     openReview();
-    expect(await screen.findByText('Full conversation analytics')).toBeTruthy();
+    expect(await screen.findByText('Activate Full analytics')).toBeTruthy();
     expect(screen.getByText('Price')).toBeTruthy();
     expect(screen.getByText('Free')).toBeTruthy();
     expect(screen.getByText('Uses 1 pilot credit')).toBeTruthy();
@@ -150,11 +261,11 @@ describe('native commercial activation', () => {
     await act(async () => fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, revision: fixture.api.getState().snapshot!.revision + 1, decision: null,
       decision_status: { operation_id: decision.operation_id, state: 'accepted' }, allowed_actions: [],
       pending_operations: [{ operation_id: decision.operation_id, action: 'activation.review', state: 'accepted', reason: 'none' }] } }));
-    expect(await screen.findByText('Activation accepted. Checking Full analytics…')).toBeTruthy();
+    expect(await screen.findByText('Checking your activation…')).toBeTruthy();
     expect(screen.queryByText('On')).toBeNull();
     await act(async () => fixture.readiness(active));
     expect(await screen.findByText('On')).toBeTruthy();
-    expect(screen.queryByText('Activation accepted. Checking Full analytics…')).toBeNull();
+    expect(screen.queryByText('Checking your activation…')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Check activation status' })).toBeNull();
   });
 
@@ -177,13 +288,13 @@ describe('native commercial activation', () => {
     mount(makeApi(), fixture.api);
     openReview();
     expect(screen.queryByRole('button', { name: 'Cancel sign-in' })).toBeNull();
-    fireEvent.click(await screen.findByRole('button', { name: 'Sign in to Full analytics with another account' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Use a different sign-in for Full analytics' }));
     expect(fixture.api.begin).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Activate for free' })).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Continue with Google' }));
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Sign in to Full analytics with another account' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in to Full analytics with another account' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Use a different sign-in for Full analytics' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use a different sign-in for Full analytics' }));
     fireEvent.click(screen.getByRole('button', { name: 'Continue with Microsoft' }));
     await waitFor(() => expect(fixture.api.begin).toHaveBeenCalledExactlyOnceWith('auth.switch', { provider: 'microsoft-personal' }));
   });
@@ -193,8 +304,8 @@ describe('native commercial activation', () => {
     fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, authentication: { ...authentication, state: 'selected',
       actions: { select: false, cancel: true, open_browser: true, switch_account: true } }, allowed_actions: ['auth.switch', 'auth.cancel'] } });
     mount(makeApi(), fixture.api);
-    expect(await screen.findByText('Finish signing in in Chrome.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Open Chrome' })).toBeNull();
+    expect(await screen.findByText('Finish signing in in your browser.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Open browser' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Cancel sign-in' })).toBeNull();
     expect(fixture.api.openBrowser).not.toHaveBeenCalled();
     expect(fixture.api.begin).not.toHaveBeenCalled();
@@ -204,10 +315,10 @@ describe('native commercial activation', () => {
     fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, authentication: { ...authentication, state: 'selected',
       actions: { select: false, cancel: true, open_browser: true, switch_account: false } }, allowed_actions: [] } });
     mount(makeApi(), fixture.api);
-    expect(await screen.findByText('Finish signing in in Chrome.')).toBeTruthy();
+    expect(await screen.findByText('Finish signing in in your browser.')).toBeTruthy();
     await act(async () => fixture.publish({ error }));
-    expect(screen.queryByText('Finish signing in in Chrome.')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Open Chrome' }));
+    expect(screen.queryByText('Finish signing in in your browser.')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Open browser' }));
     await waitFor(() => expect(fixture.api.openBrowser).toHaveBeenCalledExactlyOnceWith(authentication.browser_operation_id));
     expect(fixture.api.begin).not.toHaveBeenCalled();
   });
@@ -217,7 +328,7 @@ describe('native commercial activation', () => {
     fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, authentication,
       decision_status: { operation_id: decision.operation_id, state: 'accepted' }, allowed_actions: ['activation.confirm', 'auth.select', 'auth.switch', 'auth.cancel'] } });
     mount(makeApi(), fixture.api);
-    expect(await screen.findByText('Activation accepted. Checking Full analytics…')).toBeTruthy();
+    expect(await screen.findByText('Checking your activation…')).toBeTruthy();
     expect(screen.queryByRole('group', { name: 'Sign-in options' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Activate for free' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Cancel sign-in' })).toBeNull();
@@ -232,9 +343,9 @@ describe('native commercial activation', () => {
       pending_operations: [{ operation_id: decision.operation_id, action: 'activation.review', state: 'accepted', reason: 'none' }] } });
     mount(makeApi(), fixture.api);
     expect(await screen.findByText('The activation offer is unavailable.')).toBeTruthy();
-    expect(screen.queryByText('Finish signing in in Chrome.')).toBeNull();
+    expect(screen.queryByText('Finish signing in in your browser.')).toBeNull();
     expect(screen.queryByRole('group', { name: 'Sign-in options' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Open Chrome' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open browser' }));
     await waitFor(() => expect(fixture.api.openBrowser).toHaveBeenCalledExactlyOnceWith(authentication.browser_operation_id));
     expect(fixture.api.begin).not.toHaveBeenCalled();
   });
@@ -246,12 +357,12 @@ describe('native commercial activation', () => {
     fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, authentication: { ...authentication, state: 'admitted',
       actions: { select: false, cancel: true, open_browser: true, switch_account: false } }, allowed_actions: ['auth.cancel'] } });
     mount(makeApi(), { ...fixture.api, openBrowser });
-    fireEvent.click(await screen.findByRole('button', { name: 'Open Chrome' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open browser' }));
     await act(async () => fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!,
       decision_status: { operation_id: decision.operation_id, state: 'accepted' } } }));
     await act(async () => reject(new Error('late browser reply')));
-    expect(screen.getByText('Activation accepted. Checking Full analytics…')).toBeTruthy();
-    expect(screen.queryByText('Chrome could not be opened.')).toBeNull();
+    expect(screen.getByText('Checking your activation…')).toBeTruthy();
+    expect(screen.queryByText('The browser could not be opened.')).toBeNull();
     expect(openBrowser).toHaveBeenCalledOnce();
   });
 
@@ -259,7 +370,8 @@ describe('native commercial activation', () => {
     const fixture = desktopFixture(); const api = makeApi();
     mount(api, fixture.api);
     const toggle = await screen.findByRole('button', { name: 'Use an activation code' });
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.queryByLabelText('Activation code')).toBeNull();
     fireEvent.click(toggle);
     const input = screen.getByLabelText('Activation code');
@@ -284,8 +396,8 @@ describe('native commercial activation', () => {
     await act(async () => fixture.publish());
     expect(api.redeem).toHaveBeenCalledExactlyOnceWith(code, expect.any(AbortSignal));
     expect((screen.getByLabelText('Activation code') as HTMLInputElement).value).toBe(code);
-    fireEvent.click(screen.getByRole('button', { name: 'Use an activation code' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Use an activation code' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Use an activation code' }));
     expect((screen.getByLabelText('Activation code') as HTMLInputElement).value).toBe(code);
     expect(fixture.api.begin).not.toHaveBeenCalled();
   });
@@ -297,9 +409,10 @@ describe('native commercial activation', () => {
       pending_operations: [{ operation_id: decision.operation_id, action: 'activation.review', state: 'waiting', reason: 'none' }] } });
     const api = makeApi();
     mount(api, fixture.api);
-    expect(await screen.findByText('Activation accepted. Checking Full analytics…')).toBeTruthy();
+    expect(await screen.findByText('Checking your activation…')).toBeTruthy();
     const toggle = await screen.findByRole('button', { name: 'Use an activation code' });
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(api.redeem).not.toHaveBeenCalled();
     fireEvent.click(toggle);
     const code = 'clr1.' + 'A'.repeat(43);
@@ -325,7 +438,8 @@ describe('native commercial activation', () => {
     expect(redeem).toHaveBeenCalledOnce();
     await act(async () => accept());
     expect(screen.queryByText('On')).toBeNull();
-    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Activate', exact: true })).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Activation code' })).toHaveProperty('disabled', true);
     expect(screen.queryByRole('button', { name: 'Check activation status' })).toBeNull();
     await act(async () => fixture.readiness(active));
     expect(await screen.findByText('On')).toBeTruthy();
@@ -371,7 +485,7 @@ describe('native commercial activation', () => {
     view.rerender(<ThemeProvider theme={theme}><CommercialActivationControls api={api} onboarding={fixture.api} creatorAccountId="another-creator" /></ThemeProvider>);
     expect((redeem.mock.calls[0][1] as AbortSignal).aborted).toBe(!accepted);
     if (!accepted) await act(async () => accept());
-    expect(screen.queryByText('Checking activation…')).toBeNull();
+    expect(screen.queryByText('Checking your activation…')).toBeNull();
     expect(redeem).toHaveBeenCalledOnce();
     expect(api.readiness).not.toHaveBeenCalled();
   });
@@ -379,12 +493,13 @@ describe('native commercial activation', () => {
   it('keeps an open code form during readiness loss while disabling new work', async () => {
     const fixture = desktopFixture(), api = makeApi();
     mount(api, fixture.api);
+    const review = screen.getByRole('button', { name: 'Review offer' });
     fireEvent.click(await screen.findByRole('button', { name: 'Use an activation code' }));
     const code = 'clr1.' + 'A'.repeat(43);
     fireEvent.change(screen.getByLabelText('Activation code'), { target: { value: code } });
     await act(async () => fixture.publish({ connected: false }));
     expect(screen.getByLabelText('Activation code')).toHaveProperty('value', code);
-    expect(screen.getByRole('button', { name: 'Set up Full analytics' })).toHaveProperty('disabled', true);
+    expect(review).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: 'Activate', exact: true })).toHaveProperty('disabled', true);
     await act(async () => { fixture.readiness(null); fixture.publish({ connected: true }); });
     expect(screen.getByRole('button', { name: 'Activate', exact: true })).toHaveProperty('disabled', true);
@@ -399,7 +514,7 @@ describe('native commercial activation', () => {
     fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, decision_status: { operation_id: decision.operation_id, state: 'awaiting-authentication' }, allowed_actions: [],
       pending_operations: [{ operation_id: decision.operation_id, action: 'activation.review', state: 'accepted', reason: 'none' }] } });
     mount(makeApi(), fixture.api);
-    expect(await screen.findByText('Finish signing in in Chrome.')).toBeTruthy();
+    expect(await screen.findByText('Finish signing in in your browser.')).toBeTruthy();
     expect(fixture.api.begin).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Activate for free' })).toBeNull();
     expect(screen.queryByLabelText('Activation code')).toBeNull();
@@ -474,11 +589,11 @@ describe('native commercial activation', () => {
   it('opens a newly prepared offer after an explicit review without another click', async () => {
     const fixture = desktopFixture();
     mount(makeApi(), fixture.api);
-    fireEvent.click(screen.getByRole('button', { name: 'Set up Full analytics' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review offer' }));
     await waitFor(() => expect(fixture.api.begin).toHaveBeenCalledExactlyOnceWith('activation.review'));
     await act(async () => fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!,
       decision, allowed_actions: ['activation.confirm'] } }));
-    expect(screen.getByRole('dialog', { name: 'Full conversation analytics' })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Activate Full analytics' })).toBeTruthy();
     expect(fixture.api.begin).toHaveBeenCalledOnce();
   });
 
@@ -492,7 +607,7 @@ describe('native commercial activation', () => {
     expect(screen.getByRole('button', { name: 'Activate for free' })).toBeTruthy();
     view.rerender(component('another-creator'));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(screen.queryByRole('button', { name: 'Review activation offer' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Review offer' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Activate for free' })).toBeNull();
     await act(async () => fixture.readiness(required, 'another-creator'));
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -529,11 +644,12 @@ it('blocks competing activation paths while the original desktop command is unco
   const fixture = desktopFixture();
   const api = makeApi();
   mount(api, fixture.api);
+  const review = screen.getByRole('button', { name: 'Review offer' });
   fireEvent.click(await screen.findByRole('button', { name: 'Use an activation code' }));
   fireEvent.change(screen.getByLabelText('Activation code'), { target: { value: 'clr1.' + 'A'.repeat(43) } });
   await act(async () => fixture.publish({ pending: '33333333-3333-4333-8333-333333333333', error: 'operation_unconfirmed' }));
   expect(screen.getByText('Activation has not been confirmed.')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Set up Full analytics' })).toHaveProperty('disabled', true);
+  expect(review).toHaveProperty('disabled', true);
   expect(screen.getByRole('button', { name: 'Activate', exact: true })).toHaveProperty('disabled', true);
   fireEvent.click(screen.getByRole('button', { name: 'Activate', exact: true }));
   expect(api.redeem).not.toHaveBeenCalled();
@@ -567,13 +683,14 @@ it('preserves accepted code recovery across disconnect and renewal without resub
   const code = 'clr1.' + 'A'.repeat(43);
   fireEvent.change(screen.getByLabelText('Activation code'), { target: { value: code } });
   fireEvent.click(screen.getByRole('button', { name: 'Activate', exact: true }));
-  await screen.findByText('Checking activation…');
+  await screen.findByText('Checking your activation…');
   await act(async () => {});
   await act(async () => fixture.publish({ connected: false }));
   await act(async () => fixture.publish({ connected: true, snapshot: { ...fixture.api.getState().snapshot!,
     generation: '33333333-3333-4333-8333-333333333333' } }));
   expect(screen.getByLabelText('Activation code')).toHaveProperty('value', code);
-  expect(screen.getByRole('button', { name: 'Activate', exact: true })).toHaveProperty('disabled', true);
+  expect(screen.queryByRole('button', { name: 'Activate', exact: true })).toBeNull();
+  expect(screen.getByRole('textbox', { name: 'Activation code' })).toHaveProperty('disabled', true);
   expect(screen.queryByRole('button', { name: 'Resume activation' })).toBeNull();
   expect(api.redeem).toHaveBeenCalledOnce();
   await act(async () => fixture.readiness(active));
@@ -614,25 +731,41 @@ it('never carries an uncertain code into a different creator account', async () 
   await act(async () => fixture.publish({ connected: true }));
   expect(screen.queryByRole('button', { name: 'Resume activation' })).toBeNull();
   expect(screen.queryByLabelText('Activation code')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Use an activation code' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Use an activation code' }));
   expect(screen.getByLabelText('Activation code')).toHaveProperty('value', '');
   expect(api.redeem).toHaveBeenCalledOnce();
 });
 
 it('does not promote a separate activation code while a current commercial offer is available', async () => {
   const fixture = withDecision();
-  const api = makeApi();
+  const api = makeApi({ redeem: vi.fn().mockRejectedValue(new CapabilityLicenseApiError("Activation couldn't be confirmed.")) });
   mount(api, fixture.api);
-  expect(await screen.findByRole('button', { name: 'Review activation offer' })).toBeTruthy();
+  expect(await screen.findByRole('button', { name: 'Review offer' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Use an activation code' })).toBeNull();
   expect(screen.queryByRole('dialog')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Review activation offer' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Review offer' }));
   const dialog = screen.getByRole('dialog');
   expect(within(dialog).queryByLabelText('Activation code')).toBeNull();
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Other activation options' }));
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-  expect(screen.getByLabelText('Activation code')).toBeTruthy();
+  const action = within(dialog).getByRole('button', { name: 'Use an activation code' });
+  action.focus();
+  fireEvent.click(action);
+  const codeDialog = within(await screen.findByRole('dialog', { name: 'Use an activation code' }));
+  expect(document.activeElement).toBe(codeDialog.getByLabelText('Activation code'));
+  fireEvent.click(codeDialog.getByRole('button', { name: 'Cancel' }));
+  const offer = within(await screen.findByRole('dialog', { name: 'Activate Full analytics' }));
+  expect(document.activeElement).toBe(offer.getByRole('button', { name: 'Use an activation code' }));
   expect(api.redeem).not.toHaveBeenCalled();
+  expect(fixture.api.begin).not.toHaveBeenCalled();
+  fireEvent.click(offer.getByRole('button', { name: 'Use an activation code' }));
+  const code = 'clr1.' + 'A'.repeat(43);
+  fireEvent.change(screen.getByLabelText('Activation code'), { target: { value: code } });
+  fireEvent.click(screen.getByRole('button', { name: 'Activate', exact: true }));
+  expect(await screen.findByRole('button', { name: 'Resume activation' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(offer.getByRole('button', { name: 'Activate for free' })).toHaveProperty('disabled', true);
+  fireEvent.click(offer.getByRole('button', { name: 'Use an activation code' }));
+  expect(screen.getByLabelText('Activation code')).toHaveProperty('value', code);
+  expect(api.redeem).toHaveBeenCalledExactlyOnceWith(code, expect.any(AbortSignal));
   expect(fixture.api.begin).not.toHaveBeenCalled();
 });
 
@@ -645,7 +778,7 @@ it('presents a current explicit Full intent only as review, never activation, an
   const draw = () => render(<ThemeProvider theme={theme}><CommercialActivationControls api={api} onboarding={fixture.api}
     creatorAccountId="creator-account" presentationIntent={intent} /></ThemeProvider>);
   const view = draw();
-  expect(await screen.findByRole('dialog', { name: 'Full conversation analytics' })).toBeTruthy();
+  expect(await screen.findByRole('dialog', { name: 'Activate Full analytics' })).toBeTruthy();
   expect(fixture.api.begin).not.toHaveBeenCalled();
   expect(api.redeem).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
@@ -653,7 +786,7 @@ it('presents a current explicit Full intent only as review, never activation, an
   view.unmount();
   draw();
   expect(screen.queryByRole('dialog')).toBeNull();
-  expect(screen.getByRole('button', { name: 'Review activation offer' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Review offer' })).toBeTruthy();
   expect(fixture.api.begin).not.toHaveBeenCalled();
 });
 
@@ -663,7 +796,7 @@ it('does not prepare an activation or open a new ceremony solely from an unprepa
     disclosure_bundle_id: 'c'.repeat(64) };
   render(<ThemeProvider theme={theme}><CommercialActivationControls api={makeApi()} onboarding={fixture.api}
     creatorAccountId="creator-account" presentationIntent={intent} /></ThemeProvider>);
-  expect(await screen.findByRole('button', { name: 'Set up Full analytics' })).toBeTruthy();
+  expect(await screen.findByRole('button', { name: 'Review offer' })).toBeTruthy();
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(fixture.api.begin).not.toHaveBeenCalled();
   expect(fixture.api.openBrowser).not.toHaveBeenCalled();

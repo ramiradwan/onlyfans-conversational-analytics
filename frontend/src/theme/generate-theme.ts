@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { qualifyThemeColors } from './chart-qualification.ts';
 import { contrastRatio, contrastRatioOnComposite } from './color-validation.ts';
 import { buildTokenGraph, isObject, publicIntents, validateBridgeIntents, type JsonObject, type JsonValue } from './intent-contracts.ts';
-import { generateStaticFontsCss, replaceStaticFontPreloads } from './static-fonts.ts';
+import { generateNativeInter, generateStaticFontsCss, replaceStaticFontPreloads } from './static-fonts.ts';
 import { validateRepositoryConsumers } from './token-consumers.ts';
 
 const filename = fileURLToPath(import.meta.url);
@@ -339,7 +339,7 @@ export function generateStaticTokensCss(tokensJsonSource: string, explicitScheme
     ['press-scale', String(motion.pressScale)],
   ];
   return (
-    '/* Generated from frontend/src/theme/tokens.json; run npm run sync:static-tokens in frontend. */\n' +
+    '/* Generated from frontend/src/theme/tokens.json. Run npm run sync:static-tokens in frontend. */\n' +
     declarationBlock(':root', [...shared, ...colorDeclarations(getObject(colorSchemes, 'light')), ...intentDeclarations(getObject(intents, 'light'))], '') +
     (explicitScheme ? '\n' + declarationBlock(':root[data-color-scheme="dark"]', [...colorDeclarations(getObject(colorSchemes, 'dark')), ...intentDeclarations(getObject(intents, 'dark'))], '') : '') +
     '\n@media (prefers-color-scheme: dark) {\n' +
@@ -419,6 +419,21 @@ function writeIfChanged(filePath: string, content: string): boolean {
   return true;
 }
 
+export function generateNativeOnboardingBundle(tokensJsonSource: string, root: string) {
+  const { css: fontCss, ...font } = generateNativeInter(root);
+  const layout = fs.readFileSync(path.join(root, 'frontend/src/theme/onboarding.css'), 'utf8').replace(/\r\n/g, '\n');
+  const icons: { name: string; svg: string }[] = [];
+  const nativeLayout = layout.replace(
+    /^(\.onboarding-icon\[data-icon="([a-z-]+)"\][^{}\n]* \{ --onboarding-icon: )url\("data:image\/svg\+xml,([^"]+)"\)/gm,
+    (_, selector: string, name: string, encoded: string) => {
+      icons.push({ name, svg: decodeURIComponent(encoded) + '\n' });
+      return selector + `url("./onboarding-icons/${name}.svg")`;
+    },
+  );
+  if (nativeLayout.includes('data:image/')) throw new Error('Native onboarding masks require local assets');
+  return { css: generateStaticTokensCss(tokensJsonSource, true) + '\n' + fontCss + '\n' + nativeLayout, font, icons };
+}
+
 export function generateColorReport(tokensJsonSource: string): string {
   return JSON.stringify(qualifyThemeColors(resolveTokens(tokensJsonSource)), null, 2) + '\n';
 }
@@ -435,6 +450,18 @@ function main(): void {
   writeIfChanged(path.join(themeDirectory, 'generated', 'static-fonts.css'), fonts);
   const workspace = fs.readFileSync(path.join(themeDirectory, 'onboarding.css'), 'utf8').replace(/\r\n/g, '\n');
   writeIfChanged(path.join(themeDirectory, 'generated', 'hosted-onboarding.css'), css + '\n' + fonts + '\n' + workspace);
+  const native = generateNativeOnboardingBundle(tokensSource, repositoryRoot);
+  const shell = path.join(repositoryRoot, 'desktop', 'shell');
+  writeIfChanged(path.join(shell, 'onboarding-theme.css'), native.css);
+  const iconDirectory = path.join(shell, 'onboarding-icons');
+  fs.mkdirSync(iconDirectory, { recursive: true });
+  for (const { name, svg } of native.icons) {
+    writeIfChanged(path.join(iconDirectory, name + '.svg'), svg);
+  }
+  const fontPath = path.join(shell, native.font.filename);
+  if (!fs.existsSync(fontPath) || !fs.readFileSync(fontPath).equals(native.font.bytes)) {
+    fs.writeFileSync(fontPath, native.font.bytes);
+  }
   console.log('Theme generated deterministically from tokens.json');
   const reportIndex = process.argv.indexOf('--color-report');
   if (reportIndex >= 0) {

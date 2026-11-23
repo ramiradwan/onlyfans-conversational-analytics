@@ -87,7 +87,7 @@ export function extensionLabel(connection: ExtensionConnection): string {
 
 export function protocolErrorText(error: Pick<ProtocolErrorPayload, 'code' | 'fatal'>): string {
   const classification = recoveryClass(protocolRecovery, error.code);
-  if (classification === 'authentication_required') return 'Your session ended. Reload the page to sign in again.';
+  if (classification === 'authentication_required') return 'Your session ended. Sign in to continue.';
   if (classification === 'version_incompatible') return 'This page is out of date. Reload the page.';
   return error.fatal
     ? "Dipsy couldn't continue the connection."
