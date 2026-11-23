@@ -1,9 +1,8 @@
 /** Group status changes that describe the same visible setup requirement. */
-export function setupRequirement({ model, view, selected, reviewFull, journey }) {
+export function setupRequirement({ model, view, selected, journey }) {
   if (view === 'desktop') return 'desktop-handoff';
   if (view === 'start') return 'start-choice';
-  if (view === 'agree') return `agreement:${model.legal.requires_reauthorization ? 'reauthorization' : 'initial'}:${selected ?? 'software'}`;
-  if (view === 'mode') return `mode-choice:${reviewFull ? 'full' : 'preview'}`;
+  if (view === 'consent') return `consent:${model.legal.requires_reauthorization ? 'reauthorization' : 'initial'}:${selected ?? 'preview'}`;
   if (view === 'access') return 'site-access';
   const { status, pairing } = model;
   switch (journey.id) {

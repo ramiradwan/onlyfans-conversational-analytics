@@ -107,7 +107,7 @@ function activationHarness() {
     async status() { return { consent: structuredClone(this.state) }; },
     async setMode(mode, options = {}) {
       this.setModeCalls.push({ mode, options: structuredClone(options) });
-      this.state = { mode, resume_mode: null };
+      this.state = { mode, resume_mode: null, authorization_event_id: options.evidenceEventId };
       return { consent: structuredClone(this.state) };
     },
   };
@@ -219,6 +219,43 @@ test('changed Terms reset only stale pre-mode evidence and require a fresh activ
   assert.equal(after.flow.completed_event_id, null);
 });
 
+test('a stale review cannot record an action against replacement instruments', async () => {
+  const h = activationHarness();
+  const { flow } = await h.controller.status();
+  h.bindingRef.current.instruments.terms_of_service.version = '2.1.0';
+  await assert.rejects(h.controller.acceptTerms({ transactionId: flow.transaction_id }), /review changed/);
+  assert.deepEqual(await h.evidenceStore.exportAuditTrail(), []);
+});
+
+test('status recovers an acknowledgment committed before its flow pointer', async () => {
+  const h = activationHarness();
+  const { flow } = await h.controller.status();
+  const original = await h.evidenceStore.recordRiskAcknowledgment({
+    transactionId: flow.transaction_id, bindings,
+  });
+  const current = await h.controller.status();
+  assert.equal(current.flow.risk_event_id, original.event_id);
+  assert.equal(current.flow.terms_event_id, null);
+  assert.equal(current.flow.stage, 'pre_mode');
+  assert.deepEqual(await h.evidenceStore.exportAuditTrail(), [original]);
+});
+
+test('mode receipt requires access and preserves the time of the affirmative gesture', async () => {
+  const h = activationHarness();
+  const status = h.consentController.status.bind(h.consentController);
+  let granted = false;
+  h.consentController.status = async () => ({ ...await status(), onlyfans_permission: granted });
+  await h.controller.acceptTerms();
+  await h.controller.acknowledgeRisk();
+  const { flow } = await h.controller.activateSoftware();
+  const action = { transactionId: flow.transaction_id, occurredAt: '2026-08-30T10:10:00.000Z' };
+  await assert.rejects(h.controller.chooseMode('preview', action), /access/);
+  assert.equal((await h.evidenceStore.exportAuditTrail()).length, 2);
+  granted = true;
+  const { evidence } = await h.controller.chooseMode('preview', action);
+  assert.equal(evidence.actions.extension_data_handling.timestamp, action.occurredAt);
+});
+
 test('AE-07 lost-response retry reuses the same mode envelope and timestamp', async () => {
   const h = activationHarness();
   await h.controller.acceptTerms();
@@ -244,4 +281,22 @@ test('AE-07 lost-response retry reuses the same mode envelope and timestamp', as
     first.evidence.event_id,
   );
   assert.deepEqual(h.consentController.setModeCalls[1], h.consentController.setModeCalls[0]);
+});
+
+test('a scoped Full retry recovers the receipt across the upgrade transaction rotation', async () => {
+  const h = activationHarness();
+  const status = h.consentController.status.bind(h.consentController);
+  h.consentController.status = async () => ({ ...await status(), onlyfans_permission: true, local_service_permission: true });
+  await h.controller.acceptTerms();
+  await h.controller.acknowledgeRisk();
+  const { flow } = await h.controller.activateSoftware();
+  await h.controller.chooseMode('preview');
+  const action = { transactionId: flow.transaction_id, occurredAt: '2026-08-30T11:00:00.000Z' };
+  const first = await h.controller.chooseMode('full', action);
+  assert.notEqual((await h.controller.status()).flow.transaction_id, action.transactionId);
+  const prior = await h.evidenceStore.exportAuditTrail();
+  const retry = await h.controller.chooseMode('full', { ...action, occurredAt: '2026-08-30T11:10:00.000Z' });
+  assert.equal(retry.retried, true);
+  assert.deepEqual(retry.evidence, first.evidence);
+  assert.deepEqual(await h.evidenceStore.exportAuditTrail(), prior);
 });

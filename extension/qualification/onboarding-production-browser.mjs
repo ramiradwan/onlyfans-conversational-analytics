@@ -61,11 +61,10 @@ try {
   });
   await setup.waitForSelector('#start-choice:not(.hidden)');
   await setup.locator('#start-preview').click();
-  await setup.waitForSelector('#pre-mode:not(.hidden)');
-  await setup.locator('#activate-software').click();
-  assert.equal(await setup.locator('#terms-accepted').evaluate((node) => document.activeElement === node), true);
+  await setup.waitForSelector('#mode-choice:not(.hidden)');
+  await expect(setup.locator('#enable-preview')).toBeDisabled();
   await setup.locator('#terms-accepted').check(); await setup.locator('#risk-acknowledged').check();
-  await setup.locator('#activate-software').click();
+  await setup.locator('#enable-preview').click();
   await setup.waitForSelector('#preview-metrics:not(.hidden)');
   await user.evaluate(() => fixtureRead('/api2/v2/users/me')); await user.evaluate(() => fixtureRead('/api2/v2/chats'));
   await user.evaluate(() => fixtureRead('/api2/v2/chats/fixture-peer-primary/messages'));

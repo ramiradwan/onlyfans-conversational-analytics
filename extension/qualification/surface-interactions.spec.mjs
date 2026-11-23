@@ -20,25 +20,260 @@ test('loading setup never records approvals or requests browser access', async (
   await page.locator('#start-preview').click();
   await expect(page.locator('#terms-accepted')).not.toBeChecked();
   await expect(page.locator('#risk-acknowledged')).not.toBeChecked();
-  await expect(page.locator('#activate-software')).toBeEnabled();
+  await expect(page.locator('#enable-preview')).toBeDisabled();
   expect((await calls(page)).every((call) => call.type.endsWith('.status'))).toBe(true);
   expect(await page.evaluate(() => window.__surfaceFixture.calls.filter(call => call.type === 'ofca.workspace.v1' && call.action === 'full_presentation_intent').every(call => call.requested === false))).toBe(true);
-  await page.locator('#activate-software').click();
-  await expect(page.locator('#feedback')).toBeVisible();
-  await expect(page.locator('#terms-accepted')).toBeFocused();
-  expect((await calls(page)).every((call) => call.type.endsWith('.status'))).toBe(true);
   await page.locator('#terms-accepted').check();
+  await expect(page.locator('#terms-recorded')).toHaveText('Recorded');
   await expect(page.locator('#risk-acknowledged')).toBeEnabled();
-  await page.locator('#activate-software').click();
-  await expect(page.locator('#risk-acknowledged')).toBeFocused();
-  expect((await calls(page)).every((call) => call.type.endsWith('.status'))).toBe(true);
+  await expect(page.locator('#enable-preview')).toBeDisabled();
   await page.locator('#risk-acknowledged').check();
-  await expect(page.locator('#activate-software')).toBeEnabled();
-  await page.locator('#activate-software').click();
-  await expect(page.locator('#access-card')).toBeVisible();
+  await expect(page.locator('#enable-preview')).toBeEnabled();
+  await expect(page.locator('#mode-permission-note')).toBeVisible();
   expect((await calls(page)).filter((call) => !call.type.endsWith('.status')).map((call) => call.type))
     .toEqual(['ofca.legal-activation.accept-terms', 'ofca.legal-activation.acknowledge-risk', 'ofca.legal-activation.activate-software']);
   expect((await calls(page)).some((call) => call.type === 'permission')).toBe(false);
+});
+
+test('consent decisions stay on one page and use three distinct gestures', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.software_activation);
+  await page.locator('#start-preview').click();
+  const enable = page.locator('#enable-preview');
+  await expect(enable).toBeVisible();
+  await expect(enable).toBeDisabled();
+  await page.locator('#risk-acknowledged').check();
+  await expect.poll(async () => (await calls(page)).filter((call) => call.type.endsWith('acknowledge-risk')).length).toBe(1);
+  await expect(page.locator('#terms-accepted')).not.toBeChecked();
+  await expect(enable).toBeDisabled();
+  await page.locator('#terms-accepted').check();
+  await expect(enable).toBeEnabled();
+  const decisions = async () => (await calls(page)).filter((call) => !call.type.endsWith('.status')).map((call) => call.type);
+  expect(await decisions()).toEqual(['ofca.legal-activation.acknowledge-risk', 'ofca.legal-activation.accept-terms',
+    'ofca.legal-activation.activate-software']);
+  await enable.click();
+  await expect(page.locator('#preview-metrics')).toBeVisible();
+  expect((await decisions()).at(-1)).toBe('ofca.legal-activation.choose-mode');
+  expect((await decisions()).includes('permission')).toBe(false);
+});
+
+const reviewSnapshot = (page) => page.evaluate(async () => {
+  const { result: workspace } = await chrome.runtime.sendMessage({ type: 'ofca.workspace.v1', action: 'read' });
+  const { status } = await chrome.runtime.sendMessage({ type: 'ofca.ui.status' });
+  const { result: legal } = await chrome.runtime.sendMessage({ type: 'ofca.legal-activation.status' });
+  return { workspace, consent: status.consent, flow: legal.flow,
+    choice: JSON.parse(sessionStorage.getItem('onboarding-mode-review-v1')) };
+});
+
+const reviewActions = (page) => page.evaluate(() => window.__surfaceFixture.calls.filter((call) =>
+  !call.type.endsWith('.status') && !(call.type === 'ofca.workspace.v1'
+    && ['read', 'browser_task', 'desktop_adoption'].includes(call.action))));
+
+for (const ready of [true, false]) test(`Preview review link switches to Full with ${ready ? 'validated' : 'outstanding'} prerequisites`, async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.software_activation, persistReview: true, permissionGranted: false });
+  await page.getByRole('button', { name: 'Continue with Preview' }).click();
+  await page.locator('#terms-accepted').check();
+  await expect(page.locator('#terms-recorded')).toHaveText('Recorded');
+  if (ready) {
+    await page.locator('#risk-acknowledged').check();
+    await expect(page.locator('#enable-preview')).toBeEnabled();
+  } else await expect(page.locator('#enable-preview')).toBeDisabled();
+  const before = await reviewSnapshot(page);
+  expect(before.choice.mode).toBe('preview');
+  const previousActionCount = (await reviewActions(page)).length;
+  const { journey_id, draft_scope } = before.workspace;
+
+  await page.getByRole('button', { name: 'Review Full analytics', exact: true }).click();
+  await expect(page.locator('#desktop-entry')).toBeVisible();
+  await expect(page.locator('#desktop-entry-title')).toBeFocused();
+  await expect(page.locator('#mode-choice')).toBeHidden();
+  const after = await reviewSnapshot(page);
+  expect(after.workspace).toMatchObject({ journey_id, draft_scope, draft: { full_checked: true } });
+  expect(after.choice).toEqual({ ...before.choice, mode: 'full' });
+  expect(after.consent).toEqual(before.consent);
+  expect(after.flow).toEqual(before.flow);
+  expect((await reviewActions(page)).slice(previousActionCount)).toEqual([
+    { type: 'ofca.workspace.v1', action: 'full_presentation_intent', scope_id: draft_scope.scope_id, requested: true },
+    { type: 'ofca.workspace.v1', action: 'draft', scope_id: draft_scope.scope_id, draft: { ...before.workspace.draft, full_checked: true } },
+  ]);
+
+  await page.reload();
+  await expect(page.locator('#desktop-entry')).toBeVisible();
+  await page.evaluate(() => window.__surfaceFixture.change({ browserTask: true }));
+  await expect(page.locator('#full-disclosure')).toBeVisible();
+  await expect(page.locator('#preview-disclosure')).toBeHidden();
+  await expect(page.locator('#terms-recorded')).toHaveText('Recorded');
+  if (ready) await expect(page.locator('#enable-full')).toBeEnabled();
+  else {
+    await expect(page.locator('#risk-acknowledged')).not.toBeChecked();
+    await expect(page.locator('#enable-full')).toBeDisabled();
+  }
+  const admitted = await reviewSnapshot(page);
+  expect(admitted.consent).toEqual(before.consent);
+  expect(admitted.flow).toEqual(before.flow);
+  expect(await reviewActions(page)).toEqual([]);
+
+  const replacement = { ...draft_scope, scope_id: '22222222-2222-4222-8222-222222222223' };
+  await page.evaluate((draftScope) => window.__surfaceFixture.change({ draftScope, browserTask: false }), replacement);
+  await expect(page.locator(ready ? '#preview-disclosure' : '#start-choice')).toBeVisible();
+  await expect(page.locator('#desktop-entry')).toBeHidden();
+  const replaced = await reviewSnapshot(page);
+  expect(replaced.workspace).toMatchObject({ draft_scope: replacement, draft: { full_checked: false } });
+  expect(replaced.choice).toBeNull();
+  expect(replaced.consent).toEqual(before.consent);
+  expect(replaced.flow).toEqual(before.flow);
+  expect(await reviewActions(page)).toEqual([]);
+});
+
+test('review navigation and Keep Preview preserve an existing Preview authorization', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.preview_complete, authorizationEventId: 'fixture-preview-receipt' });
+  const before = await reviewSnapshot(page);
+  await page.getByRole('button', { name: 'Review Full analytics', exact: true }).click();
+  await expect(page.locator('#desktop-entry')).toBeVisible();
+  await page.evaluate(() => window.__surfaceFixture.change({ browserTask: true }));
+  await expect(page.locator('#full-disclosure')).toBeVisible();
+  expect((await reviewSnapshot(page)).consent).toEqual(before.consent);
+  await page.getByRole('button', { name: 'Keep Preview', exact: true }).click();
+  await expect(page.locator('#preview-metrics')).toBeVisible();
+  const after = await reviewSnapshot(page);
+  expect(after.consent).toEqual(before.consent);
+  expect(after.flow).toEqual(before.flow);
+  const scope_id = before.workspace.draft_scope.scope_id;
+  expect(await reviewActions(page)).toEqual([
+    { type: 'ofca.workspace.v1', action: 'full_presentation_intent', scope_id, requested: true },
+    { type: 'ofca.workspace.v1', action: 'draft', scope_id, draft: { ...before.workspace.draft, full_checked: true } },
+    { type: 'ofca.workspace.v1', action: 'full_presentation_intent', scope_id, requested: false },
+    { type: 'ofca.workspace.v1', action: 'draft', scope_id, draft: before.workspace.draft },
+    { type: 'ofca.workspace.v1', action: 'dismiss_browser_task' },
+  ]);
+  await page.reload();
+  await expect(page.locator('#preview-metrics')).toBeVisible();
+  expect((await reviewSnapshot(page)).consent).toEqual(before.consent);
+  expect(await reviewActions(page)).toEqual([]);
+});
+
+test('setup validation must succeed before the consent mode action becomes available', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.software_activation, validationRejected: true });
+  await page.locator('#start-preview').click();
+  const feedback = page.locator('#feedback');
+  await expect(feedback).toHaveRole('status');
+  await expect(feedback).toHaveAttribute('aria-live', 'polite');
+  await expect(feedback).toHaveCSS('display', 'block');
+  await expect(feedback).toHaveCSS('visibility', 'visible');
+  await page.locator('#terms-accepted').check();
+  await page.locator('#risk-acknowledged').check();
+  const retry = page.locator('#retry-validation');
+  await expect(retry).toBeVisible();
+  await expect(feedback).toHaveText('The setup check didn’t finish.');
+  await expect(page.locator('#enable-preview')).toBeDisabled();
+  const before = (await reviewSnapshot(page)).flow;
+  expect(acknowledgmentCount(before)).toBe(2);
+  expect(before.stage).toBe('pre_mode');
+  expect((await calls(page)).filter(call => call.type.endsWith('activate-software')).length).toBe(1);
+  await page.evaluate(() => window.__surfaceFixture.change({ validationRejected: false }));
+  await retry.click();
+  await expect(page.locator('#enable-preview')).toBeEnabled();
+  await expect(feedback).toBeEmpty();
+  expect((await reviewSnapshot(page)).flow).toEqual({ ...before, stage: 'mode_selection' });
+  expect((await calls(page)).filter(call => /accept-terms$|acknowledge-risk$/.test(call.type))).toHaveLength(2);
+  expect((await calls(page)).filter(call => call.type.endsWith('activate-software')).length).toBe(2);
+  expect((await calls(page)).some(call => call.type.endsWith('choose-mode') || call.type === 'permission')).toBe(false);
+});
+
+const acknowledgmentCount = (flow) => [flow.terms_event_id, flow.risk_event_id].filter(Boolean).length;
+
+test('a lost validation reply announces no failure when the saved review is ready', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.software_activation,
+    lostResponse: 'ofca.legal-activation.activate-software' });
+  await page.locator('#start-preview').click();
+  await page.locator('#terms-accepted').check();
+  await page.locator('#risk-acknowledged').check();
+  await expect(page.locator('#enable-preview')).toBeEnabled();
+  await expect(page.locator('#feedback')).toBeEmpty();
+  await expect(page.locator('#retry-validation')).toBeHidden();
+  const saved = await reviewSnapshot(page);
+  expect(acknowledgmentCount(saved.flow)).toBe(2);
+  expect(saved.flow.stage).toBe('mode_selection');
+  expect(saved.consent.mode).toBe('off');
+  expect((await calls(page)).filter(call => !call.type.endsWith('.status')).map(call => call.type)).toEqual([
+    'ofca.legal-activation.accept-terms', 'ofca.legal-activation.acknowledge-risk', 'ofca.legal-activation.activate-software',
+  ]);
+});
+
+for (const mode of ['revoked', 'paused']) test(`Not now leaves a Preview re-entry action during ${mode} agreement`, async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.software_activation, mode,
+    resume: mode === 'paused' ? 'preview' : null, reauthorization: mode === 'paused', permissionGranted: false });
+  const navigations = [];
+  page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations.push(frame.url()); });
+  if (mode === 'revoked') await page.locator('#start-preview').click();
+  await expect(page.locator('#preview-disclosure')).toBeVisible();
+  await page.locator('#terms-accepted').check();
+  await expect(page.locator('#terms-recorded')).toHaveText('Recorded');
+  const before = await reviewSnapshot(page);
+  expect(acknowledgmentCount(before.flow)).toBe(1);
+  await page.locator('#not-now-preview').click();
+  await expect(page.locator('#mode-choice')).toBeHidden();
+  const reentry = page.locator('#journey-primary');
+  await expect(reentry).toHaveText(mode === 'revoked' ? 'Choose analytics mode' : 'Review changes');
+  await expect(reentry).toBeEnabled();
+  expect((await reviewSnapshot(page)).consent).toEqual(before.consent);
+  await reentry.click();
+  if (mode === 'revoked') await page.locator('#start-preview').click();
+  await expect(page.locator('#preview-disclosure')).toBeVisible();
+  await expect(page.locator('#terms-recorded')).toHaveText('Recorded');
+  await expect(page.locator('#risk-acknowledged')).not.toBeChecked();
+  await expect(page.locator('#enable-preview')).toBeDisabled();
+  const reopened = await reviewSnapshot(page);
+  expect(reopened.flow).toEqual(before.flow);
+  expect(reopened.consent).toEqual(before.consent);
+  expect((await calls(page)).filter(call => !call.type.endsWith('.status')).map(call => call.type)).toEqual([
+    'ofca.legal-activation.accept-terms',
+  ]);
+  await page.locator('#risk-acknowledged').check();
+  await expect(page.locator('#enable-preview')).toBeEnabled();
+  const ready = await reviewSnapshot(page);
+  expect(acknowledgmentCount(ready.flow)).toBe(2);
+  expect(ready.flow.terms_event_id).toBe(before.flow.terms_event_id);
+  expect(ready.consent).toEqual(before.consent);
+  expect((await calls(page)).filter(call => !call.type.endsWith('.status')).map(call => call.type)).toEqual([
+    'ofca.legal-activation.accept-terms', 'ofca.legal-activation.acknowledge-risk', 'ofca.legal-activation.activate-software',
+  ]);
+  expect(navigations).toHaveLength(0);
+});
+
+test('acknowledgment gestures remain unchecked while a workspace refresh is pending', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.software_activation);
+  await page.locator('#start-preview').click();
+  const terms = page.locator('#terms-accepted'), risk = page.locator('#risk-acknowledged');
+  await expect(terms).toBeEnabled();
+  await page.evaluate(async () => {
+    window.__surfaceFixture.state.holdWorkspaceRead = true;
+    await chrome.storage.session.set({ browser_task_entry_v1: null });
+  });
+  await page.waitForFunction(() => typeof window.__releaseWorkspaceRead === 'function');
+  await terms.press('Space');
+  await expect(terms).not.toBeChecked();
+  await risk.scrollIntoViewIfNeeded();
+  const riskBox = await risk.boundingBox();
+  await page.mouse.click(riskBox.x + riskBox.width / 2, riskBox.y + riskBox.height / 2);
+  await expect(risk).not.toBeChecked();
+  await expect(terms).toHaveAttribute('aria-disabled', 'true');
+  await expect(risk).toHaveAttribute('aria-disabled', 'true');
+  const pending = await page.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'ofca.legal-activation.status' })).result.flow);
+  expect(acknowledgmentCount(pending)).toBe(0);
+  expect((await calls(page)).every(call => call.type.endsWith('.status'))).toBe(true);
+  await page.evaluate(() => window.__releaseWorkspaceRead());
+  await expect(terms).toBeEnabled();
+  await expect(risk).toBeEnabled();
+  await terms.check();
+  await expect(page.locator('#terms-recorded')).toHaveText('Recorded');
+  await risk.check();
+  await expect(page.locator('#enable-preview')).toBeEnabled();
+  const saved = await reviewSnapshot(page);
+  expect(acknowledgmentCount(saved.flow)).toBe(2);
+  expect(saved.consent.mode).toBe('off');
+  expect((await calls(page)).filter(call => !call.type.endsWith('.status')).map(call => call.type)).toEqual([
+    'ofca.legal-activation.accept-terms', 'ofca.legal-activation.acknowledge-risk', 'ofca.legal-activation.activate-software',
+  ]);
 });
 
 test('permission refusal stays off and never submits a mode choice', async ({ page }) => {
@@ -49,6 +284,104 @@ test('permission refusal stays off and never submits a mode choice', async ({ pa
   expect(messages.find((call) => call.type === 'permission').userGesture).toBe(true);
   expect(messages.some((call) => call.type === 'ofca.legal-activation.choose-mode')).toBe(false);
   expect(await page.evaluate(() => window.__surfaceFixture.state.mode)).toBe('off');
+});
+
+for (const { width, height, theme, mode } of [
+  { width: 1440, height: 900, theme: 'light', mode: 'preview' },
+  { width: 390, height: 844, theme: 'dark', mode: 'full' },
+]) test(`consent keyboard order and re-entry at ${width} ${theme}`, async ({ page }, info) => {
+  await page.setViewportSize({ width, height });
+  await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
+  await renderSurfaceState(page, { ...SURFACE_STATES.software_activation, browserTask: mode === 'full',
+    persistReview: true, lostResponse: 'ofca.legal-activation.accept-terms', permissionGranted: false, permissionOutcome: 'granted' });
+  if (mode === 'preview') await page.locator('#start-preview').click();
+  const enable = page.locator(`#enable-${mode}`);
+  await expect(enable).toBeDisabled();
+  const disclosure = page.locator(`#${mode}-disclosure`);
+  await expect(disclosure).toBeVisible();
+  await expect(disclosure.getByRole('link', { name: 'Extension Privacy Notice' })).toHaveAttribute('href', /\/privacy$/);
+  await expect(disclosure.getByRole('link', { name: 'Creator platform and data risks' })).toHaveAttribute('href', /\/risk$/);
+  await disclosure.getByRole('link', { name: 'Creator platform and data risks' }).focus();
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#terms-accepted')).toBeFocused();
+  await page.keyboard.press('Space');
+  await expect(page.locator('#terms-recorded')).toHaveText('Recorded');
+  await page.reload();
+  await expect(page.locator('#terms-recorded')).toHaveText('Recorded');
+  await expect(page.locator('#terms-accepted')).toBeChecked();
+  await expect(page.locator('#risk-acknowledged')).not.toBeChecked();
+  await expect(enable).toBeDisabled();
+  await page.locator('#terms-accepted').focus();
+  for (const id of ['terms-link', 'risk-acknowledged']) {
+    await page.keyboard.press('Tab');
+    await expect(page.locator(`#${id}`)).toBeFocused();
+  }
+  await page.keyboard.press('Space');
+  await expect(page.locator('#risk-recorded')).toHaveText('Recorded');
+  await expect(enable).toBeEnabled();
+  for (const id of ['risk-link', `enable-${mode}`]) {
+    await page.keyboard.press('Tab');
+    await expect(page.locator(`#${id}`)).toBeFocused();
+  }
+  const boxes = await Promise.all([disclosure, page.locator('#separate-choices-disclosure'),
+    page.locator('#pre-mode'), page.locator('#mode-permission-note'), enable].map((locator) => locator.boundingBox()));
+  expect(boxes.every((box, index) => box.width > 0 && box.height > 0
+    && (index === 0 || boxes[index - 1].y + boxes[index - 1].height <= box.y))).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: info.outputPath(`${width}-${theme}-${mode}.png`), fullPage: true });
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#journey-title')).toBeVisible();
+  const messages = await calls(page);
+  expect(messages.filter((call) => call.type === 'permission' || call.type.endsWith('choose-mode'))
+    .map((call) => call.type)).toEqual(['permission', 'ofca.legal-activation.choose-mode']);
+  expect(messages.filter((call) => call.type === 'permission').map((call) => call.userGesture)).toEqual([true]);
+  expect(messages.filter((call) => call.type.endsWith('choose-mode')).map((call) => call.mode)).toEqual([mode]);
+  expect(messages.some((call) => call.type.endsWith('accept-terms'))).toBe(false);
+});
+
+for (const receipt of ['current', 'missing', 'mismatched', 'previous', 'needs-review']) {
+  test(`lost Full response recovers only with a current matching receipt: ${receipt}`, async ({ page }) => {
+    await renderSurfaceState(page, { ...SURFACE_STATES.full_review, authorizationEventId: 'fixture-preview-receipt',
+      lostResponse: 'ofca.legal-activation.choose-mode', modeReceipt: receipt });
+    const enable = page.locator('#enable-full');
+    await expect(enable).toBeEnabled();
+    await enable.click();
+    const feedback = page.locator('#feedback');
+    if (receipt === 'current') {
+      await expect(page.locator('main')).toHaveAttribute('data-task', 'browser-access-ready');
+      await expect(feedback).toBeEmpty();
+      const { consent, flow } = await reviewSnapshot(page);
+      expect(consent.authorization_event_id).toBe('fixture-full-receipt');
+      expect(flow.completed_event_id).toBe(consent.authorization_event_id);
+    } else {
+      await expect(feedback).toHaveText('That did not complete.');
+    }
+    expect((await calls(page)).filter((call) => call.type.endsWith('choose-mode')).map((call) => call.mode)).toEqual(['full']);
+  });
+}
+
+for (const permissionOutcome of ['denied', 'dismissed']) test(`Full consent keeps Preview on simulated ${permissionOutcome} access`, async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.full_review, permissionGranted: false, permissionOutcome });
+  await expect(page.locator('#full-secondary')).toHaveText('Keep Preview');
+  await page.locator('#enable-full').click();
+  await expect(page.locator('#feedback')).toContainText('Site access was not allowed');
+  await expect(page.locator('#terms-recorded')).toHaveText('Recorded');
+  await expect(page.locator('#risk-recorded')).toHaveText('Recorded');
+  expect((await calls(page)).some((call) => call.type.endsWith('choose-mode'))).toBe(false);
+  expect(await page.evaluate(() => window.__surfaceFixture.state.mode)).toBe('preview');
+  await page.locator('#full-secondary').click();
+  await expect(page.locator('#preview-metrics')).toBeVisible();
+});
+
+test('a permission response cannot complete a replaced consent review', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.mode_choice, permissionGranted: false, permissionOutcome: 'granted', holdPermission: true });
+  await page.locator('#enable-preview').click();
+  await page.waitForFunction(() => typeof window.__releasePermission === 'function');
+  await page.evaluate(() => window.__surfaceFixture.change({ transactionId: '66666666-6666-4666-8666-666666666666' }));
+  await expect.poll(async () => (await calls(page)).filter((call) => call.type.endsWith('.status')).length).toBeGreaterThan(2);
+  await page.evaluate(() => window.__releasePermission());
+  await expect(page.locator('#feedback')).toContainText('Setup changed');
+  expect((await calls(page)).some((call) => call.type.endsWith('choose-mode'))).toBe(false);
 });
 
 test('Preview finishes setup without pairing or desktop requests', async ({ page }) => {
@@ -633,7 +966,7 @@ test('only the admitted task presents Full consent and permission actions', asyn
   await expect(page.locator('#pre-mode')).toBeVisible();
   await page.locator('#terms-accepted').check();
   await page.locator('#risk-acknowledged').check();
-  await page.locator('#activate-software').click();
+  await page.locator('#enable-full').click();
   await expect(page.locator('#journey-title')).toHaveText('Browser access is ready');
   await expect(page.locator('#pairing-code')).toHaveCount(0);
   expect((await calls(page)).some(call => call.type === 'pair')).toBe(false);

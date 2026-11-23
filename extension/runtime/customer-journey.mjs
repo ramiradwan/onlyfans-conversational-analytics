@@ -36,9 +36,11 @@ export function deriveCustomerJourney({
   analysisReadiness = { commercial_authority: 'unknown', analysis_admission: 'blocked' },
   resumeAvailable = false,
   modeChoiceAvailable = false,
+  agreementReviewAvailable = false,
 } = {}, { setup = false } = {}) {
+  const canReview = modeChoiceAvailable || agreementReviewAvailable;
   if (status?.consent?.mode === 'paused') {
-    const reviewAvailable = !resumeAvailable && modeChoiceAvailable;
+    const reviewAvailable = !resumeAvailable && canReview;
     return Object.freeze({
       id: CUSTOMER_STATES.PAUSED,
       tone: 'info',
@@ -59,8 +61,8 @@ export function deriveCustomerJourney({
       tone: 'info',
       title: 'Analytics off',
       body: 'Site access was removed.',
-      primaryAction: modeChoiceAvailable ? 'choose_mode' : null,
-      primaryLabel: modeChoiceAvailable ? 'Choose analytics mode' : null,
+      primaryAction: canReview ? 'choose_mode' : null,
+      primaryLabel: canReview ? 'Choose analytics mode' : null,
       secondaryAction: null,
       secondaryLabel: null,
     });

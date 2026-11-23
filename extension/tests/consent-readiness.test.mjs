@@ -39,8 +39,8 @@ async function renderSurface(surface, model) {
       nodes.set(id, { dataset: {}, disabled: false, checked: false, textContent: '',
         classList: { toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); },
           contains: (name) => classes.has(name) },
-        setAttribute() {}, removeAttribute() {}, addEventListener() {},
-        querySelector: node, cloneNode() { return this; }, replaceChildren() {}, append() {}, insertBefore() {} });
+        attributes: {}, setAttribute(name, value) { this.attributes[name] = value; }, removeAttribute() {}, addEventListener() {},
+        querySelector: () => null, cloneNode() { return this; }, replaceChildren() {}, append() {}, insertBefore() {} });
     }
     return nodes.get(id);
   };
@@ -52,6 +52,7 @@ async function renderSurface(surface, model) {
       messages.push(message.type);
       if (message.type === 'ofca.ui.status') return { ok: true, status: model.status };
       if (message.type === 'ofca.legal-activation.status') return { ok: true, result: model.legal };
+      if (message.type === 'ofca.legal-activation.activate-software') return { ok: false };
       if (message.type === 'ofca.workspace.v1' && message.action === 'read') return { ok: true, result: record };
       if (message.type === 'ofca.workspace.v1' && message.action === 'browser_task') return { ok: true, result: { task, draft_scope: record.draft_scope } };
       if (message.type === 'ofca.workspace.v1' && message.action === 'desktop_adoption') return { ok: true, result: { adopted: true } };
@@ -72,7 +73,7 @@ async function renderSurface(surface, model) {
     await new Promise(setImmediate);
   }
   assert.equal(node('main').dataset.ready, 'true', `${surface} renders the status response`);
-  assert.deepEqual(messages.filter(type => type === 'ofca.ui.status' || type === 'ofca.legal-activation.status'),
+  assert.deepEqual(messages.filter(type => type === 'ofca.ui.status' || type === 'ofca.legal-activation.status').slice(0, 2),
     ['ofca.ui.status', 'ofca.legal-activation.status']);
   return node;
 }
@@ -222,11 +223,11 @@ for (const mode of ['preview', 'full']) for (const paused of [false, true]) for 
     assert.equal(legal.requires_reauthorization, true, 'surviving mode evidence cannot authorize missing prerequisites');
     assert.equal(needsAgreement(model), true);
     const setup = await renderSurface('setup', model);
-    assert.equal(setup('main').dataset.step, 'agree');
-    assert.equal(setup('terms-accepted').disabled, lost === 'risk');
-    assert.equal(setup('risk-acknowledged').disabled, lost === 'terms');
-    assert.equal(setup('activate-software').disabled, false);
-    assert.equal(setup('activate-software').classList.contains('hidden'), false);
+    assert.equal(setup('main').dataset.step, 'consent');
+    assert.equal(setup('terms-accepted').attributes['aria-disabled'], String(lost === 'risk'));
+    assert.equal(setup('risk-acknowledged').attributes['aria-disabled'], String(lost === 'terms'));
+    assert.equal(setup(`enable-${mode}`).disabled, true);
+    assert.equal(setup(`enable-${mode}`).classList.contains('hidden'), false);
     const popup = await renderSurface('popup', model);
     assert.equal(popup('journey-primary').textContent, mode === 'full' ? 'Continue in the desktop app' : 'Review changes');
     assert.equal(legal.flow.terms_event_id, lost === 'risk' ? before.terms_event_id : null);
@@ -259,26 +260,26 @@ for (const mode of ['preview', 'full']) for (const lost of ['terms', 'risk', 'bo
     assert.deepEqual(await h.evidenceStore.exportAuditTrail(), surviving);
     assert.equal((await renderSurface('popup', model))('journey-primary').textContent, mode === 'full' ? 'Continue in the desktop app' : 'Review changes');
     const setup = await renderSurface('setup', model);
-    assert.equal(setup('main').dataset.step, 'agree');
-    assert.equal(setup('activate-software').disabled, false);
+    assert.equal(setup('main').dataset.step, 'consent');
+    assert.equal(setup(`enable-${mode}`).disabled, true);
     h.evidenceStore.now = () => new Date('2030-01-09T12:00:00.000Z');
     for (const [id, action, needed] of [
       ['terms-accepted', 'acceptTerms', lost !== 'risk'],
       ['risk-acknowledged', 'acknowledgeRisk', lost !== 'terms'],
     ]) {
-      assert.equal(setup(id).disabled, !needed);
+      assert.equal(setup(id).attributes['aria-disabled'], String(!needed));
       if (needed) await h.legal[action]();
     }
     const agreed = { legal: await h.legal.status(), status: await h.consent.status() };
-    assert.equal((await renderSurface('setup', agreed))('activate-software').disabled, false);
+    assert.equal((await renderSurface('setup', agreed))(`enable-${mode}`).disabled, true);
     await h.legal.activateSoftware();
     const selection = { legal: await h.legal.status(), status: await h.consent.status() };
     assert.equal(modeChoiceAvailable(selection), true);
     const choice = await renderSurface('setup', selection);
-    assert.equal(choice('main').dataset.step, 'mode');
+    assert.equal(choice('main').dataset.step, 'consent');
     assert.equal(choice('mode-choice').classList.contains('hidden'), false);
-    assert.equal(choice('enable-full').classList.contains('hidden'), false);
-    assert.equal(choice('enable-full').disabled, false);
+    assert.equal(choice(`enable-${mode}`).classList.contains('hidden'), false);
+    assert.equal(choice(`enable-${mode}`).disabled, false);
     assert.equal(h.consent.captureScope.isOpen, false);
     const recovered = await h.legal.chooseMode('full');
     const record = await h.evidenceStore.event(recovered.evidence.event_id);
@@ -411,11 +412,11 @@ test('F1 later Full choice uses replacement prerequisites while the prior mode r
   const legal = await h.legal.status();
   assert.equal(legal.requires_reauthorization, true, 'replacement actions do not authorize the old mode record');
   const setup = await renderSurface('setup', { legal, status: await h.consent.status() });
-  assert.equal(setup('activate-software').disabled, false);
+  assert.equal(setup('enable-full').disabled, true);
   await h.legal.activateSoftware();
   const selection = { legal: await h.legal.status(), status: await h.consent.status() };
   assert.equal(modeChoiceAvailable(selection), true);
-  assert.equal((await renderSurface('setup', selection))('main').dataset.step, 'mode');
+  assert.equal((await renderSurface('setup', selection))('main').dataset.step, 'consent');
   const recovered = await h.legal.chooseMode('full');
   const record = await h.evidenceStore.event(recovered.evidence.event_id);
   assert.notEqual(record.event_id, original.event_id);
@@ -440,9 +441,8 @@ test('F1 all-present active modes keep agreement and its actions unchanged', asy
     assert.equal(model.legal.requires_reauthorization, false);
     assert.equal(needsAgreement(model), false);
     const setup = await renderSurface('setup', model);
-    assert.notEqual(setup('main').dataset.step, 'agree');
-    for (const id of ['terms-accepted', 'risk-acknowledged', 'activate-software']) assert.equal(setup(id).disabled, true);
-    assert.equal(setup('activate-software').classList.contains('hidden'), true);
+    assert.notEqual(setup('main').dataset.step, 'consent');
+    assert.equal(setup('mode-choice').classList.contains('hidden'), true);
     assert.notEqual((await renderSurface('popup', model))('journey-primary').textContent, 'Review changes');
     assert.equal(h.consent.captureScope.isOpen, true);
   }
@@ -716,6 +716,8 @@ test('a changed privacy notice reconciles pending choices after restart and crea
   assert.equal(current.flow.completed_event_id, null);
   const reopened = new LegalActivationController({ chromeApi: h.chromeApi, consentController: h.consent,
     evidenceStore: h.evidenceStore, bindings: () => h.bindingRef.current });
+  await assert.rejects(reopened.chooseMode('preview'), /Activate Software/);
+  await reopened.activateSoftware();
   const second = await reopened.chooseMode('preview');
   assert.equal(second.evidence.event_type, 'reauthorization');
   assert.notEqual(second.evidence.event_id, first.evidence.event_id);

@@ -14,7 +14,7 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSION_ROOT = path.dirname(ROOT);
 const BRIDGE_ORIGIN = 'http://bridge.localhost:17871';
 const COMPANION_WS = 'ws://127.0.0.1:17871/ws/agent';
-const EXPECTED_CSP = "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871;";
+const EXPECTED_CSP = "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871; frame-ancestors 'none';";
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');

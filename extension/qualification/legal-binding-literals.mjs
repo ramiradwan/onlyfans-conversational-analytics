@@ -7,6 +7,7 @@ const ACTIVATION_DISCLOSURES = {
   full: '5527bb2a4b92d4a3381c77ccbd944ac73379ec4f2b1d01c73e6538b9f7a38151',
   'separate-choices': 'd9b04f4a0f4e015e99092f3d89af1cce0af430fb823b4d97e10a497cbc833837',
 };
+const MODE_REVIEW_SHA256 = '717015cab4d6b68e78b44fbf35d4b25b8834979081031c3691f75a202c421285';
 
 export function auditActivationDisclosures(html) {
   for (const [name, digest] of Object.entries(ACTIVATION_DISCLOSURES)) {
@@ -15,6 +16,10 @@ export function auditActivationDisclosures(html) {
     assert.equal(createHash('sha256').update(sections[0][1]).digest('hex'), digest,
       `${name} disclosure differs from the approved rendering`);
   }
+  const reviews = [...html.matchAll(/<section id="mode-choice"[\s\S]*?<\/section>/g)];
+  assert.equal(reviews.length, 1, 'expected one mode review');
+  assert.equal(createHash('sha256').update(reviews[0][0]).digest('hex'), MODE_REVIEW_SHA256,
+    'mode review differs from the reviewed composition');
 }
 
 // Read generated declarations strictly as data. Never evaluate a candidate bundle.

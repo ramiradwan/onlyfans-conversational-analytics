@@ -31,17 +31,15 @@ function approvedSection(name) {
 
 test('Preview disclosure retains the adopted section and exact actions', () => {
   approvedSection('preview');
-  const preview = requireFragment(/<div id="preview-disclosure"[\s\S]*?(?=<div id="full-disclosure")/, 'Preview disclosure');
-  assert.match(preview, /id="enable-preview"[^>]*>Enable Preview<\/button>/);
-  assert.match(preview, /id="not-now-preview"[^>]*>Not now<\/button>/);
-  assert.match(preview, /id="review-full"[^>]*>Review Full analytics<\/button>/);
+  assert.match(modeChoice, /id="enable-preview"[^>]*>Enable Preview<\/button>/);
+  assert.match(modeChoice, /id="not-now-preview"[^>]*>Not now<\/button>/);
+  assert.match(modeChoice, /id="review-full"[^>]*>Review Full analytics<\/button>/);
 });
 
 test('Full disclosure retains the adopted section and separate Full action', () => {
   approvedSection('full');
-  const full = requireFragment(/<div id="full-disclosure"[\s\S]*?(?=<div id="separate-choices-disclosure")/, 'Full disclosure');
-  assert.match(full, /id="enable-full"[^>]*>Enable Full analytics<\/button>/);
-  assert.match(full, /id="full-secondary"[^>]*>Not now<\/button>/);
+  assert.match(modeChoice, /id="enable-full"[^>]*>Enable Full analytics<\/button>/);
+  assert.match(modeChoice, /id="full-secondary"[^>]*>Not now<\/button>/);
   assert.match(script, /'Keep Preview' : 'Not now'/);
   assert.doesNotMatch(script, /transition\(['"]full['"]\)/);
   assert.match(script, /LEGAL_CHOOSE_MODE_MESSAGE_TYPE/);
@@ -58,23 +56,24 @@ test('the package copy audit refuses changed, missing and duplicate disclosures'
   assert.throws(() => auditActivationDisclosures(`${html}<div data-approved-copy="preview">\n${approvedSection('preview')}</div>`));
 });
 
+test('the package copy audit refuses mutations of the reviewed composition', () => {
+  assert.throws(() => auditActivationDisclosures(html.replace('I agree to the', 'I reviewed the')), /reviewed composition/);
+  assert.throws(() => auditActivationDisclosures(html.replace('Chrome may ask', 'Chrome always asks')), /reviewed composition/);
+  const choice = modeChoice.match(/<div id="separate-choices-disclosure"[\s\S]*?<\/div>/)[0];
+  assert.throws(() => auditActivationDisclosures(html.replace(choice, '').replace('</label>', `</label>\n${choice}`)), /reviewed composition/);
+});
+
 test('mode choice keeps every required point visible without a collapsed section', () => {
   assert.doesNotMatch(modeChoice, /<details|<summary/);
   assert.doesNotMatch(modeChoice, /\shidden[\s=>]/);
   const hiddenByDefault = [...modeChoice.matchAll(/<[^>]*\bclass="[^"]*\bhidden\b[^"]*"[^>]*>/g)]
     .map(([tag]) => tag.match(/id="([^"]+)"/)?.[1]);
-  assert.deepEqual(hiddenByDefault, ['mode-choice', 'full-disclosure']);
+  assert.deepEqual(hiddenByDefault, ['mode-choice', 'full-disclosure', 'retry-validation', 'mode-permission-note', 'enable-full', 'full-secondary']);
 });
 
 test('combined mode review retains separate software activation and consent commands', () => {
-  const preMode = requireFragment(
-    /<section id="pre-mode"[\s\S]*?<\/section>/,
-    'Pre-mode activation section',
-  );
-  assert.match(
-    preMode,
-    /<button[^>]*id="activate-software"[^>]*>\s*Continue\s*<\/button>/,
-  );
+  assert.match(modeChoice, /id="separate-choices-disclosure"[\s\S]*id="terms-accepted"[\s\S]*id="risk-acknowledged"[\s\S]*id="mode-permission-note"[\s\S]*id="enable-preview"[\s\S]*id="enable-full"/);
+  assert.doesNotMatch(modeChoice, /id="activate-software"/);
   assert.match(script, /type: LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE/);
   assert.match(script, /type: LEGAL_CHOOSE_MODE_MESSAGE_TYPE/);
   assert.doesNotMatch(html, /GDPR consent/i);

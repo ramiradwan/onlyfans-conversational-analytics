@@ -894,12 +894,11 @@ footer a[aria-disabled="true"] { color: var(--dipsy-color-text-muted); text-deco
 #pending-count { font-family: var(--dipsy-font-family-numeric); font-variant-numeric: tabular-nums; }
 
 /* The required review stays the dominant surface while its controls are visible. */
-#pre-mode:not(.hidden), #mode-choice:not(.hidden) {
+#mode-choice:not(.hidden) {
   border: var(--dipsy-border-thin) solid var(--dipsy-intent-surface-dominant-border);
   box-shadow: var(--dipsy-intent-surface-dominant-elevation);
 }
-#pre-mode::before, #mode-choice::before { display: none; }
-main:has(#pre-mode:not(.hidden)) .journey-card,
+#mode-choice::before { display: none; }
 main:has(#mode-choice:not(.hidden)) .journey-card {
   border-color: var(--dipsy-color-divider);
   box-shadow: none;

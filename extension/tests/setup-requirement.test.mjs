@@ -10,7 +10,7 @@ function requirement(overrides = {}, view = 'journey') {
     desktopRuntimeReachable: true, analysisReadiness: { commercial_authority: 'active', analysis_admission: 'admitted' },
     ...overrides };
   const journey = deriveCustomerJourney(model);
-  return { journey: journey.id, requirement: setupRequirement({ model, view, selected: 'full', reviewFull: true, journey }) };
+  return { journey: journey.id, requirement: setupRequirement({ model, view, selected: 'full', journey }) };
 }
 
 test('activation status changes keep one requirement while the confirmed journey advances', () => {
@@ -48,8 +48,7 @@ test('site access, creator sign-in, extension status, tab activity and analysis 
 });
 
 test('a renewed disclosure review is distinct from initial consent without depending on wording', () => {
-  assert.equal(requirement({}, 'agree').requirement, 'agreement:initial:full');
-  assert.equal(requirement({ legal: { requires_reauthorization: true } }, 'agree').requirement, 'agreement:reauthorization:full');
-  assert.equal(requirement({}, 'mode').requirement, 'mode-choice:full');
+  assert.equal(requirement({}, 'consent').requirement, 'consent:initial:full');
+  assert.equal(requirement({ legal: { requires_reauthorization: true } }, 'consent').requirement, 'consent:reauthorization:full');
   assert.equal(requirement({}, 'access').requirement, 'site-access');
 });

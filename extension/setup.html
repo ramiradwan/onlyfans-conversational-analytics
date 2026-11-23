@@ -75,28 +75,10 @@
       <h2 id="legal-unavailable-title">Setup is unavailable in this version</h2>
       <p>Update the extension to continue.</p>
     </section>
-    <section id="pre-mode" class="onboarding-card hidden" aria-labelledby="activation-title" data-composition="trust">
-        <button id="start-back" class="text-button" type="button">Back</button>
-        <h2 id="activation-title">Before you start</h2>
-        <div id="start-disclosure"></div>
-        <label class="check-row">
-          <input id="terms-accepted" type="checkbox">
-          <span>I agree to the <a id="terms-link" href="#">Software Terms</a>.</span>
-        </label>
-        <label class="check-row">
-          <input id="risk-acknowledged" type="checkbox">
-          <span>
-            I have read the <a id="risk-link" href="#">Creator Platform &amp; Data Risk Disclosure</a>
-            and acknowledge the platform, account, privacy, data-security, and technical risks
-            described in it.
-          </span>
-        </label>
-        <button id="activate-software" class="primary" type="button">
-          Continue
-        </button>
-      </section>
-    <section id="mode-choice" class="onboarding-card hidden" data-composition="decision">
-        <div id="preview-disclosure" class="choice" role="group" aria-labelledby="preview-choice-title">
+    <section id="mode-choice" class="onboarding-card hidden" aria-labelledby="activation-title" data-composition="trust">
+      <h2 id="activation-title">Turn on Preview</h2>
+      <div id="start-disclosure">
+        <div id="preview-disclosure">
           <div class="points" data-approved-copy="preview">
 <h2>Preview</h2>
 <p>Preview temporarily handles account, chat and message information received by supported OnlyFans pages to measure recent activity. This information can include message text.</p>
@@ -106,12 +88,9 @@
 <p>Local processing and limited retention do not mean OnlyFans permits Preview. Platform restrictions can apply to collection and put your account and earnings at risk.</p>
 <p>Read the <a href="/legal/extension-privacy">Extension Privacy Notice</a> and <a href="/legal/creator-risk-disclosure">Creator platform and data risks</a>.</p>
 </div>
-          <button id="enable-preview" class="primary" type="button">Enable Preview</button>
-          <button id="not-now-preview" class="text-button" type="button">Not now</button>
-          <button id="review-full" class="menu-row" type="button">Review Full analytics</button>
         </div>
 
-        <div id="full-disclosure" class="choice hidden" role="group" aria-labelledby="full-choice-title">
+        <div id="full-disclosure" class="hidden">
           <div class="points" data-approved-copy="full">
 <h2>Full</h2>
 <p>Full handles and keeps message text, identifiers, participant details and related conversation information. The extension sends this information to the companion analytics app on the same computer. Both can keep a copy.</p>
@@ -120,15 +99,39 @@
 <p>Full's collection and history retrieval are subject to OnlyFans restrictions. Your permission, read-only access and local processing do not mean OnlyFans permits them. Enforcement may affect your account, payments and earnings.</p>
 <p>Enabling Full is not consent on anyone else's behalf. Read the <a href="/legal/extension-privacy">Extension Privacy Notice</a> and <a href="/legal/creator-risk-disclosure">Creator platform and data risks</a>.</p>
 </div>
-          <button id="enable-full" class="primary" type="button">Enable Full analytics</button>
-          <button id="full-secondary" class="text-button" type="button">Not now</button>
         </div>
         <div id="separate-choices-disclosure" class="points" data-approved-copy="separate-choices">
 <h2>Separate choices</h2>
 <p>Enabling Full does not enable history access; you enable it separately. In the ordinary software workflow, the normal conversation dataset stays on your computer and is not sent to our hosted analytics or storage services.</p>
 <p>Accepting the Software Terms, acknowledging risks and choosing a mode are separate steps. Enabling a mode does not accept OnlyFans' updated terms. Complete any required acceptance directly with OnlyFans.</p>
   </div>
-      </section>
+      </div>
+      <div id="pre-mode">
+        <label class="check-row">
+          <input id="terms-accepted" type="checkbox" aria-describedby="terms-recorded">
+          <span>I agree to the <a id="terms-link">Software Terms</a>.</span>
+        </label>
+        <p id="terms-recorded" class="choice-recorded" role="status"></p>
+        <label class="check-row">
+          <input id="risk-acknowledged" type="checkbox" aria-describedby="risk-recorded">
+          <span>
+            I have read the <a id="risk-link">Creator Platform &amp; Data Risk Disclosure</a>
+            and acknowledge the platform, account, privacy, data-security, and technical risks
+            described in it.
+          </span>
+        </label>
+        <p id="risk-recorded" class="choice-recorded" role="status"></p>
+      </div>
+      <div class="mode-actions">
+        <button id="retry-validation" class="text-button hidden" type="button">Retry setup check</button>
+        <p id="mode-permission-note" class="fine-print hidden">Chrome may ask you to allow site access.</p>
+        <button id="enable-preview" class="primary" type="button" disabled>Enable Preview</button>
+        <button id="enable-full" class="primary hidden" type="button" disabled>Enable Full analytics</button>
+        <button id="not-now-preview" class="text-button" type="button">Not now</button>
+        <button id="full-secondary" class="text-button hidden" type="button">Not now</button>
+        <button id="review-full" class="menu-row" type="button">Review Full analytics</button>
+      </div>
+    </section>
     <section id="access-card" class="journey-card onboarding-card hidden" aria-labelledby="access-title" data-composition="guided">
       <span class="onboarding-status-icon" aria-hidden="true"><span id="access-icon-mark" class="onboarding-icon" data-icon="extension"></span></span>
       <h2 id="access-title" tabindex="-1"></h2>

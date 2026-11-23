@@ -1,16 +1,16 @@
 {
   "blocks": {
     "pre-mode": {
-      "element_sha256": "a03d397ccebd3b317cb616cb11b48b9ce274d8f06ccbe4bea562d50234a8e117"
+      "element_sha256": "3078ea6e6712c6cd815413c32d7501932d492ac6a95087a4df892024ebee77d8"
     },
     "preview-disclosure": {
-      "element_sha256": "bfcf6b93b0f338f144e14da0907a8a14f0ab85bd3fca0d732186c1de330afc1b"
+      "element_sha256": "48fa83e62b4e10c5f3f7b07ad1d588b9b531372bb7481de5e2545f110894a330"
     },
     "full-disclosure": {
-      "element_sha256": "14a94334c0395d80c5292bac961f976367a32ac70c9499aab02f03147e7736b3"
+      "element_sha256": "89274e37deafc8704bfaeb5d95b024dbb4d546a5847b831eb7329d25a4d2fd0f"
     }
   },
-  "element_baseline_source": "d6175bc23086d2d78e8b953c5bad2130792ce6a2:extension/setup.html",
+  "element_baseline_source": "9ce04c5796bb0b88500ab67b8d0f83dc429f6b0c:extension/setup.html",
   "acknowledgements_sha256": "3439558519daa54e726b24980c278f411bc64f9782f8eed0179e6f604344dea6",
   "activation_sections": {
     "preview": "92642f8a5c46c5026de0b6845dbfdb0c4adbedaa5612d2d634c4d796a02f4fa2",

@@ -1,10 +1,19 @@
 // Browser-test adapter only. This file is never included in extension artifacts.
 export function installSurfaceFixture(input) {
   const state = structuredClone(input), calls = [], ports = new Set();
+  if (state.persistReview) Object.assign(state, JSON.parse(sessionStorage.getItem('fixture-review') ?? '{}'));
+  function saveReview() {
+    if (state.persistReview) {
+      const { terms, risk, agreement, choice, mode } = state;
+      sessionStorage.setItem('fixture-review', JSON.stringify({ terms, risk, agreement, choice, mode }));
+    }
+  }
   const journey = '11111111-1111-4111-8111-111111111111';
-  const draftScope = { scope_id: '22222222-2222-4222-8222-222222222222', disclosure_bundle_id: 'a'.repeat(64) };
+  let draftScope = { scope_id: '22222222-2222-4222-8222-222222222222', disclosure_bundle_id: 'a'.repeat(64) };
   const draft = { terms_checked: false, risk_checked: false, full_checked: input.fullIntent === true };
-  const task = { journey_id: journey, expires_at: Math.floor(Date.now() / 1000) + 300 };
+  const workspaceRecord = () => ({ journey_id: journey, draft_scope: draftScope, draft: structuredClone(draft) });
+  const task = { journey_id: journey, task_id: '12345678-1234-4234-8234-123456789abc',
+    admission_generation: '12345678-1234-4234-8234-abcdef012345', expires_at: Math.floor(Date.now() / 1000) + 300 };
   const event = () => { const listeners = new Set(); return { addListener: (fn) => listeners.add(fn),
     removeListener: (fn) => listeners.delete(fn), emit: (...values) => { for (const fn of listeners) fn(...values); } }; };
   const storageChanged = event(), sessionValues = structuredClone(input.sessionValues ?? {});
@@ -36,7 +45,8 @@ export function installSurfaceFixture(input) {
     comparison_code: state.pairing === 'compare' && state.surface === 'setup' ? '483217' : null,
     owns_attempt: state.surface === 'setup' && ['pairing', 'compare'].includes(state.pairing),
     desktop_control: state.desktopControl === true });
-  const status = () => ({ consent: { mode: state.mode, resume_mode: state.resume ?? null, consent_epoch: 'fixture-epoch' },
+  const status = () => ({ consent: { mode: state.mode, resume_mode: state.resume ?? null, consent_epoch: 'fixture-epoch',
+    authorization_event_id: state.authorizationEventId ?? null },
     brain_reachable: state.reachable === true,
     phase: state.phase ?? (state.mode === 'full' ? (state.paired ? 'full' : 'identity') : state.mode),
     reload_required: state.reload === true, onlyfans_permission: state.phase !== 'permission_required' && state.permissionGranted !== false,
@@ -49,12 +59,19 @@ export function installSurfaceFixture(input) {
     requires_reauthorization: state.reauthorization === true,
     bindings: { public_origin: 'https://legal.example.test', instruments: {
       terms_of_service: { public_url: '/terms' }, risk_disclosure: { public_url: '/risk' }, extension_privacy_notice: { public_url: '/privacy' } } },
-    flow: { terms_event_id: !state.agreement || state.accepted || state.terms ? 'fixture-terms' : null,
+    flow: { transaction_id: state.transactionId ?? '55555555-5555-4555-8555-555555555555',
+      terms_event_id: !state.agreement || state.accepted || state.terms ? 'fixture-terms' : null,
       risk_event_id: !state.agreement || state.accepted || state.risk ? 'fixture-risk' : null,
-      stage: state.agreement ? 'pre_mode' : state.choice ? 'mode_selection' : 'complete' } });
+      completed_event_id: state.completedEventId ?? null,
+      stage: state.agreement ? 'pre_mode' : 'mode_selection' } });
   window.__surfaceFixture = { state, calls, change(next, replace = false) {
     if (replace) for (const key of Object.keys(state)) delete state[key];
     Object.assign(state, next);
+    if (next.draftScope) {
+      draftScope = next.draftScope;
+      draft.full_checked = false;
+      storageChanged.emit({ onboarding_workspace_state_v3: { newValue: { record: workspaceRecord() } } }, 'local');
+    }
     for (const port of ports) port.onMessage.emit(pairState());
     window.chrome.storage.onChanged.emit({ fixture: { newValue: true } }, 'local');
     if ('browserTask' in next) storageChanged.emit({ browser_task_entry_v1: { newValue: next.browserTask } }, 'session');
@@ -72,10 +89,25 @@ export function installSurfaceFixture(input) {
         if (message.type === 'ofca.ui.status') return { ok: true, status: status() };
         if (message.type === 'ofca.legal-activation.status') return { ok: true, result: legal() };
         if (message.type === 'ofca.workspace.v1') {
-          if (message.action === 'read') return { ok: true, result: { journey_id: journey, draft_scope: draftScope, draft: structuredClone(draft) } };
+          if (message.action === 'read') {
+            if (state.holdWorkspaceRead) await new Promise((resolve) => {
+              window.__releaseWorkspaceRead = () => {
+                delete state.holdWorkspaceRead;
+                delete window.__releaseWorkspaceRead;
+                resolve();
+              };
+            });
+            return { ok: true, result: workspaceRecord() };
+          }
           if (message.action === 'draft') { Object.assign(draft, message.draft); return { ok: true, result: {} }; }
           if (message.action === 'browser_task') return { ok: true, result: state.browserTask ? { task, draft_scope: draftScope } : null };
-          if (message.action === 'dismiss_browser_task') { state.browserTask = false; return { ok: true, result: { dismissed: true } }; }
+          if (message.action === 'dismiss_browser_task') {
+            if (state.browserTask) {
+              state.browserTask = false;
+              storageChanged.emit({ browser_task_entry_v1: { oldValue: { task, draft_scope: draftScope } } }, 'session');
+            }
+            return { ok: true, result: { dismissed: true } };
+          }
           if (message.action === 'desktop_adoption') return { ok: true, result: { adopted: state.adopted === true } };
           if (message.action === 'prepare_launch') return { ok: true, result: { journey_id: journey, app_link: `ofca://onboarding/?journey=${journey}` } };
           if (message.action === 'full_presentation_intent') return { ok: true, result: message.requested ? '33333333-3333-4333-8333-333333333333' : null };
@@ -83,17 +115,35 @@ export function installSurfaceFixture(input) {
         }
         if (message.type === 'ofca.legal-activation.accept-terms') state.terms = true;
         else if (message.type === 'ofca.legal-activation.acknowledge-risk') state.risk = true;
-        else if (message.type === 'ofca.legal-activation.activate-software') { state.agreement = false; state.choice = true; }
-        else if (message.type === 'ofca.legal-activation.choose-mode') { state.mode = message.mode; state.choice = false; }
+        else if (message.type === 'ofca.legal-activation.activate-software') {
+          if (!legal().flow.terms_event_id || !legal().flow.risk_event_id || state.validationRejected) return { ok: false };
+          state.agreement = false; state.choice = true;
+        }
+        else if (message.type === 'ofca.legal-activation.choose-mode') {
+          state.mode = message.mode;
+          state.choice = false;
+          const previousReceipt = state.authorizationEventId;
+          const receipt = `fixture-${message.mode}-receipt`;
+          state.authorizationEventId = state.modeReceipt === 'missing' ? null
+            : state.modeReceipt === 'previous' ? previousReceipt : receipt;
+          state.completedEventId = state.modeReceipt === 'mismatched' ? 'fixture-other-receipt'
+            : state.modeReceipt === 'previous' ? previousReceipt : receipt;
+          if (state.modeReceipt === 'needs-review') state.reauthorization = true;
+        }
         else if (message.type === 'ofca.ui.transition') {
           if (message.mode === 'pause' && ['preview', 'full'].includes(state.mode)) {
             state.resume = state.mode; state.mode = 'paused';
           } else if (message.mode === 'resume' && state.mode === 'paused' && state.resume) {
             state.mode = state.resume; state.resume = null;
           } else if (message.mode === 'revoked') { state.mode = 'revoked'; state.resume = null; }
+          else if (state.phase === 'permission_required' && state.permissionGranted && message.mode === state.mode) {
+            delete state.phase;
+          }
           else return { ok: false, code: 'transition_rejected' };
         }
         else if (message.type === 'ofca.ui.reload-tabs') state.reload = false;
+        saveReview();
+        if (state.lostResponse === message.type) { delete state.lostResponse; throw Error('fixture_response_lost'); }
         return { ok: true, status: status() };
       },
       connect() {
@@ -114,7 +164,14 @@ export function installSurfaceFixture(input) {
           disconnect() { ports.delete(port); port.onDisconnect.emit(); },
         }; ports.add(port); queueMicrotask(() => port.onMessage.emit(pairState())); return port;
       } },
-    permissions: { request: async (request) => { calls.push({ type: 'permission', request, userGesture: navigator.userActivation.isActive }); return state.permissionGranted !== false; } },
+    permissions: { request: async (request) => {
+      calls.push({ type: 'permission', request, userGesture: navigator.userActivation.isActive });
+      if (state.holdPermission) await new Promise((resolve) => { window.__releasePermission = resolve; });
+      if (state.permissionOutcome === 'dismissed' || state.permissionOutcome === 'denied'
+        || (state.permissionGranted === false && state.permissionOutcome !== 'granted')) return false;
+      state.permissionGranted = true;
+      return true;
+    } },
     tabs: { create: async (value) => { calls.push({ type: 'tab', ...value }); return { id: 2 }; } },
     storage: { session, onChanged: storageChanged },
   };

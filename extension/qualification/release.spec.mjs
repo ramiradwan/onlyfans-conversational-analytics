@@ -36,13 +36,13 @@ test('extracted release starts disabled, records UI choices and deletes without 
     expect((await access()).origins ?? []).toEqual([]);
     await setup.locator('#start-preview').click();
     await expect(setup.locator('#pre-mode')).toBeVisible();
-    await setup.locator('#start-back').click();
+    await setup.locator('#not-now-preview').click();
     await expect(setup.locator('#start-choice')).toBeVisible();
     await setup.locator('#start-preview').click();
     await setup.locator('#terms-accepted').check();
     await setup.locator('#risk-acknowledged').check();
-    await setup.locator('#activate-software').click();
-    await expect(setup.locator('#access-card')).toBeVisible();
+    await expect(setup.locator('#enable-preview')).toBeEnabled();
+    await expect(setup.locator('#mode-permission-note')).toBeVisible();
     await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
     expect((await access()).origins ?? []).toEqual([]);
     const openedOptions = context.waitForEvent('page');
@@ -59,10 +59,11 @@ test('extracted release starts disabled, records UI choices and deletes without 
     await expect(setup.locator('#pre-mode')).toBeVisible();
     await setup.locator('#terms-accepted').check();
     await setup.locator('#risk-acknowledged').check();
-    await setup.locator('#activate-software').click();
-    await expect(setup.locator('#access-card')).toBeVisible();
+    await expect(setup.locator('#enable-preview')).toBeEnabled();
     await setup.reload();
-    await expect(setup.locator('#access-card')).toBeVisible();
+    await expect(setup.locator('#enable-preview')).toBeEnabled();
+    await expect(setup.locator('#terms-recorded')).toHaveText('Recorded');
+    await expect(setup.locator('#risk-recorded')).toHaveText('Recorded');
     await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
     expect(requests).toEqual([]);
     const report = {
