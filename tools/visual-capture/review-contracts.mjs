@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { reviewCases } from './ci/inventory.mjs';
+import { measureFindingCopy, prepareFindings } from './screen-matrix.mjs';
 
 export function contrastAgainst(foreground, backdrop) {
   const rgb = foreground.slice(0, 3).map((c, i) => (c * foreground[3] + backdrop[i] * (1 - foreground[3])) / 255);
@@ -196,6 +197,36 @@ async function textLines(locator) {
         && rect.top >= bounds.top - 0.5 && rect.bottom <= bounds.bottom + 0.5),
     };
   });
+}
+
+export async function measureFindingsStates(page, base, mode, viewport) {
+  const open = async state => {
+    await page.goto(`${base}?stability=findings&state=${state}&mode=${mode}`);
+    await page.evaluate(() => document.fonts.ready);
+  };
+  await open('saved');
+  const first = await measureFindingCopy(page, viewport);
+  const card = page.locator('[data-visual="findings-summary"]');
+  const cardAnchor = () => card.evaluate(node => {
+    const { x, y, width } = node.getBoundingClientRect();
+    return { x, y: y + scrollY, width };
+  });
+  const firstCard = await cardAnchor();
+  const refresh = page.getByRole('button', { name: 'Refresh saved findings', exact: true });
+  await refresh.press('Enter');
+  const seen = await measureFindingCopy(page, viewport, 'seen');
+  assert(await refresh.evaluate(node => node === document.activeElement && node.matches(':focus-visible')));
+  const seenCard = await cardAnchor();
+  for (const axis of ['x', 'y', 'width']) near(seenCard[axis], firstCard[axis], `Seen findings card ${axis}`);
+  for (const part of Object.keys(first)) {
+    near(seen[part].x, first[part].x, `Seen findings ${part} x`);
+    if (viewport.width === 1440) near(seen[part].y, first[part].y, `Seen findings ${part} y`);
+  }
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await open('pending');
+  const pending = await measureFindingCopy(page, viewport, 'pending');
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  return { width: viewport.width, first, seen, pending };
 }
 
 export async function measureDashboardMismatch(page, open, width, scale) {
@@ -555,7 +586,14 @@ export async function captureReviewChecks(browser, base, outDir, recorder = null
           assert(parseFloat(style.duration) + parseFloat(style.delay) <= 0.321, 'motion exceeds spatial duration'); }
         await page.emulateMedia({ reducedMotion: 'reduce' });
         for (const selector of selectors) assert.equal((await appearance(page.locator(selector).first())).animation, 'none');
-        return animations;
+        const findings = [];
+        await prepareFindings(page, true);
+        for (const [width, height] of [[1440, 900], [390, 844], [320, 900]]) {
+          const viewport = { width, height };
+          await page.setViewportSize(viewport);
+          findings.push(await measureFindingsStates(page, base, mode, viewport));
+        }
+        return { animations, findings };
       });
     } finally { await context.close(); }
   }

@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { openActivationReview, publishActivation } from './desktop-decision-fixtures.mjs';
 
 export const FIXED_NOW = '2026-06-30T12:05:00.000Z';
@@ -17,26 +18,28 @@ const openPairingComparison = async page => {
 };
 
 const findingHeadline = 'One topic appears in 50% of fully checked messages';
+const longFinding = 'Custom content requests, pricing details, and delivery expectations for scheduled sessions';
 const findingsDialog = page => page.getByRole('dialog', { name: 'All topics', exact: true });
 const findingsTrigger = page => page.getByRole('button', { name: 'See all topics', exact: true });
 
-async function prepareFindings(page) {
+export async function prepareFindings(page, longCopy = false) {
   await page.route('**/src/story-only/findingsFixtures.ts*', async route => {
     const response = await route.fetch();
     const source = await response.text();
     if (!source.includes('Example topic')) throw new Error('Synthetic findings label is missing');
-    await route.fulfill({ response, body: source.replace('Example topic', 'Pricing questions') });
+    const body = source.replace('Example topic', 'Pricing questions');
+    await route.fulfill({ response, body: longCopy ? body.replaceAll('Second category', longFinding) : body });
   });
-  if (page.viewportSize().width === 320) {
-    await page.addInitScript(() => {
+  await page.addInitScript(() => {
+    if (innerWidth === 320) {
       const root = new MutationObserver(() => {
         if (!document.documentElement) return;
         document.documentElement.style.fontSize = '200%';
         root.disconnect();
       });
       root.observe(document, { childList: true, subtree: true });
-    });
-  }
+    }
+  });
 }
 
 async function assertFindingTitle(locator, viewport) {
@@ -54,15 +57,79 @@ async function assertFindingTitle(locator, viewport) {
   if (viewport.width === 320 && (layout.lines < 2 || layout.fontSize < 48)) throw new Error('Finding title did not wrap at 2×');
 }
 
+export async function measureFindingCopy(page, viewport, state = 'first') {
+  const card = page.getByRole('region', { name: state === 'first' ? 'Your first insights are ready' : 'Insights', exact: true });
+  const measure = async locator => {
+    assert.equal(await locator.count(), 1, 'Expected one findings text element');
+    assert(await locator.isVisible(), 'Findings text must be visible');
+    return locator.evaluate(node => {
+      const css = getComputedStyle(node);
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const rects = [...range.getClientRects()];
+      const bounds = node.getBoundingClientRect();
+      const card = node.closest('[data-visual="findings-summary"]').getBoundingClientRect();
+      const fits = rects.length > 0 && rects.every(rect => rect.left >= Math.max(0, bounds.left, card.left) - 0.5
+        && rect.right <= Math.min(innerWidth, bounds.right, card.right) + 0.5
+        && rect.top >= bounds.top - 0.5 && rect.bottom <= bounds.bottom + 0.5);
+      return { text: node.textContent, lines: new Set(rects.map(rect => rect.top)).size,
+        x: bounds.x, y: bounds.y + scrollY, width: bounds.width, height: bounds.height,
+        fits, font: css.fontFamily, fontSize: parseFloat(css.fontSize), clamp: css.webkitLineClamp,
+        overflow: css.overflow, ellipsis: css.textOverflow, color: css.color, lineHeight: parseFloat(css.lineHeight) };
+    });
+  };
+  const check = (measurement, label, budget) => {
+    assert(measurement.fits && measurement.font.includes('Inter Variable') && measurement.clamp === 'none'
+      && measurement.overflow === 'visible' && measurement.ellipsis === 'clip', `${label} lost readable wrapping`);
+    if (viewport.width === 1440) {
+      assert(measurement.lines <= budget, `${label} uses ${measurement.lines} lines in ${measurement.width}px (budget ${budget})`);
+    }
+  };
+  const heading = card.getByRole('heading', { level: 2 });
+  await heading.waitFor({ state: 'visible' });
+  const title = await measure(heading);
+  check(title, 'Findings title', 1);
+  if (state === 'pending') {
+    const status = await measure(card.getByText('Saved findings aren’t ready yet.', { exact: true }));
+    check(status, 'Pending findings status', 1);
+    assert.equal(await card.locator('[data-visual="finding-bar"], [role="progressbar"]').count(), 0);
+    assert.doesNotMatch(await card.innerText(), /\d\s*%|fully checked|being updated|updates by itself/i);
+    return { title, status };
+  }
+  const finding = await measure(card.getByText(longFinding, { exact: true }));
+  check(finding, 'Long finding', 2);
+  const headline = card.getByRole('heading', { name: findingHeadline, exact: true });
+  await assertFindingTitle(headline, viewport);
+  const scope = await measure(card.getByText(/^Available message dates:.*All directions.*All conversations$/));
+  const basis = await measure(card.getByText('Topics are based on 2 fully checked messages.', { exact: true }));
+  const status = await measure(card.getByText(/^Processing state when saved: paused/));
+  check(scope, 'Saved findings scope', 2);
+  check(basis, 'Saved findings basis', 2);
+  check(status, 'Saved findings status', 1);
+  for (const paragraph of [scope, basis, status]) {
+    assert.equal(paragraph.color, title.color, 'Saved metadata must use secondary ink');
+  }
+  for (const [before, after] of [[scope, basis], [basis, status]]) {
+    const gap = after.y - before.y - before.height;
+    assert(gap > before.lineHeight - before.fontSize, 'Saved metadata needs more space between paragraphs than between lines');
+  }
+  if (viewport.width === 1440) assert(scope.lines + basis.lines <= 2, 'Saved scope and basis exceed two lines');
+  if (viewport.width === 320) assert(finding.lines > 2 && finding.fontSize >= 24, 'Long finding did not wrap at 2×');
+  const row = card.getByRole('listitem').filter({ hasText: longFinding });
+  const share = await row.getByText('50%', { exact: true }).boundingBox();
+  assert(share && finding.x + finding.width <= share.x + 0.5, 'Long finding overlaps its saved share');
+  return { title, headline: await measure(headline), finding, scope, basis, status };
+}
+
 /** Each screen names the locator that proves its state rendered before capture. */
 export function createScreens({ assertMaxWidth, assertCentered, assertLoadingGeometry, assertMetricHierarchy } = {}) {
 return [
   {
     workspace: 'findings', state: 'first-insights', viewports: ['desktop', 'narrow', 'narrow-2x'],
-    query: { stability: 'findings' }, prepare: prepareFindings,
+    query: { stability: 'findings' }, prepare: page => prepareFindings(page, true),
     ready: page => page.getByRole('heading', { name: findingHeadline, exact: true }),
     assert: async (page, viewport) => {
-      await assertFindingTitle(page.getByRole('heading', { name: findingHeadline, exact: true }), viewport);
+      await measureFindingCopy(page, viewport);
       const bar = await page.locator('[data-visual="finding-bar"]').first().evaluate(node => ({
         animation: getComputedStyle(node).animationName,
         fill: node.getBoundingClientRect().width / node.parentElement.getBoundingClientRect().width,
@@ -72,7 +139,7 @@ return [
   },
   {
     workspace: 'findings', state: 'all-topics', viewports: ['desktop', 'narrow', 'narrow-2x'],
-    query: { stability: 'findings' }, prepare: prepareFindings,
+    query: { stability: 'findings' }, prepare: page => prepareFindings(page),
     act: async page => {
       await findingsTrigger(page).press('Enter');
       const close = findingsDialog(page).getByRole('button', { name: 'Close', exact: true });

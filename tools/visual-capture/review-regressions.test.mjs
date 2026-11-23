@@ -8,12 +8,26 @@ import { FIXED_NOW, startHarness } from './capture.mjs';
 import { auditScrolling, installWatcher, readWatcher } from './shift-watcher.mjs';
 import { renderSurfaceState, SURFACE_STATES } from '../../extension/qualification/surface-fixtures.mjs';
 import { openActivationReview, publishActivation } from './desktop-decision-fixtures.mjs';
-import { measureDashboardMismatch } from './review-contracts.mjs';
+import { measureDashboardMismatch, measureFindingsStates } from './review-contracts.mjs';
+import { prepareFindings } from './screen-matrix.mjs';
 
 let browser, harness;
 before(async () => { browser = await chromium.launch(); harness = await startHarness(); });
 after(async () => { await browser?.close(); harness?.vite.kill(); });
 const settle = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+
+for (const mode of ['light', 'dark']) for (const reducedMotion of ['reduce', 'no-preference']) {
+  for (const [width, height] of [[1440, 900], [390, 844], [320, 900]]) {
+    test(`first and seen findings copy fits at ${width} in ${mode} with motion ${reducedMotion}`, async () => {
+      const viewport = { width, height };
+      const page = await browser.newPage({ viewport, colorScheme: mode, reducedMotion, locale: 'en-US', timezoneId: 'UTC' });
+      try {
+        await prepareFindings(page, true);
+        await measureFindingsStates(page, harness.base, mode, viewport);
+      } finally { await page.close(); }
+    });
+  }
+}
 
 for (const mode of ['light', 'dark']) for (const scale of [1, 1.5]) {
   test(`native window controls and compact Settings fit 640x480 in ${mode} at ${scale}x text`, async () => {
