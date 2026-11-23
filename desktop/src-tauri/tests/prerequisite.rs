@@ -61,7 +61,15 @@ fn native_unpacked_update_probe_reports_no_managed_source() {
 fn real_native_installation_conflict_has_close_and_guidance() {
     let value = run("installation-conflict");
     assert_eq!(value["state"], "desktop.installation_conflict");
-    assert_eq!(value["close_and_guidance_observed"], true);
+    assert_eq!(value["close_label_observed"], true, "expected Close label");
+    assert_eq!(
+        value["close_action_observed"], true,
+        "Close did not dismiss the dialog"
+    );
+    assert_eq!(
+        value["conflict_guidance_observed"], true,
+        "expected installation conflict guidance"
+    );
 }
 
 #[test]

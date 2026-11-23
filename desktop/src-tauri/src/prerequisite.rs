@@ -333,7 +333,7 @@ fn show_installation_conflict() {
     use windows_sys::Win32::UI::{Controls::*, WindowsAndMessaging::*};
     let title = wide("Conversation Analytics");
     let heading = wide("Another installation may be using your data folder");
-    let guidance = wide("Quit the other Conversation Analytics installation from its tray menu, then reopen this one. If it is still blocked, use your existing installation and contact support. Your files were left unchanged.");
+    let guidance = wide("Quit the other Conversation Analytics installation from its icon near the Windows clock, then reopen this one. If it is still blocked, use your existing installation. Your files were left unchanged.");
     let mut config: TASKDIALOGCONFIG = unsafe { std::mem::zeroed() };
     config.cbSize = std::mem::size_of::<TASKDIALOGCONFIG>() as u32;
     config.pszWindowTitle = title.as_ptr();

@@ -47,7 +47,56 @@ unsafe extern "system" fn find(hwnd: HWND, data: isize) -> i32 {
     1
 }
 
-fn close_failure(state: &'static str, code: Option<&'static str>) {
+#[derive(Default)]
+struct ConflictLabels {
+    close: bool,
+    guidance: bool,
+}
+
+fn conflict_labels(hwnd: HWND) -> windows_runtime::core::Result<ConflictLabels> {
+    use windows_runtime::Win32::{
+        Foundation::HWND as AutomationHwnd,
+        System::Com::{
+            CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
+            COINIT_MULTITHREADED,
+        },
+        UI::Accessibility::{
+            CUIAutomation, IUIAutomation, TreeScope_Descendants, UIA_ButtonControlTypeId,
+        },
+    };
+
+    unsafe {
+        CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
+        let result = (|| {
+            let automation: IUIAutomation =
+                CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER)?;
+            let dialog = automation.ElementFromHandle(AutomationHwnd(hwnd))?;
+            // The TaskDialog text controls expose their content through UI Automation.
+            let controls = dialog.FindAll(TreeScope_Descendants, &automation.CreateTrueCondition()?)?;
+            let mut labels = ConflictLabels::default();
+            for index in 0..controls.Length()? {
+                let control = controls.GetElement(index)?;
+                if control.CurrentIsOffscreen()?.as_bool() {
+                    continue;
+                }
+                match control.CurrentName()?.to_string().as_str() {
+                    "Close" if control.CurrentControlType()? == UIA_ButtonControlTypeId => {
+                        labels.close = true;
+                    }
+                    "Quit the other Conversation Analytics installation from its icon near the Windows clock, then reopen this one. If it is still blocked, use your existing installation. Your files were left unchanged." => {
+                        labels.guidance = true;
+                    }
+                    _ => {}
+                }
+            }
+            Ok(labels)
+        })();
+        CoUninitialize();
+        result
+    }
+}
+
+fn close_failure(state: &'static str, code: Option<&'static str>) -> (usize, ConflictLabels) {
     struct Expected {
         hwnd: usize,
         state: &'static str,
@@ -106,6 +155,11 @@ fn close_failure(state: &'static str, code: Option<&'static str>) {
                 );
             }
             if observed == [true; 2] {
+                let labels = if state == prerequisite::INSTALLATION_CONFLICT_STATE {
+                    conflict_labels(found.hwnd as HWND).unwrap_or_default()
+                } else {
+                    ConflictLabels::default()
+                };
                 unsafe {
                     SendMessageW(
                         found.hwnd as HWND,
@@ -114,7 +168,7 @@ fn close_failure(state: &'static str, code: Option<&'static str>) {
                         0,
                     );
                 }
-                return;
+                return (found.hwnd, labels);
             }
         }
         assert!(
@@ -353,10 +407,15 @@ fn main() {
         let closer =
             std::thread::spawn(|| close_failure(prerequisite::INSTALLATION_CONFLICT_STATE, None));
         prerequisite::show_failure("runtime_installation_conflict");
-        closer.join().unwrap();
+        let (hwnd, labels) = closer.join().unwrap();
         println!(
             "{}",
-            serde_json::json!({"state":prerequisite::INSTALLATION_CONFLICT_STATE,"close_and_guidance_observed":true})
+            serde_json::json!({
+                "state": prerequisite::INSTALLATION_CONFLICT_STATE,
+                "conflict_guidance_observed": labels.guidance,
+                "close_label_observed": labels.close,
+                "close_action_observed": unsafe { IsWindow(hwnd as HWND) == 0 },
+            })
         );
         return;
     }
