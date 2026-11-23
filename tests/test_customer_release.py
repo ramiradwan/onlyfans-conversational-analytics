@@ -152,6 +152,7 @@ def test_pyinstaller_uses_the_selected_customer_release_bytes(spec_environment, 
     ]
 
 
+@pytest.mark.windows_production
 @pytest.mark.skipif(os.name != "nt", reason="exercises the Windows wrapper")
 @pytest.mark.parametrize("case", ["default", "override", "authority", "prebuilt", "prebuilt-empty", "changed-brain"])
 def test_windows_support_channels_bind_one_snapshot(tmp_path, case):

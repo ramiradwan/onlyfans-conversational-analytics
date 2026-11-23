@@ -578,6 +578,7 @@
     "tests/test_companion_noise.py": 2,
     "tests/test_companion_onboarding_progress.py": 1,
     "tests/test_config_identity_sqlite_migration.py": 5,
+    "tests/test_customer_release.py": 5,
     "tests/test_desktop_activation.py": 4,
     "tests/test_desktop_admission.py": 1,
     "tests/test_desktop_authentication.py": 3,
