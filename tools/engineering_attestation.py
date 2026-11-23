@@ -1666,7 +1666,7 @@ def _qualified_workspace_policy(manifest: dict[str, Any]) -> bool:
         return manifest.get("externally_connectable") == {"matches": [local_match]}
     try:
         release = load_json_strict(CUSTOMER_RELEASE_CONFIG.read_bytes(), label="customer release")
-        if not isinstance(release, dict) or set(release) != {
+        if not isinstance(release, dict) or set(release) - {"support_channels"} != {
             "schema", "setup_transfer_receiver_url", "hosted_api_origin", "authentication_providers"
         } or release["schema"] != "ofca-customer-release/v2":
             return False

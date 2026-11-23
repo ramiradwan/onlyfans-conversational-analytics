@@ -1,5 +1,6 @@
 import { recoveryTone, setStatus } from '../shared-setup/presentation.js';
 import { browserRecovery, recoveryClass } from '../shared-setup/recovery.js';
+import { renderSupportHelp } from '../shared-setup/support-help.js';
 const journeyStates = { loading: 'loading', unavailable: 'unavailable', profile_mismatch: 'profile_mismatch',
   account_mismatch: 'account_mismatch', auth_idle: 'auth_idle', auth_opening: 'auth_opening', auth_checking: 'auth_checking',
   auth_unconfirmed: 'auth_unconfirmed', auth_access_required: 'auth_access_required', auth_closed: 'auth_closed',
@@ -123,6 +124,8 @@ export function renderBrowserTask(document, value) {
     : ['auth_unconfirmed', 'paused'].includes(state) ? 'progress' : recoveryTone(classification);
   get('task-status').dataset.tone = text && !quietStatuses.includes(state) ? tone : 'none';
   setStatus(get('task-message'), text);
+  renderSupportHelp(card.querySelector('.task-actions-slot > [data-region-content]'),
+    value.state === 'service_unavailable' && failure && !hasAction);
   if (card !== previous && actions[focused?.id]) {
     focused.focus({ preventScroll: true });
   }

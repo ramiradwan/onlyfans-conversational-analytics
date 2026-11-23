@@ -228,6 +228,14 @@ pub fn show_recovery(reason: RecoveryReason) -> Result<RecoveryAction, &'static 
     }
 }
 
+pub(super) fn failure_dialog_config() -> windows_sys::Win32::UI::Controls::TASKDIALOGCONFIG {
+    use windows_sys::Win32::UI::Controls::{TASKDIALOGCONFIG, TDCBF_CLOSE_BUTTON};
+    let mut config: TASKDIALOGCONFIG = unsafe { std::mem::zeroed() };
+    config.cbSize = std::mem::size_of::<TASKDIALOGCONFIG>() as u32;
+    config.dwCommonButtons = TDCBF_CLOSE_BUTTON;
+    config
+}
+
 pub fn show_failure(reason: &'static str) {
     if reason == "runtime_installation_conflict" {
         show_installation_conflict();
@@ -246,16 +254,21 @@ pub fn show_failure(reason: &'static str) {
     };
     let title = wide("Conversation Analytics");
     let heading = wide(heading);
-    let message = wide(message);
+    let message = if reason == "servicing_pending" {
+        wide(message)
+    } else {
+        wide(&crate::support_channels::dialog_content(
+            message,
+            crate::support_channels::COMPILED_CHANNELS,
+        ))
+    };
     // The property contains only a source-selected static error code. No
     // paths, activation arguments, account data or credentials are exposed.
     let code = wide(&format!("OFCA.StartupFailure.{reason}"));
-    let mut config: TASKDIALOGCONFIG = unsafe { std::mem::zeroed() };
-    config.cbSize = std::mem::size_of::<TASKDIALOGCONFIG>() as u32;
+    let mut config = failure_dialog_config();
     config.pszWindowTitle = title.as_ptr();
     config.pszMainInstruction = heading.as_ptr();
     config.pszContent = message.as_ptr();
-    config.dwCommonButtons = TDCBF_CLOSE_BUTTON;
     config.pfCallback = Some(failure_callback);
     config.lpCallbackData = code.as_ptr() as isize;
     if unsafe {
@@ -333,13 +346,14 @@ fn show_installation_conflict() {
     use windows_sys::Win32::UI::{Controls::*, WindowsAndMessaging::*};
     let title = wide("Conversation Analytics");
     let heading = wide("Another installation may be using your data folder");
-    let guidance = wide("Quit the other Conversation Analytics installation from its icon near the Windows clock, then reopen this one. If it is still blocked, use your existing installation. Your files were left unchanged.");
-    let mut config: TASKDIALOGCONFIG = unsafe { std::mem::zeroed() };
-    config.cbSize = std::mem::size_of::<TASKDIALOGCONFIG>() as u32;
+    let guidance = wide(&crate::support_channels::dialog_content(
+        "Quit the other Conversation Analytics installation from its icon near the Windows clock, then reopen this one. If it is still blocked, use your existing installation. Your files were left unchanged.",
+        crate::support_channels::COMPILED_CHANNELS,
+    ));
+    let mut config = failure_dialog_config();
     config.pszWindowTitle = title.as_ptr();
     config.pszMainInstruction = heading.as_ptr();
     config.pszContent = guidance.as_ptr();
-    config.dwCommonButtons = TDCBF_CLOSE_BUTTON;
     config.pfCallback = Some(conflict_callback);
     if unsafe {
         TaskDialogIndirect(

@@ -26,6 +26,24 @@ const response = (value, status = 200) => new Response(JSON.stringify(value), { 
 const session = { role: 'desktop', stage: 'setup', generation, csrf_token: 'A'.repeat(43) };
 const storage = () => { const values = new Map(); return { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }; };
 
+it('shows selectable support on the invariant refusal only', () => {
+  document.documentElement.innerHTML = markup;
+  document.getElementById('support-channels').innerHTML = '<span data-channel="whatsapp">https://help.example.com/a&amp;copy;b</span>';
+  const render = (error, view = {}) => {
+    renderSetup(document, { snapshot: initial(), connected: true, error, ...view });
+    return document.querySelector('.task-actions-slot [data-support-help]:not([hidden])');
+  };
+  const help = render('invalid_snapshot');
+  expect(help.querySelector('h2').textContent).toBe('Get help');
+  expect([...help.querySelectorAll('li')].map(item => item.textContent)).toEqual(['WhatsApp https://help.example.com/a&copy;b']);
+  expect(help.querySelector('a, button, input')).toBeNull();
+  expect(render(null)).toBeNull();
+  expect(render('invalid_snapshot', { pending: operationId })).toBeNull();
+  expect(render('status_unavailable', { snapshot: null, connected: false })).toBeNull();
+  document.getElementById('support-channels').remove();
+  expect(render('invalid_snapshot')).toBeNull();
+});
+
 it('sends closed click deltas without delaying command dispatch', async () => {
   const calls = [];
   const subject = new DesktopSetupClient({ generation, storage: storage(), receive() {},

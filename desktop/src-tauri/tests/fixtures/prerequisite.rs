@@ -16,6 +16,8 @@ mod servicing;
 mod servicing_feed;
 #[path = "../../src/servicing_handoff.rs"]
 mod servicing_handoff;
+#[path = "../../src/support_channels.rs"]
+mod support_channels;
 #[path = "../../src/windows.rs"]
 mod windows;
 #[path = "../../src/worker_diagnostics.rs"]

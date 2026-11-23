@@ -26,10 +26,52 @@ mod servicing;
 mod servicing_feed;
 #[cfg(windows)]
 mod servicing_handoff;
+#[cfg(any(windows, test))]
+mod support_channels;
 #[cfg(windows)]
 mod windows;
 mod worker_diagnostics;
 mod worker_host;
+
+#[cfg(test)]
+mod support_channels_tests {
+    use super::support_channels::{dialog_content, initialization_script, COMPILED_CHANNELS};
+
+    #[test]
+    fn support_channels_formats_one_plain_text_block_in_provider_order() {
+        let projection = r#"{"tiktok":"https://video.example.com/a&b","whatsapp":"https://msg.example.com/help"}"#;
+        assert_eq!(
+            dialog_content("Setup ended.", projection),
+            "Setup ended.\n\nGet help\nWhatsApp https://msg.example.com/help\nTikTok https://video.example.com/a&b"
+        );
+        assert_eq!(dialog_content("Setup ended.", "{}"), "Setup ended.");
+    }
+
+    #[test]
+    fn support_channels_binds_the_compiled_projection_and_omits_empty_script() {
+        assert!(initialization_script("{}").is_empty());
+        let projection = r#"{"telegram":"https://chat.example.com/help"}"#;
+        let script = initialization_script(projection);
+        assert!(script.contains(projection));
+        assert!(script.contains("/data-recovery.html"));
+        assert!(script.contains("/unavailable.html"));
+        assert!(!script.contains("clipboard"));
+        assert!(!script.contains("invoke"));
+        let expected = std::env::var("OFCA_TEST_SUPPORT_CHANNELS").unwrap_or_else(|_| "{}".into());
+        assert_eq!(COMPILED_CHANNELS, expected);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn support_channels_keeps_native_close_and_disables_hyperlinks() {
+        use windows_sys::Win32::UI::Controls::{TDCBF_CLOSE_BUTTON, TDF_ENABLE_HYPERLINKS};
+        let config = super::prerequisite::failure_dialog_config();
+        let buttons = config.dwCommonButtons;
+        assert_eq!(buttons, TDCBF_CLOSE_BUTTON);
+        assert_eq!(config.dwFlags & TDF_ENABLE_HYPERLINKS, 0);
+        assert!(config.hwndParent.is_null());
+    }
+}
 
 #[cfg(windows)]
 #[tauri::command]
@@ -382,6 +424,9 @@ fn main() {
                     .min_inner_size(640.0, 480.0)
                     .decorations(false)
                     .initialization_script(include_str!("../../window-frame.js"))
+                    .initialization_script(support_channels::initialization_script(
+                        support_channels::COMPILED_CHANNELS,
+                    ))
                     .devtools(false)
                     .disable_drag_drop_handler()
                     .on_navigation(move |url| {

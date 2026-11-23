@@ -12,6 +12,7 @@ param(
     # A fresh per-process directory outside the repository avoids untracked
     # build output and makes the script non-destructive by default.
     [string] $OutputRoot = (Join-Path $env:TEMP ("brain-pyinstaller-" + $PID)),
+    [string] $CustomerReleaseConfig = "",
 
     # Intended for build-gate tests with staged frontend, extension and native
     # fixtures. Normal builds rebuild all three before freezing Brain.
@@ -66,7 +67,7 @@ $DigestScriptPath = Join-Path $ProjectRoot "packaging\write-digests.ps1"
 $AgentBundleScriptPath = Join-Path $ProjectRoot "packaging\new-agent-bundle.ps1"
 $ExtensionRoot = Join-Path $ProjectRoot "extension"
 $ExtensionBuildScript = Join-Path $ExtensionRoot "build.mjs"
-$CustomerReleaseConfigPath = Join-Path $ProjectRoot "app\core\customer-release.json"
+$SourceCustomerRelease = Join-Path $ProjectRoot "app\core\customer-release.json"
 
 # The Legal instrument this package serves from disk, and the bindings field
 # naming the approved rendering of it. packaging/runtime-files.json stages the
@@ -226,6 +227,36 @@ if ($LASTEXITCODE -ne 0) {
 New-Item -ItemType Directory -Path $OutputRoot | Out-Null
 $distPath = Join-Path $OutputRoot "dist"
 $workPath = Join-Path $OutputRoot "work"
+$CustomerReleaseConfigPath = Join-Path $OutputRoot "release-input/customer-release.json"
+$selectedRelease = if ($CustomerReleaseConfig) {
+    (Resolve-Path -LiteralPath $CustomerReleaseConfig).Path
+} else { $SourceCustomerRelease }
+$buildMode = if ($ReleaseMode) { "release" } else { "development" }
+$assetMode = if ($SkipAssetBuild) { "prebuilt" } else { "rebuild" }
+$snapshotRelease = @'
+import hashlib, json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from app.core.customer_release import validate_customer_release_document
+
+source_path, selected_path, snapshot = map(Path, sys.argv[2:5])
+release = sys.argv[5] == "release"
+source_bytes = source_path.read_bytes()
+selected_bytes = source_bytes if source_path == selected_path else selected_path.read_bytes()
+source = json.loads(source_bytes.decode("utf-8"))
+selected = source if selected_bytes == source_bytes else json.loads(selected_bytes.decode("utf-8"))
+validate_customer_release_document(source, require_hosted=release)
+config = validate_customer_release_document(selected, require_hosted=release)
+if any(selected[field] != source[field] for field in source if field != "support_channels"):
+    raise SystemExit("The customer release authority fields differ from the source document")
+if config.support_channels and sys.argv[6] == "prebuilt":
+    raise SystemExit("Configured support requires a native asset build")
+snapshot.parent.mkdir()
+snapshot.write_bytes(selected_bytes)
+print(hashlib.sha256(selected_bytes).hexdigest())
+'@
+$customerReleaseDigest = $snapshotRelease | & $BuildPython - $ProjectRoot $SourceCustomerRelease $selectedRelease $CustomerReleaseConfigPath $buildMode $assetMode
+if ($LASTEXITCODE -ne 0) { throw "Customer release input was refused" }
 
 function Invoke-RequiredCommand {
     param([Parameter(Mandatory)] [string] $FilePath, [Parameter(Mandatory)] [string[]] $Arguments)
@@ -277,6 +308,9 @@ function Get-ExtensionReleaseArguments {
         $arguments += "--privacy-policy-url=$PrivacyPolicyUrl"
     }
     # Brain's spec stages this exact document. There is no Agent-only override.
+    if ((Get-Sha256Digest -Path $CustomerReleaseConfigPath) -ne $customerReleaseDigest) {
+        throw "The customer release snapshot changed during the build"
+    }
     $arguments += "--customer-release-config=$CustomerReleaseConfigPath"
     return $arguments
 }
@@ -689,10 +723,14 @@ function New-DevelopmentAgentBundle {
     & $AgentBundleScriptPath -SourceDirectory $AgentRoot -BundlePath $BundlePath
 }
 
+$nativeTarget = Join-Path $ProjectRoot 'desktop/src-tauri/target'
 if (-not $SkipAssetBuild) {
+    $nativeTarget = Join-Path $OutputRoot 'native'
     Invoke-RequiredCommand -FilePath 'powershell.exe' -Arguments @(
         '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
-        (Join-Path $ProjectRoot 'packaging/build-desktop.ps1'), '-ProjectRoot', $ProjectRoot
+        (Join-Path $ProjectRoot 'packaging/build-desktop.ps1'), '-ProjectRoot', $ProjectRoot,
+        '-TargetDirectory', $nativeTarget, '-BuildPython', $BuildPython,
+        '-CustomerReleaseConfig', $CustomerReleaseConfigPath
     )
     Invoke-RequiredCommand -FilePath "npm.cmd" -Arguments @("ci", "--prefix", (Join-Path $ProjectRoot "frontend"))
     Invoke-RequiredCommand -FilePath "npm.cmd" -Arguments @("run", "build", "--prefix", (Join-Path $ProjectRoot "frontend"))
@@ -720,9 +758,11 @@ Assert-EmbeddedExtensionIdentity -BuildPython $BuildPython -ProjectRoot $Project
 $previousProjectRoot = $env:BRAIN_PROJECT_ROOT
 $previousSourceRoot = $env:BRAIN_SOURCE_ROOT
 $previousBuildMode = $env:BRAIN_BUILD_MODE
+$previousBuildRelease = $env:BRAIN_BUILD_CUSTOMER_RELEASE_CONFIG
 $env:BRAIN_PROJECT_ROOT = $ProjectRoot
 $env:BRAIN_SOURCE_ROOT = $packagingSource.SourceRoot
-$env:BRAIN_BUILD_MODE = if ($ReleaseMode) { "release" } else { "development" }
+$env:BRAIN_BUILD_MODE = $buildMode
+$env:BRAIN_BUILD_CUSTOMER_RELEASE_CONFIG = $CustomerReleaseConfigPath
 try {
     $pyInstallerArguments = @(
         "--noconfirm", "--clean", "--distpath", $distPath,
@@ -741,6 +781,7 @@ try {
     $env:BRAIN_PROJECT_ROOT = $previousProjectRoot
     $env:BRAIN_SOURCE_ROOT = $previousSourceRoot
     $env:BRAIN_BUILD_MODE = $previousBuildMode
+    $env:BRAIN_BUILD_CUSTOMER_RELEASE_CONFIG = $previousBuildRelease
 }
 
 $stagingRoot = Join-Path $distPath "Brain"
@@ -749,11 +790,12 @@ if (-not (Test-Path -LiteralPath (Join-Path $stagingRoot "Brain.exe") -PathType 
 }
 $stagedCustomerRelease = Join-Path $stagingRoot "_internal\app\core\customer-release.json"
 if (-not (Test-Path -LiteralPath $stagedCustomerRelease -PathType Leaf) -or
-    (Get-Sha256Digest -Path $stagedCustomerRelease) -ne (Get-Sha256Digest -Path $CustomerReleaseConfigPath)) {
+    (Get-Sha256Digest -Path $CustomerReleaseConfigPath) -ne $customerReleaseDigest -or
+    (Get-Sha256Digest -Path $stagedCustomerRelease) -ne $customerReleaseDigest) {
     throw "Brain and Agent customer routing configuration must match"
 }
 Copy-DeclaredTopLevelFiles -StagingRoot $stagingRoot
-$desktopExecutable = Join-Path $ProjectRoot 'desktop/src-tauri/target/x86_64-pc-windows-msvc/release/Bridge.exe'
+$desktopExecutable = Join-Path $nativeTarget 'x86_64-pc-windows-msvc/release/Bridge.exe'
 if (-not (Test-Path -LiteralPath $desktopExecutable -PathType Leaf)) {
     throw 'The native desktop artifact is absent: Bridge.exe'
 }

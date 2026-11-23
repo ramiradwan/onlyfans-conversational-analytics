@@ -35,10 +35,12 @@ _INTERNAL_PREFIX = "_internal/"
 _build_mode = os.environ.get("BRAIN_BUILD_MODE")
 if _build_mode not in {"release", "development"}:
     raise ValueError("Build through packaging/build-windows.ps1 with an explicit build mode")
-load_customer_release_config(
-    _PROJECT_ROOT / "app" / "core" / "customer-release.json",
-    require_hosted=_build_mode == "release",
-)
+_customer_release = Path(os.environ.get(
+    "BRAIN_BUILD_CUSTOMER_RELEASE_CONFIG", _PROJECT_ROOT / "app" / "core" / "customer-release.json",
+)).resolve()
+if _customer_release.name != "customer-release.json":
+    raise ValueError("The customer release snapshot must preserve the internal basename")
+load_customer_release_config(_customer_release, require_hosted=_build_mode == "release")
 
 
 def _source_relative(staged_relative: str) -> PurePosixPath:
@@ -86,7 +88,7 @@ for _required_file in _POLICY["required_files"]:
 # Customer routing is nonsecret release configuration owned by runtime
 # composition. It is deliberately explicit until runtime-files.json grows a
 # digest-bearing declaration for non-contract configuration files.
-_add_file(_DATAS, "_internal/app/core/customer-release.json")
+_DATAS.append((str(_customer_release), "app/core"))
 
 _SEEN_TREES: set[PurePosixPath] = set()
 _add_tree(_DATAS, _SEEN_TREES, _POLICY["frontend"]["dist_path"])

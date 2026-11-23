@@ -10,6 +10,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
 import { build } from 'esbuild';
 import { zipSync } from 'fflate';
@@ -19,6 +20,7 @@ import { readArchiveEntries } from './qualification/archive-entries.mjs';
 import { signingPublicationTrust, SIGNING_PUBLICATION_TRUST_SHA256, SIGNING_PUBLICATION_TRUST_B64 } from './runtime/signing-publication-trust.mjs';
 import { SIGNER_RELEASE, signerReleaseFiles, auditInstalledSigner, auditSignerMetadata } from './qualification/signer-release.mjs';
 import { auditPackagedSnow, SNOW_WASM_FILE } from './qualification/companion-snow-release.mjs';
+import { projectSupportChannels } from './ui/support-channels.mjs';
 
 import { canonicalLegalBindingsJson } from '../tools/legal-release-bindings/canonical-json.mjs';
 import {
@@ -122,7 +124,7 @@ function stableJson(value) {
  * Canonical serialization for a Legal instrument bindings document, shared
  * with the release gate that verifies a fetched document before packaging.
  */
-export { canonicalLegalBindingsJson };
+export { canonicalLegalBindingsJson, projectSupportChannels };
 
 export function deriveExtensionId(manifestKey) {
   if (typeof manifestKey !== 'string' || manifestKey.length === 0) {
@@ -157,8 +159,9 @@ async function readJson(filename) {
 }
 
 export function validateExtensionConfig(document, { requirePrivacyPolicy = false } = {}) {
+  const { support_channels, ...config } = document;
   assert.deepEqual(
-    Object.keys(document).sort(),
+    Object.keys(config).sort(),
     ['dashboard_url', 'history_settings_url', 'privacy_policy_url', 'schema'],
     'extension configuration contains unexpected fields',
   );
@@ -166,25 +169,29 @@ export function validateExtensionConfig(document, { requirePrivacyPolicy = false
   assert.equal(document.dashboard_url, 'http://bridge.localhost:17871/');
   assert.equal(document.history_settings_url, 'http://bridge.localhost:17871/settings');
   assert.equal(typeof document.privacy_policy_url, 'string');
+  const channels = projectSupportChannels(support_channels);
+  assert.ok(!Object.hasOwn(document, 'support_channels') || isDeepStrictEqual(support_channels, channels),
+    'extension configuration contains invalid support channels');
+  if (Object.keys(channels).length) config.support_channels = channels;
   if (document.privacy_policy_url === '') {
     if (requirePrivacyPolicy) throw new Error('Chrome package requires a privacy policy URL.');
-    return Object.freeze({ ...document });
+    return Object.freeze(config);
   }
   const privacyUrl = new URL(document.privacy_policy_url);
   assert.equal(privacyUrl.protocol, 'https:', 'privacy policy URL must use HTTPS');
   assert.equal(privacyUrl.username, '', 'privacy policy URL must not contain credentials');
   assert.equal(privacyUrl.password, '', 'privacy policy URL must not contain credentials');
   assert.equal(privacyUrl.hostname.endsWith('.invalid'), false, 'privacy policy URL is invalid');
-  return Object.freeze({ ...document, privacy_policy_url: privacyUrl.href });
+  return Object.freeze({ ...config, privacy_policy_url: privacyUrl.href });
 }
 
-async function loadExtensionConfig({ requirePrivacyPolicy }) {
+async function loadExtensionConfig({ requirePrivacyPolicy, supportChannels }) {
   const document = await readJson(path.join(ROOT, 'extension-config.json'));
   const privacyPolicyArgument = argumentValue('--privacy-policy-url');
   const effective = privacyPolicyArgument === null
     ? document
     : { ...document, privacy_policy_url: privacyPolicyArgument };
-  return validateExtensionConfig(effective, { requirePrivacyPolicy });
+  return validateExtensionConfig({ ...effective, support_channels: supportChannels }, { requirePrivacyPolicy });
 }
 
 export function validateSigningRuleDocument(document) {
@@ -681,6 +688,7 @@ async function jsonFromView(view, filename) {
 }
 
 async function auditArtifactView(view, {
+  expectedSupportChannels,
   expectedSigningRule = null,
   expectedLegalBindings = null,
   requirePrivacyPolicy = false,
@@ -834,6 +842,8 @@ async function auditArtifactView(view, {
     await jsonFromView(view, 'extension-config.json'),
     { requirePrivacyPolicy },
   );
+  assert.ok(isDeepStrictEqual(extensionConfig.support_channels ?? {}, expectedSupportChannels),
+    'extension support projection differs from the customer release input');
   assert.equal(metadata.privacy_policy_configured, extensionConfig.privacy_policy_url !== '');
 
   for (const filename of UI_FILES) {
@@ -870,12 +880,13 @@ async function auditArtifactView(view, {
 
 async function auditDirectory(
   expectedSigningRule = null,
-  { requirePrivacyPolicy = false, expectedLegalBindings = null } = {},
+  { requirePrivacyPolicy = false, expectedLegalBindings = null, expectedSupportChannels } = {},
 ) {
   await auditDependencyLock();
   return auditArtifactView(directoryView(), {
     expectedSigningRule,
     expectedLegalBindings,
+    expectedSupportChannels,
     requirePrivacyPolicy,
   });
 }
@@ -883,7 +894,8 @@ async function auditDirectory(
 export async function auditChromeArchive(
   filename,
   expectedSigningRule,
-  expectedLegalBindings = null,
+  expectedLegalBindings,
+  expectedSupportChannels,
 ) {
   await auditDependencyLock();
   assert.equal(expectedSigningRule, null, 'Dynamic archive refuses raw signing rules');
@@ -892,6 +904,7 @@ export async function auditChromeArchive(
   const metadata = await auditArtifactView(view, {
     expectedSigningRule,
     expectedLegalBindings,
+    expectedSupportChannels,
     requirePrivacyPolicy: true,
     requireSigningRule: true,
     requireLegalBindings: true,
@@ -1029,7 +1042,7 @@ async function buildArtifact(
   signingRule,
   extensionConfig,
   legalBindings,
-  { requirePrivacyPolicy },
+  { requirePrivacyPolicy, expectedSupportChannels },
 ) {
   await auditDependencyLock();
   verifiedSnow = await auditPackagedSnow();
@@ -1040,12 +1053,14 @@ async function buildArtifact(
   await auditDirectory(signingRule, {
     requirePrivacyPolicy,
     expectedLegalBindings: legalBindings,
+    expectedSupportChannels,
   });
   return metadata;
 }
 
 export function validateOnboardingReleaseConfig(document, { required = false } = {}) {
-  assert.deepEqual(Object.keys(document).sort(), ['authentication_providers', 'hosted_api_origin', 'schema', 'setup_transfer_receiver_url']);
+  assert.deepEqual(Object.keys(document).filter(key => key !== 'support_channels').sort(),
+    ['authentication_providers', 'hosted_api_origin', 'schema', 'setup_transfer_receiver_url']);
   assert.equal(document.schema, 'ofca-customer-release/v2');
   const providers = document.authentication_providers;
   assert.ok(Array.isArray(providers) && providers.length > 0
@@ -1082,6 +1097,7 @@ async function main() {
     ?? path.join(ROOT, '../app/core/customer-release.json')));
   workspaceHostedOrigin = validateOnboardingReleaseConfig(release,
     { required: process.argv.includes('--package') || process.argv.includes('--audit-package') });
+  const expectedSupportChannels = projectSupportChannels(release.support_channels);
   if (process.argv.includes('--audit-package')) {
     const signingRule = await loadSigningRule({ required: true });
     const legalBindings = await verifyLegalReleaseBindings({ required: true });
@@ -1093,6 +1109,7 @@ async function main() {
       path.resolve(artifactArgument),
       signingRule,
       legalBindings,
+      expectedSupportChannels,
     );
     process.stdout.write(`Chrome archive audit passed (${result.digest}).\n`);
     return;
@@ -1100,7 +1117,7 @@ async function main() {
   if (process.argv.includes('--audit')) {
     const signingRule = await loadSigningRule({ required: false });
     const legalBindings = await verifyLegalReleaseBindings({ required: false });
-    await auditDirectory(signingRule, { expectedLegalBindings: legalBindings });
+    await auditDirectory(signingRule, { expectedLegalBindings: legalBindings, expectedSupportChannels });
     process.stdout.write('Extension artifact audit passed.\n');
     return;
   }
@@ -1110,9 +1127,11 @@ async function main() {
   const legalBindings = await verifyLegalReleaseBindings({ required: packageRequested });
   const extensionConfig = await loadExtensionConfig({
     requirePrivacyPolicy: packageRequested,
+    supportChannels: expectedSupportChannels,
   });
   const metadata = await buildArtifact(signingRule, extensionConfig, legalBindings, {
     requirePrivacyPolicy: packageRequested,
+    expectedSupportChannels,
   });
   if (packageRequested) {
     const filename = await writeChromeArchive(metadata);
@@ -1120,7 +1139,7 @@ async function main() {
     // leaves nothing a release path could mistake for a Store candidate.
     let result;
     try {
-      result = await auditChromeArchive(filename, signingRule, legalBindings);
+      result = await auditChromeArchive(filename, signingRule, legalBindings, expectedSupportChannels);
     } catch (error) {
       await rm(filename, { force: true });
       throw error;

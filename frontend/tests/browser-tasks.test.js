@@ -60,6 +60,26 @@ const browserTaskCases = [
 ];
 
 describe('Browser task presentation', () => {
+  it('shows inert support only for a classified refusal with an empty action slot', () => {
+    document.documentElement.innerHTML = browserTaskHtml;
+    document.getElementById('support-channels').innerHTML = '<span data-channel="tiktok">https://help.example.com/a&amp;copy;b</span>';
+    const refusal = { state: 'service_unavailable', recovery: 'invariant_failed', payload: null };
+    const render = value => {
+      renderBrowserTask(document, value);
+      return document.querySelector('.task-actions-slot [data-support-help]:not([hidden])');
+    };
+    const help = render(refusal);
+    expect(help.parentElement).toBe(document.querySelector('.task-actions-slot > [data-region-content]'));
+    expect(help.parentElement.nextElementSibling).toBe(document.getElementById('task-status'));
+    expect(help.querySelector('h2').textContent).toBe('Get help');
+    expect([...help.querySelectorAll('li')].map(item => item.textContent)).toEqual(['TikTok https://help.example.com/a&copy;b']);
+    expect(help.querySelector('a, button, input')).toBeNull();
+    for (const value of [{ ...refusal, payload: payload() }, { ...refusal, recovery: undefined },
+      { ...refusal, state: 'status_reconnecting' }, { ...refusal, state: 'loading' }]) expect(render(value)).toBeNull();
+    document.getElementById('support-channels').remove();
+    expect(render(refusal)).toBeNull();
+  });
+
   it.each(browserTaskCases)('uses the per-state D4 title and copy for %s (%s)', (state, title, message, controls, makePayload = payload, recovery) => {
     document.documentElement.innerHTML = browserTaskHtml;
     const value = makePayload();

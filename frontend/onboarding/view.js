@@ -2,6 +2,7 @@ import { focusTransition, recoveryTone, setStatus } from '../shared-setup/presen
 import { browserRecoveryTarget } from './browser-task.js';
 import { authorityRecoveryView } from '../shared-setup/authority-recovery.js';
 import { desktopRecovery, passkeyRecovery, recoveryClass } from '../shared-setup/recovery.js';
+import { renderSupportHelp } from '../shared-setup/support-help.js';
 
 const tasks = {
   'browser-access': ['Bring in your conversations', 'Set up browser access', 'setup_browser_access'],
@@ -79,6 +80,7 @@ export function renderSetup(document, state) {
     if (kind) element.prepend(get('desktop-status-icons').content.querySelector(`[data-status-icon="${kind}"]`).cloneNode(true));
   };
   const taskStatus = get('task-status');
+  const actionSlot = card.querySelector('.task-actions-slot > [data-region-content]');
   Object.assign(card.style, { inlineSize: recovery ? '100%' : '', maxInlineSize: recovery ? '560px' : '',
     marginInline: recovery ? 'auto' : '' });
   for (const control of [get('task-action'), get('protected-cancel'), get('task-pending'), card.querySelector('.desktop-loading-action')]) {
@@ -91,6 +93,7 @@ export function renderSetup(document, state) {
   get('protected-cancel').hidden = true;
   get('task-action').dataset.protectedRecovery = '';
   if (recovery) {
+    renderSupportHelp(actionSlot, false);
     main.dataset.journeyState = 'desktop.' + 'setup_authority_recovery';
     main.dataset.task = 'authority-recovery';
     get('task-title').textContent = recovery.title || 'Checking access';
@@ -364,6 +367,9 @@ export function renderSetup(document, state) {
   for (const group of document.querySelectorAll('.setup-actions')) {
     group.hidden = [...group.children].every(child => child.hidden);
   }
+  renderSupportHelp(actionSlot, terminal && Object.hasOwn(desktopRecovery, reason)
+    && !loading && !state.acting && !state.pending && !state.pendingAction && !state.browserLaunchPending
+    && !actionSlot.querySelector(':scope > :not([hidden], [aria-hidden="true"], [data-support-help])'));
   for (const step of document.querySelectorAll('[data-step]')) {
     if (step.dataset.step === task) step.setAttribute('aria-current', 'step');
     else step.removeAttribute('aria-current');

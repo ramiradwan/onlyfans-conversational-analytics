@@ -7,6 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { unzipSync, zipSync } from 'fflate';
 import { auditLegalBindingLiterals } from '../qualification/legal-binding-literals.mjs';
 
 import {
@@ -103,6 +104,50 @@ async function withScratchDirectory(body) {
     await rm(directory, { force: true, recursive: true });
   }
 }
+
+test('support archive audit binds independently supplied channels including an empty input', async () => {
+  await withScratchDirectory(async ({ directory }) => {
+    const release = { schema: 'ofca-customer-release/v2', setup_transfer_receiver_url: '',
+      hosted_api_origin: 'https://api.example.com', authentication_providers: ['default'] };
+    const out = path.join(directory, 'artifact');
+    const selected = path.join(directory, 'selected.json');
+    const swapped = path.join(directory, 'swapped.json');
+    const empty = path.join(directory, 'empty.json');
+    const originalChannels = { telegram: 'https://chat.example.com/help', tiktok: 'https://127.0.0.1/' };
+    const swapChannels = { whatsapp: 'https://msg.example.com/help' };
+    await writeFile(selected, JSON.stringify({ ...release, support_channels: originalChannels }));
+    await writeFile(swapped, JSON.stringify({ ...release, support_channels: swapChannels }));
+    await writeFile(empty, JSON.stringify(release));
+    const invoke = (input, ...args) => run(process.execPath, [BUILD_SCRIPT, `--outdir=${out}`,
+      `--customer-release-config=${input}`, `--legal-release-bindings=${SYNTHETIC_BINDINGS}`, ...args],
+    { cwd: EXTENSION_ROOT });
+    await invoke(selected, '--package', `--privacy-policy-url=${PRIVACY_POLICY_URL}`);
+    const archive = path.join(out, (await readdir(out)).find(name => name.endsWith('.zip')));
+    const audit = (input, file = archive) => invoke(input, '--audit-package', `--artifact=${file}`);
+    assert.match((await audit(selected)).stdout, /Chrome archive audit passed/);
+    const entries = unzipSync(await readFile(archive));
+    const config = JSON.parse(Buffer.from(entries['extension-config.json']));
+    assert.deepEqual(config.support_channels, { telegram: originalChannels.telegram });
+    await assert.rejects(audit(empty), /support projection differs/);
+    await assert.rejects(invoke(empty, '--audit'), /support projection differs/);
+    assert.match((await invoke(selected, '--audit')).stdout, /artifact audit passed/);
+
+    const metadata = JSON.parse(Buffer.from(entries['build-meta.json']));
+    for (const [channels, matching] of [[swapChannels, swapped], [null, empty]]) {
+      const replacement = { ...config };
+      if (channels) replacement.support_channels = channels;
+      else delete replacement.support_channels;
+      const bytes = Buffer.from(JSON.stringify(replacement));
+      metadata.outputs['extension-config.json'] = 'sha256:' + fileDigest(bytes);
+      entries['extension-config.json'] = bytes;
+      entries['build-meta.json'] = Buffer.from(JSON.stringify(metadata));
+      const modified = path.join(directory, 'modified.zip');
+      await writeFile(modified, zipSync(entries));
+      await assert.rejects(audit(selected, modified), /support projection differs/);
+      assert.match((await audit(matching, modified)).stdout, /Chrome archive audit passed/);
+    }
+  });
+});
 
 test('release bindings reuse the runtime instrument validator', async () => {
   const bindings = await readSyntheticBindings();

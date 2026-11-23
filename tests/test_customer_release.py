@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import runpy
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -13,6 +15,7 @@ from app.core.customer_release import (
     CUSTOMER_RELEASE_PATH,
     CustomerReleaseConfigurationError,
     load_customer_release_config,
+    main,
     validate_customer_release_document,
 )
 
@@ -116,6 +119,115 @@ def test_customer_release_loader_is_closed_over_exact_json_shape(tmp_path: Path)
     path.write_text("{not-json", encoding="utf-8")
     with pytest.raises(CustomerReleaseConfigurationError, match="unavailable"):
         load_customer_release_config(path, require_hosted=True)
+
+
+def test_support_channels_match_the_agent_vectors():
+    vectors = json.loads((ROOT / "extension/tests/fixtures/support-channels.json").read_text(encoding="utf-8"))
+    for vector in vectors:
+        config = validate_customer_release_document({**document(), **vector["input"]})
+        assert list(config.support_channels) == list(vector["expected"].items())
+    oversized = {"tiktok": "https://video.example.com/" + "x" * 1024}
+    assert not validate_customer_release_document({**document(), "support_channels": oversized}).support_channels
+
+
+def test_support_channels_are_absent_from_the_routing_summary(tmp_path, monkeypatch, capsys):
+    release = tmp_path / "selected.json"
+    release.write_text(json.dumps({**document(), "support_channels": {
+        "whatsapp": "https://msg.example.com/help"}}), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["customer-release", "--config", str(release)])
+    assert main() == 0
+    assert json.loads(capsys.readouterr().out) == document()
+
+
+def test_pyinstaller_uses_the_selected_customer_release_bytes(spec_environment, tmp_path, monkeypatch):
+    snapshot = tmp_path / "selected" / "customer-release.json"
+    snapshot.parent.mkdir()
+    selected = {**document(), "support_channels": {"whatsapp": "https://msg.example.com/help"}}
+    snapshot.write_bytes((json.dumps(selected, indent=2) + "\n").encode())
+    monkeypatch.setenv("BRAIN_BUILD_CUSTOMER_RELEASE_CONFIG", str(snapshot))
+    spec_environment.execute("development", document())
+    data = spec_environment.calls[0][1]["datas"]
+    assert [(source, target) for source, target in data if Path(source).name == snapshot.name] == [
+        (str(snapshot), "app/core")
+    ]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="exercises the Windows wrapper")
+@pytest.mark.parametrize("case", ["default", "override", "authority", "prebuilt", "prebuilt-empty", "changed-brain"])
+def test_windows_support_channels_bind_one_snapshot(tmp_path, case):
+    project = tmp_path / "source"
+    output = tmp_path / "output"
+    release = document(api="https://api.example.com")
+    override = {**release, "support_channels": {"telegram": "https://chat.example.com/help"}}
+    if case == "authority":
+        override["hosted_api_origin"] = "https://different.example.com"
+    selected = tmp_path / "override.json"
+    selected.write_bytes((json.dumps(override, indent=4) + "\n").encode())
+    source_bytes = (json.dumps(release, indent=2) + "\n").encode()
+    disclosure = b"synthetic document"
+    bindings = tmp_path / "bindings.json"
+    bindings.write_text(json.dumps({"instruments": {"risk_disclosure": {
+        "rendered_sha256": hashlib.sha256(disclosure).hexdigest()}}}), encoding="utf-8")
+    files = {
+        "app/__init__.py": b"",
+        "app/core/customer_release.py": (ROOT / "app/core/customer_release.py").read_bytes(),
+        "app/core/extension_identity.py": (ROOT / "app/core/extension_identity.py").read_bytes(),
+        "app/core/customer-release.json": source_bytes,
+        "app/core/config.py": b'version: str = "1.2.3"\n',
+        "app/core/signing-parameter-release.json": b"{}",
+        "app/security/signing-publication-trust.json": b"{}",
+        "app/security/signing_parameter_publications.py": b"def validate_trust(*args, **kwargs): pass\n",
+        "app/services/signing_parameters.py": b"class FixedDistribution: pass\n",
+        "app/provisioning/creator-platform-data-risk-disclosure.html": disclosure,
+        "extension/build.mjs": b"",
+        "extension/manifest.json": b'{"key":"Zml4dHVyZQ=="}',
+        "desktop/src-tauri/Cargo.lock": b"fixture",
+        "desktop/src-tauri/tauri.conf.json": b'{"version":"1.2.3"}',
+        "packaging/build-desktop.ps1": (ROOT / "packaging/build-desktop.ps1").read_bytes(),
+        "packaging/pyinstaller/brain.spec": b"",
+        "packaging/inno/brain.iss": b"",
+        "packaging/new-agent-bundle.ps1": b"",
+        "packaging/runtime-files.json": b'{"required_files":[],"package_payloads":{"inno":{"adapter_resources":[]}}}',
+        "packaging/write-digests.ps1": (ROOT / "packaging/write-digests.ps1").read_bytes(),
+        "shared/desktop-release/prerequisite-policy.json": (ROOT / "shared/desktop-release/prerequisite-policy.json").read_bytes(),
+        "tools/packaging_policy.py": b'def verify_runtime_files(*args, **kwargs): return []\ndef installed_runtime_files(*args): return ["Brain.exe"]\n',
+    }
+    for name, data in files.items():
+        path = project / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    completed = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+         str(ROOT / "tests/fixtures/customer-release-forwarding.ps1"),
+         "-Wrapper", str(ROOT / "packaging/build-windows.ps1"), "-Python", sys.executable,
+         "-Project", str(project), "-Output", str(output), "-Selected", str(selected),
+         "-Bindings", str(bindings), "-Case", case],
+        capture_output=True, text=True, timeout=45,
+    )
+    if case in {"authority", "prebuilt", "changed-brain"}:
+        assert completed.returncode != 0
+        expected_message = {
+            "authority": "customer release authority fields differ",
+            "prebuilt": "Configured support requires a native asset build",
+            "changed-brain": "Brain and Agent customer routing configuration must match",
+        }[case]
+        assert expected_message in completed.stdout + completed.stderr
+        return
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    expected = source_bytes if case in {"default", "prebuilt-empty"} else selected.read_bytes()
+    snapshot = output / "release-input/customer-release.json"
+    assert snapshot.read_bytes() == expected
+    staged = output / "dist/Brain/_internal/app/core/customer-release.json"
+    assert staged.read_bytes() == expected
+    lines = (project / "forwarding.txt").read_text(encoding="utf-8").splitlines()
+    digest = hashlib.sha256(expected).hexdigest()
+    consumers = ["--package", "brain", "--audit-package"]
+    if case != "prebuilt-empty":
+        consumers.insert(0, "native")
+        projection = json.loads((output / "native/support-channels.json").read_text(encoding="utf-8"))
+        assert projection == {"source_sha256": digest,
+                              "support_channels": override["support_channels"] if case == "override" else {}}
+    assert lines == [f"{consumer}|{snapshot}|{digest}" for consumer in consumers]
 
 
 @pytest.fixture
