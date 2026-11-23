@@ -987,7 +987,10 @@ for (const width of [320, 390]) for (const mode of ['light', 'dark']) for (const
       assert.equal(await page.getByRole('button').count(), 1);
       assert.equal(protectedRequests, 0, 'Resource readiness cannot start a passkey ceremony');
       assert.equal(statusReads, 1);
-      assert.deepEqual((await readWatcher(page)).failures, []);
+      const observation = await readWatcher(page);
+      const firstTaskFrame = observation.frames.find(frame => frame.task?.startsWith('passkey:'));
+      assert(firstTaskFrame?.regions.some(region => region.id === 'passkey-heading'), 'The heading must be visible on the first task frame');
+      assert.deepEqual(observation.failures, []);
     } finally { release(); await page.close(); }
   });
 }
