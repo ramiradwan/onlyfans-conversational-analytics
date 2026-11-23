@@ -125,10 +125,20 @@ def test_one_message_deletion_preserves_neighbor_and_checks_origin(workspace, mo
     # Abandoning the Windows ceremony leaves every data operation locked.
     assert client.post(api + "/login/begin").status_code == 200
     assert client.post(api + "/export").status_code == 403
+    assert client.post(api + "/metrics").status_code == 403
     options = client.post(api + "/login/begin").json()
     response = client.post(api + "/login/finish", json=_authentication_payload(key, options["challenge"], counter=2))
     assert response.status_code == 200
     csrf = {"x-csrf-token": response.json()["csrf_token"]}
+    from app.services import insights_service
+    seen = []
+    def stored_metrics(account_id):
+        seen.append(account_id)
+        return {"creator_metrics": {"message_count": 2}}
+    monkeypatch.setattr(insights_service, "saved_metrics", stored_metrics)
+    assert client.post(api + "/metrics", headers={**csrf, "Origin": "https://different.example"}).status_code == 403
+    assert client.post(api + "/metrics", headers=csrf).json() == {"creator_metrics": {"message_count": 2}}
+    assert seen == [ACCOUNT_ID]
     target = api + "/messages/delete?message_id=message-1"
     assert client.post(target, headers={**csrf, "Origin": "https://different.example"}).status_code == 403
     assert client.post(target, headers=csrf).json() == {"deleted": True}

@@ -9,7 +9,7 @@ import secrets
 import threading
 import time
 from collections import OrderedDict, deque
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, replace
 from typing import Callable, TypeVar, cast
 from uuid import uuid4
@@ -30,6 +30,7 @@ from app.models.analytics import AvailabilityStatus
 
 
 _Result = TypeVar("_Result")
+_RebuildScope = Callable[[], AbstractContextManager]
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +59,7 @@ class _AccountWork:
     attempted_revision: int | None = None
     requested_input_revision: int = 0
     cancellation: _CancellationToken | None = None
+    rebuild_scope: _RebuildScope | None = None
 
 
 class _ExecutorSaturated(RuntimeError):
@@ -283,6 +285,10 @@ class InProcessProjectionScheduler:
                         )
                     else:
                         self._publication_locks.pop(creator_account_id, None)
+
+    def _publish_for_attempt(self, candidate: ProjectionCandidate, rebuild_scope: _RebuildScope | None) -> None:
+        with rebuild_scope() if rebuild_scope else nullcontext():
+            self._publish_if_open(candidate)
 
     def _publish_if_open(self, candidate: ProjectionCandidate) -> None:
         with self._account_publication(candidate.creator_account_id):
@@ -581,17 +587,22 @@ class InProcessProjectionScheduler:
         retry_failed: bool = False,
         force: bool = False,
         input_revision: int | None = None,
+        rebuild_scope: _RebuildScope | None = None,
     ) -> None:
         """Admit immediately, coalesce an account, or reject with backpressure."""
 
         if canonical_revision < 0:
             raise ValueError("canonical_revision must be non-negative")
+        if rebuild_scope is not None and not force:
+            raise ValueError("creator admission requires an explicit rebuild")
         with self._state_lock:
             if not self._accepting or self._closed:
                 raise ProjectionCoordinatorClosed()
             existing = self._work.get(creator_account_id)
             if existing is not None:
                 existing.force_requested += int(force)
+                if force:
+                    existing.rebuild_scope = rebuild_scope
                 existing.requested_input_revision = max(existing.requested_input_revision, input_revision or 0)
                 existing.requested_revision = max(
                     existing.requested_revision,
@@ -616,6 +627,8 @@ class InProcessProjectionScheduler:
             existing = self._work.get(creator_account_id)
             if existing is not None:
                 existing.force_requested += int(force)
+                if force:
+                    existing.rebuild_scope = rebuild_scope
                 existing.requested_input_revision = max(existing.requested_input_revision, input_revision or 0)
                 existing.requested_revision = max(
                     existing.requested_revision,
@@ -636,7 +649,7 @@ class InProcessProjectionScheduler:
             self._available.pop(creator_account_id, None)
             self._work[creator_account_id] = _AccountWork(
                 requested_revision=canonical_revision, force_requested=int(force),
-                requested_input_revision=input_revision or 0
+                requested_input_revision=input_revision or 0, rebuild_scope=rebuild_scope
             )
             self._pending.append(creator_account_id)
             self._launch_workers_locked(loop)
@@ -718,7 +731,7 @@ class InProcessProjectionScheduler:
             if self._work.get(creator_account_id) is work:
                 self._work.pop(creator_account_id, None)
 
-    def _build_observed(self, account, revision, force, epoch, token):
+    def _build_observed(self, account, revision, force, epoch, token, rebuild_scope=None):
         from app.core.lifecycle_receipts import emit
 
         attempt = uuid4().hex
@@ -726,11 +739,12 @@ class InProcessProjectionScheduler:
                       attempt_id=attempt, full_rebuild=bool(force))
         emit("build_started", **fields)
         try:
-            pipeline = self.generation_pipeline(account) if self.generation_pipeline else self.pipeline
-            candidate = pipeline.build_candidate(
-                account, publication_epoch=epoch, cancellation_check=token.cancelled,
-                **({"force": True, "full_rebuild": True} if force else {}),
-            )
+            with rebuild_scope() if rebuild_scope else nullcontext():
+                pipeline = self.generation_pipeline(account) if self.generation_pipeline else self.pipeline
+                candidate = pipeline.build_candidate(
+                    account, publication_epoch=epoch, cancellation_check=token.cancelled,
+                    **({"force": True, "full_rebuild": True} if force else {}),
+                )
         except ProjectionBuildCancelled:
             emit("build_cancelled", **fields)
             raise
@@ -752,6 +766,7 @@ class InProcessProjectionScheduler:
                     return
                 attempted_revision = work.requested_revision
                 force_attempted = work.force_requested
+                rebuild_scope, work.rebuild_scope = work.rebuild_scope, None
                 input_attempted = work.requested_input_revision
                 work.attempted_revision = attempted_revision
                 token = _CancellationToken()
@@ -764,7 +779,7 @@ class InProcessProjectionScheduler:
                 candidate = await self._run_owned(
                     functools.partial(
                         self._build_observed, creator_account_id, attempted_revision,
-                        force_attempted, publication_epoch, token,
+                        force_attempted, publication_epoch, token, rebuild_scope,
                     )
                 )
             except asyncio.CancelledError:
@@ -791,7 +806,7 @@ class InProcessProjectionScheduler:
                 if eligible:
                     try:
                         await self._run_owned(
-                            functools.partial(self._publish_if_open, candidate)
+                            functools.partial(self._publish_for_attempt, candidate, rebuild_scope)
                         )
                         published = True
                     except AnalyticsError as error:

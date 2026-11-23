@@ -535,6 +535,31 @@ async def active_projection(
     )
 
 
+def saved_metrics(account_id: str) -> dict | None:
+    """Read the existing account metrics without scheduling a build or recovery."""
+    from app.analytics.identity import source_identity
+
+    runtime = analytics_runtime()
+    identity = source_identity(runtime.source, account_id)
+    if identity is None:
+        return None
+    projection = runtime.pipeline.projections.get(account_id, canonical_identity=identity)
+    if projection is None or runtime.pipeline._expired(projection):
+        return None
+    if not _projection_is_current(projection, runtime, identity.revision):
+        account = runtime.pipeline.canonical_account(account_id)
+        if not _saved_projection_is_current(projection, runtime, account_id, account, lambda: False):
+            return None
+    result = projection.model_dump(mode="json", include={
+        "source_revision", "projection_generation", "projection_digest",
+        "creator_metrics", "conversation_metrics",
+    })
+    if (source_identity(runtime.source, account_id) != identity
+            or runtime.pipeline._expired(projection)):
+        return None
+    return result
+
+
 async def fetch_topic_metrics(
     start_date: datetime | None,
     end_date: datetime | None,
@@ -1013,20 +1038,32 @@ async def fetch_observation_links(policy, request):
 
 async def rebuild_projection(policy):
     """Admit a bounded full rebuild for the authenticated account."""
+    from functools import partial
+
     import anyio
     from app.core.config import settings
     from app.persistence.auth import SQLiteAuthenticationStore
-    from app.security.analysis_authorization import require_cached_analysis_run
-    from app.security.runtime_policy import authorized_account
+    from app.security.analysis_authorization import (
+        creator_rebuild_policy, creator_rebuild_scope, require_cached_analysis_run,
+    )
+    from app.security.runtime_policy import authorized_account, require_role
 
+    require_role(policy, "creator")
     account = authorized_account(policy, None)
+
     def authorize():
         store = SQLiteAuthenticationStore(settings.auth_database_path)
+        if policy.signed_object_reference_ids:
+            creator_rebuild_policy(store, policy)
+            return {"rebuild_scope": partial(creator_rebuild_scope, store, policy)}
+        # A legacy session may only use an existing agent admission.
         require_cached_analysis_run(store, account)
-    await anyio.to_thread.run_sync(authorize)
+        return {}
+
+    options = await anyio.to_thread.run_sync(authorize)
     runtime = analytics_runtime()
     revision = await runtime.scheduler.canonical_revision(account)
-    await runtime.scheduler.schedule(account, revision, retry_failed=True, force=True)
+    await runtime.scheduler.schedule(account, revision, retry_failed=True, force=True, **options)
     if runtime.questions is not None:
         runtime.questions.discard(account)
 

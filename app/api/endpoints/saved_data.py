@@ -171,6 +171,24 @@ def results(request: Request, after: UUID | None = None, store: SQLiteAuthentica
         return saved_result_page(transport_manager.canonical_database, owner, str(after) if after else "")
 
 
+@router.post("/metrics")
+def metrics(request: Request, store: SQLiteAuthenticationStore = Depends(authentication_store)) -> dict:
+    from app.analytics.errors import AnalyticsError
+    from app.analytics.graph_store import GraphStoreError
+    from app.analytics.sqlite_projection_store import ProjectionValidationError
+    from app.services.insights_service import saved_metrics
+
+    with _opened(request, store) as (owner, _):
+        _enforce_retention(owner.creator_account_id)
+        try:
+            document = saved_metrics(owner.creator_account_id)
+        except (AnalyticsError, GraphStoreError, ProjectionValidationError, ValueError):
+            raise HTTPException(409, "Saved metrics could not be verified") from None
+        if document is None:
+            raise HTTPException(404, "No saved metrics are available")
+        return document
+
+
 @router.post("/results/{kind}/{identifier}")
 def result(request: Request, kind: Literal["Full", "Preview"], identifier: UUID,
            store: SQLiteAuthenticationStore = Depends(authentication_store)) -> dict:
