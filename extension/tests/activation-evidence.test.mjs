@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import {
+  ACTIVATION_EVIDENCE_DATABASE_NAME,
   ActivationEvidenceStore,
   validateActivationEnvelopeV2,
 } from '../runtime/activation-evidence.mjs';
@@ -65,6 +66,21 @@ function gitBlobSha(bytes) {
 
 const INITIAL_TX = '20000000-0000-4000-8000-000000000001';
 const UPGRADE_TX = '20000000-0000-4000-8000-000000000002';
+
+test('pre-mode recovery leaves a fresh profile empty and reads existing acknowledgments after reopening', async () => {
+  const { indexedDb, store } = harness();
+  store.indexedDb = {
+    open: indexedDb.open.bind(indexedDb),
+    async databases() { return [...indexedDb.databases.keys()].map(name => ({ name })); },
+  };
+  const readAcknowledgments = () => Promise.all(['terms', 'risk'].map(key => store.preModeEvent(INITIAL_TX, key)));
+  assert.deepEqual(await readAcknowledgments(), [null, null]);
+  assert.deepEqual(await store.indexedDb.databases(), []);
+  const { terms, risk } = await acceptedPreMode(store);
+  await store.close();
+  assert.deepEqual(await store.indexedDb.databases(), [{ name: ACTIVATION_EVIDENCE_DATABASE_NAME }]);
+  assert.deepEqual(await readAcknowledgments(), [terms, risk]);
+});
 
 async function acceptedPreMode(store, transactionId = INITIAL_TX) {
   const terms = await store.recordTermsAcceptance({ transactionId, bindings });

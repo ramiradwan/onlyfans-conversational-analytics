@@ -5,6 +5,7 @@ import {
   presentedInstruments,
   validateLegalInstrumentBindings,
 } from './legal-instruments.mjs';
+import { extensionDatabaseNames } from './local-data.mjs';
 
 export const ACTIVATION_EVIDENCE_DATABASE_NAME = 'ofca_legal_evidence_v1';
 export const ACTIVATION_EVIDENCE_DATABASE_VERSION = 1;
@@ -41,6 +42,10 @@ function exactKeys(value, expected, label) {
 
 function validTimestamp(value) {
   return typeof value === 'string' && Number.isFinite(Date.parse(value));
+}
+
+export function isActionTimestamp(value) {
+  return validTimestamp(value) && new Date(value).toISOString() === value;
 }
 
 function validateUuid(value, label) {
@@ -304,7 +309,16 @@ export class ActivationEvidenceStore {
     return value === null ? null : clone(value);
   }
 
-  async recordTermsAcceptance({ transactionId, bindings }) {
+  async preModeEvent(transactionId, key) {
+    validateUuid(transactionId, 'transactionId');
+    if (key !== 'terms' && key !== 'risk') throw new TypeError('Unknown acknowledgment');
+    if (this.databasePromise === null && typeof this.indexedDb?.databases === 'function'
+        && !(await extensionDatabaseNames(this.indexedDb)).includes(ACTIVATION_EVIDENCE_DATABASE_NAME)) return null;
+    const record = await this.#readRecord(`${key}:${transactionId}`);
+    return record && validatePreModeRecord(record, key === 'terms' ? key : 'risk_disclosure');
+  }
+
+  async recordTermsAcceptance({ transactionId, bindings, occurredAt }) {
     validateUuid(transactionId, 'transactionId');
     const validatedBindings = validateLegalInstrumentBindings(bindings);
     const recordKey = `terms:${transactionId}`;
@@ -316,6 +330,8 @@ export class ActivationEvidenceStore {
       }
       return existing;
     }
+    occurredAt ??= this.now().toISOString();
+    if (!isActionTimestamp(occurredAt)) throw new TypeError('Invalid Terms action time');
     const eventId = this.uuid();
     validateUuid(eventId, 'terms event_id');
     return this.#appendRecord(Object.freeze({
@@ -326,14 +342,14 @@ export class ActivationEvidenceStore {
       transaction_id: transactionId,
       legal_meaning: 'terms',
       action: 'accepted',
-      occurred_at: this.now().toISOString(),
+      occurred_at: occurredAt,
       software_version: this.softwareVersion,
       locale: validatedBindings.instruments.terms_of_service.locale,
       instrument: clone(validatedBindings.instruments.terms_of_service),
     }));
   }
 
-  async recordRiskAcknowledgment({ transactionId, bindings }) {
+  async recordRiskAcknowledgment({ transactionId, bindings, occurredAt }) {
     validateUuid(transactionId, 'transactionId');
     const validatedBindings = validateLegalInstrumentBindings(bindings);
     const recordKey = `risk:${transactionId}`;
@@ -345,6 +361,8 @@ export class ActivationEvidenceStore {
       }
       return existing;
     }
+    occurredAt ??= this.now().toISOString();
+    if (!isActionTimestamp(occurredAt)) throw new TypeError('Invalid risk action time');
     const eventId = this.uuid();
     validateUuid(eventId, 'risk event_id');
     return this.#appendRecord(Object.freeze({
@@ -355,7 +373,7 @@ export class ActivationEvidenceStore {
       transaction_id: transactionId,
       legal_meaning: 'risk_disclosure',
       action: 'acknowledged',
-      occurred_at: this.now().toISOString(),
+      occurred_at: occurredAt,
       software_version: this.softwareVersion,
       locale: validatedBindings.instruments.risk_disclosure.locale,
       instrument: clone(validatedBindings.instruments.risk_disclosure),
@@ -369,6 +387,7 @@ export class ActivationEvidenceStore {
     termsEventId,
     riskEventId,
     bindings,
+    occurredAt,
   }) {
     validateUuid(transactionId, 'transactionId');
     if (!EVENT_TYPES.has(eventType)) throw new TypeError('eventType is invalid');
@@ -403,7 +422,8 @@ export class ActivationEvidenceStore {
       return clone(existing);
     }
 
-    const occurredAt = this.now().toISOString();
+    occurredAt ??= this.now().toISOString();
+    if (!isActionTimestamp(occurredAt)) throw new TypeError('Invalid mode action time');
     const eventId = this.uuid();
     validateUuid(eventId, 'mode event_id');
     const historical = HISTORICAL_EVENT_TYPES.has(eventType);

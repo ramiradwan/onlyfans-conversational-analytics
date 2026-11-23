@@ -22,13 +22,13 @@ async function surface(t, entry, mode = 'off') {
       const listeners = new Map();
       nodes.set(id, { dataset: {}, disabled: false, checked: false, textContent: '',
         classList: { toggle(name, value) { if (name === 'hidden') nodes.get(id).hidden = value; } },
-        setAttribute() {}, removeAttribute() {},
+        setAttribute() {}, removeAttribute() {}, getClientRects: () => [], scrollIntoView() {}, querySelector: () => null,
         addEventListener: (type, fn) => listeners.set(type, fn), dispatch: (type) => listeners.get(type)?.() });
     }
     return nodes.get(id);
   };
   const model = { status: { consent: { mode, resume_mode: mode === 'paused' ? 'full' : null }, phase: mode },
-    legal: { configured: true, flow: { stage: 'pre_mode', terms_event_id: null, risk_event_id: null } } };
+    legal: { configured: true, flow: { stage: 'pre_mode', transaction_id: 'fixture-review', terms_event_id: null, risk_event_id: null } } };
   let action = null, desktopControl = false, releaseStatus = null;
   const port = { onMessage: event(), onDisconnect: event(), disconnect() {}, postMessage(message) {
     if (message.type === 'status') queueMicrotask(() => port.onMessage.emit({ state: 'unavailable', desktop_control: desktopControl }));
@@ -44,10 +44,10 @@ async function surface(t, entry, mode = 'off') {
       if (action) return action(message);
       throw new Error('unexpected_command');
     } }, storage: { onChanged: event(), session: { async get() { return {}; } } } },
-    URL, TextEncoder, AbortController, setTimeout, clearTimeout, HTMLElement: class {},
+    URL, TextEncoder, AbortController, setTimeout, clearTimeout, requestAnimationFrame: setImmediate, HTMLElement: class {},
     location: { hash: '' }, sessionStorage: { getItem() { return null; } },
     window: { addEventListener() {}, removeEventListener() {} },
-    document: { getElementById: node, querySelector: node,
+    document: { getElementById: node, querySelector: node, activeElement: null, body: null,
       querySelectorAll: (selector) => selector === 'button, input' ? [...nodes.values()] : [],
       addEventListener() {}, removeEventListener() {} },
     fetch: async () => ({ json: async () => ({}) }),
@@ -66,17 +66,26 @@ async function surface(t, entry, mode = 'off') {
     } };
 }
 
-for (const id of ['terms-accepted', 'risk-acknowledged']) test(`${id} is a draft until the explicit consent button`, async (t) => {
-  const h = await surface(t, 'setup'); let commands = 0;
-  h.setAction(() => { commands++; throw Error('unexpected legal acceptance'); });
-  h.node(id).checked = true; h.node(id).dispatch('change');
+for (const [id, command, field] of [
+  ['terms-accepted', 'accept-terms', 'terms_event_id'],
+  ['risk-acknowledged', 'acknowledge-risk', 'risk_event_id'],
+]) test(`${id} writes only its own action and recovers a lost response`, async (t) => {
+  const h = await surface(t, 'setup'); const messages = [];
+  await h.node('start-preview').dispatch('click');
+  await h.client.sync(); await tick();
+  h.setAction((message) => {
+    messages.push(message);
+    h.model.legal.flow[field] = 'fixture-receipt';
+    throw Error('fixture_lost_response');
+  });
+  h.node(id).checked = true;
+  await h.node(id).dispatch('change');
   assert.equal(h.page.busy, false);
-  h.port.onMessage.emit({ type: 'surface_changed' });
-  await h.client.refresh(); await tick();
-  assert.equal(h.node(id).checked, true, 'a status update preserves unfinished choices');
-  assert.equal(h.node(id).disabled, false);
-  assert.equal(commands, 0, 'checking a draft never records acceptance');
-  assert.equal(h.node('activate-software').disabled, false, 'validation remains available');
+  assert.equal(h.node(id).checked, true);
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].type, `ofca.legal-activation.${command}`);
+  assert.equal(messages[0].transactionId, 'fixture-review');
+  assert.equal(h.node('enable-preview').disabled, true);
 });
 
 test('paused Full remains a desktop handoff as control sessions change', async (t) => {
@@ -135,7 +144,7 @@ test('setup and popup omit #retry-runtime and recover passively through surface-
             contains(name) { return classes.has(name); },
           },
           setAttribute() {}, removeAttribute() {},
-          addEventListener() {},
+          addEventListener() {}, querySelector: () => null,
         });
       }
       return nodes.get(id);

@@ -9,19 +9,12 @@ import { createSurfaceClient, openSurface, send, secureExternalUrl, NoticeError 
 import { supportChannelLabels } from './ui/support-channels.mjs';
 import { customerJourney, needsAgreement, modeChoiceAvailable } from './ui/presentation.mjs';
 import { element, show, text, renderLoading, renderJourney, renderLegalLinks, createPageActions } from './ui/dom.mjs';
-import { chooseMode, transition, restoreAccess, openCreatorAccount } from './ui/actions.mjs';
+import { requestAnalyticsAccess, transition, restoreAccess, openCreatorAccount } from './ui/actions.mjs';
 import { createDesktopLaunch } from './ui/desktop-launch.mjs';
 import { BROWSER_TASK_ENTRY_KEY, BROWSER_TASK_ADOPTION_KEY } from './runtime/browser-task-entry.mjs';
 import { createSetupChoice } from './ui/setup-choice.mjs';
 import { previewCounts } from './ui/preview-counts.mjs';
 import { setupRequirement } from './ui/setup-requirement.mjs';
-
-// Keep the approved section bytes intact in HTML; focus identifiers are presentation state.
-for (const mode of ['preview', 'full']) {
-  const heading = document.querySelector(`#${mode}-disclosure .points h2`);
-  heading.id = `${mode}-choice-title`;
-  heading.tabIndex = -1;
-}
 
 let failed = false;
 let dismissed = false;
@@ -61,21 +54,27 @@ window.addEventListener('pagehide', () => {
   clearTimeout(browserTaskExpiry);
   desktopLaunch.stop();
 });
-let checkboxDraft = { terms_checked: false, risk_checked: false, full_checked: false };
+const acknowledgments = [
+  { id: 'terms-accepted', status: 'terms-recorded', field: 'terms_event_id', type: LEGAL_ACCEPT_TERMS_MESSAGE_TYPE },
+  { id: 'risk-acknowledged', status: 'risk-recorded', field: 'risk_event_id', type: LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE },
+];
+const recording = new Set();
+const VALIDATION_FAILURE = 'The setup check didn’t finish.';
+let validationPending = null, validationFailed = null;
 let receivingRead = 0;
-const consumeFullReviewIntent = createFullReviewIntentConsumer({ apply() {
-  dismissed = false; setFullReview(true);
-  setupChoice = { mode: 'full', stage: 'review' }; choicePersistence.write(workspaceRecord, setupChoice);
-} });
+const consumeFullReviewIntent = createFullReviewIntentConsumer({ apply: () => saveReviewChoice('full') });
 async function readWorkspace() {
   if (!location.hash.startsWith('#journey=')) return;
   const generation = ++receivingRead;
   const lifetime = taskLifetime;
+  workspacePending = true;
+  for (const { id } of acknowledgments) element(id).setAttribute('aria-disabled', 'true');
+  page.lock('enable-preview', true);
+  page.lock('enable-full', true);
   workspaceRecord = null;
   browserTask = null; desktopAdoption = false; clearTimeout(browserTaskExpiry);
   setupChoice = null;
   fullReviewRequested = false;
-  checkboxDraft = { terms_checked: false, risk_checked: false, full_checked: false };
   try {
     const next = await send({ type: WORKSPACE_MESSAGE_TYPE, action: 'read' });
     const intent = (await chrome.storage.session.get([FULL_REVIEW_INTENT_KEY]))[FULL_REVIEW_INTENT_KEY];
@@ -83,7 +82,6 @@ async function readWorkspace() {
     workspaceRecord = next;
     setupChoice = choicePersistence.read(workspaceRecord);
     fullReviewRequested = fullReviewPersistence.read(workspaceRecord) || workspaceRecord.draft.full_checked;
-    checkboxDraft = { ...workspaceRecord.draft };
     consumeFullReviewIntent(intent, workspaceRecord);
     const [task, adoption] = await Promise.all([
       send({ type: WORKSPACE_MESSAGE_TYPE, action: 'browser_task' }),
@@ -101,12 +99,6 @@ async function readWorkspace() {
     if (generation === receivingRead && lifetime === taskLifetime) { workspacePending = false; render(client.model); }
   }
 }
-async function saveDraft() {
-  checkboxDraft = { terms_checked: element('terms-accepted').checked, risk_checked: element('risk-acknowledged').checked, full_checked: fullReviewRequested };
-  if (!workspaceRecord) return;
-  workspaceRecord.draft = { ...checkboxDraft };
-  await send({ type: WORKSPACE_MESSAGE_TYPE, action: 'draft', scope_id: workspaceRecord.draft_scope.scope_id, draft: workspaceRecord.draft });
-}
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'session' && changes[FULL_REVIEW_INTENT_KEY]?.newValue) {
     void readWorkspace(); return;
@@ -120,6 +112,58 @@ chrome.storage.onChanged.addListener((changes, area) => {
     || next?.draft_scope?.disclosure_bundle_id !== workspaceRecord.draft_scope.disclosure_bundle_id) void readWorkspace();
 });
 const initialWorkspace = readWorkspace();
+
+function hasModeAccess(status, mode) {
+  return status.onlyfans_permission === true && (mode === 'preview' || status.local_service_permission === true);
+}
+
+async function validateReview(transactionId) {
+  validationPending = transactionId;
+  validationFailed = null;
+  try {
+    await send({ type: LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE, transactionId });
+  } catch {
+    // Read status even if the response was lost.
+  } finally {
+    await client.sync();
+    if (client.model.legal?.flow.stage !== 'mode_selection') validationFailed = transactionId;
+    validationPending = null;
+    render(client.model);
+  }
+}
+
+function renderModeReview(model, mode) {
+  const { legal: { flow }, status } = model;
+  const transactionId = flow.transaction_id;
+  const acknowledged = acknowledgments.every(({ field }) => Boolean(flow[field]));
+  const ready = acknowledged && flow.stage === 'mode_selection';
+  const full = mode === 'full';
+  text('activation-title', full ? 'Turn on Full analytics' : 'Turn on Preview');
+  show('preview-disclosure', !full);
+  show('full-disclosure', full);
+  show('enable-preview', !full);
+  show('enable-full', full);
+  show('not-now-preview', !full);
+  show('full-secondary', full);
+  show('review-full', !full);
+  text('full-secondary', status.consent.mode === 'preview' ? 'Keep Preview' : 'Not now');
+  show('mode-permission-note', !hasModeAccess(status, mode));
+  const validationRejected = !ready && acknowledged && validationFailed === transactionId;
+  show('retry-validation', validationRejected);
+  if (validationRejected && !element('feedback').textContent) page.feedback(VALIDATION_FAILURE, true);
+  if (!validationRejected && element('feedback').textContent === VALIDATION_FAILURE) page.feedback('');
+  page.lock('enable-preview', !ready || workspacePending);
+  page.lock('enable-full', !ready || workspacePending);
+  for (const { id, field, status: statusId } of acknowledgments) {
+    const recorded = Boolean(flow[field]);
+    const saving = recording.has(id);
+    const checkbox = element(id);
+    checkbox.checked = recorded || saving;
+    checkbox.setAttribute('aria-disabled', String(recorded || saving || workspacePending));
+    text(statusId, recorded ? 'Recorded' : saving ? 'Saving…' : '');
+  }
+  if (acknowledged && !ready && !workspacePending && !validationPending && validationFailed !== transactionId) void validateReview(transactionId);
+}
 
 // This is not the draft value: automatic helper navigation is never an
 // explicit request for a commercial offer.
@@ -136,6 +180,20 @@ function setFullReview(value) {
     void send({ type: WORKSPACE_MESSAGE_TYPE, action: 'draft', scope_id: workspaceRecord.draft_scope.scope_id,
       draft: { ...workspaceRecord.draft } }).catch(() => undefined);
   }
+}
+function saveReviewChoice(mode) {
+  dismissed = false;
+  setupChoice = { mode, stage: 'review' };
+  choicePersistence.write(workspaceRecord, setupChoice);
+  setFullReview(mode === 'full');
+}
+async function selectModeReview(mode) {
+  if (workspacePending) return;
+  const generation = receivingRead, lifetime = taskLifetime;
+  await recordFullChoice(mode === 'full');
+  if (generation !== receivingRead || lifetime !== taskLifetime) return;
+  saveReviewChoice(mode);
+  render(client.model);
 }
 function renderDesktop(model, journey) {
   const launch = desktopLaunch.state;
@@ -205,7 +263,7 @@ function render(model) {
     presentationStarted = true;
     document.querySelector('main').dataset.presentationReady = 'true';
   }
-  for (const id of ['start-choice', 'desktop-entry', 'pre-mode', 'mode-choice', 'access-card', 'journey-card', 'legal-unavailable']) show(id, false);
+  for (const id of ['start-choice', 'desktop-entry', 'mode-choice', 'access-card', 'journey-card', 'legal-unavailable']) show(id, false);
   renderLoading(status && legal && !waitingForWorkspace ? status : null, failed, model.connectionRecovery, { setup: true });
   renderLegalLinks(legal);
   renderRuntimeHelp(model.config.support_channels,
@@ -229,9 +287,6 @@ function render(model) {
   }
   const mode = status.consent.mode;
   const agreement = needsAgreement(model);
-  // A new legal review supersedes an earlier optional mode-choice dismissal.
-  if (agreement) dismissed = false;
-  const active = ['preview', 'full'].includes(mode) && !legal.requires_reauthorization;
   const revoked = mode === 'revoked' || status.phase === 'revoked';
   if (!revoked) revokedChoice = false;
   const choose = (modeChoiceAvailable(model) && !dismissed && (!revoked || revokedChoice)) || (mode === 'preview' && fullReviewRequested)
@@ -239,30 +294,28 @@ function render(model) {
   const access = status.phase === 'permission_required' && !revoked;
   const selected = browserTask ? 'full' : setupChoice?.mode ?? (fullReviewRequested ? 'full' : legal.requires_reauthorization
     ? status.consent.resume_mode ?? (['preview', 'full'].includes(mode) ? mode : null) : null);
-  const pendingAccess = selected && setupChoice?.stage === 'access' && !agreement
-    && legal.flow.stage === 'mode_selection';
   const full = (!revoked || revokedChoice || Boolean(browserTask)) && (selected === 'full' || mode === 'full' || mode === 'paused' && status.consent.resume_mode === 'full');
+  const reviewMode = selected ?? 'preview';
   const view = full && !browserTask ? 'desktop'
-    : agreement ? selected ? 'agree' : 'start'
-      : pendingAccess ? 'access' : choose ? 'mode' : access ? 'access' : 'journey';
+    : !dismissed && (choose || selected && agreement) ? 'consent'
+      : agreement && (!dismissed || mode === 'off') ? 'start' : access ? 'access' : 'journey';
+  if (view !== 'consent' && element('feedback').textContent === VALIDATION_FAILURE) page.feedback('');
   currentJourney = customerJourney(model, { setup: true });
   const browserAccessReady = full && browserTask && view === 'journey';
   currentTask = browserAccessReady ? 'browser-access-ready' : view === 'journey' ? `journey:${currentJourney.id}`
-    : ['agree', 'mode'].includes(view) ? `${view}:${selected ?? fullReviewRequested}` : view;
+    : view === 'consent' ? `consent:${reviewMode}` : view;
   document.querySelector('main').dataset.task = currentTask;
   document.querySelector('main').dataset.requirement = browserAccessReady ? 'browser-access-ready' : setupRequirement({ model, view, selected,
-    reviewFull: fullReviewRequested, journey: currentJourney });
-  taskHeading = view === 'desktop' ? 'desktop-entry-title' : view === 'start' ? 'start-title' : view === 'agree' ? 'activation-title'
-    : view === 'access' ? 'access-title' : view === 'mode'
-      ? fullReviewRequested || browserTask ? 'full-choice-title' : 'preview-choice-title'
-      : 'journey-title';
+    journey: currentJourney });
+  taskHeading = view === 'desktop' ? 'desktop-entry-title' : view === 'start' ? 'start-title' : view === 'consent' ? 'activation-title'
+    : view === 'access' ? 'access-title' : 'journey-title';
   const icon = ['paused', 'analytics_off'].includes(currentJourney.id) ? 'pause' :
     ({ success: 'done', progress: 'pending', warning: 'attention', error: 'error' })[currentJourney.tone] ?? 'info';
   element('journey-icon-mark').dataset.icon = icon;
   document.querySelector('main').dataset.step = view;
   const summary = view === 'desktop' ? 'Continue in the desktop app'
-    : view === 'start' ? 'Choose Preview or Full analytics' : view === 'agree' ? 'Review terms and risk disclosure'
-      : view === 'mode' ? 'Choose a mode' : view === 'access' ? 'Allow site access' : full ? 'Browser access' : currentJourney.title;
+    : view === 'start' ? 'Choose Preview or Full analytics' : view === 'consent' ? 'Review data handling and separate choices'
+      : view === 'access' ? 'Allow site access' : full ? 'Browser access' : currentJourney.title;
   if (element('step-summary').textContent !== summary) text('step-summary', summary);
   show('desktop-entry', view === 'desktop');
   const fullWorkspace = mode === 'full' || mode === 'paused' && status.consent.resume_mode === 'full';
@@ -270,47 +323,14 @@ function render(model) {
   renderDesktop(model, desktopJourney);
   show('desktop-back', mode !== 'full' && status.consent.resume_mode !== 'full');
   text('desktop-back', mode === 'preview' ? 'Keep Preview' : 'Back');
-  show('pre-mode', view === 'agree'); show('mode-choice', view === 'mode');
+  show('mode-choice', view === 'consent');
+  if (view === 'consent') renderModeReview(model, reviewMode);
   show('start-choice', view === 'start');
-  show('start-back', view === 'agree' && Boolean(setupChoice) && !browserTask && !legal.requires_reauthorization);
-  if (view === 'agree' && selected) {
-    text('activation-title', selected === 'full' ? 'Turn on Full analytics' : 'Turn on Preview');
-    text('activate-software', selected === 'full' ? 'Continue with Full analytics' : 'Continue with Preview');
-    const disclosure = element('start-disclosure');
-    if (disclosure.dataset.mode !== selected) {
-      const original = element(selected === 'full' ? 'full-disclosure' : 'preview-disclosure');
-      const copy = original.querySelector('.points').cloneNode(true);
-      copy.querySelector('h2').removeAttribute('id');
-      copy.querySelector('h2').removeAttribute('tabindex');
-      const separateChoices = element('separate-choices-disclosure').cloneNode(true);
-      separateChoices.removeAttribute('id');
-      disclosure.replaceChildren(copy, separateChoices);
-      disclosure.dataset.mode = selected;
-    }
-  }
   show('access-card', view === 'access'); show('journey-card', view === 'journey');
-  if (!page.busy) {
-    element('terms-accepted').checked = Boolean(legal.flow.terms_event_id || checkboxDraft.terms_checked);
-    element('risk-acknowledged').checked = Boolean(legal.flow.risk_event_id || checkboxDraft.risk_checked);
-  }
-  page.lock('terms-accepted', Boolean(legal.flow.terms_event_id) || active);
-  page.lock('risk-acknowledged', Boolean(legal.flow.risk_event_id) || active);
-  page.lock('activate-software', active);
-  show('activate-software', !active);
-  const reviewFull = fullReviewRequested || Boolean(browserTask);
-  show('preview-disclosure', view === 'mode' && !reviewFull);
-  show('full-disclosure', view === 'mode' && reviewFull);
-  if (view === 'mode') {
-    element(reviewFull ? 'full-disclosure' : 'preview-disclosure').insertBefore(
-      element('separate-choices-disclosure'), element(reviewFull ? 'enable-full' : 'enable-preview'));
-  }
-  show('enable-preview', !active); show('enable-full', mode !== 'full' || legal.requires_reauthorization);
-  text('full-secondary', mode === 'preview' ? 'Keep Preview' : 'Not now');
-  text('access-title', pendingAccess ? 'Allow site access' : 'Site access needed');
-  text('access-body', pendingAccess ? 'Allow the extension to read activity from your creator account.'
-    : 'Allow site access to receive activity from your creator account.');
-  element('access-icon-mark').dataset.icon = pendingAccess ? 'extension' : 'attention';
-  show('restore-access', Boolean(pendingAccess) || status.phase === 'permission_required');
+  text('access-title', 'Site access needed');
+  text('access-body', 'Allow site access to receive activity from your creator account.');
+  element('access-icon-mark').dataset.icon = 'attention';
+  show('restore-access', status.phase === 'permission_required');
   renderJourney(currentJourney, model);
   const preview = mode === 'preview' || (mode === 'paused' && status.consent.resume_mode === 'preview');
   const stopped = mode !== 'paused' && status.observer?.helper === 'closed' && status.observer?.attachment !== 'ready';
@@ -362,12 +382,12 @@ function focusTask() {
   return false;
 }
 async function runJourneyAction(action) {
-  if (action === 'review_full' || action === 'choose_mode') {
+  if (action === 'review_full') return selectModeReview('full');
+  if (action === 'choose_mode') {
     dismissed = false;
-    revokedChoice = action === 'choose_mode' && client.model.status.consent.mode === 'revoked';
-    if (action === 'review_full') await recordFullChoice(true);
-    else await recordFullChoice(false);
-    setFullReview(action === 'review_full'); render(client.model); return;
+    revokedChoice = client.model.status.consent.mode === 'revoked';
+    await recordFullChoice(false);
+    setFullReview(false); render(client.model); return;
   }
   if (action === 'open_desktop') return desktopLaunch.launch(client.model);
   if (action === 'open_creator_account') return openCreatorAccount();
@@ -380,46 +400,78 @@ async function runJourneyAction(action) {
   }
 }
 async function enableMode(mode) {
+  if (workspacePending) return;
+  const { legal, status } = client.model;
+  const transactionId = legal.flow.transaction_id;
+  if (legal.flow.stage !== 'mode_selection' || !acknowledgments.every(({ field }) => legal.flow[field])) return;
+  const occurredAt = new Date().toISOString();
+  const generation = receivingRead, lifetime = taskLifetime, task = browserTask;
+  const assertReviewCurrent = () => {
+    if (generation !== receivingRead || lifetime !== taskLifetime || workspacePending
+      || transactionId !== client.model.legal?.flow.transaction_id) {
+      throw new NoticeError('Setup changed. Review the current choices before continuing.');
+    }
+  };
+  if (!hasModeAccess(status, mode)) await requestAnalyticsAccess(mode);
+  assertReviewCurrent();
   if (mode === 'preview') await recordFullChoice(false);
-  else if (!browserTask) await recordFullChoice(true);
-  await chooseMode(mode);
+  else {
+    const admitted = await send({ type: WORKSPACE_MESSAGE_TYPE, action: 'browser_task' });
+    if (!task || !admitted || admitted.task.journey_id !== task.task.journey_id
+      || admitted.draft_scope.scope_id !== task.draft_scope.scope_id
+      || admitted.draft_scope.disclosure_bundle_id !== task.draft_scope.disclosure_bundle_id
+      || admitted.task.task_id !== task.task.task_id
+      || admitted.task.admission_generation !== task.task.admission_generation) {
+      throw new NoticeError('Open the browser setup step again to continue.');
+    }
+  }
+  assertReviewCurrent();
+  try {
+    await send({ type: LEGAL_CHOOSE_MODE_MESSAGE_TYPE, mode, transactionId, occurredAt,
+      consentEpoch: status.consent.consent_epoch });
+  } catch (error) {
+    await client.sync();
+    const current = client.model;
+    const receipt = current.status?.consent.authorization_event_id;
+    if (!receipt || receipt === status.consent.authorization_event_id || current.status.consent.mode !== mode
+      || current.legal?.flow.completed_event_id !== receipt
+      || current.legal?.requires_reauthorization !== false) throw error;
+  }
   setupChoice = null; choicePersistence.write(workspaceRecord, null);
   setFullReview(false); dismissed = false;
 }
-for (const id of ['terms-accepted', 'risk-acknowledged']) {
-  element(id).addEventListener('change', () => { void saveDraft().catch(() => undefined); });
-}
-element('activate-software').addEventListener('click', () => {
-  const missing = ['terms-accepted', 'risk-acknowledged'].find((id) => !element(id).checked);
-  if (missing) {
-    page.feedback('Check both boxes to continue.', true);
-    element(missing).focus();
-    return;
-  }
-  void page.run(async () => {
-    const chosen = browserTask ? 'full' : setupChoice?.mode ?? (fullReviewRequested ? 'full' : client.model.status.consent.resume_mode ?? null);
-    const chosenScope = workspaceRecord?.draft_scope?.scope_id ?? null;
-    if (!client.model.legal.flow.terms_event_id) await send({ type: LEGAL_ACCEPT_TERMS_MESSAGE_TYPE });
-    if (!client.model.legal.flow.risk_event_id) await send({ type: LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE });
-    if (chosen) { setupChoice = { mode: chosen, stage: 'access' }; choicePersistence.write(workspaceRecord, setupChoice); }
-    await send({ type: LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE });
-    if (chosen && chosenScope === (workspaceRecord?.draft_scope?.scope_id ?? null)
-      && client.model.status.onlyfans_permission === true
-      && (chosen === 'preview' || client.model.status.local_service_permission === true)) {
-      await send({ type: LEGAL_CHOOSE_MODE_MESSAGE_TYPE, mode: chosen });
-      setupChoice = null; choicePersistence.write(workspaceRecord, null); setFullReview(false);
-    }
+for (const { id, field, type } of acknowledgments) {
+  const checkbox = element(id);
+  checkbox.addEventListener('click', (event) => {
+    if (workspacePending || checkbox.getAttribute('aria-disabled') === 'true') event.preventDefault();
   });
+  checkbox.addEventListener('change', async () => {
+    const flow = client.model.legal?.flow;
+    if (workspacePending) {
+      checkbox.checked = Boolean(flow?.[field]) || recording.has(id);
+      return;
+    }
+    if (!checkbox.checked || !flow || flow[field] || recording.has(id)) return;
+    const transactionId = flow.transaction_id;
+    const occurredAt = new Date().toISOString();
+    recording.add(id);
+    page.feedback('');
+    render(client.model);
+    try { await send({ type, transactionId, occurredAt }); } catch {}
+    await client.sync();
+    recording.delete(id);
+    const currentFlow = client.model.legal?.flow;
+    if (currentFlow?.transaction_id === transactionId && !currentFlow[field]) {
+      page.feedback('That choice could not be confirmed. Try again.', true);
+    }
+    render(client.model);
+  });
+}
+page.bind('retry-validation', async () => {
+  if (workspacePending || validationPending) return;
+  await validateReview(client.model.legal.flow.transaction_id);
 });
-for (const mode of ['preview', 'full']) page.bind(`start-${mode}`, async () => {
-  await recordFullChoice(mode === 'full');
-  setupChoice = { mode, stage: 'review' }; choicePersistence.write(workspaceRecord, setupChoice);
-  setFullReview(mode === 'full'); render(client.model);
-});
-page.bind('start-back', async () => {
-  await recordFullChoice(false);
-  setupChoice = null; choicePersistence.write(workspaceRecord, null); setFullReview(false); render(client.model);
-});
+for (const mode of ['preview', 'full']) page.bind(`start-${mode}`, () => selectModeReview(mode));
 page.bind('open-desktop', () => runJourneyAction(element('open-desktop').dataset.action));
 page.bind('download-desktop', () => runJourneyAction('install_desktop'));
 page.bind('desktop-back', async () => {
@@ -428,16 +480,21 @@ page.bind('desktop-back', async () => {
 });
 page.bind('enable-preview', () => enableMode('preview'));
 page.bind('enable-full', () => enableMode('full'));
-page.bind('review-full', async () => { await recordFullChoice(true); setFullReview(true); render(client.model); });
-page.bind('not-now-preview', async () => { await recordFullChoice(false); dismissed = true; revokedChoice = false; render(client.model); });
+page.bind('review-full', () => selectModeReview('full'));
+page.bind('not-now-preview', async () => {
+  await recordFullChoice(false);
+  setupChoice = null; choicePersistence.write(workspaceRecord, null);
+  dismissed = true; revokedChoice = false; render(client.model);
+});
 page.bind('full-secondary', async () => {
   await recordFullChoice(false);
+  setupChoice = null; choicePersistence.write(workspaceRecord, null);
+  setFullReview(false);
   if (browserTask) await send({ type: WORKSPACE_MESSAGE_TYPE, action: 'dismiss_browser_task' });
   browserTask = null; clearTimeout(browserTaskExpiry);
-  setupChoice = null; choicePersistence.write(workspaceRecord, null);
-  setFullReview(false); render(client.model);
+  render(client.model);
 });
-page.bind('restore-access', () => setupChoice?.stage === 'access' ? enableMode(setupChoice.mode) : restoreAccess(client.model));
+page.bind('restore-access', () => restoreAccess(client.model));
 page.bind('reopen-background-tab', () => send({ type: OBSERVER_REOPEN_TYPE }));
 page.bind('pause', () => transition('pause', client.model));
 page.bind('journey-primary', () => runJourneyAction(element('journey-primary').dataset.action));

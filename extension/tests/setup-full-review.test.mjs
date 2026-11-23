@@ -11,7 +11,7 @@ const record = { journey_id: '11111111-1111-4111-8111-111111111111',
   draft_scope: { scope_id: '22222222-2222-4222-8222-222222222222', disclosure_bundle_id: 'a'.repeat(64) },
   draft: { terms_checked: true, risk_checked: true, full_checked: false } };
 const model = { status: { consent: { mode: 'preview' }, phase: 'preview' },
-  legal: { configured: true, flow: { terms_event_id: 'terms', risk_event_id: 'risk' } },
+  legal: { configured: true, flow: { stage: 'mode_selection', terms_event_id: 'terms', risk_event_id: 'risk' } },
   pairing: { state: 'unpaired' }, config: {}, desktopLinked: false };
 const initiallyHidden = new Set([...readFileSync(new URL('../setup.html', import.meta.url), 'utf8').matchAll(/<[^>]+>/gu)]
   .filter(([tag]) => /\bclass="[^"]*\bhidden\b[^"]*"/u.test(tag))
@@ -36,7 +36,7 @@ const stubs = {
   'dom.mjs': `export const element=fixture.element, show=fixture.show, text=(id,value)=>{element(id).textContent=value};
     export const renderLoading=()=>{},renderJourney=()=>{},renderReadiness=()=>{},renderLegalLinks=()=>{};
     export const createPageActions=()=>({busy:false,lock(){},bind(id,fn){fixture.actions[id]=fn}});`,
-  'actions.mjs': 'export const chooseMode=async()=>{},transition=()=>{},restoreAccess=()=>{},openCreatorAccount=()=>{};',
+  'actions.mjs': 'export const requestAnalyticsAccess=async()=>{},transition=()=>{},restoreAccess=()=>{},openCreatorAccount=()=>{};',
   'handoff.mjs': 'export const createHandoffFinisher=()=>()=>{},returnToDesktop=()=>{};',
 };
 const bundle = await build({ entryPoints: [fileURLToPath(new URL('../setup.js', import.meta.url))],
@@ -58,7 +58,7 @@ async function initialize(saved, admitted = record, intent = null, options = {})
   const nodes = new Map(), actions = {}, visibility = [], calls = [];
   const element = (id) => {
     if (!nodes.has(id)) nodes.set(id, { hidden: initiallyHidden.has(id), dataset: {}, classList: { toggle() {} },
-      setAttribute() {}, removeAttribute() {}, addEventListener() {}, insertBefore() {} });
+      setAttribute() {}, removeAttribute() {}, addEventListener() {}, insertBefore() {}, querySelector: () => null });
     return nodes.get(id);
   };
   let admit;
@@ -102,7 +102,7 @@ for (const id of ['pairing_required', 'activation_required', 'full_ready', 'desk
     assert.equal(run.element('desktop-entry-title').textContent, id);
     assert.equal(run.element('desktop-entry').dataset.tone, id === 'full_ready' ? 'success' : 'warning');
     if (id === 'full_ready') assert.equal(run.element('desktop-setup-code').hidden, true);
-    for (const section of ['pre-mode', 'mode-choice', 'access-card', 'journey-card']) assert.equal(run.element(section).hidden, true);
+    for (const section of ['mode-choice', 'access-card', 'journey-card']) assert.equal(run.element(section).hidden, true);
     assert.ok(run.calls.every(call => ['read', 'browser_task', 'desktop_adoption', 'context'].includes(call.action)));
   });
 }
@@ -136,7 +136,7 @@ test('only the admitted task opens Full consent; declining it preserves Preview'
   assert.equal(run.fixture.model.status.consent.mode, 'preview');
   await run.fixture.actions['full-secondary']();
   assert.ok(run.calls.some(call => call.action === 'dismiss_browser_task'));
-  assert.equal(run.element('full-disclosure').hidden, true);
+  assert.equal(run.element('mode-choice').hidden, true);
   assert.equal(run.element('preview-metrics').hidden, false);
 });
 

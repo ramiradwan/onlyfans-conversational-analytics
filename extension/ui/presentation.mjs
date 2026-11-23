@@ -28,6 +28,7 @@ export function customerJourney(model, options) {
     desktopDownloadAvailable: secureExternalUrl(model.config.desktop_app_download_url) !== null,
     analysisReadiness: model.analysisReadiness,
     resumeAvailable: model.legal?.configured === true && !model.legal.requires_reauthorization,
+    agreementReviewAvailable: options?.setup === true && needsAgreement(model),
     modeChoiceAvailable: modeChoiceAvailable(model) }, options);
 }
 export function isPreview(status) {

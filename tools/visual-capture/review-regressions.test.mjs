@@ -140,26 +140,26 @@ for (const width of [320, 390, 1440]) for (const fontScale of [1, 2]) for (const
   } finally { await page.close(); }
 });
 
-for (const width of [320, 1280]) for (const [state, title, count] of [
-  [{ ...SURFACE_STATES.software_activation, fullIntent: true, browserTask: true }, 'activation-title', 2],
-  [SURFACE_STATES.full_review, 'full-choice-title', 1],
-]) test(`approved copy sections sit under ${title} at ${width}`, async () => {
+for (const width of [320, 1280]) for (const [state, review] of [
+  [{ ...SURFACE_STATES.software_activation, fullIntent: true, browserTask: true }, 'initial review'],
+  [SURFACE_STATES.full_review, 'Preview upgrade'],
+]) test(`approved copy sections sit under the ${review} title at ${width}`, async () => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   try {
     await renderSurfaceState(page, state);
-    const levels = await page.evaluate(id => {
+    const levels = await page.evaluate(() => {
       const size = node => parseFloat(getComputedStyle(node).fontSize);
       const top = node => node.getBoundingClientRect().top, bottom = node => node.getBoundingClientRect().bottom;
-      const heading = document.getElementById(id);
+      const heading = document.getElementById('activation-title');
       const sections = [...heading.closest('section').querySelectorAll('.points > h2')]
         .filter(node => node !== heading && node.getClientRects().length);
       const copy = sections[0].nextElementSibling;
-      return { title: size(heading), sizes: sections.map(size), paragraph: top(copy.nextElementSibling) - bottom(copy),
+      return { title: size(heading), labels: sections.map(node => node.textContent), sizes: sections.map(size),
+        paragraph: top(copy.nextElementSibling) - bottom(copy),
         below: sections.map(node => top(node.nextElementSibling) - bottom(node)),
-        above: sections.filter(node => node.parentElement.previousElementSibling?.matches('.points'))
-          .map(node => top(node) - bottom(node.parentElement.previousElementSibling.lastElementChild)) };
-    }, title);
-    assert.equal(levels.sizes.length, count);
+        above: sections.slice(1).map((node, index) => top(node) - bottom(sections[index].parentElement.lastElementChild)) };
+    });
+    assert.deepEqual(levels.labels, ['Full', 'Separate choices']);
     assert(levels.sizes.every(size => size < levels.title), 'Approved copy headings must sit under the title');
     assert(levels.below.every(gap => gap < levels.paragraph), 'A section heading must sit closer to its copy than paragraphs do');
     assert(levels.above.length && levels.above.every(gap => gap > levels.paragraph), 'A new section must start further away than the next paragraph');

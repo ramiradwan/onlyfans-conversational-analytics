@@ -1,6 +1,7 @@
 import { allowsUiMessage } from './ui-surfaces.mjs';
 import { validateLegalInstrumentBindings } from './legal-instruments.mjs';
 import { SerialExecutor } from './operation-scope.mjs';
+import { isActionTimestamp } from './activation-evidence.mjs';
 import {
   authorizationScope,
   modeRecordAuthorizes,
@@ -28,6 +29,8 @@ const freshFlow = ({ termsEventId = null, riskEventId = null, stage = 'pre_mode'
   stage,
   pending_mode: null,
   pending_event_type: null,
+  pending_occurred_at: null,
+  mode_review_transaction_id: null,
   completed_mode: null,
   completed_event_id: null,
 });
@@ -57,6 +60,8 @@ function validFlow(value) {
     stage: value.stage,
     pending_mode: pendingMode,
     pending_event_type: pendingMode === null ? null : pendingEventType,
+    pending_occurred_at: pendingMode !== null && isActionTimestamp(value.pending_occurred_at) ? value.pending_occurred_at : null,
+    mode_review_transaction_id: typeof value.mode_review_transaction_id === 'string' ? value.mode_review_transaction_id : null,
     completed_mode: ACTIVE_MODES.has(value.completed_mode) ? value.completed_mode : null,
     completed_event_id: typeof value.completed_event_id === 'string'
       ? value.completed_event_id
@@ -73,6 +78,14 @@ function preModeEventMatches(record, meaning, instrument) {
   return record?.record_type === 'pre_mode'
     && record.legal_meaning === meaning
     && sameInstrument(record.instrument, instrument);
+}
+
+function checkReview(flow, transactionId) {
+  if (transactionId !== undefined && transactionId !== flow.transaction_id) throw new Error('Consent review changed');
+}
+
+function boundOrigin(scope) {
+  try { return JSON.parse(scope)?.public_origin; } catch { return undefined; }
 }
 
 export class LegalActivationController {
@@ -119,8 +132,8 @@ export class LegalActivationController {
     if (binding === null) return flow;
     const scope = authorizationScope(binding, 'preview');
     const [terms, risk] = await Promise.all([
-      flow.terms_event_id === null ? null : this.evidenceStore.event(flow.terms_event_id),
-      flow.risk_event_id === null ? null : this.evidenceStore.event(flow.risk_event_id),
+      flow.terms_event_id === null ? this.evidenceStore.preModeEvent?.(flow.transaction_id, 'terms') : this.evidenceStore.event(flow.terms_event_id),
+      flow.risk_event_id === null ? this.evidenceStore.preModeEvent?.(flow.transaction_id, 'risk') : this.evidenceStore.event(flow.risk_event_id),
     ]);
     const termsCurrent = preModeEventMatches(terms, 'terms', binding.instruments.terms_of_service);
     const riskCurrent = preModeEventMatches(risk, 'risk_disclosure', binding.instruments.risk_disclosure);
@@ -128,13 +141,18 @@ export class LegalActivationController {
       flow.binding_scope === scope
       && (flow.terms_event_id === null || termsCurrent)
       && (flow.risk_event_id === null || riskCurrent)
-    ) return flow;
+    ) {
+      const termsId = termsCurrent ? terms.event_id : null;
+      const riskId = riskCurrent ? risk.event_id : null;
+      if (termsId === flow.terms_event_id && riskId === flow.risk_event_id) return flow;
+      return this.#saveFlow({ ...flow, terms_event_id: termsId, risk_event_id: riskId });
+    }
+    const sameOrigin = boundOrigin(flow.binding_scope) === binding.public_origin;
     return this.#saveFlow(freshFlow({
-      termsEventId: termsCurrent ? flow.terms_event_id : null,
-      riskEventId: riskCurrent ? flow.risk_event_id : null,
-      stage: termsCurrent && riskCurrent ? 'mode_selection' : 'pre_mode',
+      termsEventId: sameOrigin && termsCurrent ? terms.event_id : null,
+      riskEventId: sameOrigin && riskCurrent ? risk.event_id : null,
       bindingScope: scope,
-      termsReacceptanceRequired: flow.terms_event_id !== null && !termsCurrent,
+      termsReacceptanceRequired: flow.terms_reacceptance_required || Boolean(terms && (!termsCurrent || !sameOrigin)),
     }));
   }
 
@@ -156,10 +174,10 @@ export class LegalActivationController {
   }
 
   status() { return this.#run((context) => this.#statusLocked(context)); }
-  acceptTerms() { return this.#run((context) => this.#acceptTermsLocked(context)); }
-  acknowledgeRisk() { return this.#run((context) => this.#acknowledgeRiskLocked(context)); }
-  activateSoftware() { return this.#run((context) => this.#activateSoftwareLocked(context)); }
-  chooseMode(mode) { return this.#run((context) => this.#chooseModeLocked(mode, context)); }
+  acceptTerms(action = {}) { return this.#run((context) => this.#acceptTermsLocked(context, action)); }
+  acknowledgeRisk(action = {}) { return this.#run((context) => this.#acknowledgeRiskLocked(context, action)); }
+  activateSoftware(review = {}) { return this.#run((context) => this.#activateSoftwareLocked(context, review)); }
+  chooseMode(mode, action = {}) { return this.#run((context) => this.#chooseModeLocked(mode, context, action)); }
   exportAuditTrail() { return this.#run(() => this.evidenceStore.exportAuditTrail()); }
 
   async #statusLocked(context) {
@@ -202,13 +220,17 @@ export class LegalActivationController {
     };
   }
 
-  async #acceptTermsLocked(context) {
+  async #acceptTermsLocked(context, { transactionId, occurredAt }) {
     const binding = this.#binding();
     if (binding === null) throw new Error('Legal instrument bindings are not configured');
     const flow = await this.#flow(binding);
+    context.assertCurrent();
+    checkReview(flow, transactionId);
+    if (flow.terms_event_id !== null) return this.#statusLocked(context);
     const record = await this.evidenceStore.recordTermsAcceptance({
       transactionId: flow.transaction_id,
       bindings: binding,
+      occurredAt,
     });
     flow.terms_event_id = record.event_id;
     await this.#saveFlow(flow);
@@ -216,13 +238,17 @@ export class LegalActivationController {
     return this.#statusLocked(context);
   }
 
-  async #acknowledgeRiskLocked(context) {
+  async #acknowledgeRiskLocked(context, { transactionId, occurredAt }) {
     const binding = this.#binding();
     if (binding === null) throw new Error('Legal instrument bindings are not configured');
     const flow = await this.#flow(binding);
+    context.assertCurrent();
+    checkReview(flow, transactionId);
+    if (flow.risk_event_id !== null) return this.#statusLocked(context);
     const record = await this.evidenceStore.recordRiskAcknowledgment({
       transactionId: flow.transaction_id,
       bindings: binding,
+      occurredAt,
     });
     flow.risk_event_id = record.event_id;
     await this.#saveFlow(flow);
@@ -230,20 +256,23 @@ export class LegalActivationController {
     return this.#statusLocked(context);
   }
 
-  async #activateSoftwareLocked(context) {
+  async #activateSoftwareLocked(context, { transactionId }) {
     const binding = this.#binding();
     if (binding === null) throw new Error('Legal instrument bindings are not configured');
     const flow = await this.#flow(binding);
+    context.assertCurrent();
+    checkReview(flow, transactionId);
     if (flow.terms_event_id === null || flow.risk_event_id === null) {
       throw new Error('Terms and risk actions must be completed first');
     }
+    if (flow.stage === 'mode_selection') return this.#statusLocked(context);
     flow.stage = 'mode_selection';
     await this.#saveFlow(flow);
     context.assertCurrent();
     return this.#statusLocked(context);
   }
 
-  async #chooseModeLocked(mode, context) {
+  async #chooseModeLocked(mode, context, { transactionId, occurredAt, consentEpoch }) {
     if (!ACTIVE_MODES.has(mode)) throw new Error('Legal mode choice must be preview or full');
     const binding = this.#binding();
     if (binding === null) throw new Error('Legal instrument bindings are not configured');
@@ -256,11 +285,20 @@ export class LegalActivationController {
       throw new Error('Activate Software must complete before mode choice');
     }
 
-    const consent = (await context.status()).consent;
+    const statusBefore = await context.status();
+    const consent = statusBefore.consent;
+    context.assertCurrent();
+    const retryingReview = transactionId === flow.mode_review_transaction_id
+      && (flow.pending_mode === mode || (flow.completed_mode === mode && consent.mode === mode));
+    if (!retryingReview) checkReview(flow, transactionId);
+    if (statusBefore.onlyfans_permission === false || (mode === 'full' && statusBefore.local_service_permission === false)) {
+      throw new Error('Required site access is missing');
+    }
     if (
       flow.completed_mode === mode
       && flow.completed_event_id !== null
       && consent.mode === mode
+      && (consent.authorization_event_id === undefined || consent.authorization_event_id === flow.completed_event_id)
     ) {
       const prior = await this.evidenceStore.event(flow.completed_event_id);
       if (!modeRecordAuthorizes(prior, mode, binding)) {
@@ -272,11 +310,15 @@ export class LegalActivationController {
       return { status, evidence: structuredClone(prior.envelope), retried: true };
     }
 
+    if (consentEpoch !== undefined && consentEpoch !== consent.consent_epoch
+      && !(flow.pending_mode === mode && consent.mode === mode)) throw new Error('Consent review changed');
+
     if (flow.pending_mode !== null && flow.pending_mode !== mode) {
       throw new Error('A different Legal mode choice is already pending');
     }
 
     if (flow.pending_mode === null) {
+      const reviewTransactionId = flow.transaction_id;
       let eventType = 'initial_activation';
       if (flow.terms_reacceptance_required) {
         eventType = 'terms_reacceptance';
@@ -303,12 +345,15 @@ export class LegalActivationController {
       }
       flow.pending_mode = mode;
       flow.pending_event_type = eventType;
+      flow.pending_occurred_at = occurredAt ?? null;
+      flow.mode_review_transaction_id = reviewTransactionId;
       await this.#saveFlow(flow);
     }
 
     if (!LEGAL_EVENT_TYPES.has(flow.pending_event_type)) {
       throw new Error('Saved Legal mode-choice event type is inconsistent');
     }
+    context.assertCurrent();
     const record = await this.evidenceStore.recordModeChoice({
       transactionId: flow.transaction_id,
       eventType: flow.pending_event_type,
@@ -316,12 +361,14 @@ export class LegalActivationController {
       termsEventId: flow.terms_event_id,
       riskEventId: flow.risk_event_id,
       bindings: binding,
+      occurredAt: flow.pending_occurred_at ?? undefined,
     });
     const status = await context.setMode(mode, {
       evidenceEventId: record.event_id,
     });
     flow.pending_mode = null;
     flow.pending_event_type = null;
+    flow.pending_occurred_at = null;
     flow.completed_mode = mode;
     flow.completed_event_id = record.event_id;
     await this.#saveFlow(flow);
@@ -330,31 +377,34 @@ export class LegalActivationController {
 
   #onMessage(message, sender, sendResponse) {
     if (!allowsUiMessage(sender, message, this.chromeApi)) return false;
-    const calls = new Map([
-      [LEGAL_ACTIVATION_STATUS_MESSAGE_TYPE, () => this.status()],
-      [LEGAL_ACCEPT_TERMS_MESSAGE_TYPE, () => this.acceptTerms()],
-      [LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE, () => this.acknowledgeRisk()],
-      [LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE, () => this.activateSoftware()],
-      [LEGAL_AUDIT_EXPORT_MESSAGE_TYPE, () => this.exportAuditTrail()],
-    ]);
-    if (calls.has(message?.type) && Object.keys(message).length === 1) {
-      void calls.get(message.type)().then(
+    const { transactionId, occurredAt, consentEpoch } = message ?? {};
+    const keys = Object.keys(message ?? {});
+    const scoped = typeof transactionId === 'string';
+    const action = { transactionId, occurredAt, consentEpoch };
+    const reply = (promise) => {
+      void promise.then(
         (result) => sendResponse({ ok: true, result }),
         (error) => sendResponse({ ok: false, code: error.message }),
       );
       return true;
+    };
+    const calls = new Map([
+      [LEGAL_ACTIVATION_STATUS_MESSAGE_TYPE, () => this.status()],
+      [LEGAL_AUDIT_EXPORT_MESSAGE_TYPE, () => this.exportAuditTrail()],
+    ]);
+    if (calls.has(message?.type) && keys.length === 1) return reply(calls.get(message.type)());
+    if ((keys.length === 1 || (scoped && isActionTimestamp(occurredAt) && keys.length === 3))) {
+      if (message?.type === LEGAL_ACCEPT_TERMS_MESSAGE_TYPE) return reply(this.acceptTerms(action));
+      if (message?.type === LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE) return reply(this.acknowledgeRisk(action));
+    }
+    if (message?.type === LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE && (keys.length === 1 || (scoped && keys.length === 2))) {
+      return reply(this.activateSoftware(action));
     }
     if (
       message?.type === LEGAL_CHOOSE_MODE_MESSAGE_TYPE
-      && Object.keys(message).length === 2
       && ACTIVE_MODES.has(message.mode)
-    ) {
-      void this.chooseMode(message.mode).then(
-        (result) => sendResponse({ ok: true, result }),
-        (error) => sendResponse({ ok: false, code: error.message }),
-      );
-      return true;
-    }
+      && (keys.length === 2 || (scoped && isActionTimestamp(occurredAt) && 'consentEpoch' in message && keys.length === 5))
+    ) return reply(this.chooseMode(message.mode, action));
     return false;
   }
 }

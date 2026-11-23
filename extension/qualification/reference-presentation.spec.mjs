@@ -30,15 +30,15 @@ for (const request of ['ofca.ui.status', 'ofca.legal-activation.status']) {
     await page.evaluate(() => window.__releaseInitialRequest());
     await rendering;
     await expect(page.locator('main')).toBeVisible();
-    await expect(page.locator('#full-choice-title')).toBeVisible();
+    await expect(page.locator('#full-disclosure').getByRole('heading', { name: 'Full', exact: true })).toBeVisible();
     await expect(page.locator('#setup-progress')).toHaveCount(0);
     await expect(page.locator('#loading')).toBeHidden();
     expect(await page.locator('.onboarding-header').boundingBox()).toEqual(header);
-    await expect(page.locator('main')).toHaveAttribute('data-task', 'mode:full');
+    await expect(page.locator('main')).toHaveAttribute('data-task', 'consent:full');
     await page.locator('#full-secondary').click();
-    await expect(page.locator('#preview-choice-title')).toBeVisible();
+    await expect(page.locator('#preview-disclosure').getByRole('heading', { name: 'Preview', exact: true })).toBeVisible();
     await expect(page.locator('#setup-progress')).toBeHidden();
-    await expect(page.locator('main')).toHaveAttribute('data-task', 'mode:false');
+    await expect(page.locator('main')).toHaveAttribute('data-task', 'consent:preview');
   });
 }
 
@@ -171,22 +171,24 @@ for (const [state, card, task] of [
 
 test('updated consent identifies a new review while preserving the exact task and disclosure content', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.software_activation, browserTask: true });
-  await expect(page.locator('main')).toHaveAttribute('data-task', 'agree:full');
-  await expect(page.locator('main')).toHaveAttribute('data-requirement', 'agreement:initial:full');
+  await expect(page.locator('main')).toHaveAttribute('data-task', 'consent:full');
+  await expect(page.locator('main')).toHaveAttribute('data-requirement', 'consent:initial:full');
   await expect(page.locator('#review-notice')).toBeHidden();
   const disclosure = await page.locator('#start-disclosure').textContent();
-  const sizes = await page.locator('#start-disclosure .points').evaluateAll((blocks) => blocks.map((block) =>
-    [...block.children].map((child) => getComputedStyle(child).fontSize)));
-  const originalSizes = await page.locator('#full-disclosure .points, #separate-choices-disclosure').evaluateAll((blocks) => blocks.map((block) =>
-    [...block.children].map((child) => getComputedStyle(child).fontSize)));
-  expect(sizes.map((block) => block.slice(1))).toEqual(originalSizes.map((block) => block.slice(1)));
+  const copy = page.locator('#full-disclosure .points p, #separate-choices-disclosure p');
+  const measureCopy = () => copy.evaluateAll((paragraphs) => paragraphs.map((paragraph) => ({
+    font: getComputedStyle(paragraph).fontSize, height: paragraph.getBoundingClientRect().height,
+  })));
+  const sizes = await measureCopy();
+  expect(sizes.every(({ height }) => height > 0)).toBe(true);
   await page.locator('#terms-accepted').focus();
   await page.evaluate(() => window.__surfaceFixture.change({ mode: 'paused', resume: 'full', reauthorization: true }));
   await expect(page.locator('#review-notice')).toBeVisible();
-  await expect(page.locator('main')).toHaveAttribute('data-task', 'agree:full');
-  await expect(page.locator('main')).toHaveAttribute('data-requirement', 'agreement:reauthorization:full');
+  await expect(page.locator('main')).toHaveAttribute('data-task', 'consent:full');
+  await expect(page.locator('main')).toHaveAttribute('data-requirement', 'consent:reauthorization:full');
   await expect(page.locator('#terms-accepted')).toBeFocused();
   expect(await page.locator('#start-disclosure').textContent()).toBe(disclosure);
+  expect(await measureCopy()).toEqual(sizes);
 });
 
 for (const theme of ['light', 'dark']) {
@@ -377,7 +379,8 @@ for (const width of [800, 640]) {
     await expect(page.locator('#start-disclosure')).toContainText('no general automatic expiry');
     await page.locator('#terms-accepted').check();
     await page.locator('#risk-acknowledged').check();
-    const action = page.locator('#activate-software');
+    const action = page.locator('#enable-full');
+    await expect(action).toBeEnabled();
     await action.scrollIntoViewIfNeeded();
     await expect(action).toBeInViewport();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -401,7 +404,8 @@ test('setup consent works by keyboard in forced colors and reduced motion', asyn
   await risk.focus();
   await page.keyboard.press('Space');
   await expect(risk).toBeChecked();
-  const action = page.locator('#activate-software');
+  const action = page.locator('#enable-preview');
+  await expect(action).toBeEnabled();
   await action.focus();
   await expect(action).toBeFocused();
   expect(await action.evaluate((element) => getComputedStyle(element).transitionDuration)).toBe('0s');
@@ -597,7 +601,7 @@ for (const { width, textScale } of [{ width: 1280, textScale: 1 }, { width: 390,
     test(`deliberate consent and connection transitions reveal the task at ${width}px, ${textScale * 100}% text, ${theme}`, async ({ page }, info) => {
       await page.setViewportSize({ width, height: width === 1280 ? 640 : 960 });
       await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
-      await renderSurfaceState(page, { ...SURFACE_STATES.start_choice, permissionGranted: false, reachable: false });
+      await renderSurfaceState(page, { ...SURFACE_STATES.start_choice, permissionGranted: false, permissionOutcome: 'granted', reachable: false });
       if (textScale > 1) await page.evaluate((scale) => {
         document.documentElement.style.fontSize = `${parseFloat(getComputedStyle(document.documentElement).fontSize) * scale}px`;
       }, textScale);
@@ -605,26 +609,36 @@ for (const { width, textScale } of [{ width: 1280, textScale: 1 }, { width: 390,
       await expect(page.locator('#activation-title')).toBeFocused();
       await page.locator('#terms-accepted').check();
       await page.locator('#risk-acknowledged').check();
-      const consent = page.locator('#activate-software');
+      const consent = page.locator('#enable-preview');
+      await expect(consent).toBeEnabled();
       await consent.scrollIntoViewIfNeeded();
+      const note = await page.locator('#mode-permission-note').boundingBox();
+      const button = await consent.boundingBox();
+      expect(note.y + note.height).toBeLessThanOrEqual(button.y);
       await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
       expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0);
       await consent.click();
-      await expect(page.locator('#access-title')).toBeFocused();
-      await expect(page.locator('#access-card .onboarding-icon')).toHaveAttribute('data-icon', 'extension');
+      await expect(page.locator('#journey-title')).toBeFocused();
+      const connection = await position(page);
+      expect(connection.heading.top).toBeGreaterThanOrEqual(0);
+      expect(connection.heading.bottom).toBeLessThanOrEqual(connection.height);
+      expect(connection.overflow, JSON.stringify(connection.overflowNodes)).toBe(false);
+      await page.screenshot({ path: info.outputPath(`task-transition-${width}-${textScale}-${theme}.png`), fullPage: true });
+
+      await page.evaluate(() => window.__surfaceFixture.change({ phase: 'permission_required', permissionGranted: false }));
+      const accessTitle = page.locator('#access-title');
+      await expect(accessTitle).toBeVisible();
+      await accessTitle.focus();
+      await expect(accessTitle).toBeFocused();
+      await expect(page.locator('#access-card .onboarding-icon')).toHaveAttribute('data-icon', 'attention');
       const access = await position(page);
       expect(access.heading.top).toBeGreaterThanOrEqual(0);
       expect(access.heading.bottom).toBeLessThanOrEqual(access.height);
       expect(access.overflow, JSON.stringify(access.overflowNodes)).toBe(false);
       await expect(page.locator('#access-card .back-button')).toHaveCount(0);
-      await page.evaluate(() => window.__surfaceFixture.change({ permissionGranted: true }));
       await page.locator('#restore-access').click();
       await expect(page.locator('#journey-title')).toBeFocused();
-      const connection = await position(page);
-      expect(connection.heading.top).toBeGreaterThanOrEqual(0);
-      expect(connection.heading.bottom).toBeLessThanOrEqual(connection.height);
-      expect(connection.overflow).toBe(false);
-      await page.screenshot({ path: info.outputPath(`task-transition-${width}-${textScale}-${theme}.png`), fullPage: true });
+      await expect(page.locator('#preview-metrics')).toBeVisible();
     });
   }
 }
@@ -633,10 +647,10 @@ test('validation focus and passive updates keep the current reading position', a
   await page.setViewportSize({ width: 320, height: 640 });
   await renderSurfaceState(page, SURFACE_STATES.start_choice);
   await page.locator('#start-preview').click();
-  await page.locator('#activate-software').click();
-  await expect(page.locator('#terms-accepted')).toBeFocused();
+  await expect(page.locator('#enable-preview')).toBeDisabled();
   await page.locator('#terms-accepted').check();
-  await page.locator('#activate-software').click();
+  await expect(page.locator('#enable-preview')).toBeDisabled();
+  await page.locator('#risk-acknowledged').focus();
   await expect(page.locator('#risk-acknowledged')).toBeFocused();
   const before = await page.evaluate(() => scrollY);
   await page.evaluate(() => window.__surfaceFixture.change({ preview: { message_observations: 129 } }));

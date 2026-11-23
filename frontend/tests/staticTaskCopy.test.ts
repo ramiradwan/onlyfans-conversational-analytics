@@ -24,23 +24,25 @@ describe('task-focused static copy', () => {
     for (const [id, item] of Object.entries(baseline.blocks) as [string, { element_sha256: string }][]) {
       const element = doc.getElementById(id);
       expect(element, id).not.toBeNull();
-      const disclosure = element!.cloneNode(true) as HTMLElement;
-      // The approved interaction keeps submission enabled to explain missing
-      // checkboxes. Preserve the original disclosure bytes/hash while allowing
-      // only that button's initial interactive state to differ.
+      expect(createHash('sha256').update(element!.outerHTML).digest('hex'), id).toBe(item.element_sha256);
       if (id === 'pre-mode') {
-        expect(element!.querySelector('#activate-software')?.hasAttribute('disabled')).toBe(false);
-        // The task shell and ordinary action copy may change. The original
-        // acknowledgement markup is pinned independently of those elements.
+        const review = element!.closest('#mode-choice');
+        for (const mode of ['preview', 'full']) {
+          expect(review?.querySelector(`#enable-${mode}`)?.hasAttribute('disabled')).toBe(true);
+        }
+        const announcements = ['terms-recorded', 'risk-recorded'];
+        expect([...element!.querySelectorAll('input')].map(node => node.getAttribute('aria-describedby'))).toEqual(announcements);
+        expect([...element!.querySelectorAll('[role="status"]')].map(node => node.id)).toEqual(announcements);
         const acknowledgements = read('extension/setup.html').match(/<label class="check-row">[\s\S]*?<\/label>/g);
         expect(acknowledgements).toHaveLength(2);
-        expect(createHash('sha256').update(acknowledgements!.join('')).digest('hex')).toBe(baseline.acknowledgements_sha256);
+        expect([...element!.querySelectorAll('a')].map(node => node.getAttribute('href'))).toEqual([null, null]);
+        const originalMarkup = acknowledgements!.join('').replace(/ aria-describedby="(?:terms|risk)-recorded"/g, '')
+          .replace(/(<a id="(?:terms|risk)-link")>/g, '$1 href="#">');
+        expect(createHash('sha256').update(originalMarkup).digest('hex')).toBe(baseline.acknowledgements_sha256);
         expect([...element!.children].map(node => node.id || node.querySelector('input')?.id)).toEqual([
-          'start-back', 'activation-title', 'start-disclosure', 'terms-accepted', 'risk-acknowledged', 'activate-software',
+          'terms-accepted', 'terms-recorded', 'risk-acknowledged', 'risk-recorded',
         ]);
-        continue;
       }
-      expect(createHash('sha256').update(disclosure.outerHTML).digest('hex')).toBe(item.element_sha256);
     }
   });
   it('keeps the release remedy outside the protected setup disclosures', () => {
@@ -48,7 +50,7 @@ describe('task-focused static copy', () => {
     const unavailable = doc.querySelector('#legal-unavailable');
     expect(unavailable?.querySelector('h2')?.textContent).toBe('Setup is unavailable in this version');
     expect(unavailable?.querySelector('p')?.textContent).toBe('Update the extension to continue.');
-    expect(unavailable?.nextElementSibling?.id).toBe('pre-mode');
+    expect(unavailable?.nextElementSibling?.id).toBe('mode-choice');
   });
   it('describes browser setup without naming the browser vendor', () => {
     const doc = parse('frontend/browser-tasks/index.html');
