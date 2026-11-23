@@ -1,4 +1,5 @@
-pub const COMPILED_CHANNELS: &str = include_str!(concat!(env!("OUT_DIR"), "/support-channels.json"));
+pub const COMPILED_CHANNELS: &str =
+    include_str!(concat!(env!("OUT_DIR"), "/support-channels.json"));
 
 pub fn initialization_script(channels: &str) -> String {
     if channels == "{}" {
@@ -15,7 +16,11 @@ pub fn dialog_content(message: &str, projection: &str) -> String {
         ("tiktok", "TikTok"),
     ]
     .into_iter()
-    .filter_map(|(key, label)| channels[key].as_str().map(|address| format!("{label} {address}")))
+    .filter_map(|(key, label)| {
+        channels[key]
+            .as_str()
+            .map(|address| format!("{label} {address}"))
+    })
     .peekable();
     if rows.peek().is_none() {
         return message.to_owned();

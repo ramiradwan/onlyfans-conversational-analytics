@@ -667,6 +667,17 @@ for (const mode of ['light', 'dark']) for (const [width, scale] of [[1440, 1], [
   test(`Dashboard mismatch V03 at ${width} with ${scale}x text in ${mode}`, async t => {
     const page = await browser.newPage({ colorScheme: mode, reducedMotion: 'reduce' });
     try {
+      await page.addInitScript(value => {
+        const setFontSize = () => {
+          const root = document.documentElement;
+          if (!root) return;
+          root.style.fontSize = `${value * 100}%`;
+          observer.disconnect();
+        };
+        const observer = new MutationObserver(setFontSize);
+        observer.observe(document, { childList: true });
+        setFontSize();
+      }, scale);
       const open = async workspace => {
         await page.goto(harness.base + `?workspace=${workspace}&mode=${mode}`);
         await page.waitForFunction(() => window.__workspaceFixture);

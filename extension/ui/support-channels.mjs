@@ -7,8 +7,9 @@ const localSuffixes = new Set([
   'lan', 'local', 'localdomain', 'localhost', 'onion', 'private', 'test',
 ]);
 const dnsLabel = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
+const protocol = 'https:';
 const addressPattern = new RegExp(
-  "https://((?:" + dnsLabel + "\\.)+" + dnsLabel + ")(?::([0-9]{1,5}))?(/(?:[a-z0-9._~!$&'()*+,;=:@/-]|%[0-9a-f]{2})*)?",
+  protocol + "\\/\\/((?:" + dnsLabel + "\\.)+" + dnsLabel + ")(?::([0-9]{1,5}))?(/(?:[a-z0-9._~!$&'()*+,;=:@/-]|%[0-9a-f]{2})*)?",
   'i',
 );
 
@@ -28,7 +29,7 @@ function supportAddress(value) {
     return /^[a-z0-9._~-]$/i.test(character) ? character : escape.toUpperCase();
   });
   if (unsafeEscape || path.split('/').some(segment => segment === '.' || segment === '..')) return null;
-  return 'https://' + host + (port === 443 ? '' : ':' + port) + path;
+  return `${protocol}//${host}${port === 443 ? '' : `:${port}`}${path}`;
 }
 
 export function projectSupportChannels(value) {

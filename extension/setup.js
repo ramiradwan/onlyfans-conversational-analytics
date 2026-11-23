@@ -176,10 +176,11 @@ function renderDesktop(model, journey) {
   show('download-desktop', desktopResources && secureExternalUrl(model.config.desktop_app_download_url) !== null);
 }
 function renderRuntimeHelp(channels, eligible) {
+  const values = Object.entries(channels ?? {});
+  if (!values.length) return;
   const slot = element('runtime-unavailable');
   const current = slot.querySelector('[data-support-help]');
-  const values = eligible && Object.entries(channels ?? {});
-  if (!values?.length) {
+  if (!eligible) {
     current?.remove();
     return;
   }
