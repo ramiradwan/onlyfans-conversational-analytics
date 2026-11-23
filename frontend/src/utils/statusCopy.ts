@@ -85,10 +85,12 @@ export function extensionLabel(connection: ExtensionConnection): string {
   }
 }
 
+export const SOFTWARE_UPDATE_REQUIRED_TEXT = 'Update Conversation Analytics to continue.';
+
 export function protocolErrorText(error: Pick<ProtocolErrorPayload, 'code' | 'fatal'>): string {
   const classification = recoveryClass(protocolRecovery, error.code);
   if (classification === 'authentication_required') return 'Your session ended. Sign in to continue.';
-  if (classification === 'version_incompatible') return 'This page is out of date. Reload the page.';
+  if (classification === 'version_incompatible') return 'The app and this page use different versions.';
   return error.fatal
     ? "Dipsy couldn't continue the connection."
     : 'The last update could not be verified.';

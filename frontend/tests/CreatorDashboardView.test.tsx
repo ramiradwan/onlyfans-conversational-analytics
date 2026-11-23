@@ -405,9 +405,19 @@ describe('CreatorDashboardView', () => {
     await renderDashboard(store);
     expect(screen.queryByText('Update Conversation Analytics to continue.')).toBeNull();
     expect(screen.queryByText('Updating this page…')).toBeNull();
-    act(() => store.setAgent({ ...store.getState().agent!, browser: { ...COLLECTION_ON, history_error_code: 'software_update_required' } }));
+    const error = { related_message_id: null, retryable: false, detail: 'fixture error' };
+    act(() => {
+      store.setProtocolError({ ...error, code: 'internal_error', fatal: false });
+      store.setAgent({ ...store.getState().agent!, browser: { ...COLLECTION_ON, history_error_code: 'software_update_required' } });
+    });
     expect(screen.getByText('Update Conversation Analytics to continue.')).toBeTruthy();
+    expect(screen.queryByText('Couldn’t check the latest update. Showing your saved counts.')).toBeNull();
     expect(screen.queryByText(/Last updated/)).toBeNull();
+    act(() => store.setProtocolError({ ...error, code: 'unsupported_version', fatal: true }));
+    expect(screen.getByText('The app and this page use different versions.')).toBeTruthy();
+    expect(screen.queryByText('Update Conversation Analytics to continue.')).toBeNull();
+    expect(screen.queryByRole('button', { name: /reload|update conversation analytics/i })).toBeNull();
+    expect(screen.queryByText(/reload the page/i)).toBeNull();
   });
   it('opens the current browser review directly and never accepts collection from the dashboard', async () => {
     const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]) }), conversations: [] });

@@ -1,5 +1,6 @@
 import { historyOwnerRecovery, recoveryClass } from '../../shared-setup/recovery.js';
 import type { AgentStatePayload, HistoricalCoverage, HistorySettings } from '../protocol';
+import { SOFTWARE_UPDATE_REQUIRED_TEXT } from './statusCopy';
 
 export interface HistoryPresentation {
   label: string;
@@ -39,12 +40,15 @@ export function presentHistory(settings: HistorySettings, agent: AgentStatePaylo
   if (ownerFailure === 'operation_pending') return {
     label: 'Waiting', detail: 'History collection is waiting for the browser.', tone: 'info',
   };
-  if (agent.browser?.history_error_code === 'software_update_required') return {
-    label: 'Update needed', detail: 'History collection is waiting for a compatible app update.', tone: 'warning',
-  };
-  if (agent.browser?.history_error_code === 'unsupported_revision') return {
-    label: 'Needs attention', detail: 'The last history check could not read this site version. Check for an app update.', tone: 'warning',
-  };
+  if (ownerFailure === 'version_incompatible') {
+    const code = agent.browser?.history_error_code;
+    if (code === 'software_update_required') return {
+      label: 'Update needed', detail: SOFTWARE_UPDATE_REQUIRED_TEXT, tone: 'warning',
+    };
+    if (code === 'unsupported_revision') return {
+      label: 'Needs attention', detail: 'The last history check could not read this site version.', tone: 'warning',
+    };
+  }
   if (coverage.phase === 'blocked' || agent.degraded_reason) return {
     label: 'Incomplete', detail: 'Older message collection has not completed.', tone: 'warning',
   };

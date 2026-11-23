@@ -133,6 +133,30 @@ describe('signed Bridge role bootstrap', () => {
     expect(protocolErrorText(endedSession)).toBe('Your session ended. Sign in to continue.');
   });
 
+  it('reports a version mismatch without restarting the application or prompting to reload', () => {
+    injectConfig('creator');
+    const { socket, connect } = mockTransport();
+    const startUrl = window.location.href;
+    const previousDocument = document;
+    const versionError = { ...endedSession, code: 'unsupported_version' };
+    expect(protocolErrorText({ code: 'unsupported_version', fatal: true })).toBe('The app and this page use different versions.');
+    render(<App />);
+    const { virtualConsole } = jsdom;
+    const navigation = vi.fn();
+    virtualConsole.on('jsdomError', navigation);
+    try {
+      act(() => socket.onmessage?.({ data: JSON.stringify({ ...protocolError, payload: versionError }) }));
+    } finally {
+      virtualConsole.off('jsdomError', navigation);
+    }
+    expect(navigation).not.toHaveBeenCalled();
+    expect(window.location.href).toBe(startUrl);
+    expect(document).toBe(previousDocument);
+    expect(connect).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: /reload|sign in with passkey/i })).toBeNull();
+    expect(webauthnApi.login).not.toHaveBeenCalled();
+  });
+
   it('replaces a stale privileged route with the in-place passkey gate on fatal authorization', async () => {
     injectConfig('creator');
     const { socket, connect } = mockTransport();

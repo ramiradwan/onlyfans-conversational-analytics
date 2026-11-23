@@ -97,6 +97,7 @@ export function installSurfaceFixture(input) {
         return { ok: true, status: status() };
       },
       connect() {
+        if (state.portUnavailable) throw Error('Fixture port unavailable');
         const port = { onMessage: event(), onDisconnect: event(),
           postMessage(message) {
             if (message.type === 'readiness') {

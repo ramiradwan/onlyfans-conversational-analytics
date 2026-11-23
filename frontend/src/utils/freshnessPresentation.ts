@@ -7,7 +7,7 @@ export interface FreshnessPresentation {
   sentence: string;
   icon: 'dot' | 'ring' | 'ring-active' | 'pause';
   tone: 'settled' | 'checking' | 'unknown' | 'attention' | 'user' | 'error';
-  action?: { label: string; destination: 'settings' | 'creator' | 'setup' | 'reload' };
+  action?: { label: string; destination: 'settings' | 'creator' | 'setup' };
 }
 export interface FreshnessInput {
   freshness: CatchupFreshness | null | undefined;

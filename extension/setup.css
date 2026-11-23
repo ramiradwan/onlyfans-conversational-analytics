@@ -660,6 +660,12 @@ body.onboarding-workspace > main { max-width: none; padding: 28px; }
 }
 .onboarding-workspace #background-tab-note .onboarding-icon { margin-block-start: max(0px, calc((1lh - 20px) / 2)); }
 .onboarding-workspace #reopen-background-tab { padding: 8px 12px; }
+@media (min-width: 800px) {
+  .onboarding-workspace .background-tab-row { display: grid; }
+  .onboarding-workspace #reopen-background-tab {
+    padding-block: clamp(0px, calc((var(--dipsy-static-control-height) - 1lh) / 2 - var(--dipsy-border-thin)), 8px);
+  }
+}
 .onboarding-workspace #pause { width: auto; padding-inline: 4px; border: 0; background: transparent; color: var(--dipsy-color-primary); }
 .onboarding-workspace .start-option { padding-block: 16px; }
 .onboarding-workspace .start-option + .start-option { border-block-start: var(--dipsy-border-thin) solid var(--dipsy-color-divider); }

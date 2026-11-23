@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { SURFACE_STATES, renderSurfaceState } from './surface-fixtures.mjs';
+import { assertBackgroundTabLayout, backgroundTabLayoutCases, measureBackgroundTabLayout } from './setup-background-tab-layout.mjs';
 
 for (const request of ['ofca.ui.status', 'ofca.legal-activation.status']) {
   test(`initial ${request} delay keeps setup status visible until the Full task is ready`, async ({ page }) => {
@@ -349,7 +350,7 @@ test('D1 setup shows the admitted state through the persistent entry view', asyn
   await expect(page.locator('#journey-badge')).toBeHidden();
 });
 
-for (const [width, scale, theme] of [[1440, 16, 'light'], [480, 16, 'dark'], [320, 32, 'light'], [320, 32, 'dark']]) {
+for (const [width, scale, theme] of backgroundTabLayoutCases) {
   test(`D2 preserves Preview controls and metrics at ${width}px with ${scale}px text in ${theme}`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 960 });
     await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
@@ -359,6 +360,7 @@ for (const [width, scale, theme] of [[1440, 16, 'light'], [480, 16, 'dark'], [32
     const reopen = page.locator('#reopen-background-tab');
     const badge = page.locator('#journey-badge');
     const action = page.locator('#journey-primary');
+    const privacy = page.locator('.onboarding-footer #privacy-link');
     const box = (id) => page.locator(id).evaluate((element) => {
       const card = element.closest('#journey-card').getBoundingClientRect();
       const { x, y, width, height } = element.getBoundingClientRect();
@@ -387,9 +389,15 @@ for (const [width, scale, theme] of [[1440, 16, 'light'], [480, 16, 'dark'], [32
     await expect(reopen).toBeHidden();
     const open = await box('#background-tab-note');
     expect((await box('.background-tab-row')).height).toBe(open.height);
+    const openLayout = await measureBackgroundTabLayout(page);
+    const openScreenshot = info.outputPath(`preview-counting-${theme}.png`);
+    await page.screenshot({ path: openScreenshot, fullPage: true });
+    await page.keyboard.press('Tab');
+    await expect(privacy).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(action).toBeFocused();
     if (width === 320) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-      await page.screenshot({ path: info.outputPath(`preview-counting-${theme}.png`), fullPage: true });
     }
     const before = [await box('#journey-primary'), await box('#preview-metrics')];
     const badgeBefore = await box('#journey-badge');
@@ -401,19 +409,26 @@ for (const [width, scale, theme] of [[1440, 16, 'light'], [480, 16, 'dark'], [32
     await expect(action).toBeFocused();
     const badgeAfter = await box('#journey-badge');
     const delta = badgeAfter.height - badgeBefore.height;
-    if (width > 320) expect(delta).toBe(0);
+    if (width > 390 || scale === 16) expect(delta).toBe(0);
     expect([await box('#journey-primary'), await box('#preview-metrics')]).toEqual(before.map(({ y, ...rect }) => ({ ...rect, y: y + delta })));
     const closed = await box('#reopen-background-tab');
     expect((await box('.background-tab-row')).height).toBe(closed.height);
     expect(closed.y).toBe(open.y + delta);
-    if (width > 320) expect(closed.height).toBe(open.height);
-    else {
+    if (width === 320) {
       expect(open.height).toBeGreaterThan(closed.height);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-      await info.attach('D2 row geometry', { body: JSON.stringify({ open, closed, badgeBefore, badgeAfter }), contentType: 'application/json' });
-      await page.screenshot({ path: info.outputPath(`preview-stopped-${theme}.png`), fullPage: true });
     }
+    const closedLayout = await measureBackgroundTabLayout(page);
+    const closedScreenshot = info.outputPath(`preview-stopped-${theme}.png`);
+    await page.screenshot({ path: closedScreenshot, fullPage: true });
+    await info.attach('D2 row geometry', { body: JSON.stringify({ width, scale, theme, open: openLayout, closed: closedLayout,
+      screenshots: [openScreenshot, closedScreenshot] }), contentType: 'application/json' });
     const reopenCalls = () => page.evaluate(() => window.__surfaceFixture.calls.filter(({ type }) => type === 'ofca.ui.reopen-background-tab').length);
+    expect(await reopenCalls()).toBe(0);
+    await page.keyboard.press('Tab');
+    await expect(reopen).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(privacy).toBeFocused();
     expect(await reopenCalls()).toBe(0);
     await reopen.click();
     await expect.poll(reopenCalls).toBe(1);
@@ -422,6 +437,7 @@ for (const [width, scale, theme] of [[1440, 16, 'light'], [480, 16, 'dark'], [32
     await expect(note).toBeHidden();
     await expect(badge).toHaveText('Counting messages');
     expect(await reopenCalls()).toBe(1);
+    assertBackgroundTabLayout(openLayout, closedLayout, width, scale);
   });
 }
 

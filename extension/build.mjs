@@ -822,6 +822,13 @@ async function auditArtifactView(view, {
   auditActivationDisclosures(TEXT_DECODER.decode(await view.read('setup.html')));
   assert.doesNotMatch(popup, /id="(?:pre-mode|mode-choice|companion-pairing|delete-local-data)"/);
   assert.match(popup, /not affiliated with or endorsed by OnlyFans/);
+  assert.equal(popup.match(/<footer>[\s\S]*?<\/footer>/u)?.[0].replace(/>\s+</gu, '><'), [
+    '<footer>',
+    '<span>Use only with a creator account you are authorized to analyze.</span>',
+    '<span>Independent software. It is not affiliated with or endorsed by OnlyFans.</span>',
+    '<a id="privacy-link" href="#" aria-disabled="true">Privacy information unavailable</a>',
+    '</footer>',
+  ].join(''));
 
   const extensionConfig = validateExtensionConfig(
     await jsonFromView(view, 'extension-config.json'),

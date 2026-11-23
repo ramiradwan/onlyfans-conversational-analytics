@@ -45,6 +45,26 @@ async function savedFixture() {
   return f;
 }
 
+test('repeat toolbar activation focuses the current journey without creating another tab', async () => {
+  const f = fixture();
+  const click = () => new Promise((resolve) => {
+    f.chromeApi.windows.update = async (id, options) => resolve({ id, options });
+    f.chromeApi.action.onClicked.emit();
+  });
+  const focused = { id: 1, options: { focused: true } };
+  assert.deepEqual(await click(), focused);
+  const first = await f.command('read');
+  const tab = { ...f.tabs[0] };
+  assert.equal(first.ok, true);
+  assert.equal(first.result.route, 'extension');
+  assert.match(tab.url, /\/setup\.html#journey=/u);
+  assert.deepEqual(f.calls, [['create']]);
+  assert.deepEqual(await click(), focused);
+  assert.deepEqual(await f.command('read'), first);
+  assert.deepEqual(f.tabs, [tab]);
+  assert.deepEqual(f.calls, [['create'], ['update', { active: true }]]);
+});
+
 function browserOwner(f, authentication) {
   return createBrowserTaskOwner({ chromeApi: f.chromeApi, onboarding: f.entry,
     authentication,

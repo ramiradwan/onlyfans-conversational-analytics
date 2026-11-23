@@ -76,7 +76,7 @@ export function createPageActions(client, render, { beforeAction, afterAction } 
       if (success) feedback(success);
     } catch (error) {
       await client.sync();
-      feedback(noticeText(error, 'That did not complete. Try again.'), true);
+      feedback(noticeText(error, 'That did not complete.'), true);
     } finally {
       setBusy(false); render(client.model);
       const handled = await afterAction?.(previous, focused);
