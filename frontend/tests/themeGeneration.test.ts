@@ -18,6 +18,7 @@ import {
   replaceFirstPaintScript,
   staticTokenConsumers,
 } from '../src/theme/generate-theme';
+import { validateConsumerSource } from '../src/theme/token-consumers';
 
 describe('theme token generation', () => {
   const tokenPath = path.resolve(process.cwd(), 'src/theme/tokens.json');
@@ -100,6 +101,36 @@ describe('theme token generation', () => {
         mode, foreground: 'measurement.main', background: 'surface.metric.opportunity.fill', minimum: 3,
       }));
     }
+  });
+
+  it.each(['light', 'dark'] as const)('rejects a %s warning alias to the offer', (mode) => {
+    const raw = JSON.parse(tokensSource);
+    raw.tier3.offerPrice = { [mode]: { fill: 'oklch(87% 0.15 96)' } };
+    const intents = raw.tier2.intents[mode];
+    intents.surface.feedback.warning.fill = `{tier3.offerPrice.${mode}.fill}`;
+    expect(() => generateThemeSource(JSON.stringify(raw))).toThrow(/offer price tokens are local/);
+  });
+
+  it.each(['light', 'dark'] as const)('rejects a nonreserved yellow alias for %s opportunity', (mode) => {
+    const raw = JSON.parse(tokensSource);
+    raw.tier2.intents[mode].chart.opportunity = '{tier1.brandPalette.dataViz.light.yellow}';
+    expect(() => generateThemeSource(JSON.stringify(raw))).toThrow(/opportunity must use measurement/);
+  });
+
+  it.each(['light', 'dark'] as const)('rejects an offer alias to the %s reserved family', (mode) => {
+    const raw = JSON.parse(tokensSource);
+    raw.tier3.offerPrice = { [mode]: { fill: `{tier2.intents.${mode}.financial.main}` } };
+    expect(() => generateThemeSource(JSON.stringify(raw))).toThrow(/financial tokens are reserved/);
+  });
+
+  it('restricts the generated offer binding to the Price value', () => {
+    const source = 'import { offerPriceColors } from "../theme/generated/tokens";';
+    expect(() => validateConsumerSource(source, 'src/components/Warning.tsx')).toThrow(/offer price tokens are local/);
+    const component = 'src/components/CommercialActivationControls.tsx';
+    expect(() => validateConsumerSource(source + ' const warning = offerPriceColors.light;', component))
+      .toThrow(/offer price tokens are local/);
+    expect(() => validateConsumerSource(source.replace('offerPriceColors', 'offerPriceColors as warning'), component))
+      .toThrow(/offer price tokens are local/);
   });
 });
 

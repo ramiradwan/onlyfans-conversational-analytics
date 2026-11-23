@@ -34,6 +34,7 @@ export async function renderSurfaceState(page, state) {
   const html = await surfaceDocument(state);
   const script = await surfaceBundle(state.surface, Boolean(state.receiving));
   await page.addInitScript(installSurfaceFixture, state);
+  await page.route('**/*', route => route.abort());
   await page.route('http://extension-ui.test/**', async (route) => {
     const name = new URL(route.request().url()).pathname.slice(1);
     if (name.endsWith('.html')) return route.fulfill({ contentType: 'text/html', body: html });

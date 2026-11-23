@@ -1,10 +1,247 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { extname, resolve } from 'node:path';
+import { extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { chromium } from 'playwright';
+import { onboardingStaticAssets, onboardingStaticFixtures } from './onboarding-static-fixtures.mjs';
+
+const supportChannels = [
+  ['whatsapp', 'WhatsApp', 'https://msg.example.com/setup'],
+  ['telegram', 'Telegram', 'https://chat.example.com/setup-help-with-a-long-address/a&b'],
+  ['tiktok', 'TikTok', 'https://video.example.com/setup'],
+];
+const supportProjection = Object.fromEntries(supportChannels.map(([key, , address]) => [key, address]));
+
+async function supportGeometry(page, title, body, status) {
+  return page.evaluate(({ title, body, status }) => {
+    const measure = selector => {
+      const node = selector && document.querySelector(selector);
+      if (!node || !node.textContent.trim()) return null;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      return { rect: node.getBoundingClientRect().toJSON(),
+        lines: new Set([...range.getClientRects()].map(rect => rect.top)).size };
+    };
+    return { title: measure(title), body: measure(body), status: measure(status),
+      header: document.querySelector('header').getBoundingClientRect().toJSON(),
+      overflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        document.body.scrollWidth - document.documentElement.clientWidth) };
+  }, { title, body, status });
+}
+
+test('retained data recovery and terminal support fit the title column with native Close', async () => {
+  const desktop = new URL('../../desktop/', import.meta.url);
+  const source = await readFile(new URL('startup-help.js', desktop), 'utf8');
+  const windowFrame = await readFile(new URL('window-frame.js', desktop), 'utf8');
+  const shell = Object.fromEntries(await Promise.all([
+    'index.html', 'data-recovery.html', 'unavailable.html', 'shell.css',
+    'onboarding-theme.css', 'inter-latin-opsz-normal.woff2',
+  ].map(async name => ['/' + name, {
+    body: await readFile(new URL('shell/' + name, desktop)),
+    contentType: { '.html': 'text/html', '.css': 'text/css', '.woff2': 'font/woff2' }[extname(name)],
+  }])));
+  const staticAssets = await onboardingStaticAssets();
+  const fixtures = await onboardingStaticFixtures();
+  const screenshotDirectory = process.env.OFCA_TERMINAL_HELP_SCREENSHOTS;
+  if (screenshotDirectory) await mkdir(screenshotDirectory, { recursive: true });
+  const recoveryMeasurements = [];
+  const browser = await chromium.launch();
+  const routes = [
+    { name: 'native-data-recovery', path: '/data-recovery.html', origin: 'http://tauri.localhost', shell: true },
+    { name: 'native-unavailable', path: '/unavailable.html', origin: 'http://tauri.localhost', shell: true },
+    { ...fixtures.find(f => f.surface === 'desktop-onboarding'), path: '/onboarding/index.html',
+      name: 'desktop-unavailable', origin: 'http://setup-fixture.test', state: { snapshot: null, connected: false, error: 'invalid_snapshot' } },
+    ...['invariant_failed', 'authorization_refused'].map(recovery => ({
+      ...fixtures.find(f => f.surface === 'browser-task'), name: `chrome-${recovery}`, path: '/browser-tasks/index.html',
+      origin: 'http://setup-fixture.test', state: { state: 'service_unavailable', recovery, payload: null },
+    })),
+  ];
+  try {
+    for (const colorScheme of ['light', 'dark']) {
+      for (const [width, scale] of [[1440, 1], [1440, 2], [640, 1], [390, 1], [390, 2], [320, 1], [320, 2]]) {
+        const context = await browser.newContext({ colorScheme, viewport: { width, height: width === 640 ? 480 : 810 } });
+        try {
+          for (const route of routes) {
+            if (!route.shell && (width === 640 || (width === 1440 && scale === 2))) continue;
+            const anchors = [];
+            for (const configured of [false, true]) {
+              const page = await context.newPage();
+              const otherRequests = [];
+              await page.addInitScript(({ size, state, native }) => {
+                if (native) {
+                  window.nativeCalls = [];
+                  window.nativeShifts = [];
+                  window.__TAURI__ = { core: { invoke: async (command, args) => {
+                    window.nativeCalls.push([command, args.action]);
+                    return false;
+                  } } };
+                  new PerformanceObserver(list => {
+                    window.nativeShifts.push(...list.getEntries().filter(entry => !entry.hadRecentInput && entry.value > 0));
+                  }).observe({ type: 'layout-shift', buffered: true });
+                  function sampleFrame() {
+                    const header = document.querySelector('.setup-header');
+                    if (!header || getComputedStyle(header).display !== 'flex') {
+                      requestAnimationFrame(sampleFrame);
+                      return;
+                    }
+                    const root = header.querySelector('desktop-window-controls')?.shadowRoot;
+                    window.firstNativeFrame = [...(root?.querySelectorAll('button') ?? [])]
+                      .map(button => button.getAttribute('aria-label'));
+                  }
+                  requestAnimationFrame(sampleFrame);
+                }
+                window.__staticSurfaceFixture = state;
+                document.addEventListener('DOMContentLoaded', () => { document.documentElement.style.fontSize = size + 'px'; });
+              }, { size: scale * 16, state: route.state ?? null, native: route.shell ?? false });
+              if (route.shell) {
+                await page.addInitScript({ content: windowFrame });
+                await page.addInitScript({ content: `(${source})(${JSON.stringify(configured ? supportProjection : {})});` });
+              }
+              await page.route('**/*', request => {
+                const url = new URL(request.request().url());
+                const path = url.pathname;
+                if (url.origin === route.origin) {
+                  if (route.shell && shell[path]) return request.fulfill(shell[path]);
+                  if (!route.shell && path === route.path) {
+                    const template = '<template id="support-channels">';
+                    const entries = supportChannels.map(([key, , address]) =>
+                      `<span data-channel="${key}">${address.replaceAll('&', '&amp;')}</span>`).join('');
+                    const body = configured ? route.html.replace(template, template + entries) : route.html;
+                    return request.fulfill({ contentType: 'text/html', body });
+                  }
+                  if (path === `/${route.surface}.js`) return request.fulfill({ contentType: 'text/javascript', body: route.script });
+                  if (staticAssets[path]) return request.fulfill(staticAssets[path]);
+                }
+                otherRequests.push(url.origin);
+                return request.abort();
+              });
+              await page.goto(route.origin + route.path);
+              await page.evaluate(async () => {
+                await document.fonts.ready;
+                const arriving = document.getAnimations().filter(animation => Number.isFinite(animation.effect.getComputedTiming().endTime));
+                await Promise.all(arriving.map(animation => animation.finished));
+              });
+              const help = page.locator('[data-support-help]');
+              assert.equal(await help.count(), Number(configured), route.path);
+              if (configured) {
+                assert.equal(await help.locator('h2').textContent(), 'Get help');
+                assert.deepEqual(await help.getByRole('listitem').allTextContents(),
+                  supportChannels.map(([, label, address]) => label + ' ' + address));
+                assert.equal(await help.locator('a, button, input').count(), 0);
+                assert.deepEqual(await help.evaluate(element => {
+                  const title = document.querySelector('h1').getBoundingClientRect();
+                  const heading = element.querySelector('h2');
+                  return {
+                    weight: getComputedStyle(heading).fontWeight,
+                    markers: getComputedStyle(element.querySelector('ul')).listStyleType,
+                    offsets: [heading, ...element.querySelectorAll('li')].map(node => node.getBoundingClientRect().left - title.left),
+                    selection: [...element.querySelectorAll('li span')].map(node => getComputedStyle(node).userSelect),
+                  };
+                }), { weight: '600', markers: 'none', offsets: [0, 0, 0, 0], selection: ['text', 'text', 'text'] }, route.name);
+              }
+              const position = await supportGeometry(page, 'h1', route.shell ? '.startup-card > p' : '#task-description',
+                route.surface === 'browser-task' ? '#task-message' : '#task-status');
+              if (route.surface === 'browser-task') {
+                const actionSlot = page.locator('.task-actions-slot > [data-region-content]');
+                const action = await actionSlot.boundingBox();
+                if (configured) {
+                  assert.equal(await actionSlot.locator(':scope > [data-support-help]').count(), 1);
+                  const helpBox = await help.boundingBox();
+                  const statusBox = await page.locator('#task-status').boundingBox();
+                  assert.equal(helpBox.y - position.title.rect.bottom, 24);
+                  assert.ok(helpBox.y + helpBox.height <= statusBox.y);
+                  assert.equal(await page.locator('#task-message').textContent(), route.state.recovery === 'invariant_failed'
+                    ? 'This step couldn’t finish.' : 'This page can’t continue setup.');
+                  // Compare the status anchor after accounting for the new action row's height.
+                  const rect = position.status.rect;
+                  rect.y -= action.height;
+                  rect.top -= action.height;
+                  rect.bottom -= action.height;
+                } else assert.equal(action.height, 0);
+              }
+              assert.equal(position.overflow, 0, route.path);
+              if (width === 1440 && scale === 1) {
+                assert.equal(position.title.lines, 1);
+                assert.ok((position.body?.lines ?? 0) <= 2, route.path);
+                assert.ok((position.status?.lines ?? 0) <= 1, route.path);
+              }
+              if (route.shell) {
+                await page.waitForFunction(() => window.firstNativeFrame !== undefined);
+                assert.deepEqual(await page.evaluate(() => window.firstNativeFrame),
+                  ['Minimize', 'Maximize', 'Close window'], route.path);
+                const shifts = await page.evaluate(() => window.nativeShifts.map(entry => ({
+                  value: entry.value,
+                  sources: entry.sources.map(source => source.node?.className || source.node?.nodeName),
+                })));
+                assert.deepEqual(shifts, [], `${route.path} ${colorScheme} ${width} ${scale}x help=${configured}`);
+                const close = page.getByRole('button', { name: 'Close window', exact: true });
+                const { x, y, width: targetWidth, height: targetHeight } = await close.boundingBox();
+                assert.deepEqual([targetWidth, targetHeight], [44, 40]);
+                assert.equal(x + targetWidth, width - (width <= 600 ? 8 : 24));
+                assert.equal(y, (position.header.height - targetHeight - 1) / 2);
+                if (scale === 1 || width <= 600) assert.equal(position.header.height, 72);
+                assert.equal(await page.evaluate(() => document.fonts.check('16px "Inter Variable"')), true);
+                assert.deepEqual(await page.evaluate(() => window.nativeCalls.filter(([, action]) => action !== 'state')), []);
+                for (const name of ['Minimize', 'Maximize', 'Close window']) {
+                  await page.keyboard.press('Tab');
+                  assert.equal(await page.getByRole('button', { name, exact: true }).evaluate(button =>
+                    button === button.getRootNode().activeElement && button.matches(':focus-visible')), true, name);
+                }
+                await page.keyboard.press('Enter');
+                assert.deepEqual(await page.evaluate(() => window.nativeCalls.filter(([, action]) => action !== 'state')),
+                  [['desktop_window', 'close']]);
+                assert.equal(page.url(), route.origin + route.path);
+                assert.equal(context.pages().length, 1);
+              }
+              if (configured) {
+                await help.scrollIntoViewIfNeeded();
+                if (route.shell) {
+                  assert.ok(await help.evaluate(node =>
+                    node.scrollWidth === node.clientWidth && node.scrollHeight === node.clientHeight), route.path);
+                  for (const row of await help.getByRole('listitem').all()) {
+                    await row.scrollIntoViewIfNeeded();
+                    assert.ok(await row.evaluate(node => {
+                      const range = document.createRange();
+                      range.selectNodeContents(node);
+                      return [...range.getClientRects()].every(rect => rect.left >= 0 &&
+                        rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight);
+                    }), route.path);
+                  }
+                }
+              }
+              if (route.path === '/data-recovery.html') {
+                recoveryMeasurements.push({
+                  colorScheme, width, scale, configured, ...position, help: configured ? await help.boundingBox() : null,
+                  close: await page.getByRole('button', { name: 'Close window', exact: true }).boundingBox(),
+                });
+              }
+              if (screenshotDirectory && (configured || route.path === '/data-recovery.html')) {
+                const suffix = configured ? '' : '-no-help';
+                await page.screenshot({ path: join(screenshotDirectory, `${route.name}-${colorScheme}-${width}-${scale}x${suffix}.png`), fullPage: true });
+              }
+              if (route.shell && configured && width === 1440) {
+                await page.goto(route.origin + route.path + '?unsupported=1');
+                assert.equal(await help.count(), 0);
+                assert.equal(await page.getByRole('button', { name: 'Close window', exact: true }).count(), 0);
+                await page.goto(route.origin + '/index.html');
+                assert.equal(await help.count(), 0);
+              }
+              assert.deepEqual(otherRequests, []);
+              anchors.push(position);
+              await page.close();
+            }
+            assert.deepEqual(anchors[1], anchors[0], route.path);
+          }
+        } finally { await context.close(); }
+      }
+    }
+  } finally { await browser.close(); }
+  if (screenshotDirectory) {
+    await writeFile(join(screenshotDirectory, 'recovery-measurements.json'), JSON.stringify(recoveryMeasurements, null, 2) + '\n');
+  }
+});
 
 test('native startup documents expose settled copy and preserve native semantics', async () => {
   const root = new URL('../../desktop/shell/', import.meta.url);
@@ -19,11 +256,11 @@ test('native startup documents expose settled copy and preserve native semantics
   assert.match(waiting, /<h1 id="startup-title">Opening Conversation Analytics<\/h1>/);
   assert.match(waiting, /role="status"[^>]*>Getting things ready on this computer…<\/p>/);
   assert.match(unavailable, /<h1>Conversation Analytics can’t start right now<\/h1>/);
-  assert.match(unavailable, /Quit Conversation Analytics from its icon in the system tray, then open it again\./);
+  assert.doesNotMatch(unavailable, /<p>|system tray|open it again/);
   assert.match(recovery, /<h1>Can’t open your saved data<\/h1>/);
   assert.match(recovery, /role="alert"/);
-  assert.match(recovery, /Keep your existing data and keys\./);
-  assert.match(recovery, /If the problem continues, contact your administrator\./);
+  assert.deepEqual([...recovery.matchAll(/<p>(.*?)<\/p>/g)].map(match => match[1]),
+    ['The app stopped to protect your saved data.']);
   for (const html of [waiting, unavailable, recovery]) {
     assert.match(html, /class="setup-header"/);
     assert.match(html, /class="brand-mark"/);

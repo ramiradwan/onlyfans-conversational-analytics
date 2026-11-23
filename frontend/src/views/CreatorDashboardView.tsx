@@ -7,6 +7,7 @@ import {
 } from '@mui/material';
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 
+import { protocolRecovery, recoveryClass } from '../../shared-setup/recovery.js';
 import { BrowserExtensionControls } from '../components/BrowserExtensionControls';
 import { CommercialActivationControls } from '../components/CommercialActivationControls';
 import { DashboardOverview, type OverviewProgress } from '../components/dashboard/DashboardOverview';
@@ -48,6 +49,7 @@ import {
   extensionConnection,
   protocolErrorText,
   setupIncomplete,
+  SOFTWARE_UPDATE_REQUIRED_TEXT,
   type StatusMessage,
 } from '../utils/statusCopy';
 
@@ -116,22 +118,23 @@ function getIssue(
   connectionPhase: ConnectionPhase,
   softwareUpdateRequired: boolean,
 ): DashboardIssue | null {
-  if (softwareUpdateRequired) return {
-    title: 'Update Conversation Analytics to continue.', detail: '', severity: 'warning',
+  const protocolError = state.protocolError;
+  if (softwareUpdateRequired && !protocolError?.fatal) return {
+    title: SOFTWARE_UPDATE_REQUIRED_TEXT, detail: '', severity: 'warning',
   };
-  if (state.protocolError !== null) {
-    if (state.protocolError.code === 'unsupported_version') return {
-      title: 'This page is out of date.', detail: '', severity: 'error', updatesStopped: state.protocolError.fatal,
+  if (protocolError !== null) {
+    if (recoveryClass(protocolRecovery, protocolError.code) === 'version_incompatible') return {
+      title: protocolErrorText(protocolError), detail: '', severity: 'error', updatesStopped: protocolError.fatal,
     };
-    if (!state.protocolError.fatal && hasDisplayedNumbers && state.readModelState !== 'resyncing') return {
+    if (!protocolError.fatal && hasDisplayedNumbers && state.readModelState !== 'resyncing') return {
       title: 'Couldn’t check the latest update. Showing your saved counts.', detail: '', severity: 'warning',
       updatesStopped: state.readModelState === 'degraded',
     };
     return {
-      detail: protocolErrorText(state.protocolError),
-      severity: state.protocolError.fatal ? 'error' : 'warning',
+      detail: protocolErrorText(protocolError),
+      severity: protocolError.fatal ? 'error' : 'warning',
       title: 'Connection problem',
-      updatesStopped: state.protocolError.fatal,
+      updatesStopped: protocolError.fatal,
     };
   }
   if (state.viewRevision !== null && connectionPhase === 'interrupted') {

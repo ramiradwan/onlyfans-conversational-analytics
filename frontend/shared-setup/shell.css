@@ -48,6 +48,10 @@ p { max-width: 58ch; margin: 0 0 20px; }
 @keyframes status-rotate { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .task-status[data-tone="progress"]::before { animation: none; } }
 .setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 16px; }
+[data-support-help] { min-inline-size: 0; overflow-wrap: anywhere; }
+[data-support-help] > h2 { margin: 0 0 8px; font-size: 1rem; font-weight: var(--dipsy-font-weight-semibold); }
+[data-support-help] > ul { margin: 0; padding: 0; list-style: none; }
+[data-support-help] li > span { user-select: text; }
 .setup-card > #task-description { margin-block-end: 0; min-block-size: 3.1em; }
 .setup-card > #task-description[hidden] { display: block !important; visibility: hidden; }
 .setup-task-card { display: flex; flex-direction: column; }
@@ -195,7 +199,7 @@ h1:focus { outline: none; }
 .browser-task-spot { display: grid; place-items: center; flex: none; inline-size: 40px; block-size: 40px; border-radius: var(--dipsy-radius-control); background: var(--dipsy-color-surface-subtle); color: var(--dipsy-color-text-secondary); box-shadow: inset 0 0 0 1px var(--dipsy-color-divider); }
 .browser-task-spot svg { inline-size: 20px; block-size: 20px; fill: currentColor; }
 .browser-task .setup-task-card > h1 { min-block-size: 0; margin: 0; font-size: clamp(1.375rem, 1.1rem + .9vw, 1.75rem); line-height: 1.25; letter-spacing: -.015em; text-wrap: balance; overflow-wrap: anywhere; }
-.browser-task .task-actions-slot .setup-actions:first-child { margin-block-start: 24px; }
+.browser-task .task-actions-slot :is(.setup-actions:first-child, [data-support-help]) { margin-block-start: 24px; }
 .browser-task .setup-actions > :is(button, .button) { min-block-size: var(--dipsy-static-control-height); min-inline-size: 0; overflow-wrap: anywhere; }
 .browser-task #task-status { min-block-size: 0; margin: 16px 0 0; padding: 0; color: var(--dipsy-color-text); font-size: .9375rem; line-height: 1.5; }
 .browser-task #task-status:is([data-tone="neutral"], [data-tone="none"]) { color: var(--dipsy-color-text-secondary); }
@@ -239,6 +243,7 @@ h1:focus { outline: none; }
 @media (max-width: 600px) {
   .desktop-setup { padding-block: 24px 48px; }
   .desktop-setup .setup-steps { margin-block-end: 24px; }
+  .desktop-setup .setup-steps li { min-inline-size: min-content; }
   .desktop-setup .setup-steps li[aria-current="step"] { flex: 0 1 auto; }
   .desktop-setup .setup-steps [aria-current="step"] .setup-step-label { min-inline-size: 0; overflow-wrap: anywhere; }
   .desktop-setup .setup-steps li:not([aria-current="step"]) .setup-step-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

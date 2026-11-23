@@ -72,6 +72,8 @@ describe('TaskFindings', () => {
     const loading = screen.getByRole('region', { name: 'Insights', busy: true });
     expect(loading.querySelectorAll('.MuiSkeleton-root')).toHaveLength(4);
     expect(within(loading).queryByText('Loading saved text analysis…')).toBeNull();
+    expect(within(loading).queryByRole('progressbar')).toBeNull();
+    expect(within(loading).queryByText(/fully checked|\d\s*%|updates by itself/)).toBeNull();
     expect(screen.queryByText('Your first insights are ready')).toBeNull();
     expect(screen.queryByRole('button', { name: 'See all topics' })).toBeNull();
     await act(async () => { release(); await pending; });
@@ -90,6 +92,9 @@ describe('TaskFindings', () => {
     expect(head?.querySelector('.onboarding-spot svg')).toBeTruthy();
     expect(summary.getAttribute('data-composition')).toBe('first-value');
     expect(within(summary).getByText(/^50\s*%$/)).toBeTruthy();
+    expect(within(summary).getByText(/Available message dates:.*All directions.*All conversations/)).toBeTruthy();
+    expect(within(summary).getByText('Topics are based on 2 fully checked messages.')).toBeTruthy();
+    expect(within(summary).getByText(/Processing state when saved: paused/)).toBeTruthy();
   });
 
   it('keeps previous-only findings and unknown coverage without showing first value', async () => {
@@ -111,12 +116,17 @@ describe('TaskFindings', () => {
     expect(within(screen.getByRole('table', { name: 'Previous Topics findings' })).getByText(/^50\s*%$/)).toBeTruthy();
     expect(within(screen.getByRole('table', { name: 'Topics findings' })).getByText('Unavailable')).toBeTruthy();
     expect(screen.queryByText('Not enough messages yet')).toBeNull();
+    const summary = screen.getByRole('region', { name: 'Insights' });
+    expect(within(summary).queryByText(/fully checked|\d\s*%/)).toBeNull();
+    expect(within(summary).queryByRole('progressbar')).toBeNull();
+    expect(summary.querySelector('[data-visual="finding-bar"]')).toBeNull();
   });
 
-  it('plays the glow and bar arrival once across visits and resets on a new window', async () => {
+  it('plays the glow and bar arrival once across visits and windows within the same owner', async () => {
     const h = setup();
     const first = await screen.findByRole('region', { name: 'Your first insights are ready' });
     expect(first.style.backgroundImage || getComputedStyle(first).backgroundImage).toContain('surface-glow');
+    expect(getComputedStyle(first.querySelector<HTMLElement>('[data-visual="finding-bar"]')!).animation).toContain('240ms');
     h.rendered.unmount();
     const revisit = h.revisit();
     await screen.findByRole('table', { name: 'Topics findings' });
@@ -126,7 +136,16 @@ describe('TaskFindings', () => {
     revisit.rerender(<ThemeProvider theme={theme}><TaskFindings baseline={{ ...baseline, requested_window: {
       ...baseline.requested_window, end: '2026-09-20T23:59:59.999Z' } }} controller={store}
       literalsController={literalStore} transport={h.transport} /></ThemeProvider>);
-    expect(await screen.findByRole('region', { name: 'Your first insights are ready' })).toBeTruthy();
+    await screen.findByRole('table', { name: 'Topics findings' });
+    const sameOwner = screen.getByRole('region', { name: 'Insights', exact: true });
+    expect(getComputedStyle(sameOwner).backgroundImage).not.toContain('surface-glow');
+    expect(getComputedStyle(sameOwner.querySelector<HTMLElement>('[data-visual="finding-bar"]')!).animation).not.toContain('240ms');
+    const owner = context();
+    act(() => h.update({ ...owner, session: { connection_id: 'synthetic-connection', bridge_session_id: 'synthetic-session',
+      creator_account_id: owner.creatorAccountId!, negotiated_protocol_version: '2', server_version: 'synthetic' } }));
+    const newSession = await screen.findByRole('region', { name: 'Your first insights are ready' });
+    expect(getComputedStyle(newSession).backgroundImage).toContain('surface-glow');
+    expect(getComputedStyle(newSession.querySelector<HTMLElement>('[data-visual="finding-bar"]')!).animation).toContain('240ms');
   });
 
   it('provides a 240 ms transform-only entrance and a reduced-motion end state', async () => {
@@ -228,17 +247,23 @@ describe('TaskFindings', () => {
     const refresh = vi.fn(async () => {});
     const read = vi.fn<FindingsClient['read']>(async request => {
       if (request.baseline.projection_generation === baseline.projection_generation) {
-        throw new FindingsClientError('building', 'The saved analysis is being updated.');
+        throw new FindingsClientError('building', 'Saved findings aren’t ready yet.');
       }
       return parseFindings(findingsResponse(request), request);
     });
     const h = setup({ read }, null, refresh);
-    await screen.findByText('Insights aren’t available right now.');
+    const status = await screen.findByText('Saved findings aren’t ready yet.');
+    const card = within(screen.getByRole('region', { name: 'Insights', exact: true }));
+    expect(card.getByRole('status').contains(status)).toBe(true);
+    expect(card.queryByRole('progressbar')).toBeNull();
+    expect(card.queryByText(/\d\s*%|fully checked|updates by itself|being updated|tries again/i)).toBeNull();
+    expect(status.closest('[data-visual="findings-summary"]')?.querySelector('[data-visual="finding-bar"]')).toBeNull();
     expect(screen.queryByRole('table', { name: 'Topics findings' })).toBeNull();
     expect(screen.queryByText('Your first insights are on the way')).toBeNull();
     h.rerender(nextBaseline);
     const table = await screen.findByRole('table', { name: 'Topics findings' });
     expect(within(table).getByText('Example topic')).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Your first insights are ready' })).toBeTruthy();
     expect(store.getState().result?.projection_generation).toBe(nextBaseline.projection_generation);
     expect(read).toHaveBeenLastCalledWith(expect.objectContaining({ baseline: nextBaseline }), expect.any(AbortSignal));
     expect(refresh).not.toHaveBeenCalled();
@@ -486,7 +511,8 @@ describe('TaskFindings', () => {
     expect(screen.getByText(/Processing state when saved: paused/)).toBeTruthy();
     expect(api.evidence).not.toHaveBeenCalled();
     expect(screen.getByRole('table', { name: 'Previous Topics findings' })).toBeTruthy();
-    expect(screen.getAllByText(/Shares use only the 0 completely assessed messages/)).toHaveLength(2);
+    expect(screen.getAllByText(/No fully checked messages in this saved result/)).toHaveLength(2);
+    expect(screen.queryByText(/Shares use only the 0 completely assessed messages/)).toBeNull();
   });
   it('opens only the selected repeated Unicode mention occurrence', async () => {
     const { api } = setup();

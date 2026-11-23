@@ -1,10 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { ThemeProvider } from '@mui/material/styles';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { getStatusPresentation } from '../src/layouts/AppAppBar';
+import { AppAppBar, getStatusPresentation } from '../src/layouts/AppAppBar';
 import type { BridgeTransportState } from '../src/store/transportStore';
-import { createBridgeTransportStore } from '../src/store/transportStore';
+import { bridgeTransportStore, createBridgeTransportStore } from '../src/store/transportStore';
+import { theme } from '../src/theme';
 
 const AS_OF = '2026-07-19T12:00:00Z';
+
+afterEach(() => {
+  cleanup();
+  bridgeTransportStore.reset();
+});
 
 function state(overrides: Partial<BridgeTransportState> = {}): BridgeTransportState {
   const initial = createBridgeTransportStore().getState();
@@ -91,7 +99,24 @@ function partialState(phase: 'backfilling' | 'paused'): BridgeTransportState {
 }
 
 describe('AppBar freshness authority', () => {
-  it('keeps fatal protocol errors actionable', () => {
+  it.each([['wide', 0], ['narrow', 1]] as const)('opens the %s version mismatch details without a recovery action', (_layout, index) => {
+    bridgeTransportStore.setProtocolError({
+      code: 'unsupported_version', related_message_id: null, retryable: false, fatal: true, detail: 'internal detail',
+    });
+    render(<ThemeProvider theme={theme}><AppAppBar onDrawerToggle={() => {}} /></ThemeProvider>);
+
+    const pills = screen.getAllByRole('button', { name: 'Status: Action needed. Show details' });
+    expect(pills).toHaveLength(2);
+    fireEvent.click(pills[index]!);
+
+    const details = within(screen.getByRole('dialog', { name: 'Status details' }));
+    expect(details.getByText('The app and this page use different versions.')).toBeTruthy();
+    expect(details.queryByText(/reload/i)).toBeNull();
+    expect(details.queryByRole('button')).toBeNull();
+    expect(details.queryByRole('link')).toBeNull();
+  });
+
+  it('reports fatal protocol errors without exposing internal details', () => {
     const result = getStatusPresentation(state({ protocolError: { code: 'identity_conflict', related_message_id: null, retryable: false, fatal: true, detail: 'internal detail' } }));
     expect(result.label).toBe('Action needed');
     expect(result.detail).not.toContain('internal detail');

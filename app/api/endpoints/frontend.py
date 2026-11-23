@@ -18,9 +18,9 @@ from fastapi.templating import Jinja2Templates
 from app.utils.logger import logger
 from app.core.config import settings
 from app.core.customer_release import (
+    CustomerReleaseConfig,
     CustomerReleaseConfigurationError,
     load_customer_release_config,
-    release_has_microsoft_picker,
 )
 from app.core.resource_paths import ResourcePathError, resource_path
 from app.api.security import (
@@ -40,12 +40,11 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 @lru_cache(maxsize=1)
-def _setup_transfer_receiver_url() -> str:
-    """Explicit setup-transfer receiver; never a generic sign-in destination."""
+def _presentation_release() -> CustomerReleaseConfig | None:
     try:
-        return load_customer_release_config().setup_transfer_receiver_url
+        return load_customer_release_config()
     except CustomerReleaseConfigurationError:
-        return ""
+        return None
 
 
 @dataclass(frozen=True)
@@ -170,12 +169,13 @@ async def serve_frontend(
     ws_url = f"{base_ws_url}/ws/bridge"
 
     identity = None if request.query_params.get("view") == "saved-data" else policy.identity
+    release = _presentation_release()
     config = {
         "EXTENSION_ID": settings.extension_id,
         "FASTAPI_WS_URL": ws_url,
         "API_BASE_URL": api_base_url,
         "VERSION": settings.version,
-        "SETUP_TRANSFER_RECEIVER_URL": _setup_transfer_receiver_url(),
+        "SETUP_TRANSFER_RECEIVER_URL": release.setup_transfer_receiver_url if release else "",
         "CREATOR_ID": None if identity is None else identity.creator_account_id,
         "BRIDGE_ROLE": None if identity is None else identity.role,
         "BRIDGE_AUTH_TICKET": (
@@ -214,7 +214,7 @@ async def serve_frontend(
             "css_files": [f"/static/dist/{c}" for c in css_files],
             "font_preloads": [f"/static/dist/{f}" for f in font_files],
             "config": config,
-            "microsoft_picker": release_has_microsoft_picker(),
+            "microsoft_picker": bool(release and release.has_microsoft_picker),
             "csrf_token": None if identity is None else csrf_token(policy),
         },
     )

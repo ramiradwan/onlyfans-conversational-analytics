@@ -27,20 +27,16 @@ export const findingsBinding = (baseline: FindingsBaseline | null, direction: Fi
   category: FindingsCategoryFilter | null = null, view: 'grouped' | null = null) => JSON.stringify([baseline, direction, conversation, category?.task ?? null, category?.category_id ?? null, view]);
 
 export function createFindingsPresentation() {
-  let owner = '';
-  let scope = '';
+  let owner: string | null = null;
+  let session: string | null = null;
   let seen = false;
   let established = false;
   return {
-    setScope(nextOwner: string, nextScope: string | null) {
-      if (owner !== nextOwner) {
+    setOwner(nextOwner: string | null, nextSession: string | null) {
+      if (owner !== nextOwner || (nextSession !== null && session !== nextSession)) {
         owner = nextOwner;
+        session = nextSession;
         established = false;
-        scope = '';
-        seen = false;
-      }
-      if (nextScope !== null && scope !== nextScope) {
-        scope = nextScope;
         seen = false;
       }
       return established;
@@ -120,8 +116,7 @@ export function createFindingsStore(api?: FindingsClient, options: {
         category_filter: category ? { task: category.task, category_id: category.category_id } : null,
         ...(selectedView === 'grouped' ? { view: 'grouped' as const } : {}) } : null;
     if (!selected) navigationPin = null;
-    const established = presentation.setScope(JSON.stringify([next.creatorAccountId, next.session]),
-      baseline ? JSON.stringify([baseline.requested_window, direction, conversation]) : null);
+    const established = presentation.setOwner(next.creatorAccountId, next.session?.bridge_session_id ?? null);
     store.setState({ ...initial, binding, established });
     if (selected) void read();
   }

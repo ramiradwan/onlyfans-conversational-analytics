@@ -127,7 +127,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.PAIRING_FAILED,
       tone: 'error',
       title: setup ? 'Connection didn’t finish' : 'Connection was not completed',
-      body: setup ? 'Choose Connect extension in the desktop app to start a new connection.' : 'In the desktop app, choose Connect extension and try again.',
+      body: setup ? 'Choose Connect extension in the desktop app to start a new connection.' : 'In the desktop app, choose Connect extension.',
       primaryAction: setup ? 'open_desktop' : 'pair',
       primaryLabel: setup ? 'Open desktop app' : 'Try connection again',
       secondaryAction: null,
@@ -261,10 +261,10 @@ export function deriveCustomerJourney({
       tone: 'error',
       title: setup ? 'Can’t check Full analytics right now' : 'Couldn\'t check activation',
       body: '',
-      primaryAction: setup ? 'open_dashboard' : 'retry_readiness',
-      primaryLabel: setup ? 'Open desktop app' : 'Check again',
-      secondaryAction: setup ? null : 'open_dashboard',
-      secondaryLabel: setup ? null : 'Open desktop app',
+      primaryAction: 'open_dashboard',
+      primaryLabel: 'Open desktop app',
+      secondaryAction: null,
+      secondaryLabel: null,
     });
   }
 
@@ -321,10 +321,10 @@ export function deriveCustomerJourney({
     tone: 'warning',
     title: setup ? 'Can’t check analysis right now' : 'Analysis status unavailable',
     body: '',
-    primaryAction: setup ? 'open_dashboard' : 'retry_readiness',
-    primaryLabel: setup ? 'Open desktop app' : 'Check again',
-    secondaryAction: setup ? null : 'open_dashboard',
-    secondaryLabel: setup ? null : 'Open desktop app',
+    primaryAction: 'open_dashboard',
+    primaryLabel: 'Open desktop app',
+    secondaryAction: null,
+    secondaryLabel: null,
   });
 }
 

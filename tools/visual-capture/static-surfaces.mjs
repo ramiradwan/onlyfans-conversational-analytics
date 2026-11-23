@@ -9,6 +9,8 @@ import { chromium } from 'playwright';
 import { inspectTaskCopy } from './task-copy.mjs';
 import { assertStaticAccessibility } from './static-accessibility.mjs';
 import { installSurfaceFixture } from '../../extension/qualification/surface-runtime-fixture.mjs';
+import { renderSurfaceState, SURFACE_STATES } from '../../extension/qualification/surface-fixtures.mjs';
+import { assertBackgroundTabLayout, backgroundTabLayoutCases, measureBackgroundTabLayout } from '../../extension/qualification/setup-background-tab-layout.mjs';
 import { staticFixtures } from './static-fixtures.mjs';
 import { onboardingStaticAssets } from './onboarding-static-fixtures.mjs';
 import { staticCases } from './static-fixture-matrix.mjs';
@@ -142,6 +144,60 @@ async function inspect(page, fixture, width, session) {
     return { ...metrics, fonts, task: task ?? await inspectTaskCopy(page, fixture) };
   } finally { await session.detach(); }
 }
+async function captureBackgroundTabLayout(browser, directory) {
+  const screenshots = join(directory, 'background-tab');
+  await mkdir(screenshots, { recursive: true });
+  const results = [];
+  await runCaptureJobs(backgroundTabLayoutCases, async ([width, size, mode]) => {
+    const context = await browser.newContext({ viewport: { width, height: 960 }, colorScheme: mode, reducedMotion: 'reduce', locale: 'en-US' });
+    const report = { width, size, mode, diagnosticScreenshots: {} };
+    results.push(report);
+    const unexpected = [];
+    try {
+      const page = await context.newPage();
+      page.on('requestfailed', request => unexpected.push(request.resourceType()));
+      await renderSurfaceState(page, { ...SURFACE_STATES.preview_complete, observer: { attachment: 'ready', helper: 'open' } });
+      await page.evaluate(size => { document.documentElement.style.fontSize = `${size}px`; }, size);
+      await page.evaluate(() => document.fonts.ready);
+      await page.locator('#journey-primary').focus();
+      const snapshot = async state => {
+        report[state] = await measureBackgroundTabLayout(page);
+        const file = `${width}-${size}-${mode}-${state}.png`;
+        await page.screenshot({ path: join(screenshots, file), fullPage: true, animations: 'disabled' });
+        report.diagnosticScreenshots[state] = `background-tab/${file}`;
+      };
+      const reopen = page.locator('#reopen-background-tab');
+      const privacy = page.locator('.onboarding-footer #privacy-link');
+      const calls = () => page.evaluate(() => window.__surfaceFixture.calls.filter(call => call.type === 'ofca.ui.reopen-background-tab').length);
+      await snapshot('open');
+      await page.keyboard.press('Tab');
+      report.openFooterReached = await privacy.evaluate(node => node === document.activeElement && node.matches(':focus-visible'));
+      await page.keyboard.press('Shift+Tab');
+      await page.evaluate(() => window.__surfaceFixture.change({ observer: { attachment: 'checking', helper: 'closed' } }));
+      await reopen.waitFor({ state: 'visible' });
+      await snapshot('closed');
+      await page.keyboard.press('Tab');
+      report.reopenReached = await reopen.evaluate(node => node === document.activeElement && node.matches(':focus-visible'));
+      await page.keyboard.press('Tab');
+      report.closedFooterReached = await privacy.evaluate(node => node === document.activeElement && node.matches(':focus-visible'));
+      report.callsBefore = await calls();
+      await reopen.click();
+      await page.waitForFunction(() => window.__surfaceFixture.calls.some(call => call.type === 'ofca.ui.reopen-background-tab'));
+      report.callsAfter = await calls();
+      assert.deepEqual(unexpected, []);
+      assert(report.reopenReached && report.openFooterReached && report.closedFooterReached, 'Reopen and the Legal footer must be keyboard reachable');
+      assert.equal(report.callsBefore, 0, 'Status push cannot reopen the tab');
+      assert.equal(report.callsAfter, 1, 'Reopen sends one message');
+      assertBackgroundTabLayout(report.open, report.closed, width, size);
+    } catch (error) {
+      report.failure = error.message;
+    } finally {
+      await context.close();
+    }
+  });
+  return results.sort((a, b) => b.width - a.width || a.size - b.size || a.mode.localeCompare(b.mode));
+}
+
 export async function captureStaticSurfaces(browser, outDir, recorder = null) {
   const directory = join(outDir, 'static-surfaces');
   await mkdir(directory, { recursive: true });
@@ -242,7 +298,10 @@ export async function captureStaticSurfaces(browser, outDir, recorder = null) {
         }
   });
   entries.sort((a, b) => a.file.localeCompare(b.file));
-  const report = { limits: { layout: LAYOUT_SHIFT, canvas: CANVAS_DELTA, keyElements: KEY_ELEMENTS }, revision: process.env.VISUAL_CAPTURE_REVISION ?? null, entries, checks, failures };
+  const backgroundTabLayout = !process.env.STATIC_SURFACE_ONLY || 'setup-preview_complete'.includes(process.env.STATIC_SURFACE_ONLY)
+    ? await captureBackgroundTabLayout(browser, directory) : [];
+  const report = { limits: { layout: LAYOUT_SHIFT, canvas: CANVAS_DELTA, keyElements: KEY_ELEMENTS }, revision: process.env.VISUAL_CAPTURE_REVISION ?? null,
+    entries, checks, failures, backgroundTabLayout };
   await writeFile(join(directory, 'acceptance.json'), JSON.stringify(report, null, 2) + '\n');
   return report;
 }

@@ -753,6 +753,10 @@
         "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
       },
       {
+        "selector": "tests/test_customer_release.py::test_windows_support_channels_bind_one_snapshot",
+        "reason": "The Windows packaging wrapper must forward one customer release snapshot to every build consumer."
+      },
+      {
         "selector": "tests/test_desktop_admission.py",
         "reason": "Desktop presentation and browser-task fences persist in the Windows encrypted authentication database."
       },
@@ -1379,6 +1383,7 @@
     "tests/test_companion_noise.py": 1,
     "tests/test_companion_onboarding_progress.py": 2,
     "tests/test_config_identity_sqlite_migration.py": 1,
+    "tests/test_customer_release.py": 3,
     "tests/test_desktop_activation.py": 2,
     "tests/test_desktop_admission.py": 2,
     "tests/test_desktop_authentication.py": 1,

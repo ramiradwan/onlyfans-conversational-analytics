@@ -1275,3 +1275,14 @@ export const componentTokens = {
 } as const;
 
 export const skeletonTokens = componentTokens.skeleton;
+
+export const offerPriceColors = {
+  "dark": {
+    "fill": "oklch(88% 0.14 96)",
+    "ink": "oklch(19% 0.008 95)"
+  },
+  "light": {
+    "fill": "oklch(87% 0.15 96)",
+    "ink": "oklch(18% 0.008 95)"
+  }
+} as const;

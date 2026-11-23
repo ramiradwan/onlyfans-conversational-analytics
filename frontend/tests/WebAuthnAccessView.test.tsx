@@ -278,6 +278,42 @@ it('an unmounted sign-in cannot navigate when its stale success resolves', async
   pending.resolve(); await pending.promise;
   expect(view.onAuthenticated).not.toHaveBeenCalled();
 });
+
+it('suppresses a pending passkey completion when native authority becomes blocked', async () => {
+  const pending = deferred();
+  const api = { state: vi.fn(async () => ({ enrolled: true, authenticated: false })), enroll: vi.fn(),
+    login: vi.fn().mockImplementationOnce(() => pending.promise).mockResolvedValueOnce(undefined) };
+  const onAuthenticated = vi.fn();
+  let desktop: DesktopState = { snapshot: null, pending: null, connected: true, error: null };
+  const listeners = new Set<() => void>();
+  const recoveryApi: AuthorityRecoveryApi = { getState: () => desktop,
+    subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }, act: vi.fn() };
+  const show = (snapshot: DesktopSnapshot) => act(() => {
+    desktop = { ...desktop, snapshot }; listeners.forEach(listener => listener());
+  });
+  render(<ThemeProvider theme={theme}><WebAuthnAccessView api={api} recoveryApi={recoveryApi} onAuthenticated={onAuthenticated}
+    sessionNotice="Your session ended. Sign in to continue." /></ThemeProvider>);
+  const signIn = await screen.findByRole('button', { name: 'Sign in with passkey' });
+  expect(api.login).not.toHaveBeenCalled();
+  fireEvent.click(signIn);
+  expect(api.login).toHaveBeenCalledOnce();
+  const blocked: DesktopSnapshot = { journey_id: '11111111-1111-4111-8111-111111111111',
+    generation: '22222222-2222-4222-8222-222222222222', revision: 0, facts: {}, next_task: 'account-connection',
+    authority_recovery: 'blocked', allowed_actions: [], pending_operations: [], local_ready: false, full_ready: false,
+    analysis_readiness: { availability: 'unauthorized', creator_account_id: null, value: null } };
+  show(blocked);
+  expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
+  await act(async () => pending.resolve());
+  expect(onAuthenticated).not.toHaveBeenCalled();
+  expect(recoveryApi.act).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
+  show({ ...blocked, authority_recovery: undefined });
+  const fresh = await screen.findByRole('button', { name: 'Sign in with passkey' });
+  expect(onAuthenticated).not.toHaveBeenCalled();
+  fireEvent.click(fresh);
+  await waitFor(() => expect(onAuthenticated).toHaveBeenCalledOnce());
+  expect(api.login).toHaveBeenCalledTimes(2);
+});
 /** An access stream the test pushes into. */
 function pushedStream() {
   let deliver: ((access: PushedAccess) => void) | undefined;

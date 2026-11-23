@@ -2,25 +2,122 @@ import { webcrypto } from 'node:crypto';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { FindingsClient } from '../src/analytics/findingsClient';
+import { FindingsClientError, type FindingsClient } from '../src/analytics/findingsClient';
 import { parseFindings, type FindingsResponse } from '../src/analytics/findingsContract';
 import type { SourceEvidence } from '../src/analytics/questionContract';
-import { createFindingsStore, type FindingsStore } from '../src/store/findingsStore';
+import { createFindingsPresentation, createFindingsStore, type FindingsStore } from '../src/store/findingsStore';
+import { expectedAccountRef } from '../src/analytics/questionContract';
 import { findingsBaselineFixture as baseline, findingsResponse, findingsFilteredResponse, findingsSource, findingsSubsetResponse } from '../src/story-only/findingsFixtures';
 import { context } from './questionFixture';
 
 let store: FindingsStore;
 beforeEach(() => vi.stubGlobal('crypto', webcrypto));
 afterEach(() => { store?.actions.dispose(); vi.unstubAllGlobals(); });
-function setup(overrides: Partial<FindingsClient> = {}) {
+function setup(overrides: Partial<FindingsClient> = {}, presentation?: ReturnType<typeof createFindingsPresentation>) {
   const api: FindingsClient = { context: vi.fn(async () => { throw new Error('Unavailable'); }), read: vi.fn(async (request) => parseFindings(request.category_filter ? findingsFilteredResponse(request) : findingsResponse(request), request)),
     evidence: vi.fn(async (reference) => findingsSource(reference)), ...overrides };
-  store = createFindingsStore(api); store.actions.setContext(baseline, context(), 'all');
+  store = createFindingsStore(api, { presentation }); store.actions.setContext(baseline, context(), 'all');
   return api;
 }
 const ready = async () => vi.waitFor(() => expect(store.getState().status).toBe('ready'));
 
 describe('findings store', () => {
+  it('reveals once across scope changes, temporary invalidation and a remount', async () => {
+    const presentation = createFindingsPresentation();
+    const api = setup({}, presentation);
+    await ready();
+    expect(store.getState().firstInsight).toBe(true);
+
+    const dates = { ...baseline, requested_window: { ...baseline.requested_window, end: '2026-09-20T23:59:59.999Z' } };
+    const conversation = store.getState().result!.conversation_page.items[0].conversation_ref;
+    const category = { task: 'message_topics' as const, category_id: 'synthetic-topic' };
+    store.actions.setContext(dates, context(), 'all');
+    await ready();
+    expect(store.getState().firstInsight).toBe(false);
+    store.actions.setContext(dates, context(), 'inbound');
+    await ready();
+    expect(store.getState().firstInsight).toBe(false);
+    store.actions.setContext(dates, context(), 'inbound', conversation);
+    await ready();
+    expect(store.getState().firstInsight).toBe(false);
+    store.actions.setContext(dates, context(), 'inbound', conversation, category);
+    await ready();
+    expect(store.getState().firstInsight).toBe(false);
+
+    store.actions.setContext(null, { ...context(), readModelState: 'loading' }, 'inbound', conversation, category);
+    expect(store.getState().result).toBeNull();
+    expect(store.getState().established).toBe(true);
+    store.actions.setContext(dates, context(), 'inbound', conversation, category);
+    await ready();
+    expect(store.getState().firstInsight).toBe(false);
+
+    store.actions.dispose();
+    store = createFindingsStore(api, { presentation });
+    store.actions.setContext(baseline, context(), 'all');
+    await ready();
+    expect(store.getState().firstInsight).toBe(false);
+  });
+
+  it('rearms for a new session, a new account or a new presentation', async () => {
+    const api = setup({ read: async request => {
+      const result = findingsResponse(request);
+      result.evidence_page.items = result.evidence_page.items.map(item => ({
+        ...item, reference: { ...item.reference, account_ref: request.baseline.account_ref },
+      }));
+      return parseFindings(result, request);
+    } });
+    await ready();
+    expect(store.getState().firstInsight).toBe(true);
+    const owner = context();
+    const session = { connection_id: 'synthetic-connection', bridge_session_id: 'synthetic-session',
+      creator_account_id: owner.creatorAccountId!, negotiated_protocol_version: '2' as const, server_version: 'synthetic' };
+    store.actions.setContext(baseline, { ...owner, session }, 'all');
+    await ready();
+    expect(store.getState().firstInsight).toBe(true);
+    store.actions.setContext(null, { ...owner, connection: 'disconnected', readModelState: 'degraded' }, 'all');
+    expect(store.getState().result).toBeNull();
+    store.actions.setContext(baseline, { ...owner, session: { ...session, connection_id: 'synthetic-reconnection' } }, 'all');
+    await ready();
+    expect(store.getState().firstInsight).toBe(false);
+
+    const nextSession = { ...session, bridge_session_id: 'another-synthetic-session' };
+    store.actions.setContext(baseline, { ...owner, session: nextSession }, 'all');
+    await ready();
+    expect(store.getState().firstInsight).toBe(true);
+
+    const creatorAccountId = 'another-synthetic-account';
+    const next = { ...baseline, account_ref: await expectedAccountRef(creatorAccountId) };
+    store.actions.setContext(next, { ...owner, creatorAccountId, session: { ...nextSession, creator_account_id: creatorAccountId } }, 'all');
+    await ready();
+    expect(store.getState().firstInsight).toBe(true);
+
+    store.actions.dispose();
+    store = createFindingsStore(api);
+    store.actions.setContext(baseline, owner, 'all');
+    await ready();
+    expect(store.getState().firstInsight).toBe(true);
+  });
+
+  it.each(['empty', 'zero support', 'building'])('keeps the reveal for a saved generation after %s', async input => {
+    const read = vi.fn<FindingsClient['read']>().mockImplementationOnce(async request => {
+      if (input === 'building') throw new FindingsClientError('building', 'Saved findings aren’t ready yet.');
+      const result = findingsResponse(request);
+      if (input === 'empty') result.comparison.tasks = result.comparison.tasks.map(task => ({ ...task, rows: [] }));
+      result.tasks = result.comparison.tasks;
+      result.effective_window = result.comparison.effective_window!;
+      result.evidence_page = { ...result.evidence_page, items: [], total: 0 };
+      return parseFindings(result, request);
+    }).mockImplementation(async request => parseFindings(findingsResponse(request), request));
+    setup({ read });
+    await vi.waitFor(() => expect(store.getState().status).toBe(input === 'building' ? 'building' : 'ready'));
+    expect(store.getState().firstInsight).toBe(false);
+    const next = { ...baseline, projection_generation: baseline.projection_generation + 1 };
+    store.actions.setContext(next, context(), 'all');
+    await ready();
+    expect(store.getState().result?.projection_generation).toBe(next.projection_generation);
+    expect(store.getState().firstInsight).toBe(true);
+  });
+
   it('keeps raw context separate and clears it when the active category changes', async () => {
     setup({ context: vi.fn(async (request, source) => ({ schema_version: 'analytics-evidence-context.v1',
       reference: request.reference, projection_generation: request.expected_generation, projection_digest: request.expected_projection_digest,
@@ -121,13 +218,24 @@ describe('findings store', () => {
   });
   it('discards a late summary after the requested dates change', async () => {
     let resolve!: (value: FindingsResponse) => void;
+    let release!: () => void;
+    const pending = new Promise<void>(done => { release = done; });
     const read = vi.fn<FindingsClient['read']>().mockImplementationOnce(() => new Promise((done) => { resolve = done; }))
-      .mockImplementation(async (request) => parseFindings(findingsResponse(request), request));
+      .mockImplementation(async (request) => {
+        await pending;
+        return parseFindings(findingsResponse(request), request);
+      });
     setup({ read }); await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
     const next = { ...baseline, requested_window: { ...baseline.requested_window, start: '2026-09-19T00:00:00.000Z' } };
-    store.actions.setContext(next, context(), 'all'); await ready();
+    store.actions.setContext(next, context(), 'all');
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
     resolve(findingsResponse()); await Promise.resolve();
+    expect(read.mock.calls[0][1]?.aborted).toBe(true);
+    expect(store.getState().result).toBeNull();
+    expect(store.getState().firstInsight).toBe(false);
+    release(); await ready();
     expect(store.getState().result?.requested_window.start).toBe(next.requested_window.start);
+    expect(store.getState().firstInsight).toBe(true);
   });
   it('discards a pending source when filters or source revision change', async () => {
     let resolve!: (value: SourceEvidence) => void;

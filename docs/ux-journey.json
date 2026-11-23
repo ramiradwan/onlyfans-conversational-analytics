@@ -1285,7 +1285,7 @@
         {
           "kind": "unit",
           "file": "extension/tests/customer-journey.test.mjs",
-          "name": "pairing failure has a concrete retry path"
+          "name": "pairing failure gives the explicit Connect instruction"
         },
         {
           "kind": "unit",
@@ -1432,7 +1432,7 @@
         {
           "kind": "unit",
           "file": "extension/tests/customer-journey.test.mjs",
-          "name": "commercial authority failure is distinct and recoverable"
+          "name": "unavailable analysis offers only the desktop action without promising an update"
         }
       ]
     },
@@ -2155,7 +2155,7 @@
         {
           "kind": "unit",
           "file": "frontend/tests/CommercialActivationControls.test.tsx",
-          "name": "rejects a click from an outdated rendered offer before sending a command"
+          "name": "rejects the old review trigger before the owner change is painted"
         },
         {
           "kind": "unit",

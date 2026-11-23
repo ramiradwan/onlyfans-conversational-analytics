@@ -34,6 +34,26 @@ from tools import engineering_attestation as producer
 pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat, pytest.mark.serial]
 
 
+def test_workspace_policy_accepts_optional_support_without_widening_origin(tmp_path, monkeypatch):
+    path = tmp_path / "release.json"
+    monkeypatch.setattr(producer, "CUSTOMER_RELEASE_CONFIG", path)
+    release = {
+        "schema": "ofca-customer-release/v2", "hosted_api_origin": "https://api.example.com",
+        "setup_transfer_receiver_url": "https://api.example.com/public/onboarding/setup",
+        "authentication_providers": ["default"],
+        "support_channels": {"whatsapp": "https://help.example.com/"},
+    }
+    path.write_text(json.dumps(release), encoding="utf-8")
+    manifest = {"host_permissions": ["http://bridge.localhost/*"],
+                "externally_connectable": {"matches": ["http://bridge.localhost:17871/*"]}}
+    assert producer._qualified_workspace_policy(manifest)
+    assert not producer._qualified_workspace_policy({**manifest,
+        "host_permissions": [*manifest["host_permissions"], "https://help.example.com/*"]})
+    for extra in ({"extra": True}, {"setup_transfer_receiver_url": "https://help.example.com/public/onboarding/setup"}):
+        path.write_text(json.dumps({**release, **extra}), encoding="utf-8")
+        assert not producer._qualified_workspace_policy(manifest)
+
+
 ROOT = Path(__file__).resolve().parents[1]
 EXTENSION_ROOT = ROOT / "extension"
 EXTENSION_DIST = EXTENSION_ROOT / "dist"

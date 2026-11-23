@@ -23,6 +23,8 @@ const mutations = ['revoke', 'forget-companion', 'history', 'clear-preview', 'de
 function render(model) {
   const { status, legal } = model;
   renderLoading(status, failed);
+  text('runtime-title', model.connectionRecovery === 'retrying'
+    ? 'The extension is reconnecting' : 'Extension status is unavailable');
   const historyHandoff = document.querySelector('main').dataset.permissionHandoff === 'true';
   const historyStatus = element('history-status');
   const historyStatusRegion = historyStatus.closest('.options-state');
@@ -56,7 +58,7 @@ function render(model) {
     ? 'You turned on message history in the desktop app. Allow the extension to read your older messages.' : '');
   text('pending-count', new Intl.NumberFormat().format(status.delivery?.pending_entries ?? 0));
   const drops = Object.values(status.delivery?.capture_drop_counts ?? {}).reduce((sum, count) => sum + (Number.isSafeInteger(count) ? count : 0), 0);
-  text('capture-health', status.delivery?.startup_error_code ? 'Full analytics could not start. Open the desktop app, then retry in setup.'
+  text('capture-health', status.delivery?.startup_error_code ? 'Full analytics could not start. Open the desktop app.'
     : drops ? `${new Intl.NumberFormat().format(drops)} updates could not be recorded.` : 'No capture issues reported.');
   text('history-health', status.delivery?.browser_tab_sleeping
     ? 'Your browser paused the creator site. Open the tab to continue.'

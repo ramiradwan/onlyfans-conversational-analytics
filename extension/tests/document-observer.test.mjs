@@ -175,7 +175,33 @@ test('replacement is discovered without stop intent, new navigation or stale rea
   assert.equal(f.stored[OBSERVER_HELPER_KEY].closed, false);
   assert.equal(f.observer.snapshot().helper, 'none');
   assert.ok(f.calls.some(([kind, id]) => kind === 'inject' && id === 33));
+  const status = { mode: 'preview', active: true, forwarding: true, ws2_socket_open: false };
+  const sender = { id: 'fixture', tab: { id: 33 }, frameId: 0, url: 'https://onlyfans.com/', documentLifecycle: 'active' };
+  assert.equal(f.observer.observe({ type: OBSERVER_STATE_TYPE, status }, { ...sender, documentId: 'document-12' }), false);
+  assert.equal(f.observer.snapshot().attached, false);
+  assert.equal(f.observer.observe({ type: OBSERVER_STATE_TYPE, status }, { ...sender, documentId: 'document-33' }), true);
   assert.equal(f.calls.filter(([kind]) => kind === 'create').length, 1);
+  assert.equal(f.calls.some(([kind, id]) => kind === 'update' && id === 33), false);
+});
+
+test('observer lifecycle leaves automatic discard at the Chrome default', async () => {
+  const f = fixture({ tabs: [] });
+  await f.observer.configure('preview');
+  f.api.tabs.onActivated.emit({ tabId: 12, windowId: 1 });
+  await f.observer.helperWriteTail;
+  assert.equal(f.stored[OBSERVER_HELPER_KEY].touched, true);
+  f.browserTabs.set(7, { id: 7, url: 'https://onlyfans.com/my/chats', active: true });
+  f.browserTabs.set(8, { id: 8, url: 'https://onlyfans.com/', discarded: true });
+  const restored = new DocumentObserverCoordinator({ chromeApi: f.api });
+  await restored.configure('preview');
+  await restored.configure(null);
+  f.stored[OBSERVER_HELPER_KEY].owner_session = 'prior-session';
+  await new DocumentObserverCoordinator({ chromeApi: f.api }).configure('preview');
+  const writes = f.calls.flatMap(([kind, id, update]) => kind === 'create' ? [id] : kind === 'update' ? [update] : []);
+  assert(writes.length > 0);
+  assert(writes.every(write => !Object.hasOwn(write, 'autoDiscardable')));
+  assert.equal(f.calls.filter(([kind]) => kind === 'create').length, 1);
+  assert.equal(f.calls.filter(([kind]) => kind === 'update').length, 1);
 });
 test('lifecycle recovery never creates a helper while paused or without an observation phase', async () => {
   for (const [mode, paused] of [[null, false], ['preview', true]]) {

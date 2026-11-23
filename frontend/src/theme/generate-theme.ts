@@ -181,7 +181,7 @@ function validateContrast(colorSchemes: JsonObject): void {
 function emitTokens(resolved: JsonObject): string {
   const tier1 = getObject(resolved, 'tier1');
   const tier2 = getObject(resolved, 'tier2');
-  const tier3 = getObject(resolved, 'tier3');
+  const { offerPrice, ...componentTokens } = getObject(resolved, 'tier3');
   return (
     header +
     'export const brandPalette = ' +
@@ -209,9 +209,12 @@ function emitTokens(resolved: JsonObject): string {
     stableStringify(getObject(tier2, 'shape')) +
     ' as const;\n\n' +
     'export const componentTokens = ' +
-    stableStringify(tier3) +
+    stableStringify(componentTokens) +
     ' as const;\n\n' +
-    'export const skeletonTokens = componentTokens.skeleton;\n'
+    'export const skeletonTokens = componentTokens.skeleton;\n\n' +
+    'export const offerPriceColors = ' +
+    stableStringify(offerPrice) +
+    ' as const;\n'
   );
 }
 

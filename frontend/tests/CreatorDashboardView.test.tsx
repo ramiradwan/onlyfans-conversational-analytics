@@ -405,9 +405,19 @@ describe('CreatorDashboardView', () => {
     await renderDashboard(store);
     expect(screen.queryByText('Update Conversation Analytics to continue.')).toBeNull();
     expect(screen.queryByText('Updating this page…')).toBeNull();
-    act(() => store.setAgent({ ...store.getState().agent!, browser: { ...COLLECTION_ON, history_error_code: 'software_update_required' } }));
+    const error = { related_message_id: null, retryable: false, detail: 'fixture error' };
+    act(() => {
+      store.setProtocolError({ ...error, code: 'internal_error', fatal: false });
+      store.setAgent({ ...store.getState().agent!, browser: { ...COLLECTION_ON, history_error_code: 'software_update_required' } });
+    });
     expect(screen.getByText('Update Conversation Analytics to continue.')).toBeTruthy();
+    expect(screen.queryByText('Couldn’t check the latest update. Showing your saved counts.')).toBeNull();
     expect(screen.queryByText(/Last updated/)).toBeNull();
+    act(() => store.setProtocolError({ ...error, code: 'unsupported_version', fatal: true }));
+    expect(screen.getByText('The app and this page use different versions.')).toBeTruthy();
+    expect(screen.queryByText('Update Conversation Analytics to continue.')).toBeNull();
+    expect(screen.queryByRole('button', { name: /reload|update conversation analytics/i })).toBeNull();
+    expect(screen.queryByText(/reload the page/i)).toBeNull();
   });
   it('opens the current browser review directly and never accepts collection from the dashboard', async () => {
     const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]) }), conversations: [] });
@@ -418,7 +428,8 @@ describe('CreatorDashboardView', () => {
     source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['browser.access'] } });
     const api: BrowserControlApi = { setCapture: vi.fn(async () => 'delivered'), open: vi.fn(async () => 'delivered') };
     mountDashboard(store, source, api);
-    expect(screen.getByRole('heading', { name: 'Allow message collection' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Allow OnlyFans activity collection' })).toBeTruthy();
+    expect(screen.getByText('Review how Dipsy uses your OnlyFans activity in your browser.', { exact: true })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
     expect(source.api.begin).not.toHaveBeenCalled();
     const review = screen.getByRole('button', { name: 'Review in browser' });
@@ -431,7 +442,7 @@ describe('CreatorDashboardView', () => {
     expect(screen.queryByRole('button', { name: 'Review in browser' })).toBeNull();
     expect(screen.getByText('Complete the review in your browser.')).toBeTruthy();
     await act(async () => store.setAgent({ ...store.getState().agent!, browser: { ...browser, legal_review_required: false } }));
-    expect(screen.queryByRole('heading', { name: 'Allow message collection' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Allow OnlyFans activity collection' })).toBeNull();
     // Complete history is not offered again, even with no visible messages.
     expect(screen.queryByRole('button', { name: 'Review message history' })).toBeNull();
     expect(source.api.begin).toHaveBeenCalledOnce();
@@ -445,6 +456,7 @@ describe('CreatorDashboardView', () => {
     mountDashboard(store, source);
     expectStat('Messages', '19');
     expect(screen.getByRole('heading', { name: 'Allow site access' })).toBeTruthy();
+    expect(screen.getByText('Your browser needs permission before Dipsy can collect OnlyFans activity.', { exact: true })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Review in browser' })).toBeNull();
     await act(async () => source.publish({ snapshot: { ...source.api.getState().snapshot!, allowed_actions: ['browser.access'] } }));
     expect(screen.getByRole('button', { name: 'Review in browser' })).toBeTruthy();
@@ -1093,6 +1105,21 @@ describe('CreatorDashboardView', () => {
     mountDashboard(store, source);
     expect(screen.queryByText('Checking setup…')).toBeNull();
     expect(screen.getByRole('heading', { name: 'Full analytics' })).toBeTruthy();
+    expectStat('Messages', '19');
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
+  it('keeps activation gated with a current owner mismatch and empty identity label', () => {
+    const source = readinessSource(false);
+    const snapshot = source.api.getState().snapshot!;
+    source.publish({ snapshot: { ...snapshot, facts: { account: 'verified' },
+      creator_label: { creator_id: ACCOUNT_ID, display_name: null, username: null }, allowed_actions: ['activation.review'],
+      pending_operations: [{ operation_id: '22222222-2222-4222-8222-222222222222', action: 'activation.review',
+        state: 'outcome_unknown', reason: 'account_mismatch' }] } });
+    mountDashboard(readyStore(), source);
+    const mismatch = screen.getByRole('region', { name: 'Full analytics unavailable' });
+    expect(within(mismatch).getByRole('status').textContent).toBe('Switch to the OnlyFans account you used for setup.');
+    expect(within(mismatch).queryByRole('button', { name: /Review offer|Use an activation code/ })).toBeNull();
     expectStat('Messages', '19');
     expect(source.api.begin).not.toHaveBeenCalled();
   });

@@ -1,7 +1,8 @@
 // Native-owned presentation only. Browser documents never load this script.
 (() => {
   const shell = location.origin === 'http://tauri.localhost'
-    && ['/', '/index.html', '/unavailable.html'].includes(location.pathname);
+    && location.href === location.origin + location.pathname
+    && ['/', '/index.html', '/unavailable.html', '/data-recovery.html'].includes(location.pathname);
   const local = location.origin === 'http://bridge.localhost:17871'
     && (['/', '/onboarding', '/provisioning', '/api/v1/session/handoff'].includes(location.pathname)
       || location.pathname.startsWith('/onboarding/') || location.pathname.startsWith('/provisioning/'));
