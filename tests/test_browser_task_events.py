@@ -205,6 +205,8 @@ def test_ended_records_one_display_notice_and_changes_no_task_state(tmp_path):
         notices = client.get("/api/v1/desktop/browser-tasks/notices", headers=headers(native))
         assert notices.json() == {"notices": [{"task_id": task["task_id"], "reason": "profile_mismatch"}]}
         assert client.get("/api/v1/desktop/browser-tasks/notices", headers=headers(browser)).status_code == 401
+        tasks.complete(task["operation_id"])
+        assert client.get("/api/v1/desktop/browser-tasks/notices", headers=headers(native)).json() == {"notices": []}
 
 
 @pytest.mark.parametrize("reason", ["needs_account", "needs_consent", "needs_permission"])
@@ -229,18 +231,15 @@ async def test_the_desktop_stream_shows_a_helper_notice_and_its_clearing(tmp_pat
     coordinator, tasks, native, _ = setup
     _, task, browser = await browser_access(setup)
 
-    def notices(session):
-        return tasks.helpers.notices({row["task_id"] for row in tasks.current_native(session)})
-
     served = Served(DesktopEventResponse(coordinator, native, actor=lambda: None, active=set(),
-                                         deadline=lambda: 1800.0, notices=notices)).start()
+                                         deadline=lambda: 1800.0, notices=tasks.current_notices)).start()
     try:
         event, _ = await served.frame()
         assert event == "setup"
         tasks.helpers.notice(task["task_id"], browser.generation, "profile_mismatch")
         event, value = await served.frame()
         assert (event, value) == ("browser-notices", {"notices": [{"task_id": task["task_id"], "reason": "profile_mismatch"}]})
-        tasks.helpers.clear_notice(task["task_id"])
+        tasks.complete(task["operation_id"])
         event, value = await served.frame()
         assert (event, value) == ("browser-notices", {"notices": []})
     finally:

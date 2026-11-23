@@ -245,8 +245,7 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
         if request.url.query:
             raise HTTPException(400, "Invalid browser task request")
         session = authorize(coordinator.admissions, request, role="desktop")
-        current = {task["task_id"] for task in tasks.current_native(session)}
-        return JSONResponse({"notices": tasks.helpers.notices(current)}, headers=HEADERS)
+        return JSONResponse({"notices": tasks.current_notices(session)}, headers=HEADERS)
 
     @router.post("/api/v1/desktop/setup/protected-browser/open")
     async def open_protected(request: Request):

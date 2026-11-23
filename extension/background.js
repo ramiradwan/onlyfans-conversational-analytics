@@ -243,7 +243,7 @@ captureMessageBridge.register();
 legalActivationController.register();
 consentController.register();
 companionClient.registerPopup({
-  onPaired: () => consentController.reconcile(),
+  onPaired: () => consentController.pairingCompleted(),
   onForget: () => consentController.reconcile(),
 });
 companionClient.onRevoked(() => consentController.reconcile());
@@ -292,7 +292,7 @@ export const desktopPort = registerDesktopPort({
   authentication: browserAuth,
   companion: companionClient,
   owner: browserTaskOwner,
-  onPaired: () => consentController.reconcile(),
+  onPaired: () => consentController.pairingCompleted(),
   stages: { begin: stageBegin, mark: stageMark, flush: stageFlush },
   changeSources: [
     Object.assign(changed => consentController.subscribe(changed), { label: 'consent' }),

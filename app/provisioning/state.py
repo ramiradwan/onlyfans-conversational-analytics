@@ -63,6 +63,6 @@ def local_setup_facts(store: SQLiteAuthenticationStore, *, journey: dict | None 
         facts["activation"] = {"active": "verified", "required": "missing", "unavailable": "unknown"}[readiness.commercial_authority]
         facts["analysis"] = "verified" if readiness.analysis_admission == "admitted" else "unknown"
         facts["pairing"] = CompanionPairingPersistence(store).current_pairing_state(
-            identity.creator_account_id, connection=connection
+            identity.creator_account_id, connection=connection, for_setup=True
         )
     return facts

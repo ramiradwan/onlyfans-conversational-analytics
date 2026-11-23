@@ -205,7 +205,8 @@ export function renderSetup(document, state) {
   const showingProviders = choosingProvider || opening;
   const controlsDisabled = !state.connected || !localAccessReady || Boolean(state.acting);
   const pairingPending = task === 'finish-setup' && value.pending_operations.some(item => item.action === 'browser.pair');
-  const pairingAvailable = task === 'finish-setup' && state.connected && localAccessReady && !state.error
+  const pairingRetry = state.failedAction === 'browser.pair' && ['operation_expired', 'operation_refused'].includes(state.error);
+  const pairingAvailable = task === 'finish-setup' && state.connected && localAccessReady && (!state.error || pairingRetry)
     && allowed.includes('browser.pair') && !pairingPending;
   const browserWork = task === 'browser-access' && value.pending_operations.some(item => item.action === 'browser.access');
   const startingChrome = task === 'browser-access' && state.acting === 'browser.access';
@@ -271,6 +272,7 @@ export function renderSetup(document, state) {
   get('setup-code-open').hidden = !value || pending || opening || value.facts.installation === 'verified' || Boolean(authentication);
   get('setup-code-open').disabled = !state.connected || pending || opening;
   const reasonMessage = reasonClass === 'invariant_failed' ? ''
+    : pairingRetry && pairingAvailable ? 'The extension didn’t finish connecting. Try again.'
     : reason === 'authority_unavailable' && state.savedAuthorizationExpired
       ? `${expiredAccessTitle}. ${expiredAccessDescription}`
     : reason === 'connection_unavailable' && value?.journey_id

@@ -605,7 +605,16 @@ export class ConsentController {
   }
 
   reconcile() {
-    const generation = this.#invalidate('consent_reconcile');
+    return this.#queueReconciliation(this.#invalidate('consent_reconcile'));
+  }
+
+  pairingCompleted() {
+    // The companion has just authenticated and saved this connection. Use it to
+    // start the runtime. A subsequent consent or identity change still fences it.
+    return this.#queueReconciliation(this.controlGeneration);
+  }
+
+  #queueReconciliation(generation) {
     return this.controlQueue.run(async () => {
       await this.#loadStateLocked();
       return this.#reconcileLocked(generation);

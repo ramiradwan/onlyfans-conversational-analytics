@@ -2439,6 +2439,17 @@ class SQLiteAuthenticationStore:
                 )
             self._increment_authorization_epoch(connection)
 
+    def record_companion_configuration(self, session: CompanionSessionBinding) -> bool:
+        """Record a current configuration echo once for the exact authenticated pairing."""
+        with self.database.transaction() as connection:
+            now = self._now()
+            self._require_companion_session_current(connection, session, now)
+            return connection.execute(
+                "UPDATE agent_pairings SET first_configuration_at=? WHERE pairing_id=? "
+                "AND companion_confirmation_method='browser_verified' AND first_configuration_at IS NULL",
+                (_time_text(now), session.pairing_id),
+            ).rowcount == 1
+
     def _companion_session_policy(
         self, connection: sqlite3.Connection, session: CompanionSessionBinding
     ) -> RuntimePolicy:

@@ -36,11 +36,13 @@ from app.persistence.factory import CanonicalRepositories
 from app.persistence.history import IngestResult, InvariantViolation, StreamKey
 from app.persistence.catchup import CatchupPolicy
 from app.persistence.catchup_events import subscribe_authority_changes
+from app.provisioning.events import events
 from app.provisioning.progress_reporting import (
     OnboardingProgressCoordinator,
 )
 from app.security.account_bindings import eligible_accounts
 from app.security.activation_gate import runtime_is_activated
+from app.security.companion_session_authority import CompanionSessionError
 from app.transport.companion_records import CompanionRecordError
 from app.utils.logger import logger
 
@@ -777,7 +779,8 @@ class InMemoryTransportManager:
         coordinator = self._onboarding_progress
         authority = getattr(lease.websocket, "authority", None)
         reconcile = getattr(coordinator, "reconcile", None)
-        if authority is None or reconcile is None:
+        record_initial = getattr(authority, "record_initial_configuration", None)
+        if authority is None or (record_initial is None and reconcile is None):
             return
         session = authority.binding
         if (
@@ -793,6 +796,16 @@ class InMemoryTransportManager:
             and record.last_failure is None
             and self.is_current_fence(lease)
         )
+        # Local setup can finish as soon as this specific companion confirms
+        # its configuration, including when hosted progress reporting is off.
+        if current and record_initial is not None:
+            try:
+                if await asyncio.to_thread(record_initial):
+                    events.publish()
+            except CompanionSessionError:
+                return
+        if reconcile is None:
+            return
         try:
             await asyncio.to_thread(
                 reconcile, session=authority.binding, current_configuration=current

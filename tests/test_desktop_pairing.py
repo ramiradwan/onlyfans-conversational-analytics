@@ -8,6 +8,8 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+from app.api.endpoints.companion_session import ProtectedSocket
+from app.core.config import settings
 from app.onboarding.admission import AdmissionRefused, ScopedAdmissions, csrf_token
 from app.onboarding.browser_routes import browser_router
 from app.onboarding.browser_tasks import BrowserTasks
@@ -15,11 +17,16 @@ from app.onboarding.coordinator import DesktopOnboardingCoordinator
 from app.onboarding.pairing import DesktopPairing
 from app.onboarding.runtime import RuntimeActor, RuntimeSetupOwner
 from app.persistence.auth import RevocationKey, RevocationScopeType
+from app.persistence.factory import create_canonical_repositories
 from app.provisioning.events import events
 from app.security.companion_pairing import CompanionPairingError, encode_pairing_id
 from app.security.companion_pairing_proof import comparison_code
+from app.security.companion_session_authority import CompanionSessionAuthority, CompanionSessionError
 from app.security.hosted_grants import HostedGrantUnavailable
+from app.transport.account_bound_manager import AccountBoundTransportManager
+from test_companion_onboarding_progress import _bind, _config_applied
 from test_companion_pairing_service import _agent_confirmation, contract as contract, grant_references as grant_references, local as local
+from test_companion_session_authority import _hello
 from test_desktop_coordinator import command
 
 pytestmark = [pytest.mark.ci_tier("fast"), pytest.mark.windows_compat]
@@ -62,8 +69,14 @@ def awaiting(setup):
     return window.pairing_id, {"comparison_code": comparison_code(window.pairing_digest)}
 
 
+def apply_initial_configuration(setup, pairing_id):
+    session = setup.local.service.persistence.session_authority(pairing_id).binding("configured-companion")
+    assert setup.local.store.record_companion_configuration(session)
+    assert not setup.local.store.record_companion_configuration(session)
+
+
 @pytest.mark.asyncio
-async def test_real_pairing_commits_only_the_independent_code_for_this_operator_task(setup):
+async def test_real_pairing_commits_only_the_independent_code_for_this_operator_task(setup, monkeypatch):
     operation, helper = await begin(setup)
     pairing_id, code = awaiting(setup)
     assert setup.pairing.observe(operation) is None
@@ -77,6 +90,29 @@ async def test_real_pairing_commits_only_the_independent_code_for_this_operator_
     # authority being discarded during a Brain restart.
     restored = DesktopPairing(setup.local.store, browser_tasks=setup.tasks, service=setup.local.service)
     setup.owner.pairing = restored
+    assert restored.observe(operation) is None
+    assert not setup.coordinator.read(setup.native, actor=setup.actor)["local_ready"]
+    await restored.compare(helper, operation, code)
+    # The live transport can finish local setup even without a hosted progress reporter.
+    store = setup.local.store
+    monkeypatch.setattr(settings, "auth_database_path", str(store.database.path))
+    # The signed contract vectors and both configuration resolvers share the fixture clock.
+    monkeypatch.setattr("app.transport.manager.utc_now", store._now)
+    monkeypatch.setattr("app.transport.account_bound_manager.datetime", SimpleNamespace(now=lambda _zone: store._now()))
+    manager = AccountBoundTransportManager(create_canonical_repositories(), onboarding_progress=None)
+    authority = CompanionSessionAuthority(store)
+    snapshot = authority.prepare(pairing_id)
+    session = authority.authorize(snapshot)
+    with pytest.raises(CompanionSessionError):
+        session.record_initial_configuration()
+    _hello((setup.local, authority, snapshot, session))
+    socket = ProtectedSocket(SimpleNamespace(authority=session, websocket=SimpleNamespace(client=None)))
+    lease = await _bind(manager, socket, session.binding)
+    required = manager.required_config_document(session.binding.creator_account_id)
+    await manager.record_config_applied(lease, _config_applied(lease, required.config_revision, required.digest, 'degraded'))
+    assert restored.observe(operation) is None
+    await manager.record_config_applied(lease, _config_applied(lease, required.config_revision, required.digest))
+    assert not session.record_initial_configuration()
     await setup.coordinator.reconcile(setup.native, operation["operation_id"])
     await setup.coordinator.drain()
     assert setup.coordinator.receipt(setup.native, operation["operation_id"])["state"] == "completed"
@@ -102,7 +138,35 @@ async def test_restart_requires_fresh_operator_then_recovers_the_same_pairing_wi
     await setup.coordinator.drain()
     assert setup.local.service.persistence.window(pairing_id) == original
     await restored.compare(helper, operation, code)
+    assert restored.observe(operation) is None
+    apply_initial_configuration(setup, pairing_id)
     assert restored.observe(operation).state == "completed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("echo_at_deadline", [False, True])
+async def test_interrupted_extension_can_retry_without_disconnecting_a_confirmed_pin(setup, echo_at_deadline):
+    operation, helper = await begin(setup)
+    original_id, code = awaiting(setup)
+    await setup.pairing.compare(helper, operation, code)
+    assert setup.pairing.observe(operation) is None
+    deadline = setup.owner.confirmation_deadline(operation)
+    assert deadline == setup.local.clock.now.timestamp() + 300
+    setup.local.clock.now += timedelta(seconds=300)
+    if echo_at_deadline:
+        apply_initial_configuration(setup, original_id)
+        assert setup.pairing.observe(operation).reason == "operation_expired"
+        return
+    await setup.coordinator.reconcile(setup.native, operation["operation_id"], actor=setup.actor)
+    await setup.coordinator.drain()
+    assert setup.coordinator.receipt(setup.native, operation["operation_id"])["reason"] == "operation_expired"
+    assert not setup.coordinator.read(setup.native, actor=setup.actor)["local_ready"]
+    retry, next_helper = await begin(setup)
+    next_id, next_code = awaiting(setup)
+    assert next_id != original_id
+    await setup.pairing.compare(next_helper, retry, next_code)
+    apply_initial_configuration(setup, next_id)
+    assert setup.pairing.observe(retry).state == "completed"
 
 
 @pytest.mark.asyncio
@@ -227,5 +291,9 @@ async def test_browser_route_requires_admission_and_csrf_and_returns_no_brain_co
     assert response.status_code == 202 and response.json() == {"state": "checking"}
     assert response.headers["Cache-Control"] == "no-store"
     assert code["comparison_code"] not in response.text
+    await setup.coordinator.drain()
+    assert setup.coordinator.receipt(setup.native, operation["operation_id"])["state"] == "waiting"
+    apply_initial_configuration(setup, pairing_id)
+    await setup.coordinator.reconcile(setup.native, operation["operation_id"])
     await setup.coordinator.drain()
     assert setup.coordinator.receipt(setup.native, operation["operation_id"])["state"] == "completed"

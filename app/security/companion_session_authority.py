@@ -170,6 +170,9 @@ class ProtectedCompanionSession:
         self._challenges = 0
         self._authenticated = False
         self._hello_accepted = False
+        self._needs_initial_configuration = (
+            snapshot.pin.confirmation_method == "browser_verified" and snapshot.pin.first_configuration_at is None
+        )
         self._config_digest = None
 
     def _require_open(self):
@@ -322,6 +325,18 @@ class ProtectedCompanionSession:
             reconnect = self._issue_ticket(TicketPurpose.AGENT_WEBSOCKET)
             config = self._issue_ticket(TicketPurpose.AGENT_CONFIG)
             return self.binding.principal_id, account, reconnect, config
+
+    @_boundary
+    def record_initial_configuration(self) -> bool:
+        with self._lock:
+            self._require_open()
+            if not self._needs_initial_configuration:
+                return False
+            if not self._hello_accepted:
+                raise CompanionSessionError()
+            changed = self.authentication.record_companion_configuration(self.binding)
+            self._needs_initial_configuration = False
+            return changed
 
     @_boundary
     def validate_config(self, ticket: str, account: str, agent_id) -> None:
