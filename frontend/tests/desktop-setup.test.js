@@ -2014,6 +2014,24 @@ it('protected recovery never enables stale controls during a command or disconne
   expect(authorityRecoveryView({ snapshot: value, connected: true, error: 'chrome_unavailable' }).status).toBe('Install the required browser to continue.');
 });
 
+it('shows blocked recovery when the original account connection is still pending', () => {
+  document.documentElement.innerHTML = markup;
+  const command = { operation_id: operationId, action: 'account.connect', state: 'accepted', reason: 'none' };
+  const preparing = { ...initial(), journey_id: operationId, next_task: 'account-connection',
+    authority_recovery: 'preparing', allowed_actions: [], pending_operations: [command] };
+  const state = { connected: true, pending: operationId, pendingAction: 'account.connect' };
+  renderSetup(document, { ...state, snapshot: preparing });
+  expect(document.getElementById('task-pending').textContent).toBe('Preparing sign-in…');
+  expect(document.getElementById('task-action').hidden).toBe(true);
+
+  renderSetup(document, { ...state, snapshot: { ...preparing, revision: preparing.revision + 1,
+    authority_recovery: 'blocked', pending_operations: [{ ...command, state: 'outcome_unknown', reason: 'operation_unconfirmed' }] } });
+  expect(document.getElementById('task-title').textContent).toBe('Can’t open your analytics right now');
+  expect(document.getElementById('task-pending').textContent).toBe('');
+  expect(document.getElementById('task-action').hidden).toBe(true);
+  expect(document.getElementById('protected-cancel').hidden).toBe(true);
+});
+
 it('preflights Chrome before spending a protected launch and never auto-opens a replacement', async () => {
   const request = vi.fn(async () => response({ entry_code: 'A'.repeat(43) }));
   const invoke = vi.fn(async () => false);

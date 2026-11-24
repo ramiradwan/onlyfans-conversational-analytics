@@ -47,15 +47,16 @@ class Key:
 
 
 class Transport:
-    def __init__(self, challenge, result):
+    def __init__(self, challenge, result, *, challenge_status=200):
         self.challenge, self.result = challenge, result
+        self.challenge_status = challenge_status
         self.status = 200
         self.calls = []
 
     def request(self, method, path, *, json_body):
         self.calls.append((method, path, copy.deepcopy(json_body)))
         if path.endswith("proof-challenges"):
-            return TransportResponse(200, json.dumps(self.challenge).encode(), "application/json")
+            return TransportResponse(self.challenge_status, json.dumps(self.challenge).encode(), "application/json")
         if isinstance(self.result, Exception):
             raise self.result
         if isinstance(self.result, bytes):

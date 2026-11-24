@@ -191,6 +191,41 @@ async def test_restart_after_lost_prepare_and_ceremony_keeps_exact_desktop_and_h
 
 
 @pytest.mark.asyncio
+async def test_exhausted_preparation_exposes_blocked_with_the_original_command_pending(installed):
+    case = installed
+    coordinator, owner, _, state = build(case)
+    session = connect(coordinator)
+    command = recovery_command(coordinator, session)
+    operation, _ = coordinator._accept(session, command)
+    original_deadline = operation["expires_at"]
+    assert coordinator.read(session)["authority_recovery"] == "preparing"
+
+    for reconcile in (False, True):
+        state["lose_prepare"] = True
+        result = await owner.execute(operation, reconcile=reconcile)
+        assert result.state == "outcome_unknown"
+        coordinator._settle(operation, result)
+        operation = saved(coordinator, command["operation_id"])
+        case.clock[0] += timedelta(seconds=16)
+
+    snapshot = coordinator.read(session)
+    assert snapshot["authority_recovery"] == "blocked"
+    assert snapshot["allowed_actions"] == []
+    assert snapshot["pending_operations"] == [{
+        "operation_id": command["operation_id"],
+        "action": "account.connect",
+        "state": "outcome_unknown",
+        "reason": "operation_unconfirmed",
+    }]
+    assert operation["expires_at"] == original_deadline
+    assert state["calls"] == [
+        ("authority", "prepare", state["calls"][0][2]),
+        ("authority", "prepare", state["calls"][0][2]),
+    ]
+    await owner.stop()
+
+
+@pytest.mark.asyncio
 async def test_original_commit_delivers_verified_grants_through_coordinator_and_settles(installed):
     case=installed
     coordinator,owner,_,state=build(case)

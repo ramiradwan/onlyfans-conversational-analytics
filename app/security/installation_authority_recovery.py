@@ -11,6 +11,7 @@ import base64
 import hashlib
 import json
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 
@@ -18,7 +19,8 @@ from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
 
 from app.core.resource_paths import resource_path
-from app.security.hosted_grants import HostedGrantUnavailable
+from app.onboarding import timing
+from app.security.hosted_grants import HostedFailureStage, HostedGrantUnavailable, HostedTransportFailure
 from app.security.initial_handoff import _require_proof_budget, timestamp
 from app.security.installation_continuation import (
     _P256_ORDER, _decode, _document, canonical_request, signing_reference,
@@ -115,71 +117,106 @@ class AuthorityRecoveryRefused(ValueError):
         return self.reason in WITHDRAWALS
 
 
+@contextmanager
+def _diagnose_prepare(verb, stage, category):
+    try:
+        yield
+    except Exception as error:
+        if verb == "prepare":
+            if (category == "transport_unknown" and isinstance(error, HostedTransportFailure)
+                    and isinstance(error.stage, HostedFailureStage) and error.stage != HostedFailureStage.UNKNOWN):
+                category = error.stage.value
+            elif isinstance(error, AuthorityRecoveryRefused):
+                category = "provider_refusal"
+            timing.recovery_prepare_failure(stage, category)
+        raise
+
+
 class InstallationAuthorityRecoveryClient:
     def __init__(self, transport, key, *, clock=lambda: datetime.now(timezone.utc), monotonic=time.monotonic):
         self.transport, self.key = transport, key
         self.clock, self.monotonic = clock, monotonic
         _, self.profile, self.proof = contract()
 
-    def _request(self, path, value, schema, guard, *, challenge=False):
-        if len(canonical_request(value)) > REQUEST_LIMIT:
-            raise HostedGrantUnavailable("Authority recovery request exceeds limit")
-        guard()
+    def _request(self, verb, path, value, schema, guard, *, challenge=False):
+        stage = "challenge" if challenge else "submit"
+        # The Provider returns Created for a proof challenge and OK for the result.
+        success_status = 201 if challenge else 200
+        with _diagnose_prepare(verb, stage, "invalid_request"):
+            if len(canonical_request(value)) > REQUEST_LIMIT:
+                raise HostedGrantUnavailable("Authority recovery request exceeds limit")
+        with _diagnose_prepare(verb, stage, "guard_refused"):
+            guard()
         try:
-            response = self.transport.request("POST", path, json_body=value)
+            with _diagnose_prepare(verb, stage, "transport_unknown"):
+                response = self.transport.request("POST", path, json_body=value)
         except Exception:
             raise HostedGrantUnavailable("Authority recovery outcome is unknown") from None
-        if response.content_type.split(";", 1)[0].strip().lower() != "application/json":
-            raise HostedGrantUnavailable("Invalid authority recovery response type")
-        result = _document(response.body, limit=RESPONSE_LIMIT)
-        if response.status_code != 200:
-            validate("error", result)
-            reason = result["reason"]
-            # Challenge disclosure is nonauthorizing. Never treat an error there
-            # as an authenticated operation refusal or proof of withdrawal.
-            if challenge or response.status_code != self.profile["refusal_status"][reason] or reason in {
-                    "rate_limited", "temporarily_unavailable"}:
-                raise HostedGrantUnavailable("Authority recovery outcome is unknown")
-            raise AuthorityRecoveryRefused(reason)
-        return validate(schema, result)
+        category = "invalid_response" if response.status_code == success_status else "http_failure"
+        with _diagnose_prepare(verb, stage, category):
+            if response.content_type.split(";", 1)[0].strip().lower() != "application/json":
+                raise HostedGrantUnavailable("Invalid authority recovery response type")
+            result = _document(response.body, limit=RESPONSE_LIMIT)
+            if response.status_code != success_status:
+                validate("error", result)
+                reason = result["reason"]
+                # Challenge disclosure is nonauthorizing. Never treat an error there
+                # as an authenticated operation refusal or proof of withdrawal.
+                if challenge or response.status_code != self.profile["refusal_status"][reason] or reason in {
+                        "rate_limited", "temporarily_unavailable"}:
+                    raise HostedGrantUnavailable("Authority recovery outcome is unknown")
+                raise AuthorityRecoveryRefused(reason)
+            return validate(schema, result)
 
     def _exchange(self, verb, request, *, before_send):
-        request = _document(canonical_request(request), limit=REQUEST_LIMIT)
-        target = challenge_target(verb, request)
-        scope = request["scope"]
-        before_send()
-        key = signing_reference(self.key)
-        if (key.installation_key_id, key.installation_key_jkt) != (scope["installation_key_id"], scope["installation_key_jkt"]):
-            raise HostedGrantUnavailable("Authority recovery key changed")
+        with _diagnose_prepare(verb, "request", "invalid_request"):
+            request = _document(canonical_request(request), limit=REQUEST_LIMIT)
+            target = challenge_target(verb, request)
+            scope = request["scope"]
+        with _diagnose_prepare(verb, "request", "guard_refused"):
+            before_send()
+        with _diagnose_prepare(verb, "key", "key_unavailable"):
+            key = signing_reference(self.key)
+            if (key.installation_key_id, key.installation_key_jkt) != (
+                scope["installation_key_id"], scope["installation_key_jkt"]
+            ):
+                raise HostedGrantUnavailable("Authority recovery key changed")
         purpose = "authority-recovery-" + verb
         route = self.proof["purposes"][purpose]
         path = route["path"].format(installation_id=scope["installation_id"])
         started = self.monotonic()
-        challenge = self._request(f"/v1/installations/{scope['installation_id']}/authority-recovery-proof-challenges",
+        challenge = self._request(verb, f"/v1/installations/{scope['installation_id']}/authority-recovery-proof-challenges",
             target, "proof-challenge-response", before_send, challenge=True)
-        _require_proof_budget(started, self.monotonic())
-        timestamp(challenge["expires_at"])
-        digest = hashlib.sha256(canonical_request(request)).digest()
-        if challenge["request_digest"] != digest.hex():
-            raise HostedGrantUnavailable("Authority recovery challenge changed")
-        fields = (_decode(challenge["challenge"], 32), route["method"].encode(), path.encode(),
-            digest, purpose.encode(), _decode(key.installation_key_jkt, 32), self.proof["audience"].encode())
-        message = self.proof["domain"].encode() + b"".join(len(field).to_bytes(4, "big") + field for field in fields)
-        before_send()
-        signature = self.key.sign_challenge(message)
-        _require_proof_budget(started, self.monotonic())
-        if (signature.installation_key_id != key.installation_key_id or signature.algorithm != "ES256"
-                or len(signature.signature) != 64 or not 0 < int.from_bytes(signature.signature[:32], "big") < _P256_ORDER
-                or not 0 < int.from_bytes(signature.signature[32:], "big") <= _P256_ORDER // 2
-                or not verify_installation_proof(key.public_key_jwk, message, signature)):
-            raise HostedGrantUnavailable("Authority recovery proof unavailable")
-        envelope = validate(verb + "-request", {"request": request, "proof": {"challenge": challenge["challenge"],
-            "key_id": key.installation_key_id, "signature": base64.urlsafe_b64encode(signature.signature).rstrip(b"=").decode()}})
+        with _diagnose_prepare(verb, "challenge", "proof_budget_exhausted"):
+            _require_proof_budget(started, self.monotonic())
+        with _diagnose_prepare(verb, "challenge", "invalid_response"):
+            timestamp(challenge["expires_at"])
+            digest = hashlib.sha256(canonical_request(request)).digest()
+            if challenge["request_digest"] != digest.hex():
+                raise HostedGrantUnavailable("Authority recovery challenge changed")
+            fields = (_decode(challenge["challenge"], 32), route["method"].encode(), path.encode(),
+                digest, purpose.encode(), _decode(key.installation_key_jkt, 32), self.proof["audience"].encode())
+            message = self.proof["domain"].encode() + b"".join(len(field).to_bytes(4, "big") + field for field in fields)
+        with _diagnose_prepare(verb, "proof", "guard_refused"):
+            before_send()
+        with _diagnose_prepare(verb, "proof", "proof_unavailable"):
+            signature = self.key.sign_challenge(message)
+        with _diagnose_prepare(verb, "proof", "proof_budget_exhausted"):
+            _require_proof_budget(started, self.monotonic())
+        with _diagnose_prepare(verb, "proof", "proof_unavailable"):
+            if (signature.installation_key_id != key.installation_key_id or signature.algorithm != "ES256"
+                    or len(signature.signature) != 64 or not 0 < int.from_bytes(signature.signature[:32], "big") < _P256_ORDER
+                    or not 0 < int.from_bytes(signature.signature[32:], "big") <= _P256_ORDER // 2
+                    or not verify_installation_proof(key.public_key_jwk, message, signature)):
+                raise HostedGrantUnavailable("Authority recovery proof unavailable")
+            envelope = validate(verb + "-request", {"request": request, "proof": {"challenge": challenge["challenge"],
+                "key_id": key.installation_key_id, "signature": base64.urlsafe_b64encode(signature.signature).rstrip(b"=").decode()}})
         def guard():
             before_send()
             _require_proof_budget(started, self.monotonic())
-        result = self._request(path, envelope, verb + "-response", guard)
-        return validate_result(verb, request, result, now=self.clock())
+        result = self._request(verb, path, envelope, verb + "-response", guard)
+        with _diagnose_prepare(verb, "result", "invalid_response"):
+            return validate_result(verb, request, result, now=self.clock())
 
     def prepare(self, request, *, before_send):
         return self._exchange("prepare", request, before_send=before_send)

@@ -2,12 +2,16 @@
 import copy
 import hashlib
 import json
+import logging
 from dataclasses import replace
 from datetime import timedelta
 
 import pytest
 
-from app.security.hosted_grants import HostedGrantUnavailable, TransportResponse
+from app.onboarding import timing
+from app.security.hosted_grants import (
+    HostedFailureStage, HostedGrantUnavailable, HostedTransportFailure, TransportResponse,
+)
 from app.security.installation_authority_recovery import (
     PROFILE, InstallationAuthorityRecoveryClient, AuthorityRecoveryRefused, exact_request,
     challenge_target, scope_digest, validate, contract, WITHDRAWALS,
@@ -47,7 +51,7 @@ def exchange(request):
     payload = vector["request"]
     challenge = {"profile": contract()[2]["profile"], "challenge": vector["proof"]["challenge"],
         "request_digest": hashlib.sha256(canonical_request(payload)).hexdigest(), "expires_at": wire_time(NOW+timedelta(seconds=60))}
-    transport = Transport(challenge, response_for(verb, payload))
+    transport = Transport(challenge, response_for(verb, payload), challenge_status=201)
     key = Key(REGISTERED, vector)
     return verb, vector, transport, key, InstallationAuthorityRecoveryClient(transport, key, clock=lambda: NOW)
 
@@ -67,6 +71,19 @@ def test_exact_published_proof_and_path(exchange):
     assert transport.calls == [("POST", path+"-proof-challenges", challenge_target(verb, request)),
         ("POST", path+":"+verb, {"request": request, "proof": vector["proof"]})]
     assert key.signed == 1
+
+
+@pytest.mark.parametrize(("reply", "request_count", "signature_count"), [("challenge", 1, 0), ("operation", 2, 1)])
+def test_challenge_and_operation_require_their_own_success_status(exchange, reply, request_count, signature_count):
+    _, _, transport, key, _ = exchange
+    if reply == "challenge":
+        transport.challenge_status = 200
+    else:
+        transport.status = 201
+    with pytest.raises(HostedGrantUnavailable):
+        send(exchange)
+    assert len(transport.calls) == request_count
+    assert key.signed == signature_count
 
 
 @pytest.mark.parametrize("case", VECTORS["schema_cases"], ids=lambda c: c["case_id"])
@@ -149,6 +166,77 @@ def test_duplicate_reply_members_are_rejected(exchange):
     transport.result = json.dumps(transport.result).replace('"profile":', '"profile": "duplicate", "profile":', 1).encode()
     with pytest.raises(HostedGrantUnavailable):
         send(exchange)
+
+
+@pytest.mark.parametrize("exchange", [
+    vector for vector in VECTORS["proof_cases"] if vector["operation"] == "authority-recovery-prepare"
+], indirect=True)
+@pytest.mark.parametrize(("fault", "stage", "category", "request_count", "signature_count"), [
+    ("guard", "challenge", "guard_refused", 0, 0),
+    ("connect", "challenge", "connection_setup", 1, 0),
+    ("http", "challenge", "http_failure", 1, 0),
+    ("digest", "challenge", "invalid_response", 1, 0),
+    ("budget", "challenge", "proof_budget_exhausted", 1, 0),
+    ("sign", "proof", "proof_unavailable", 1, 0),
+    ("timeout", "submit", "response_timeout", 2, 1),
+    ("result", "result", "invalid_response", 2, 1),
+])
+def test_prepare_records_only_the_failed_stage_and_safe_category(
+    exchange, fault, stage, category, request_count, signature_count, caplog, monkeypatch, tmp_path
+):
+    _, _, transport, key, client = exchange
+    private_detail = "raw transport or proof detail"
+    sent = []
+    underlying_request = transport.request
+
+    def request(method, path, *, json_body):
+        sent.append(path)
+        if fault == "connect":
+            raise HostedTransportFailure(private_detail, stage=HostedFailureStage.CONNECTION_SETUP)
+        if fault == "http":
+            return TransportResponse(503, private_detail.encode(), "text/html")
+        if fault == "timeout" and len(sent) == 2:
+            raise HostedTransportFailure(private_detail, stage=HostedFailureStage.RESPONSE_TIMEOUT)
+        return underlying_request(method, path, json_body=json_body)
+
+    guard_calls = 0
+
+    def guard():
+        nonlocal guard_calls
+        guard_calls += 1
+        if fault == "guard" and guard_calls == 2:
+            raise HostedGrantUnavailable(private_detail)
+
+    def fail_to_sign(_):
+        raise HostedGrantUnavailable(private_detail)
+
+    monkeypatch.setattr(transport, "request", request)
+    if fault == "digest":
+        transport.challenge["request_digest"] = "0" * 64
+    if fault == "budget":
+        monkeypatch.setattr(client, "monotonic", iter([0, 600]).__next__)
+    if fault == "sign":
+        monkeypatch.setattr(key, "sign_challenge", fail_to_sign)
+    if fault == "result":
+        transport.result["scope_digest"] = "0" * 64
+
+    monkeypatch.setattr(timing, "_sink", None)
+    timing.record_to(tmp_path)
+    caplog.set_level(logging.INFO, logger=timing.__name__)
+    with pytest.raises(HostedGrantUnavailable):
+        send(exchange, guard)
+    assert len(sent) == request_count
+    assert key.signed == signature_count
+    expected = f"authority_recovery_prepare_failure stage={stage} category={category}"
+    assert caplog.messages == [f"event={expected}"]
+    lines = (tmp_path / timing.SINK_DIRECTORY / timing.SINK_FILENAME).read_text("ascii").splitlines()
+    assert len(lines) == 1 and lines[0].split(" ", 1)[1] == expected
+
+
+def test_successful_recovery_does_not_log_a_preparation_failure(exchange, caplog):
+    caplog.set_level(logging.INFO, logger=timing.__name__)
+    assert send(exchange) == exchange[2].result
+    assert not caplog.messages
 
 
 @pytest.mark.parametrize("exchange", [vector for vector in VECTORS["proof_cases"]

@@ -658,15 +658,27 @@ it('renders protected native recovery instead of passkey access and returns only
   expect(api.login).not.toHaveBeenCalled();
 });
 
-it('keeps a disconnected protected recovery passive and does not return to ordinary passkey setup', async () => {
-  const snapshot: DesktopSnapshot = { journey_id: null, generation: '11111111-1111-4111-8111-111111111111',
+it('shows the blocked protected recovery result while the original command is pending', async () => {
+  const operationId = '22222222-2222-4222-8222-222222222222';
+  const command = { operation_id: operationId, action: 'account.connect' as const, state: 'accepted' as const, reason: 'none' as const };
+  const snapshot: DesktopSnapshot = { journey_id: operationId, generation: '11111111-1111-4111-8111-111111111111',
     revision: 1, facts: {}, local_ready: false, full_ready: false, analysis_readiness: { availability: 'unauthorized', creator_account_id: null, value: null },
-    next_task: 'account-connection', authority_recovery: 'blocked', allowed_actions: [] , pending_operations: [] };
-  const desktop: DesktopState = { snapshot, pending: null, connected: true, error: null };
-  const recoveryApi: AuthorityRecoveryApi = { getState: () => desktop, subscribe: () => () => {}, act: vi.fn(async () => {}) };
+    next_task: 'account-connection', authority_recovery: 'preparing', allowed_actions: [], pending_operations: [command] };
+  let desktop: DesktopState = { snapshot, pending: operationId, pendingAction: 'account.connect', connected: true, error: null };
+  const listeners = new Set<() => void>();
+  const recoveryApi: AuthorityRecoveryApi = { getState: () => desktop,
+    subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    act: vi.fn(async () => {}) };
   render(<ThemeProvider theme={theme}><WebAuthnAccessView recoveryApi={recoveryApi} api={{ enroll: vi.fn(), login: vi.fn() }} /></ThemeProvider>);
+  expect(await screen.findByText('Preparing sign-in…')).toBeTruthy();
+  act(() => {
+    desktop = { ...desktop, snapshot: { ...snapshot, revision: 2, authority_recovery: 'blocked',
+      pending_operations: [{ ...command, state: 'outcome_unknown', reason: 'operation_unconfirmed' }] } };
+    for (const listener of listeners) listener();
+  });
   expect(await screen.findByRole('heading', { name: 'Can’t open your analytics right now' })).toBeTruthy();
   expect(screen.getByText('This page updates by itself if anything changes.')).toBeTruthy();
+  expect(screen.queryByText('Preparing sign-in…')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Sign in', exact: true })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
   expect(recoveryApi.act).not.toHaveBeenCalled();

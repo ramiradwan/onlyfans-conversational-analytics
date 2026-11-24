@@ -23,6 +23,8 @@ export function authorityRecoveryView(state, acting = null) {
       value.journey_id ? 'Dipsy can’t connect right now. Your setup progress is saved.' : 'Dipsy can’t connect right now.', 'warning');
     return card('', '', '', 'progress');
   }
+  if (recovery === 'blocked') return card('Can’t open your analytics right now',
+    'This page updates by itself if anything changes.', '');
   const childPending = state.pending && state.pending !== auth?.operation_id && ['account.connect', 'auth.select', 'auth.cancel'].includes(state.pendingAction);
   if (childPending && !acting) {
     return state.pendingAction === 'auth.cancel' ? checking() : preparing();
@@ -40,8 +42,6 @@ export function authorityRecoveryView(state, acting = null) {
   if (recovery === 'checking') return checking();
   if (recovery === 'restoring') return card('Opening your analytics',
     '', 'Signed in. Getting this computer ready…', 'progress');
-  if (recovery === 'blocked') return card('Can’t open your analytics right now',
-    'This page updates by itself if anything changes.', '');
   if (recovery !== 'sign-in-required' || !auth) return checking();
   const select = auth.actions.select && auth.choices.default && permitted('auth.select');
   const cancel = auth.actions.cancel && permitted('auth.cancel');
