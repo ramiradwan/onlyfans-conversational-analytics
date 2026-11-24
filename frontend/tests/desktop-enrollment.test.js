@@ -263,3 +263,23 @@ describe('native local enrollment', () => {
     expect(h.refresh).not.toHaveBeenCalled();
   });
 });
+
+it('retires a failed ceremony only after verified current authentication', async () => {
+  let current = { enrolled: true, authenticated: false };
+  const refresh = vi.fn();
+  const subject = new DesktopEnrollment({
+    api: { state: async () => current, login: async () => { throw Error('cancelled'); } },
+    receive() {}, refresh,
+  });
+  try {
+    await subject.check();
+    await subject.authenticate();
+    expect(subject.state.error).toBe('passkey_unconfirmed');
+    await subject.check({ quiet: true });
+    expect(subject.state.error).toBe('passkey_unconfirmed');
+    current = { enrolled: true, authenticated: true };
+    await subject.check({ quiet: true });
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(subject.state).toMatchObject({ authenticated: true, error: null });
+  } finally { subject.stop(); }
+});

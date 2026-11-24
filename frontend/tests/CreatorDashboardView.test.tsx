@@ -467,6 +467,26 @@ describe('CreatorDashboardView', () => {
     expect(source.api.begin).not.toHaveBeenCalled();
   });
 
+  it('keeps an exact collection helper notice on the Dashboard after local setup is complete', async () => {
+    const store = readyStore();
+    store.setAgent({ ...store.getState().agent!, browser: { ...COLLECTION_ON, legal_review_required: true } });
+    const source = readinessSource(true);
+    const operation = { operation_id: '22222222-2222-4222-8222-222222222222', action: 'browser.access', state: 'waiting', reason: 'none' };
+    const notice = { task_id: '33333333-3333-4333-8333-333333333333', admission_generation: '44444444-4444-4444-8444-444444444444',
+      operation_id: operation.operation_id, reason: 'profile_mismatch' };
+    const snapshot = { ...source.api.getState().snapshot!, next_task: 'complete', allowed_actions: [],
+      pending_operations: [operation] };
+    source.publish({ snapshot, browserNotices: [notice] });
+    mountDashboard(store, source);
+    expect(screen.getByText('Switch to the browser profile that has the extension.')).toBeTruthy();
+    expect(screen.queryByText('Complete the review in your browser.')).toBeNull();
+    const successor = { ...operation, operation_id: '55555555-5555-4555-8555-555555555555' };
+    await act(async () => source.publish({ snapshot: { ...snapshot, pending_operations: [successor] } }));
+    expect(screen.queryByText('Switch to the browser profile that has the extension.')).toBeNull();
+    expect(screen.getByText('Complete the review in your browser.')).toBeTruthy();
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
   it('leaves paused collection untouched after opening the browser and waits for pushed confirmation', async () => {
     const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]) }), conversations: [] });
     const browser: BrowserSurfacePayload = { capture: 'paused', site_access: 'granted',

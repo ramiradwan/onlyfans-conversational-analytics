@@ -114,7 +114,9 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
         with coordinator.store.database.read() as connection:
             row = connection.execute("SELECT t.admission_generation,t.state,t.expires_at,o.state AS operation_state "
                 "FROM desktop_browser_tasks t JOIN desktop_setup_operations o ON o.operation_id=t.operation_id "
-                "WHERE t.task_id=?", (task_id,)).fetchone()
+                "JOIN desktop_presentations p ON p.generation=t.desktop_generation "
+                "WHERE t.task_id=? AND p.stage=t.stage AND p.state='active' AND p.expires_at>?",
+                (task_id, coordinator.admissions._now())).fetchone()
         return (row is not None and row["admission_generation"] == generation
                 and row["state"] in {"pending", "accepted", "outcome_unknown"}
                 and row["expires_at"] > coordinator.admissions._now()
@@ -246,11 +248,13 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
 
     @router.post("/api/v1/browser-tasks/ended")
     async def ended(request: Request):
-        session, task = task_session(request, mutation=True)
+        task_session(request, mutation=True)
         value = await body(request)
-        if set(value) != {"reason"} or value["reason"] not in NOTICES:
+        if set(value) != {"reason"} or not isinstance(value["reason"], str) or value["reason"] not in NOTICES:
             raise HTTPException(400, "Invalid browser task request")
-        tasks.helpers.notice(task["task_id"], session.generation, value["reason"])
+        session, task = task_session(request, mutation=True)
+        if task["state"] != "completed":
+            tasks.helpers.notice(task["task_id"], session.generation, value["reason"])
         return JSONResponse({"state": "recorded"}, headers=HEADERS)
 
     @router.get("/api/v1/desktop/browser-tasks/notices")
@@ -304,7 +308,7 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
                 raise HTTPException(401, "Setup admission is unavailable") from None
             if task is None:
                 return JSONResponse({"state": "unavailable"}, headers=HEADERS)
-            tasks.helpers.clear_notice(task_id)
+            tasks.helpers.clear_notice(task_id, task["admission_generation"])
             if tasks.dispatcher is not None and task["purpose"] == "browser.authentication":
                 state = await tasks.dispatcher(request, session, task_id)
                 if state == "dispatched":

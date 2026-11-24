@@ -13,7 +13,7 @@ import {
   type BrowserDestination,
 } from '../services/browserControlApi';
 import { captureOperation } from '../services/captureOperation';
-import { desktopOnboardingApi, selectCollectionContinuation, type DesktopOnboardingApi } from '../services/desktopOnboarding';
+import { desktopOnboardingApi, selectBrowserFeedback, selectCollectionContinuation, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import type { ExtensionConnection } from '../utils/statusCopy';
 import { OnboardingAction, OnboardingCard, OnboardingSpot } from './ui/OnboardingCard';
 import { StatusLine } from './ui/ReservedRegion';
@@ -43,7 +43,8 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   const continuation = continuationCreatorId !== undefined;
   const snapshot = desktop.snapshot;
   const { current: currentAuthority, reviewNeeded, paused: continuationPaused, reviewOperation, localReviewPending, canReview, canResume } =
-    selectCollectionContinuation(desktop, continuationCreatorId, browser, canManage);
+    selectCollectionContinuation(desktop, continuationCreatorId ?? creatorAccountId, browser, canManage);
+  const reviewFeedback = selectBrowserFeedback(desktop, reviewOperation?.operation_id);
   const currentPresentation = () => {
     const current = onboarding.getState();
     return current.connected && current.snapshot === snapshot && current.pending === desktop.pending
@@ -101,7 +102,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
     : captureFailure === 'outcome_unknown' ? "Your change hasn't been confirmed."
       : captureFailure === 'authorization_refused' ? "Dipsy couldn't change collection of OnlyFans activity."
         : captureFailure === 'browser_disconnected' || notice === 'unreachable' ? 'The browser extension is not connected right now.'
-          : notice === 'failed' ? 'The change was not confirmed.' : null;
+          : reviewFeedback?.message ?? (notice === 'failed' ? 'The change was not confirmed.' : null);
   useEffect(() => { onFeedback?.(feedbackText); }, [feedbackText, onFeedback]);
   useEffect(() => () => onFeedback?.(null), [onFeedback]);
   const feedback = onFeedback ? null : <StatusLine id="browser-feedback" tone="error" text={feedbackText} />;

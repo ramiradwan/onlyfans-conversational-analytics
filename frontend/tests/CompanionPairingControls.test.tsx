@@ -73,6 +73,25 @@ afterEach(() => {
 });
 
 describe('companion pairing controls', () => {
+  it('keeps the current pairing helper notice in Settings until the operation leaves', async () => {
+    const source = desktopFixture(false);
+    const pairing = { operation_id: '22222222-2222-4222-8222-222222222222', action: 'browser.pair', state: 'waiting', reason: 'none' };
+    const notice = { task_id: '33333333-3333-4333-8333-333333333333', admission_generation: '44444444-4444-4444-8444-444444444444',
+      operation_id: pairing.operation_id, reason: 'profile_mismatch' };
+    const initial = source.api.getState().snapshot!;
+    const snapshot = { ...initial, next_task: 'complete', pending_operations: [pairing],
+      analysis_readiness: { availability: 'unauthorized' as const, creator_account_id: null, value: null } };
+    source.publish({ snapshot, browserNotices: [notice] });
+    mount(makeApi(), source.api);
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: 'Continue connecting' })).toBeTruthy();
+    await click('Browser alert');
+    expect(screen.getByText('Switch to the browser profile that has the extension.')).toBeTruthy();
+    await act(async () => source.publish({ snapshot: { ...snapshot, pending_operations: [] } }));
+    expect(screen.queryByRole('button', { name: 'Browser alert' })).toBeNull();
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
+
   it('removes the connected badge when the bridge is lost and restores it on recovery', async () => {
     bridgeTransportStore.setConnection('connected');
     bridgeTransportStore.setAgent({ creator_account_id: 'creator-1', status: 'connected', agent_installation_id: null, connection_id: null,

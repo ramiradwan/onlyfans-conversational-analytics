@@ -1,4 +1,4 @@
-import { validateDocument, validateOperation } from './generated-contract.js';
+import { validateDocument, validateOperation, validateSetupFrame } from './generated-contract.js';
 import limits from '../../shared/desktop-onboarding/wire-limits.json' with { type: 'json' };
 import { parseOnboardingJson } from '../../shared/onboarding/json.mjs';
 
@@ -7,6 +7,12 @@ export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 export function snapshot(text, generation) {
   const value = parseOnboardingJson(text, limits.document_utf8_bytes);
   if (!validateDocument(value) || value.kind !== 'snapshot' || value.generation !== generation) throw new Error('invalid_snapshot');
+  return value;
+}
+
+export function setupFrame(text, generation) {
+  const value = parseOnboardingJson(text, limits.setup_frame_utf8_bytes);
+  if (!validateSetupFrame(value) || value.snapshot.generation !== generation) throw new Error('invalid_snapshot');
   return value;
 }
 

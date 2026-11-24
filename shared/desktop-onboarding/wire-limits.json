@@ -1,3 +1,4 @@
 {
-  "document_utf8_bytes": 16384
+  "document_utf8_bytes": 16384,
+  "setup_frame_utf8_bytes": 32768
 }

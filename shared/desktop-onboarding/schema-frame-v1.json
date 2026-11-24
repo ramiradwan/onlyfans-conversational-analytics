@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ofca:desktop-onboarding:setup-frame:v1",
+  "title": "Scoped desktop setup stream frame",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "snapshot",
+    "browser_notices"
+  ],
+  "properties": {
+    "snapshot": {
+      "type": "object",
+      "$ref": "urn:ofca:desktop-onboarding:v2",
+      "properties": {
+        "kind": {
+          "const": "snapshot"
+        }
+      }
+    },
+    "browser_notices": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "task_id",
+          "operation_id",
+          "admission_generation",
+          "reason"
+        ],
+        "properties": {
+          "task_id": {
+            "$ref": "urn:ofca:desktop-onboarding:v2#/$defs/uuid"
+          },
+          "operation_id": {
+            "$ref": "urn:ofca:desktop-onboarding:v2#/$defs/uuid"
+          },
+          "admission_generation": {
+            "$ref": "urn:ofca:desktop-onboarding:v2#/$defs/uuid"
+          },
+          "reason": {
+            "enum": [
+              "extension_unavailable",
+              "profile_mismatch",
+              "account_mismatch",
+              "task_changed",
+              "task_expired",
+              "unavailable",
+              "needs_account",
+              "needs_consent",
+              "needs_permission"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

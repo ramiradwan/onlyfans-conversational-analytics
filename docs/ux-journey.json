@@ -1663,6 +1663,11 @@
           "name": "requires explicit code comparison before versioned confirmation without exposing the identity thumbprint"
         },
         {
+          "kind": "unit",
+          "file": "frontend/tests/CompanionPairingControls.test.tsx",
+          "name": "keeps the current pairing helper notice in Settings until the operation leaves"
+        },
+        {
           "kind": "visual",
           "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "pairing-comparison"
@@ -2101,6 +2106,16 @@
           "kind": "unit",
           "file": "frontend/tests/CommercialActivationControls.test.tsx",
           "name": "waits for Chrome without redundant launch or cancellation controls"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "keeps pairing and replaced sign-in failures out of the current activation sign-in"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "shows browser helper feedback only for the current activation sign-in"
         },
         {
           "kind": "unit",
@@ -4318,6 +4333,11 @@
           "kind": "unit",
           "file": "frontend/tests/CreatorDashboardView.test.tsx",
           "name": "does not offer browser review without matching current authority or hide existing activity"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "keeps an exact collection helper notice on the Dashboard after local setup is complete"
         },
         {
           "kind": "unit",

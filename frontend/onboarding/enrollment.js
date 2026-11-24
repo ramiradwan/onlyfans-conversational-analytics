@@ -56,7 +56,7 @@ export class DesktopEnrollment {
         // Retire the pre-authentication setup projection before publishing
         // restored access. A fresh authenticated snapshot owns the next action.
         if (rechecking && value.authenticated && !wasAuthenticated) void this.refresh();
-        this.publish({ ...value, checked: true, access: null, recoveringStatus: false, ...(this.state.enrolled === null ? { error: null } : {}) });
+        this.publish({ ...value, checked: true, access: null, recoveringStatus: false, ...(this.state.enrolled === null || value.authenticated ? { error: null, attempt: null } : {}) });
         this.retryCount = 0;
       }
     } catch (error) {

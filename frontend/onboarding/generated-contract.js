@@ -5007,3 +5007,220 @@ validate23.errors = vErrors;
 return errors === 0;
 }
 validate23.evaluated = {"props":true,"dynamicProps":false,"dynamicItems":false};
+
+export const validateSetupFrame = validate27;
+const schema45 = {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"urn:ofca:desktop-onboarding:setup-frame:v1","title":"Scoped desktop setup stream frame","type":"object","additionalProperties":false,"required":["snapshot","browser_notices"],"properties":{"snapshot":{"type":"object","$ref":"urn:ofca:desktop-onboarding:v2","properties":{"kind":{"const":"snapshot"}}},"browser_notices":{"type":"array","maxItems":64,"items":{"type":"object","additionalProperties":false,"required":["task_id","operation_id","admission_generation","reason"],"properties":{"task_id":{"$ref":"urn:ofca:desktop-onboarding:v2#/$defs/uuid"},"operation_id":{"$ref":"urn:ofca:desktop-onboarding:v2#/$defs/uuid"},"admission_generation":{"$ref":"urn:ofca:desktop-onboarding:v2#/$defs/uuid"},"reason":{"enum":["extension_unavailable","profile_mismatch","account_mismatch","task_changed","task_expired","unavailable","needs_account","needs_consent","needs_permission"]}}}}}};
+
+function validate27(data, {instancePath="", parentData, parentDataProperty, rootData=data, dynamicAnchors={}}={}){
+/*# sourceURL="urn:ofca:desktop-onboarding:setup-frame:v1" */;
+let vErrors = null;
+let errors = 0;
+const evaluated0 = validate27.evaluated;
+if(evaluated0.dynamicProps){
+evaluated0.props = undefined;
+}
+if(evaluated0.dynamicItems){
+evaluated0.items = undefined;
+}
+if(errors === 0){
+if(data && typeof data == "object" && !Array.isArray(data)){
+let missing0;
+if(((data.snapshot === undefined) && (missing0 = "snapshot")) || ((data.browser_notices === undefined) && (missing0 = "browser_notices"))){
+validate27.errors = [{instancePath,schemaPath:"#/required",keyword:"required",params:{missingProperty: missing0},message:"must have required property '"+missing0+"'"}];
+return false;
+}
+else {
+const _errs1 = errors;
+for(const key0 in data){
+if(!((key0 === "snapshot") || (key0 === "browser_notices"))){
+validate27.errors = [{instancePath,schemaPath:"#/additionalProperties",keyword:"additionalProperties",params:{additionalProperty: key0},message:"must NOT have additional properties"}];
+return false;
+break;
+}
+}
+if(_errs1 === errors){
+if(data.snapshot !== undefined){
+let data0 = data.snapshot;
+const _errs2 = errors;
+if(!(validate20(data0, {instancePath:instancePath+"/snapshot",parentData:data,parentDataProperty:"snapshot",rootData,dynamicAnchors}))){
+vErrors = vErrors === null ? validate20.errors : vErrors.concat(validate20.errors);
+errors = vErrors.length;
+}
+else {
+var props0 = validate20.evaluated.props;
+}
+if(errors === _errs2){
+if(data0 && typeof data0 == "object" && !Array.isArray(data0)){
+if(props0 !== true){
+props0 = props0 || {};
+props0.kind = true;
+}
+if(data0.kind !== undefined){
+if("snapshot" !== data0.kind){
+validate27.errors = [{instancePath:instancePath+"/snapshot/kind",schemaPath:"#/properties/snapshot/properties/kind/const",keyword:"const",params:{allowedValue: "snapshot"},message:"must be equal to constant"}];
+return false;
+}
+}
+}
+else {
+validate27.errors = [{instancePath:instancePath+"/snapshot",schemaPath:"#/properties/snapshot/type",keyword:"type",params:{type: "object"},message:"must be object"}];
+return false;
+}
+}
+var valid0 = _errs2 === errors;
+}
+else {
+var valid0 = true;
+}
+if(valid0){
+if(data.browser_notices !== undefined){
+let data2 = data.browser_notices;
+const _errs5 = errors;
+if(errors === _errs5){
+if(Array.isArray(data2)){
+if(data2.length > 64){
+validate27.errors = [{instancePath:instancePath+"/browser_notices",schemaPath:"#/properties/browser_notices/maxItems",keyword:"maxItems",params:{limit: 64},message:"must NOT have more than 64 items"}];
+return false;
+}
+else {
+var valid2 = true;
+const len0 = data2.length;
+for(let i0=0; i0<len0; i0++){
+let data3 = data2[i0];
+const _errs7 = errors;
+if(errors === _errs7){
+if(data3 && typeof data3 == "object" && !Array.isArray(data3)){
+let missing1;
+if(((((data3.task_id === undefined) && (missing1 = "task_id")) || ((data3.operation_id === undefined) && (missing1 = "operation_id"))) || ((data3.admission_generation === undefined) && (missing1 = "admission_generation"))) || ((data3.reason === undefined) && (missing1 = "reason"))){
+validate27.errors = [{instancePath:instancePath+"/browser_notices/" + i0,schemaPath:"#/properties/browser_notices/items/required",keyword:"required",params:{missingProperty: missing1},message:"must have required property '"+missing1+"'"}];
+return false;
+}
+else {
+const _errs9 = errors;
+for(const key1 in data3){
+if(!((((key1 === "task_id") || (key1 === "operation_id")) || (key1 === "admission_generation")) || (key1 === "reason"))){
+validate27.errors = [{instancePath:instancePath+"/browser_notices/" + i0,schemaPath:"#/properties/browser_notices/items/additionalProperties",keyword:"additionalProperties",params:{additionalProperty: key1},message:"must NOT have additional properties"}];
+return false;
+break;
+}
+}
+if(_errs9 === errors){
+if(data3.task_id !== undefined){
+let data4 = data3.task_id;
+const _errs10 = errors;
+const _errs11 = errors;
+if(errors === _errs11){
+if(typeof data4 === "string"){
+if(!pattern4.test(data4)){
+validate27.errors = [{instancePath:instancePath+"/browser_notices/" + i0+"/task_id",schemaPath:"urn:ofca:desktop-onboarding:v2#/$defs/uuid/pattern",keyword:"pattern",params:{pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},message:"must match pattern \""+"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"+"\""}];
+return false;
+}
+}
+else {
+validate27.errors = [{instancePath:instancePath+"/browser_notices/" + i0+"/task_id",schemaPath:"urn:ofca:desktop-onboarding:v2#/$defs/uuid/type",keyword:"type",params:{type: "string"},message:"must be string"}];
+return false;
+}
+}
+var valid3 = _errs10 === errors;
+}
+else {
+var valid3 = true;
+}
+if(valid3){
+if(data3.operation_id !== undefined){
+let data5 = data3.operation_id;
+const _errs13 = errors;
+const _errs14 = errors;
+if(errors === _errs14){
+if(typeof data5 === "string"){
+if(!pattern4.test(data5)){
+validate27.errors = [{instancePath:instancePath+"/browser_notices/" + i0+"/operation_id",schemaPath:"urn:ofca:desktop-onboarding:v2#/$defs/uuid/pattern",keyword:"pattern",params:{pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},message:"must match pattern \""+"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"+"\""}];
+return false;
+}
+}
+else {
+validate27.errors = [{instancePath:instancePath+"/browser_notices/" + i0+"/operation_id",schemaPath:"urn:ofca:desktop-onboarding:v2#/$defs/uuid/type",keyword:"type",params:{type: "string"},message:"must be string"}];
+return false;
+}
+}
+var valid3 = _errs13 === errors;
+}
+else {
+var valid3 = true;
+}
+if(valid3){
+if(data3.admission_generation !== undefined){
+let data6 = data3.admission_generation;
+const _errs16 = errors;
+const _errs17 = errors;
+if(errors === _errs17){
+if(typeof data6 === "string"){
+if(!pattern4.test(data6)){
+validate27.errors = [{instancePath:instancePath+"/browser_notices/" + i0+"/admission_generation",schemaPath:"urn:ofca:desktop-onboarding:v2#/$defs/uuid/pattern",keyword:"pattern",params:{pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},message:"must match pattern \""+"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"+"\""}];
+return false;
+}
+}
+else {
+validate27.errors = [{instancePath:instancePath+"/browser_notices/" + i0+"/admission_generation",schemaPath:"urn:ofca:desktop-onboarding:v2#/$defs/uuid/type",keyword:"type",params:{type: "string"},message:"must be string"}];
+return false;
+}
+}
+var valid3 = _errs16 === errors;
+}
+else {
+var valid3 = true;
+}
+if(valid3){
+if(data3.reason !== undefined){
+let data7 = data3.reason;
+const _errs19 = errors;
+if(!(((((((((data7 === "extension_unavailable") || (data7 === "profile_mismatch")) || (data7 === "account_mismatch")) || (data7 === "task_changed")) || (data7 === "task_expired")) || (data7 === "unavailable")) || (data7 === "needs_account")) || (data7 === "needs_consent")) || (data7 === "needs_permission"))){
+validate27.errors = [{instancePath:instancePath+"/browser_notices/" + i0+"/reason",schemaPath:"#/properties/browser_notices/items/properties/reason/enum",keyword:"enum",params:{allowedValues: schema45.properties.browser_notices.items.properties.reason.enum},message:"must be equal to one of the allowed values"}];
+return false;
+}
+var valid3 = _errs19 === errors;
+}
+else {
+var valid3 = true;
+}
+}
+}
+}
+}
+}
+}
+else {
+validate27.errors = [{instancePath:instancePath+"/browser_notices/" + i0,schemaPath:"#/properties/browser_notices/items/type",keyword:"type",params:{type: "object"},message:"must be object"}];
+return false;
+}
+}
+var valid2 = _errs7 === errors;
+if(!valid2){
+break;
+}
+}
+}
+}
+else {
+validate27.errors = [{instancePath:instancePath+"/browser_notices",schemaPath:"#/properties/browser_notices/type",keyword:"type",params:{type: "array"},message:"must be array"}];
+return false;
+}
+}
+var valid0 = _errs5 === errors;
+}
+else {
+var valid0 = true;
+}
+}
+}
+}
+}
+else {
+validate27.errors = [{instancePath,schemaPath:"#/type",keyword:"type",params:{type: "object"},message:"must be object"}];
+return false;
+}
+}
+validate27.errors = vErrors;
+return errors === 0;
+}
+validate27.evaluated = {"props":true,"dynamicProps":false,"dynamicItems":false};

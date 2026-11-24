@@ -66,6 +66,33 @@ export interface DesktopOnboardingApi {
   reconcile(action: DesktopAction): Promise<void>;
 }
 
+const browserFeedbackMessages = new Map([
+  ['browser_unavailable', 'The browser action could not be confirmed.'],
+  ['chrome_unavailable', 'The browser could not be opened.'],
+  ['extension_unavailable', 'The browser extension is not connected right now.'],
+  ['profile_mismatch', 'Switch to the browser profile that has the extension.'],
+  ['account_mismatch', 'Switch to the OnlyFans account you used for setup.'],
+  ['browser_needs_account', 'Sign in to your creator account in your browser.'],
+  ['browser_needs_consent', 'Turn on browser access in the extension.'],
+  ['browser_needs_permission', 'Allow access to the creator site in the extension.'],
+  ['operation_expired', 'This browser request expired.'],
+]);
+
+/** Use feedback only for the operation represented by this control. */
+export function selectBrowserFeedback(desktop: DesktopState, operationId: string | null | undefined) {
+  if (!desktop.connected || !operationId) return null;
+  const operation = desktop.snapshot?.pending_operations.find(item => item.operation_id === operationId);
+  if (!operation) return null;
+  const failure = desktop.operationError;
+  if (failure?.operationId === operationId && failure.action === operation.action) {
+    const message = browserFeedbackMessages.get(failure.reason);
+    if (message) return { reason: failure.reason, message };
+  }
+  const notice = desktop.browserNotices?.find(item => item.operation_id === operationId);
+  const message = notice && browserFeedbackMessages.get(notice.reason);
+  return notice && message ? { reason: notice.reason, message } : null;
+}
+
 const listeners = new Set<() => void>();
 let client: DesktopSetupClient | null = null;
 let state: DesktopState = { snapshot: null, pending: null, connected: false, error: null };

@@ -26,6 +26,8 @@ Consolidate commercial and analysis readiness as a non-authorizing read projecti
 
 Native snapshots use the closed v2 read profile; commands retain v1 and their existing guard inputs. The browser-surface v2 profile carries only a bounded owner-reported history failure code through the existing authenticated channel. Historical protocol fixtures retain their bytes when this optional display field is absent. Readiness and acquisition status cannot authorize a command or infer completed coverage.
 
+The existing native setup stream supports an opt-in `setup-frame.v1` event. It carries the v2 snapshot and current helper notices together. Each notice is scoped to an operation, a browser task and its admission generation. A notice carries presentation feedback only. The unversioned stream retains its existing shapes for earlier readers.
+
 Narrower command freshness and a preparation-use-case rewrite are conditional follow-ups. They require their own evidence and review before changing admission policy or qualified commercial behavior.
 
 ## Confirmation

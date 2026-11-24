@@ -48,6 +48,8 @@ export interface DesktopState {
   pendingAction?: string;
   connected: boolean;
   error: string | null;
+  browserNotices?: ReadonlyArray<{ task_id: string; admission_generation: string; operation_id: string; reason: string }>;
+  operationError?: { operationId: string; action: string | null; reason: string } | null;
   deliberate?: boolean;
   browserLaunchPending?: boolean;
   recoverySignInPending?: boolean;
