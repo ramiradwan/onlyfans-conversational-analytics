@@ -11,7 +11,7 @@ from starlette.requests import ClientDisconnect
 from app.core.resource_paths import resource_path
 from app.onboarding.contract import validate
 from app.onboarding.admission_routes import COOKIE_NAMES, CSRF, GENERATION, ORIGIN, csrf_token
-from app.onboarding.routes import DesktopEventResponse, desktop_router
+from app.onboarding.routes import SCOPED_SETUP_EVENT, SETUP_EVENT_PROFILE, DesktopEventResponse, desktop_router
 from app.provisioning.events import events
 from test_desktop_coordinator import command, setup as coordinator_setup
 
@@ -234,13 +234,16 @@ async def test_planned_stream_end_rechecks_deadlines_before_another_read(setup, 
         await frames.aclose()
         events.unsubscribe(response.listener)
 
-def test_snapshot_sse_matches_browser_wire_vectors(setup, monkeypatch):
+@pytest.mark.parametrize("scoped", [False, True])
+def test_snapshot_sse_matches_browser_wire_vectors(setup, monkeypatch, scoped):
     coordinator, _, session, _ = setup
     vectors = json.loads(resource_path("shared/desktop-onboarding/wire-vectors.json").read_text("utf-8"))
     app = FastAPI()
     app.include_router(desktop_router(coordinator, next_expiry=lambda: 0))
     request_headers = {"Host": "bridge.localhost:17871", "Origin": ORIGIN,
         GENERATION: session.generation, "Cookie": COOKIE_NAMES["desktop"] + "=" + session.identifier}
+    if scoped:
+        request_headers[SETUP_EVENT_PROFILE] = SCOPED_SETUP_EVENT
     with TestClient(app, base_url=ORIGIN, headers=request_headers) as client:
         for variant in vectors["descriptions"]:
             value = deepcopy(vectors["snapshot"])
@@ -250,7 +253,12 @@ def test_snapshot_sse_matches_browser_wire_vectors(setup, monkeypatch):
             assert response.status_code == 200
             event, data = response.content.splitlines()[:2]
             payload = data.removeprefix(b"data: ")
-            assert event == b"event: setup"
+            if scoped:
+                assert event == f"event: {SCOPED_SETUP_EVENT}".encode()
+                assert payload.startswith(b'{"snapshot":') and payload.endswith(b',"browser_notices":[]}')
+                payload = payload.removeprefix(b'{"snapshot":').removesuffix(b',"browser_notices":[]}')
+            else:
+                assert event == b"event: setup"
             assert len(payload) == variant["utf8_bytes"]
             assert hashlib.sha256(payload).hexdigest() == variant["sha256"]
             assert json.loads(payload) == value

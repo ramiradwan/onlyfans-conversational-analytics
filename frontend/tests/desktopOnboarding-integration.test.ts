@@ -19,7 +19,7 @@ const snapshot = { profile: 'desktop-onboarding.v2', kind: 'snapshot', journey_i
 
 afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); });
 
-it.each([['completed', 'completed'], ['waiting', 'accepted'], ['outcome_unknown', 'unconfirmed']])('returns %s for its own activation interaction', async (receiptState, expectedState) => {
+async function verifyActivationOutcome(receiptState: string, expectedState: string) {
   sessionStorage.setItem('desktop-presentation', generation);
   const receipts: string[] = [];
   let operationId = '';
@@ -51,4 +51,12 @@ it.each([['completed', 'completed'], ['waiting', 'accepted'], ['outcome_unknown'
     await expect(api.begin('activation.review')).resolves.toMatchObject({ state: expectedState });
     expect(receipts).toEqual([operationId]);
   } finally { unsubscribe(); }
+}
+
+it('returns the completed activation receipt independently of older helper feedback', async () => {
+  await verifyActivationOutcome('completed', 'completed');
+});
+
+it.each([['waiting', 'accepted'], ['outcome_unknown', 'unconfirmed']])('reports %s as %s for the same activation', async (receiptState, expectedState) => {
+  await verifyActivationOutcome(receiptState, expectedState);
 });

@@ -25,7 +25,7 @@ It checks the ZIP digest again before promotion. Releases are retained under
 Failed candidates remain at the printed temporary path for investigation.
 
 Automation uses persistent Chromium contexts and real popup actions. It covers
-fresh install with no permissions, legal choices while analytics stays off,
+fresh install with only the required local Bridge access, legal choices while analytics stays off,
 absence of HTTP requests during the observed popup actions, and deletion followed by reacceptance in
 the same worker. `OFCA_HEADLESS=1` selects headless Chromium. These tests do not
 inject consent or replace the permission API. The network observation starts

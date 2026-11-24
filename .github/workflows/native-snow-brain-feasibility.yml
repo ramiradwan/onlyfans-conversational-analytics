@@ -184,7 +184,7 @@ jobs:
           $env:PYTHON = $env:PRODUCTION_PYTHON
           node extension/qualification/companion-origin-browser.mjs playwright tools/native-snow-brain-spike/origin-current.json
           if ($LASTEXITCODE -ne 0) { throw "current browser origin qualification failed" }
-          node extension/qualification/companion-production-browser.mjs playwright tools/native-snow-brain-spike/production-current.json
+          node extension/qualification/companion-production-browser.mjs playwright tools/native-snow-brain-spike/production-current.json --readiness-epoch
           if ($LASTEXITCODE -ne 0) { throw "current browser production session qualification failed" }
           node extension/qualification/companion-popup-browser.mjs playwright tools/native-snow-brain-spike/popup-current.json
           if ($LASTEXITCODE -ne 0) { throw "current browser pairing window qualification failed" }
@@ -201,7 +201,7 @@ jobs:
           $env:PYTHON = $env:PRODUCTION_PYTHON
           node extension/qualification/companion-origin-browser.mjs "$browser" tools/native-snow-brain-spike/origin-chrome132.json
           if ($LASTEXITCODE -ne 0) { throw "minimum browser origin qualification failed" }
-          node extension/qualification/companion-production-browser.mjs "$browser" tools/native-snow-brain-spike/production-chrome132.json
+          node extension/qualification/companion-production-browser.mjs "$browser" tools/native-snow-brain-spike/production-chrome132.json --readiness-epoch
           if ($LASTEXITCODE -ne 0) { throw "minimum browser production session qualification failed" }
           node extension/qualification/companion-popup-browser.mjs "$browser" tools/native-snow-brain-spike/popup-chrome132.json
           if ($LASTEXITCODE -ne 0) { throw "minimum browser pairing window qualification failed" }
