@@ -354,3 +354,36 @@ def test_prepared_terminal_source_cannot_enter_ordinary_fresh_recovery(owner, st
         with pytest.raises(OnboardingJourneyUnavailable):
             owner.contexts.desktop_recovery_proposal(connection, journey_id=original.journey_id)
     assert owner.journeys.require_current(original.journey_id) == before
+
+
+@pytest.mark.parametrize("state,expected", [
+    ("completing", "registration_pending"),
+    ("unknown", "registration_unconfirmed"),
+    ("completed", "recovery_required"),
+])
+@pytest.mark.parametrize("claim", ["absent", "matching", "different"])
+def test_initial_registration_transition_does_not_invent_missing_authority(tmp_path, state, expected, claim):
+    from app.persistence.auth import ClaimSubmission, InstallationKeyReference, InstallationKeyReservation
+    store = SQLiteAuthenticationStore(tmp_path / "auth.sqlite3", clock=lambda: NOW)
+    store.reserve_installation_key(InstallationKeyReservation(
+        provider_name="test-provider", provider_key_name="test-key", algorithm="ES256", created_at=NOW))
+    key = InstallationKeyReference(provider_name="test-provider", provider_key_name="test-key",
+        algorithm="ES256", installation_key_id="test-key-id", installation_key_jkt="a" * 43,
+        public_key_jwk='{"kty":"EC"}', created_at=NOW, activated_at=NOW)
+    store.activate_installation_key(key)
+    journey = OnboardingJourneyStore(store).open()
+    scope = {"association_request_id": "request-1", "organization_id": "organization-1",
+             "onboarding_transaction_id": "source-transaction", "intended_creator_id": "creator-1",
+             "installation_id": journey["installation_id"], "installation_key_jkt": key.installation_key_jkt}
+    with store.database.transaction() as connection:
+        connection.execute("UPDATE onboarding_journeys SET state=?,scope_json=?,operation_id=?,handoff_reference=? WHERE journey_id=?",
+                           (state, json.dumps(scope), "original-operation", "original-reference", journey["journey_id"]))
+    if claim != "absent":
+        store.record_claim_submission(ClaimSubmission(
+            claim_id="claim-1", onboarding_transaction_id=scope["onboarding_transaction_id"],
+            organization_id=scope["organization_id"],
+            installation_id=journey["installation_id"] if claim == "matching" else "other-installation",
+            submitted_at=NOW, claim_profile="urn:bridge-clean:installation-claim:v2"))
+    observed = scoped_durable_provisioning_progress(lambda: store)(journey["journey_id"])
+    assert observed["stage"] == ("recovery_required" if claim == "different" else expected)
+    assert observed["creator_account_id"] is None

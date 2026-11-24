@@ -473,35 +473,49 @@ test('native onboarding primitives render under the shell CSP', async () => {
   }
 });
 
-for (const selected of ['dark', 'light']) {
-  test(`saved ${selected} setup theme selects the canvas before CSS arrives`, async () => {
-    const browser = await chromium.launch();
-    let release;
-    const delayedStyles = new Promise(resolve => { release = resolve; });
-    try {
-      const context = await browser.newContext({ colorScheme: selected === 'dark' ? 'light' : 'dark' });
-      const page = await context.newPage();
-      await page.addInitScript(theme => localStorage.setItem('mui-mode', theme), selected);
-      const document = await readFile(new URL('../../app/static/dist/onboarding/index.html', import.meta.url), 'utf8');
-      const initializer = await readFile(new URL('../../frontend/public/setup-theme-init.js', import.meta.url), 'utf8');
-      await page.route('http://127.0.0.1:17899/**', async route => {
-        const path = new URL(route.request().url()).pathname;
-        if (path === '/onboarding') return route.fulfill({ contentType: 'text/html', body: document });
-        if (path === '/static/dist/setup-theme-init.js') return route.fulfill({ contentType: 'text/javascript', body: initializer });
-        if (path.endsWith('.css')) await delayedStyles;
-        return route.fulfill({ contentType: path.endsWith('.css') ? 'text/css' : 'text/javascript', body: '' });
-      });
-      await page.goto('http://127.0.0.1:17899/onboarding', { waitUntil: 'commit' });
-      await page.waitForFunction(theme => document.documentElement.dataset.colorScheme === theme, selected);
-      const early = await page.evaluate(() => ({
-        scheme: document.querySelector('meta[name="color-scheme"]').content,
-        stylesheets: document.styleSheets.length,
-      }));
-      assert.equal(early.stylesheets, 0, 'check must precede stylesheet arrival');
-      assert.equal(early.scheme, selected, 'browser canvas must use the saved theme before CSS');
-    } finally {
-      release();
-      await browser.close();
-    }
-  });
+for (const [selected, system] of [['dark', 'light'], ['light', 'dark'], ['system', 'dark'], ['system', 'light']]) {
+  for (const [surface, relative] of [
+    ['desktop', '../../app/static/dist/onboarding/index.html'],
+    ['browser', '../../app/static/dist/browser-tasks/index.html'],
+    ['setup code', '../../app/static/dist/setup-code/index.html'],
+    ['admission', '../../app/onboarding/entry.html'],
+  ]) {
+    test('saved ' + selected + ' setup theme on ' + surface + ' with ' + system + ' system selects the canvas before CSS arrives', async () => {
+      const browser = await chromium.launch();
+      let release;
+      const delayedStyles = new Promise(resolve => { release = resolve; });
+      try {
+        const context = await browser.newContext({ colorScheme: system });
+        const page = await context.newPage();
+        await page.addInitScript(theme => localStorage.setItem('mui-mode', theme), selected);
+        const document = await readFile(new URL(relative, import.meta.url), 'utf8');
+        assert.ok(document.includes('<script data-setup-first-paint>'));
+        assert.ok(!document.includes('src="/static/dist/setup-theme-init.js"'));
+        await page.route('http://127.0.0.1:17899/**', async route => {
+          const path = new URL(route.request().url()).pathname;
+          if (path === '/onboarding') return route.fulfill({ contentType: 'text/html', body: document });
+          assert.notEqual(path, '/static/dist/setup-theme-init.js', 'no external theme initializer');
+          if (path.endsWith('.css')) await delayedStyles;
+          return route.fulfill({ contentType: path.endsWith('.css') ? 'text/css' : 'text/javascript', body: '' });
+        });
+        await page.goto('http://127.0.0.1:17899/onboarding', { waitUntil: 'commit' });
+        await page.waitForFunction(theme => document.documentElement.dataset.colorScheme === theme
+          || theme === 'system' && document.querySelector('style[data-setup-first-paint]')?.sheet, selected);
+        const early = await page.evaluate(() => ({
+          scheme: document.querySelector('meta[name="color-scheme"]').content,
+          stylesheets: [...document.styleSheets].map(sheet => sheet.ownerNode?.hasAttribute('data-setup-first-paint')),
+          background: getComputedStyle(document.documentElement).backgroundColor,
+          resolved: getComputedStyle(document.documentElement).colorScheme,
+        }));
+        const expected = selected === 'system' ? system : selected;
+        assert.deepEqual(early.stylesheets, [true], 'only inline critical CSS has arrived');
+        assert.match(early.background, /^oklch\(/);
+        assert.equal(early.resolved, expected);
+        assert.equal(early.scheme, selected === 'system' ? 'light dark' : selected);
+      } finally {
+        release();
+        await browser.close();
+      }
+    });
+  }
 }

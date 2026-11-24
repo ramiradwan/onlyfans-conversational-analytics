@@ -593,3 +593,26 @@ def test_another_verified_account_leaves_installation_configuration_unchanged(
     assert OTHER_ACCOUNT_ID not in (
         first.configuration.configuration_file.read_text(encoding="utf-8")
     )
+
+
+@pytest.mark.parametrize("condition,expected", [
+    ("empty-membership", True),
+    ("another-account", False),
+    ("incomplete", False),
+    ("revoked", False),
+    ("expired", False),
+])
+def test_initial_membership_refresh_is_non_authorizing_and_only_exact_pending(store, clock, condition, expected):
+    from app.provisioning.finalize import initial_membership_scope_pending, verified_grant_bindings
+    from app.persistence.auth import RevocationKey, RevocationScopeType
+    allowed = ("another-creator",) if condition == "another-account" else ()
+    refs = record_verified_tuple(store, omitted="creator_account_binding" if condition == "incomplete" else None,
+                                 overrides={"membership_snapshot": {"allowed_creator_account_ids": allowed}})
+    approve_candidate(store)
+    if condition == "revoked":
+        store.revoke(RevocationKey(RevocationScopeType.VERIFIED_GRANT, refs[0]))
+    if condition == "expired":
+        clock.value += timedelta(days=30)
+    assert initial_membership_scope_pending(store, request()) is expected
+    with pytest.raises(FinalizationRefused):
+        verified_grant_bindings(store=store, request=request())

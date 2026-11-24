@@ -3,6 +3,8 @@
 
 #[cfg(windows)]
 mod admission;
+#[cfg(windows)]
+mod appearance;
 mod bootstrap;
 #[cfg(windows)]
 mod browser;
@@ -369,6 +371,9 @@ fn main() {
             return;
         }
     };
+    // Resolve presentation before creating the native window or WebView.
+    let appearance = appearance::Appearance::read(&data);
+    let startup_appearance = appearance.mode();
     let (sender, receiver) = mpsc::sync_channel(8);
     let state = Arc::new(host::Host {
         admitted: AtomicBool::new(false),
@@ -399,6 +404,7 @@ fn main() {
             },
         ))
         .manage(state.clone())
+        .manage(appearance)
         .invoke_handler(tauri::generate_handler![
             desktop_state,
             desktop_chrome_available,
@@ -418,15 +424,15 @@ fn main() {
             let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                     .title("Conversation Analytics")
-                    // Navigation briefly exposes the native surface before
-                    // either dark startup document has painted.
-                    .background_color(tauri::window::Color(20, 25, 22, 255))
+                    .theme(startup_appearance.window_theme())
+                    .background_color(startup_appearance.background())
                     .data_directory(
                         policy::webview_directory(&data).map_err(std::io::Error::other)?,
                     )
                     .inner_size(1180.0, 800.0)
                     .min_inner_size(640.0, 480.0)
                     .decorations(false)
+                    .initialization_script(&startup_appearance.initialization_script())
                     .initialization_script(include_str!("../../window-frame.js"))
                     .initialization_script(support_channels::initialization_script(
                         support_channels::COMPILED_CHANNELS,
@@ -446,6 +452,12 @@ fn main() {
             let close = window.clone();
             let close_state = setup.clone();
             window.on_window_event(move |event| {
+                if matches!(event, tauri::WindowEvent::ThemeChanged(_)) {
+                    let appearance = tauri::Manager::state::<appearance::Appearance>(&close);
+                    if appearance.mode() == appearance::Mode::System {
+                        let _ = close.set_background_color(Some(appearance.mode().background()));
+                    }
+                }
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = frame::close_main(&close, &close_state, close.url().ok().as_ref());

@@ -25,6 +25,9 @@ export function applyTheme(document, storage) {
       document.documentElement.dataset.colorScheme = selected;
       // The browser paints its canvas before the external stylesheet arrives.
       document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', selected);
+    } else {
+      delete document.documentElement.dataset.colorScheme;
+      document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', 'light dark');
     }
   } catch { /* The system theme remains available when local storage is denied. */ }
 }

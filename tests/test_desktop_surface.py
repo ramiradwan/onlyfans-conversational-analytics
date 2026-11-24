@@ -82,7 +82,7 @@ def test_support_projection_preserves_closed_setup_admission(compiled, tmp_path,
     assert client.get("/static/dist/release.json").status_code == 404
 
 
-@pytest.mark.parametrize("missing", ["manifest.json", "onboarding/index.html", "assets/setup.js", "setup-theme-init.js"])
+@pytest.mark.parametrize("missing", ["manifest.json", "onboarding/index.html", "assets/setup.js"])
 def test_missing_generated_setup_assets_are_unavailable(compiled, missing):
     client, directory = compiled
     (directory / missing).unlink()
@@ -123,18 +123,18 @@ def test_real_compiled_entries_load_before_admission(entry, configured):
         assert page.status_code == 200
         paths = re.findall(r'(?:src|href)="(/static/[^\"]+)"', page.text)
         assert paths
-        if entry == "/onboarding":
-            assert "/static/dist/setup-theme-init.js" in paths
+        assert "/static/dist/setup-theme-init.js" not in paths
+        from app.onboarding.theme_presentation import first_paint_csp
+        script, style = first_paint_csp(page.text)
+        assert script and style
+        assert script.strip() in page.headers["content-security-policy"]
+        assert style.strip() in page.headers["content-security-policy"]
         for path in paths:
             response = client.get(path)
             assert response.status_code == 200, path
             assert "html" not in response.headers["content-type"], path
         if not configured:
-            theme = client.get("/static/dist/setup-theme-init.js")
-            assert "javascript" in theme.headers["content-type"]
-            assert theme.headers["cache-control"] == "no-store"
-            assert theme.headers["x-content-type-options"] == "nosniff"
-            assert "set-cookie" not in theme.headers
+            assert client.get("/static/dist/setup-theme-init.js").status_code == 404
             assert client.get("/static/dist/setup-theme-init.js", headers={"Host": "outside.example"}).status_code == 421
             assert client.get("/static/dist/manifest.json").status_code == 404
 

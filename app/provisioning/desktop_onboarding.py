@@ -14,7 +14,8 @@ from app.onboarding.coordinator import AcceptedContext, CommandRefused, DomainVi
 from app.persistence.continuation_selection import ContinuationSelectionUnavailable
 from app.persistence.installation_continuation import InstallationContinuationStore
 from app.persistence.onboarding import OnboardingJourneyStore, OnboardingJourneyUnavailable
-from app.provisioning.finalize import FinalizationRefused, FinalizationRequest, verified_grant_bindings
+from app.provisioning.finalize import (FinalizationRefused, FinalizationRequest,
+    initial_membership_scope_pending, verified_grant_bindings)
 from app.provisioning.owner_effects import OwnerEffects
 from app.provisioning.progress import scoped_durable_provisioning_progress
 from app.provisioning.state import local_setup_facts
@@ -243,15 +244,29 @@ class ProvisioningSetupOwner:
         facts["browser_access"] = ("verified" if browser_state == "ready" else "paused" if browser_state == "paused"
                                    else "missing" if browser_state is None or browser_state.startswith("needs-") else "unknown")
         facts["configuration"] = "verified" if self.completion_ready() else "missing"
-        facts["account"] = "missing" if progress["stage"] in {"registration_required", "creator_confirmation_required", "creator_approval_pending"} else "unknown"
-        if journey is not None and progress["stage"] == "finalization_ready" and creator is not None:
+        stage = progress["stage"]
+        facts["account"] = "missing" if stage in {"registration_required", "creator_confirmation_required", "creator_approval_pending"} else "unknown"
+        pending_authority = stage in {"registration_pending", "registration_unconfirmed"}
+        if pending_authority and reason == "none" and (
+                stage == "registration_unconfirmed" or self.initial is None
+                or not getattr(self.initial, "has_live_work", lambda _: False)(source_journey)):
+            reason = "operation_unconfirmed"
+        if journey is not None and stage == "finalization_ready" and creator is not None:
+            request = FinalizationRequest(progress["association_request_id"], creator)
             try:
-                verified_grant_bindings(store=self.store, request=FinalizationRequest(progress["association_request_id"], creator),
+                verified_grant_bindings(store=self.store, request=request,
                     trusted_journey_id=source_journey if journey.kind == "registered-continuation" else None)
                 facts["account"] = "verified"
-            except (FinalizationRefused, ValueError):
-                reason = "authority_unavailable"
-        if progress["stage"] == "recovery_required":
+            except (FinalizationRefused, ValueError) as error:
+                if (reason == "none" and journey.kind == "initial-enrollment" and journey.state == "completed"
+                        and isinstance(error, FinalizationRefused) and error.reason == "grant_set_not_current"
+                        and self.initial is not None
+                        and getattr(self.initial, "has_live_work", lambda _: False)(source_journey)
+                        and initial_membership_scope_pending(self.store, request)):
+                    pending_authority = True
+                else:
+                    reason = "authority_unavailable"
+        if stage == "recovery_required":
             reason = "authority_unavailable"
         key = self.store.installation_key_reference()
         scope = {"source_journey_id": source_journey, "journey_kind": None if journey is None else journey.kind,
@@ -314,7 +329,8 @@ class ProvisioningSetupOwner:
                             })
                     except (HostedGrantUnavailable, OnboardingJourneyUnavailable, ValueError):
                         pass
-        return DomainView(facts, scope, reason)
+        return DomainView(facts, scope, reason,
+            permitted_actions=frozenset() if pending_authority else None)
 
     def admit(self, connection, journey_id, *, action, scope, actor=None):
         if action != "browser.access" and connection.execute(

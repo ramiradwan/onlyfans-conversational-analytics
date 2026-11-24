@@ -11,7 +11,7 @@
 
 The shared onboarding construction, authentication-task handlers and typed source lifecycle remain within those modules. [ADR 0054](adr/0054-consolidate-onboarding-coordination.md) preserves their separate runtime authority and transport admission boundaries.
 
-The generated `frontend/public/setup-theme-init.js` belongs to `bridge-orchestration`. It runs the existing shared theme rule before onboarding's module entry, with no setup, browser or account authority. Its generator keeps the blocking script and module consumers on the same rule.
+The generated first-paint blocks in the setup, browser task, receiving and admission documents use the shared presentation theme rule before the module entry. They add no theme network request and use exact content hashes under the restricted CSP. The native window resolves the retained appearance preference before creating WebView2. This presentation preference is not setup, browser or account authority.
 
 The repository contains three runtime components and supporting release controls:
 

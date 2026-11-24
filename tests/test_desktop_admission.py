@@ -281,7 +281,14 @@ def test_entry_stylesheet_is_available_before_admission_without_loosening_csp(se
         for path in ("/onboarding/entry", "/browser-tasks/entry"):
             landing = client.get(path)
             assert landing.status_code == 200
-            assert '<link rel="stylesheet" href="/onboarding/entry.css">' in landing.text.split("</head>")[0]
+            from app.onboarding.theme_presentation import first_paint_csp
+            head = landing.text.split("</head>")[0]
+            assert '<style data-setup-first-paint>' in head
+            assert '<script data-setup-first-paint>' in head
+            assert '<link rel="stylesheet" href="/onboarding/entry.css">' not in head
+            script, style = first_paint_csp(landing.text)
+            assert script.strip() in landing.headers["content-security-policy"]
+            assert style.strip() in landing.headers["content-security-policy"]
             assert "style-src 'self'" in landing.headers["content-security-policy"]
             assert "'unsafe-inline'" not in landing.headers["content-security-policy"]
             assert "set-cookie" not in landing.headers

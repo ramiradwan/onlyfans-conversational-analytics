@@ -80,6 +80,10 @@ class InitialInstallationEnrollment:
     def accepted_work(self):
         return self._effects.accepted_work() + self._original_effects.accepted_work()
 
+    def has_live_work(self, journey_id: str) -> bool:
+        task = self._tasks.get(journey_id)
+        return not self._stopped and task is not None and not task.done()
+
     def bind_effect_gate(self, lock, guard):
         self._effects.bind_effect_gate(lock, guard)
         self._original_effects.bind_effect_gate(lock, lambda _: None)
@@ -229,7 +233,10 @@ class InitialInstallationEnrollment:
             return
         existing = self._tasks.get(journey_id)
         if existing is None or existing.done():
-            self._tasks[journey_id] = asyncio.create_task(self._run(journey_id))
+            task = asyncio.create_task(self._run(journey_id))
+            self._tasks[journey_id] = task
+            # The end of bounded owner work also changes its read-only projection.
+            task.add_done_callback(lambda _: events.publish())
 
     async def pause_terminal_wait(self, journey_id: str, operation_id: str) -> None:
         """Stop only an idle wait after its caller obtained an exact terminal read."""

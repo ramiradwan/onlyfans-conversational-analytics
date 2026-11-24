@@ -13,6 +13,8 @@ from app.security.grant_types import CREATOR_ACCOUNT_BINDING, MEMBERSHIP_SNAPSHO
 
 ProvisioningStage = Literal[
     "registration_required",
+    "registration_pending",
+    "registration_unconfirmed",
     "creator_confirmation_required",
     "creator_approval_pending",
     "finalization_ready",
@@ -113,10 +115,27 @@ def scoped_durable_provisioning_progress(
                     scope = json.loads(journey["scope_json"])
                     candidate = store.provisioning_candidate(scope["association_request_id"])
                     claims = store.consumed_claim_submissions()
-                    if (store.unresolved_claim_submissions() or len(claims) != 1
-                            or claims[0].installation_id != journey["installation_id"]
-                            or claims[0].organization_id != scope["organization_id"]
-                            or claims[0].onboarding_transaction_id != scope["onboarding_transaction_id"]):
+                    unresolved = store.unresolved_claim_submissions()
+                    def matches(claim):
+                        return (claim.installation_id == journey["installation_id"]
+                                and claim.organization_id == scope["organization_id"]
+                                and claim.onboarding_transaction_id == scope["onboarding_transaction_id"])
+                    # Completing an authorized handoff necessarily precedes the
+                    # local receipt. Only absent or exact partial claim evidence
+                    # belongs to that transition; ambiguity remains a refusal.
+                    key = store.installation_key_reference() if journey["state"] in {"completing", "unknown"} else None
+                    if (journey["state"] in {"completing", "unknown"}
+                            and journey["operation_id"] and journey["handoff_reference"]
+                            and scope.get("installation_id") == journey["installation_id"]
+                            and key is not None and scope.get("installation_key_jkt") == key.installation_key_jkt
+                            and not claims and len(unresolved) <= 1
+                            and all(matches(claim) and claim.claim_profile == "urn:bridge-clean:installation-claim:v2"
+                                    for claim in unresolved)
+                            and candidate is None):
+                        return ProvisioningProgress(
+                            "registration_pending" if journey["state"] == "completing"
+                            else "registration_unconfirmed").public()
+                    if (unresolved or len(claims) != 1 or not matches(claims[0])):
                         return ProvisioningProgress("recovery_required").public()
                     if candidate is None:
                         return ProvisioningProgress("creator_confirmation_required").public()

@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from app.core.customer_release import CustomerReleaseConfigurationError, load_customer_release_config
 from app.core.resource_paths import ResourcePathError, resource_path
 from app.onboarding.admission_routes import HEADERS, _host
+from app.onboarding.theme_presentation import first_paint_csp
 
 _SUPPORT_TEMPLATE = '<template id="support-channels"></template>'
 _PICKER_MARKER = 'data-microsoft-picker="false"'
@@ -34,9 +35,8 @@ def _assets(entry_name="onboarding/index.html"):
         entry = manifest[entry_name]
         if entry.get("isEntry") is not True:
             raise ValueError()
-        # Vite copies this blocking public script without a manifest entry.
-        # Keep it explicit so provisioning admits it before theme hydration.
-        pending, seen, paths = [entry_name], set(), {"setup-theme-init.js"}
+        # First-paint theme is embedded in the build-owned entry document.
+        pending, seen, paths = [entry_name], set(), set()
         while pending:
             name = pending.pop()
             if name in seen:
@@ -65,12 +65,13 @@ def setup_shell(request: Request, *, browser=False, receiving_origin=None, acces
         document = (root / entry).read_text(encoding="utf-8")
     except OSError:
         raise HTTPException(503, "Setup assets are unavailable") from None
+    script, style = first_paint_csp(document)
     if not receiving_origin:
         document = _with_release_presentation(document)
     if access_ticket is not None:
         document = document.replace("</body>", f'<template id="access-document-entry">{escape(access_ticket)}</template></body>', 1)
     return HTMLResponse(document, headers=HEADERS | {"Content-Security-Policy":
-        "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self' data:; "
+        f"default-src 'none'; script-src 'self'{script}; style-src 'self'{style}; font-src 'self' data:; "
         "img-src 'self' data:; connect-src 'self' " + ("ws://bridge.localhost:17871/api/v1/browser-tasks/access-document; "
         if access_ticket is not None else "; " if browser or receiving_origin else "ipc: http://ipc.localhost; ") +
         "frame-ancestors 'none'; base-uri 'none'; form-action " + (receiving_origin or "'none'")})

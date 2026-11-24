@@ -21,6 +21,9 @@ pub enum WindowAction {
     Close,
     StartDragging,
     Focus,
+    AppearanceLight,
+    AppearanceDark,
+    AppearanceSystem,
 }
 
 pub fn close_main(
@@ -51,6 +54,7 @@ pub(crate) fn close_or_hide(
 pub fn desktop_window(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, Arc<Host>>,
+    appearance: tauri::State<'_, crate::appearance::Appearance>,
     action: WindowAction,
 ) -> Result<bool, &'static str> {
     let url = window.url().map_err(|_| "window_unavailable")?;
@@ -64,6 +68,30 @@ pub fn desktop_window(
     }
     let result = match action {
         WindowAction::State => Ok(()),
+        WindowAction::AppearanceLight
+        | WindowAction::AppearanceDark
+        | WindowAction::AppearanceSystem => {
+            // Appearance is available only to the admitted configured document,
+            // not to the packaged shell, browser helper or setup admission.
+            if !state.admitted.load(Ordering::SeqCst)
+                || !matches!(
+                    url.path(),
+                    "/" | "/inbox" | "/analytics" | "/graph-explorer" | "/settings"
+                )
+            {
+                return Err("window_control_denied");
+            }
+            let mode = match action {
+                WindowAction::AppearanceLight => crate::appearance::Mode::Light,
+                WindowAction::AppearanceDark => crate::appearance::Mode::Dark,
+                _ => crate::appearance::Mode::System,
+            };
+            appearance.select(mode)?;
+            window
+                .set_background_color(Some(mode.background()))
+                .map_err(|_| "window_unavailable")?;
+            window.set_theme(mode.window_theme())
+        }
         WindowAction::Minimize => window.minimize(),
         WindowAction::ToggleMaximize => {
             if window.is_maximized().map_err(|_| "window_unavailable")? {
