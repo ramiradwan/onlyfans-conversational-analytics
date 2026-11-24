@@ -5,6 +5,7 @@ import { customerReleaseConfig } from '../runtime/customer-release-config.mjs';
 import { probeDesktopRuntime } from '../runtime/customer-journey.mjs';
 import { LOCAL_SERVICE_ORIGIN, assertLocalServiceUrl } from '../transport/local-service-endpoints.mjs';
 import { DESKTOP_LINK_STORAGE_KEY } from '../runtime/desktop-port.mjs';
+import { isReadinessResponse, READINESS_REQUEST, READINESS_RESPONSE } from '../runtime/surface-readiness.mjs';
 import { projectSupportChannels } from './support-channels.mjs';
 
 const unknownReadiness = () => ({ commercial_authority: 'unknown', analysis_admission: 'blocked' });
@@ -47,8 +48,8 @@ export function createSurfaceClient(onChange, onError) {
     config: { dashboard_url: `${LOCAL_SERVICE_ORIGIN}/`, history_settings_url: `${LOCAL_SERVICE_ORIGIN}/settings`,
       desktop_app_download_url: customerReleaseConfig.desktop_app_download_url },
   };
-  let port = null, stopped = false, refreshPromise = null, readinessTimer = null;
-  let reconnectTimer = null, readinessPending = false, surfaceChangedDuringRead = false;
+  let port = null, connectionEpoch = 0, stopped = false;
+  let refreshPromise = null, refreshRequested = false, reconnectTimer = null, readiness = null;
   let reconnectAttempts = 0, wakeAt = 0;
   const reconnectDelays = [200, 500, 1000];
   function reconnect() {
@@ -66,33 +67,46 @@ export function createSurfaceClient(onChange, onError) {
   let pendingCommand = null;
   const emit = () => { if (!stopped) onChange(model); };
   function resetReadiness() {
-    clearTimeout(readinessTimer);
-    readinessPending = false;
+    if (readiness) clearTimeout(readiness.timer);
+    readiness = null;
     model.analysisReadiness = unknownReadiness();
   }
+  function readinessEligible() {
+    return port && model.status?.consent?.mode === 'full'
+      && model.desktopRuntimeReachable && model.pairing.state === 'paired';
+  }
   function requestReadiness() {
-    if (!port || readinessPending || model.status?.consent.mode !== 'full'
-      || !model.desktopRuntimeReachable || model.pairing.state !== 'paired') return;
-    readinessPending = true;
-    readinessTimer = setTimeout(() => {
-      model.analysisReadiness = { commercial_authority: 'unavailable', analysis_admission: 'blocked' };
-      // A replacement port cannot accept a late result from the timed-out request.
-      const expired = port; port = null; expired?.disconnect(); readinessPending = false;
-      emit(); reconnect();
+    if (!readinessEligible() || readiness) return;
+    const waiting = { port, epoch: model.status.consent.consent_epoch, id: crypto.randomUUID(), timer: null };
+    waiting.timer = setTimeout(() => {
+      if (readiness !== waiting || port !== waiting.port) return;
+      losePort(waiting.port, true);
+      waiting.port.disconnect();
     }, 12000);
-    post('readiness');
+    readiness = waiting;
+    try { waiting.port.postMessage({ type: READINESS_REQUEST, request_id: waiting.id }); }
+    catch {
+      losePort(waiting.port, true);
+      waiting.port.disconnect();
+    }
+  }
+  function losePort(connected, readinessUnavailable = false) {
+    if (port !== connected || stopped) return;
+    port = null; connectionEpoch++;
+    resetReadiness(); cancelPendingCommand();
+    if (readinessUnavailable) model.analysisReadiness = { commercial_authority: 'unavailable', analysis_admission: 'blocked' };
+    model.pairing = { state: 'unavailable', comparison_code: null, owns_attempt: false, desktop_attempt: false, desktop_control: false };
+    model.desktopRuntimeReachable = false;
+    reconnect();
   }
   function connectPort() {
     if (stopped || port) return;
     let connected;
     try { connected = chrome.runtime.connect({ name: 'ofca.companion.pairing' }); }
     catch { reconnect(); return; }
-    port = connected;
+    port = connected; connectionEpoch++;
     connected.onMessage.addListener((value) => {
       if (stopped || port !== connected) return;
-      if (value?.type !== 'pairing_command_result') {
-        reconnectAttempts = 0; model.connectionRecovery = 'idle';
-      }
       if (value?.type === 'pairing_command_result') {
         if (pendingCommand?.port === connected && value.command === pendingCommand.command) {
           const waiting = pendingCommand; pendingCommand = null; clearTimeout(waiting.timer);
@@ -100,21 +114,16 @@ export function createSurfaceClient(onChange, onError) {
         }
         return;
       }
-      if (value?.type === 'surface_changed') {
-        if (refreshPromise) surfaceChangedDuringRead = true;
-        else void refresh();
-        return;
-      }
-      if (value?.type === 'analysis_readiness') {
-        if (!readinessPending) return;
-        clearTimeout(readinessTimer); readinessPending = false;
-        const valid = ['required', 'active', 'unavailable'].includes(value.commercial_authority)
-          && ['blocked', 'admitted'].includes(value.analysis_admission)
-          && !(value.analysis_admission === 'admitted' && value.commercial_authority !== 'active');
-        model.analysisReadiness = valid && model.status?.consent.mode === 'full' && model.pairing.state === 'paired'
+      if (value?.type === 'surface_changed') { void refresh(); return; }
+      if (value?.type === READINESS_RESPONSE) {
+        if (!readiness || readiness.port !== connected || value.request_id !== readiness.id
+          || model.status?.consent?.consent_epoch !== readiness.epoch || !readinessEligible()) return;
+        resetReadiness();
+        model.analysisReadiness = isReadinessResponse(value)
           ? { commercial_authority: value.commercial_authority, analysis_admission: value.analysis_admission }
           : { commercial_authority: 'unavailable', analysis_admission: 'blocked' };
       } else if (typeof value?.state === 'string') {
+        reconnectAttempts = 0; model.connectionRecovery = 'idle';
         model.pairing = { state: value.state, owns_attempt: value.owns_attempt === true,
           desktop_attempt: value.desktop_attempt === true,
           // True while the desktop app can control this browser over an open session.
@@ -125,14 +134,9 @@ export function createSurfaceClient(onChange, onError) {
       }
       emit();
     });
-    connected.onDisconnect.addListener(() => {
-      if (port !== connected || stopped) return;
-      port = null; resetReadiness(); cancelPendingCommand();
-      model.pairing = { state: 'unavailable', comparison_code: null, owns_attempt: false, desktop_attempt: false, desktop_control: false };
-      model.desktopRuntimeReachable = false;
-      reconnect();
-    });
+    connected.onDisconnect.addListener(() => losePort(connected));
   }
+
   function post(type) {
     if (!port) throw new NoticeError('The extension is not connected.');
     port.postMessage({ type });
@@ -155,37 +159,40 @@ export function createSurfaceClient(onChange, onError) {
     clearTimeout(pendingCommand.timer); pendingCommand.reject(new Error('connection_lost')); pendingCommand = null;
   }
   async function readCurrent() {
+    const connection = connectionEpoch;
+    const current = () => !stopped && connection === connectionEpoch;
     try {
-      const [status, legal] = await Promise.all([
-        send({ type: UI_STATUS_MESSAGE_TYPE }), send({ type: LEGAL_ACTIVATION_STATUS_MESSAGE_TYPE }),
+      const [status, legal, linked] = await Promise.all([
+        send({ type: UI_STATUS_MESSAGE_TYPE }), send({ type: LEGAL_ACTIVATION_STATUS_MESSAGE_TYPE }), desktopLinked(),
       ]);
-      if (stopped) return;
+      if (!current()) return;
       if (status?.consent?.mode !== 'full' || status.consent.consent_epoch !== model.status?.consent?.consent_epoch
         || status.delivery?.transport_state !== 'authenticated') resetReadiness();
-      model.status = status; model.legal = legal;
-      model.desktopLinked = await desktopLinked();
-      // A page or port is not evidence that Brain is running. Only the
-      // authenticated companion state can confirm readiness.
+      model.status = status; model.legal = legal; model.desktopLinked = linked;
+      // Reachability is a fresh authenticated runtime fact. Pairing state
+      // comes from the port and can change while a status read is in flight.
       model.desktopRuntimeReachable = isFullFamilyStatus(status)
         && status.brain_reachable === true && status.delivery?.transport_state === 'authenticated';
       if (!model.desktopRuntimeReachable) resetReadiness();
-      if (port && (status.consent.mode === 'full'
-        || (status.consent.mode === 'paused' && status.consent.resume_mode === 'full'))) post('status');
+      if (port && isFullFamilyStatus(status)) post('status');
       requestReadiness(); emit();
     } catch (error) {
-      model.status = null; model.legal = null; resetReadiness();
-      model.pairing = { state: 'unavailable', comparison_code: null, owns_attempt: false, desktop_attempt: false, desktop_control: false };
-      emit(); if (!stopped) onError(error);
+      if (!current()) return;
+      model.status = null; model.legal = null; model.desktopRuntimeReachable = false;
+      resetReadiness(); emit(); onError(error);
     }
   }
   function refresh() {
     if (stopped) return Promise.resolve();
+    refreshRequested = true;
     if (!refreshPromise) refreshPromise = (async () => {
-      do {
-        surfaceChangedDuringRead = false;
-        await readCurrent();
-      } while (!stopped && surfaceChangedDuringRead);
-    })().finally(() => { refreshPromise = null; });
+      try {
+        do {
+          refreshRequested = false;
+          await readCurrent();
+        } while (!stopped && refreshRequested);
+      } finally { refreshPromise = null; }
+    })();
     return refreshPromise;
   }
   async function sync() {
@@ -234,7 +241,7 @@ export function createSurfaceClient(onChange, onError) {
     window.addEventListener('pagehide', stop, { once: true });
   }
   function stop() {
-    stopped = true; clearTimeout(reconnectTimer); clearTimeout(readinessTimer);
+    stopped = true; clearTimeout(reconnectTimer); resetReadiness();
     port?.disconnect(); port = null; cancelPendingCommand();
     document.removeEventListener('visibilitychange', wake); window.removeEventListener('focus', wake);
     chrome.storage.onChanged.removeListener(changed);

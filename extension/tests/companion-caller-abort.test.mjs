@@ -94,7 +94,7 @@ function harness(t, { gate = null, paired = true } = {}) {
     const value = { name: PAIRING_PORT_NAME, sender: { id: chromeApi.runtime.id, url: chromeApi.runtime.getURL(`${surface}.html`) },
       onMessage, onDisconnect, postMessage: (message) => values.push(message) };
     chromeApi.runtime.onConnect.emit(value);
-    return { values, send: (type) => onMessage.emit({ type }), close: () => onDisconnect.emit() };
+    return { values, send: (type, fields = {}) => onMessage.emit({ type, ...fields }), close: () => onDisconnect.emit() };
   }
   return { client, peers, channels, port, pairingResult, setAccount: (value) => { account = value; },
     get cancelled() { return cancelled; }, get wireClosed() { return wireClosed; }, get pairingWaiting() { return pairingWaiting; } };
@@ -172,7 +172,7 @@ test('abandoned id retention is bounded by count', async (t) => {
 for (const surface of ['popup', 'setup', 'options']) test(`${surface} disconnect aborts readiness with nothing posted afterwards`, async (t) => {
   const h = harness(t); await h.client.adapter.loadBrainBinding();
   const facade = h.client.webSocketFactory(); await until(() => facade.readyState === 1);
-  h.client.registerPopup(); const port = h.port(surface); await tick(); port.send('readiness');
+  h.client.registerPopup(); const port = h.port(surface); await tick(); port.send('readiness.v1', { request_id: crypto.randomUUID() });
   const p = h.peers[0]; await until(() => p.requests.some((r) => r.method === 'agent.analysis.readiness'));
   const count = port.values.length; port.close(); await tick();
   assert.equal(port.values.length, count, 'no post after disconnect');

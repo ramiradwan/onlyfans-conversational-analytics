@@ -1,4 +1,4 @@
-// Browser-test adapter only. This file is never included in extension artifacts.
+// Browser-test adapter serialized into the page by the capture and Playwright suites.
 export function installSurfaceFixture(input) {
   const state = structuredClone(input), calls = [], ports = new Set();
   if (state.persistReview) Object.assign(state, JSON.parse(sessionStorage.getItem('fixture-review') ?? '{}'));
@@ -155,8 +155,8 @@ export function installSurfaceFixture(input) {
         if (state.portUnavailable) throw Error('Fixture port unavailable');
         const port = { onMessage: event(), onDisconnect: event(),
           postMessage(message) {
-            if (message.type === 'readiness') {
-              if (!state.checking) queueMicrotask(() => port.onMessage.emit({ type: 'analysis_readiness',
+            if (message.type === 'readiness.v1') {
+              if (!state.checking) queueMicrotask(() => port.onMessage.emit({ type: 'analysis_readiness.v1', request_id: message.request_id,
                 commercial_authority: state.commercial ?? 'active', analysis_admission: state.ready ? 'admitted' : 'blocked' }));
               return;
             }

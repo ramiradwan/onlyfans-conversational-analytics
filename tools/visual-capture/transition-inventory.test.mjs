@@ -7,6 +7,7 @@ import { staticFixtures } from './static-fixtures.mjs';
 import { runInNewContext } from 'node:vm';
 import { installSurfaceFixture } from '../../extension/qualification/surface-runtime-fixture.mjs';
 import { SURFACE_STATES } from '../../extension/qualification/surface-states.mjs';
+import { READINESS_REQUEST, READINESS_RESPONSE } from '../../extension/runtime/surface-readiness.mjs';
 
 test('the route inventory includes every graph projection state', () => {
   for (const state of ['current', 'pending', 'unavailable', 'degraded']) assert(SCREENS.some((screen) => screen.workspace === 'graph' && screen.state === state));
@@ -29,11 +30,20 @@ test('each current browser setup fixture retains its production renderer and inp
     assert(fixtures.some(fixture => fixture.name === name), `Missing native journey handoff state: ${name}`);
   }
 });
-test('surface state changes publish the storage notification used by renderers', () => {
+test('serialized capture fixtures publish storage changes and return the requested readiness identity', async () => {
   const window = { fetch() {} };
-  runInNewContext(`(${installSurfaceFixture})({ surface: 'popup', mode: 'preview' })`, { window, structuredClone, location: { origin: 'http://fixture.localhost' } });
+  runInNewContext(`(${installSurfaceFixture})({ surface: 'popup', mode: 'full', ready: true, paired: true })`,
+    { window, structuredClone, queueMicrotask, location: { origin: 'http://fixture.localhost' } });
   const calls = [];
   window.chrome.storage.onChanged.addListener((changes, area) => calls.push({ changes, area }));
+  const port = window.chrome.runtime.connect();
+  const replies = [];
+  port.onMessage.addListener(message => { if (message.type === READINESS_RESPONSE) replies.push({ ...message }); });
+  const requestId = '33333333-3333-4333-8333-333333333333';
+  port.postMessage({ type: READINESS_REQUEST, request_id: requestId });
+  await new Promise(queueMicrotask);
+  assert.deepEqual(replies, [{ type: READINESS_RESPONSE, request_id: requestId,
+    commercial_authority: 'active', analysis_admission: 'admitted' }]);
   window.__surfaceFixture.change({ mode: 'off' });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].area, 'local');

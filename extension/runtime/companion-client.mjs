@@ -1,4 +1,5 @@
 import { uiSurface } from './ui-surfaces.mjs';
+import { isReadiness, isReadinessRequest, READINESS_RESPONSE } from './surface-readiness.mjs';
 import { openPairingStore } from './companion-pairing-store.mjs';
 import { loadPackagedSnow } from './packaged-snow.mjs';
 import { signAgentSessionProof, snowKeypairGenerator } from './companion-agent-identity.mjs';
@@ -15,6 +16,7 @@ const INSTALLATION_KEY = 'agent_installation_id';
 const ACTIVE_PARTITION_KEY = 'active_account_partition_v5';
 const ANALYSIS_READINESS_SCHEMA = 'ofca-analysis-readiness/v1';
 const failure = () => new CompanionChannelError();
+class ReadinessSuperseded extends Error {}
 const exact = (value, fields) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === fields.length && fields.every((field) => Object.hasOwn(value, field));
 const secret = (value) => typeof value === 'string' && value.length > 0 && value.length <= 16_384
@@ -30,9 +32,7 @@ function abortable(operation, signal) {
 function validatedAnalysisReadiness(value) {
   if (!exact(value, ['schema', 'commercial_authority', 'analysis_admission'])
     || value.schema !== ANALYSIS_READINESS_SCHEMA
-    || !['required', 'active', 'unavailable'].includes(value.commercial_authority)
-    || !['blocked', 'admitted'].includes(value.analysis_admission)
-    || (value.analysis_admission === 'admitted' && value.commercial_authority !== 'active')) throw failure();
+    || !isReadiness(value)) throw failure();
   return Object.freeze({
     commercial_authority: value.commercial_authority,
     analysis_admission: value.analysis_admission,
@@ -45,6 +45,7 @@ export function createCompanionClient({
   allowsControl = () => false, onControl = async () => {}, onBrowserTask = null, onBrowserTaskEnd = null,
   onBrowserTaskWaiting = null, readFullPresentationIntent = null,
   readCaptureControlStatus = null, onCaptureControl = null,
+  readinessConsentEpoch = () => null,
   accountDatabaseName,
   storeFactory = openPairingStore, loadSnow = loadPackagedSnow,
   channelFactory = openCompanionChannel, wireFactory = openLoopbackSocket,
@@ -499,9 +500,22 @@ export function createCompanionClient({
     return { ...state };
   }
   async function analysisReadiness(controls = {}) {
+    const epoch = readinessConsentEpoch();
     const connected = await connect(controls);
-    controls.signal?.throwIfAborted(); controls.assertCurrent?.();
-    return validatedAnalysisReadiness(await connected.channel.rpc('agent.analysis.readiness', {}, controls));
+    const assertCurrent = () => {
+      controls.signal?.throwIfAborted(); controls.assertCurrent?.();
+      if (!allowsFull() || readinessConsentEpoch() !== epoch || active !== connected || connected.channel.closed) {
+        throw new ReadinessSuperseded();
+      }
+    };
+    assertCurrent();
+    const reply = await connected.channel.rpc('agent.analysis.readiness', {}, { ...controls, assertCurrent })
+      .then(value => ({ value }), error => ({ error }));
+    assertCurrent();
+    await permitted(connected.accountId).catch(() => { throw new ReadinessSuperseded(); });
+    assertCurrent();
+    if (Object.hasOwn(reply, 'error')) throw reply.error;
+    return validatedAnalysisReadiness(reply.value);
   }
   async function pair({ signal } = {}) {
     if (pairingAbort !== null) throw failure();
@@ -784,12 +798,33 @@ export function createCompanionClient({
         } : value;
         try { port.postMessage(projection); } catch {}
       };
-      const notifyReadiness = (value) => notify({ type: 'analysis_readiness', ...value });
+      let readinessRead = null;
+      async function readReadiness(requestId) {
+        readinessRead?.abort();
+        const reading = new AbortController();
+        readinessRead = reading;
+        const signal = AbortSignal.any([controller.signal, reading.signal]);
+        const epoch = readinessConsentEpoch();
+        const current = () => !signal.aborted && readinessRead === reading
+          && readinessConsentEpoch() === epoch && allowsFull();
+        const respond = value => {
+          if (current()) notify({ type: READINESS_RESPONSE, request_id: requestId, ...value });
+        };
+        try { respond(await analysisReadiness({ signal })); }
+        catch (error) {
+          if (!(error instanceof ReadinessSuperseded)) {
+            respond({ commercial_authority: 'unavailable', analysis_admission: 'blocked' });
+          }
+        } finally {
+          if (readinessRead === reading) readinessRead = null;
+        }
+      }
       subscribers.add(notify);
       port.onDisconnect.addListener(() => { subscribers.delete(notify); controller.abort(); });
       port.onMessage.addListener((message) => {
+        if (isReadinessRequest(message)) { void readReadiness(message.request_id); return; }
         if (!message || Object.keys(message).length !== 1
-          || !['pair', 'status', 'forget', 'cancel', 'readiness'].includes(message.type)) return;
+          || !['pair', 'status', 'forget', 'cancel'].includes(message.type)) return;
         void (async () => {
           if (message.type === 'pair') {
             if (surface !== 'setup') return;
@@ -803,16 +838,10 @@ export function createCompanionClient({
           else if (message.type === 'cancel') {
             if (surface === 'setup') cancelFor(port);
           }
-          else if (message.type === 'readiness') {
-            notifyReadiness(await analysisReadiness({ signal: controller.signal }));
-            return;
-          }
           notify(await status());
         })().catch(() => {
           if (message.type === 'forget') {
             notify({ type: 'pairing_command_result', command: 'forget', ok: false });
-          } else if (message.type === 'readiness') {
-            notifyReadiness({ commercial_authority: 'unavailable', analysis_admission: 'blocked' });
           } else if (message.type === 'pair') {
             void status().then(notify, () => notify({ state: 'pairing_failed', comparison_code: null }));
           } else {

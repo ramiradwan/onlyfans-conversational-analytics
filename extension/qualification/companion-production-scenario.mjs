@@ -1,4 +1,7 @@
 import { createCompanionClient } from '../runtime/companion-client.mjs';
+import { ConsentController } from '../runtime/consent-controller.mjs';
+import { LEGAL_ACTIVATION_STATUS_MESSAGE_TYPE } from '../runtime/legal-activation-controller.mjs';
+import { openCompanionChannel } from '../transport/companion-channel.mjs';
 import { loadGrantTrustSet } from '../transport/grant-verifier.mjs';
 
 let client;
@@ -7,6 +10,60 @@ let pairFailure = false;
 let socket;
 let session;
 let burst;
+let consent;
+const readinessReads = [];
+
+async function qualificationChannel(options) {
+  const channel = await openCompanionChannel(options);
+  return { ...channel, get closed() { return channel.closed; },
+    async rpc(method, ...args) {
+      const result = await channel.rpc(method, ...args);
+      if (!consent || method !== 'agent.analysis.readiness') return result;
+      // Hold the verified native reply at the worker boundary. The encrypted
+      // request and authorization have already run through Brain.
+      const hold = Promise.withResolvers();
+      readinessReads.push(hold.resolve);
+      await hold.promise;
+      return result;
+    },
+  };
+}
+
+export async function startReadiness() {
+  consent = new ConsentController({
+    // The fixture authorizes a synthetic choice. No platform tab is created.
+    chromeApi: { storage: chrome.storage, runtime: chrome.runtime, tabs: { query: async () => [] },
+      permissions: { contains: async () => true }, scripting: {
+        getRegisteredContentScripts: async () => [], registerContentScripts: async () => {},
+      } },
+    runtime: { start: async () => {}, suspend: async () => {} }, adapter: client.adapter,
+    provisioningIdentityBridge: { register() {}, clearContexts: async () => {} },
+    previewMetrics: { record() {}, summary: async () => ({}), clear() {}, prune: async () => {} },
+    clearLocalData: async () => {},
+    activeModeAuthorization: {
+      authorizeTransition: async () => true, authorizeResume: async () => true, reconcileActiveMode: async () => true,
+    },
+    runtimeSummary: () => ({ transport_state: client.connected ? 'authenticated' : 'disconnected' }),
+    fetchImpl: async () => new Response(null, { status: 200 }),
+  });
+  await advanceReadinessConsent();
+  client.registerPopup();
+  consent.subscribe(client.notifySurfaces);
+  chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+    if (message?.type === LEGAL_ACTIVATION_STATUS_MESSAGE_TYPE) respond({ ok: true, result: {} });
+  });
+}
+
+export async function advanceReadinessConsent() {
+  const epoch = consent.state.consent_epoch;
+  const next = await consent.runLegalOperation(({ setMode }) =>
+    setMode('full', { evidenceEventId: crypto.randomUUID() }));
+  return next.consent.mode === 'full' && next.consent.consent_epoch !== epoch;
+}
+
+export function readinessCount() { return readinessReads.length; }
+export function releaseReadiness(index) { readinessReads[index](); }
+
 
 async function snapshotBurst() {
   const identity = {
@@ -53,7 +110,9 @@ export async function prepare({ account, trust, now }) {
   Date.now = () => now * 1000;
   const verifiedTrust = await loadGrantTrustSet(trust, { allowNonProduction: true });
   client = createCompanionClient({
-    allowsFull: () => true,
+    allowsFull: () => !consent || consent.state.mode === 'full',
+    readinessConsentEpoch: () => consent?.state.consent_epoch ?? null,
+    channelFactory: qualificationChannel,
     detectedAccountId: async () => account,
     accountDatabaseName: async () => 'qualification-account',
     loadTrust: async () => verifiedTrust,

@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 import { SURFACE_STATES } from './surface-states.mjs';
 export { SURFACE_STATES } from './surface-states.mjs';
+// Like an extension page, the synthetic renderer needs a secure context.
+export const SURFACE_FIXTURE_ORIGIN = 'https://extension-ui.test';
 
 const bundles = new Map();
 async function bundle(surface, receiving = false) {
@@ -35,7 +37,7 @@ export async function renderSurfaceState(page, state) {
   const script = await surfaceBundle(state.surface, Boolean(state.receiving));
   await page.addInitScript(installSurfaceFixture, state);
   await page.route('**/*', route => route.abort());
-  await page.route('http://extension-ui.test/**', async (route) => {
+  await page.route(`${SURFACE_FIXTURE_ORIGIN}/**`, async (route) => {
     const name = new URL(route.request().url()).pathname.slice(1);
     if (name.endsWith('.html')) return route.fulfill({ contentType: 'text/html', body: html });
     if (name === `${state.surface}.js`) return route.fulfill({ contentType: 'text/javascript', body: script });
@@ -43,7 +45,7 @@ export async function renderSurfaceState(page, state) {
     return route.fulfill({ status: 404 });
   });
   const hash = state.hash ?? (state.surface === 'setup' ? 'journey=11111111-1111-4111-8111-111111111111' : '');
-  await page.goto(`http://extension-ui.test/${state.surface}.html${hash ? '#' + hash : ''}`, { waitUntil: 'load' });
+  await page.goto(`${SURFACE_FIXTURE_ORIGIN}/${state.surface}.html${hash ? '#' + hash : ''}`, { waitUntil: 'load' });
   await page.waitForFunction(() => document.querySelector('main[data-ready="true"]')
     || document.querySelector('#runtime-unavailable:not(.hidden)'));
   await page.evaluate(() => document.fonts.ready);

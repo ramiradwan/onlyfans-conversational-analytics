@@ -50,7 +50,7 @@ A connected desktop does not imply active commercial authority or admitted analy
 Readiness is requested separately through the existing authenticated companion path.
 A stale, malformed, or unavailable response cannot produce a ready state.
 The paired Full popup shows desktop availability, secure connection, Full activation,
-and analysis readiness separately; connection loss clears its ready indication.
+and analysis readiness separately; connection loss clears its ready indication. Status invalidations that arrive during a read trigger a follow-up. The local popup port links each readiness reply to its request. The worker checks the current consent epoch, account and authenticated companion channel before returning it.
 
 ## Design details
 

@@ -16,6 +16,7 @@ const temporary = await mkdtemp(path.join(tmpdir(), 'ofca-production-companion-'
 const extension = path.join(temporary, 'extension'), profile = path.join(temporary, 'profile');
 let context, child, stage = 'initialize', launchNumber = 0;
 let workerEntryStarted = null;
+let readinessEpoch;
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 try {
   await cp(path.join(root, 'dist'), extension, { recursive: true });
@@ -30,6 +31,16 @@ try {
   }, bundle: true, format: 'esm', outfile: path.join(extension, 'production-qualification.mjs') });
   await writeFile(path.join(extension, 'manifest.json'), JSON.stringify({ ...manifest,
     background: { service_worker: 'production-qualification.mjs', type: 'module' } }));
+  if (process.argv.includes('--readiness-epoch')) {
+    await build({ stdin: {
+      resolveDir: here,
+      contents: `import { createSurfaceClient } from '../ui/surface-client.mjs';
+        const client = createSurfaceClient(() => {}, () => {});
+        globalThis.readinessObservation = () => client.model.analysisReadiness.commercial_authority;
+        void client.start();`,
+    }, bundle: true, format: 'esm', outfile: path.join(extension, 'qualification-surface.mjs') });
+    await writeFile(path.join(extension, 'popup.html'), '<!doctype html><script type="module" src="qualification-surface.mjs"></script>');
+  }
   child = spawn(process.env.PYTHON ?? 'python', ['tools/companion-session-qualification/serve.py'], {
     cwd: repository, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
   });
@@ -108,6 +119,28 @@ try {
   await control('inbound_burst');
   const inbound = await worker.evaluate(() => globalThis.productionScenario('receiveBurst'));
   assert.equal(inbound.inbound_512k, true);
+  if (process.argv.includes('--readiness-epoch')) {
+    stage = 'readiness_consent_epoch';
+    await worker.evaluate(() => globalThis.productionScenario('startReadiness'));
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${new URL(worker.url()).host}/popup.html`);
+    const count = () => worker.evaluate(() => globalThis.productionScenario('readinessCount'));
+    const waitForReads = number => within(stage, async () => {
+      while (await count() < number) await new Promise(resolve => setTimeout(resolve, 10));
+    }, 5_000);
+    await waitForReads(1);
+    assert.equal(await worker.evaluate(() => globalThis.productionScenario('advanceReadinessConsent')), true);
+    await waitForReads(2);
+    await worker.evaluate(() => globalThis.productionScenario('releaseReadiness', 0));
+    // Let Chrome deliver the held response while request B is still held.
+    await page.waitForTimeout(100);
+    const stale = await page.evaluate(() => globalThis.readinessObservation()) !== 'unknown';
+    await worker.evaluate(() => globalThis.productionScenario('releaseReadiness', 1));
+    await page.waitForFunction(() => globalThis.readinessObservation() !== 'unknown');
+    readinessEpoch = { both_requests_reached_brain: true, obsolete_reply_rendered: stale };
+    await page.close();
+    assert.equal(stale, false);
+  }
   stage = 'revocation';
   await control('revoke');
   const revocation = await within(stage, () => worker.evaluate(() => globalThis.productionScenario('revoked')), 15_000);
@@ -118,6 +151,7 @@ try {
     browser: browserVersion, manifest_sha256: digest(originalManifest), wasm_sha256: digest(wasm),
     native: ready.native, pairing_code_compared: true, explicit_confirmation: true,
     first_connection: first, browser_restart: restored, ...inbound, revocation,
+    ...(readinessEpoch ? { readiness_epoch: readinessEpoch } : {}),
   };
   if (process.argv[3]) await writeFile(process.argv[3], JSON.stringify(result, null, 2) + '\n');
   console.log(JSON.stringify(result));
@@ -131,6 +165,7 @@ try {
   const result = {
     schema: 'ofca-production-companion-qualification/v1', result: 'failed',
     stage, code, launch_number: launchNumber,
+    ...(readinessEpoch ? { readiness_epoch: readinessEpoch } : {}),
     ...(workerEntryStarted === null ? {} : { worker_entry_elapsed_ms: Math.round(performance.now() - workerEntryStarted) }),
   };
   if (process.argv[3]) await writeFile(process.argv[3], JSON.stringify(result, null, 2) + '\n');

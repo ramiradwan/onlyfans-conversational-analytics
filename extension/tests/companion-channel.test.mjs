@@ -13,6 +13,7 @@ import { vector, trustSet, fixtureMaterial, fixturePrivateJwk } from '../test-fi
 import { payload as browserPayload } from '../test-fixtures/browser-task.mjs';
 import { DurableIngestOutbox } from '../transport/durable-outbox.mjs';
 import { createIndexedDbIngestionStorage } from '../transport/indexeddb-ingestion-storage.mjs';
+import { fullStatus, surfaceHarness } from './surface-client-fixture.mjs';
 import { FakeIndexedDb } from './fake-indexeddb.mjs';
 
 await initialize({ module_or_path: await readFile(new URL('../vendor/companion-snow/ofca_snow_wasm_bg.wasm', import.meta.url)) });
@@ -842,3 +843,56 @@ test('scoped encrypted capture commands carry no authority to change another sco
     channel.close();
   }
 });
+
+for (const oldOutcome of ['success', 'failure']) {
+  test('F09 a late encrypted readiness ' + oldOutcome + ' cannot settle the newer consent epoch', async t => {
+    const account = vector.detected_account_id, reads = [];
+    const peer = fixture({ reply(document) {
+      if (document.method === 'agent.challenge') return { challenge_id: crypto.randomUUID(),
+        challenge: Buffer.alloc(32, 9).toString('base64url'), session_id: crypto.randomUUID(), expires_at: '2026-09-30T12:00:00Z' };
+      if (document.method === 'agent.authenticate') return { creator_account_id: account,
+        auth_ticket: 'fixture-ticket', storage_bootstrap: 'fixture-bootstrap' };
+      if (document.method === 'agent.storage.unseal') return { schema: 'ofca-extension-storage-unlock/v1',
+        creator_account_id: account, credential_kind: 'pairing', auth_ticket: 'fixture-ticket',
+        storage_key_base64: Buffer.alloc(32, 7).toString('base64') };
+      if (document.method === 'agent.analysis.readiness') reads.push(document.id);
+      return undefined;
+    } });
+    const channel = await peer.open();
+    t.after(() => channel.close());
+    const privateKey = await crypto.subtle.importKey('jwk',
+      fixturePrivateJwk(vector.fixture_labels.agent_identity_key, vector.request.agent_identity_jwk),
+      { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+    const surface = surfaceHarness(t);
+    const values = {};
+    const area = { async get() { return { ...values }; }, async set(update) { Object.assign(values, update); } };
+    let epoch = fullStatus.consent.consent_epoch;
+    const worker = createCompanionClient({ chromeApi: { ...surface.chromeApi, storage: { local: area, session: area } },
+      allowsFull: () => true, readinessConsentEpoch: () => epoch, detectedAccountId: async () => account, accountDatabaseName: async () => 'fixture-storage',
+      storeFactory: async () => ({ identity: async () => ({ privateKey }), status: async () => ({ paired: true }), close() {} }),
+      loadSnow: async () => ({ SnowSession }), loadTrust: async () => trust, channelFactory: async () => channel });
+    t.after(() => worker.invalidate());
+    worker.registerPopup();
+    await surface.client.start();
+    await waitFor(() => reads.length === 1);
+    epoch = '22222222-2222-4222-8222-222222222222';
+    surface.setStatus({ ...fullStatus,
+      consent: { ...fullStatus.consent, consent_epoch: epoch } });
+    worker.notifySurfaces();
+    await waitFor(() => reads.length === 2);
+    assert.notEqual(reads[0], reads[1]);
+    const result = (commercial_authority, analysis_admission) => ({ schema: 'ofca-analysis-readiness/v1',
+      commercial_authority, analysis_admission });
+    peer.application({ type: 'rpc.response', id: reads[0], ...(oldOutcome === 'success'
+      ? { result: result('required', 'blocked') } : { error: 'unavailable' }) });
+    await tick();
+    const afterOld = { ...surface.client.model.analysisReadiness };
+    peer.application({ type: 'rpc.response', id: reads[1], result: result('active', 'admitted') });
+    await tick();
+    assert.equal(channel.closed, false);
+    assert.deepEqual({ afterOld, afterCurrent: surface.client.model.analysisReadiness }, {
+      afterOld: { commercial_authority: 'unknown', analysis_admission: 'blocked' },
+      afterCurrent: { commercial_authority: 'active', analysis_admission: 'admitted' },
+    });
+  });
+}
