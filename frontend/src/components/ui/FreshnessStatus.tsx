@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 
 import type { CatchupFreshness } from '../../protocol';
 import { browserControlApi } from '../../services/browserControlApi';
-import { desktopOnboardingApi, type DesktopOnboardingApi } from '../../services/desktopOnboarding';
+import { desktopInteractionFailure, desktopOnboardingApi, type DesktopOnboardingApi } from '../../services/desktopOnboarding';
 import type { BridgeConnectionState } from '../../store/transportStore';
 import { componentTokens, effectTokens } from '../../theme';
 import { connectionGrace, connectionNote } from '../../utils/connectionGrace';
@@ -48,7 +48,11 @@ export function FreshnessStatus({ freshness, bridge, snapshotUsable, now = new D
     const controller = new AbortController(); navigation.current = controller;
     setNavigationError(false);
     try {
-      if (destination === 'setup') { await onboarding.begin('browser.access'); return; }
+      if (destination === 'setup') {
+        const result = await onboarding.begin('browser.access');
+        if (!controller.signal.aborted && desktopInteractionFailure(result)) setNavigationError(true);
+        return;
+      }
       const result = await browserControlApi.open(destination, controller.signal);
       if (!controller.signal.aborted) setNavigationError(result === 'unreachable');
     } catch { if (!controller.signal.aborted) setNavigationError(true); }

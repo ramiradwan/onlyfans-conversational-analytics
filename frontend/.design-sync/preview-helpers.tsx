@@ -341,8 +341,9 @@ export function createPreviewDesktopOnboardingApi(ready = true): DesktopOnboardi
       schema: 'ofca-analysis-readiness/v1', commercial_authority: ready ? 'active' : 'required',
       analysis_admission: ready ? 'admitted' : 'blocked' } },
   } };
+  const acceptPreviewAction = async () => ({ state: 'accepted' as const, operationId: null, reason: null });
   return { getState: () => state, subscribe: () => previewNoop,
-    begin: async () => {}, reconcile: async () => {}, openBrowser: async () => {} };
+    begin: acceptPreviewAction, reconcile: acceptPreviewAction, openBrowser: acceptPreviewAction };
 }
 
 export function createPreviewActivationApi(): CapabilityLicenseApi {

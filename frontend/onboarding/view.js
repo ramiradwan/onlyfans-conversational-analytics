@@ -62,6 +62,14 @@ const accountName = label => label?.display_name || (label?.username ? '@' + lab
 
 const statusIcons = { neutral: 'info', progress: 'pending', success: 'done', warning: 'attention', error: 'attention' };
 
+const actionTasks = {
+  'browser.access': 'browser-access',
+  'account.connect': 'account-connection', 'account.confirm': 'account-connection',
+  'auth.select': 'account-connection', 'auth.switch': 'account-connection', 'auth.cancel': 'account-connection',
+  'browser.pair': 'finish-setup', 'setup.finalize': 'finish-setup',
+  'activation.review': 'complete', 'activation.confirm': 'complete',
+};
+
 export function renderSetup(document, state) {
   const get = id => document.getElementById(id);
   const value = state.snapshot;
@@ -123,8 +131,10 @@ export function renderSetup(document, state) {
     focusTransition(get('task-title'), state.deliberate);
     return;
   }
-  const operationReason = value?.pending_operations.find(item => item.reason !== 'none')?.reason;
-  const reportedReason = state.error || (value?.reason === 'none' ? null : value?.reason) || operationReason;
+  const relevant = action => !actionTasks[action] || actionTasks[action] === value?.next_task;
+  const error = relevant(state.failedAction) ? state.error : null;
+  const operationReason = value?.pending_operations.find(item => relevant(item.action) && item.reason !== 'none')?.reason;
+  const reportedReason = error || (value?.reason === 'none' ? null : value?.reason) || operationReason;
   const reason = reportedReason === 'chrome_unavailable' && state.chromeAvailable === true ? 'browser_unavailable' : reportedReason;
   const reasonClass = recoveryClass(desktopRecovery, reason);
   const unavailable = reasonClass === 'invariant_failed' || reason === 'connection_unavailable';
@@ -193,9 +203,9 @@ export function renderSetup(document, state) {
   const choosingProvider = Boolean(signIn && (canSelect || choosingAccount || canReplaceProviders || sourceContinuationProviders));
   // The clicked provider stays in place and busy until its sign-in is selected or fails.
   const signInActions = ['account.connect', 'auth.select', 'auth.switch'];
-  const continuingReplacement = Boolean(state.continuingProvider && !state.error && task === 'account-connection');
+  const continuingReplacement = Boolean(state.continuingProvider && !error && task === 'account-connection');
   // Brain reports no sign-in projection while the accepted command has not selected yet.
-  const opening = Boolean(activeProvider && !state.error && task === 'account-connection'
+  const opening = Boolean(activeProvider && !error && task === 'account-connection'
     && (continuingReplacement
       || !['selected', 'admitted', 'reauthentication-required', 'replacement-required', 'replacement-pending'].includes(signIn?.state)
         && (signInActions.includes(state.acting) || signInActions.includes(state.pendingAction)
@@ -206,7 +216,7 @@ export function renderSetup(document, state) {
   const controlsDisabled = !state.connected || !localAccessReady || Boolean(state.acting);
   const pairingPending = task === 'finish-setup' && value.pending_operations.some(item => item.action === 'browser.pair');
   const pairingRetry = state.failedAction === 'browser.pair' && ['operation_expired', 'operation_refused'].includes(state.error);
-  const pairingAvailable = task === 'finish-setup' && state.connected && localAccessReady && (!state.error || pairingRetry)
+  const pairingAvailable = task === 'finish-setup' && state.connected && localAccessReady && (!error || pairingRetry)
     && allowed.includes('browser.pair') && !pairingPending;
   const browserWork = task === 'browser-access' && value.pending_operations.some(item => item.action === 'browser.access');
   const startingChrome = task === 'browser-access' && state.acting === 'browser.access';

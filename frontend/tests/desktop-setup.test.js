@@ -380,7 +380,7 @@ describe('desktop setup projection', () => {
     const openBrowser = vi.fn();
     const client = new DesktopSetupClient({ generation, storage: storage(), receive: vi.fn(), openBrowser });
     client.connected = true; client.value = { ...initial(), pending_operations: [record] }; client.pending = operationId;
-    await expect(client.launchBrowser(true)).rejects.toThrow('browser_unavailable');
+    await expect(client.launchBrowser(true)).resolves.toMatchObject({ state: 'not-dispatched', reason: 'browser_unavailable' });
     expect(openBrowser).not.toHaveBeenCalled();
     client.stop();
   });
@@ -712,12 +712,15 @@ describe('desktop setup projection', () => {
       stream: async (_request, _headers, _signal, receive) => receive(JSON.stringify(value)) });
     await client.connect();
     await client.reconcile(other);
-    expect(request).toHaveBeenLastCalledWith('/api/v1/desktop/setup/operations/' + other + '/reconcile', expect.objectContaining({
+    expect(request).toHaveBeenNthCalledWith(2, '/api/v1/desktop/setup/operations/' + other + '/reconcile', expect.objectContaining({
       method: 'POST', headers: expect.objectContaining({ 'X-Desktop-Generation': generation, 'X-Desktop-CSRF': session.csrf_token,
         'X-CSRF-Token': 'operator-csrf' }),
     }));
-    await expect(client.reconcile('44444444-4444-4444-8444-444444444444')).rejects.toThrow('operation_unavailable');
-    expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenLastCalledWith('/api/v1/desktop/setup/operations/' + other, expect.objectContaining({
+      headers: { 'X-Desktop-Generation': generation },
+    }));
+    await expect(client.reconcile('44444444-4444-4444-8444-444444444444')).resolves.toMatchObject({ state: 'not-dispatched', reason: 'operation_unavailable' });
+    expect(request).toHaveBeenCalledTimes(3);
   });
   it('preserves the browser receiver when using native fetch', async () => {
     vi.stubGlobal('fetch', function () {
@@ -1523,7 +1526,7 @@ describe('desktop setup presentation', () => {
       expect(button.dataset.action).toBe('browser.pair');
       expect(document.getElementById('task-status').textContent).toContain('Try again');
       renderSetup(document, { snapshot, connected: true, error, failedAction: 'account.connect' });
-      expect(button.hidden).toBe(true);
+      expect(button.hidden).toBe(false);
     }
   });
   it.each([
@@ -1772,7 +1775,7 @@ it('requires the explicit protected recovery discriminator and never opens an or
   expect(commands[0][1]).toMatchObject({ action: 'account.connect', recover_authority: true });
   expect(openBrowser).not.toHaveBeenCalled();
   subject.value = { ...subject.value, authority_recovery: 'sign-in-required', pending_operations: [parent], allowed_actions: [] };
-  await expect(subject.launchBrowser(true, operationId)).rejects.toThrow('browser_unavailable');
+  await expect(subject.launchBrowser(true, operationId)).resolves.toMatchObject({ state: 'not-dispatched', reason: 'browser_unavailable' });
   expect(openBrowser).not.toHaveBeenCalled();
 });
 
@@ -1803,7 +1806,7 @@ it('admits protected child commands only with the explicit marker and never laun
   expect(commands[0][1]).toMatchObject({ action: 'auth.select', provider: 'default', recover_authority: true });
   expect(openBrowser).not.toHaveBeenCalled();
   subject.value = { ...subject.value, pending_operations: [parent, child], authority_recovery: 'checking', allowed_actions: [] };
-  await expect(subject.launchBrowser(true, child.operation_id)).rejects.toThrow('browser_unavailable');
+  await expect(subject.launchBrowser(true, child.operation_id)).resolves.toMatchObject({ state: 'not-dispatched', reason: 'browser_unavailable' });
   expect(openBrowser).not.toHaveBeenCalled();
 });
 
@@ -1993,7 +1996,7 @@ it('preflights Chrome before spending a protected launch and never auto-opens a 
     const subject = new DesktopSetupClient({ generation, storage: storage(), receive() {}, request, stream: () => () => {} });
     subject.value = { ...protectedSelected(), authority_recovery_browser: 'ready' };
     subject.connected = true; subject.session = session;
-    await expect(subject.launchProtectedBrowser()).rejects.toThrow('chrome_unavailable');
+    await expect(subject.launchProtectedBrowser()).resolves.toMatchObject({ state: 'not-dispatched', reason: 'chrome_unavailable' });
     expect(invoke).toHaveBeenCalledExactlyOnceWith('desktop_chrome_available');
     expect(request).not.toHaveBeenCalled();
     subject.stop();
@@ -2018,7 +2021,7 @@ it('opens the protected native entry once from the current explicit gesture', as
     await subject.launchProtectedBrowser();
     expect(invoke.mock.calls).toEqual([['desktop_chrome_available'], ['desktop_browser_task', { entryCode: 'A'.repeat(43) }]]);
     expect(request).toHaveBeenCalledOnce();
-    await expect(subject.launchProtectedBrowser()).rejects.toThrow('browser_unavailable');
+    await expect(subject.launchProtectedBrowser()).resolves.toMatchObject({ state: 'not-dispatched', reason: 'browser_unavailable' });
     expect(request).toHaveBeenCalledOnce();
     subject.stop();
   } finally { vi.unstubAllGlobals(); }
@@ -2432,4 +2435,86 @@ it('rejects malformed UTF-8, duplicate fields and oversized unrelated events', a
   expect(receive).not.toHaveBeenCalled();
   expect(() => snapshot(JSON.stringify(initial()).replace('{', '{"revision":0,'), generation))
     .toThrow('Duplicate onboarding field');
+});
+
+describe('correlated desktop interaction outcomes', () => {
+  function controlledClient(initialValue, transport = async () => { throw Error('unexpected request'); }) {
+    const states = [];
+    let publish;
+    let first = initialValue;
+    const client = new DesktopSetupClient({ generation, receive: state => states.push(state), storage: storage(),
+      request: async (path, options) => path.endsWith('/session') ? response(session) : transport(path, options),
+      stream: async (_request, _headers, _signal, snapshotFrame) => {
+        publish = value => snapshotFrame(JSON.stringify(value));
+        publish(first);
+      } });
+    return { client, states, publish: value => publish(value),
+      reconnect: value => { first = value; return client.connect(); } };
+  }
+
+  it.each(['reply', 'failure'])('does not apply an obsolete reconciliation %s after reconnect', async settled => {
+    const started = Promise.withResolvers();
+    const network = Promise.withResolvers();
+    const first = { ...initial(), journey_id: operationId, pending_operations: [record], allowed_actions: [] };
+    const { client, reconnect, states } = controlledClient(first, path => {
+      expect(path.split('/').slice(-2)).toEqual([operationId, 'reconcile']);
+      started.resolve();
+      return network.promise;
+    });
+    try {
+      await client.connect();
+      const reconciliation = client.reconcile(operationId);
+      await started.promise;
+      await reconnect({ ...first, revision: 1, pending_operations: [], next_task: 'finish-setup', allowed_actions: ['browser.pair'] });
+      expect(states.at(-1)).toMatchObject({ connected: true, error: null, snapshot: { revision: 1 } });
+      if (settled === 'reply') network.resolve(response(record));
+      else network.reject(new Error('synthetic lost response'));
+      await expect(reconciliation).resolves.toMatchObject({ state: 'superseded', operationId });
+      expect(states.at(-1)).toMatchObject({ error: null, snapshot: { revision: 1 } });
+    } finally { client.stop(); }
+  });
+
+  it.each([true, false])('ignores a Chrome preflight result of %s from a replaced protected child', async available => {
+    const availability = Promise.withResolvers();
+    const invoke = vi.fn(() => availability.promise);
+    vi.stubGlobal('__TAURI__', { core: { invoke } });
+    const selected = protectedSelected();
+    const first = { ...selected, authority_recovery_browser: 'ready', allowed_actions: ['auth.cancel'],
+      authentication: { ...selected.authentication, choices: { google: false, 'microsoft-personal': false, telegram: false, tiktok: false, default: true } } };
+    const { client, publish, states } = controlledClient(first);
+    try {
+      await client.connect();
+      const oldLaunch = client.launchProtectedBrowser().catch(error => error.message);
+      expect(invoke).toHaveBeenCalledExactlyOnceWith('desktop_chrome_available');
+      publish({ ...first, revision: 1, authentication: { ...first.authentication,
+        authentication_attempt: { ...first.authentication.authentication_attempt,
+          authentication_attempt_id: '0198a1b2-c3d4-7300-8000-000000000064' } } });
+      availability.resolve(available);
+      await expect(oldLaunch).resolves.toMatchObject({ state: 'superseded', operationId });
+      expect(invoke).toHaveBeenCalledTimes(1);
+      expect(states.at(-1)).toMatchObject({ error: null, snapshot: { revision: 1 } });
+    } finally { client.stop(); vi.unstubAllGlobals(); }
+  });
+
+  it('reads the reconciled activation receipt without touching pending pairing', async () => {
+    const activationId = '33333333-3333-4333-8333-333333333333';
+    const pairing = { ...record, action: 'browser.pair', state: 'waiting' };
+    const activation = { ...record, operation_id: activationId, action: 'activation.review', state: 'outcome_unknown' };
+    const first = { ...initial(), journey_id: operationId, next_task: 'finish-setup',
+      pending_operations: [pairing, activation], allowed_actions: [] };
+    const calls = [];
+    const { client } = controlledClient(first, async path => {
+      calls.push(path.replace('/api/v1/desktop/setup/operations/', ''));
+      const requested = path.endsWith(operationId) ? pairing : activation;
+      return response({ ...requested, state: 'completed' });
+    });
+    try {
+      await client.connect();
+      client.remember(operationId);
+      await expect(client.reconcile(activationId)).resolves.toMatchObject({ state: 'completed', operationId: activationId });
+      expect({ calls, pending: client.pending }).toEqual({
+        calls: [activationId + '/reconcile', activationId], pending: operationId,
+      });
+    } finally { client.stop(); }
+  });
 });

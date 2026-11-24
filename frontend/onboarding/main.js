@@ -3,7 +3,7 @@ import '../shared-setup/providers.css';
 import { applyTheme } from '../shared-setup/presentation.js';
 import { DesktopSetupClient } from './client.js';
 import { renderSetup } from './view.js';
-import { openBrowserTask, openSetupCode } from './browser-task.js';
+import { openBrowserTask, openSetupCode, presentationGuard } from './browser-task.js';
 import { DesktopEnrollment } from './enrollment.js';
 import { savedDataEntry, savedDataLinkText, savedDataUrl } from '../shared-setup/saved-data-entry.js';
 import { authorityRecoveryView, authorityRecoveryOptions } from '../shared-setup/authority-recovery.js';
@@ -33,17 +33,30 @@ try {
   if (fields.size !== 1 || !fields.has('presentation')) throw new Error('session_unavailable');
   let current = { snapshot: null, pending: null, connected: false, error: null };
   let choosingAccount = false;
-  let acting = null;
+  let acting = null, activeAction = null;
   let replacingCeremony = false;
   let provider = null;
   let finished = false;
   let chromeAvailable = false, chromeScope = null, chromeCheck = 0;
+  const actionScope = state => {
+    const value = state.snapshot;
+    return state.connected && value ? JSON.stringify([value.generation, value.journey_id, value.next_task,
+      value.authentication?.operation_id, value.authentication?.authentication_attempt?.authentication_attempt_id]) : null;
+  };
+  const beginAction = (name) => {
+    const owner = { scope: actionScope(current) };
+    activeAction = owner; acting = name; render();
+    return owner;
+  };
+  const endAction = (owner) => {
+    if (activeAction !== owner) return;
+    activeAction = null; acting = null; replacingCeremony = false; render();
+  };
   const missingChrome = () => current.error === 'chrome_unavailable'
     || current.snapshot?.reason === 'chrome_unavailable'
     || current.snapshot?.pending_operations.some(item => item.reason === 'chrome_unavailable');
   const scope = () => current.connected && missingChrome() && current.snapshot
-    ? JSON.stringify([client?.generation, current.snapshot.journey_id, current.snapshot.next_task,
-      current.pending, current.snapshot.pending_operations.map(item => item.operation_id)]) : null;
+    ? JSON.stringify([actionScope(current), current.pending, current.snapshot.pending_operations.map(item => item.operation_id)]) : null;
   const checkChrome = async () => {
     const owner = scope();
     if (finished || !owner) return;
@@ -63,8 +76,9 @@ try {
       if (owner) void checkChrome();
     }
     const authentication = client?.session?.stage === 'runtime' ? enrollment.state : null;
-    const continuing = !finished && current.connected && !current.error
-      && current.snapshot?.next_task === 'complete' && current.snapshot.local_ready === true
+    const sessionFailure = ['session_unavailable', 'authorization_unavailable', 'status_unavailable', 'connection_unavailable'].includes(current.error);
+    const continuing = !finished && current.connected && !sessionFailure && current.snapshot?.reason === 'none'
+      && current.snapshot.next_task === 'complete' && current.snapshot.local_ready === true
       && authentication?.checked === true && authentication.authenticated === true
       && !authentication.busy && !authentication.error;
     renderSetup(document, { ...current, choosingAccount, acting, provider, authentication, continuing, chromeAvailable, replacingCeremony,
@@ -83,6 +97,9 @@ try {
     return client.connect();
   } });
   client = new DesktopSetupClient({ generation: fields.get('presentation'), receive: state => {
+    if (activeAction && activeAction.scope !== actionScope(state)) {
+      activeAction = null; acting = null; replacingCeremony = false;
+    }
     if (current.snapshot?.authentication?.authentication_attempt?.authentication_attempt_id
       !== state.snapshot?.authentication?.authentication_attempt?.authentication_attempt_id) choosingAccount = false;
     if (!acting && !state.continuingProvider && (!state.pending || state.error
@@ -96,25 +113,28 @@ try {
   }, openBrowser: openBrowserTask });
   const act = async (action, options, continued = null) => {
     if (acting) return;
-    acting = action; render();
-    try { await (continued ? client.act(action, options, continued) : client.act(action, options)); choosingAccount = false; }
-    catch { client.notify('operation_unconfirmed'); }
-    finally { acting = null; render(); }
+    const owner = beginAction(action);
+    const work = continued ? client.act(action, options, continued) : client.act(action, options);
+    const presented = presentationGuard(client);
+    try {
+      const result = await work;
+      if (!finished && activeAction === owner && presented() && result.state !== 'superseded') choosingAccount = false;
+    } catch {
+      if (!finished && activeAction === owner && presented()) client.notify('operation_refused');
+    } finally { endAction(owner); }
   };
   const protectedAct = async action => {
     const view = authorityRecoveryView(current, acting);
     if (finished || !view || view.disabled || (action !== view.action && !(action === 'auth.cancel' && view.cancel))) return;
-    acting = action; render();
+    const owner = beginAction(action);
+    const work = action === 'browser.open' ? client.launchProtectedBrowser() : client.act(action, authorityRecoveryOptions(action));
+    const presented = presentationGuard(client);
     try {
-      if (action === 'browser.open') await client.launchProtectedBrowser();
-      else await client.act(action, authorityRecoveryOptions(action));
-    } catch (error) {
-      // A failed response cannot justify another launch. Reattach to the
-      // existing owner; the current projection determines available actions.
-      if (!finished && error?.message !== 'chrome_unavailable' && client.connected) {
-        void client.connect(); client.notify();
-      }
-    } finally { acting = null; render(); }
+      const result = await work;
+      if (!finished && activeAction === owner && presented() && result.state === 'unconfirmed') void client.connect();
+    } catch {
+      if (!finished && activeAction === owner && presented()) void client.connect();
+    } finally { endAction(owner); }
   };
   document.getElementById('protected-cancel').addEventListener('click', () => { void protectedAct('auth.cancel'); });
   document.getElementById('task-action').addEventListener('click', event => {
@@ -127,7 +147,7 @@ try {
     const continuingSource = button.dataset.action === 'account.connect' && current.snapshot?.continuation_available
       && !current.snapshot?.authentication;
     if (replacing || continuingSource) replacingCeremony = true;
-    void act(button.dataset.action, replacing ? { replace_ceremony: true } : {}).finally(() => { replacingCeremony = false; render(); });
+    void act(button.dataset.action, replacing ? { replace_ceremony: true } : {});
   });
   for (const button of document.querySelectorAll('#sign-in-options [data-provider]')) {
     button.addEventListener('click', event => {
@@ -166,16 +186,23 @@ try {
   document.getElementById('browser-reopen').addEventListener('click', async event => {
     const button = event.currentTarget, operation = button.dataset.operation;
     if (acting || button.hidden || button.disabled || !operation) return;
-    acting = 'browser.open'; render();
+    const owner = beginAction('browser.open');
+    const presented = presentationGuard(client);
     try { await client.launchBrowser(true, operation); }
-    catch { client.notify('browser_unavailable'); }
-    finally { acting = null; render(); }
+    catch { if (!finished && activeAction === owner && presented()) client.notify('browser_unavailable'); }
+    finally { endAction(owner); }
   });
   document.getElementById('setup-code-open').addEventListener('click', async event => {
+    if (acting) return;
     event.currentTarget.disabled = true;
+    const owner = beginAction('setup-code.open');
+    const presented = presentationGuard(client);
     try { await openSetupCode(client); }
-    catch (error) { client.notify(error === 'chrome_unavailable' ? 'chrome_unavailable' : 'browser_unavailable'); }
-    finally { render(); }
+    catch (error) {
+      if (!finished && activeAction === owner && presented()) {
+        client.notify(error === 'chrome_unavailable' ? 'chrome_unavailable' : 'browser_unavailable');
+      }
+    } finally { endAction(owner); }
   });
   document.getElementById('local-authenticate').addEventListener('click', () => { void enrollment.authenticate(); });
   const onWake = () => {

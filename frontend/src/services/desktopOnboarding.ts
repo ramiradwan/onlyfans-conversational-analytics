@@ -1,5 +1,5 @@
 import { openBrowserTask } from '../../onboarding/browser-task.js';
-import { DesktopSetupClient, type DesktopState } from '../../onboarding/client.js';
+import { DesktopSetupClient, type DesktopInteractionOutcome, type DesktopState } from '../../onboarding/client.js';
 import { authorityRecoveryOptions, authorityRecoveryView, type RecoveryAction } from '../../shared-setup/authority-recovery.js';
 import type { BrowserSurfacePayload, FullPresentationIntent } from '../protocol';
 
@@ -61,9 +61,16 @@ export type AuthenticationProvider = 'google' | 'microsoft-personal' | 'telegram
 export interface DesktopOnboardingApi {
   getState(): DesktopState;
   subscribe(listener: () => void): () => void;
-  begin(action: DesktopAction, options?: { provider?: AuthenticationProvider }): Promise<void>;
-  openBrowser(operationId: string): Promise<void>;
-  reconcile(action: DesktopAction): Promise<void>;
+  begin(action: DesktopAction, options?: { provider?: AuthenticationProvider }): Promise<DesktopInteractionOutcome>;
+  openBrowser(operationId: string): Promise<DesktopInteractionOutcome>;
+  reconcile(action: DesktopAction): Promise<DesktopInteractionOutcome>;
+}
+
+export function desktopInteractionFailure(outcome: DesktopInteractionOutcome): string | null {
+  if (outcome.state === 'not-dispatched' || outcome.state === 'refused' || outcome.state === 'unconfirmed') {
+    return outcome.reason ?? (outcome.state === 'unconfirmed' ? 'operation_unconfirmed' : 'operation_refused');
+  }
+  return null;
 }
 
 const browserFeedbackMessages = new Map([
@@ -130,27 +137,23 @@ export async function beginDesktopAction(action: DesktopAction, options: { provi
   const replacesReview = action === 'activation.review' && pending && state.snapshot.allowed_actions.includes(action);
   if (pending && !replacesReview) {
     if (options.provider !== undefined && state.snapshot.authentication?.authentication_attempt?.provider !== options.provider) throw Error('operation_pending');
-    await client.launchBrowser(true, pending.operation_id);
+    return client.launchBrowser(true, pending.operation_id);
   }
-  else {
-    const authentication = state.snapshot.authentication;
-    const replacesCurrentAuthentication = ['auth.cancel', 'auth.switch'].includes(action)
-      && [authentication?.operation_id, authentication?.browser_operation_id].includes(state.pending);
-    const replacesReviewChild = replacesReview && state.snapshot.pending_operations.some(item =>
-      item.operation_id === state.pending && ['activation.review', 'activation.confirm', 'auth.select', 'auth.switch', 'auth.cancel'].includes(item.action));
-    if (state.pending !== null && !replacesCurrentAuthentication && !replacesReviewChild) throw Error('operation_pending');
-    if (!state.snapshot.allowed_actions.includes(action)) throw Error('action_unavailable');
-    await client.act(action, options);
-  }
-  if (state.error) throw Error(state.error);
+  const authentication = state.snapshot.authentication;
+  const replacesCurrentAuthentication = ['auth.cancel', 'auth.switch'].includes(action)
+    && [authentication?.operation_id, authentication?.browser_operation_id].includes(state.pending);
+  const replacesReviewChild = replacesReview && state.snapshot.pending_operations.some(item =>
+    item.operation_id === state.pending && ['activation.review', 'activation.confirm', 'auth.select', 'auth.switch', 'auth.cancel'].includes(item.action));
+  if (state.pending !== null && !replacesCurrentAuthentication && !replacesReviewChild) throw Error('operation_pending');
+  if (!state.snapshot.allowed_actions.includes(action)) throw Error('action_unavailable');
+  return client.act(action, options);
 }
 
 export async function openDesktopBrowser(operationId: string) {
   if (!client || !state.connected || !state.snapshot) throw Error('session_unavailable');
   const authentication = state.snapshot.authentication;
   if (!authentication?.actions.open_browser || authentication.browser_operation_id !== operationId) throw Error('browser_unavailable');
-  await client.launchBrowser(true, operationId);
-  if (state.error) throw Error(state.error);
+  return client.launchBrowser(true, operationId);
 }
 
 export function reconnectDesktopOnboarding() { connect(); }
@@ -158,8 +161,7 @@ export async function reconcileDesktopOnboarding(action: DesktopAction) {
   if (!client || !state.connected || !state.snapshot) throw Error('session_unavailable');
   const pending = state.snapshot.pending_operations.find(value => value.action === action);
   if (!pending) throw Error('operation_unavailable');
-  await client.reconcile(pending.operation_id);
-  if (state.error) throw Error(state.error);
+  return client.reconcile(pending.operation_id);
 }
 
 export const desktopOnboardingApi: DesktopOnboardingApi = { getState: desktopOnboardingState,
@@ -179,8 +181,10 @@ export const authorityRecoveryApi: AuthorityRecoveryApi = {
     const view = authorityRecoveryView(state);
     if (!current || !view || view.disabled || (action !== view.action && !(action === 'auth.cancel' && view.cancel))) throw Error('action_unavailable');
     try {
-      if (action === 'browser.open') await current.launchProtectedBrowser();
-      else await current.act(action, authorityRecoveryOptions(action));
+      const outcome = action === 'browser.open' ? await current.launchProtectedBrowser()
+        : await current.act(action, authorityRecoveryOptions(action));
+      const failure = desktopInteractionFailure(outcome);
+      if (failure && client === current) throw Error(failure);
     } catch (error) {
       if (client === current && !(error instanceof Error && error.message === 'chrome_unavailable') && current.session) {
         void current.connect();

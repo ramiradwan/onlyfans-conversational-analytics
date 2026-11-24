@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { AnalysisReadiness, DesktopState } from '../onboarding/client.js';
+import type { AnalysisReadiness, DesktopInteractionOutcome, DesktopState } from '../onboarding/client.js';
 import type { DesktopOnboardingApi } from '../src/services/desktopOnboarding';
 
 export function desktopFixture(available = true) {
@@ -11,10 +11,11 @@ export function desktopFixture(available = true) {
     pending_operations: [], allowed_actions: available ? ['activation.review'] : [],
   } };
   const listeners = new Set<() => void>();
+  const accepted: DesktopInteractionOutcome = { state: 'accepted', operationId: null, reason: null };
   const api: DesktopOnboardingApi = {
     getState: () => state,
     subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    begin: vi.fn(async () => {}), reconcile: vi.fn(async () => {}), openBrowser: vi.fn(async () => {}),
+    begin: vi.fn(async () => accepted), reconcile: vi.fn(async () => accepted), openBrowser: vi.fn(async () => accepted),
   };
   const publish = (change: Partial<DesktopState> = {}) => {
     state = { ...state, ...change, snapshot: change.snapshot === undefined && state.snapshot
