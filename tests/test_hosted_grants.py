@@ -1263,6 +1263,34 @@ def test_new_connection_and_tls_durations_are_recorded_without_request_details(m
         "event=sign_in_phase operation=transport phase=tls status=error elapsed_ms=500"]
 
 
+@pytest.mark.parametrize(("events", "failure", "stage"), [
+    (("connection.connect_tcp.started", "connection.connect_tcp.failed"), httpx.ConnectError, "connection_setup"),
+    (("connection.start_tls.started", "connection.start_tls.failed"), httpx.ConnectTimeout, "connection_setup"),
+    (("http11.send_request_headers.started", "connection.connect_tcp.started", "connection.connect_tcp.failed"),
+     httpx.ConnectError, "unknown"),
+    ((), httpx.ConnectError, "unknown"),
+    (("http11.send_request_body.started",), httpx.WriteTimeout, "transmission"),
+    (("http2.receive_response_headers.started",), httpx.ReadTimeout, "response_timeout"),
+    ((), httpx.RemoteProtocolError, "unknown"),
+])
+def test_hosted_transport_keeps_only_a_bounded_failure_stage(events, failure, stage):
+    def handler(request):
+        for event in events:
+            request.extensions["trace"](event, {})
+        raise failure("private network detail", request=request)
+
+    transport = HTTPXHostedTransport("https://control.example")
+    transport.close()
+    transport._client = httpx.Client(base_url="https://control.example", transport=httpx.MockTransport(handler))
+    try:
+        with pytest.raises(RuntimeError, match="^Hosted request failed$") as caught:
+            transport.request("POST", "/v1/test", json_body={})
+    finally:
+        transport.close()
+    assert getattr(caught.value, "stage", None) == stage
+    assert "private network detail" not in repr(caught.value)
+
+
 def test_a_warm_up_opens_a_connection_with_one_bodiless_liveness_read_until_the_pool_is_fresh(monkeypatch):
     now = [100.0]
     monkeypatch.setattr("app.security.hosted_grants.monotonic", lambda: now[0])

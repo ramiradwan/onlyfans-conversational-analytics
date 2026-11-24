@@ -24,7 +24,7 @@ from app.security.installation_key import InstallationKeyReference, Installation
 from contracts.loader import verify_snapshot_integrity
 
 from app.security.hosted_grants import (
-    HostedGrantUnavailable, HostedTransport, InstallationProofAuthority,
+    HostedFailureStage, HostedGrantUnavailable, HostedTransport, HostedTransportFailure, InstallationProofAuthority,
     _response_object, hosted_stream_tls_context, require_hosted_origin,
 )
 
@@ -268,8 +268,17 @@ class InitialHandoffClient:
         return result
 
     def complete(self, request: dict, *, before_send: Callable[[], None] | None = None) -> dict:
-        result = self._request(PATH_PREFIX + "complete",
-            self.envelope("complete", request, before_send=before_send), expected=200, before_send=before_send)
+        key = self._signing_key()
+        for retrying in (False, True):
+            envelope = self.envelope("complete", request, before_send=before_send, key=key)
+            try:
+                result = self._request(PATH_PREFIX + "complete", envelope, expected=200, before_send=before_send)
+            except HostedTransportFailure as error:
+                # Only this live owner can prove the protected request never started sending.
+                if retrying or before_send is None or error.stage is not HostedFailureStage.CONNECTION_SETUP:
+                    raise
+            else:
+                break
         allowed = {"profile", "status", "bootstrap"} if result.get("status") == "completed" else {"profile", "status", "receipt"}
         if set(result) != allowed or result.get("profile") != PROFILE or result.get("status") not in {"completed", "recovery-required"}:
             raise HostedGrantUnavailable("Invalid initial completion")
@@ -299,6 +308,8 @@ class InitialHandoffClient:
                         if "handoff-" + verb in timing.OPERATIONS else nullcontext())
             with measured:
                 response = self.transport.request("POST", path, json_body=body)
+        except HostedTransportFailure as error:
+            raise HostedTransportFailure("Initial handoff result unavailable", stage=error.stage) from None
         except Exception:
             raise HostedGrantUnavailable("Initial handoff result unavailable") from None
         if response.status_code != expected:

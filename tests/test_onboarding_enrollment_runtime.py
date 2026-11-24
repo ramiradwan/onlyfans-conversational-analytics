@@ -10,14 +10,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
+import httpx
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.persistence.auth import SQLiteAuthenticationStore, RevocationKey, RevocationScopeType
 from app.provisioning.events import OnboardingEvents
-from app.security.initial_handoff import InitialHandoffClient, InitialHandoffRefused, PROOF_PROFILE, canonical
-from app.security.hosted_grants import TransportResponse
-from app.security.hosted_grants import HostedGrantUnavailable
+from app.security.initial_handoff import (
+    CHALLENGE_PATH, PATH_PREFIX, PROFILE, PROOF_PROFILE, InitialHandoffClient, InitialHandoffRefused, canonical,
+)
+from app.security.hosted_grants import HTTPXHostedTransport, HostedGrantUnavailable, TransportResponse
 from app.provisioning.initial_handoff import InitialInstallationEnrollment
 from app.security.webauthn import WebAuthnAuthorityPort, WebAuthnVerificationError
 from test_webauthn_routes import _seeded_store, _service, _policy, INSTANT, PRINCIPAL_ID, CREDENTIAL_ID
@@ -167,6 +169,86 @@ def test_initial_key_proof_signs_once_with_an_active_key(tmp_path):
     envelope = InitialHandoffClient(Transport(), authority, clock=lambda: INSTANT).envelope("prepare", record["request"])
     assert envelope["proof"]["key_id"] == active.installation_key_id
     assert provider.signs == 1
+
+
+@pytest.mark.parametrize(("fault", "expected_sends", "recovers"), [
+    ("connection_setup", 2, True),
+    ("second_connect_failure", 2, False),
+    ("connect_after_transmission", 1, False),
+    ("connect_without_trace", 1, False),
+    ("response_timeout", 1, False),
+    ("authorization_ended", 1, False),
+])
+def test_initial_completion_retries_only_a_proven_unsent_request(tmp_path, fault, expected_sends, recovers):
+    from app.security.installation_key import InstallationKeyAuthority
+    from test_installation_key import EmulatedPlatformProvider
+
+    records = json.loads((Path(__file__).parents[1] / "contracts/initial-installation-handoff-v2/proof-cases.json").read_text())
+    request = next(row["request"] for row in records if row["case_id"] == "complete-valid")
+    store = SQLiteAuthenticationStore(tmp_path / "auth.sqlite3", clock=lambda: INSTANT)
+    authority = InstallationKeyAuthority(store, EmulatedPlatformProvider())
+    key = authority.ensure_ready()
+    request["scope"]["installation_key_jkt"] = key.installation_key_jkt
+    authorization_current = True
+    challenges = []
+    sends = []
+
+    def authorize():
+        if not authorization_current:
+            raise HostedGrantUnavailable("Original enrollment authority expired")
+
+    def reply(value):
+        return httpx.Response(200, headers={"content-type": "application/json"},
+                              stream=httpx.ByteStream(json.dumps(value).encode()))
+
+    def handler(http_request):
+        nonlocal authorization_current
+        body = json.loads(http_request.content)
+        if http_request.url.path == CHALLENGE_PATH:
+            assert body == {"profile": PROOF_PROFILE,
+                            "target": {"operation": "initial-handoff-complete", "request": request}}
+            challenge = base64.urlsafe_b64encode(bytes([len(challenges) + 1]) * 32).rstrip(b"=").decode()
+            challenges.append(challenge)
+            return reply({
+                "profile": PROOF_PROFILE,
+                "challenge": challenge,
+                "request_digest": hashlib.sha256(canonical(request)).hexdigest(),
+                "expires_at": (INSTANT + timedelta(seconds=30)).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            })
+        assert http_request.url.path == PATH_PREFIX + "complete"
+        assert body["request"] == request
+        assert body["proof"]["key_id"] == key.installation_key_id
+        assert body["proof"]["challenge"] == challenges[-1]
+        sends.append(body["proof"])
+        if len(sends) == 2 and fault == "connection_setup":
+            return reply({"profile": PROFILE, "status": "completed", "bootstrap": {}})
+        trace = http_request.extensions["trace"]
+        if fault in {"connect_after_transmission", "response_timeout"}:
+            trace("http11.send_request_headers.started", {})
+        if fault == "response_timeout":
+            raise httpx.ReadTimeout("fixture dropped the response")
+        if fault != "connect_without_trace":
+            trace("connection.connect_tcp.started", {})
+            trace("connection.connect_tcp.failed", {})
+        if fault == "authorization_ended":
+            authorization_current = False
+        raise httpx.ConnectError("fixture failed to connect")
+
+    transport = HTTPXHostedTransport("https://fixture.invalid")
+    transport.close()
+    transport._client = httpx.Client(base_url="https://fixture.invalid", transport=httpx.MockTransport(handler))
+    client = InitialHandoffClient(transport, authority, clock=lambda: INSTANT)
+    try:
+        if recovers:
+            assert client.complete(request, before_send=authorize)["status"] == "completed"
+        else:
+            with pytest.raises(HostedGrantUnavailable):
+                client.complete(request, before_send=authorize)
+    finally:
+        transport.close()
+    assert len(sends) == len(challenges) == expected_sends
+    assert len(set(challenges)) == expected_sends
+    assert len({proof["signature"] for proof in sends}) == expected_sends
 
 
 class _HandoffFixture:
@@ -339,7 +421,8 @@ async def test_owner_session_and_confirmation_refusals_keep_exact_pending_operat
     journey = worker.journeys.open()["journey_id"]
     row = worker.journeys.get(journey)
     completions = []
-    def complete(request):
+    def complete(request, *, before_send):
+        before_send()
         completions.append(request)
         raise InitialHandoffRefused(status.replace("-", "_"))
     def receipt(request):
