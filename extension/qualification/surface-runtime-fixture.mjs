@@ -50,7 +50,8 @@ export function installSurfaceFixture(input) {
     brain_reachable: state.reachable === true,
     phase: state.phase ?? (state.mode === 'full' ? (state.paired ? 'full' : 'identity') : state.mode),
     reload_required: state.reload === true, onlyfans_permission: state.phase !== 'permission_required' && state.permissionGranted !== false,
-    local_service_permission: state.localPermissionGranted !== false, history_permission: false,
+    local_service_permission: state.localPermissionGranted !== false, history_permission: state.historyPermission === true,
+    history_choice_revision: state.historyChoice ?? null,
     observer: state.observer ?? { attachment: 'ready', helper: 'none' },
     preview: state.preview ?? { message_observations: 128, chat_observations: 24, inbound_observations: 80, outbound_observations: 48 },
     delivery: { transport_state: state.paired ? 'authenticated' : 'disconnected', browser_tab_sleeping: state.sleeping === true,
@@ -89,6 +90,7 @@ export function installSurfaceFixture(input) {
             delete state.initialRequestHold; delete window.__releaseInitialRequest; resolve();
           }; });
         }
+        if (message.type === 'ofca.ui.history-choice') return { ok: true, result: { revision: state.historyChoice ?? null } };
         if (message.type === 'ofca.ui.status') return { ok: true, status: status() };
         if (message.type === 'ofca.legal-activation.status') return { ok: true, result: legal() };
         if (message.type === 'ofca.workspace.v1') {

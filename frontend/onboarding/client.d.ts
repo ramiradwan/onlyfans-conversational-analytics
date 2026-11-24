@@ -55,7 +55,7 @@ export interface DesktopState {
 }
 export class DesktopSetupClient {
   constructor(options: { generation: string; receive(state: DesktopState): void;
-    openBrowser?: (client: DesktopSetupClient, operationId: string, invoke?: (code: string) => Promise<unknown>, current?: () => boolean) => Promise<boolean>;
+    openBrowser?: (client: DesktopSetupClient, operationId: string, invoke?: (code: string, presentation?: string) => Promise<unknown>, current?: () => boolean) => Promise<boolean>;
     request?: typeof fetch; storage?: Storage; operatorCsrf?: () => string | null;
     focusWindow?: () => Promise<unknown>; now?: () => number;
     refreshPresentation?: (generation: string) => Promise<string> });

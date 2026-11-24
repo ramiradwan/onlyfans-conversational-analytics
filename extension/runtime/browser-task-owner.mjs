@@ -21,14 +21,14 @@ export function createBrowserTaskOwner({ chromeApi, onboarding, consentControlle
     return id;
   })().catch(error => { instancePromise = null; throw error; });
   // A read-only context neither reconciles the workspace identity nor creates the instance id.
-  async function context(payload, initial = false, { authorize = async () => {}, signal, readOnly = false } = {}) {
+  async function context(payload, initial = false, { authorize = async () => {}, signal, readOnly = false, expectedAccountId } = {}) {
     const saved = (await chromeApi.storage.local.get(INSTANCE))[INSTANCE];
     if (saved !== undefined && !UUID.test(saved)) throw Error('unavailable');
     if (payload.participant && saved !== payload.participant.instance_id) throw Error('profile_mismatch');
     const current = await onboarding.browserTaskContext(payload.task.journey_id, {
       adopt: initial && payload.entry_source === 'desktop' && payload.participant === null
         && payload.creator_account_id === null && payload.task.purpose === 'browser.access',
-      authorize, reconcile: !readOnly,
+      authorize, reconcile: !readOnly, expectedAccountId,
       canAdopt: () => !signal?.aborted && !authentication?.hasLiveFlow() && [...owners.values()].every(owner =>
         owner.payload.task.expires_at * 1000 <= now() || owner.payload.task.journey_id === payload.task.journey_id),
     });
@@ -101,9 +101,7 @@ export function createBrowserTaskOwner({ chromeApi, onboarding, consentControlle
     read(owner) { return this.readPaired(owner, null); },
     async readPaired(owner, pinnedAccountId) {
       if (!owns(owner)) throw Error('task_changed');
-      const current = await context(owner.payload, false, { readOnly: Boolean(owner.preparing) });
-      // A task retains its admitted draft until the workspace has one.
-      const scope = current.record ? current.draft_scope : owner.draft_scope;
+      let current = await context(owner.payload, false, { readOnly: Boolean(owner.preparing) });
       const [consent, legal] = await Promise.all([consentController.status(), legalActivationController.status()]);
       const mode = consent.consent?.mode;
       const full = mode === 'full' || mode === 'paused' && consent.consent?.resume_mode === 'full';
@@ -118,6 +116,15 @@ export function createBrowserTaskOwner({ chromeApi, onboarding, consentControlle
       const profile = permitted && mode !== 'paused' ? await (presentation && identityBridge.presentedProfile
         ? identityBridge.presentedProfile() : identityBridge.currentProfile?.()) : null;
       if (profile && profile.creator_account_id !== account) throw Error('task_changed');
+      // Full activation can first confirm the creator while this read is in progress.
+      // Report the workspace scope reconciled for that same confirmed account.
+      if (account !== null && mode === 'full' && !owner.preparing
+        && ['browser.access', 'browser.identity'].includes(owner.payload.task.purpose)) {
+        current = await context(owner.payload, false, { expectedAccountId: account });
+        if (current.draft_scope.disclosure_bundle_id !== owner.draft_scope.disclosure_bundle_id) throw Error('task_changed');
+      }
+      // A task retains its admitted draft until the workspace has one.
+      const scope = current.record ? current.draft_scope : owner.draft_scope;
       if (permitted) {
         const [latest, currentLegal] = await Promise.all([consentController.status(), legalActivationController.status()]);
         if (latest.consent?.consent_epoch !== consent.consent?.consent_epoch || latest.consent?.mode !== mode
@@ -178,7 +185,12 @@ export async function attachInstalledHelpers(chromeApi) {
     .filter(tab => helperGeneration(tab.url));
   for (const tab of candidates) {
     await chromeApi.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, world: 'ISOLATED', args: [tab.url],
-      func: expected => { if (window === window.top && location.href === expected) location.reload(); } }).catch(() => undefined);
+      func: expected => {
+        if (window !== window.top || location.href !== expected) return;
+        if (document.documentElement.dataset.accessDocument === 'true') {
+          window.dispatchEvent(new Event('ofca-access-extension-installed'));
+        } else location.reload();
+      } }).catch(() => undefined);
   }
   return candidates.length > 0;
 }

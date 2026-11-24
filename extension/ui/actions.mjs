@@ -1,4 +1,4 @@
-import { ONLYFANS_ORIGIN_PATTERN, UI_TRANSITION_MESSAGE_TYPE } from '../runtime/consent-controller.mjs';
+import { ONLYFANS_ORIGIN_PATTERN, UI_HISTORY_CHOICE_MESSAGE_TYPE, UI_TRANSITION_MESSAGE_TYPE } from '../runtime/consent-controller.mjs';
 import { LEGAL_CHOOSE_MODE_MESSAGE_TYPE } from '../runtime/legal-activation-controller.mjs';
 import { requiredOriginsForMode } from '../runtime/permission-recovery.mjs';
 import { NoticeError, send } from './surface-client.mjs';
@@ -24,7 +24,11 @@ export async function restoreAccess(model) {
   await requestAnalyticsAccess(model.status?.consent.mode);
   return send({ type: UI_TRANSITION_MESSAGE_TYPE, mode: model.status.consent.mode });
 }
-export async function allowHistory() {
+export async function allowHistory(displayedRevision) {
+  const current = await send({ type: UI_HISTORY_CHOICE_MESSAGE_TYPE });
+  if (!displayedRevision || current?.revision !== displayedRevision) {
+    throw new NoticeError('Check your message history setting in the desktop app.');
+  }
   const granted = await chrome.permissions.request({ permissions: ['webRequest'], origins: [ONLYFANS_ORIGIN_PATTERN] });
   if (!granted) throw new NoticeError('Message history access was not allowed.');
 }

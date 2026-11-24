@@ -14,6 +14,7 @@ export function uiSurface(sender, chromeApi) {
 export function allowsUiMessage(sender, message, chromeApi) {
   const surface = uiSurface(sender, chromeApi);
   if (!surface) return false;
+  if (message?.type === 'ofca.ui.history-choice') return surface === 'options';
   if (message?.type === 'ofca.ui.delete-local-data' || message?.type === 'ofca.ui.clear-preview') {
     return surface === 'options';
   }

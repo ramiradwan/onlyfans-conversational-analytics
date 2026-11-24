@@ -428,7 +428,7 @@ export class ReadOnlyAgentWebSocketClient {
         this.onValidationError(error);
         this.socket?.close(safeCloseCode(1011), 'Agent reconnect credential could not be stored');
       });
-    this.configClient?.bindSessionAuthorization?.(session.config_auth_ticket);
+    this.configClient?.bindSessionAuthorization?.(session.config_auth_ticket, session.required_config_revision);
     this.sentSourceSeqs.clear();
     this.syncRequired = session.resume_action === 'snapshot_required';
     this.startHeartbeat(session.lease.heartbeat_interval_seconds * 1000);

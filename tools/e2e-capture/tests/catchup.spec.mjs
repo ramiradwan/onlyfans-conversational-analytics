@@ -137,9 +137,6 @@ for (const enabled of [true, false]) {
       const bridge = context.pages()[0] ?? await context.newPage();
       await establishBrowserWebAuthnSession(bridge, auth);
       await pairCompanionForCapture(context);
-      const historyPopup = await openPopup(context, id, []);
-      await grantHistoryPermission(context, historyPopup, worker);
-      await historyPopup.close();
       let lastSummary = null;
       const summary = async () => (lastSummary = await readBrainSummary(context, { catchup: true }));
       const poll = (read, expected, timeout = 180_000, checkpoint = null) => withCatchupDiagnostics(
@@ -157,6 +154,9 @@ for (const enabled of [true, false]) {
       let page = await reopen();
       await withCatchupDiagnostics(async () => {
         expect(await enableHistory(bridge)).toBe(200);
+        const historyPopup = await openPopup(context, id, []);
+        await grantHistoryPermission(context, historyPopup, worker);
+        await historyPopup.close();
       }, { summary, platform, context, brain, failureContext: 'capture' });
       await poll(async () => (await summary()).coverage.status, 'complete', 60_000, 'initial_history');
       if (enabled) await poll(async () => (await summary()).catchupFreshness?.status, 'current');

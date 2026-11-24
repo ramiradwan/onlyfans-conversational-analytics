@@ -126,7 +126,8 @@ def test_open_mints_an_entry_only_without_a_session_or_live_helper(tmp_path, mon
         assert not launched.is_set()
         response = client.post(path, json={}, headers=headers(native))
         assert response.status_code == 200
-        assert set(response.json()) == {"state", "entry_code"} and response.json()["state"] == "entry"
+        assert set(response.json()) == {"state", "entry_code", "presentation"} and response.json()["state"] == "entry"
+        assert response.json()["presentation"] != browser.generation
         # The returned route lets the click's deferred key preparation start.
         assert launched.is_set()
         # The reissue fenced the earlier helper generation.

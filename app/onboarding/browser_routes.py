@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from app.onboarding import timing
 from app.onboarding.admission import AdmissionRefused
 from app.onboarding.admission_routes import HEADERS, authorize
+from app.onboarding.access_document import BrowserAccessDocuments
 from app.onboarding.helper_events import NOTICES, BrowserTaskEventResponse
 from app.onboarding.routes import body
 from app.onboarding.task_reports import AdmittedAuthenticationTask, AuthenticationTaskReports
@@ -160,12 +161,9 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
         return JSONResponse({"profile": "browser-task.v1", "task": task,
             "extension_id": tasks.extension_id, "ceremony": entry, **tasks.attachment(task)}, headers=HEADERS)
 
-    @router.post("/api/v1/browser-tasks/observation")
-    async def observe(request: Request):
-        session, _ = task_session(request, mutation=True)
+    def record_observation(session, value):
         if coordinator._closed:
             raise HTTPException(503, "Local setup is stopping")
-        value = await body(request)
         try:
             tasks.observe(session, value)
         except AdmissionRefused:
@@ -177,6 +175,21 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
                 "JOIN desktop_browser_tasks t ON t.operation_id=o.operation_id WHERE t.task_id=?", (session.task_id,)).fetchone())
         if operation["state"] in {"accepted", "waiting", "outcome_unknown"}:
             coordinator._start(operation, reconcile=True, actor=None)
+
+    documents = BrowserAccessDocuments(coordinator, tasks, record_observation)
+
+    @router.post("/browser-tasks", include_in_schema=False)
+    async def open_access_page(request: Request):
+        return await documents.page(request)
+
+    @router.websocket("/api/v1/browser-tasks/access-document")
+    async def access_document(socket: WebSocket):
+        await documents.open(socket)
+
+    @router.post("/api/v1/browser-tasks/observation")
+    async def observe(request: Request):
+        session, _ = task_session(request, mutation=True)
+        record_observation(session, await body(request))
         return JSONResponse({"state": "observed"}, headers=HEADERS)
 
     @router.post("/api/v1/browser-tasks/notification")
@@ -308,12 +321,18 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
                 return JSONResponse({"state": "focused"}, headers=HEADERS)
             try:
                 # Reissue fences any helper that did not confirm focus.
-                code = coordinator.admissions.reissue_task_entry(session.identifier,
-                    generation=session.generation, task_id=task_id)
+                navigation = {}
+                if task["purpose"] == "browser.access":
+                    code, generation = coordinator.admissions.reissue_access_document(session.identifier,
+                        generation=session.generation, task_id=task_id)
+                    navigation["presentation"] = generation
+                else:
+                    code = coordinator.admissions.reissue_task_entry(session.identifier,
+                        generation=session.generation, task_id=task_id)
             except (AdmissionRefused, ValueError):
                 return JSONResponse({"state": "unavailable"}, headers=HEADERS)
             events.publish()
-            return JSONResponse({"state": "entry", "entry_code": code}, headers=HEADERS)
+            return JSONResponse({"state": "entry", "entry_code": code, **navigation}, headers=HEADERS)
         finally:
             opening.discard(task_id)
             if task is not None:

@@ -294,13 +294,14 @@ export class ReadOnlyAgentConfigClient {
       : { status: 'degraded', detail: this.lastFailure.message };
   }
 
-  bindSessionAuthorization(configAuthTicket) {
+  bindSessionAuthorization(configAuthTicket, requiredRevision) {
     if (typeof configAuthTicket !== 'string' || configAuthTicket.length === 0) {
       throw new Error('A session-issued configuration authorization ticket is required');
     }
     this.sessionAbort.abort(new Error('session_authorization_changed'));
     this.sessionAbort = new AbortController();
     this.configAuthTicket = configAuthTicket;
+    this.required = { revision: requiredRevision, digest: null };
     this.authorizationEpoch += 1;
     this.#clearRetry();
   }

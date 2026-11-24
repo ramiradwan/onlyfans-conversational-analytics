@@ -679,8 +679,24 @@ test('options offers no second pause control', async ({ page }) => {
   await expect(page.locator('#pause')).toHaveCount(0);
 });
 
+test('settings tracks the separate desktop history choice, including withdrawal with a browser grant', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.connection);
+  const action = page.locator('#history');
+  const status = page.locator('#history-status');
+  await expect(action).toBeHidden();
+  await expect(status).toBeEmpty();
+  await page.evaluate(() => window.__surfaceFixture.change({ historyChoice: 'choice-A' }));
+  await expect(action).toBeVisible();
+  await page.evaluate(() => window.__surfaceFixture.change({ historyPermission: true }));
+  await expect(status).toHaveText('Browser access allowed.');
+  await expect(action).toBeHidden();
+  await page.evaluate(() => window.__surfaceFixture.change({ historyChoice: null }));
+  await expect(status).toBeEmpty();
+  await expect(action).toBeHidden();
+});
+
 test('options history permission uses the approved copy and preserves denied access state', async ({ page }) => {
-  await renderSurfaceState(page, { ...SURFACE_STATES.connection, hash: 'history', permissionGranted: false });
+  await renderSurfaceState(page, { ...SURFACE_STATES.connection, hash: 'history', historyChoice: 'choice-A', permissionGranted: false });
   await expect(page.locator('#history-status')).toHaveText('You turned on message history in the desktop app. Allow the extension to read your older messages.');
   await expect(page.locator('#history')).toHaveText('Allow browser access');
   await expect(page.locator('#history')).toBeVisible();
@@ -697,7 +713,7 @@ for (const width of [1440, 390]) {
   test(`history handoff checking uses a busy placeholder and no tall empty row at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.addInitScript(() => { location.hash = '#history'; });
-    const rendering = renderSurfaceState(page, { ...SURFACE_STATES.connection, hash: undefined, initialRequestHold: 'ofca.ui.status' });
+    const rendering = renderSurfaceState(page, { ...SURFACE_STATES.connection, hash: undefined, historyChoice: 'choice-A', initialRequestHold: 'ofca.ui.status' });
     await page.waitForFunction(() => typeof window.__releaseInitialRequest === 'function');
     await expect(page.locator('#loading')).toBeHidden();
     await expect(page.locator('#connection')).toBeVisible();

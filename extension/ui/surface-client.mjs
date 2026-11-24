@@ -48,7 +48,7 @@ export function createSurfaceClient(onChange, onError) {
       desktop_app_download_url: customerReleaseConfig.desktop_app_download_url },
   };
   let port = null, stopped = false, refreshPromise = null, readinessTimer = null;
-  let reconnectTimer = null, readinessPending = false;
+  let reconnectTimer = null, readinessPending = false, surfaceChangedDuringRead = false;
   let reconnectAttempts = 0, wakeAt = 0;
   const reconnectDelays = [200, 500, 1000];
   function reconnect() {
@@ -100,7 +100,11 @@ export function createSurfaceClient(onChange, onError) {
         }
         return;
       }
-      if (value?.type === 'surface_changed') { void refresh(); return; }
+      if (value?.type === 'surface_changed') {
+        if (refreshPromise) surfaceChangedDuringRead = true;
+        else void refresh();
+        return;
+      }
       if (value?.type === 'analysis_readiness') {
         if (!readinessPending) return;
         clearTimeout(readinessTimer); readinessPending = false;
@@ -176,7 +180,12 @@ export function createSurfaceClient(onChange, onError) {
   }
   function refresh() {
     if (stopped) return Promise.resolve();
-    if (!refreshPromise) refreshPromise = readCurrent().finally(() => { refreshPromise = null; });
+    if (!refreshPromise) refreshPromise = (async () => {
+      do {
+        surfaceChangedDuringRead = false;
+        await readCurrent();
+      } while (!stopped && surfaceChangedDuringRead);
+    })().finally(() => { refreshPromise = null; });
     return refreshPromise;
   }
   async function sync() {

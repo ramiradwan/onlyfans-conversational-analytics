@@ -17,6 +17,7 @@ export const ACTIVE_ACCOUNT_PARTITION_KEY = 'active_account_partition_v5';
 export const CONSENT_POLICY_REVISION = '1';
 export const CAPTURE_RECEIPT_KEY = 'ofca_capture_receipt_v1';
 export const UI_STATUS_MESSAGE_TYPE = 'ofca.ui.status';
+export const UI_HISTORY_CHOICE_MESSAGE_TYPE = 'ofca.ui.history-choice';
 export const UI_TRANSITION_MESSAGE_TYPE = 'ofca.ui.transition';
 export const UI_CLEAR_PREVIEW_MESSAGE_TYPE = 'ofca.ui.clear-preview';
 export const UI_DELETE_LOCAL_DATA_MESSAGE_TYPE = 'ofca.ui.delete-local-data';
@@ -852,6 +853,21 @@ export class ConsentController {
     return this.controlQueue.run(() => this.#statusLocked());
   }
 
+  #historyChoiceRevision() {
+    const { transport, configuration } = this.runtime;
+    const session = transport?.session;
+    const document = configuration?.activeDocument;
+    const history = document?.history_acquisition;
+    if (!fullCaptureMode(this.state) || this.documentReset || this.deletionPending
+      || !session || !document || !configuration.configAuthTicket
+      || configuration.creatorAccountId !== session.creator_account_id
+      || document.creator_account_id !== session.creator_account_id
+      || document.config_revision !== configuration.identity.appliedConfigRevision
+      || document.config_revision !== configuration.required?.revision
+      || !history?.enabled || !history.authorized_platform_creator_id) return null;
+    return history.consent_revision || null;
+  }
+
   async #statusLocked() {
     const { tabs: onlyFansTabs, attached, helper } = this.observer.snapshot();
     const [preview, onlyFansPermission, localServicePermission, historyPermission] = await Promise.all([
@@ -871,6 +887,7 @@ export class ConsentController {
       onlyfans_permission: onlyFansPermission,
       local_service_permission: localServicePermission,
       history_permission: historyPermission,
+      history_choice_revision: this.#historyChoiceRevision(),
       brain_reachable: brainReachable,
       brain_bound: this.phase === 'full',
       preview,
@@ -991,6 +1008,10 @@ export class ConsentController {
         () => sendResponse({ ok: false, code: 'attachment_unavailable' }),
       );
       return true;
+    }
+    if (message?.type === UI_HISTORY_CHOICE_MESSAGE_TYPE && Object.keys(message).length === 1) {
+      sendResponse({ ok: true, result: { revision: this.#historyChoiceRevision() } });
+      return false;
     }
     if (message?.type === UI_STATUS_MESSAGE_TYPE && Object.keys(message).length === 1) {
       void this.status().then(

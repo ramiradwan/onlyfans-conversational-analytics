@@ -35,6 +35,25 @@ The browser participant must match saved Full intent and workspace evidence on e
 
 After pairing, closed browser tasks and bounded acknowledgements use the authenticated companion session. Paused Full retains its control-only channel without capture or storage unlock. Pairing still requires Brain's constant-time comparison against the independently delivered extension-port code, scoped to that exact task. Existing manual comparison remains an explicit recovery route.
 
+### Document admission for the browser access review
+
+Proposed amendment, 2026-11-24. For an unpaired `browser.access` review, the
+desktop issues a one-use entry and a public presentation generation. The landing
+page removes the fragment and submits both values in a same-origin, top-level
+POST. Brain spends the entry and serves the review at the final presentation
+URL. Chrome can then identify that document when the extension checks its sender.
+
+The response carries a one-use ticket that expires within 15 seconds or at the
+session deadline, whichever comes first. A socket at the exact loopback host and
+origin redeems it using the browser-access protocol. Brain holds the session
+identifier and rechecks the current task and generation before recording one
+ready or paused observation. The extension receives the public generation.
+Installing the extension can wake the open review in place. Reloading a spent
+entry requires a fresh review from the desktop.
+
+Sign-in and pairing confirmation retain their existing purpose-specific admission
+and verification. The desktop still makes the account connection decision.
+
 ## Hosted ceremonies and durable coordination
 
 Provider authentication, exact creator approval and commercial confirmation stay in focused hosted ceremonies. The extension opens the exact ceremony entry in a popup window it creates, in system-browser presentation. The extension may first open that popup on its own local waiting page and then navigate the same window to the exact ceremony entry, so an attempt still has one popup. The waiting page carries no ceremony and no authority, and every write still starts only from the explicit click. The hosted page ends on its own completion screen and never navigates to the extension's return URI. A popup is used because a Provider's sign-in can hand off to its desktop application through a custom-scheme link, which the browser's extension authentication flow refuses. There is no extension return. The extension reads no tab URL and gains no permission for sign-in. Removing the popup while it is opening is closure. A failed popup creation is an uncertain outcome, never closure. The extension removes the popup itself when its browser task ends or expires, and that removal is never closure. Sign-in has no ordinary-tab route. Without an extension, the helper offers the extension's install instead. No Provider cookies, identity tokens, licenses or redemption continuations travel through the extension. Brain's proof reconciliation of the underlying operation alone settles the outcome. The cross-plane ceremony profile is owned by the canonical contracts repository; local presentation and browser task schemas remain Product-owned.

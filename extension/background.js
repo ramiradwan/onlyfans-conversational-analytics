@@ -61,6 +61,7 @@ export const agentRuntime = createAgentRuntime({
   parameterOwner: signingParameterOwner,
   chromeApi: chrome,
   configHttpFactory: () => companionClient.configAdapter,
+  onConfigurationChanged: () => companionClient.notifySurfaces(),
   onHistoryStateChanged: () => surfaceReporter.changed(),
   catchupRpc: (...args) => companionClient.configAdapter.catchupRpc(...args),
   captureState: () => consentController.captureState(),

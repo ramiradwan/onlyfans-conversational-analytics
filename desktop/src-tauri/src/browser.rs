@@ -83,7 +83,14 @@ pub fn desktop_browser_task(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, std::sync::Arc<host::Host>>,
     entry_code: String,
+    presentation: Option<String>,
 ) -> Result<(), &'static str> {
+    if let Some(value) = presentation {
+        require_entry_code(&entry_code)?;
+        let generation = uuid::Uuid::parse_str(&value).map_err(|_| "browser_entry_invalid")?;
+        let url = format!("{}/browser-tasks/access-entry#code={entry_code}&presentation={generation}", policy::ORIGIN);
+        return open_entry(window, state, url);
+    }
     open_entry(window, state, task_url(&entry_code)?)
 }
 

@@ -85,6 +85,7 @@ export function createAgentRuntime(options = {}) {
         reportApplied: (report) => {
           if (signal.aborted) return false;
           const sent = transport?.sendConfigApplied(report) ?? false;
+          options.onConfigurationChanged?.();
           void history?.wake('observing').catch(() => undefined);
           return sent;
         },
@@ -151,6 +152,7 @@ export function createAgentRuntime(options = {}) {
         configClient: configuration,
         health: () => configuration.healthSummary(),
         onSession: () => { if (!signal.aborted) void Promise.resolve(lazySigner?.refreshParameters({ force: true })).catch(() => undefined).then(() => history?.wake('admission')).catch(() => undefined); },
+        onConfigAvailable: options.onConfigurationChanged,
         onSessionLost: () => history?.cancelCurrent?.('Agent session ended'),
         onIngestAcknowledged: (payload) => { if (!signal.aborted) void history?.onIngestAcknowledged?.(payload)?.catch?.(() => undefined); },
       });

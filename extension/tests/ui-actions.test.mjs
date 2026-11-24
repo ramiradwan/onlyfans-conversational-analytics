@@ -53,10 +53,17 @@ test('concurrent creator actions share one tab creation', async () => {
 
 test('history permission grants browser access without opening desktop pages in Chrome', async () => {
   const requested = [];
-  globalThis.chrome = { permissions: { async request(value) { requested.push(value); return true; } },
+  let current = 'choice-A';
+  globalThis.chrome = { runtime: { async sendMessage() { return { ok: true, result: { revision: current } }; } },
+    permissions: { async request(value) { requested.push(value); return true; } },
     tabs: { create() { assert.fail('native history settings must stay native'); } } };
-  await allowHistory();
+  await assert.rejects(allowHistory(null), /desktop app/);
+  await assert.rejects(allowHistory('previous-choice'), /desktop app/);
+  assert.deepEqual(requested, []);
+  await allowHistory('choice-A');
   assert.deepEqual(requested, [{ permissions: ['webRequest'], origins: ['https://onlyfans.com/*'] }]);
   globalThis.chrome.permissions.request = async () => false;
-  await assert.rejects(allowHistory(), /not allowed/);
+  await assert.rejects(allowHistory('choice-A'), /not allowed/);
+  current = null;
+  await assert.rejects(allowHistory('choice-A'), /desktop app/);
 });

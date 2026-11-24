@@ -5,7 +5,19 @@ const code = fields.get('code');
 const browser = location.pathname === '/browser-tasks/entry';
 const endpoint = browser ? '/api/v1/browser-tasks/entry/consume' : '/api/v1/desktop/entry/consume';
 const status = document.getElementById('status');
-if (fields.size !== 1 || !/^[A-Za-z0-9_-]{43}$/.test(code ?? '')) {
+if (location.pathname === '/browser-tasks/access-entry' && window.top === window && fields.size === 2
+  && /^[A-Za-z0-9_-]{43}$/u.test(code ?? '') && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(fields.get('presentation') ?? '')) {
+  const generation = fields.get('presentation');
+  const form = document.createElement('form');
+  form.method = 'post'; form.action = '/browser-tasks#presentation=' + generation;
+  for (const [name, value] of [['code', code], ['presentation', generation]]) {
+    const input = document.createElement('input');
+    input.type = 'hidden'; input.name = name; input.value = value; form.append(input);
+  }
+  document.body.append(form);
+  window.addEventListener('pagehide', () => form.remove(), { once: true });
+  form.submit();
+} else if (location.pathname === '/browser-tasks/access-entry' || fields.size !== 1 || !/^[A-Za-z0-9_-]{43}$/.test(code ?? '')) {
   status.textContent = 'This setup link is unavailable. Return to the desktop app to continue.';
 } else {
   fetch(endpoint, { method: 'POST', credentials: 'same-origin', redirect: 'error',

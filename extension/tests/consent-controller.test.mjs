@@ -791,3 +791,31 @@ test('a scoped resume denied by Legal records refusal without changing consent',
   assert.equal(refused.receipt.outcome, 'refused');
   assert.equal(refused.receipt.operation_id, command.operation_id);
 });
+
+test('history choice follows the authenticated account and the current applied desktop configuration', async () => {
+  const { controller } = harness();
+  await controller.initialize();
+  controller.state.mode = 'full';
+  const document = { creator_account_id: 'account-A', config_revision: 'revision-1',
+    history_acquisition: { enabled: true, consent_revision: 'choice-A', authorized_platform_creator_id: 'creator-A' } };
+  const configuration = { creatorAccountId: 'account-A', configAuthTicket: 'fixture',
+    activeDocument: document, required: { revision: 'revision-1' }, identity: { appliedConfigRevision: 'revision-1' } };
+  const session = { creator_account_id: 'account-A' };
+  controller.runtime.configuration = configuration;
+  controller.runtime.transport = { session: null };
+  const choice = async () => (await controller.status()).history_choice_revision;
+  assert.equal(await choice(), null);
+  controller.runtime.transport.session = session;
+  assert.equal(await choice(), 'choice-A');
+  session.creator_account_id = 'account-B';
+  assert.equal(await choice(), null);
+  session.creator_account_id = 'account-A';
+  configuration.required.revision = 'revision-2';
+  assert.equal(await choice(), null);
+  configuration.identity.appliedConfigRevision = document.config_revision = 'revision-2';
+  document.history_acquisition.enabled = false;
+  assert.equal(await choice(), null);
+  document.history_acquisition.enabled = true;
+  configuration.configAuthTicket = null;
+  assert.equal(await choice(), null);
+});
