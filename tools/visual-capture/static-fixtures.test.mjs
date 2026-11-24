@@ -122,12 +122,15 @@ test('native recovery and uncertain operations preserve authority and linked fee
       assert.equal(document.querySelector('#recovery-package'), null);
     }
     renderSetup(document, nativeState('account-connection', {
-      pending_operations: [{ operation_id: 'op', action: 'account.connect', reason: 'none' }],
+      pending_operations: [{ operation_id: 'op', action: 'account.connect', state: 'waiting', reason: 'none' }],
       decision_status: { operation_id: 'op', state: 'accepted' },
     }));
-    assert.equal(document.querySelector('#task-pending').textContent, 'Account connected. Moving to the next step…');
+    assert.equal(document.querySelector('#task-pending').textContent, 'Connecting your account…');
     for (const id of ['task-action', 'sign-in-options', 'sign-in-switch', 'browser-reopen', 'setup-code-open']) {
       assert.equal(document.getElementById(id).hidden, true, `Accepted setup exposes another action: ${id}`);
     }
+    renderSetup(document, nativeState('finish-setup'));
+    assert.equal(document.querySelector('#task-pending').hidden, true);
+    assert.equal(document.querySelector('[data-step][aria-current="step"]')?.dataset.step, 'finish-setup');
   } finally { dom.window.close(); }
 });
