@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, StreamingResponse, Response
 from app.onboarding import timing
 from app.onboarding.admission import AdmissionRefused
 from app.onboarding.admission_routes import HEADERS, authorize
+from app.onboarding.contract import DOCUMENT_UTF8_BYTES
 from app.onboarding.coordinator import CommandRefused, DesktopOnboardingCoordinator
 from app.provisioning.events import events
 
@@ -35,9 +36,9 @@ async def body(request: Request, *, empty=False):
         raise HTTPException(400, "Invalid setup request")
     raw = bytearray()
     async for chunk in request.stream():
-        raw.extend(chunk)
-        if len(raw) > 16_384:
+        if len(raw) + len(chunk) > DOCUMENT_UTF8_BYTES:
             raise HTTPException(413, "Setup request exceeds its limit")
+        raw.extend(chunk)
     try:
         value = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique, parse_constant=_invalid_number)
         if not isinstance(value, dict) or (empty and value != {}):
@@ -92,7 +93,7 @@ class DesktopEventResponse(StreamingResponse):
                 if self.warm is not None and SIGN_IN_ACTIONS.intersection(snapshot.get("allowed_actions", ())):
                     # Only a connection is opened. Every sign-in write still starts from its click.
                     self.warm()
-                encoded = json.dumps(snapshot, separators=(",", ":"))
+                encoded = json.dumps(snapshot, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
                 if encoded != previous:
                     yield "event: setup\ndata: " + encoded + "\n\n"
                     previous = encoded
