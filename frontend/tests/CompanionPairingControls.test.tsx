@@ -195,6 +195,7 @@ describe('companion pairing controls', () => {
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
     expect(screen.getByText('This attempt expires in 5:00.')).toBeTruthy();
     expect(screen.getByText('Waiting for the extension…')).toBeTruthy();
+    expect(screen.getByText(/In the extension’s setup tab, open Connection options/)).toBeTruthy();
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect(api.get).not.toHaveBeenCalled();
     await brainNotice();

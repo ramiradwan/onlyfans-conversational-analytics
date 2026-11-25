@@ -195,6 +195,14 @@ async function selectModeReview(mode) {
   saveReviewChoice(mode);
   render(client.model);
 }
+function manualPairingAction({ status, legal, pairing }) {
+  if (browserTask || workspacePending || !legal?.configured || legal.requires_reauthorization
+    || status?.consent.mode !== 'full' || !hasModeAccess(status, 'full')
+    || pairing.desktop_attempt || pairing.desktop_control) return null;
+  if (pairing.owns_attempt && ['pairing', 'compare'].includes(pairing.state)) return 'cancel';
+  return ['unpaired', 'desktop_not_ready', 'pairing_failed'].includes(pairing.state) ? 'pair' : null;
+}
+
 function renderDesktop(model, journey) {
   const launch = desktopLaunch.state;
   const opening = launch === 'opening';
@@ -227,6 +235,11 @@ function renderDesktop(model, journey) {
   show('desktop-setup-code', desktopResources && !model.pairing?.desktop_control);
   text('desktop-comparison-code', compare ? `${comparison.slice(0, 3)} ${comparison.slice(3)}` : '');
   show('desktop-comparison-code', Boolean(compare));
+  const manualAction = manualPairingAction(model);
+  if (!manualAction) element('desktop-pairing-options').open = false;
+  show('desktop-pairing-options', Boolean(manualAction));
+  show('desktop-pairing-hint', manualAction === 'pair');
+  text('desktop-pairing-action', manualAction === 'cancel' ? 'Cancel comparison' : 'Compare connection codes');
   element('open-desktop').dataset.action = openOnlyFans ? 'open_creator_account' : 'open_desktop';
   text('open-desktop', fullReady || openOnlyFans ? journey.primaryLabel : 'Open desktop app');
   show('open-desktop', !passiveConnection);
@@ -474,6 +487,10 @@ page.bind('retry-validation', async () => {
 for (const mode of ['preview', 'full']) page.bind(`start-${mode}`, () => selectModeReview(mode));
 page.bind('open-desktop', () => runJourneyAction(element('open-desktop').dataset.action));
 page.bind('download-desktop', () => runJourneyAction('install_desktop'));
+page.bind('desktop-pairing-action', () => {
+  const action = manualPairingAction(client.model);
+  if (action) client.post(action);
+});
 page.bind('desktop-back', async () => {
   await recordFullChoice(false);
   setupChoice = null; choicePersistence.write(workspaceRecord, null); setFullReview(false); render(client.model);

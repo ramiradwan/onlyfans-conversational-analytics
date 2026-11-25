@@ -43,8 +43,9 @@ export function installSurfaceFixture(input) {
   };
   const pairState = () => ({ state: state.pairing ?? (state.paired ? 'paired' : 'unpaired'),
     comparison_code: state.pairing === 'compare' && state.surface === 'setup' ? '483217' : null,
-    owns_attempt: state.surface === 'setup' && ['pairing', 'compare'].includes(state.pairing),
-    desktop_control: state.desktopControl === true });
+    owns_attempt: state.surface === 'setup' && !state.otherPairingOwner && !state.desktopAttempt
+      && ['pairing', 'compare'].includes(state.pairing),
+    desktop_attempt: state.desktopAttempt === true, desktop_control: state.desktopControl === true });
   const status = () => ({ consent: { mode: state.mode, resume_mode: state.resume ?? (state.mode === 'paused' ? 'preview' : null), consent_epoch: 'fixture-epoch',
     authorization_event_id: state.authorizationEventId ?? null },
     brain_reachable: state.reachable === true,
