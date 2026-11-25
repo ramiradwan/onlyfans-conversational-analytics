@@ -1018,6 +1018,86 @@ async def test_unreached_abandonment_retires_past_window_and_allows_fresh_admiss
 
 
 @pytest.mark.asyncio
+async def test_observed_child_expiry_rechecks_parent_after_its_deadline_worker(installed, monkeypatch):
+    import asyncio
+    from threading import Event
+
+    from app.provisioning.events import events
+
+    case = installed
+    coordinator, owner, _, state = build(case)
+    session = connect(coordinator)
+    parent_id = "ffffffff-ffff-4fff-bfff-ffffffffffff"
+    child_id = "00000000-0000-4000-8000-000000000001"
+    await coordinator.command(session, recovery_command(coordinator, session) | {"operation_id": parent_id})
+    await coordinator.drain()
+    parent = saved(coordinator, parent_id)
+    state["lose_select"] = True
+    await coordinator.command(session, child_command(coordinator, session) | {"operation_id": child_id})
+    await coordinator.drain()
+    assert parent["state"] == "waiting"
+    assert saved(coordinator, child_id)["state"] == "outcome_unknown"
+    # Both commands have the same fixture timestamp. The watcher reads the child first.
+    assert [op["operation_id"] for op in coordinator._pending()] == [child_id, parent_id]
+    deadline = owner.confirmation_deadline(parent)
+    assert deadline is not None
+    cutoff = case.clock[0] + timedelta(seconds=deadline - case.clock[0].timestamp())
+    calls_before = list(state["calls"])
+    advance_clock, crossed_deadline, first_parent_pass = Event(), Event(), Event()
+    before_deadline = []
+    parent_results = []
+    observe, execute = owner.observe, owner.execute
+
+    def observe_across_deadline(operation):
+        if operation["operation_id"] != child_id:
+            return observe(operation)
+        if crossed_deadline.is_set():
+            first_parent_pass.wait(10)
+            return observe(operation)
+        outcome = observe(operation)
+        if advance_clock.is_set():
+            before_deadline.append(outcome)
+            case.clock[0] = cutoff
+            crossed_deadline.set()
+        return outcome
+
+    async def execute_at_deadline(operation, *, reconcile, actor=None):
+        result = await execute(operation, reconcile=reconcile, actor=actor)
+        if operation["operation_id"] == parent_id and crossed_deadline.is_set():
+            parent_results.append(result.state)
+            first_parent_pass.set()
+        return result
+
+    monkeypatch.setattr(owner, "observe", observe_across_deadline)
+    monkeypatch.setattr(owner, "execute", execute_at_deadline)
+    coordinator.start()
+    try:
+        await coordinator.drain()
+        async with asyncio.timeout(10):
+            while coordinator._confirmation_at.get(parent_id) != deadline:
+                await asyncio.sleep(0.01)
+            advance_clock.set()
+            events.publish()
+            while saved(coordinator, child_id)["state"] != "refused":
+                await asyncio.sleep(0.01)
+        await coordinator.drain()
+
+        assert before_deadline == [None]
+        assert parent_results[:1] == ["waiting"]
+        fresh_session = connect(coordinator)
+        for operation_id in (child_id, parent_id):
+            receipt = coordinator.receipt(fresh_session, operation_id)
+            assert (receipt["state"], receipt["reason"]) == ("refused", "operation_expired")
+        assert parent_results == ["waiting", "refused"]
+        assert not any(_recovery_counts(case.store).values())
+        assert state["calls"] == calls_before
+    finally:
+        first_parent_pass.set()
+        await coordinator.stop()
+        await owner.stop()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("variant",["pending-entry","earlier-child-only"])
 async def test_reached_post_expiry_read_without_commit_retires_and_allows_fresh_admission(installed,variant):
     case=installed

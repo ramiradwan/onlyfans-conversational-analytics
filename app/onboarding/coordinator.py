@@ -719,7 +719,7 @@ class DesktopOnboardingCoordinator:
             outcome = result
             self._settle(operation, result)
             if result.state != "outcome_unknown":
-                await self._refresh_authentication_parent(operation)
+                self._refresh_authentication_parent(operation)
             return result
         finally:
             self._finish_worker(operation_id, asyncio.current_task(), outcome)
@@ -750,18 +750,23 @@ class DesktopOnboardingCoordinator:
         except Exception:
             return None
 
-    async def _refresh_authentication_parent(self, operation):
+    def _refresh_authentication_parent(self, operation):
         parent = self._authentication_parent(operation)
         if parent is None:
             return
         running = self._workers.get(parent["operation_id"])
-        if running is not None and not running.done():
-            # Its read may have started before the child changed admission. Keep
-            # one fresh read after that worker, including during drain.
-            await asyncio.shield(running)
-            parent = self._authentication_parent(operation)
-        if parent is not None:
+        if running is None or running.done():
             self._start(parent, reconcile=True, actor=None)
+            return
+
+        # The current read may predate the child's outcome. Recheck after it
+        # finishes so the watcher can keep settling other operations meanwhile.
+        def refresh_after_parent(_):
+            current = self._authentication_parent(operation)
+            if current is not None:
+                self._start(current, reconcile=True, actor=None)
+
+        running.add_done_callback(refresh_after_parent)
 
     def _settle(self, operation, result):
         with self.store.database.transaction() as connection:
@@ -776,6 +781,7 @@ class DesktopOnboardingCoordinator:
             settled = getattr(self.owner, "settled", None)
             if settled is not None:
                 settled(operation, result)
+        return bool(changed)
 
     def _pending(self):
         with self.store.database.read() as connection:
@@ -870,7 +876,8 @@ class DesktopOnboardingCoordinator:
                         if prefetch is not None:
                             prefetch.cancel()
                     if observed is not None:
-                        self._settle(operation, observed)
+                        if self._settle(operation, observed) and observed.state in {"completed", "refused"}:
+                            self._refresh_authentication_parent(operation)
                         continue
                     remaining.append(operation)
                     if operation["operation_id"] not in self._workers and recoverable:
