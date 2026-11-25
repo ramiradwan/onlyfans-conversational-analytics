@@ -4,7 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.persistence.auth import AuthenticationStateError, SavedDataOwner, SQLiteAuthenticationStore
-from app.security.grant_types import CREATOR_ACCOUNT_BINDING
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,24 +86,11 @@ class AccountPasskeyBindings:
         if len(row) != 1:
             return None
         binding = _record(row[0])
-        return binding if self.owner_current(connection, binding) else None
-
-    def owner_current(self, connection, binding: AccountPasskeyBinding) -> bool:
-        owner = binding.owner
-        account = connection.execute(
-            """
-            SELECT installation_id FROM authorized_account_bindings
-            WHERE creator_account_id=? AND revoked_at IS NULL
-            """,
-            (owner.creator_account_id,),
-        ).fetchone()
-        return bool(
-            account is not None and account["installation_id"] == owner.installation_id
-            and self.store._saved_data_scope_current(
-                connection, owner, external_issuer=binding.external_issuer,
-                external_subject=owner.principal_id,
-            )
-        )
+        if not self.store.account_passkey_owner_current(
+            connection, binding.owner, external_issuer=binding.external_issuer,
+        ):
+            return None
+        return binding
 
     def read(self, connection, installation_id: str, rp_id: str, credential_id: str) -> AccountPasskeyBinding | None:
         row = connection.execute(
@@ -131,32 +117,11 @@ class AccountPasskeyBindings:
 
     def install(self, connection, *, creator_account_id: str, installation_id: str, installation_key_jkt: str,
                 rp_id: str, credential_id: str, subject: str, digest: str, generation: int, record: str) -> AccountPasskeyBinding:
-        rows = connection.execute(
-            """
-            SELECT g.issuer,g.subject,g.organization_id,k.installation_key_id
-            FROM authorized_account_bindings a
-            JOIN authorized_account_binding_grants ag ON ag.creator_account_id=a.creator_account_id
-            JOIN verified_grant_references g ON g.reference_id=ag.grant_reference_id
-            JOIN installation_key_reference k ON k.singleton=1 AND k.activated_at IS NOT NULL
-            WHERE a.creator_account_id=? AND a.installation_id=? AND a.revoked_at IS NULL
-              AND g.grant_type=? AND g.creator_account_id=a.creator_account_id
-              AND g.installation_id=a.installation_id AND g.organization_id IS NOT NULL
-              AND g.installation_key_id=k.installation_key_id AND g.installation_key_jkt=k.installation_key_jkt
-              AND g.valid_from <= a.authorized_at AND a.authorized_at < g.expires_at
-              AND k.installation_key_jkt=?
-            """,
-            (creator_account_id, installation_id, CREATOR_ACCOUNT_BINDING, installation_key_jkt),
-        ).fetchall()
-        if len(rows) != 1:
-            raise AuthenticationStateError("Account passkey requires the committed creator connection")
-        row = rows[0]
-        owner = SavedDataOwner(
-            credential_id, row["subject"], creator_account_id, installation_id, row["installation_key_id"],
-            installation_key_jkt, row["organization_id"], account_passkey_binding=digest,
+        owner, issuer = self.store.account_passkey_owner(
+            connection, creator_account_id=creator_account_id, installation_id=installation_id,
+            installation_key_jkt=installation_key_jkt, credential_id=credential_id, binding_digest=digest,
         )
-        candidate = AccountPasskeyBinding(owner, rp_id, subject, row["issuer"], digest, generation, record, None, None, None)
-        if not self.owner_current(connection, candidate):
-            raise AuthenticationStateError("Account passkey creator authority changed")
+        candidate = AccountPasskeyBinding(owner, rp_id, subject, issuer, digest, generation, record, None, None, None)
         retained = self.read(connection, installation_id, rp_id, credential_id)
         if retained is not None:
             if retained != candidate:

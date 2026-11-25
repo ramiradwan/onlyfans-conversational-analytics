@@ -2046,6 +2046,55 @@ class SQLiteAuthenticationStore:
             connection, owner, external_issuer=row["external_issuer"], external_subject=row["external_subject"],
         ) else None
 
+    def account_passkey_owner(
+        self, connection: sqlite3.Connection, *, creator_account_id: str, installation_id: str,
+        installation_key_jkt: str, credential_id: str, binding_digest: str,
+    ) -> tuple[SavedDataOwner, str]:
+        """Resolve the passkey's local owner from the grant committed by Connect."""
+        rows = connection.execute(
+            """
+            SELECT g.issuer,g.subject,g.organization_id,k.installation_key_id
+            FROM authorized_account_bindings a
+            JOIN authorized_account_binding_grants ag ON ag.creator_account_id=a.creator_account_id
+            JOIN verified_grant_references g ON g.reference_id=ag.grant_reference_id
+            JOIN installation_key_reference k ON k.singleton=1 AND k.activated_at IS NOT NULL
+            WHERE a.creator_account_id=? AND a.installation_id=? AND a.revoked_at IS NULL
+              AND g.grant_type=? AND g.creator_account_id=a.creator_account_id
+              AND g.installation_id=a.installation_id AND g.organization_id IS NOT NULL
+              AND g.installation_key_id=k.installation_key_id AND g.installation_key_jkt=k.installation_key_jkt
+              AND g.valid_from <= a.authorized_at AND a.authorized_at < g.expires_at
+              AND k.installation_key_jkt=?
+            """,
+            (creator_account_id, installation_id, CREATOR_ACCOUNT_BINDING, installation_key_jkt),
+        ).fetchall()
+        if len(rows) != 1:
+            raise AuthenticationStateError("Account passkey requires the committed creator connection")
+        row = rows[0]
+        owner = SavedDataOwner(
+            credential_id, row["subject"], creator_account_id, installation_id, row["installation_key_id"],
+            installation_key_jkt, row["organization_id"], account_passkey_binding=binding_digest,
+        )
+        if not self.account_passkey_owner_current(connection, owner, external_issuer=row["issuer"]):
+            raise AuthenticationStateError("Account passkey creator authority changed")
+        return owner, row["issuer"]
+
+    def account_passkey_owner_current(
+        self, connection: sqlite3.Connection, owner: SavedDataOwner, *, external_issuer: str,
+    ) -> bool:
+        account = connection.execute(
+            """
+            SELECT installation_id FROM authorized_account_bindings
+            WHERE creator_account_id=? AND revoked_at IS NULL
+            """,
+            (owner.creator_account_id,),
+        ).fetchone()
+        return bool(
+            account is not None and account["installation_id"] == owner.installation_id
+            and self._saved_data_scope_current(
+                connection, owner, external_issuer=external_issuer, external_subject=owner.principal_id,
+            )
+        )
+
     def _saved_data_scope_current(
         self, connection: sqlite3.Connection, owner: SavedDataOwner, *, external_issuer: str, external_subject: str,
     ) -> bool:
