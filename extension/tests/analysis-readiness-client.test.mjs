@@ -32,6 +32,8 @@ async function harness(readinessDocument) {
     storage: { local: area(), session: area() },
   };
   const methods = [];
+  const scope = { account: ACCOUNT, epoch: crypto.randomUUID() };
+  const entered = Promise.withResolvers();
   const closeListeners = [];
   const channel = {
     identity: {
@@ -73,7 +75,7 @@ async function harness(readinessDocument) {
           storage_key_base64: STORAGE_KEY,
         };
       }
-      if (method === 'agent.analysis.readiness') return readinessDocument;
+      if (method === 'agent.analysis.readiness') { entered.resolve(); return readinessDocument; }
       throw new Error(`unexpected RPC ${method}`);
     },
   };
@@ -85,14 +87,15 @@ async function harness(readinessDocument) {
   const client = createCompanionClient({
     chromeApi,
     allowsFull: () => true,
-    detectedAccountId: async () => ACCOUNT,
+    readinessConsentEpoch: () => scope.epoch,
+    detectedAccountId: async () => scope.account,
     accountDatabaseName: async (accountId) => `account-${accountId}`,
     storeFactory: async () => pairingStore,
     loadSnow: async () => ({ SnowSession: class {}, generateStaticKeypair() { return new Uint8Array(64); } }),
     loadTrust: async () => ({}),
     channelFactory: async () => channel,
   });
-  return { client, methods };
+  return { client, methods, entered: entered.promise, scope };
 }
 
 test('analysis readiness is read only over the authenticated companion channel', async () => {
@@ -145,3 +148,24 @@ test('analysis readiness rejects malformed and impossible ready responses', asyn
     }
   }
 });
+
+for (const changed of ['account', 'consent', 'channel']) {
+  for (const outcome of ['success', 'failure']) {
+    test('does not return an obsolete readiness ' + outcome + ' after ' + changed + ' changes', async () => {
+      const held = Promise.withResolvers();
+      const { client, scope, entered } = await harness(held.promise);
+      try {
+        const reading = client.analysisReadiness();
+        const rejected = assert.rejects(reading, { name: 'Error' });
+        await entered;
+        if (changed === 'account') scope.account = 'different-creator';
+        else if (changed === 'consent') scope.epoch = crypto.randomUUID();
+        else client.invalidate();
+        if (outcome === 'success') held.resolve({ schema: 'ofca-analysis-readiness/v1',
+          commercial_authority: 'active', analysis_admission: 'admitted' });
+        else held.reject(new Error('fixture failure'));
+        await rejected;
+      } finally { client.invalidate(); }
+    });
+  }
+}

@@ -46,7 +46,7 @@ def main():
         root = Path(directory)
         fixture_contract = contract.__wrapped__()
         fixture_grants = grant_references.__wrapped__(fixture_contract)
-        fixture = local.__wrapped__(root, fixture_contract, fixture_grants)
+        fixture = local.__wrapped__(None, root, fixture_contract, fixture_grants)
         patches = pytest.MonkeyPatch()
         patches.setattr(companion_pairing, "require_activated_runtime", lambda: None)
         patches.setattr(companion_pairing, "companion_pairing_service", lambda: fixture.service)

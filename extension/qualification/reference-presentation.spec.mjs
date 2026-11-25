@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { SURFACE_STATES, renderSurfaceState } from './surface-fixtures.mjs';
+import { SURFACE_FIXTURE_ORIGIN, SURFACE_STATES, renderSurfaceState } from './surface-fixtures.mjs';
 import { assertBackgroundTabLayout, backgroundTabLayoutCases, measureBackgroundTabLayout } from './setup-background-tab-layout.mjs';
 
 for (const request of ['ofca.ui.status', 'ofca.legal-activation.status']) {
@@ -68,7 +68,7 @@ for (const theme of ['light', 'dark']) {
       const supportChannels = { telegram: 'https://chat.example.com/help-and-setup', tiktok: 'https://video.example.com/a&copy;b',
         whatsapp: 'https://help.example.com/<script>', extra: 'https://example.com/' };
       const outbound = [], newPages = [];
-      page.on('request', request => { if (!request.url().startsWith('http://extension-ui.test/')) outbound.push(request.url()); });
+      page.on('request', request => { if (new URL(request.url()).origin !== SURFACE_FIXTURE_ORIGIN) outbound.push(request.url()); });
       context.on('page', opened => { if (opened !== page) newPages.push(opened); });
       await page.clock.install();
       await renderSurfaceState(page, { ...SURFACE_STATES.runtime_unavailable, portUnavailable: true, supportChannels });

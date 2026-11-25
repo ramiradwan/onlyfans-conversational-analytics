@@ -41,6 +41,7 @@ const signalDeliveryProgress = () => {
 export const companionClient = createCompanionClient({
   accountDatabaseName,
   allowsFull: () => consentController?.state.mode === 'full',
+  readinessConsentEpoch: () => consentController?.state.consent_epoch ?? null,
   allowsControl: () => consentController?.state.mode === 'paused' && consentController.state.resume_mode === 'full',
   onControl: (action) => action.startsWith('browser.open.')
     ? openBrowserControl(action, { openSurface, openCreatorAccount }) : applyControl(consentController, action),
