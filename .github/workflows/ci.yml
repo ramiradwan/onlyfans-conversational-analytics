@@ -66,7 +66,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native desktop contracts failed' }
       - name: Retain native contract outcomes
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: desktop-native-contracts-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/desktop-native/contracts.log
@@ -82,7 +82,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ env.PRODUCT_SHA }}
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: npm
@@ -149,7 +149,7 @@ jobs:
       - name: Qualify bounded 10k-message snapshot repair
         run: npm run qualify:snapshot:ci --prefix extension
       - name: Upload frontend build
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: frontend-dist-${{ env.PRODUCT_SHA }}
           path: app/static/dist/
@@ -157,7 +157,7 @@ jobs:
           if-no-files-found: error
           overwrite: true
       - name: Upload audited extension artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: extension-dist-${{ env.PRODUCT_SHA }}
           path: extension/dist/
@@ -174,7 +174,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ env.PRODUCT_SHA }}
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
           cache: pip
@@ -183,7 +183,7 @@ jobs:
             requirements-dev.txt
             packaging/sqlcipher/fixed-runtime-sources.json
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: npm
@@ -290,7 +290,7 @@ jobs:
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/backend-fast-contract-integrity/junit.xml
       - name: Retain backend timing and selection
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ci-tests-backend-fast-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/ci-tests/
@@ -316,7 +316,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ env.PRODUCT_SHA }}
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
           cache: pip
@@ -325,7 +325,7 @@ jobs:
             requirements-dev.txt
             packaging/sqlcipher/fixed-runtime-sources.json
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: npm
@@ -356,7 +356,7 @@ jobs:
         run: python tools/test_backend.py --lane analytics-integration --shard ${{ matrix.shard }}
       - name: Retain backend timing and selection
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ci-tests-analytics-integration-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{
             github.run_attempt }}
@@ -375,7 +375,7 @@ jobs:
         with:
           ref: ${{ env.PRODUCT_SHA }}
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
       - name: Compute fixed wheel cache identity
@@ -471,7 +471,7 @@ jobs:
           }
           $payload | ConvertTo-Json | Set-Content -Encoding utf8NoBOM (Join-Path $wheelhouse "ci-source.json")
       - name: Retain fixed SQLCipher wheel and provenance
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse\
@@ -514,7 +514,7 @@ jobs:
         shell: pwsh
         run: ./tools/ci_windows_host.ps1
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
           cache: pip
@@ -523,7 +523,7 @@ jobs:
             requirements-dev.txt
             packaging/sqlcipher/fixed-runtime-sources.json
       - name: Retrieve fixed SQLCipher wheel
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
@@ -539,7 +539,7 @@ jobs:
         run: |
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: npm
@@ -559,7 +559,7 @@ jobs:
         id: frontend-download
         if: needs.web-build-assets.result == 'success'
         continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: ci-frontend-assets-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}/ofca-frontend-assets
@@ -601,7 +601,7 @@ jobs:
         run: ./tools/ci_windows_host.ps1 -StopCounters -Destination artifacts/ci-tests/candidate-platform-${{ matrix.shard }}
       - name: Retain backend timing and selection
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ci-tests-candidate-platform-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/ci-tests/
@@ -636,7 +636,7 @@ jobs:
         shell: pwsh
         run: ./tools/ci_windows_host.ps1
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
           cache: pip
@@ -645,7 +645,7 @@ jobs:
             requirements-dev.txt
             packaging/sqlcipher/fixed-runtime-sources.json
       - name: Retrieve fixed SQLCipher wheel
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
@@ -661,7 +661,7 @@ jobs:
         run: |
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: npm
@@ -681,7 +681,7 @@ jobs:
         id: frontend-download
         if: needs.web-build-assets.result == 'success'
         continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: ci-frontend-assets-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}/ofca-frontend-assets
@@ -723,7 +723,7 @@ jobs:
         run: ./tools/ci_windows_host.ps1 -StopCounters -Destination artifacts/ci-tests/candidate-analytics-${{ matrix.shard }}
       - name: Retain backend timing and selection
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ci-tests-candidate-analytics-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/ci-tests/
@@ -781,7 +781,7 @@ jobs:
         shell: pwsh
         run: ./tools/ci_windows_host.ps1
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
           cache: pip
@@ -790,7 +790,7 @@ jobs:
             requirements-dev.txt
             packaging/sqlcipher/fixed-runtime-sources.json
       - name: Retrieve fixed SQLCipher wheel
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
@@ -806,7 +806,7 @@ jobs:
         run: |
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: npm
@@ -826,7 +826,7 @@ jobs:
         id: frontend-download
         if: needs.web-build-assets.result == 'success'
         continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: ci-frontend-assets-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}/ofca-frontend-assets
@@ -868,7 +868,7 @@ jobs:
         run: ./tools/ci_windows_host.ps1 -StopCounters -Destination artifacts/ci-tests/candidate-full-${{ matrix.shard }}
       - name: Retain backend timing and selection
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ci-tests-candidate-full-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/ci-tests/
@@ -916,7 +916,7 @@ jobs:
         shell: pwsh
         run: ./tools/ci_windows_host.ps1
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
           cache: pip
@@ -925,7 +925,7 @@ jobs:
             requirements-dev.txt
             packaging/sqlcipher/fixed-runtime-sources.json
       - name: Retrieve fixed SQLCipher wheel
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
@@ -941,7 +941,7 @@ jobs:
         run: |
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: npm
@@ -961,7 +961,7 @@ jobs:
         id: frontend-download
         if: needs.web-build-assets.result == 'success'
         continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: ci-frontend-assets-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}/ofca-frontend-assets
@@ -1002,7 +1002,7 @@ jobs:
         run: ./tools/ci_windows_host.ps1 -StopCounters -Destination artifacts/ci-tests/analytics-scale-qualification
       - name: Retain backend timing and selection
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ci-tests-analytics-scale-qualification-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/ci-tests/
@@ -1026,7 +1026,7 @@ jobs:
         with:
           ref: ${{ env.PRODUCT_SHA }}
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: npm
@@ -1034,7 +1034,7 @@ jobs:
             extension/package-lock.json
             tools/e2e-capture/package-lock.json
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
       - name: Install pinned reporting dependencies
@@ -1088,7 +1088,7 @@ jobs:
             "NPM_CONFIG_CACHE=$npmCache", "PLAYWRIGHT_BROWSERS_PATH=$playwrightCache" |
             Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
           cache: pip
@@ -1097,7 +1097,7 @@ jobs:
             requirements-dev.txt
             packaging/sqlcipher/fixed-runtime-sources.json
       - name: Retrieve fixed SQLCipher wheel
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
@@ -1113,7 +1113,7 @@ jobs:
         run: |
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: npm
@@ -1180,7 +1180,7 @@ jobs:
         run: python tools/ci_browser_gate.py seal --artifact-dir "$env:BROWSER_CI_REPORT_DIR" --publish-dir "$env:BROWSER_CI_REPORT_DIR-published" --diagnostics-dir "$env:BROWSER_CI_REPORT_DIR-diagnostics"
       - name: Retain immutable browser producer evidence
         if: ${{ success() && steps.browser-seal.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: browser-e2e-inputs-${{ matrix.lane }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ env.BROWSER_CI_REPORT_DIR }}-published/
@@ -1188,7 +1188,7 @@ jobs:
           if-no-files-found: error
       - name: Retain restricted browser diagnostics
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: browser-e2e-diagnostics-${{ matrix.lane }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ env.BROWSER_CI_REPORT_DIR }}-diagnostics/
@@ -1226,7 +1226,7 @@ jobs:
             "NPM_CONFIG_CACHE=$npmCache", "PLAYWRIGHT_BROWSERS_PATH=$playwrightCache" |
             Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
           cache: pip
@@ -1235,7 +1235,7 @@ jobs:
             requirements-dev.txt
             packaging/sqlcipher/fixed-runtime-sources.json
       - name: Retrieve fixed SQLCipher wheel
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
@@ -1251,7 +1251,7 @@ jobs:
         run: |
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: npm
@@ -1317,7 +1317,7 @@ jobs:
         run: python tools/ci_browser_gate.py seal --artifact-dir "$env:BROWSER_CI_REPORT_DIR" --publish-dir "$env:BROWSER_CI_REPORT_DIR-published" --diagnostics-dir "$env:BROWSER_CI_REPORT_DIR-diagnostics"
       - name: Retain immutable browser producer evidence
         if: ${{ success() && steps.browser-seal.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: browser-e2e-inputs-legacy-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ env.BROWSER_CI_REPORT_DIR }}-published/
@@ -1325,7 +1325,7 @@ jobs:
           if-no-files-found: error
       - name: Retain restricted browser diagnostics
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: browser-e2e-diagnostics-legacy-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ env.BROWSER_CI_REPORT_DIR }}-diagnostics/
@@ -1350,15 +1350,15 @@ jobs:
         with:
           ref: ${{ env.PRODUCT_SHA }}
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
       - name: Retrieve immutable browser producer evidence
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           pattern: browser-e2e-inputs-*
           path: artifacts/browser-evidence
@@ -1371,14 +1371,14 @@ jobs:
       - name: 'Generate Product #5 Legal evidence bundle'
         run: node tools/legal-evidence/generate-activation-bundle.mjs --execution-root artifacts/legal/execution --runtime-proof artifacts/legal/runtime-ui-proof.json
       - name: Retain verified browser assembly provenance
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: browser-e2e-verified-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/browser-evidence/assembly-receipt.json
           retention-days: 14
           if-no-files-found: error
       - name: 'Upload Product #5 Legal evidence bundle'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: legal-activation-v2-${{ env.PRODUCT_SHA }}
           path: artifacts/legal/activation-v2/${{ env.PRODUCT_SHA }}/
@@ -1413,11 +1413,11 @@ jobs:
         with:
           ref: ${{ env.PRODUCT_SHA }}
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
       - name: Retrieve backend execution evidence
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           pattern: ci-tests-*
           path: artifacts/ci-downloaded
@@ -1465,7 +1465,7 @@ jobs:
           "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp" |
             Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
           cache: pip
@@ -1474,7 +1474,7 @@ jobs:
             requirements-dev.txt
             packaging/sqlcipher/fixed-runtime-sources.json
       - name: Retrieve fixed SQLCipher wheel
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
@@ -1490,7 +1490,7 @@ jobs:
         run: |
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: npm
@@ -1510,7 +1510,7 @@ jobs:
         id: frontend-download
         if: needs.web-build-assets.result == 'success'
         continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: ci-frontend-assets-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}/ofca-frontend-assets
@@ -1574,7 +1574,7 @@ jobs:
           python -m pytest --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke --junitxml=artifacts/ci-tests/windows-persistence-smoke/junit.xml -vv
       - name: Setup CPython 3.13 for socket-loop contracts
         id: loop-python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.13'
       - name: Install isolated socket-loop test dependencies
@@ -1628,7 +1628,7 @@ jobs:
           }
           $payload | ConvertTo-Json | Set-Content -Encoding utf8NoBOM "$env:RUNNER_TEMP\windows-persistence-ci-source.json"
       - name: Retain Windows persistence evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: windows-persistence-evidence-${{ env.PRODUCT_SHA }}
           path: |
@@ -1643,7 +1643,7 @@ jobs:
         if: always()
       - name: Retain backend timing and selection
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ci-tests-windows-qualification-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/ci-tests/
@@ -1663,7 +1663,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ env.PRODUCT_SHA }}
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
       - name: Check documentation
@@ -1684,7 +1684,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ env.PRODUCT_SHA }}
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: npm
@@ -1696,13 +1696,13 @@ jobs:
       - name: Check committed theme artifacts against the generator
         run: git diff --exit-code -- frontend/src/theme/generated
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
       - name: Seal frontend asset receipt
         run: python tools/ci_frontend_assets.py seal app/static/dist "$RUNNER_TEMP/ofca-frontend-assets" --producer-attempt "$GITHUB_RUN_ATTEMPT"
       - name: Retain source-bound frontend assets
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ci-frontend-assets-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}/ofca-frontend-assets/
