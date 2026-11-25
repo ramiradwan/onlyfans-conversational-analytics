@@ -239,7 +239,7 @@ for (const [width, textSize] of [[1440, 16], [390, 16], [320, 32]]) {
       }, textSize);
       const layout = () => page.locator('#desktop-entry').evaluate(card => {
         const top = card.getBoundingClientRect().top;
-        return [...card.querySelectorAll('#desktop-entry-title, #desktop-entry-body, #desktop-setup-code, .journey-actions > button')].map(node => {
+        return [...card.querySelectorAll('#desktop-entry-title, #desktop-entry-body, #desktop-setup-code, button')].map(node => {
           const rect = node.getBoundingClientRect();
           return [rect.top - top, rect.height];
         });

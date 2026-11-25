@@ -647,15 +647,15 @@ test('paused Preview keeps Resume in the extension even with an existing desktop
 });
 
 test('standalone Full setup starts and cancels its own manual comparison', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 760 });
   await renderSurfaceState(page, { ...SURFACE_STATES.pairing_required, hash: '', reachable: false });
-  const options = page.getByText('Connection options', { exact: true });
+  await page.evaluate(() => { document.documentElement.style.fontSize = '32px'; });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
   const start = page.getByRole('button', { name: 'Compare connection codes' });
   const cancel = page.getByRole('button', { name: 'Cancel comparison' });
   const pairingCommands = async () => (await calls(page)).filter(call => ['pair', 'cancel'].includes(call.type));
-  await expect(options).toBeVisible();
-  await expect(start).toBeHidden();
+  await expect(start).toBeEnabled();
   expect(await pairingCommands()).toEqual([]);
-  await options.click();
   await start.click();
   await expect(page.getByLabel('Connection code', { exact: true })).toHaveText('483 217');
   await expect(cancel).toBeVisible();
@@ -668,15 +668,17 @@ test('standalone Full setup starts and cancels its own manual comparison', async
 
 test('manual comparison respects consent, browser access and attempt ownership', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.pairing_required, hash: '', reachable: false });
-  const options = page.getByText('Connection options', { exact: true });
+  const start = page.getByRole('button', { name: 'Compare connection codes' });
+  const cancel = page.getByRole('button', { name: 'Cancel comparison' });
   for (const state of [
     { localPermissionGranted: false }, { permissionGranted: false }, { reauthorization: true },
     { mode: 'paused', resume: 'full' }, { desktopAttempt: true }, { desktopControl: true },
     { pairing: 'compare', otherPairingOwner: true }, { pairing: 'paired', paired: true },
   ]) {
-    await expect(options).toBeVisible();
+    await expect(start).toBeVisible();
     await page.evaluate(next => window.__surfaceFixture.change(next), state);
-    await expect(options).toBeHidden();
+    await expect(start).toBeHidden();
+    await expect(cancel).toBeHidden();
     await page.evaluate(() => window.__surfaceFixture.change({
       mode: 'full', pairing: 'unpaired', paired: false, permissionGranted: true, localPermissionGranted: true,
       reauthorization: false, desktopAttempt: false, desktopControl: false, otherPairingOwner: false,
@@ -690,7 +692,7 @@ test('the compact setup window for the desktop app shows only its task', async (
   await expect(page.locator('#journey-title')).toHaveText('Browser access is ready');
   await expect(page.locator('main')).toHaveAttribute('data-requirement', 'browser-access-ready');
   await expect(page.locator('#setup-progress, #pairing-code')).toHaveCount(0);
-  await expect(page.getByText('Connection options', { exact: true })).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Compare connection codes' })).toBeHidden();
 });
 
 test('while the desktop app controls a paused browser, resume points to the desktop app', async ({ page }) => {

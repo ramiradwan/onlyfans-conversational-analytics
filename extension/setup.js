@@ -196,7 +196,8 @@ async function selectModeReview(mode) {
   render(client.model);
 }
 function manualPairingAction({ status, legal, pairing }) {
-  if (browserTask || workspacePending || !legal?.configured || legal.requires_reauthorization
+  if (browserTask || workspacePending || location.hash.startsWith('#journey=')
+    || !legal?.configured || legal.requires_reauthorization
     || status?.consent.mode !== 'full' || !hasModeAccess(status, 'full')
     || pairing.desktop_attempt || pairing.desktop_control) return null;
   if (pairing.owns_attempt && ['pairing', 'compare'].includes(pairing.state)) return 'cancel';
@@ -206,6 +207,7 @@ function manualPairingAction({ status, legal, pairing }) {
 function renderDesktop(model, journey) {
   const launch = desktopLaunch.state;
   const opening = launch === 'opening';
+  const manualAction = manualPairingAction(model);
   const comparison = model.pairing?.state === 'compare' && model.pairing.owns_attempt && model.pairing.comparison_code;
   const compare = journey?.id === 'pairing_in_progress' && comparison;
   const passiveConnection = journey?.id === 'setup_incomplete' && model.pairing?.state === 'unavailable';
@@ -226,24 +228,22 @@ function renderDesktop(model, journey) {
   element('desktop-entry').dataset.composition = compare ? 'decision' : 'guided';
   element('desktop-icon-mark').dataset.icon = icon;
   text('desktop-entry-title', journey?.title ?? 'Full analytics uses the desktop app');
-  text('desktop-entry-body', journey?.body
-    ?? 'Your conversation insights are stored on this computer. Open the desktop app to continue setup.');
+  text('desktop-entry-body', manualAction === 'pair'
+    ? 'Open code comparison in desktop settings first.'
+    : journey?.body ?? 'Your conversation insights are stored on this computer. Open the desktop app to continue setup.');
   text('desktop-launch-message', status);
   element('desktop-launch-mark').dataset.icon = opening ? 'pending' : launchUnconfirmed ? 'attention' : 'done';
   show('desktop-launch-status', Boolean(status));
   const desktopResources = !passiveConnection && !fullReady && !openOnlyFans && !compare && !model.desktopRuntimeReachable;
-  show('desktop-setup-code', desktopResources && !model.pairing?.desktop_control);
+  show('desktop-setup-code', desktopResources && !manualAction && !model.pairing?.desktop_control);
   text('desktop-comparison-code', compare ? `${comparison.slice(0, 3)} ${comparison.slice(3)}` : '');
   show('desktop-comparison-code', Boolean(compare));
-  const manualAction = manualPairingAction(model);
-  if (!manualAction) element('desktop-pairing-options').open = false;
-  show('desktop-pairing-options', Boolean(manualAction));
-  show('desktop-pairing-hint', manualAction === 'pair');
-  text('desktop-pairing-action', manualAction === 'cancel' ? 'Cancel comparison' : 'Compare connection codes');
-  element('open-desktop').dataset.action = openOnlyFans ? 'open_creator_account' : 'open_desktop';
-  text('open-desktop', fullReady || openOnlyFans ? journey.primaryLabel : 'Open desktop app');
+  const desktopLabel = fullReady || openOnlyFans ? journey.primaryLabel : 'Open desktop app';
+  const manualLabels = { pair: 'Compare connection codes', cancel: 'Cancel comparison' };
+  element('open-desktop').dataset.action = manualAction ?? (openOnlyFans ? 'open_creator_account' : 'open_desktop');
+  text('open-desktop', manualLabels[manualAction] ?? desktopLabel);
   show('open-desktop', !passiveConnection);
-  page.lock('open-desktop', opening || !workspaceRecord);
+  page.lock('open-desktop', opening || (!manualAction && !workspaceRecord));
   show('download-desktop', desktopResources && secureExternalUrl(model.config.desktop_app_download_url) !== null);
 }
 function renderRuntimeHelp(channels, eligible) {
@@ -402,6 +402,10 @@ async function runJourneyAction(action) {
     await recordFullChoice(false);
     setFullReview(false); render(client.model); return;
   }
+  if (action === 'pair' || action === 'cancel') {
+    if (manualPairingAction(client.model) === action) client.post(action);
+    return;
+  }
   if (action === 'open_desktop') return desktopLaunch.launch(client.model);
   if (action === 'open_creator_account') return openCreatorAccount();
   if (action === 'restore_access') return restoreAccess(client.model);
@@ -487,10 +491,6 @@ page.bind('retry-validation', async () => {
 for (const mode of ['preview', 'full']) page.bind(`start-${mode}`, () => selectModeReview(mode));
 page.bind('open-desktop', () => runJourneyAction(element('open-desktop').dataset.action));
 page.bind('download-desktop', () => runJourneyAction('install_desktop'));
-page.bind('desktop-pairing-action', () => {
-  const action = manualPairingAction(client.model);
-  if (action) client.post(action);
-});
 page.bind('desktop-back', async () => {
   await recordFullChoice(false);
   setupChoice = null; choicePersistence.write(workspaceRecord, null); setFullReview(false); render(client.model);
