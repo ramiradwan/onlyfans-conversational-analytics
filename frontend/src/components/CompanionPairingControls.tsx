@@ -16,7 +16,7 @@ import {
   type CompanionPairingApi,
   type CompanionPairingStatus,
 } from '../services/companionPairingApi';
-import { desktopOnboardingApi, type DesktopOnboardingApi } from '../services/desktopOnboarding';
+import { desktopOnboardingApi, selectBrowserFeedback, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import { bridgeTransportStore } from '../store/transportStore';
 import {
   extensionConnection,
@@ -77,7 +77,12 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
   const epoch = useRef(0);
   const confirmationInFlight = useRef(false);
   const desktop = useSyncExternalStore(onboarding.subscribe, onboarding.getState, onboarding.getState);
-  const pendingPairing = desktop.snapshot?.pending_operations.some(value => value.action === 'browser.pair') === true;
+  const pairingOperation = desktop.snapshot?.pending_operations.find(value => value.action === 'browser.pair');
+  const pendingPairing = pairingOperation !== undefined;
+  // Operators can continue pairing without access to creator-only readiness.
+  const desktopAccount = desktop.snapshot?.creator_label?.creator_id ?? desktop.snapshot?.analysis_readiness.creator_account_id;
+  const pairingFeedback = desktopAccount == null || desktopAccount === creatorAccountId
+    ? selectBrowserFeedback(desktop, pairingOperation?.operation_id) : null;
   const canStart = desktop.connected && (pendingPairing || desktop.snapshot?.allowed_actions.includes('browser.pair'));
   const notice = useSyncExternalStore(
     bridgeTransportStore.subscribe,
@@ -263,11 +268,11 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
       : status && terminal(status) ? status.state === 'expired' ? PAIRING_EXPIRED
           : status.state === 'revoked' ? 'This browser extension was disconnected.'
             : status.state === 'declined' ? 'Connection declined.'
-              : 'Connection cancelled.' : starting && !manualRecovery ? 'Waiting for the extension…' : null;
+              : 'Connection cancelled.' : starting && !manualRecovery && !pairingFeedback ? 'Waiting for the extension…' : null;
   const feedback = [...new Set([
     browserFeedback,
     listFeedback?.failed ? "Connected extensions couldn't be checked." : null,
-    entryError,
+    pairingFeedback?.message ?? entryError,
     failed && !manualRecovery ? 'Dipsy can’t check the connection right now.' : null,
   ].filter((text): text is string => text !== null))].join(' ') || null;
   const canCompare = !connected && !pendingPairing && (!canStart || Boolean(entryError));

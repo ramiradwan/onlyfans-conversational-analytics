@@ -21,7 +21,7 @@ import {
   CapabilityLicenseApiError,
   type CapabilityLicenseApi,
 } from '../services/capabilityLicenseApi';
-import { desktopOnboardingApi, selectAnalysisReadiness, type DesktopOnboardingApi } from '../services/desktopOnboarding';
+import { desktopOnboardingApi, selectAnalysisReadiness, selectBrowserFeedback, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import { componentTokens, typography } from '../theme';
 import { OnboardingAction, OnboardingPill, OnboardingSpot, OnboardingStatus } from './ui/OnboardingCard';
 import { offerPriceColors } from '../theme/generated/tokens';
@@ -141,6 +141,8 @@ export function CommercialActivationControls({
   const unprojectedOperation = Boolean(desktop.pending && !snapshot?.pending_operations.some(item => item.operation_id === desktop.pending));
   const pendingConfirmation = Boolean(snapshot?.pending_operations.some(item => item.action === 'activation.confirm'));
   const unresolvedCommand = unprojectedOperation || pendingConfirmation;
+  const unresolvedActivation = pendingConfirmation || unprojectedOperation
+    && (desktop.pendingAction?.startsWith('activation.') || desktop.pendingAction?.startsWith('auth.'));
   const codeInProgress = codeBusy || codePending || codeUnconfirmed;
   const canSelect = !accepted && !unresolvedCommand && !codeInProgress && authentication?.actions.select && allowed.includes('auth.select');
   const canSwitch = !accepted && !unresolvedCommand && !codeInProgress && authentication?.state === 'admitted'
@@ -156,9 +158,10 @@ export function CommercialActivationControls({
     operation.action === 'activation.review' && (!reviewOperationId || operation.operation_id === reviewOperationId)
     || operation.action === 'activation.confirm' && operation.operation_id === desktop.pending) ?? [] : [];
   const mismatchOperation = mismatchOperations.length === 1 ? mismatchOperations[0] : undefined;
+  const operationError = desktop.operationError;
   const classifiedMismatch = mismatchOperation !== undefined && (mismatchOperation.reason === 'account_mismatch'
-    || desktop.error === 'account_mismatch' && desktop.pending === mismatchOperation.operation_id
-      && desktop.pendingAction === mismatchOperation.action);
+    || operationError?.reason === 'account_mismatch' && operationError.operationId === mismatchOperation.operation_id
+      && operationError.action === mismatchOperation.action);
   const mismatchMessage = classifiedMismatch ? snapshot?.facts.account === 'verified'
     ? 'Switch to the OnlyFans account you used for setup.'
     : 'Sign in to the OnlyFans account you want to connect.' : null;
@@ -340,9 +343,17 @@ export function CommercialActivationControls({
   const activeButBlocked = readiness?.commercial_authority === 'active'
     && readiness.analysis_admission === 'blocked';
   const activationUnavailable = readiness?.commercial_authority === 'unavailable';
-  const browserLaunchError = desktop.error === 'browser_unavailable' ? 'The browser action could not be confirmed.'
-    : desktop.error === 'chrome_unavailable' ? 'The browser could not be opened.' : null;
-  const noticeError = (entryScope.current === reviewScope ? entryError : null) ?? error ?? (!codeOpen ? codeError : null) ?? browserLaunchError;
+  const signInBrowserId = authentication?.actions.open_browser ? authentication.browser_operation_id : null;
+  const reviewBrowserId = !authentication && activationOutcome && (!reviewOperationId || activationOutcome.operation_id === reviewOperationId)
+    ? activationOutcome.operation_id : null;
+  const browserFeedback = currentAuthority && activationRequired && !accepted && !decision
+    ? selectBrowserFeedback(desktop, signInBrowserId ?? reviewBrowserId) : null;
+  const browserLaunchFailed = browserFeedback?.reason === 'browser_unavailable' || browserFeedback?.reason === 'chrome_unavailable';
+  const reviewRefused = currentAuthority && activationRequired && !accepted && !decision && !authentication
+    && operationError?.action === 'activation.review' && operationError.reason === 'activation_unavailable'
+    && (!reviewOperationId || operationError.operationId === reviewOperationId)
+    && (!activationOutcome || operationError.operationId === activationOutcome.operation_id);
+  const noticeError = (entryScope.current === reviewScope ? entryError : null) ?? error ?? (!codeOpen ? codeError : null) ?? browserFeedback?.message;
   const offer = decision?.offer;
   const codeChecking = codeBusy || codePending;
   const activationChecking = currentAuthority && activationRequired && accepted;
@@ -355,7 +366,7 @@ export function CommercialActivationControls({
         : mismatchMessage ? mismatchMessage
           : terminalUnknown ? 'Activation couldn’t finish.'
           : replacementAvailable ? 'Activation was not completed.'
-          : unresolvedCommand ? 'Activation has not been confirmed.'
+          : unresolvedActivation ? 'Activation has not been confirmed.'
           : choosingProvider ? choosingAccount ? 'Choose a different sign-in.' : 'Choose how to sign in.'
             : activationOutcome?.state === 'waiting' && activationOutcome.reason === 'activation_unavailable' ? 'Checking the activation offer.'
               : activationOutcome?.state === 'outcome_unknown' ? 'Activation has not been confirmed.'
@@ -364,8 +375,9 @@ export function CommercialActivationControls({
               : authentication?.state === 'retired' ? 'Sign-in was cancelled.'
                 : authentication?.state === 'unavailable' ? 'The sign-in request could not be confirmed.'
                   : authentication?.state === 'selected' || decisionStatus === 'awaiting-authentication' ? 'Finish signing in in your browser.'
-                    : decisionStatus === 'unavailable' || activationOutcome?.reason === 'activation_unavailable' || desktop.error === 'activation_unavailable' ? 'Full analytics activation could not be prepared.'
-                      : checking && !decision ? 'Checking activation…'
+                    : decisionStatus === 'unavailable' || activationOutcome?.reason === 'activation_unavailable' || reviewRefused ? 'Full analytics activation could not be prepared.'
+                      : unprojectedOperation ? 'Waiting for a desktop action to finish.'
+                        : checking && !decision ? 'Checking activation…'
               : activeButBlocked ? "New messages aren't being analyzed"
                 : activationUnavailable || readiness === null ? "Activation couldn't be checked." : null);
   const showOfferDialog = Boolean(offer && offerOpen && sameCreator && !fullReady);
@@ -401,9 +413,8 @@ export function CommercialActivationControls({
   const codeFeedback = codeError || (canRedeem ? null : feedback);
   const offerFeedback = !desktop.connected ? feedback : noticeError || (opening ? feedback : null);
   const showSwitch = canSwitch && !choosingAccount;
-  const showBrowser = !accepted && !unresolvedCommand && !codeInProgress && !choosingProvider && authentication?.actions.open_browser
-    && authentication.browser_operation_id && currentAuthority && !desktop.browserLaunchPending
-    && (authentication.state === 'admitted' || browserLaunchError !== null);
+  const showBrowser = !accepted && !unresolvedCommand && !codeInProgress && !choosingProvider && signInBrowserId
+    && currentAuthority && !desktop.browserLaunchPending && (authentication?.state === 'admitted' || browserLaunchFailed);
   const hasActions = pending || canEnterCode || showReview || showBrowser || showSwitch || choosingAccount;
   const inlineStatus = inlineFeedback && <Box id={feedbackId} role={noticeError || terminalUnknown ? 'alert' : undefined}>
     <OnboardingStatus tone={noticeError || terminalUnknown ? 'error' : classifiedMismatch ? 'attention' : 'neutral'} live={!noticeError && !terminalUnknown}>{inlineFeedback}</OnboardingStatus>

@@ -11,9 +11,9 @@ from app.core.resource_paths import resource_path
 
 PROFILE = "desktop-onboarding.v1"
 SNAPSHOT_PROFILE = "desktop-onboarding.v2"
-DOCUMENT_UTF8_BYTES = json.loads(
-    resource_path("shared/desktop-onboarding/wire-limits.json").read_text("utf-8")
-)["document_utf8_bytes"]
+_WIRE_LIMITS = json.loads(resource_path("shared/desktop-onboarding/wire-limits.json").read_text("utf-8"))
+DOCUMENT_UTF8_BYTES = _WIRE_LIMITS["document_utf8_bytes"]
+SETUP_FRAME_UTF8_BYTES = _WIRE_LIMITS["setup_frame_utf8_bytes"]
 ACTIONS = frozenset({"browser.access", "account.connect", "account.confirm", "setup.finalize", "browser.pair", "activation.review", "activation.confirm", "auth.select", "auth.cancel", "auth.switch"})
 REASONS = frozenset({"none", "operation_unconfirmed", "authority_unavailable", "browser_unavailable",
                      "account_mismatch", "operation_expired", "operation_refused", "activation_unavailable"})

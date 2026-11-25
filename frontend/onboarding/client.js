@@ -1,13 +1,20 @@
-import { command, operation, snapshot, UUID } from './contract.js';
-import { setupEvents } from './events.js';
-import { openProtectedBrowser } from './browser-task.js';
-import { exact } from '../../shared/browser-tasks/wire.mjs';
-import { parseOnboardingJson } from '../../shared/onboarding/json.mjs';
+import { command, operation, setupFrame, snapshot, UUID } from './contract.js';
+import { SCOPED_SETUP_EVENT, setupEvents } from './events.js';
+import { browserRecoveryTarget, openProtectedBrowser } from './browser-task.js';
 
 // A helper tab reports why it ended. The desktop shows it where retry lives.
 const NOTICE_ERRORS = { extension_unavailable: 'extension_unavailable', profile_mismatch: 'profile_mismatch',
   account_mismatch: 'account_mismatch', task_expired: 'operation_expired', unavailable: 'browser_unavailable',
   needs_account: 'browser_needs_account', needs_consent: 'browser_needs_consent', needs_permission: 'browser_needs_permission' };
+function currentBrowserNotices(value, notices = []) {
+  if (!notices.length || value.authority_recovery !== undefined) return [];
+  // Brain has already checked each task's admission generation. Keep every
+  // still-pending operation's notice for the surface displaying that operation.
+  const pending = new Set(value.pending_operations.map(item => item.operation_id));
+  return notices.filter(notice => NOTICE_ERRORS[notice.reason] && pending.has(notice.operation_id))
+    .map(notice => ({ ...notice, reason: NOTICE_ERRORS[notice.reason] }));
+}
+
 // The later steps of one explicit protected sign-in run only within this bound.
 const RECOVERY_SIGN_IN_MS = 120_000;
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16_000, 30_000];
@@ -49,7 +56,7 @@ export class DesktopSetupClient {
     this.connecting = false;
     this.stopped = false;
     this.operationError = null;
-    this.browserNotice = null;
+    this.browserNotices = [];
     this.key = 'desktop-setup-operation:' + generation;
     try {
       const saved = storage.getItem(this.key);
@@ -58,9 +65,14 @@ export class DesktopSetupClient {
   }
 
   notify(error = null, deliberate = false) {
+    const operationError = this.value && this.operationError?.journey === this.value.journey_id ? this.operationError : null;
+    // The setup window still presents one current step. Configured surfaces
+    // select their own feedback from the scoped fields.
+    const setupNotice = this.browserNotices.find(notice => browserRecoveryTarget(this.value, notice.reason) === notice.operation_id);
     this.receive({ snapshot: this.value, pending: this.pending, connected: this.connected,
-      error: error || this.protectedLaunchError || this.operationError?.reason || this.browserNotice || null, deliberate,
-      failedAction: !error && !this.protectedLaunchError ? this.operationError?.action : null,
+      error: error || this.protectedLaunchError || operationError?.reason || setupNotice?.reason || null, deliberate,
+      failedAction: !error && !this.protectedLaunchError ? operationError?.action : null,
+      operationError, browserNotices: this.browserNotices,
       ...(this.intent?.operationId === this.pending ? { pendingAction: this.intent.action } : {}),
       browserLaunchPending: Boolean(this.launchOperation || this.protectedOpening),
       recoverySignInPending: Boolean(this.recoverySignIn),
@@ -69,7 +81,11 @@ export class DesktopSetupClient {
 
   retireCompletedFeedback() {
     const feedback = this.operationError, value = this.value;
-    if (!feedback || !value || feedback.journey !== value.journey_id) return;
+    if (!feedback || !value) return;
+    if (feedback.journey !== value.journey_id) {
+      this.operationError = null;
+      return;
+    }
     if (feedback.action === 'browser.pair' && value.local_ready && value.facts.pairing === 'verified') {
       this.operationError = null;
       return;
@@ -271,13 +287,21 @@ export class DesktopSetupClient {
       if (session.role !== 'desktop' || session.generation !== this.generation || !['setup', 'runtime'].includes(session.stage)
         || !/^[A-Za-z0-9_-]{43}$/u.test(session.csrf_token)) throw new Error('session_unavailable');
       this.session = session;
-      // A new stream sends only current helper notices. It may begin with none.
-      this.browserNotice = null;
+      this.browserNotices = [];
+      let lastProjection;
       // The server subscribes before its first complete authoritative snapshot.
-      await this.stream(this.request, this.headers(), controller.signal, (text) => {
+      await this.stream(this.request, this.headers(), controller.signal, (text, event) => {
         if (controller.signal.aborted) return;
-        const value = snapshot(text, this.generation);
+        const frame = event === SCOPED_SETUP_EVENT ? setupFrame(text, this.generation) : null;
+        const value = frame?.snapshot ?? snapshot(text, this.generation);
         if (this.value && value.revision < this.value.revision) throw new Error('invalid_snapshot');
+        this.browserNotices = currentBrowserNotices(value, frame?.browser_notices);
+        if (frame) {
+          // A feedback-only update must not drive a launch or continuation.
+          const projection = JSON.stringify(value);
+          if (lastProjection === projection) { this.notify(); return; }
+          lastProjection = projection;
+        }
         const deliberate = this.intent?.confirmed === true && this.intent.task !== value.next_task;
         if (deliberate) this.intent = null;
         if (this.value?.authentication?.authentication_attempt?.authentication_attempt_id !== value.authentication?.authentication_attempt?.authentication_attempt_id
@@ -306,15 +330,6 @@ export class DesktopSetupClient {
         this.continueProviderSelection();
         if (this.pending && this.pending === pendingBefore
           && !value.pending_operations.some(item => item.operation_id === this.pending)) void this.receipt();
-      }, text => {
-        if (controller.signal.aborted) return;
-        const value = parseOnboardingJson(text);
-        if (!exact(value, ['notices']) || !Array.isArray(value.notices) || value.notices.length > 64
-          || !value.notices.every(item => exact(item, ['task_id', 'reason']) && UUID.test(item.task_id))) throw new Error('invalid_snapshot');
-        const notice = value.notices.map(item => NOTICE_ERRORS[item.reason]).find(Boolean) ?? null;
-        if (notice === this.browserNotice) return;
-        this.browserNotice = notice;
-        this.notify();
       });
     } catch (error) {
       if (!controller.signal.aborted && !this.stopped) {

@@ -10,12 +10,14 @@ from fastapi.responses import JSONResponse, StreamingResponse, Response
 from app.onboarding import timing
 from app.onboarding.admission import AdmissionRefused
 from app.onboarding.admission_routes import HEADERS, authorize
-from app.onboarding.contract import DOCUMENT_UTF8_BYTES
+from app.onboarding.contract import DOCUMENT_UTF8_BYTES, SETUP_FRAME_UTF8_BYTES
 from app.onboarding.coordinator import CommandRefused, DesktopOnboardingCoordinator
 from app.provisioning.events import events
 
 # A view offering one of these can start a sign-in from its next click.
 SIGN_IN_ACTIONS = frozenset({"account.connect", "auth.select"})
+SCOPED_SETUP_EVENT = "setup-frame.v1"
+SETUP_EVENT_PROFILE = "X-Desktop-Setup-Events"
 
 
 def _unique(pairs):
@@ -58,10 +60,10 @@ def _refused(error):
 
 class DesktopEventResponse(StreamingResponse):
     """The response owns its subscription, even if no body is ever consumed."""
-    def __init__(self, coordinator, session, *, actor, active, deadline, notices=None, warm=None):
+    def __init__(self, coordinator, session, *, actor, active, deadline, notices=None, warm=None, scoped=False):
         self.coordinator, self.session = coordinator, session
         self.actor, self.active, self.deadline = actor, active, deadline
-        self.notices, self.warm = notices, warm
+        self.notices, self.warm, self.scoped = notices, warm, scoped
         super().__init__(self.frames(), media_type="text/event-stream", headers=HEADERS | {"X-Accel-Buffering": "no"})
         self.listener = None
 
@@ -77,6 +79,17 @@ class DesktopEventResponse(StreamingResponse):
             events.unsubscribe(self.listener)
             self.active.discard(self.session.generation)
 
+    def _projection(self, actor):
+        if not self.scoped:
+            return self.coordinator.read(self.session, actor=actor), None
+        # The same read connection resolves the snapshot and its current
+        # notice scopes. A change while reading keeps the stream invalidated.
+        with self.coordinator.store.database.shared_reads():
+            snapshot = self.coordinator.read(self.session, actor=actor)
+            notices = [] if self.notices is None else self.notices(self.session, scoped=True)
+        pending = {item["operation_id"] for item in snapshot["pending_operations"]}
+        return snapshot, [notice for notice in notices if notice["operation_id"] in pending]
+
     async def frames(self):
         signal = self.listener[1]
         previous = None
@@ -89,15 +102,19 @@ class DesktopEventResponse(StreamingResponse):
                 actor = self.actor()
                 # The read runs off the event loop so sign-in work is not held behind it.
                 with timing.phase("snapshot", "read", minimum_ms=timing.SLOW_MS):
-                    snapshot = await asyncio.to_thread(self.coordinator.read, self.session, actor=actor)
+                    snapshot, scoped_notices = await asyncio.to_thread(self._projection, actor)
                 if self.warm is not None and SIGN_IN_ACTIONS.intersection(snapshot.get("allowed_actions", ())):
                     # Only a connection is opened. Every sign-in write still starts from its click.
                     self.warm()
-                encoded = json.dumps(snapshot, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+                event = SCOPED_SETUP_EVENT if self.scoped else "setup"
+                projection = {"snapshot": snapshot, "browser_notices": scoped_notices} if self.scoped else snapshot
+                encoded = json.dumps(projection, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+                if self.scoped and len(encoded.encode("utf-8")) > SETUP_FRAME_UTF8_BYTES:
+                    return
                 if encoded != previous:
-                    yield "event: setup\ndata: " + encoded + "\n\n"
+                    yield f"event: {event}\ndata: {encoded}\n\n"
                     previous = encoded
-                if self.notices is not None:
+                if self.notices is not None and not self.scoped:
                     # Display-only helper notices. Older pages ignore this event.
                     notices = json.dumps({"notices": self.notices(self.session)}, separators=(",", ":"))
                     if notices != shown:
@@ -184,7 +201,11 @@ def desktop_router(coordinator: DesktopOnboardingCoordinator, *, actor=lambda re
     def stream(request: Request):
         session = admitted(request)
         actor(request, False)
+        profiles = request.headers.getlist(SETUP_EVENT_PROFILE)
+        if profiles and profiles != [SCOPED_SETUP_EVENT]:
+            raise HTTPException(400, "Invalid setup event profile")
         return DesktopEventResponse(coordinator, session, actor=lambda: actor(request, False),
-                                    active=active_streams, deadline=next_expiry, notices=notices, warm=warm)
+                                    active=active_streams, deadline=next_expiry, notices=notices, warm=warm,
+                                    scoped=bool(profiles))
 
     return router

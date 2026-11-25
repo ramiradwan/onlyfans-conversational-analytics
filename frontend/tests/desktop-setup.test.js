@@ -9,7 +9,7 @@ import setupThemeInitializer from '../public/setup-theme-init.js?raw';
 import markup from '../onboarding/index.html?raw';
 import { DesktopSetupClient } from '../onboarding/client.js';
 import { snapshot } from '../onboarding/contract.js';
-import { setupEvents } from '../onboarding/events.js';
+import { SCOPED_SETUP_EVENT, setupEvents } from '../onboarding/events.js';
 import { openProtectedBrowser } from '../onboarding/browser-task.js';
 import { authorityRecoveryView, authorityRecoveryOptions } from '../shared-setup/authority-recovery.js';
 import { renderSetup } from '../onboarding/view.js';
@@ -368,7 +368,8 @@ describe('desktop setup projection', () => {
       stream: async (_request, _headers, _signal, listener) => { publish = next => listener(JSON.stringify(next)); publish(value); } });
     await client.connect(); client.remember(operationId); client.launchOperation = operationId; await client.launchBrowser();
     publish({ ...value, revision: 1 });
-    expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ error: 'browser_unavailable' }));
+    expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ error: 'browser_unavailable',
+      operationError: expect.objectContaining({ operationId, action: 'auth.select', reason: 'browser_unavailable' }) }));
     expect(openBrowser).toHaveBeenCalledOnce();
     await client.launchBrowser(true, operationId);
     expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ error: null }));
@@ -1621,47 +1622,95 @@ it.each([
   }
 });
 
-describe('helper notices in the desktop', () => {
-  const sessionValue = generation => ({ role: 'desktop', generation, stage: 'setup', csrf_token: 'A'.repeat(43) });
-  it('shows a helper notice next to the step and clears it when Brain clears it', async () => {
-    const generation = crypto.randomUUID(), received = [];
-    let notices;
-    const request = vi.fn(async () => ({ ok: true, status: 200, text: async () => JSON.stringify(sessionValue(generation)) }));
-    const client = new DesktopSetupClient({ generation, storage: { getItem: () => null, setItem() {}, removeItem() {} },
-      receive: state => received.push(state), request,
-      stream: async (_request, _headers, _signal, publish, notice) => {
-        notices = notice; publish(JSON.stringify({ ...initial(), generation }));
+
+describe('scoped helper notices in the desktop', () => {
+  const taskID = '33333333-3333-4333-8333-333333333333';
+  const taskGeneration = '44444444-4444-4444-8444-444444444444';
+  const notice = { task_id: taskID, operation_id: operationId, admission_generation: taskGeneration, reason: 'profile_mismatch' };
+  const access = { ...initial(), journey_id: operationId, pending_operations: [record], allowed_actions: [] };
+
+  function connectedNoticeClient(stage = 'setup', openBrowser = null) {
+    const received = [];
+    let deliver;
+
+    const client = new DesktopSetupClient({ generation, storage: storage(), receive: state => received.push(state),
+      openBrowser, request: async () => response({ ...session, stage }), stream: async (_request, _headers, _signal, publish) => {
+        deliver = value => publish(JSON.stringify(value), SCOPED_SETUP_EVENT);
+        deliver({ snapshot: access, browser_notices: [] });
       } });
-    await client.connect();
-    notices(JSON.stringify({ notices: [{ task_id: crypto.randomUUID(), reason: 'profile_mismatch' }] }));
-    expect(received.at(-1).error).toBe('profile_mismatch');
-    const priorStream = notices;
-    await client.connect();
-    expect(received.at(-1).error).toBe(null);
-    priorStream(JSON.stringify({ notices: [{ task_id: crypto.randomUUID(), reason: 'unavailable' }] }));
-    expect(received.at(-1).error).toBe(null);
-    notices(JSON.stringify({ notices: [{ task_id: crypto.randomUUID(), reason: 'unavailable' }] }));
-    expect(received.at(-1).error).toBe('browser_unavailable');
-    notices(JSON.stringify({ notices: [] }));
-    expect(received.at(-1).error).toBe(null);
-    expect(() => notices(JSON.stringify({ notices: [{ task_id: 'x', reason: 'profile_mismatch' }] }))).toThrow('invalid_snapshot');
-    for (const reason of ['needs_account', 'needs_consent', 'needs_permission']) {
-      notices(JSON.stringify({ notices: [{ task_id: crypto.randomUUID(), reason }] }));
-      expect(received.at(-1).error).toBe('browser_' + reason);
-    }
-    client.stop();
+    return { client, received, send: () => deliver };
+  }
+
+  it('keeps current helper notices for independent runtime operations without opening a browser', async () => {
+    const openBrowser = vi.fn();
+    const { client, received, send } = connectedNoticeClient('runtime', openBrowser);
+    const operations = ['browser.access', 'browser.pair', 'auth.select', 'activation.review'].map((action, index) => ({
+      ...record, action, operation_id: index === 0 ? operationId : `22222222-2222-4222-8222-22222222222${index + 2}`,
+    }));
+    const notices = operations.map((operation, index) => ({ ...notice, operation_id: operation.operation_id,
+      task_id: `33333333-3333-4333-8333-33333333333${index + 3}` }));
+    const runtime = { ...access, revision: 1, next_task: 'complete', local_ready: true, pending_operations: operations,
+      facts: { ...access.facts, installation: 'verified', account: 'verified', configuration: 'verified', enrollment: 'verified', pairing: 'verified' } };
+    try {
+      await client.connect();
+      send()({ snapshot: runtime, browser_notices: [] });
+      send()({ snapshot: runtime, browser_notices: notices });
+      expect(received.at(-1)).toMatchObject({ browserNotices: notices, error: null });
+      send()({ snapshot: { ...runtime, revision: 2, pending_operations: operations.slice(1) }, browser_notices: notices });
+      expect(received.at(-1)).toMatchObject({ browserNotices: notices.slice(1), error: null });
+      expect(openBrowser).not.toHaveBeenCalled();
+    } finally { client.stop(); }
   });
-  it('reads browser notice events and ignores unknown events', async () => {
-    const encoder = new TextEncoder(), seen = [], shown = [];
-    const body = new ReadableStream({ start(controller) {
-      controller.enqueue(encoder.encode('event: other\ndata: {}\n\nevent: browser-notices\ndata: {"notices":[]}\n\n'));
-      controller.close();
-    } });
-    const request = async () => ({ ok: true, body, headers: new Headers({ 'content-type': 'text/event-stream' }) });
-    await expect(setupEvents(request, {}, new AbortController().signal, value => seen.push(value), value => shown.push(value)))
-      .rejects.toThrow('stream_unavailable');
-    expect(seen).toEqual([]);
-    expect(shown).toEqual(['{"notices":[]}']);
+
+  it('keeps notice identity and ignores retired streams and unrelated operations', async () => {
+    const { client, received, send } = connectedNoticeClient();
+    try {
+      await client.connect();
+      const oldStream = send();
+      oldStream({ snapshot: access, browser_notices: [notice] });
+      expect(received.at(-1)).toMatchObject({ error: 'profile_mismatch', browserNotices: [notice] });
+      await client.connect();
+      expect(received.at(-1).error).toBeNull();
+      oldStream({ snapshot: access, browser_notices: [notice] });
+      expect(received.at(-1).error).toBeNull();
+      send()({ snapshot: access, browser_notices: [{ ...notice, operation_id: taskID }] });
+      expect(received.at(-1).error).toBeNull();
+      for (const reason of ['needs_account', 'needs_consent', 'needs_permission']) {
+        send()({ snapshot: access, browser_notices: [{ ...notice, reason }] });
+        expect(received.at(-1).error).toBe('browser_' + reason);
+      }
+      expect(() => send()({ snapshot: access, browser_notices: [{ ...notice, admission_generation: 'x' }] }))
+        .toThrow('invalid_snapshot');
+      expect(() => send()({ snapshot: access, browser_notices: [{ ...notice, account: 'unrecognized' }] }))
+        .toThrow('invalid_snapshot');
+    } finally { client.stop(); }
+  });
+
+  it('shows Finish setup at its first frame even while access feedback still exists', async () => {
+    const { client, received, send } = connectedNoticeClient();
+    document.documentElement.innerHTML = markup;
+    try {
+      await client.connect();
+      send()({ snapshot: access, browser_notices: [notice] });
+      expect(received.at(-1).error).toBe('profile_mismatch');
+      const finish = { ...access, revision: 1, next_task: 'finish-setup', pending_operations: [], allowed_actions: ['browser.pair'] };
+      send()({ snapshot: finish, browser_notices: [notice] });
+      expect(received.at(-1).error).toBeNull();
+      renderSetup(document, received.at(-1));
+      expect(document.getElementById('task-action')).toMatchObject({ hidden: false, disabled: false });
+    } finally { client.stop(); }
+  });
+
+  it('requests scoped frames and ignores old unscoped notices alongside genuine snapshots', async () => {
+    const first = JSON.stringify(access);
+    const scoped = JSON.stringify({ snapshot: access, browser_notices: [notice] });
+    const bytes = new TextEncoder().encode('event: browser-notices\ndata: {"notices":[]}\n\nevent: setup\ndata: '
+      + first + '\n\nevent: ' + SCOPED_SETUP_EVENT + '\ndata: ' + scoped + '\n\n');
+    const receive = vi.fn();
+    const request = vi.fn(fragmentedEvent(bytes));
+    await expect(setupEvents(request, {}, new AbortController().signal, receive)).rejects.toThrow('stream_unavailable');
+    expect(request.mock.calls[0][1].headers['X-Desktop-Setup-Events']).toBe(SCOPED_SETUP_EVENT);
+    expect(receive.mock.calls).toEqual([[first], [scoped, SCOPED_SETUP_EVENT]]);
   });
 });
 

@@ -25,7 +25,7 @@ class HelperStreams:
 
     def __init__(self):
         self._live: dict[tuple[str, str], dict] = {}
-        self._notices: dict[str, tuple[str, str]] = {}
+        self._notices: dict[tuple[str, str], str] = {}
         # task_id -> (generation, timer). A satisfied or fired backstop keeps its generation with no timer.
         self._backstops: dict[str, tuple[str, asyncio.TimerHandle | None]] = {}
         self._expiring: set[asyncio.Task] = set()
@@ -72,20 +72,30 @@ class HelperStreams:
         """Record one display-only notice per generation. It changes no task state."""
         if reason not in NOTICES:
             raise ValueError("Unknown browser notice")
-        if task_id in self._notices and self._notices[task_id][0] == generation:
+        key = (task_id, generation)
+        if key in self._notices:
             return False
-        if task_id not in self._notices and len(self._notices) >= 64:
+        if len(self._notices) >= 64:
             self._notices.pop(next(iter(self._notices)))
-        self._notices[task_id] = (generation, reason)
+        self._notices[key] = reason
         events.publish()
         return True
 
-    def notices(self, task_ids):
-        return [{"task_id": task_id, "reason": self._notices[task_id][1]}
-                for task_id in sorted(task_ids) if task_id in self._notices]
+    def notices(self, tasks, *, scoped=False):
+        notices = []
+        for task in sorted(tasks, key=lambda item: item["task_id"]):
+            task_id, generation = task["task_id"], task["admission_generation"]
+            reason = self._notices.get((task_id, generation))
+            if reason is None:
+                continue
+            notice = {"task_id": task_id, "reason": reason}
+            if scoped:
+                notice.update(admission_generation=generation, operation_id=task["operation_id"])
+            notices.append(notice)
+        return notices
 
-    def clear_notice(self, task_id):
-        if self._notices.pop(task_id, None) is not None:
+    def clear_notice(self, task_id, generation):
+        if self._notices.pop((task_id, generation), None) is not None:
             events.publish()
 
     def arm(self, task_id, generation, current):
@@ -129,12 +139,15 @@ class HelperStreams:
         try:
             if not await asyncio.to_thread(current):
                 return
+            # The read can return after reissue or after another attempt armed
+            # the backstop. Recheck on this turn before publishing feedback.
+            if self._backstops.get(task_id) != (generation, None) or not current():
+                return
         except Exception:
             return
-        # A refusal this generation reported as task_changed is not shown, so it gives way to the backstop notice.
-        recorded = self._notices.get(task_id)
-        if recorded is not None and recorded[0] == generation and recorded[1] == "task_changed":
-            del self._notices[task_id]
+        key = (task_id, generation)
+        if self._notices.get(key) == "task_changed":
+            del self._notices[key]
         self.notice(task_id, generation, "unavailable")
         entry = self._live.get((task_id, generation))
         if entry is not None:

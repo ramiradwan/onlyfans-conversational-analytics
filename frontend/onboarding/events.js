@@ -2,13 +2,14 @@ import limits from '../../shared/desktop-onboarding/wire-limits.json' with { typ
 import { ONBOARDING_JSON_BYTES } from '../../shared/onboarding/json.mjs';
 
 // A data line may include "data: " and a carriage return beyond the document.
-const DATA_LINE_BYTES = limits.document_utf8_bytes + 7;
+const DATA_LINE_BYTES = limits.setup_frame_utf8_bytes + 7;
+export const SCOPED_SETUP_EVENT = 'setup-frame.v1';
 const OTHER_LINE_BYTES = 8192;
 
 /** Header-authenticated, bounded stream. Every setup event contains the entire projection. */
-export async function setupEvents(request, headers, signal, receive, notices = null) {
+export async function setupEvents(request, headers, signal, receive) {
   const response = await request('/api/v1/desktop/setup/events', { credentials: 'same-origin', redirect: 'error',
-    cache: 'no-store', headers: { Accept: 'text/event-stream', ...headers }, signal });
+    cache: 'no-store', headers: { Accept: 'text/event-stream', 'X-Desktop-Setup-Events': SCOPED_SETUP_EVENT, ...headers }, signal });
   if (!response.ok || !response.body || response.headers.get('content-type')?.split(';')[0] !== 'text/event-stream') {
     throw new Error(response.status === 403 ? 'authorization_unavailable' : 'stream_unavailable');
   }
@@ -25,17 +26,18 @@ export async function setupEvents(request, headers, signal, receive, notices = n
       firstLine = false;
     }
     if (!line) {
-      const budget = event === 'setup' ? limits.document_utf8_bytes : ONBOARDING_JSON_BYTES;
+      const budget = event === SCOPED_SETUP_EVENT ? limits.setup_frame_utf8_bytes
+        : event === 'setup' ? limits.document_utf8_bytes : ONBOARDING_JSON_BYTES;
       if (dataBytes > budget) throw new Error('invalid_stream');
       if (event === 'setup' && data) receive(data);
-      else if (event === 'browser-notices' && data) notices?.(data);
+      else if (event === SCOPED_SETUP_EVENT && data) receive(data, event);
       else if (event === 'setup-end' && data === '{}') throw new Error('stream_expired');
       data = ''; dataBytes = 0; event = '';
     } else if (line.startsWith('data:')) {
       const field = line.slice(5).replace(/^ /u, '');
       const separator = data ? '\n' : '';
       dataBytes += separator.length + encoder.encode(field).byteLength;
-      if (dataBytes > limits.document_utf8_bytes) throw new Error('invalid_stream');
+      if (dataBytes > limits.setup_frame_utf8_bytes) throw new Error('invalid_stream');
       data += separator + field;
     } else {
       if (raw.byteLength > OTHER_LINE_BYTES) throw new Error('invalid_stream');

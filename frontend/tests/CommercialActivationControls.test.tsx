@@ -213,7 +213,7 @@ it('keeps offer review in a modal and closing it does not accept or reopen it on
 
 it('shows a refused activation result after its operation leaves the pending list', async () => {
   const fixture = desktopFixture();
-  fixture.publish({ error: 'activation_unavailable' });
+  fixture.publish({ operationError: { operationId: decision.operation_id, action: 'activation.review', reason: 'activation_unavailable' } });
   mount(makeApi(), fixture.api);
   expect(await screen.findByText('Full analytics activation could not be prepared.')).toBeTruthy();
   expect(fixture.api.begin).not.toHaveBeenCalled();
@@ -357,13 +357,62 @@ describe('native commercial activation', () => {
     expect(fixture.api.openBrowser).not.toHaveBeenCalled();
     expect(fixture.api.begin).not.toHaveBeenCalled();
   });
+  it('keeps pairing and replaced sign-in failures out of the current activation sign-in', async () => {
+    const fixture = desktopFixture();
+    const child = { operation_id: authentication.browser_operation_id!, action: 'auth.select', state: 'waiting', reason: 'none' };
+    const pairing = { ...child, operation_id: '33333333-3333-4333-8333-333333333333', action: 'browser.pair' };
+    const snapshot = { ...fixture.api.getState().snapshot!, next_task: 'complete', pending_operations: [pairing, child],
+      authentication: { ...authentication, state: 'selected' as const,
+        actions: { select: false, cancel: true, open_browser: true, switch_account: false } }, allowed_actions: [] };
+    fixture.publish({ snapshot, error: 'browser_unavailable',
+      operationError: { operationId: pairing.operation_id, action: pairing.action, reason: 'browser_unavailable' } });
+    mount(makeApi(), fixture.api);
+    expect(screen.queryByText('The browser action could not be confirmed.')).toBeNull();
+    expect(screen.getByText('Finish signing in in your browser.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Open browser' })).toBeNull();
+
+    await act(async () => fixture.publish({ error: 'chrome_unavailable', operationError: {
+      operationId: '44444444-4444-4444-8444-444444444444', action: child.action, reason: 'chrome_unavailable',
+    } }));
+    expect(screen.queryByText('The browser could not be opened.')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open browser' })).toBeNull();
+    await act(async () => fixture.publish({ snapshot: { ...snapshot, pending_operations: [child] },
+      pending: pairing.operation_id, pendingAction: pairing.action, error: 'operation_unconfirmed', operationError: null }));
+    expect(screen.queryByText('Activation has not been confirmed.')).toBeNull();
+    expect(screen.getByText('Finish signing in in your browser.')).toBeTruthy();
+    expect(fixture.api.openBrowser).not.toHaveBeenCalled();
+    expect(fixture.api.begin).not.toHaveBeenCalled();
+  });
+
+  it('shows browser helper feedback only for the current activation sign-in', async () => {
+    const fixture = desktopFixture();
+    const child = { operation_id: authentication.browser_operation_id!, action: 'auth.select', state: 'waiting', reason: 'none' };
+    const notice = { task_id: '33333333-3333-4333-8333-333333333333', admission_generation: '44444444-4444-4444-8444-444444444444',
+      operation_id: child.operation_id, reason: 'profile_mismatch' };
+    const snapshot = { ...fixture.api.getState().snapshot!, next_task: 'complete', pending_operations: [child],
+      authentication: { ...authentication, state: 'selected' as const,
+        actions: { select: false, cancel: true, open_browser: true, switch_account: false } }, allowed_actions: [] };
+    fixture.publish({ snapshot, browserNotices: [notice] });
+    mount(makeApi(), fixture.api);
+    expect(screen.getByText('Switch to the browser profile that has the extension.')).toBeTruthy();
+    expect(screen.queryByText('Finish signing in in your browser.')).toBeNull();
+    const successor = { ...child, operation_id: '55555555-5555-4555-8555-555555555555' };
+    await act(async () => fixture.publish({ snapshot: { ...snapshot, pending_operations: [successor],
+      authentication: { ...snapshot.authentication, browser_operation_id: successor.operation_id } } }));
+    expect(screen.queryByText('Switch to the browser profile that has the extension.')).toBeNull();
+    expect(screen.getByText('Finish signing in in your browser.')).toBeTruthy();
+    expect(fixture.api.openBrowser).not.toHaveBeenCalled();
+    expect(fixture.api.begin).not.toHaveBeenCalled();
+  });
+
   it.each(['browser_unavailable', 'chrome_unavailable'])('shows an asynchronous %s launch failure and retries the same browser operation', async error => {
     const fixture = desktopFixture();
+    const child = { operation_id: authentication.browser_operation_id!, action: 'auth.select', state: 'waiting', reason: 'none' };
     fixture.publish({ snapshot: { ...fixture.api.getState().snapshot!, authentication: { ...authentication, state: 'selected',
-      actions: { select: false, cancel: true, open_browser: true, switch_account: false } }, allowed_actions: [] } });
+      actions: { select: false, cancel: true, open_browser: true, switch_account: false } }, allowed_actions: [], pending_operations: [child] } });
     mount(makeApi(), fixture.api);
     expect(await screen.findByText('Finish signing in in your browser.')).toBeTruthy();
-    await act(async () => fixture.publish({ error }));
+    await act(async () => fixture.publish({ operationError: { operationId: child.operation_id, action: child.action, reason: error } }));
     expect(screen.queryByText('Finish signing in in your browser.')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Open browser' }));
     await waitFor(() => expect(fixture.api.openBrowser).toHaveBeenCalledExactlyOnceWith(authentication.browser_operation_id));
@@ -708,7 +757,8 @@ it('blocks competing activation paths while the original desktop command is unco
   const review = screen.getByRole('button', { name: 'Review offer' });
   fireEvent.click(await screen.findByRole('button', { name: 'Use an activation code' }));
   fireEvent.change(screen.getByLabelText('Activation code'), { target: { value: 'clr1.' + 'A'.repeat(43) } });
-  await act(async () => fixture.publish({ pending: '33333333-3333-4333-8333-333333333333', error: 'operation_unconfirmed' }));
+  await act(async () => fixture.publish({ pending: '33333333-3333-4333-8333-333333333333',
+    pendingAction: 'activation.confirm', error: 'operation_unconfirmed' }));
   expect(screen.getByText('Activation has not been confirmed.')).toBeTruthy();
   expect(review).toHaveProperty('disabled', true);
   expect(screen.getByRole('button', { name: 'Activate', exact: true })).toHaveProperty('disabled', true);

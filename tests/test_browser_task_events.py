@@ -1,5 +1,8 @@
 import asyncio
 import json
+import threading
+
+import httpx
 
 import pytest
 from fastapi import FastAPI
@@ -9,7 +12,7 @@ from app.onboarding import helper_events
 from app.onboarding.admission_routes import ORIGIN
 from app.onboarding.browser_routes import browser_router
 from app.onboarding.helper_events import BrowserTaskEventResponse
-from app.onboarding.routes import DesktopEventResponse
+from app.onboarding.routes import SCOPED_SETUP_EVENT, SETUP_EVENT_PROFILE, DesktopEventResponse, desktop_router
 from test_desktop_browser_routes import headers
 from test_desktop_browser_tasks import browser_access, setup as browser_setup
 
@@ -395,10 +398,6 @@ async def sign_in_entry(tmp_path, monkeypatch, *, seconds=0.1):
     return coordinator, tasks, native, task, browser, app
 
 
-def notices_of(tasks, task):
-    return tasks.helpers.notices({task["task_id"]})
-
-
 @pytest.mark.asyncio
 async def test_serving_an_open_sign_in_entry_starts_its_accepted_handoff_wait(tmp_path, monkeypatch):
     import httpx
@@ -425,7 +424,7 @@ async def test_a_served_sign_in_that_never_opens_shows_unavailable_and_ends_its_
         before = task_row(coordinator, browser)["state"]
         event, value = await served.frame(timeout=0.3)
         assert (event, value) == ("browser-task-end", {"task_id": task["task_id"], "admission_generation": browser.generation})
-        assert notices_of(tasks, task) == [{"task_id": task["task_id"], "reason": "unavailable"}]
+        assert tasks.current_notices(native) == [{"task_id": task["task_id"], "reason": "unavailable"}]
         assert task_row(coordinator, browser)["state"] == before
         await asyncio.wait_for(served.task, 1)
     finally:
@@ -442,7 +441,7 @@ async def test_a_refusal_reported_as_task_changed_gives_way_to_the_backstop_noti
         assert (await client.post("/api/v1/browser-tasks/ended", json={"reason": "task_changed"},
                                   headers=headers(browser))).status_code == 200
         await asyncio.sleep(0.3)
-    assert notices_of(tasks, task) == [{"task_id": task["task_id"], "reason": "unavailable"}]
+    assert tasks.current_notices(native) == [{"task_id": task["task_id"], "reason": "unavailable"}]
 
 
 @pytest.mark.asyncio
@@ -454,7 +453,7 @@ async def test_a_shown_helper_notice_is_kept_when_the_backstop_fires(tmp_path, m
         assert (await client.post("/api/v1/browser-tasks/ended", json={"reason": "needs_account"},
                                   headers=headers(browser))).status_code == 200
         await asyncio.sleep(0.3)
-    assert notices_of(tasks, task) == [{"task_id": task["task_id"], "reason": "needs_account"}]
+    assert tasks.current_notices(native) == [{"task_id": task["task_id"], "reason": "needs_account"}]
 
 
 @pytest.mark.asyncio
@@ -465,13 +464,13 @@ async def test_an_opened_popup_stops_the_backstop_and_a_late_one_changes_nothing
         assert (await client.get("/api/v1/browser-tasks/payload", headers=headers(browser))).status_code == 200
         assert (await client.post("/api/v1/browser-tasks/opened", json={}, headers=headers(browser))).json() == {"state": "opened"}
         await asyncio.sleep(0.3)
-        assert notices_of(tasks, task) == []
+        assert tasks.current_notices(native) == []
     coordinator, tasks, native, task, browser, app = await sign_in_entry(tmp_path / "late", monkeypatch)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
         assert (await client.get("/api/v1/browser-tasks/payload", headers=headers(browser))).status_code == 200
         await asyncio.sleep(0.3)
         assert (await client.post("/api/v1/browser-tasks/opened", json={}, headers=headers(browser))).status_code == 200
-        assert notices_of(tasks, task) == [{"task_id": task["task_id"], "reason": "unavailable"}]
+        assert tasks.current_notices(native) == [{"task_id": task["task_id"], "reason": "unavailable"}]
 
 
 @pytest.mark.asyncio
@@ -482,14 +481,14 @@ async def test_the_backstop_of_a_settled_or_replaced_attempt_does_nothing(tmp_pa
         assert (await client.get("/api/v1/browser-tasks/payload", headers=headers(browser))).status_code == 200
         tasks.complete(task["operation_id"])
         await asyncio.sleep(0.3)
-    assert notices_of(tasks, task) == []
+    assert tasks.current_notices(native) == []
     coordinator, tasks, native, task, browser, app = await sign_in_entry(tmp_path / "replaced", monkeypatch)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
         assert (await client.get("/api/v1/browser-tasks/payload", headers=headers(browser))).status_code == 200
         # Try again reissues the entry. The earlier generation's timer no longer speaks for the task.
         coordinator.admissions.reissue_task_entry(native.identifier, generation=native.generation, task_id=task["task_id"])
         await asyncio.sleep(0.3)
-    assert notices_of(tasks, task) == []
+    assert tasks.current_notices(native) == []
 
 
 def test_a_sign_in_payload_read_records_its_queue_wait_and_handler_time(tmp_path, caplog):
@@ -517,3 +516,140 @@ def test_a_sign_in_payload_read_records_its_queue_wait_and_handler_time(tmp_path
     assert [re.sub(r"elapsed_ms=\d+", "elapsed_ms=n", message) for message in caplog.messages] == [
         "event=sign_in_phase operation=helper phase=payload-queue status=ok elapsed_ms=n",
         "event=sign_in_phase operation=helper phase=payload-handler status=ok elapsed_ms=n"]
+
+
+ENDED = "/api/v1/browser-tasks/ended"
+NOTICES = "/api/v1/desktop/browser-tasks/notices"
+
+
+def reissue_notice_task(coordinator, native, original, task_id):
+    admissions = coordinator.admissions
+    before = task_row(coordinator, original)
+    code = admissions.reissue_task_entry(native.identifier, generation=native.generation, task_id=task_id)
+    successor = admissions.consume(code, role="browser_task")
+    after = task_row(coordinator, successor)
+    assert successor.generation != original.generation
+    assert after["task_id"] == before["task_id"]
+    assert after["operation_id"] == before["operation_id"]
+    assert after["expires_at"] == before["expires_at"]
+    return successor
+
+
+@pytest.mark.asyncio
+async def test_f04_old_notice_is_not_visible_after_reissue(tmp_path):
+    fixture = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, native, _ = fixture
+    _, task, original = await browser_access(fixture)
+    app = FastAPI()
+    app.include_router(browser_router(coordinator, tasks, None))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
+        assert (await client.post(ENDED, json={"reason": "profile_mismatch"}, headers=headers(original))).status_code == 200
+        reissue_notice_task(coordinator, native, original, task["task_id"])
+        observed = (await client.get(NOTICES, headers=headers(native))).json()
+    assert observed == {"notices": []}
+
+
+@pytest.mark.asyncio
+async def test_f04_admitted_old_body_cannot_overwrite_successor_notice(tmp_path):
+    fixture = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, native, _ = fixture
+    _, task, original = await browser_access(fixture)
+    app = FastAPI()
+    app.include_router(browser_router(coordinator, tasks, None))
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def delayed_body():
+        started.set()
+        await asyncio.wait_for(release.wait(), 5)
+        yield b'{"reason":"profile_mismatch"}'
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
+        old = asyncio.create_task(client.post(ENDED, content=delayed_body(), headers={**headers(original), "Content-Type": "application/json"}))
+        try:
+            await asyncio.wait_for(started.wait(), 5)
+            successor = reissue_notice_task(coordinator, native, original, task["task_id"])
+            assert (await client.post(ENDED, json={"reason": "needs_consent"}, headers=headers(successor))).status_code == 200
+            expected = {"notices": [{"task_id": task["task_id"], "reason": "needs_consent"}]}
+            assert (await client.get(NOTICES, headers=headers(native))).json() == expected
+        finally:
+            release.set()
+            delayed_response = await asyncio.wait_for(old, 5)
+        tasks.helpers.clear_notice(task["task_id"], original.generation)
+        observed = (await client.get(NOTICES, headers=headers(native))).json()
+        tasks.complete(task["operation_id"])
+        assert (await client.get(NOTICES, headers=headers(native))).json() == {"notices": []}
+    assert delayed_response.status_code == 401
+    assert observed == expected
+
+
+@pytest.mark.asyncio
+async def test_f04_admitted_old_backstop_read_cannot_overwrite_successor_notice(tmp_path, monkeypatch):
+    coordinator, tasks, native, task, original, app = await sign_in_entry(tmp_path, monkeypatch, seconds=0)
+    completed_read, resume = asyncio.Event(), threading.Event()
+    loop = asyncio.get_running_loop()
+    arm = tasks.helpers.arm
+
+    def arm_with_delayed_result(task_id, generation, current):
+        def delayed_current():
+            result = current()
+            loop.call_soon_threadsafe(completed_read.set)
+            if not resume.wait(5):
+                raise TimeoutError("fixture failed to return held read")
+            return result
+        return arm(task_id, generation, delayed_current)
+
+    monkeypatch.setattr(tasks.helpers, "arm", arm_with_delayed_result)
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
+            assert (await client.get("/api/v1/browser-tasks/payload", headers=headers(original))).status_code == 200
+            await asyncio.wait_for(completed_read.wait(), 5)
+            old_backstops = tuple(tasks.helpers._expiring)
+            assert len(old_backstops) == 1
+            successor = reissue_notice_task(coordinator, native, original, task["task_id"])
+            assert (await client.post(ENDED, json={"reason": "needs_account"}, headers=headers(successor))).status_code == 200
+            expected = {"notices": [{"task_id": task["task_id"], "reason": "needs_account"}]}
+            assert (await client.get(NOTICES, headers=headers(native))).json() == expected
+            resume.set()
+            await asyncio.wait_for(asyncio.gather(*old_backstops), 5)
+            observed = (await client.get(NOTICES, headers=headers(native))).json()
+        assert observed == expected
+    finally:
+        resume.set()
+        await coordinator.stop()
+
+@pytest.mark.asyncio
+async def test_scoped_stream_pairs_current_feedback_with_its_snapshot(tmp_path):
+    fixture = browser_setup.__wrapped__(tmp_path)
+    coordinator, tasks, native, _ = fixture
+    _, task, browser = await browser_access(fixture)
+    app = FastAPI()
+    app.include_router(desktop_router(coordinator, notices=tasks.current_notices, next_expiry=lambda: 0))
+    app.include_router(browser_router(coordinator, tasks, None))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
+        assert (await client.post(ENDED, json={"reason": "profile_mismatch"}, headers=headers(browser))).status_code == 200
+        path = "/api/v1/desktop/setup/events"
+        scoped_headers = {**headers(native), SETUP_EVENT_PROFILE: SCOPED_SETUP_EVENT}
+        legacy = await client.get(path, headers=headers(native))
+        assert legacy.text.startswith("event: setup\ndata: ")
+        assert json.loads(legacy.text.split("event: browser-notices\ndata: ")[1].splitlines()[0]) == {
+            "notices": [{"task_id": task["task_id"], "reason": "profile_mismatch"}]}
+        frame = await client.get(path, headers=scoped_headers)
+        assert frame.status_code == 200
+        event, data = frame.text.splitlines()[:2]
+        assert event == f"event: {SCOPED_SETUP_EVENT}"
+        projection = json.loads(data.removeprefix("data: "))
+        assert projection == {
+            "snapshot": json.loads(legacy.text.splitlines()[1].removeprefix("data: ")),
+            "browser_notices": [{"task_id": task["task_id"], "reason": "profile_mismatch",
+                                 "operation_id": task["operation_id"], "admission_generation": browser.generation}],
+        }
+        assert (await client.get(path, headers={**scoped_headers, SETUP_EVENT_PROFILE: "unknown"})).status_code == 400
+        assert (await client.get(path, headers={**headers(browser), SETUP_EVENT_PROFILE: SCOPED_SETUP_EVENT})).status_code == 401
+        successor = reissue_notice_task(coordinator, native, browser, task["task_id"])
+        assert (await client.post(ENDED, json={"reason": "needs_consent"}, headers=headers(successor))).status_code == 200
+        frame = await client.get(path, headers=scoped_headers)
+        projection = json.loads(frame.text.splitlines()[1].removeprefix("data: "))
+        assert projection["browser_notices"] == [{
+            "task_id": task["task_id"], "reason": "needs_consent", "operation_id": task["operation_id"],
+            "admission_generation": successor.generation,
+        }]
