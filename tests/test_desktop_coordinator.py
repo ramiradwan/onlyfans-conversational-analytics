@@ -690,12 +690,11 @@ async def test_idle_confirmation_wakes_only_on_frame_expiry_or_failed_wait(setup
         probes.append(True)
         raise OSError("wait unavailable")
 
-    await _waited_connect(setup, hints, probe=probe)
-    await _until(lambda: coordinator._held and not coordinator._workers)
-    # Measure from the held wait.
+    request, _ = await _waited_connect(setup, hints, probe=probe)
+    operation_id = request["operation_id"]
+    await _until(lambda: operation_id in coordinator._held and not coordinator._workers)
     probes.clear()
-    started, initial = time.monotonic(), clock[0]
-    coordinator.store._clock = lambda: initial + timedelta(seconds=time.monotonic() - started)
+    initial = clock[0]
     expiry = initial.timestamp() + (0.25 if wake == "expiry" else 10)
     owner.confirmation_deadline = lambda _: expiry if coordinator.admissions._now() < expiry else None
     owner.probe_interval = lambda _: 0.01 if coordinator.admissions._now() < expiry else None
@@ -706,13 +705,32 @@ async def test_idle_confirmation_wakes_only_on_frame_expiry_or_failed_wait(setup
         return original()
 
     coordinator._pass_facts = counted
+    signal = coordinator._wake
+    wait = signal.wait
+    confirmation_waiting = asyncio.Event()
+
+    async def wait_for_confirmation_change():
+        # Count only after the watcher has applied the deadline and consumed
+        # any startup wake. Start the expiry clock at that wait boundary.
+        if (not confirmation_waiting.is_set() and not signal.is_set()
+                and operation_id in coordinator._held and not coordinator._workers
+                and coordinator._confirmation_at.get(operation_id) == expiry):
+            started = time.monotonic()
+            coordinator.store._clock = lambda: initial + timedelta(seconds=time.monotonic() - started)
+            confirmation_waiting.set()
+        return await wait()
+
+    monkeypatch.setattr(signal, "wait", wait_for_confirmation_change)
     try:
-        await asyncio.sleep(0.06)
+        signal.set()
+        await asyncio.wait_for(confirmation_waiting.wait(), 2)
+        await _until(lambda: not coordinator._prefetches and not coordinator._probes)
         before, reads, prefetched = len(passes), len(owner.calls), len(prefetches)
         await asyncio.sleep(0.12)
         assert len(passes) == before
         assert len(owner.calls) == reads
         assert len(prefetches) == prefetched
+        assert not probes
         if wake == "healthy":
             return
         if wake in {"frame", "failure"}:
