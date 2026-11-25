@@ -2641,20 +2641,28 @@ it('keeps account connection separate from the account passkey prompt', () => {
   render('available');
   expect(document.getElementById('account-passkey-create').hidden).toBe(false);
   expect(document.getElementById('task-action').hidden).toBe(true);
-  const help = document.getElementById('account-passkey-help');
-  expect(help.hidden).toBe(true);
-  document.getElementById('support-channels').innerHTML =
-    '<span data-channel="account-passkey">https://account.dipsy.fi/account/passkeys/help</span>';
+  const status = document.getElementById('account-passkey-status');
+  expect(status.textContent).not.toContain('reference');
   const reference = 'A'.repeat(43);
   render('available', { passkeySupportRef: reference });
-  expect(document.getElementById('account-passkey-status').textContent).toContain(reference);
-  expect(help.hidden).toBe(false);
-  expect(help.textContent).toBe('Get help at https://account.dipsy.fi/account/passkeys/help');
+  expect(status.textContent).toContain(reference);
+  expect(status.textContent).not.toContain('Get help');
+  const registry = document.defaultView.customElements;
+  const lookup = registry.get.bind(registry);
+  const nativeHelp = vi.spyOn(registry, 'get').mockImplementation(name => name === 'desktop-help' ? HTMLElement : lookup(name));
+  try {
+    render('available', { passkeySupportRef: reference });
+    expect(status.textContent).toContain('Choose Get help to request a review.');
+    expect(status.textContent.endsWith(reference)).toBe(true);
+    expect(status.textContent).not.toContain('https://');
+    render('available', { passkeyMessage: 'Passkey setup is unavailable.' });
+    expect(status.textContent).toBe('Passkey setup is unavailable.');
+  } finally { nativeHelp.mockRestore(); }
   render('working');
   expect(document.getElementById('account-passkey-create').disabled).toBe(true);
   expect(document.getElementById('task-action').hidden).toBe(true);
-  expect(help.hidden).toBe(true);
-  expect(help.textContent).toBe('');
+  expect(status.textContent).not.toContain(reference);
+  expect(status.textContent).not.toContain('Get help');
   render('available', { passkeyDeferred: true });
   expect(document.getElementById('account-passkey-create').hidden).toBe(true);
   expect(document.getElementById('task-action').dataset.action).toBe('account.confirm');

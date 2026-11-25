@@ -25,9 +25,6 @@ def _with_release_presentation(document: str) -> str:
     if release.has_microsoft_picker:
         document = document.replace(_PICKER_MARKER, 'data-microsoft-picker="true"', 1)
     entries = "".join(f'<span data-channel="{channel}">{escape(address)}</span>' for channel, address in release.support_channels)
-    if release.account_passkey is not None:
-        help_url = escape(f"{release.hosted_api_origin}/account/passkeys/help")
-        entries += f'<span data-channel="account-passkey">{help_url}</span>'
     return document.replace(_SUPPORT_TEMPLATE, f'<template id="support-channels">{entries}</template>', 1)
 
 
@@ -69,7 +66,7 @@ def setup_shell(request: Request, *, browser=False, receiving_origin=None, acces
     except OSError:
         raise HTTPException(503, "Setup assets are unavailable") from None
     script, style = first_paint_csp(document)
-    if not receiving_origin:
+    if not browser and not receiving_origin:
         document = _with_release_presentation(document)
     if access_ticket is not None:
         document = document.replace("</body>", f'<template id="access-document-entry">{escape(access_ticket)}</template></body>', 1)

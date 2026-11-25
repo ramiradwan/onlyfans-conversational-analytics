@@ -357,8 +357,9 @@ export function renderSetup(document, state) {
   const passkeyBusy = passkey === 'working' || state.acting === 'passkey.create';
   const offerPasskey = passkeySetup && passkey !== 'created' && !state.passkeyDeferred;
   const supportRef = passkeySetup && !passkeyBusy && passkey !== 'created' ? state.passkeySupportRef : null;
+  const reviewAction = document.defaultView?.customElements.get('desktop-help') ? ' Choose Get help to request a review.' : '';
   const passkeyMessage = passkeyBusy ? 'Waiting for Windows Hello…' : passkey === 'created' ? 'Passkey created.'
-    : supportRef ? `Dipsy couldn’t set up your passkey. Share reference ${supportRef} with support.` : state.passkeyMessage;
+    : supportRef ? `Dipsy couldn’t set up your passkey.${reviewAction} Your review reference is ${supportRef}` : state.passkeyMessage;
   get('account-passkey-setup').hidden = !passkeySetup || (!offerPasskey && !passkeyMessage);
   get('account-passkey-description').hidden = !offerPasskey;
   get('account-passkey-create').hidden = !offerPasskey;
@@ -367,9 +368,6 @@ export function renderSetup(document, state) {
   get('account-passkey-later').disabled = controlsDisabled || passkeyBusy;
   get('account-passkey-status').textContent = passkeySetup ? passkeyMessage || '' : '';
   get('account-passkey-status').hidden = !passkeySetup || !passkeyMessage;
-  const helpUrl = supportRef && get('support-channels')?.content.querySelector('[data-channel="account-passkey"]')?.textContent;
-  get('account-passkey-help').textContent = helpUrl ? `Get help at ${helpUrl}` : '';
-  get('account-passkey-help').hidden = !helpUrl;
   const submittingPair = state.acting === 'browser.pair' || state.pendingAction === 'browser.pair';
   taskAction.hidden = unavailable || reason === 'chrome_unavailable' || !action || showingProviders || accepted || !localAccessReady
     || startingChrome || confirmingUnknown || action === 'account.confirm' && (offerPasskey || passkeyBusy)

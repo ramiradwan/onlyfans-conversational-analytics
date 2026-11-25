@@ -41,7 +41,8 @@
       super();
       const root = this.attachShadow({ mode: 'open' });
       root.adoptedStyleSheets = [sheet];
-      root.innerHTML = `<button type="button" data-action="minimize" aria-label="Minimize" title="Minimize">${icon('minimize')}</button>
+      root.innerHTML = `<desktop-help></desktop-help>
+        <button type="button" data-action="minimize" aria-label="Minimize" title="Minimize">${icon('minimize')}</button>
         <button type="button" data-action="toggle_maximize" aria-label="Maximize" title="Maximize">${icon('maximize')}</button>
         <button type="button" data-action="close" aria-label="Close window" title="Close window">${icon('close')}</button>
         <span class="status" role="status"></span>`;

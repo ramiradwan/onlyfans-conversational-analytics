@@ -75,14 +75,17 @@ def test_support_projection_preserves_closed_setup_admission(compiled, tmp_path,
     for route in ("/onboarding", "/browser-tasks"):
         response = client.get(route)
         assert response.status_code == 200
-        assert '<template id="support-channels"><span data-channel="tiktok">https://help.example.com/a&amp;b</span></template>' in response.text
+        if route == "/onboarding":
+            assert '<template id="support-channels"><span data-channel="tiktok">https://help.example.com/a&amp;b</span></template>' in response.text
+        else:
+            assert "help.example.com" not in response.text
         assert "127.0.0.1" not in response.text
         assert "set-cookie" not in response.headers
         assert client.get(route + "?support=1").status_code == 400
     assert client.get("/static/dist/release.json").status_code == 404
 
 
-def test_passkey_help_uses_the_configured_account_origin_without_an_admission(compiled, tmp_path, monkeypatch):
+def test_enabling_passkeys_does_not_add_a_hosted_help_destination(compiled, tmp_path, monkeypatch):
     from app.core.customer_release import DEVELOPMENT_CUSTOMER_RELEASE_ENV
 
     client, _ = compiled
@@ -100,7 +103,8 @@ def test_passkey_help_uses_the_configured_account_origin_without_an_admission(co
     monkeypatch.setenv(DEVELOPMENT_CUSTOMER_RELEASE_ENV, str(release))
     response = client.get("/onboarding")
     assert response.status_code == 200
-    assert '<span data-channel="account-passkey">https://account.dipsy.fi/account/passkeys/help</span>' in response.text
+    assert "account.dipsy.fi" not in response.text
+    assert 'data-channel="account-passkey"' not in response.text
     assert "set-cookie" not in response.headers
 
 
