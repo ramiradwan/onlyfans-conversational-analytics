@@ -65,8 +65,10 @@ test('retained data recovery and terminal support fit the title column with nati
         try {
           for (const route of routes) {
             if (!route.shell && (width === 640 || (width === 1440 && scale === 2))) continue;
+            const browserTask = route.surface === 'browser-task';
             const anchors = [];
             for (const configured of [false, true]) {
+              const showHelp = configured && !browserTask;
               const page = await context.newPage();
               const otherRequests = [];
               await page.addInitScript(({ size, state, native }) => {
@@ -105,10 +107,14 @@ test('retained data recovery and terminal support fit the title column with nati
                 if (url.origin === route.origin) {
                   if (route.shell && shell[path]) return request.fulfill(shell[path]);
                   if (!route.shell && path === route.path) {
-                    const template = '<template id="support-channels">';
-                    const entries = supportChannels.map(([key, , address]) =>
-                      `<span data-channel="${key}">${address.replaceAll('&', '&amp;')}</span>`).join('');
-                    const body = configured ? route.html.replace(template, template + entries) : route.html;
+                    let body = route.html;
+                    if (configured) {
+                      const template = '<template id="support-channels">';
+                      const entries = supportChannels.map(([key, , address]) =>
+                        '<span data-channel="' + key + '">' + address.replaceAll('&', '&amp;') + '</span>').join('');
+                      body = body.includes(template) ? body.replace(template, template + entries)
+                        : body.replace('</body>', template + entries + '</template></body>');
+                    }
                     return request.fulfill({ contentType: 'text/html', body });
                   }
                   if (path === `/${route.surface}.js`) return request.fulfill({ contentType: 'text/javascript', body: route.script });
@@ -124,8 +130,8 @@ test('retained data recovery and terminal support fit the title column with nati
                 await Promise.all(arriving.map(animation => animation.finished));
               });
               const help = page.locator('[data-support-help]');
-              assert.equal(await help.count(), Number(configured), route.path);
-              if (configured) {
+              assert.equal(await help.count(), Number(showHelp), route.path);
+              if (showHelp) {
                 assert.equal(await help.locator('h2').textContent(), 'Get help');
                 assert.deepEqual(await help.getByRole('listitem').allTextContents(),
                   supportChannels.map(([, label, address]) => label + ' ' + address));
@@ -143,23 +149,16 @@ test('retained data recovery and terminal support fit the title column with nati
               }
               const position = await supportGeometry(page, 'h1', route.shell ? '.startup-card > p' : '#task-description',
                 route.surface === 'browser-task' ? '#task-message' : '#task-status');
-              if (route.surface === 'browser-task') {
+              if (browserTask) {
                 const actionSlot = page.locator('.task-actions-slot > [data-region-content]');
-                const action = await actionSlot.boundingBox();
-                if (configured) {
-                  assert.equal(await actionSlot.locator(':scope > [data-support-help]').count(), 1);
-                  const helpBox = await help.boundingBox();
-                  const statusBox = await page.locator('#task-status').boundingBox();
-                  assert.equal(helpBox.y - position.title.rect.bottom, 24);
-                  assert.ok(helpBox.y + helpBox.height <= statusBox.y);
-                  assert.equal(await page.locator('#task-message').textContent(), route.state.recovery === 'invariant_failed'
-                    ? 'This step couldn’t finish.' : 'This page can’t continue setup.');
-                  // Compare the status anchor after accounting for the new action row's height.
-                  const rect = position.status.rect;
-                  rect.y -= action.height;
-                  rect.top -= action.height;
-                  rect.bottom -= action.height;
-                } else assert.equal(action.height, 0);
+                assert.equal((await actionSlot.boundingBox()).height, 0);
+                assert.equal(await actionSlot.locator('a:visible, button:visible').count(), 0);
+                assert.equal(await page.locator('#desktop-return').getAttribute('href'), null);
+                assert.equal(await page.locator('h1').textContent(), 'Continue in the desktop app');
+                assert.equal(await page.locator('#task-message').textContent(), route.state.recovery === 'invariant_failed'
+                  ? 'This step couldn’t finish.' : 'This page can’t continue setup.');
+                assert.equal(page.url(), route.origin + route.path);
+                assert.equal(context.pages().length, 1);
               }
               assert.equal(position.overflow, 0, route.path);
               if (width === 1440 && scale === 1) {
@@ -195,7 +194,7 @@ test('retained data recovery and terminal support fit the title column with nati
                 assert.equal(page.url(), route.origin + route.path);
                 assert.equal(context.pages().length, 1);
               }
-              if (configured) {
+              if (showHelp) {
                 await help.scrollIntoViewIfNeeded();
                 if (route.shell) {
                   assert.ok(await help.evaluate(node =>

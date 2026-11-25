@@ -6,7 +6,6 @@ import { FULL_REVIEW_INTENT_KEY, createFullReviewIntentConsumer, createFullRevie
 import { LEGAL_ACCEPT_TERMS_MESSAGE_TYPE, LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE,
   LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE, LEGAL_CHOOSE_MODE_MESSAGE_TYPE } from './runtime/legal-activation-controller.mjs';
 import { createSurfaceClient, openSurface, send, secureExternalUrl, NoticeError } from './ui/surface-client.mjs';
-import { supportChannelLabels } from './ui/support-channels.mjs';
 import { customerJourney, hasModeAccess, manualPairingAction, modeChoiceAvailable, needsAgreement } from './ui/presentation.mjs';
 import { element, show, text, renderLoading, renderJourney, renderLegalLinks, createPageActions } from './ui/dom.mjs';
 import { requestAnalyticsAccess, transition, restoreAccess, openCreatorAccount } from './ui/actions.mjs';
@@ -238,27 +237,6 @@ function renderDesktop(model, journey) {
   page.lock('open-desktop', opening || (!manualAction && !workspaceRecord));
   show('download-desktop', desktopResources && secureExternalUrl(model.config.desktop_app_download_url) !== null);
 }
-function renderRuntimeHelp(channels, eligible) {
-  const values = Object.entries(channels ?? {});
-  if (!values.length) return;
-  const slot = element('runtime-unavailable');
-  const current = slot.querySelector('[data-support-help]');
-  if (!eligible) {
-    current?.remove();
-    return;
-  }
-  if (current) return;
-  const help = element('runtime-help-template').content.cloneNode(true);
-  const list = help.querySelector('ul');
-  for (const [channel, address] of values) {
-    const row = document.createElement('li');
-    const value = document.createElement('span');
-    value.textContent = address;
-    row.append(supportChannelLabels[channel] + ' ', value);
-    list.append(row);
-  }
-  slot.append(help);
-}
 
 function render(model) {
   desktopLaunch.observe(desktopAdoption);
@@ -269,10 +247,11 @@ function render(model) {
     document.querySelector('main').dataset.presentationReady = 'true';
   }
   for (const id of ['start-choice', 'desktop-entry', 'mode-choice', 'access-card', 'journey-card', 'legal-unavailable']) show(id, false);
-  renderLoading(status && legal && !waitingForWorkspace ? status : null, failed, model.connectionRecovery, { setup: true });
+  const recoveryExhausted = failed && !waitingForWorkspace && (!status || !legal) && model.connectionRecovery === 'exhausted';
+  renderLoading(status && legal && !waitingForWorkspace ? status : null, failed, model.connectionRecovery, {
+    unavailableMessage: recoveryExhausted ? 'Open the desktop app for help.' : 'Dipsy can’t connect right now.',
+  });
   renderLegalLinks(legal);
-  renderRuntimeHelp(model.config.support_channels,
-    failed && !waitingForWorkspace && (!status || !legal) && model.connectionRecovery === 'exhausted');
   if (!status || !legal || waitingForWorkspace) {
     currentTask = failed ? 'unavailable' : null;
     if (currentTask) document.querySelector('main').dataset.task = currentTask;

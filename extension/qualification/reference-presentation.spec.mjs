@@ -54,7 +54,7 @@ for (const name of ['legal_unavailable', 'runtime_unavailable']) {
 
 for (const theme of ['light', 'dark']) {
   for (const [width, scale] of [[1440, 1], [390, 1], [390, 2], [320, 1], [320, 2]]) {
-    test(`support stays in the exhausted action slot at ${width}px, ${scale * 100}% text, ${theme}`, async ({ page, context }, info) => {
+    test(`exhausted runtime points to desktop help at ${width}px, ${scale * 100}% text, ${theme}`, async ({ page, context }, info) => {
       await page.emulateMedia({ colorScheme: theme });
       await page.setViewportSize({ width, height: 960 });
       await page.addInitScript(size => {
@@ -73,27 +73,14 @@ for (const theme of ['light', 'dark']) {
       await page.clock.install();
       await renderSurfaceState(page, { ...SURFACE_STATES.runtime_unavailable, portUnavailable: true, supportChannels });
       const card = page.locator('#runtime-unavailable');
-      const help = card.locator('[data-support-help]');
       const title = card.locator('h2').first(), body = card.locator('#runtime-body'), footer = page.locator('.onboarding-footer');
       await expect(body).toHaveText('Connection interrupted. Reconnecting…');
-      await expect(help).toBeHidden();
+      await expect(card.locator('[data-support-help]')).toHaveCount(0);
       const titleBefore = await title.boundingBox(), footerBefore = await footer.boundingBox();
       await page.clock.runFor(1800);
-      await expect(help.getByRole('heading', { name: 'Get help' })).toBeVisible();
-      await expect(help.getByRole('listitem')).toHaveText([
-        'Telegram https://chat.example.com/help-and-setup', 'TikTok https://video.example.com/a&copy;b',
-      ]);
-      await expect(help.locator('a, button, input, script')).toHaveCount(0);
-      const helpLayout = await help.evaluate(element => {
-        const title = document.querySelector('#runtime-title').getBoundingClientRect();
-        const heading = element.querySelector('h3');
-        return {
-          weight: getComputedStyle(heading).fontWeight,
-          markers: getComputedStyle(element.querySelector('ul')).listStyleType,
-          offsets: [heading, ...element.querySelectorAll('li')].map(node => node.getBoundingClientRect().left - title.left),
-        };
-      });
-      expect(helpLayout).toEqual({ weight: '600', markers: 'none', offsets: [0, 0, 0] });
+      await expect(body).toHaveText('Open the desktop app for help.');
+      await expect(card.locator('[data-support-help], a, button, input')).toHaveCount(0);
+      await expect(card).not.toContainText(/https?:\/\//);
       expect(await title.boundingBox()).toEqual(titleBefore);
       const main = await page.locator('main').boundingBox();
       expect(await footer.boundingBox()).toEqual({
@@ -108,18 +95,14 @@ for (const theme of ['light', 'dark']) {
         expect(lines).toEqual([1, 1]);
       }
       expect(await footer.getByText('Privacy information unavailable')).toBeVisible();
-      const geometry = await help.evaluate(element => {
-        const address = element.querySelector('li:last-child span');
-        const range = document.createRange();
-        range.selectNodeContents(address);
-        getSelection().removeAllRanges();
-        getSelection().addRange(range);
-        return { selected: String(getSelection()), selectable: getComputedStyle(address).userSelect,
-          viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth };
-      });
-      expect(geometry).toMatchObject({ selected: supportChannels.tiktok, selectable: 'text', viewport: geometry.content });
-      await help.scrollIntoViewIfNeeded();
-      await expect(help).toBeInViewport();
+      const geometry = await body.evaluate(element => ({
+        textWidth: element.scrollWidth, bodyWidth: element.clientWidth,
+        viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth,
+      }));
+      expect(geometry.content).toBe(geometry.viewport);
+      expect(geometry.textWidth).toBe(geometry.bodyWidth);
+      await body.scrollIntoViewIfNeeded();
+      await expect(body).toBeInViewport();
       await footer.scrollIntoViewIfNeeded();
       await expect(footer).toBeInViewport();
       const safeReads = await page.evaluate(() => window.__surfaceFixture.calls.every(({ type, action }) =>
@@ -145,6 +128,7 @@ for (const [state, action] of [
     await page.clock.runFor(1800);
     await expect(page.locator(action)).toBeVisible();
     await expect(page.locator('[data-support-help]')).toHaveCount(0);
+    if (action === '#runtime-title') await expect(page.locator('#runtime-body')).toHaveText('Open the desktop app for help.');
     if (action === '#legal-unavailable') await expect(page.getByText('Update the extension to continue.')).toBeVisible();
   });
 }
