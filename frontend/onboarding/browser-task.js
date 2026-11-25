@@ -27,12 +27,24 @@ export function browserRecoveryTarget(snapshot, reason = null) {
   return operation.operation_id;
 }
 
+export function presentationGuard(client) {
+  const generation = client.generation, epoch = client.launchEpoch, journey = client.value?.journey_id;
+  const account = client.value?.analysis_readiness?.creator_account_id;
+  return () => client.connected && client.generation === generation && client.launchEpoch === epoch
+    && (journey == null || client.value?.journey_id === journey)
+    && (account == null || client.value?.analysis_readiness?.creator_account_id === account);
+}
+
 export async function openSetupCode(client, invoke = code =>
   globalThis.__TAURI__.core.invoke('desktop_setup_code', { entryCode: code })) {
-  if (!client.connected || client.session?.stage !== 'setup' || client.pending) return false;
+  const presentation = presentationGuard(client);
+  const task = client.value?.next_task;
+  const current = () => presentation() && client.session?.stage === 'setup'
+    && !client.pending && client.value?.next_task === task;
+  if (!current()) return false;
   const result = await client.json('/api/v1/desktop/setup-transfer/entry', {});
+  if (!current()) return false;
   if (!exact(result, ['entry_code']) || !/^[A-Za-z0-9_-]{43}$/u.test(result.entry_code)) throw Error('browser_unavailable');
-  if (!client.connected) return false;
   await invoke(result.entry_code);
   return true;
 }
@@ -65,6 +77,7 @@ export async function openBrowserTask(client, operationId, invoke = (code, prese
 /** One explicit protected launch; no task reissue, helper session or automatic retry. */
 export async function openProtectedBrowser(client, invoke = code =>
   globalThis.__TAURI__.core.invoke('desktop_browser_task', { entryCode: code })) {
+  const livePresentation = presentationGuard(client);
   const snapshot = client.value, auth = snapshot?.authentication;
   const attempt = auth?.authentication_attempt?.authentication_attempt_id;
   if (!client.connected || snapshot?.authority_recovery !== 'sign-in-required'
@@ -78,7 +91,7 @@ export async function openProtectedBrowser(client, invoke = code =>
   // The accepted claim may already be visible in a newer snapshot. Only
   // retain this one response if the same workspace and child still own it.
   const current = client.value;
-  if (!client.connected || current?.generation !== snapshot.generation
+  if (!livePresentation() || current?.generation !== snapshot.generation
     || current.journey_id !== snapshot.journey_id || current.authority_recovery !== 'sign-in-required'
     || current.authentication?.state !== 'selected' || current.authentication?.operation_id !== auth.operation_id
     || current.authentication?.authentication_attempt?.authentication_attempt_id !== attempt

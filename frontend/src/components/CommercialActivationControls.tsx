@@ -21,7 +21,7 @@ import {
   CapabilityLicenseApiError,
   type CapabilityLicenseApi,
 } from '../services/capabilityLicenseApi';
-import { desktopOnboardingApi, selectAnalysisReadiness, selectBrowserFeedback, type DesktopOnboardingApi } from '../services/desktopOnboarding';
+import { desktopInteractionFailure, desktopOnboardingApi, selectAnalysisReadiness, selectBrowserFeedback, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import { componentTokens, typography } from '../theme';
 import { OnboardingAction, OnboardingPill, OnboardingSpot, OnboardingStatus } from './ui/OnboardingCard';
 import { offerPriceColors } from '../theme/generated/tokens';
@@ -249,9 +249,10 @@ export function CommercialActivationControls({
     }
     setEntryError(null);
     try {
-      if (provider) await onboarding.begin(action, { provider });
-      else await onboarding.begin(action);
-      if (!controller.signal.aborted) setChoosingAccount(false);
+      const result = provider ? await onboarding.begin(action, { provider }) : await onboarding.begin(action);
+      const failure = desktopInteractionFailure(result);
+      if (failure) throw Error(failure);
+      if (!controller.signal.aborted && result.state !== 'superseded') setChoosingAccount(false);
     } catch (cause) {
       if (!controller.signal.aborted) {
         setEntryError(cause instanceof Error && cause.message === 'browser_unavailable'
@@ -270,7 +271,10 @@ export function CommercialActivationControls({
     if (!currentAuthority || !currentPresentation() || codeInProgress || unresolvedCommand || entryOperation.current || !authentication?.actions.open_browser || !authentication.browser_operation_id) return;
     const controller = new AbortController(); entryOperation.current = controller; entryScope.current = reviewScope;
     setOpening(true); setOpeningAction('browser.open'); setEntryError(null);
-    try { await onboarding.openBrowser(authentication.browser_operation_id); }
+    try {
+      const failure = desktopInteractionFailure(await onboarding.openBrowser(authentication.browser_operation_id));
+      if (failure) throw Error(failure);
+    }
     catch { if (!controller.signal.aborted) setEntryError('The browser could not be opened.'); }
     finally {
       if (entryOperation.current === controller) {

@@ -13,7 +13,7 @@ import {
   type BrowserDestination,
 } from '../services/browserControlApi';
 import { captureOperation } from '../services/captureOperation';
-import { desktopOnboardingApi, selectBrowserFeedback, selectCollectionContinuation, type DesktopOnboardingApi } from '../services/desktopOnboarding';
+import { desktopInteractionFailure, desktopOnboardingApi, selectBrowserFeedback, selectCollectionContinuation, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import type { ExtensionConnection } from '../utils/statusCopy';
 import { OnboardingAction, OnboardingCard, OnboardingSpot } from './ui/OnboardingCard';
 import { StatusLine } from './ui/ReservedRegion';
@@ -80,7 +80,8 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
     setNotice(null);
     try {
       if (destination === 'setup' || destination === 'access') {
-        await onboarding.begin('browser.access');
+        const result = await onboarding.begin('browser.access');
+        if (!controller.signal.aborted && desktopInteractionFailure(result)) setNotice('failed');
         return;
       }
       const result = await api.open(destination, controller.signal);

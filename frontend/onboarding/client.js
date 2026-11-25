@@ -1,6 +1,6 @@
 import { command, operation, setupFrame, snapshot, UUID } from './contract.js';
 import { SCOPED_SETUP_EVENT, setupEvents } from './events.js';
-import { browserRecoveryTarget, openProtectedBrowser } from './browser-task.js';
+import { browserRecoveryTarget, openProtectedBrowser, presentationGuard } from './browser-task.js';
 
 // A helper tab reports why it ended. The desktop shows it where retry lives.
 const NOTICE_ERRORS = { extension_unavailable: 'extension_unavailable', profile_mismatch: 'profile_mismatch',
@@ -19,6 +19,7 @@ function currentBrowserNotices(value, notices = []) {
 const RECOVERY_SIGN_IN_MS = 120_000;
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16_000, 30_000];
 const RECONNECT_SLOW_MS = 30_000;
+const outcome = (state, operationId = null, reason = null) => ({ state, operationId, reason });
 
 async function refreshNativePresentation(generation) {
   const invoke = globalThis.__TAURI__?.core?.invoke;
@@ -38,7 +39,7 @@ export class DesktopSetupClient {
     this.launchOperation = null;
     this.launchEpoch = 0;
     this.launching = false;
-    this.protectedOpening = false;
+    this.protectedOpening = null;
     this.protectedLaunchError = null;
     this.recoverySignIn = null;
     this.providerContinuation = null;
@@ -266,6 +267,8 @@ export class DesktopSetupClient {
   async _connect() {
     this.launchEpoch++;
     this.launchOperation = null;
+    this.protectedOpening = null;
+    this.protectedLaunchError = null;
     this.providerContinuation = null;
     this.focusIntent = null;
     clearTimeout(this.reconnectTimer);
@@ -304,8 +307,13 @@ export class DesktopSetupClient {
         }
         const deliberate = this.intent?.confirmed === true && this.intent.task !== value.next_task;
         if (deliberate) this.intent = null;
-        if (this.value?.authentication?.authentication_attempt?.authentication_attempt_id !== value.authentication?.authentication_attempt?.authentication_attempt_id
-          || value.authority_recovery_browser !== 'ready') this.protectedLaunchError = null;
+        const oldAuth = this.value?.authentication, nextAuth = value.authentication;
+        if (oldAuth?.operation_id !== nextAuth?.operation_id
+          || oldAuth?.authentication_attempt?.authentication_attempt_id !== nextAuth?.authentication_attempt?.authentication_attempt_id) {
+          this.protectedOpening = null;
+          this.protectedLaunchError = null;
+        }
+        if (value.authority_recovery_browser !== 'ready') this.protectedLaunchError = null;
         this.value = value;
         this.retireCompletedFeedback();
         const preparingSelection = this.intent?.initialAuthentication === true
@@ -338,6 +346,8 @@ export class DesktopSetupClient {
         this.launchOperation = null;
         this.recoverySignIn = null;
         this.providerContinuation = null;
+        this.protectedOpening = null;
+        this.protectedLaunchError = null;
         const message = typeof error === 'string' ? error : error?.message;
         const terminal = ['session_unavailable', 'authorization_unavailable'].includes(message);
         if (terminal) {
@@ -377,30 +387,46 @@ export class DesktopSetupClient {
   }
 
   async launchProtectedBrowser() {
-    if (this.protectedOpening) return;
-    const snapshot = this.value, epoch = this.launchEpoch;
-    if (!this.connected || snapshot?.authority_recovery_browser !== 'ready' || !snapshot.authentication?.actions.open_browser) throw Error('browser_unavailable');
-    this.protectedOpening = true;
+    const snapshot = this.value, auth = snapshot?.authentication;
+    const parent = auth?.operation_id ?? null;
+    if (this.protectedOpening || !this.connected || snapshot?.authority_recovery_browser !== 'ready'
+      || !auth?.actions.open_browser) return outcome('not-dispatched', parent, 'browser_unavailable');
+    const presented = presentationGuard(this);
+    const token = {};
+    const current = () => presented() && this.protectedOpening === token
+      && this.value?.authority_recovery === 'sign-in-required'
+      && this.value.authentication?.operation_id === parent
+      && this.value.authentication.authentication_attempt?.authentication_attempt_id
+        === auth.authentication_attempt?.authentication_attempt_id;
+    this.protectedOpening = token;
     this.protectedLaunchError = null;
     this.providerContinuation = null;
     this.notify();
+    let claimAttempted = false;
     try {
-      // Do not spend the one-use launch claim on a missing browser.
+      // Check both outcomes before spending or reporting a one-use claim.
       const invoke = globalThis.__TAURI__?.core?.invoke;
-      if (!invoke || await invoke('desktop_chrome_available') !== true) {
+      const available = invoke && await invoke('desktop_chrome_available') === true;
+      if (!current() || this.value.authority_recovery_browser !== 'ready') return outcome('superseded', parent);
+      if (!available) {
         this.protectedLaunchError = 'chrome_unavailable';
-        throw Error('chrome_unavailable');
+        return outcome('not-dispatched', parent, 'chrome_unavailable');
       }
-      if (!this.connected || this.launchEpoch !== epoch || this.value !== snapshot) throw Error('browser_unavailable');
-      if (!await openProtectedBrowser(this)) throw Error('browser_unavailable');
+      claimAttempted = true;
+      const opened = await openProtectedBrowser(this);
+      if (!current()) return outcome('superseded', parent);
+      return opened ? outcome('accepted', parent) : outcome('unconfirmed', parent, 'browser_unavailable');
+    } catch {
+      if (!current()) return outcome('superseded', parent);
+      return outcome(claimAttempted ? 'unconfirmed' : 'not-dispatched', parent, 'browser_unavailable');
     } finally {
-      this.protectedOpening = false;
-      if (this.connected && this.launchEpoch === epoch && !this.protectedLaunchError && this.value === snapshot) {
-        // A stale snapshot must not reoffer the spent launch before its
-        // authoritative update. Reattach for read-only status, never resend.
-        void this.connect();
+      if (this.protectedOpening === token) {
+        const reattach = claimAttempted && current() && this.value.authority_recovery_browser === 'ready';
+        this.protectedOpening = null;
+        // A read-only reattach cannot spend another launch claim.
+        if (reattach) void this.connect();
+        this.notify();
       }
-      this.notify();
     }
   }
 
@@ -517,7 +543,9 @@ export class DesktopSetupClient {
       && this.value.pending_operations.some(item => item.action === action)
       && this.value.pending_operations.some(item => item.operation_id === this.pending
         && ['activation.review', 'activation.confirm', 'auth.select', 'auth.switch', 'auth.cancel'].includes(item.action));
-    if (!this.connected || !this.value || this.protectedOpening || (this.pending && !replacesCurrentAuthentication && !replacesReview)) return;
+    if (!this.connected || !this.value || this.protectedOpening || (this.pending && !replacesCurrentAuthentication && !replacesReview)) {
+      return outcome('not-dispatched', null, 'action_unavailable');
+    }
     observe('click');
     const intent = command(this.value, action, this.uuid(), options);
     // Later launch steps of this click are recorded once each.
@@ -527,6 +555,7 @@ export class DesktopSetupClient {
     this.launchEpoch++;
     this.focusIntent = null;
     const epoch = this.launchEpoch;
+    const current = presentationGuard(this);
     this.intent = { task: this.value.next_task, action, operationId: intent.operation_id, confirmed: false,
       initialAuthentication: action === 'account.connect' && intent.provider !== undefined };
     this.remember(intent.operation_id);
@@ -556,89 +585,105 @@ export class DesktopSetupClient {
     try {
       observe('command-send');
       await this.json('/api/v1/desktop/setup/commands', intent);
-      if (epoch !== this.launchEpoch || !this.connected) return;
-      // The receipt read and the launch run together. The launch rechecks its operation.
-      await Promise.all([this.receipt(), this.launchOperation ? this.launchBrowser() : null]);
     } catch (error) {
-      if (epoch !== this.launchEpoch || !this.connected) return;
+      if (!current()) return outcome('superseded', intent.operation_id);
       this.recoverySignIn = null;
       this.providerContinuation = null;
       if (['setup_changed', 'action_unavailable', 'authority_unavailable', 'account_mismatch', 'operation_limit_reached'].includes(error.reason)) {
-        this.remember(null);
+        if (this.pending === intent.operation_id) this.remember(null);
         this.intent = null;
         this.launchOperation = null;
         this.notify('operation_refused');
         void this.connect();
-      } else { this.launchOperation = null; this.notify('operation_unconfirmed'); }
+        return outcome('refused', intent.operation_id, 'operation_refused');
+      }
+      return this.unconfirmed(intent.operation_id);
     }
+    if (!current()) return outcome('superseded', intent.operation_id);
+    // Reading the exact receipt and opening its browser may overlap.
+    const [settled] = await Promise.all([
+      this.receipt(intent.operation_id, current),
+      this.launchOperation === intent.operation_id ? this.launchBrowser() : null,
+    ]);
+    return current() ? settled : outcome('superseded', intent.operation_id);
   }
 
-  async receipt() {
-    const operationId = this.pending;
-    const epoch = this.launchEpoch;
-    if (!operationId) return;
-    try {
-      const result = operation(await this.json('/api/v1/desktop/setup/operations/' + operationId));
-      if (this.pending !== operationId || result.operation_id !== operationId || this.launchEpoch !== epoch) return;
-      if (result.state === 'outcome_unknown' && this.launchOperation === operationId) this.launchOperation = null;
-      if (['completed', 'refused'].includes(result.state)) {
-        if (result.state === 'completed') {
-          this.returnFocus(operationId);
-          if (this.operationError?.operationId === operationId) this.operationError = null;
-        } else if (['auth.select', 'auth.switch'].includes(result.action) && ['none', 'operation_expired'].includes(result.reason)) {
-          this.returnFocus(operationId, true);
-        }
-        this.remember(null);
-        if (this.launchOperation === operationId) this.launchOperation = null;
-        if (this.intent?.operationId === operationId) this.intent.confirmed = result.state === 'completed';
-        const deliberate = this.intent?.confirmed === true && this.value?.next_task !== this.intent.task;
-        if (deliberate || result.state === 'refused') this.intent = null;
-        if (result.state === 'refused') {
-          if (this.providerContinuation?.replaceOperation === operationId) this.providerContinuation = null;
-          this.operationFeedback(operationId, result.action, result.reason);
-        }
-        this.notify(null, deliberate);
-      }
-    } catch {
-      if (this.pending !== operationId || this.launchEpoch !== epoch) return;
+  unconfirmed(operationId) {
+    if (this.pending === operationId) {
       if (this.launchOperation === operationId) this.launchOperation = null;
       this.notify('operation_unconfirmed');
     }
+    return outcome('unconfirmed', operationId, 'operation_unconfirmed');
+  }
+
+  async receipt(operationId = this.pending, current = presentationGuard(this)) {
+    if (!operationId) return outcome('not-dispatched', null, 'operation_unavailable');
+    let result;
+    try { result = operation(await this.json('/api/v1/desktop/setup/operations/' + operationId)); }
+    catch { return current() ? this.unconfirmed(operationId) : outcome('superseded', operationId); }
+    if (!current()) return outcome('superseded', operationId);
+    if (result.operation_id !== operationId) return this.unconfirmed(operationId);
+    if (result.state === 'outcome_unknown' && this.launchOperation === operationId) this.launchOperation = null;
+    if (['completed', 'refused'].includes(result.state) && this.pending === operationId) {
+      const completed = result.state === 'completed';
+      if (completed) {
+        this.returnFocus(operationId);
+        if (this.operationError?.operationId === operationId) this.operationError = null;
+      } else if (['auth.select', 'auth.switch'].includes(result.action) && ['none', 'operation_expired'].includes(result.reason)) {
+        this.returnFocus(operationId, true);
+      }
+      this.remember(null);
+      if (this.launchOperation === operationId) this.launchOperation = null;
+      const intent = this.intent?.operationId === operationId ? this.intent : null;
+      if (intent) intent.confirmed = completed;
+      const deliberate = intent?.confirmed === true && this.value?.next_task !== intent.task;
+      if (intent && (deliberate || !completed)) this.intent = null;
+      if (!completed) {
+        if (this.providerContinuation?.replaceOperation === operationId) this.providerContinuation = null;
+        this.operationFeedback(operationId, result.action, result.reason);
+      }
+      this.notify(null, deliberate);
+    }
+    const state = result.state === 'waiting' ? 'accepted' : result.state === 'outcome_unknown' ? 'unconfirmed' : result.state;
+    return outcome(state, operationId, result.reason === 'none' ? null : result.reason);
   }
 
   async reconcile(selectedOperation = null) {
-    if (selectedOperation !== null && (!UUID.test(selectedOperation)
-      || !this.value?.pending_operations.some(value => value.operation_id === selectedOperation))) throw Error('operation_unavailable');
     const operationId = selectedOperation ?? (this.pending || this.value?.pending_operations[0]?.operation_id);
-    if (!this.connected || !operationId) return;
-    this.notify();
-    try {
-      await this.json('/api/v1/desktop/setup/operations/' + operationId + '/reconcile', {});
-      await this.receipt();
-    } catch { this.notify('operation_unconfirmed'); }
+    if (!this.connected || !operationId || selectedOperation !== null && (!UUID.test(selectedOperation)
+      || !this.value?.pending_operations.some(value => value.operation_id === selectedOperation))) {
+      return outcome('not-dispatched', operationId ?? null, 'operation_unavailable');
+    }
+    const current = presentationGuard(this);
+    try { await this.json('/api/v1/desktop/setup/operations/' + operationId + '/reconcile', {}); }
+    catch { return current() ? this.unconfirmed(operationId) : outcome('superseded', operationId); }
+    if (!current()) return outcome('superseded', operationId);
+    return this.receipt(operationId, current);
   }
 
   async launchBrowser(explicit = false, selectedOperation = null) {
-    if (!this.openBrowser || !this.connected) return;
+    if (!this.openBrowser || !this.connected) return outcome('not-dispatched', selectedOperation, 'browser_unavailable');
     if (this.value?.authority_recovery !== undefined) {
       this.launchOperation = null;
-      if (explicit) throw Error('browser_unavailable');
-      return;
+      return outcome('not-dispatched', selectedOperation, 'browser_unavailable');
     }
     if (this.launching) {
       if (!explicit && this.launchOperation) this.launchRequested = true;
-      return;
+      return outcome('not-dispatched', selectedOperation, 'operation_pending');
     }
     const selected = explicit && this.value?.pending_operations.find(item => item.operation_id === selectedOperation);
-    if (explicit && (!UUID.test(selectedOperation ?? '') || !selected) || !explicit && selectedOperation !== null) throw Error('browser_unavailable');
+    if (explicit && (!UUID.test(selectedOperation ?? '') || !selected) || !explicit && selectedOperation !== null) {
+      return outcome('not-dispatched', selectedOperation, 'browser_unavailable');
+    }
     const operationId = explicit ? selectedOperation : this.launchOperation;
-    if (!operationId) return;
-    const epoch = this.launchEpoch, journey = this.value?.journey_id, generation = this.generation;
+    if (!operationId) return outcome('not-dispatched', null, 'browser_unavailable');
+    const epoch = this.launchEpoch, journey = this.value?.journey_id;
+    const presented = presentationGuard(this);
     const authChild = explicit && this.value?.authentication?.browser_operation_id === operationId;
-    const stillSelected = () => this.value?.journey_id === journey && this.generation === generation
+    const stillSelected = () => this.value?.journey_id === journey
       && this.value?.pending_operations.some(item => item.operation_id === operationId && item.action === selected.action)
       && (!authChild || this.value?.authentication?.browser_operation_id === operationId && this.value.authentication.actions.open_browser);
-    const current = () => this.connected && this.launchEpoch === epoch
+    const current = () => presented()
       && this.value?.authority_recovery === undefined
       && (explicit ? stillSelected() : this.launchOperation === operationId);
     this.launching = true;
@@ -652,25 +697,30 @@ export class DesktopSetupClient {
     this.notify();
     try {
       const opened = await this.openBrowser(this, operationId, undefined, current);
-      if (opened) this.markLaunch(operationId, 'launch');
-      if (opened && this.connected && this.focusIntent?.epoch === epoch && this.focusIntent.operationId === operationId) {
+      // The receipt or selected child can advance while the native launch is returning.
+      // Its exact focus guard separately handles a verified owner transition.
+      if (opened && presented()) this.markLaunch(operationId, 'launch');
+      if (opened && presented() && this.focusIntent?.epoch === epoch && this.focusIntent.operationId === operationId) {
         this.focusIntent.opened = true;
         this.returnFocus();
       }
-      if (!current()) return;
+      if (!current()) return outcome('superseded', operationId);
       if (opened) {
         if (this.launchOperation === operationId) { this.launchOperation = null; this.notify(); }
       }
       else if (explicit) this.notify('browser_preparing');
+      return outcome('accepted', operationId);
     } catch (error) {
-      if (!current()) return;
+      if (!current()) return outcome('superseded', operationId);
       this.focusIntent = null;
       if (this.launchOperation === operationId) this.launchOperation = null;
       const reason = error === 'chrome_unavailable' || error?.message === 'chrome_unavailable' ? 'chrome_unavailable' : 'browser_unavailable';
       this.operationFeedback(operationId, this.value?.pending_operations.find(value => value.operation_id === operationId)?.action
         ?? (this.intent?.operationId === operationId ? this.intent.action : null), reason);
       this.notify();
+      return outcome('unconfirmed', operationId, reason);
     } finally {
+      if (this.launchEpoch === epoch && this.launchOperation === operationId && !presented()) this.launchOperation = null;
       this.launching = false;
       if (this.connected && this.launchOperation && (this.launchRequested || this.launchEpoch !== epoch)) void this.launchBrowser();
     }
@@ -684,6 +734,8 @@ export class DesktopSetupClient {
     this.launchOperation = null;
     this.recoverySignIn = null;
     this.providerContinuation = null;
+    this.protectedOpening = null;
+    this.protectedLaunchError = null;
     this.focusIntent = null;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;

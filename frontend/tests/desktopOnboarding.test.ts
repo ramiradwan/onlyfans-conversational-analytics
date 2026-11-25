@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DesktopState } from '../onboarding/client.js';
+import type { DesktopInteractionOutcome, DesktopState } from '../onboarding/client.js';
 import { desktopFixture } from './desktopOnboardingFixture';
 
 const mock = vi.hoisted(() => ({ construct: vi.fn() }));
@@ -13,8 +13,9 @@ afterEach(() => { sessionStorage.clear(); });
 async function setup() {
   let publish!: (state: DesktopState) => void;
   const current = desktopFixture().api.getState();
-  const client = { connect: vi.fn(async () => publish(current)), stop: vi.fn(), act: vi.fn(async () => {}),
-    launchBrowser: vi.fn(async () => {}), reconcile: vi.fn(async () => {}) };
+  const accepted: DesktopInteractionOutcome = { state: 'accepted', operationId: null, reason: null };
+  const client = { connect: vi.fn(async () => publish(current)), stop: vi.fn(), act: vi.fn(async () => accepted),
+    launchBrowser: vi.fn(async () => accepted), reconcile: vi.fn(async () => accepted) };
   mock.construct.mockImplementation((options: { receive(state: DesktopState): void }) => { publish = options.receive; return client; });
   const { desktopOnboardingApi: api } = await import('../src/services/desktopOnboarding');
   return { api, client, current, publish: (state: DesktopState) => publish(state) };
@@ -62,8 +63,10 @@ describe('native coordinator adapter', () => {
     const h = await setup();
     sessionStorage.setItem('desktop-presentation', h.current.snapshot!.generation);
     const unsubscribe = h.api.subscribe(vi.fn());
-    h.client.act.mockImplementation(async () => h.publish({ ...h.current, error: 'browser_unavailable' }));
-    await expect(h.api.begin('activation.review')).rejects.toThrow('browser_unavailable');
+    const outcome: DesktopInteractionOutcome = { state: 'unconfirmed', operationId: 'activation', reason: 'browser_unavailable' };
+    h.client.act.mockResolvedValue(outcome);
+    h.publish({ ...h.current, error: 'profile_mismatch' });
+    await expect(h.api.begin('activation.review')).resolves.toEqual(outcome);
     expect(h.client.act).toHaveBeenCalledExactlyOnceWith('activation.review', {});
     expect(h.client.launchBrowser).not.toHaveBeenCalled();
     unsubscribe();

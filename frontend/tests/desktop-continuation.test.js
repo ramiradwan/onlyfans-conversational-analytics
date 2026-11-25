@@ -266,3 +266,9 @@ it('clicks a verified provider in ceremony replacement and prepared source conti
   expect(busy()).toEqual(['default']);
   settle(); await Promise.resolve();
 });
+
+it('opens the dashboard after current readiness supersedes an old action refusal', () => {
+  authenticate();
+  publish(ready(), { error: 'operation_expired', failedAction: 'browser.pair' });
+  expect(replace).toHaveBeenCalledExactlyOnceWith('/');
+});

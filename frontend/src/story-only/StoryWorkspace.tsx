@@ -629,13 +629,15 @@ function createDriver(journey: StoryJourneyName, continuation?: DashboardContinu
   };
   let desktopActionError: string | null = null;
   const desktopActions: Array<{ action: string; provider?: string }> = [];
+  const accepted = { state: 'accepted' as const, operationId: null, reason: null };
   const onboarding: DesktopOnboardingApi = { getState: () => desktop, subscribe: listener => {
     desktopListeners.add(listener); return () => { desktopListeners.delete(listener); };
   },
     begin: async (action, options) => {
       desktopActions.push({ action, ...options });
       if (desktopActionError) throw new Error(desktopActionError);
-    }, reconcile: async () => {}, openBrowser: async () => {} };
+      return accepted;
+    }, reconcile: async () => accepted, openBrowser: async () => accepted };
   let hold = new URLSearchParams(location.search).has('transitions');
   let readinessHeld = hold;
   const initialDesktop = desktop.snapshot!;

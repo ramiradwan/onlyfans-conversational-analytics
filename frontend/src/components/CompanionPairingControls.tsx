@@ -16,7 +16,7 @@ import {
   type CompanionPairingApi,
   type CompanionPairingStatus,
 } from '../services/companionPairingApi';
-import { desktopOnboardingApi, selectBrowserFeedback, type DesktopOnboardingApi } from '../services/desktopOnboarding';
+import { desktopInteractionFailure, desktopOnboardingApi, selectBrowserFeedback, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import { bridgeTransportStore } from '../store/transportStore';
 import {
   extensionConnection,
@@ -179,7 +179,10 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
     openingRef.current = true;
     setOpening(true);
     setEntryError(null);
-    try { await onboarding.begin('browser.pair'); }
+    try {
+      const failure = desktopInteractionFailure(await onboarding.begin('browser.pair'));
+      if (failure) throw Error(failure);
+    }
     catch { setEntryError('The browser connection request could not be opened.'); }
     finally { openingRef.current = false; setOpening(false); }
   };

@@ -55,6 +55,11 @@ export interface DesktopState {
   recoverySignInPending?: boolean;
   continuingProvider?: SignInProvider | null;
 }
+export interface DesktopInteractionOutcome {
+  state: 'not-dispatched' | 'accepted' | 'completed' | 'refused' | 'unconfirmed' | 'superseded';
+  operationId: string | null;
+  reason: string | null;
+}
 export class DesktopSetupClient {
   constructor(options: { generation: string; receive(state: DesktopState): void;
     openBrowser?: (client: DesktopSetupClient, operationId: string, invoke?: (code: string, presentation?: string) => Promise<unknown>, current?: () => boolean) => Promise<boolean>;
@@ -67,9 +72,9 @@ export class DesktopSetupClient {
   connect(): Promise<void>;
   wake(): void;
   act(action: string, options?: { provider?: SignInProvider; replace_ceremony?: true; recover_authority?: true },
-    continued?: { continueProvider?: SignInProvider; until?: number } | null): Promise<void>;
-  reconcile(selectedOperation?: string): Promise<void>;
-  launchBrowser(explicit?: boolean, selectedOperation?: string): Promise<void>;
-  launchProtectedBrowser(): Promise<void>;
+    continued?: { continueProvider?: SignInProvider; until?: number } | null): Promise<DesktopInteractionOutcome>;
+  reconcile(selectedOperation?: string): Promise<DesktopInteractionOutcome>;
+  launchBrowser(explicit?: boolean, selectedOperation?: string): Promise<DesktopInteractionOutcome>;
+  launchProtectedBrowser(): Promise<DesktopInteractionOutcome>;
   stop(): void;
 }
