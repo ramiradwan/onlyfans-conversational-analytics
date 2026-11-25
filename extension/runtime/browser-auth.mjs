@@ -64,12 +64,14 @@ export function createBrowserAuth({ chromeApi, hostedOrigin, now = Date.now, onR
       || payload.extension_id !== chromeApi.runtime.id || typeof hostedOrigin !== 'string'
       || payload.creator_account_id === null) throw Error('authentication_unavailable');
     const ceremony = payload.ceremony, origin = new URL(hostedOrigin);
+    const entryPrefix = hostedOrigin + '/onboarding/browser-ceremonies/';
+    const entryReference = ceremony.entry_url.slice(entryPrefix.length).replace(/\/passkey-enrollment$/u, '');
     if (origin.protocol !== 'https:' || origin.origin !== hostedOrigin || origin.username || origin.password
       || ceremony.completion.mode !== 'extension-auth-flow'
       || ceremony.completion.return_uri !== `https://${chromeApi.runtime.id}.chromiumapp.org/${PATH}`
       || chromeApi.identity?.getRedirectURL(PATH) !== ceremony.completion.return_uri
-      || !ceremony.entry_url.startsWith(`${hostedOrigin}/onboarding/browser-ceremonies/`)
-      || !TOKEN.test(ceremony.entry_url.slice(`${hostedOrigin}/onboarding/browser-ceremonies/`.length))
+      || !ceremony.entry_url.startsWith(entryPrefix)
+      || !TOKEN.test(entryReference)
       || !TOKEN.test(ceremony.attempt_id)) throw Error('authentication_unavailable');
     const expires_at = Math.floor(Math.min(payload.task.expires_at * 1000, Date.parse(ceremony.expires_at)));
     if (expires_at <= now() || expires_at - now() > 1800000) throw Error('task_expired');

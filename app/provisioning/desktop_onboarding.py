@@ -33,10 +33,11 @@ class ProvisioningSetupOwner:
     automatic_finalization = True
 
     def __init__(self, store, *, browser_tasks, ceremonies, initial, registered, key,
-                 finalize, completion_ready, completed=lambda: None, source_replacement_clients=None):
+                 finalize, completion_ready, completed=lambda: None, source_replacement_clients=None, account_passkeys=None):
         self.store, self.browser_tasks, self.ceremonies = store, browser_tasks, ceremonies
         self.initial, self.registered, self.key = initial, registered, key
         self.finalize, self.completion_ready, self.completed = finalize, completion_ready, completed
+        self.account_passkeys = account_passkeys
         self.journeys = OnboardingJourneyStore(store)
         self.contexts = InstallationContinuationStore(store)
         self.sources = SetupSourceLifecycle(store, self.journeys, self.contexts)
@@ -398,14 +399,15 @@ class ProvisioningSetupOwner:
     def observe(self, operation):
         scope = json.loads(operation["owner_scope_json"])
         if operation["action"] == "browser.access":
-            observed = self.browser_tasks.progress(operation["journey_id"])
+            observed = (self.browser_tasks.read(operation["journey_id"], operation_id=operation["operation_id"])
+                if scope.get("browser_recheck") is not None else self.browser_tasks.progress(operation["journey_id"]))
             if observed is not None and observed["state"] in {"ready", "paused"}:
                 return OperationResult("completed")
             if operation["expires_at"] <= self.store._now().timestamp():
                 # This task owns browser presentation only. Its expiry cannot
                 # retire or replace a protected installation/account operation.
                 return OperationResult("refused", "operation_expired")
-        elif operation["action"] == "setup.finalize" and self._finalized(scope):
+        elif operation["action"] == "setup.finalize" and self._finalized(scope, operation):
             return OperationResult("completed")
         elif operation["action"] == "account.connect":
             replacement = scope.get("source_replacement")
@@ -465,7 +467,12 @@ class ProvisioningSetupOwner:
         facts = local_setup_facts(self.store, journey={"kind": journey.kind, "state": journey.state})
         return creator if facts["installation"] == "verified" else None
 
-    def _finalized(self, scope):
+    def _finalized(self, scope, operation):
+        return self._connection_finalized(scope) and (
+            self.account_passkeys is None or not self.account_passkeys.pending_adoption(operation)
+        )
+
+    def _connection_finalized(self, scope):
         if not self.completion_ready():
             return False
         return any((binding.installation_id, binding.creator_account_id, binding.association_request_id) == (
@@ -473,6 +480,10 @@ class ProvisioningSetupOwner:
             for binding in self.store.authorized_account_bindings())
 
     def automatic_recovery(self, operation):
+        if operation["action"] == "browser.access":
+            return json.loads(operation["owner_scope_json"]).get("browser_recheck") is not None
+        if operation["action"] == "setup.finalize" and self.account_passkeys is not None:
+            return self.account_passkeys.pending_adoption(operation)
         if operation["action"].startswith("auth."):
             return self.ceremonies is not None and self.ceremonies.authentication is not None
         if operation["action"] == "account.confirm":
@@ -822,6 +833,10 @@ class ProvisioningSetupOwner:
         if observed is not None:
             return observed
         if operation["action"] == "browser.access":
+            recheck = json.loads(operation["owner_scope_json"]).get("browser_recheck")
+            if recheck is not None:
+                ready = await self._prepare_browser_recheck(operation, recheck)
+                return OperationResult("waiting") if ready else OperationResult("refused", "operation_unconfirmed")
             self.browser_tasks.prepare(operation, "browser.access")
             if not reconcile:
                 self._prepare_missing_key(operation["operation_id"])
@@ -881,14 +896,21 @@ class ProvisioningSetupOwner:
             self._guard(operation)
             if self.store._now().timestamp() >= operation["expires_at"]:
                 return OperationResult("refused", "operation_expired")
-            reason = await self._effects.run(self.finalize,
-                association_request_id=scope["association_request_id"],
-                detected_creator_account_id=scope["creator_account_id"], reported_platform_creator_id=None,
-                **({"trusted_journey_id": scope["source_journey_id"]} if scope["journey_kind"] == "registered-continuation" else {}),
-                journey_id=scope["source_journey_id"])
-            if reason is not None:
-                return OperationResult("refused", "authority_unavailable")
-            if self._finalized(scope):
+            if not self._connection_finalized(scope):
+                reason = await self._effects.run(self.finalize,
+                    association_request_id=scope["association_request_id"],
+                    detected_creator_account_id=scope["creator_account_id"], reported_platform_creator_id=None,
+                    **({"trusted_journey_id": scope["source_journey_id"]} if scope["journey_kind"] == "registered-continuation" else {}),
+                    journey_id=scope["source_journey_id"])
+                if reason is not None:
+                    return OperationResult("refused", "authority_unavailable")
+            if self.account_passkeys is not None:
+                await self._effects.run(
+                    self.account_passkeys.adopt_after_connect, operation, scope,
+                    authorize=lambda connection=None: self._guard(operation, connection=connection),
+                    journey_id=operation["journey_id"],
+                )
+            if self._finalized(scope, operation):
                 return OperationResult("completed")
             return OperationResult("outcome_unknown", "operation_unconfirmed")
         return OperationResult("refused", "authority_unavailable")
@@ -1003,6 +1025,29 @@ class ProvisioningSetupOwner:
                 self.browser_tasks.withdraw_preparing(operation["operation_id"])
         except Exception:
             pass
+
+    async def _prepare_browser_recheck(self, operation, recheck):
+        def authorize(connection=None):
+            if connection is None:
+                with self.store.database.read() as current:
+                    return authorize(current)
+            self._read_guard({"operation_id": recheck["parent_operation_id"]}, connection=connection)
+            row = connection.execute("SELECT o.state,o.owner_scope_json,p.expires_at FROM desktop_setup_operations o "
+                "JOIN desktop_presentations p ON p.generation=o.generation AND p.stage='setup' AND p.state='active' "
+                "WHERE o.operation_id=? AND p.journey_id=o.journey_id", (operation["operation_id"],)).fetchone()
+            if (row is None or row["state"] not in {"accepted", "waiting", "outcome_unknown"}
+                    or row["owner_scope_json"] != operation["owner_scope_json"]
+                    or min(row["expires_at"], operation["expires_at"]) <= self.store._now().timestamp()):
+                raise HostedGrantUnavailable("Browser recheck presentation changed")
+
+        with self.store.database.read() as connection:
+            prepared = connection.execute("SELECT 1 FROM desktop_browser_tasks WHERE operation_id=?",
+                (operation["operation_id"],)).fetchone()
+        if prepared is None:
+            if not await self.ceremonies.authentication.retire_for_browser_recheck(recheck, authorize=authorize):
+                return False
+            self.browser_tasks.prepare(operation, "browser.access")
+        return True
 
     def _read_guard(self, operation, connection=None):
         """Retained proof reads may settle an expired presentation, never renew it."""

@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/proof-challenge-request.schema.json",
+  "title": "Account passkey installation proof challenge request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "target"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:account-passkey-installation-proof:v1"
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "enrollment-begin"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/enrollment-begin"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "enrollment-finish"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/enrollment-finish"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "enrollment-receipt"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/enrollment-receipt"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "enrollment-cancel"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/enrollment-cancel"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "binding-read"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/binding-read"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "initial-local-access"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/initial-local-access"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "withdrawal-ack"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/withdrawal-ack"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

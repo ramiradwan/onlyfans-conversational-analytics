@@ -37,12 +37,15 @@ try {
   let replacingCeremony = false;
   let provider = null;
   let finished = false;
+  let runtimeObserved = false;
   let chromeAvailable = false, chromeScope = null, chromeCheck = 0;
   const actionScope = state => {
     const value = state.snapshot;
     return state.connected && value ? JSON.stringify([value.generation, value.journey_id, value.next_task,
       value.authentication?.operation_id, value.authentication?.authentication_attempt?.authentication_attempt_id]) : null;
   };
+  let passkeyDeferredFor = null;
+  let passkeyFeedback = null;
   const beginAction = (name) => {
     const owner = { scope: actionScope(current) };
     activeAction = owner; acting = name; render();
@@ -81,8 +84,13 @@ try {
       && current.snapshot.next_task === 'complete' && current.snapshot.local_ready === true
       && authentication?.checked === true && authentication.authenticated === true
       && !authentication.busy && !authentication.error;
+    const passkey = current.connected && passkeyFeedback?.generation === current.snapshot?.generation
+      && passkeyFeedback?.operation === current.snapshot?.decision?.operation_id
+      ? passkeyFeedback : null;
     renderSetup(document, { ...current, choosingAccount, acting, provider, authentication, continuing, chromeAvailable, replacingCeremony,
-      savedAuthorizationExpired: entry === 'authorization-expired' });
+      savedAuthorizationExpired: entry === 'authorization-expired',
+      passkeyDeferred: passkeyDeferredFor !== null && passkeyDeferredFor === current.snapshot?.decision?.operation_id,
+      passkeyMessage: passkey?.message, passkeySupportRef: passkey?.supportRef });
     if (continuing) {
       finished = true;
       location.replace('/');
@@ -106,6 +114,10 @@ try {
       || current.continuingProvider && state.pending === current.pending)) provider = null;
     const restored = current.snapshot?.authority_recovery && state.connected && !state.snapshot?.authority_recovery;
     current = state;
+    if (client.session?.stage === 'runtime' && state.connected && !runtimeObserved) {
+      runtimeObserved = true;
+      checkSavedData();
+    }
     if (restored && client.session?.stage === 'runtime') { void enrollment.check(); render(); return; }
     render();
     if (client.session?.stage === 'runtime' && state.connected && !state.snapshot?.authority_recovery
@@ -203,6 +215,49 @@ try {
         client.notify(error === 'chrome_unavailable' ? 'chrome_unavailable' : 'browser_unavailable');
       }
     } finally { endAction(owner); }
+  });
+  document.getElementById('account-passkey-later').addEventListener('click', () => {
+    if (acting || !current.connected || current.snapshot?.account_passkey !== 'available') return;
+    passkeyDeferredFor = current.snapshot.decision.operation_id;
+    passkeyFeedback = null;
+    render();
+    document.getElementById('task-action').focus();
+  });
+  document.getElementById('account-passkey-create').addEventListener('click', async () => {
+    const value = current.snapshot;
+    if (acting || !current.connected || value?.account_passkey !== 'available' || !value.decision) return;
+    passkeyFeedback = null;
+    const owner = beginAction('passkey.create');
+    const presented = presentationGuard(client);
+    let outcome = 'unavailable';
+    let supportRef;
+    try {
+      const result = await client.json('/api/v1/desktop/setup/passkey', {
+        generation: value.generation, revision: value.revision, scope_digest: value.scope_digest,
+      });
+      outcome = result?.outcome;
+      if (outcome === 'unavailable' && typeof result.support_ref === 'string'
+          && /^[A-Za-z0-9_-]{43}$/u.test(result.support_ref)) supportRef = result.support_ref;
+    } catch { /* The next explicit action can check this attempt's result. */ }
+    finally {
+      if (!finished && activeAction === owner && presented()) {
+        const messages = {
+          cancelled: 'Passkey setup was cancelled.',
+          permission_required: 'Allow Dipsy to use passkeys in Windows Settings, then try again.',
+          foreground_required: 'Bring Dipsy to the front, then try again.',
+          credential_unavailable: 'Windows Hello could not find a passkey for this account.',
+        };
+        passkeyFeedback = {
+          generation: value.generation,
+          operation: value.decision.operation_id,
+          supportRef,
+          message: outcome === 'created' ? 'Passkey created.'
+            : Object.hasOwn(messages, outcome) ? messages[outcome] : 'Dipsy couldn’t confirm passkey setup. Try again or finish later.',
+        };
+        client.wake();
+      }
+      endAction(owner);
+    }
   });
   document.getElementById('local-authenticate').addEventListener('click', () => { void enrollment.authenticate(); });
   const onWake = () => {

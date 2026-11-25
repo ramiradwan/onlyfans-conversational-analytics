@@ -2,7 +2,7 @@ import { exact, isTask, UUID } from '../../shared/browser-tasks/wire.mjs';
 
 const browserActions = { 'browser-access': 'browser.access', 'finish-setup': 'browser.pair' };
 const authenticationActions = ['account.connect', 'auth.select', 'auth.switch'];
-const recoverableBrowserReasons = ['chrome_unavailable', 'browser_unavailable', 'extension_unavailable', 'profile_mismatch',
+const recoverableBrowserReasons = ['chrome_unavailable', 'browser_unavailable', 'browser_recheck_required', 'extension_unavailable', 'profile_mismatch',
   'account_mismatch', 'browser_needs_account', 'browser_needs_consent', 'browser_needs_permission'];
 
 /** Select only the operation that owns the visible setup task. Never guess from pending order. */

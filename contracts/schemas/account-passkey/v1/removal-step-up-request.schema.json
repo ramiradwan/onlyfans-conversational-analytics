@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/removal-step-up-request.schema.json",
+  "title": "Browser account passkey exact Entra action request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "attempt_id"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:account-passkey-hosted:v1"
+    },
+    "attempt_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    }
+  }
+}

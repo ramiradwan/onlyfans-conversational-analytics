@@ -44,7 +44,7 @@ function isCeremony(value) {
   return exact(value, ['entry_url', 'ceremony_id', 'attempt_id', 'completion', 'expires_at',
     ...(value?.preparation_recovery === true ? ['preparation_recovery'] : [])])
     && typeof value.entry_url === 'string' && value.entry_url.length <= 2048
-    && /^https:\/\/[^/?#@]+\/onboarding\/browser-ceremonies\/[A-Za-z0-9_-]{43}$/u.test(value.entry_url)
+    && /^https:\/\/[^/?#@]+\/onboarding\/browser-ceremonies\/[A-Za-z0-9_-]{43}(?:\/passkey-enrollment)?$/u.test(value.entry_url)
     && /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(value.ceremony_id)
     && /^[A-Za-z0-9_-]{43}$/u.test(value.attempt_id)
     && typeof value.expires_at === 'string' && value.expires_at.length <= 40 && Number.isFinite(Date.parse(value.expires_at))

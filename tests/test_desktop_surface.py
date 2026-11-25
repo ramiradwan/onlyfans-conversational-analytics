@@ -75,11 +75,37 @@ def test_support_projection_preserves_closed_setup_admission(compiled, tmp_path,
     for route in ("/onboarding", "/browser-tasks"):
         response = client.get(route)
         assert response.status_code == 200
-        assert '<template id="support-channels"><span data-channel="tiktok">https://help.example.com/a&amp;b</span></template>' in response.text
+        if route == "/onboarding":
+            assert '<template id="support-channels"><span data-channel="tiktok">https://help.example.com/a&amp;b</span></template>' in response.text
+        else:
+            assert "help.example.com" not in response.text
         assert "127.0.0.1" not in response.text
         assert "set-cookie" not in response.headers
         assert client.get(route + "?support=1").status_code == 400
     assert client.get("/static/dist/release.json").status_code == 404
+
+
+def test_enabling_passkeys_does_not_add_a_hosted_help_destination(compiled, tmp_path, monkeypatch):
+    from app.core.customer_release import DEVELOPMENT_CUSTOMER_RELEASE_ENV
+
+    client, _ = compiled
+    release = tmp_path / "release.json"
+    release.write_text(json.dumps({
+        "schema": "ofca-customer-release/v2",
+        "hosted_api_origin": "https://account.dipsy.fi",
+        "setup_transfer_receiver_url": "",
+        "authentication_providers": ["default"],
+        "account_passkey": {
+            "environment": "production", "rp_id": "dipsy.fi", "contract_revision": "1" * 40,
+            "trust": "{}", "trust_sha256": "2" * 64, "trust_sequence": 1,
+        },
+    }), encoding="utf-8")
+    monkeypatch.setenv(DEVELOPMENT_CUSTOMER_RELEASE_ENV, str(release))
+    response = client.get("/onboarding")
+    assert response.status_code == 200
+    assert "account.dipsy.fi" not in response.text
+    assert 'data-channel="account-passkey"' not in response.text
+    assert "set-cookie" not in response.headers
 
 
 @pytest.mark.parametrize("missing", ["manifest.json", "onboarding/index.html", "assets/setup.js"])

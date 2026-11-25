@@ -21,9 +21,11 @@ from app.security.initial_handoff import timestamp, valid_uuid7
 
 class BrowserCeremonies:
     def __init__(self, store, client, *, hosted_origin, decision_client=None, authentication_client=None,
-                 authentication_providers=("default",), wait_client=None, replacement_client=None):
+                 authentication_providers=("default",), wait_client=None, replacement_client=None,
+                 passkey_enrollment_enabled=False):
         self.store, self.client, self.hosted_origin = store, client, hosted_origin
         self.replacement_client = replacement_client
+        self.passkey_enrollment_enabled = passkey_enrollment_enabled
         from app.onboarding.decisions import DesktopDecisions
         self.decisions = None if decision_client is None else DesktopDecisions(store, self, decision_client)
         from app.onboarding.authentication import DesktopAuthentication
@@ -522,17 +524,23 @@ class BrowserCeremonies:
         """Read only nonauthorizing launch coordinates for the exact task."""
         # Each helper payload read asks for this, so it opens the store once.
         with self.store.database.read() as connection:
-            if self.authentication is not None and not self.authentication.can_open(operation_id, connection=connection):
-                return None
+            authentication_state = None
+            if self.authentication is not None:
+                authentication_state = self.authentication.open_state(operation_id, connection=connection)
+                if authentication_state is None:
+                    return None
             row = self.task_row(operation_id, connection=connection)
             if (row is None or row["entry_reference"] is None or row["presentation_state"] != "active"
                     or timestamp(row["provider_expires_at"]) <= self.store._now()
                     or self.replacement_reservation(row["operation_id"], row["hosted_operation_id"], connection=connection) is not None):
                 return None
             binding = json.loads(row["binding_json"])
-            recovery = (binding["purpose"] == "activate-complimentary" and self.authentication is not None
-                        and self.authentication.preparation_recovery(operation_id, connection=connection))
-        result = {"entry_url": browser_entry_url(self.hosted_origin, row["entry_reference"]),
+            purpose = binding["purpose"]
+            recovery = purpose == "activate-complimentary" and authentication_state == "admitted"
+            passkey_enrollment = (
+                self.passkey_enrollment_enabled and purpose == "connect-account" and authentication_state == "selected"
+            )
+        result = {"entry_url": browser_entry_url(self.hosted_origin, row["entry_reference"], passkey_enrollment=passkey_enrollment),
             "ceremony_id": row["ceremony_id"], "attempt_id": binding["attempt_id"],
             "completion": expected_completion(binding), "expires_at": row["provider_expires_at"]}
         if recovery:

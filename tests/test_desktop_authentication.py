@@ -155,13 +155,17 @@ async def test_lost_selection_reply_restart_reads_exact_child_without_resending(
 
 
 @pytest.mark.asyncio
-async def test_cancellation_fences_old_browser_task_and_retry_keeps_original_ceremony(auth):
+@pytest.mark.parametrize("passkey_enrollment", [False, True])
+async def test_cancellation_fences_old_browser_task_and_retry_keeps_original_ceremony(auth, passkey_enrollment):
     coordinator, ceremonies, authentication, client, parent, _, _ = auth
+    ceremonies.passkey_enrollment_enabled = passkey_enrollment
     operation, _ = accept(auth)
     assert (await authentication.execute(operation, authorize=authorized, read_guard=authorized, reconcile=False)).state == "waiting"
     entry = ceremonies.browser_entry(operation["operation_id"])
-    assert entry is not None and entry["ceremony_id"] == ceremonies.row(parent["operation_id"])["ceremony_id"]
-    assert "?" not in entry["entry_url"]
+    row = ceremonies.row(parent["operation_id"])
+    assert entry is not None and entry["ceremony_id"] == row["ceremony_id"]
+    expected = ceremonies.hosted_origin + "/onboarding/browser-ceremonies/" + row["entry_reference"]
+    assert entry["entry_url"] == expected + ("/passkey-enrollment" if passkey_enrollment else "")
     assert authentication.presentation(parent["journey_id"], "account.connect")["browser_operation_id"] == operation["operation_id"]
     cancellation, _ = accept(auth, "auth.cancel")
     assert (await authentication.execute(cancellation, authorize=authorized, read_guard=authorized, reconcile=False)).state == "completed"

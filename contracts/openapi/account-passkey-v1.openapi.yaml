@@ -1,0 +1,1517 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Dipsy account passkey v1",
+    "version": "1.0.0",
+    "description": "Hosted account authentication and proof-bound native enrollment and delivery."
+  },
+  "servers": [
+    {
+      "url": "https://account.dipsy.fi"
+    }
+  ],
+  "paths": {
+    "/v1/account-passkeys/native/proof-challenges": {
+      "post": {
+        "operationId": "issueAccountPasskeyInstallationProofChallengeV1",
+        "responses": {
+          "200": {
+            "description": "Uniform installation challenge.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/proof-challenge-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/account-passkey/v1/proof-challenge-request.schema.json"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account-passkeys/native/enrollment:begin": {
+      "post": {
+        "operationId": "beginAccountPasskeyEnrollmentV1",
+        "responses": {
+          "200": {
+            "description": "Exact operation outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/enrollment-begin-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/account-passkey/v1/enrollment-begin-request.schema.json"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account-passkeys/native/enrollment:finish": {
+      "post": {
+        "operationId": "finishAccountPasskeyEnrollmentV1",
+        "responses": {
+          "201": {
+            "description": "Exact operation outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/enrollment-result.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/account-passkey/v1/enrollment-finish-request.schema.json"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account-passkeys/native/enrollment:receipt": {
+      "post": {
+        "operationId": "readAccountPasskeyEnrollmentReceiptV1",
+        "responses": {
+          "200": {
+            "description": "Exact operation outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/enrollment-result.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/account-passkey/v1/enrollment-receipt-request.schema.json"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account-passkeys/native/enrollment:cancel": {
+      "post": {
+        "operationId": "cancelAccountPasskeyEnrollmentV1",
+        "responses": {
+          "200": {
+            "description": "Exact operation outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/enrollment-cancel-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/account-passkey/v1/enrollment-cancel-request.schema.json"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account-passkeys/native/binding:read": {
+      "post": {
+        "operationId": "readAccountPasskeyLocalBindingV1",
+        "responses": {
+          "200": {
+            "description": "Exact operation outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/local-binding-read-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/account-passkey/v1/local-binding-read-request.schema.json"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account-passkeys/native/local-access:issue": {
+      "post": {
+        "operationId": "issueAccountPasskeyInitialLocalAccessV1",
+        "responses": {
+          "200": {
+            "description": "Exact operation outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/initial-local-access-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/account-passkey/v1/initial-local-access-request.schema.json"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account-passkeys/native/withdrawal:ack": {
+      "post": {
+        "operationId": "ackAccountPasskeyLocalWithdrawalV1",
+        "responses": {
+          "200": {
+            "description": "Exact operation outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/local-withdrawal-ack-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/native-error.schema.json"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/account-passkey/v1/local-withdrawal-ack-request.schema.json"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account-passkeys/browser/sign-in:begin": {
+      "post": {
+        "operationId": "beginAccountPasskeySignInV1",
+        "responses": {
+          "200": {
+            "description": "Exact browser outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/hosted-begin-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/account-passkey/v1/hosted-begin-request.schema.json"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/account-passkeys/browser/sign-in:finish": {
+      "post": {
+        "operationId": "finishAccountPasskeySignInV1",
+        "responses": {
+          "200": {
+            "description": "Exact browser outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/hosted-finish-response.schema.json"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "required": true,
+                "description": "__Host-cccp-customer with Secure, HttpOnly, SameSite=Lax and Path=/, issued after verification.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/account-passkey/v1/hosted-finish-request.schema.json"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/account-passkeys/browser/credentials": {
+      "get": {
+        "operationId": "listAccountPasskeyCredentialsV1",
+        "responses": {
+          "200": {
+            "description": "Exact browser outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/credential-list-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Dipsy-Account-Passkey-Profile",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "urn:bridge-clean:account-passkey-hosted:v1"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+            }
+          }
+        ],
+        "security": [
+          {
+            "customerSession": []
+          }
+        ]
+      }
+    },
+    "/v1/account-passkeys/browser/removal:begin": {
+      "post": {
+        "operationId": "beginAccountPasskeyRemovalV1",
+        "responses": {
+          "200": {
+            "description": "Exact browser outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/removal-begin-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/account-passkey/v1/removal-begin-request.schema.json"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+            }
+          }
+        ],
+        "security": [
+          {
+            "customerSession": []
+          }
+        ]
+      }
+    },
+    "/v1/account-passkeys/browser/removal:step-up": {
+      "post": {
+        "operationId": "startAccountPasskeyRemovalStepUpV1",
+        "responses": {
+          "303": {
+            "description": "Redirect to the configured Entra authorization endpoint.",
+            "headers": {
+              "Location": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/account-passkey/v1/removal-step-up-request.schema.json"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+            }
+          }
+        ],
+        "security": [
+          {
+            "customerSession": []
+          }
+        ]
+      }
+    },
+    "/v1/account-passkeys/browser/removal:finish": {
+      "post": {
+        "operationId": "finishAccountPasskeyRemovalV1",
+        "responses": {
+          "200": {
+            "description": "Exact browser outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/removal-finish-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/account-passkey/v1/browser-error.schema.json"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/account-passkey/v1/removal-finish-request.schema.json"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+            }
+          }
+        ],
+        "security": [
+          {
+            "customerSession": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "customerSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-cccp-customer",
+        "description": "Current host-only customer session with exact account authority."
+      }
+    }
+  }
+}

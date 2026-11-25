@@ -14,9 +14,9 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS_ROOT = REPOSITORY_ROOT / "contracts"
 APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-APPROVED_SOURCE_COMMIT = "41061fc8c7e2148ecfda86531564a64e2f41bdef"
-APPROVED_SOURCE_TREE = "60620971820793872120a5abc16bfbae6f468982"
-APPROVED_SOURCE_MANIFEST_SHA256 = "605c147e2e1cd2b7aa866261aaad135008b1b16ae6bd1bb9cbfca17fb8df2b76"
+APPROVED_SOURCE_COMMIT = "40976d7134be4f2e37430078365aca03bac8a89b"
+APPROVED_SOURCE_TREE = "1278fb4224aca5bec4f9f586c1dceace73a72002"
+APPROVED_SOURCE_MANIFEST_SHA256 = "257b470e66a8ee922aac2dbd86bcb6f01a3f90e77a88aed533e6199d5de20263"
 SOURCE_MANIFEST = "contract-manifest.json"
 SOURCE_MANIFEST_EXPORT = "source-contract-manifest"
 SOURCE_MANIFEST_TARGET = f"{SOURCE_MANIFEST_EXPORT}/contract-manifest.json"
@@ -25,8 +25,8 @@ PUBLISHED_ROOTS = ("catalog", "openapi", "profiles", "schemas")
 # Only these additive inventories may replace reviewed previous bytes during
 # this pin migration. All released schemas, profiles and fixtures remain immutable.
 APPROVED_PREVIOUS_INVENTORIES = {
-    "catalog/contracts.yaml": "092c3d0a777e7567ba830b971f1b614e776e8c9d0be3ebe2de9daee9d45bde37",
-    "contract-manifest.json": "696f490f5967f8e278bc69d8ea00d79758de82b4a8f7f7e1a61bca221bf06914"
+    "catalog/contracts.yaml": "888d5f6f4ebd14587d621e62ddc14c2dd2a4357608a4475efd9022a61ec4df8f",
+    "contract-manifest.json": "605c147e2e1cd2b7aa866261aaad135008b1b16ae6bd1bb9cbfca17fb8df2b76"
 }
 
 EXPORT_SET = [
@@ -179,9 +179,16 @@ EXPECTED_PAIRING_VECTOR_FILES = frozenset(
         "vector.json",
     }
 )
-EXPECTED_FILE_COUNT = 1338
-EXPECTED_PUBLISHED_FILE_COUNT = 491
+EXPECTED_FILE_COUNT = 1380
+EXPECTED_PUBLISHED_FILE_COUNT = 533
 EXPECTED_PUBLISHED_PROFILES = (
+    "urn:bridge-clean:account-passkey-action-evidence:v1",
+    "urn:bridge-clean:account-passkey-enrollment:v1",
+    "urn:bridge-clean:account-passkey-hosted:v1",
+    "urn:bridge-clean:account-passkey-initial-local-access:v1",
+    "urn:bridge-clean:account-passkey-installation-proof:v1",
+    "urn:bridge-clean:account-passkey-local-binding:v1",
+    "urn:bridge-clean:account-passkey-local-withdrawal:v1",
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
     "urn:bridge-clean:bootstrap-recovery:v3",

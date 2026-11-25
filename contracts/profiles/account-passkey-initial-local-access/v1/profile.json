@@ -1,0 +1,43 @@
+{
+  "profile": "urn:bridge-clean:account-passkey-initial-local-access:v1",
+  "governing_adr": "docs/adr/0061-account-passkey-enrollment-and-independent-local-binding.md",
+  "messages": {
+    "initial-local-access-request": "schemas/account-passkey/v1/initial-local-access-request.schema.json",
+    "initial-local-access-response": "schemas/account-passkey/v1/initial-local-access-response.schema.json",
+    "initial-local-access-payload": "schemas/account-passkey/v1/initial-local-access-payload.schema.json"
+  },
+  "request_max_bytes": 24576,
+  "response_max_bytes": 16384,
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "jws": {
+    "alg": "ES256",
+    "typ": "urn:bridge-clean:account-passkey-initial-local-access:v1",
+    "issuer": "urn:bridge-clean:commercial-control-plane",
+    "audience": "urn:bridge-clean:local-brain:account-passkey-initial-local-access",
+    "purpose": "account-passkey-initial-local-access",
+    "payload_schema": "schemas/account-passkey/v1/initial-local-access-payload.schema.json",
+    "protected_header_exact_members": [
+      "alg",
+      "kid",
+      "typ"
+    ],
+    "canonical_json": "RFC8785",
+    "signature_encoding": "ieee-p1363-low-s"
+  },
+  "notes": "profiles/account-passkey-enrollment/v1/policy.md",
+  "claims_role": "single-use-initial-authorization-consumed-by-local-brain",
+  "max_seconds_from_verified_enrollment": 300,
+  "limit_to_original_source_expiry": true,
+  "proof_profile": "urn:bridge-clean:account-passkey-installation-proof:v1",
+  "record_digest": "lowercase-hex(SHA-256(exact-ASCII-compact-JWS))",
+  "trust_policy": {
+    "key_lookup": "immutable-pinned-per-purpose-trust-set-by-kid",
+    "at_issuance": "not_before-inclusive-retire_at-exclusive",
+    "transition": "verified-release-trust-set-increasing-sequence",
+    "rollback": "reject",
+    "production_usable_fixture_keys": false,
+    "manifest_schema": "schemas/account-passkey/v1/local-trust-set.schema.json",
+    "known_revocation": "reject-regardless-of-iat"
+  }
+}

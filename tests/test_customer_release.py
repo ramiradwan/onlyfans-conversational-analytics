@@ -121,6 +121,37 @@ def test_customer_release_loader_is_closed_over_exact_json_shape(tmp_path: Path)
         load_customer_release_config(path, require_hosted=True)
 
 
+@pytest.mark.parametrize(
+    "environment, rp_id, origin",
+    [
+        ("qa", "passkey-preview.dipsy.fi", "https://passkey-preview.dipsy.fi"),
+        ("production", "dipsy.fi", "https://account.dipsy.fi"),
+    ],
+)
+def test_passkey_descriptor_uses_a_contract_revision_without_embedded_schemas(
+    environment: str, rp_id: str, origin: str
+) -> None:
+    base = document(api=origin)
+    passkey = {
+        "environment": environment,
+        "rp_id": rp_id,
+        "contract_revision": "1" * 40,
+        "trust": "{}",
+        "trust_sha256": hashlib.sha256(b"{}").hexdigest(),
+        "trust_sequence": 1,
+    }
+    config = validate_customer_release_document({**base, "account_passkey": passkey})
+    assert config.account_passkey is not None
+    assert config.account_passkey.environment == environment
+    assert config.account_passkey.rp_id == rp_id
+    assert config.account_passkey.contract_revision == passkey["contract_revision"]
+    for field, value in (("candidate_manifest", "{}"), ("candidate_schemas", {})):
+        with pytest.raises(CustomerReleaseConfigurationError, match="account passkey release"):
+            validate_customer_release_document({
+                **base, "account_passkey": {**passkey, field: value},
+            })
+
+
 def test_support_channels_match_the_agent_vectors():
     vectors = json.loads((ROOT / "extension/tests/fixtures/support-channels.json").read_text(encoding="utf-8"))
     for vector in vectors:

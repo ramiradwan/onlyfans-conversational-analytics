@@ -115,13 +115,10 @@ class DesktopAuthentication:
         return operation_id if row is None else row["parent_operation_id"]
 
     def can_open(self, operation_id, *, connection=None):
-        return self._open_projection(operation_id, connection=connection) is not None
+        return self.open_state(operation_id, connection=connection) is not None
 
-    def preparation_recovery(self, operation_id, *, connection=None):
-        value = self._open_projection(operation_id, connection=connection)
-        return value is not None and value["state"] == "admitted"
-
-    def _open_projection(self, operation_id, *, connection=None):
+    def open_state(self, operation_id, *, connection=None):
+        """Read the current state of an exact authentication attempt that can open."""
         with (self.store.database.read() if connection is None else nullcontext(connection)) as connection:
             selected = connection.execute("SELECT * FROM desktop_authentication_commands WHERE operation_id=?",
                 (operation_id,)).fetchone()
@@ -139,7 +136,7 @@ class DesktopAuthentication:
         if (value["operation_id"], value["ceremony_id"]) != (request["operation_id"], request["ceremony_id"]):
             return None
         attempt = value["authentication_attempt"]
-        return value if (value["actions"]["open_browser"] and timestamp(value["expires_at"]) > self.store._now()
+        return value["state"] if (value["actions"]["open_browser"] and timestamp(value["expires_at"]) > self.store._now()
             and attempt is not None and attempt["authentication_attempt_id"] == request["authentication_attempt_id"]) else None
 
     def _request(self, parent, attempt=None, *, connection=None):
@@ -436,6 +433,49 @@ class DesktopAuthentication:
                 raise HostedGrantUnavailable("Authentication closure changed")
         events.publish()
         return dict(operation)
+
+    async def retire_for_browser_recheck(self, retry, *, authorize):
+        parent, operation_id = retry["parent_operation_id"], retry["operation_id"]
+        with self.store.database.read() as connection:
+            authorize(connection)
+            command = connection.execute("SELECT * FROM desktop_authentication_commands WHERE operation_id=?",
+                (operation_id,)).fetchone()
+            closure = connection.execute("SELECT task_id FROM desktop_authentication_closures WHERE operation_id=?",
+                (operation_id,)).fetchone()
+            if (command is None or command["parent_operation_id"] != parent
+                    or json.loads(command["request_json"])["authentication_attempt_id"] != retry["attempt_id"]
+                    or closure is not None and closure["task_id"] != retry["task_id"]):
+                raise HostedGrantUnavailable("Authentication recheck scope changed")
+        if closure is None:
+            # Recovery of a previously completed cancellation may outlive the
+            # helper. Only a verified current selected attempt needs a closure.
+            projection = await self.refresh(parent, authorize=authorize)
+            attempt = projection["authentication_attempt"]
+            if projection["state"] == "selected" and attempt is not None and attempt["authentication_attempt_id"] == retry["attempt_id"]:
+                self.close_for_task(retry["task_id"], retry["admission_generation"], authorize=authorize)
+                projection = await self.refresh(parent, authorize=authorize)
+        else:
+            projection = await self.refresh(parent, authorize=authorize)
+        attempt = projection["authentication_attempt"]
+        if (projection["state"] != "retired" or not projection["actions"]["select"]
+                or attempt is None or attempt["authentication_attempt_id"] != retry["attempt_id"]):
+            if projection["state"] == "selected" and attempt is not None and attempt["authentication_attempt_id"] == retry["attempt_id"]:
+                raise HostedGrantUnavailable("Authentication retirement is unconfirmed")
+            return False
+        with self.store.database.transaction() as connection:
+            authorize(connection)
+            current = connection.execute("SELECT projection_json FROM desktop_authentication_projections WHERE operation_id=?",
+                (parent,)).fetchone()
+            if current is None or current["projection_json"] != canonical(projection).decode():
+                raise HostedGrantUnavailable("Authentication projection changed")
+            connection.execute("UPDATE desktop_browser_tasks SET state='cancelled' WHERE task_id=? AND admission_generation=? "
+                "AND operation_id=? AND state IN ('pending','accepted','outcome_unknown')",
+                (retry["task_id"], retry["admission_generation"], operation_id))
+            if operation_id != parent:
+                connection.execute("UPDATE desktop_setup_operations SET state='refused',reason='none' WHERE operation_id=? "
+                    "AND state IN ('accepted','waiting','outcome_unknown')", (operation_id,))
+        events.publish()
+        return True
 
     @staticmethod
     def _closures(connection, parent):

@@ -105,6 +105,50 @@ def test_security_projection_rejects_newer_denial_or_counter_without_publish(tmp
     assert not (owner.root/RESTORE_JOURNAL_FILENAME).exists()
 
 
+@pytest.mark.parametrize('change', ['withdrawal', 'missing-fence', 'trust-sequence'])
+def test_authoritative_restore_refuses_incompatible_passkey_state(tmp_path, change):
+    owner = make_pair(tmp_path / 'live')
+    with owner.auth_database.transaction() as auth:
+        auth.execute("INSERT INTO account_passkey_trust_sequence VALUES('production',1)")
+        auth.execute(
+            """
+            INSERT INTO account_passkey_authority
+              (installation_id,rp_id,credential_id,subject,installation_key_id,
+               installation_key_jkt,creator_account_id,principal_id,external_issuer,
+               organization_id,binding_digest,binding_generation,binding_record,
+               withdrawal_generation,withdrawal_digest)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                owner.installation_id, 'dipsy.fi', 'credential', 'subject', 'key-id',
+                'key-thumbprint', 'creator', 'principal', 'issuer', 'organization', 'a' * 64, 6,
+                'binding-record' if change == 'withdrawal' else None,
+                None if change == 'withdrawal' else 7,
+                None if change == 'withdrawal' else 'b' * 64,
+            ),
+        )
+    manifest = create_authoritative_backup(owner, tmp_path / 'set')
+    assert verify_authoritative_backup(tmp_path / 'set') == manifest
+    with owner.auth_database.transaction() as auth:
+        if change == 'withdrawal':
+            auth.execute(
+                """
+                UPDATE account_passkey_authority
+                SET binding_record=NULL,withdrawal_generation=7,withdrawal_digest=?
+                """,
+                ('b' * 64,),
+            )
+        elif change == 'missing-fence':
+            auth.execute("DELETE FROM account_passkey_authority")
+        else:
+            auth.execute("UPDATE account_passkey_trust_sequence SET sequence=2")
+    before = owner.canonical_database.path.read_bytes()
+    with pytest.raises(SQLiteBackupError, match='authoritative_security_incompatible'):
+        restore_authoritative_backup(offline(owner), tmp_path / 'set')
+    assert owner.canonical_database.path.read_bytes() == before
+    assert not (owner.root / RESTORE_JOURNAL_FILENAME).exists()
+
+
 @pytest.mark.parametrize('role',['desktop','browser_task'])
 def test_actual_admission_consumption_refuses_older_restore_without_epoch_change(tmp_path,role):
     from uuid import uuid4

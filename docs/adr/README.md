@@ -8,6 +8,8 @@ Start from [the ADR template](template.md). Use the next number after the highes
 
 ## Accepted
 
+- [ADR 0060: Enroll one account passkey and verify local access independently](0060-one-account-passkey-and-independent-local-access.md)
+
 - [ADR 0059: Own optional worker execution through the installed launcher](0059-owned-optional-worker-lifetime.md)
 - [ADR 0058: Service an optional package through the normal desktop update](0058-normal-related-package-servicing.md)
 - [ADR 0057: Define optional local NLP computation and shared findings](0057-optional-local-nlp-contracts.md)

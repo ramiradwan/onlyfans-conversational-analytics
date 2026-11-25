@@ -289,14 +289,17 @@ class SavedDataOwner:
     installation_key_id: str
     installation_key_jkt: str
     organization_id: str
+    account_passkey_binding: str | None = None
 
     @property
     def binding(self) -> str:
-        return _secret_digest(json.dumps((
-            "saved-data-v1", self.credential_id, self.principal_id, self.creator_account_id,
-            self.installation_id, self.installation_key_id, self.installation_key_jkt,
-            self.organization_id,
-        ), separators=(",", ":")))
+        scope = (self.credential_id, self.principal_id, self.creator_account_id, self.installation_id,
+                 self.installation_key_id, self.installation_key_jkt, self.organization_id)
+        value = (
+            ("saved-data-v1", *scope) if self.account_passkey_binding is None else
+            ("account-passkey-saved-data-v1", *scope, self.account_passkey_binding)
+        )
+        return _secret_digest(json.dumps(value, separators=(",", ":")))
 
 
 @dataclass(frozen=True, slots=True)
@@ -2039,21 +2042,78 @@ class SQLiteAuthenticationStore:
         row = owners[0]
         owner = SavedDataOwner(row["credential_id"], row["principal_id"], row["creator_account_id"],
             row["installation_id"], row["installation_key_id"], row["installation_key_jkt"], row["organization_id"])
+        return owner if self._saved_data_scope_current(
+            connection, owner, external_issuer=row["external_issuer"], external_subject=row["external_subject"],
+        ) else None
+
+    def account_passkey_owner(
+        self, connection: sqlite3.Connection, *, creator_account_id: str, installation_id: str,
+        installation_key_jkt: str, credential_id: str, binding_digest: str,
+    ) -> tuple[SavedDataOwner, str]:
+        """Resolve the passkey's local owner from the grant committed by Connect."""
+        rows = connection.execute(
+            """
+            SELECT g.issuer,g.subject,g.organization_id,k.installation_key_id
+            FROM authorized_account_bindings a
+            JOIN authorized_account_binding_grants ag ON ag.creator_account_id=a.creator_account_id
+            JOIN verified_grant_references g ON g.reference_id=ag.grant_reference_id
+            JOIN installation_key_reference k ON k.singleton=1 AND k.activated_at IS NOT NULL
+            WHERE a.creator_account_id=? AND a.installation_id=? AND a.revoked_at IS NULL
+              AND g.grant_type=? AND g.creator_account_id=a.creator_account_id
+              AND g.installation_id=a.installation_id AND g.organization_id IS NOT NULL
+              AND g.installation_key_id=k.installation_key_id AND g.installation_key_jkt=k.installation_key_jkt
+              AND g.valid_from <= a.authorized_at AND a.authorized_at < g.expires_at
+              AND k.installation_key_jkt=?
+            """,
+            (creator_account_id, installation_id, CREATOR_ACCOUNT_BINDING, installation_key_jkt),
+        ).fetchall()
+        if len(rows) != 1:
+            raise AuthenticationStateError("Account passkey requires the committed creator connection")
+        row = rows[0]
+        owner = SavedDataOwner(
+            credential_id, row["subject"], creator_account_id, installation_id, row["installation_key_id"],
+            installation_key_jkt, row["organization_id"], account_passkey_binding=binding_digest,
+        )
+        if not self.account_passkey_owner_current(connection, owner, external_issuer=row["issuer"]):
+            raise AuthenticationStateError("Account passkey creator authority changed")
+        return owner, row["issuer"]
+
+    def account_passkey_owner_current(
+        self, connection: sqlite3.Connection, owner: SavedDataOwner, *, external_issuer: str,
+    ) -> bool:
+        account = connection.execute(
+            """
+            SELECT installation_id FROM authorized_account_bindings
+            WHERE creator_account_id=? AND revoked_at IS NULL
+            """,
+            (owner.creator_account_id,),
+        ).fetchone()
+        return bool(
+            account is not None and account["installation_id"] == owner.installation_id
+            and self._saved_data_scope_current(
+                connection, owner, external_issuer=external_issuer, external_subject=owner.principal_id,
+            )
+        )
+
+    def _saved_data_scope_current(
+        self, connection: sqlite3.Connection, owner: SavedDataOwner, *, external_issuer: str, external_subject: str,
+    ) -> bool:
+        """Keep the retained owner's latest authority and revocation checks shared."""
         account = connection.execute(
             "SELECT installation_id, revoked_at FROM authorized_account_bindings WHERE creator_account_id=?",
             (owner.creator_account_id,),
         ).fetchone()
         if account and (account["installation_id"] != owner.installation_id or account["revoked_at"]):
-            return None
+            return False
         scopes = (
             (RevocationScopeType.PRINCIPAL, owner.principal_id),
-            (RevocationScopeType.PRINCIPAL, row["external_subject"]),
+            (RevocationScopeType.PRINCIPAL, external_subject),
             (RevocationScopeType.CREATOR_ACCOUNT, owner.creator_account_id),
             (RevocationScopeType.INSTALLATION, owner.installation_id),
             (RevocationScopeType.WEBAUTHN_CREDENTIAL, owner.credential_id),
         )
         if any(self._scope_is_revoked(connection, RevocationKey(kind, value)) for kind, value in scopes):
-            return None
+            return False
         # Inspect the latest effective decision, even if it has since expired.
         # A role reduction or withdrawal must never uncover an older owner grant.
         now = _time_text(self._now())
@@ -2066,20 +2126,20 @@ class SQLiteAuthenticationStore:
             """, (owner.installation_id, kind, now, CREATOR_ACCOUNT_BINDING, owner.creator_account_id)).fetchall()
             if not rows or (len(rows) > 1 and (rows[0]["valid_from"], rows[0]["verified_at"]) ==
                             (rows[1]["valid_from"], rows[1]["verified_at"])):
-                return None
+                return False
             grant = _verified_grant_reference(rows[0])
             if (rows[0]["revoked_at"] is not None or self._grant_is_withdrawn(connection, grant)
-                or (grant.issuer, grant.subject) != (row["external_issuer"], row["external_subject"])
+                or (grant.issuer, grant.subject) != (external_issuer, external_subject)
                 or grant.organization_id != owner.organization_id
                 or (grant.installation_key_id, grant.installation_key_jkt) !=
                    (owner.installation_key_id, owner.installation_key_jkt)):
-                return None
+                return False
             if kind == MEMBERSHIP_SNAPSHOT and (
                 "owner" not in (grant.membership_roles or ())
                 or owner.creator_account_id not in (grant.allowed_creator_account_ids or ())
             ):
-                return None
-        return owner
+                return False
+        return True
 
     def issue_bridge_session(self, issue: BridgeSessionIssue) -> IssuedBridgeSession:
         with self.database.transaction() as connection:

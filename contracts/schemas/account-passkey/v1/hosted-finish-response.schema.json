@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/hosted-finish-response.schema.json",
+  "title": "Browser account passkey hosted session outcome v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "state",
+    "session_expires_at"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:account-passkey-hosted:v1"
+    },
+    "state": {
+      "const": "signed-in"
+    },
+    "session_expires_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    }
+  }
+}

@@ -202,11 +202,21 @@ test('reads never launch, duplicate actions reuse a journaled flow, and only cor
   assert.equal(JSON.stringify(h.stored).includes('https:'), false);
 });
 
+test('opens the pinned passkey enrollment entry for the current task', async t => {
+  const h = harness(t), value = h.request();
+  value.ceremony.entry_url += '/passkey-enrollment';
+  await h.owner.launch(value, async () => {});
+  assert.equal(h.flows.length, 1);
+  assert.equal(h.flows[0].options.url, value.ceremony.entry_url + '#system-browser');
+});
+
 test('rejects unpinned entries and redirect URIs before calling Chrome', async t => {
   const h = harness(t);
   for (const change of [
     value => { value.ceremony.entry_url = value.ceremony.entry_url.replace(ORIGIN, 'https://evil.example'); },
     value => { value.ceremony.entry_url += '?continue=https://evil.example'; },
+    value => { value.ceremony.entry_url += '/passkey-enrollment/other'; },
+    value => { value.ceremony.entry_url += '/passkey-enrollment?continue=https://evil.example'; },
     value => { value.ceremony.entry_url = value.ceremony.entry_url.replace('https:', 'http:'); },
     value => { value.ceremony.entry_url = value.ceremony.entry_url.replace('provider.example', 'user@provider.example'); },
     value => { value.ceremony.completion.return_uri += '/other'; },

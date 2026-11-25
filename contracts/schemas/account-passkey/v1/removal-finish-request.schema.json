@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/removal-finish-request.schema.json",
+  "title": "Browser account passkey removal confirmation v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "method",
+        "attempt_id",
+        "confirmation",
+        "assertion"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:account-passkey-hosted:v1"
+        },
+        "method": {
+          "const": "service-passkey"
+        },
+        "attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "confirmation": {
+          "const": "remove-account-passkey"
+        },
+        "assertion": {
+          "$ref": "definitions.schema.json#/$defs/browser-assertion"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "method",
+        "attempt_id",
+        "confirmation"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:account-passkey-hosted:v1"
+        },
+        "method": {
+          "const": "entra-action"
+        },
+        "attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "confirmation": {
+          "const": "remove-account-passkey"
+        }
+      }
+    }
+  ]
+}

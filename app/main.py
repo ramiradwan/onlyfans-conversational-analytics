@@ -279,6 +279,7 @@ async def startup_event():
     await start_signing_parameters(_capability_license_store)
     if hasattr(app.state, "desktop_coordinator"):
         app.state.desktop_coordinator.start()
+    saved_data.start_account_passkey_withdrawals(app)
     # Use resources created for this application lifecycle.
     configure_analytics_runtime()
     from app.services.retention_maintenance import start_default_retention_maintenance

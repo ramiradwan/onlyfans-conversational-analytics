@@ -13,6 +13,7 @@ from app.onboarding.admission_routes import HEADERS, authorize
 from app.onboarding.contract import DOCUMENT_UTF8_BYTES, SETUP_FRAME_UTF8_BYTES
 from app.onboarding.coordinator import CommandRefused, DesktopOnboardingCoordinator
 from app.provisioning.events import events
+from app.security.account_passkey import AccountPasskeyRefused
 
 # A view offering one of these can start a sign-in from its next click.
 SIGN_IN_ACTIONS = frozenset({"account.connect", "auth.select"})
@@ -165,6 +166,18 @@ def desktop_router(coordinator: DesktopOnboardingCoordinator, *, actor=lambda re
             with timing.phase("command", "run"):
                 result = await coordinator.command(session, value, actor=actor(request, True))
             return JSONResponse(result, status_code=202, headers=HEADERS)
+        except (AdmissionRefused, CommandRefused, ValueError) as error:
+            return _refused(error)
+
+    @router.post("/passkey")
+    async def account_passkey(request: Request):
+        session = admitted(request, mutation=True)
+        expected = await body(request)
+        try:
+            outcome = await coordinator.create_account_passkey(session, expected, actor=actor(request, True))
+            return JSONResponse({"outcome": outcome}, headers=HEADERS)
+        except AccountPasskeyRefused as refusal:
+            return JSONResponse({"outcome": "unavailable", "support_ref": refusal.support_ref}, headers=HEADERS)
         except (AdmissionRefused, CommandRefused, ValueError) as error:
             return _refused(error)
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 
+from app.onboarding.account_passkeys import DesktopAccountPasskeys
 from app.onboarding.admission_routes import admission_router
 from app.onboarding.admission import ScopedAdmissions
 from app.onboarding.browser_tasks import BrowserTasks
@@ -17,6 +18,12 @@ from app.provisioning.claim_submission import hosted_transport, installation_pro
 from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
 from app.provisioning.initial_handoff import InitialInstallationEnrollment
 from app.provisioning.installation_continuation import RegisteredInstallationContinuation
+from app.security.account_passkey import AccountPasskeyNativeClient
+from app.security.account_passkey_authority import AccountPasskeyAuthority
+from app.security.account_passkey_enrollment import AccountPasskeyEnrollment
+from app.security.account_passkey_local import AccountPasskeyLocalRecords
+from app.security.account_passkey_release import passkey_inputs
+from app.security.account_passkey_windows import WindowsHelloBroker
 from app.security.browser_authentication import BrowserAuthenticationClient
 from app.security.browser_ceremony import BrowserCeremonyClient
 from app.security.browser_ceremony_replacement import BrowserCeremonyReplacementClient
@@ -34,6 +41,7 @@ class DesktopSetupCore:
     ceremonies: BrowserCeremonies | None
     recovery: ProvisioningSetupOwner
     coordinator: DesktopOnboardingCoordinator
+    account_passkeys: DesktopAccountPasskeys | None = None
     _close_task: asyncio.Task | None = field(default=None, init=False, repr=False)
 
     async def close(self):
@@ -47,6 +55,8 @@ class DesktopSetupCore:
 
     async def _close(self):
         try:
+            if self.account_passkeys is not None:
+                await self.account_passkeys.close()
             await self.coordinator.stop()
         finally:
             try:
@@ -60,7 +70,7 @@ class DesktopSetupCore:
 
 def build_desktop_setup(*, store, stage, extension_id, hosted_origin, authentication_providers,
                         finalize, completion_ready, completed=lambda: None, adapt_owner=None,
-                        protected_recovery_enabled=False):
+                        protected_recovery_enabled=False, account_passkey_release=None):
     """Construct common services; the runtime root supplies its authority adapter."""
     if (stage == "runtime") != (adapt_owner is not None):
         raise ValueError("Runtime setup requires its authority adapter")
@@ -69,19 +79,34 @@ def build_desktop_setup(*, store, stage, extension_id, hosted_origin, authentica
     admissions = ScopedAdmissions(store, stage=stage)
     tasks = BrowserTasks(admissions, extension_id=extension_id or None)
     key = installation_proof_authority(store)
-    ceremonies = initial = registered = None
+    ceremonies = initial = registered = account_passkeys = None
     source_replacement_clients = {}
     if hosted_origin:
         # One pool keeps a sign-in's proof exchanges on an open connection.
         proofs = hosted_transport(hosted_origin, keepalive_seconds=SIGN_IN_KEEPALIVE_SECONDS)
         ceremony_client = BrowserCeremonyClient(proofs, key)
+        broker = None
+        if account_passkey_release is not None:
+            broker = WindowsHelloBroker.for_installed_desktop(rp_id=account_passkey_release.rp_id)
         ceremonies = BrowserCeremonies(store,
             ceremony_client, hosted_origin=hosted_origin,
             replacement_client=BrowserCeremonyReplacementClient(ceremony_client),
             decision_client=DesktopDecisionClient(proofs, key),
             authentication_client=BrowserAuthenticationClient(proofs, key),
             authentication_providers=authentication_providers,
-            wait_client=BrowserCeremonyWaitClient(proofs, key, hosted_origin))
+            wait_client=BrowserCeremonyWaitClient(proofs, key, hosted_origin),
+            passkey_enrollment_enabled=broker is not None)
+        if account_passkey_release is not None and broker is not None:
+            schemas, verifier = passkey_inputs(account_passkey_release)
+            native = AccountPasskeyNativeClient(proofs, key, schemas)
+            authority = AccountPasskeyAuthority(
+                store, AccountPasskeyLocalRecords(native, verifier, clock=store._now),
+                verifier, environment=account_passkey_release.environment, broker=broker,
+            )
+            account_passkeys = DesktopAccountPasskeys(
+                ceremonies, AccountPasskeyEnrollment(native, rp_id=account_passkey_release.rp_id, clock=store._now),
+                authority, admissions,
+            )
         # The first sign-in exchange is the initial handoff, so it shares the proof pool.
         initial = InitialInstallationEnrollment(store, hosted_origin=hosted_origin, transport=proofs)
         registered = RegisteredInstallationContinuation(store, hosted_origin=hosted_origin)
@@ -92,7 +117,7 @@ def build_desktop_setup(*, store, stage, extension_id, hosted_origin, authentica
     recovery = ProvisioningSetupOwner(store, browser_tasks=tasks, ceremonies=ceremonies,
         initial=initial, registered=registered, key=key, finalize=finalize,
         completion_ready=completion_ready, completed=completed,
-        source_replacement_clients=source_replacement_clients)
+        source_replacement_clients=source_replacement_clients, account_passkeys=account_passkeys)
     if initial is not None:
         initial.authorize_scope = recovery.authorize_initial_scope
     owner = recovery if adapt_owner is None else adapt_owner(recovery)
@@ -120,7 +145,7 @@ def build_desktop_setup(*, store, stage, extension_id, hosted_origin, authentica
                 verifier=HostedGrantClient(proofs, key, store, clock=store._now))
         owner = ProtectedAuthoritySetupOwner(owner, store, **components)
     return DesktopSetupCore(admissions, tasks, ceremonies, recovery,
-        DesktopOnboardingCoordinator(admissions, owner))
+        DesktopOnboardingCoordinator(admissions, owner, account_passkeys=account_passkeys), account_passkeys)
 
 
 def attach_desktop_setup(application, *, core, launcher_token,
@@ -131,6 +156,8 @@ def attach_desktop_setup(application, *, core, launcher_token,
     application.state.desktop_admissions = admissions
     application.state.desktop_coordinator = coordinator
     application.state.desktop_setup_owner = coordinator.owner
+    if core.account_passkeys is not None:
+        application.state.account_passkey_authority = core.account_passkeys.authority
 
     def expiry():
         values = [value for value in (tasks.next_expiry(), next_authority_expiry(admissions.authentication)) if value is not None]

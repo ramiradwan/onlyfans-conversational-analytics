@@ -22,7 +22,11 @@ from app.api.security import (
     webauthn_session_token,
 )
 from app.core.config import settings
-from app.persistence.auth import SQLiteAuthenticationStore
+from app.onboarding.admission import AdmissionRefused
+from app.onboarding.admission_routes import authorize_desktop_passkey
+from app.persistence.auth import AuthenticationStateError, SQLiteAuthenticationStore
+from app.security.account_passkey_windows import WindowsHelloRefused
+from app.security.signed_objects import SignedObjectRejected
 from app.security.grant_refresh import renewal_runs
 from app.security.runtime_policy import AuthContext, RuntimePolicy
 from app.security.webauthn import (
@@ -425,6 +429,9 @@ def begin_login(
     if not isinstance(authority, SessionAuthority):
         raise RuntimeError("Session authority port returned the wrong authority type")
     _no_store(response)
+    native = getattr(request.app.state, "account_passkey_authority", None)
+    if native is not None and native.requires_native(authority.credential_id):
+        return {"windows_hello": True}
     return service.begin_authentication(authority)
 
 
@@ -447,10 +454,47 @@ async def finish_login(
     )
     if not isinstance(authority, SessionAuthority):
         raise RuntimeError("Session authority port returned the wrong authority type")
+    native = getattr(request.app.state, "account_passkey_authority", None)
+    if native is not None and native.requires_native(authority.credential_id):
+        raise HTTPException(403, "Use Windows Hello from the desktop app")
     try:
         issued = service.complete_authentication(authority, body.assertion())
     except WebAuthnVerificationError as error:
         _verification_refusal(error, operation="login_finish")
+    return _login_cookie(response, authority, issued)
+
+
+@router.post("/login/windows-hello")
+def login_windows_hello(
+    request: Request,
+    response: Response,
+    policy: RuntimePolicy = Depends(get_runtime_policy),
+    csrf: str | None = Header(None, alias="X-CSRF-Token"),
+    authority_port: WebAuthnAuthorityPort = Depends(webauthn_authority_port),
+) -> dict[str, str]:
+    _prepare_request(request)
+    _no_store(response)
+    if policy.identity is not None:
+        verify_csrf_token(policy, csrf)
+    native = getattr(request.app.state, "account_passkey_authority", None)
+    authority = _authority_or_refuse(authority_port.session_authority(policy), operation="login_begin")
+    if (native is None or not isinstance(authority, SessionAuthority)
+            or not native.requires_native(authority.credential_id)):
+        raise HTTPException(403, "Windows Hello is unavailable for this account")
+    try:
+        issued = native.sign_in(
+            authority, authorize=authorize_desktop_passkey(request),
+            current_authority=lambda connection: authority_port.session_authority(policy, connection=connection).authority,
+            lifetime=settings.bridge_session_ttl_seconds,
+        )
+    except WindowsHelloRefused as error:
+        raise HTTPException(409, error.reason, headers={"Cache-Control": "no-store"}) from None
+    except (AdmissionRefused, AuthenticationStateError, SignedObjectRejected, WebAuthnVerificationError):
+        raise HTTPException(403, "Windows Hello could not verify this account") from None
+    return _login_cookie(response, authority, issued)
+
+
+def _login_cookie(response: Response, authority: SessionAuthority, issued) -> dict[str, str]:
     session_identity = AuthContext(
         principal_id=authority.principal_id,
         creator_account_id=authority.creator_account_id,

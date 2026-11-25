@@ -92,7 +92,7 @@ def select_brain_application(
             extension_id=os.environ.get(PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE),
             hosted_origin=hosted_origin, authentication_providers=customer_release.authentication_providers,
             finalize=finalize_action, completion_ready=completion_ready,
-            completed=application.state.request_setup_completion)
+            completed=application.state.request_setup_completion, account_passkey_release=customer_release.account_passkey)
         coordinator = attach_desktop_setup(application, core=core, launcher_token=handoff_token)
         if core.recovery.initial is not None and customer_release.setup_transfer_receiver_url:
             from app.provisioning.receiving import install_receiving
@@ -150,16 +150,23 @@ def run_brain() -> int:
     from app.core.process_lifetime import parent_lifetime
     from app.core.bootstrap_status import bootstrap_status
     from app.persistence.migrations import startup_migration_supervision
-    from app.core.startup_maintenance import acquire_runtime_ownership, admit_retained_schemas, StartupRefused
+    from app.core.startup_maintenance import (
+        acquire_runtime_ownership, admit_retained_schemas, inspect_retained_state, StartupRefused,
+    )
 
     stopped = threading.Event()
     server: uvicorn.Server | None = None
     observed_application = None
+    transition = None
 
     def request_exit() -> None:
         stopped.set()
         if server is not None:
             server.should_exit = True
+
+    def complete_setup() -> None:
+        if transition is None or not transition.request():
+            request_exit()
     # Observe the parent before root inspection or a migrating constructor.
     with parent_lifetime(request_exit, drained=lambda: observed_application is not None and observed_application.drained), bootstrap_status(stopped) as status, startup_migration_supervision(status.cancelled):
         if stopped.is_set():
@@ -186,24 +193,49 @@ def run_brain() -> int:
         status.emit("validating")
         # The supervisor still bounds validating to 300 s and all startup to 900 s.
         with status.heartbeats():
-            application = select_brain_application(provisioning_completion_exit=request_exit)
+            application = select_brain_application(provisioning_completion_exit=complete_setup)
             if stopped.is_set():
                 return 1
 
-            observed_application = ObservedApplication(application, status, stopped)
+            core = getattr(application.state, "desktop_setup_core", None)
+            if state.mode != "configured" and core is not None and core.account_passkeys is not None:
+                import asyncio
+                from app.packaged_transition import SetupRuntimeTransition
 
+                async def load_runtime():
+                    def validate():
+                        configured = inspect_retained_state(state.root)
+                        if configured.mode != "configured":
+                            raise StartupRefused("retained_configuration_missing")
+                        admit_retained_schemas(configured, should_cancel=stopped.is_set)
+                        if stopped.is_set():
+                            raise StartupRefused("startup_cancelled")
+                    await asyncio.to_thread(validate)
+                    return select_brain_application()
+
+                transition = SetupRuntimeTransition(application,
+                    load_runtime=load_runtime, exit_for_restart=request_exit)
+            served = application if transition is None else transition
+            observed_application = ObservedApplication(served, status, stopped)
+
+            # A windowed executable can have no console streams. Its launcher
+            # receives startup and shutdown observations on the status pipe.
+            log_config = (
+                uvicorn.config.LOGGING_CONFIG if sys.stdout is not None and sys.stderr is not None else None
+            )
             configuration = uvicorn.Config(
                 observed_application, host="127.0.0.1", port=17871, workers=1, access_log=False, lifespan="on",
                 ws_max_size=36_864, ws_max_queue=8, ws_per_message_deflate=False,
-                loop=uvicorn_loop(),
+                loop=uvicorn_loop(), log_config=log_config,
             )
-            server = supervised_server(configuration, application)
+            server = supervised_server(configuration, served)
             if stopped.is_set():
                 server.should_exit = True
             server.run()
             if status.phase == "ready-to-check-listener":
                 status.shutdown_complete(observed_application.drained)
-    return 75 if state.mode != "configured" and application.state.completion_requested else 0
+    return 75 if (state.mode != "configured" and application.state.completion_requested
+                  and (transition is None or not transition.configured)) else 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:

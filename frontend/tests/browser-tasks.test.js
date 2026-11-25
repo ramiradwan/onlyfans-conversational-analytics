@@ -60,24 +60,31 @@ const browserTaskCases = [
 ];
 
 describe('Browser task presentation', () => {
-  it('shows inert support only for a classified refusal with an empty action slot', () => {
+  it.each([
+    ['invariant_failed', 'This step couldn’t finish.'],
+    ['authorization_refused', 'This page can’t continue setup.'],
+  ])('returns %s to desktop without displaying support contacts', (recovery, message) => {
     document.documentElement.innerHTML = browserTaskHtml;
-    document.getElementById('support-channels').innerHTML = '<span data-channel="tiktok">https://help.example.com/a&amp;copy;b</span>';
-    const refusal = { state: 'service_unavailable', recovery: 'invariant_failed', payload: null };
-    const render = value => {
-      renderBrowserTask(document, value);
-      return document.querySelector('.task-actions-slot [data-support-help]:not([hidden])');
-    };
-    const help = render(refusal);
-    expect(help.parentElement).toBe(document.querySelector('.task-actions-slot > [data-region-content]'));
-    expect(help.parentElement.nextElementSibling).toBe(document.getElementById('task-status'));
-    expect(help.querySelector('h2').textContent).toBe('Get help');
-    expect([...help.querySelectorAll('li')].map(item => item.textContent)).toEqual(['TikTok https://help.example.com/a&copy;b']);
-    expect(help.querySelector('a, button, input')).toBeNull();
-    for (const value of [{ ...refusal, payload: payload() }, { ...refusal, recovery: undefined },
-      { ...refusal, state: 'status_reconnecting' }, { ...refusal, state: 'loading' }]) expect(render(value)).toBeNull();
-    document.getElementById('support-channels').remove();
-    expect(render(refusal)).toBeNull();
+    // A desktop serving an older browser document may still supply contact metadata.
+    const channels = document.getElementById('support-channels') ?? document.createElement('template');
+    channels.id = 'support-channels';
+    channels.innerHTML = '<span data-channel="tiktok">https://help.example.com/a&amp;copy;b</span>';
+    document.body.append(channels);
+    const refusal = { state: 'service_unavailable', recovery, payload: null };
+
+    renderBrowserTask(document, refusal);
+    expect(document.querySelector('h1').textContent).toBe('Continue in the desktop app');
+    expect(document.querySelector('#task-message').textContent).toBe(message);
+    expect(document.querySelector('main [data-support-help]')).toBeNull();
+    expect(document.querySelector('main').textContent).not.toContain('https://help.example.com');
+    expect(taskControls.every(id => document.getElementById(id).hidden)).toBe(true);
+    expect(document.getElementById('desktop-return').hasAttribute('href')).toBe(false);
+
+    const value = payload();
+    renderBrowserTask(document, { ...refusal, payload: value });
+    expect(taskControls.filter(id => !document.getElementById(id).hidden)).toEqual(desktop);
+    expect(document.getElementById('desktop-return').getAttribute('href')).toBe('ofca://onboarding/?journey=' + value.task.journey_id);
+    expect(document.querySelector('main [data-support-help]')).toBeNull();
   });
 
   it.each(browserTaskCases)('uses the per-state D4 title and copy for %s (%s)', (state, title, message, controls, makePayload = payload, recovery) => {

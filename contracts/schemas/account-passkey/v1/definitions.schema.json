@@ -1,0 +1,437 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/definitions.schema.json",
+  "title": "Account passkey v1 shared definitions",
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "operation_id",
+        "binding_digest",
+        "ceremony_id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "initial-handoff",
+            "registered-continuation"
+          ]
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding_digest": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "ceremony_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        }
+      }
+    },
+    "installation-proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "challenge",
+        "key_id",
+        "signature"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:account-passkey-installation-proof:v1"
+        },
+        "challenge": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "key_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"
+        },
+        "signature": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url64"
+        }
+      }
+    },
+    "registration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credential_id",
+        "client_data_json",
+        "attestation_object"
+      ],
+      "properties": {
+        "credential_id": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 1364,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "client_data_json": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 4096,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "attestation_object": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 10924,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      }
+    },
+    "browser-assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credential_id",
+        "client_data_json",
+        "authenticator_data",
+        "signature",
+        "user_handle"
+      ],
+      "properties": {
+        "credential_id": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 1364,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "client_data_json": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 4096,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "authenticator_data": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 1368,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 1024,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "user_handle": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        }
+      }
+    },
+    "enrollment-begin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "source",
+        "enrollment_id",
+        "intent",
+        "initial_access_nonce"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:account-passkey-enrollment:v1"
+        },
+        "source": {
+          "$ref": "definitions.schema.json#/$defs/source"
+        },
+        "enrollment_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "intent": {
+          "const": "create-account-passkey"
+        },
+        "initial_access_nonce": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        }
+      }
+    },
+    "enrollment-finish": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "enrollment_id",
+        "attempt_id",
+        "registration"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:account-passkey-enrollment:v1"
+        },
+        "enrollment_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "registration": {
+          "$ref": "definitions.schema.json#/$defs/registration"
+        }
+      }
+    },
+    "enrollment-receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "enrollment_id",
+        "attempt_id"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:account-passkey-enrollment:v1"
+        },
+        "enrollment_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        }
+      }
+    },
+    "enrollment-cancel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "enrollment_id",
+        "attempt_id"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:account-passkey-enrollment:v1"
+        },
+        "enrollment_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        }
+      }
+    },
+    "binding-read": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "profile",
+            "installation_id",
+            "credential_id",
+            "mode"
+          ],
+          "properties": {
+            "profile": {
+              "const": "urn:bridge-clean:account-passkey-local-binding:v1"
+            },
+            "installation_id": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "credential_id": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 1364,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "mode": {
+              "const": "active"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "profile",
+            "installation_id",
+            "credential_id",
+            "mode",
+            "known_binding_sha256"
+          ],
+          "properties": {
+            "profile": {
+              "const": "urn:bridge-clean:account-passkey-local-binding:v1"
+            },
+            "installation_id": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "credential_id": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 1364,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "mode": {
+              "const": "withdrawal-only"
+            },
+            "known_binding_sha256": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+            }
+          }
+        }
+      ]
+    },
+    "initial-local-access": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "enrollment_id",
+        "attempt_id",
+        "installation_id",
+        "credential_id",
+        "binding_sha256",
+        "initial_access_nonce"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:account-passkey-initial-local-access:v1"
+        },
+        "enrollment_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "credential_id": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 1364,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "binding_sha256": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "initial_access_nonce": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        }
+      }
+    },
+    "withdrawal-ack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "installation_id",
+        "credential_id",
+        "generation",
+        "withdrawal_sha256"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:account-passkey-local-withdrawal:v1"
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "credential_id": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 1364,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "withdrawal_sha256": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        }
+      }
+    },
+    "session-binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session_id",
+        "session_generation",
+        "subject_handle"
+      ],
+      "properties": {
+        "session_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "session_generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "subject_handle": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        }
+      }
+    },
+    "removal-scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "purpose",
+        "method",
+        "subject_handle",
+        "session_binding_digest",
+        "origin",
+        "attempt_id",
+        "credential_ref",
+        "credential_generation",
+        "local_access_effect",
+        "ends_current_session",
+        "expires_at"
+      ],
+      "properties": {
+        "purpose": {
+          "const": "remove-account-passkey"
+        },
+        "method": {
+          "enum": [
+            "service-passkey",
+            "entra-action"
+          ]
+        },
+        "subject_handle": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "session_binding_digest": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "origin": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 255
+        },
+        "attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "credential_ref": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "credential_generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "local_access_effect": {
+          "enum": [
+            "no-local-binding",
+            "may-lose-offline-access"
+          ]
+        },
+        "ends_current_session": {
+          "type": "boolean"
+        },
+        "expires_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        }
+      }
+    }
+  }
+}

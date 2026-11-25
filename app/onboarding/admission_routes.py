@@ -74,6 +74,19 @@ def authorize(admissions, request, *, role, mutation=False):
     return session
 
 
+def authorize_desktop_passkey(request: Request):
+    """Only the active native-admitted presentation can invoke Windows Hello."""
+    admissions = getattr(request.app.state, "desktop_admissions", None)
+    if admissions is None or admissions.stage != "runtime":
+        raise HTTPException(401, "Open the desktop app to use Windows Hello")
+    session = authorize(admissions, request, role="desktop", mutation=True)
+
+    def recheck(connection):
+        admissions._require(connection, session.identifier, role="desktop", generation=session.generation)
+
+    return recheck
+
+
 def _public_session(session):
     return {key: value for key, value in asdict(session).items() if key != "identifier"} | {
         "csrf_token": csrf_token(session.identifier)}

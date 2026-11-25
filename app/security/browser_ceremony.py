@@ -74,11 +74,12 @@ def binding_digest(binding: dict) -> str:
     return hashlib.sha256(canonical_request(binding)).hexdigest()
 
 
-def browser_entry_url(origin: str, reference: str) -> str:
+def browser_entry_url(origin: str, reference: str, *, passkey_enrollment: bool = False) -> str:
     """Only the release-selected Provider origin and fixed entry path can be opened."""
     require_hosted_origin(origin)
     _decode(reference, 32)
-    return origin + ENTRY_PREFIX + reference
+    suffix = "/passkey-enrollment" if passkey_enrollment else ""
+    return origin + ENTRY_PREFIX + reference + suffix
 
 
 def expected_completion(binding: dict) -> dict:

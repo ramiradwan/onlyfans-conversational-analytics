@@ -299,6 +299,20 @@ async function bounded<T>(operation: (signal: AbortSignal) => Promise<T>, parent
   }
 }
 
+export async function windowsHelloHeaders(signal: AbortSignal, request: typeof fetch = globalThis.fetch): Promise<Record<string, string>> {
+  const generation = sessionStorage.getItem('desktop-presentation');
+  if (!generation || !/^[0-9a-f-]{36}$/u.test(generation)) throw new Error('Desktop presentation unavailable');
+  const response = await request('/api/v1/desktop/session', {
+    signal, credentials: 'same-origin', cache: 'no-store', redirect: 'error',
+    headers: { 'X-Desktop-Generation': generation },
+  });
+  if (!response.ok) throw new Error('Desktop presentation unavailable');
+  const session = await response.json();
+  if (session?.role !== 'desktop' || session.stage !== 'runtime' || session.generation !== generation
+    || !/^[A-Za-z0-9_-]{43}$/u.test(session.csrf_token)) throw new Error('Desktop presentation changed');
+  return { 'X-Desktop-Generation': generation, 'X-Desktop-CSRF': session.csrf_token };
+}
+
 export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi {
   const request = options.fetch ?? globalThis.fetch.bind(globalThis);
   const getCsrfToken = options.getCsrfToken ?? csrfToken;
@@ -331,12 +345,14 @@ export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi
     }
   };
 
-  const post = <ResponseBody>(path: string, body?: object, signal?: AbortSignal): Promise<ResponseBody> => bounded(async (requestSignal) => {
+  const post = <ResponseBody>(path: string, body?: object, signal?: AbortSignal, timeout = deadline): Promise<ResponseBody> => bounded(async (requestSignal) => {
     const csrf = getCsrfToken();
+    const native = path === '/login/windows-hello' ? await windowsHelloHeaders(requestSignal, request) : {};
     const response = await request(`/api/v1/webauthn${path}`, {
       signal: requestSignal, credentials: 'same-origin', cache: 'no-store', redirect: 'error',
       headers: {
         Accept: 'application/json',
+        ...native,
         ...(body ? { 'Content-Type': 'application/json' } : {}),
         ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
       },
@@ -345,18 +361,23 @@ export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi
     });
     if (!response.ok) throw new RequestRefused(response.status);
     return parseOnboardingJson(await response.text()) as ResponseBody;
-  }, signal, deadline);
+  }, signal, timeout);
 
   const login = async (signal?: AbortSignal) => {
-    let loginOptions: LoginOptions;
-    try { loginOptions = await post<LoginOptions>('/login/begin', undefined, signal); }
+    let loginOptions: LoginOptions | { windows_hello: true };
+    try { loginOptions = await post<LoginOptions | { windows_hello: true }>('/login/begin', undefined, signal); }
     catch { throw new LoginOutcomeError('begin'); }
-    let assertion: ReturnType<typeof loginCredential>;
+    let result: unknown;
+    const native = 'windows_hello' in loginOptions && loginOptions.windows_hello === true;
+    let assertion: ReturnType<typeof loginCredential> | undefined;
+    if (!native) {
+      try {
+        assertion = await bounded(ceremonySignal => requestLocalAssertion(loginOptions as LoginOptions, ceremonySignal), signal, 120_000);
+      } catch { throw new LoginOutcomeError('credential'); }
+    }
     try {
-      assertion = await bounded(ceremonySignal => requestLocalAssertion(loginOptions, ceremonySignal), signal, 120_000);
-    } catch { throw new LoginOutcomeError('credential'); }
-    try {
-      const result = await post<unknown>('/login/finish', assertion, signal);
+      result = native ? await post<unknown>('/login/windows-hello', undefined, signal, 125_000)
+        : await post<unknown>('/login/finish', assertion, signal);
       if (typeof result !== 'object' || result === null || Object.keys(result).length !== 1
         || !('csrf_token' in result) || typeof result.csrf_token !== 'string' || !result.csrf_token) {
         throw new Error('Sign-in response unavailable');

@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/local-withdrawal-payload.schema.json",
+  "title": "Signed account passkey local withdrawal claims v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "iss",
+    "aud",
+    "purpose",
+    "sub",
+    "jti",
+    "iat",
+    "installation_id",
+    "installation_key_jkt",
+    "credential_id",
+    "rp_id",
+    "generation",
+    "withdrawn_binding_sha256"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:account-passkey-local-withdrawal:v1"
+    },
+    "iss": {
+      "const": "urn:bridge-clean:commercial-control-plane"
+    },
+    "aud": {
+      "const": "urn:bridge-clean:local-brain:account-passkey-local-withdrawal"
+    },
+    "purpose": {
+      "const": "account-passkey-local-withdrawal"
+    },
+    "sub": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "jti": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "iat": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "installation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "installation_key_jkt": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "credential_id": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 1364,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "rp_id": {
+      "type": "string",
+      "maxLength": 253,
+      "format": "hostname",
+      "pattern": "^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "withdrawn_binding_sha256": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+    }
+  }
+}

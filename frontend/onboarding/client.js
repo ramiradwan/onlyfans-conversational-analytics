@@ -11,8 +11,13 @@ function currentBrowserNotices(value, notices = []) {
   // Brain has already checked each task's admission generation. Keep every
   // still-pending operation's notice for the surface displaying that operation.
   const pending = new Set(value.pending_operations.map(item => item.operation_id));
-  return notices.filter(notice => NOTICE_ERRORS[notice.reason] && pending.has(notice.operation_id))
-    .map(notice => ({ ...notice, reason: NOTICE_ERRORS[notice.reason] }));
+  return notices.filter(notice => pending.has(notice.operation_id)).flatMap(notice => {
+    if (notice.reason === 'task_changed' && value.next_task === 'account-connection'
+      && value.allowed_actions.includes('browser.access') && value.authentication?.browser_operation_id === notice.operation_id) {
+      return [{ ...notice, reason: 'browser_recheck_required' }];
+    }
+    return NOTICE_ERRORS[notice.reason] ? [{ ...notice, reason: NOTICE_ERRORS[notice.reason] }] : [];
+  });
 }
 
 // The later steps of one explicit protected sign-in run only within this bound.
@@ -477,6 +482,10 @@ export class DesktopSetupClient {
   continueProviderSelection() {
     const step = this.providerContinuation, value = this.value, auth = value?.authentication;
     if (!step) return;
+    if (step.kind === 'browser-recheck') {
+      this.continueBrowserRecheck(step);
+      return;
+    }
     const sameParentPending = value?.pending_operations.some(item =>
       item.operation_id === step.parent && item.action === 'account.connect');
     const foreignPending = value?.pending_operations.some(item =>
@@ -521,6 +530,37 @@ export class DesktopSetupClient {
     });
   }
 
+  recheckProvider(operationId) {
+    const value = this.value, auth = value?.authentication;
+    if (this.session?.stage !== 'setup' || value?.next_task !== 'account-connection'
+      || !value.allowed_actions.includes('browser.access') || auth?.state !== 'selected'
+      || auth.browser_operation_id !== operationId || !auth.actions.open_browser
+      || !this.browserNotices.some(notice => notice.reason === 'browser_recheck_required' && notice.operation_id === operationId)) return null;
+    return auth.authentication_attempt?.provider ?? null;
+  }
+
+  continueBrowserRecheck(step) {
+    const value = this.value, auth = value?.authentication;
+    const live = this.connected && step.epoch === this.launchEpoch && this.now() <= step.until
+      && value?.journey_id === step.journey && value.authority_recovery === undefined && !value.decision
+      && ['browser-access', 'account-connection'].includes(value.next_task)
+      && value.pending_operations.some(item => item.action === 'account.connect' && item.operation_id === step.parent)
+      && (!auth || auth.operation_id === step.parent);
+    if (!live) {
+      this.providerContinuation = null;
+      this.notify();
+      return;
+    }
+    if (!step.completed || value.next_task !== 'account-connection'
+      || value.pending_operations.some(item => item.operation_id === step.replaceOperation)) return;
+    this.providerContinuation = null;
+    if (auth?.state === 'retired' && auth.authentication_attempt?.authentication_attempt_id === step.attempt
+      && auth.choices?.[step.provider] && auth.actions.select && value.allowed_actions.includes('auth.select')
+      && !value.pending_operations.some(item => ['auth.select', 'auth.switch', 'auth.cancel'].includes(item.action))) {
+      void this.act('auth.select', { provider: step.provider }).catch(() => this.notify());
+    } else this.notify();
+  }
+
   async act(action, options = {}, continued = null) {
     const clicked = performance.now();
     const observe = phase => {
@@ -528,6 +568,11 @@ export class DesktopSetupClient {
         elapsed_ms: Math.max(0, Math.round(performance.now() - clicked)) }).catch(() => {});
     };
     const authentication = this.value?.authentication;
+    const recheckProvider = action === 'browser.access' && continued?.recheckOperation
+      ? this.recheckProvider(continued.recheckOperation) : null;
+    if (continued?.recheckOperation && (!recheckProvider || this.providerContinuation?.kind === 'browser-recheck')) {
+      return outcome('not-dispatched', null, 'operation_pending');
+    }
     const replacesCurrentAuthentication = this.value?.allowed_actions.includes(action)
       && (options.recover_authority === true && this.value.authority_recovery === 'sign-in-required'
           && ['auth.select', 'auth.cancel'].includes(action) && authentication?.operation_id === this.pending
@@ -543,7 +588,9 @@ export class DesktopSetupClient {
       && this.value.pending_operations.some(item => item.action === action)
       && this.value.pending_operations.some(item => item.operation_id === this.pending
         && ['activation.review', 'activation.confirm', 'auth.select', 'auth.switch', 'auth.cancel'].includes(item.action));
-    if (!this.connected || !this.value || this.protectedOpening || (this.pending && !replacesCurrentAuthentication && !replacesReview)) {
+    const replacesBrowser = recheckProvider && [authentication.operation_id, continued.recheckOperation].includes(this.pending);
+    if (!this.connected || !this.value || this.protectedOpening
+      || (this.pending && !replacesCurrentAuthentication && !replacesReview && !replacesBrowser)) {
       return outcome('not-dispatched', null, 'action_unavailable');
     }
     observe('click');
@@ -579,6 +626,11 @@ export class DesktopSetupClient {
           provider: continueProvider, kind: action === 'account.connect' ? 'source' : 'ceremony',
           replaceOperation: intent.operation_id, until: this.now() + RECOVERY_SIGN_IN_MS }
       : null;
+    if (recheckProvider) {
+      this.providerContinuation = { epoch, journey: this.value.journey_id, parent: authentication.operation_id,
+        attempt: authentication.authentication_attempt.authentication_attempt_id, provider: recheckProvider,
+        kind: 'browser-recheck', replaceOperation: intent.operation_id, until: this.now() + RECOVERY_SIGN_IN_MS };
+    }
     if (this.openBrowser && !intent.replace_ceremony && !intent.recover_authority && !sourceContinuation && ['browser.access', 'account.connect', 'browser.pair', 'auth.select', 'auth.switch'].includes(action)) this.launchOperation = intent.operation_id;
     if (action === 'auth.cancel' || action === 'activation.review' || intent.replace_ceremony || intent.recover_authority || sourceContinuation) this.launchOperation = null;
     this.notify();
@@ -643,6 +695,12 @@ export class DesktopSetupClient {
         this.operationFeedback(operationId, result.action, result.reason);
       }
       this.notify(null, deliberate);
+      const continuation = this.providerContinuation;
+      if (completed && result.action === 'browser.access' && continuation?.kind === 'browser-recheck'
+        && continuation.replaceOperation === operationId) {
+        continuation.completed = true;
+        this.continueProviderSelection();
+      }
     }
     const state = result.state === 'waiting' ? 'accepted' : result.state === 'outcome_unknown' ? 'unconfirmed' : result.state;
     return outcome(state, operationId, result.reason === 'none' ? null : result.reason);
@@ -677,6 +735,9 @@ export class DesktopSetupClient {
     }
     const operationId = explicit ? selectedOperation : this.launchOperation;
     if (!operationId) return outcome('not-dispatched', null, 'browser_unavailable');
+    if (explicit && this.recheckProvider(operationId)) {
+      return this.act('browser.access', {}, { recheckOperation: operationId });
+    }
     const epoch = this.launchEpoch, journey = this.value?.journey_id;
     const presented = presentationGuard(this);
     const authChild = explicit && this.value?.authentication?.browser_operation_id === operationId;

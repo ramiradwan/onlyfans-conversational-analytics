@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/proof-challenge-response.schema.json",
+  "title": "Account passkey installation proof challenge response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "challenge",
+    "request_digest",
+    "expires_at"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:account-passkey-installation-proof:v1"
+    },
+    "challenge": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "request_digest": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+    },
+    "expires_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    }
+  }
+}

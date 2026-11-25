@@ -108,8 +108,9 @@ class SetupPresentation:
 
 
 class DesktopOnboardingCoordinator:
-    def __init__(self, admissions: ScopedAdmissions, owner: SetupOwner):
+    def __init__(self, admissions: ScopedAdmissions, owner: SetupOwner, *, account_passkeys=None):
         self.admissions, self.owner = admissions, owner
+        self.account_passkeys = account_passkeys
         self.store = admissions.authentication
         self._workers: dict[str, asyncio.Task] = {}
         self._watcher: asyncio.Task | None = None
@@ -145,6 +146,29 @@ class DesktopOnboardingCoordinator:
             raise CommandRefused("setup_selection_required")
         return None if not rows else rows[0]["journey_id"]
 
+    def _browser_recheck(self, connection, session, scope):
+        tasks = getattr(self.owner, "browser_tasks", None)
+        if tasks is None or scope.get("protected_recovery") is not None or scope.get("source_recovery") is not None:
+            return None
+        return tasks.authentication_recheck(connection, session, scope)
+
+    @staticmethod
+    def _unfinished_browser_recheck(connection, session, journey_id, auth):
+        if (session.stage != "setup" or auth is None or auth["state"] not in {
+                "selected", "retired", "reauthentication-required"} or auth["authentication_attempt"] is None):
+            return None
+        row = connection.execute("SELECT state,owner_scope_json FROM desktop_setup_operations "
+            "WHERE journey_id=? AND action='browser.access' AND json_type(owner_scope_json,'$.browser_recheck')='object' "
+            "ORDER BY source_revision DESC LIMIT 1", (journey_id,)).fetchone()
+        if row is None or row["state"] == "completed":
+            return None
+        scope = json.loads(row["owner_scope_json"])
+        recheck = scope["browser_recheck"]
+        if (recheck["parent_operation_id"] == auth["operation_id"]
+                and recheck["attempt_id"] == auth["authentication_attempt"]["authentication_attempt_id"]):
+            return scope
+        return None
+
     def read(self, session: AdmittedSession, *, actor=None) -> dict:
         """No journal writes, owner work, task creation or network calls."""
         # The owner's reads for this snapshot share its connection.
@@ -163,11 +187,18 @@ class DesktopOnboardingCoordinator:
             (journey_id,)).fetchall()
         pending = [self._public(row) for row in operation_rows]
         facts = dict(view.facts)
+        authentication = view.scope.get("desktop_authentication")
+        unfinished_recheck = self._unfinished_browser_recheck(connection, session, journey_id, authentication)
+        recheck_pending = session.stage == "setup" and any(
+            row["action"] == "browser.access" and json.loads(row["owner_scope_json"]).get("browser_recheck") is not None
+            for row in operation_rows)
         local_ready = all(facts[name] == "verified" for name in ("installation", "account", "configuration", "enrollment", "pairing"))
         if local_ready:
             task = "complete"
         elif facts["installation"] == "verified" and facts["account"] == "verified":
             task = "finish-setup"
+        elif recheck_pending or unfinished_recheck is not None:
+            task = "browser-access"
         elif any(item["action"] == "account.connect" for item in pending):
             # A replacement presentation can lose its browser observation while
             # the accepted account operation still owns the current task.
@@ -187,7 +218,6 @@ class DesktopOnboardingCoordinator:
             if refusal is not None and refusal["state"] == "refused" and reason == "none":
                 reason = refusal["reason"]
         selected_decision = view.scope.get("desktop_decision")
-        authentication = view.scope.get("desktop_authentication")
         # With no account operation the chooser offers to start one. Once the
         # account is verified that offer no longer belongs to the current task.
         if (task == "finish-setup" and facts["account"] == "verified" and authentication is not None
@@ -227,11 +257,18 @@ class DesktopOnboardingCoordinator:
             "operation_id": selected_decision["operation_id"],
             **selected_decision["projection"]["decision"],
         }
+        recheck = (self._browser_recheck(connection, session, view.scope)
+            if reason == "none" and task == "account-connection" and decision is None else None)
+        if (recheck_pending or unfinished_recheck is not None) and task == "browser-access":
+            decision, authentication = None, None
         if reason == "none":
             if task == "browser-access":
-                actions.append("browser.access")
+                if unfinished_recheck is None or unfinished_recheck["key"] == view.scope.get("key"):
+                    actions.append("browser.access")
             elif task == "account-connection" and facts["browser_access"] in {"verified", "paused"}:
                 actions.append("account.connect")
+                if recheck is not None:
+                    actions.append("browser.access")
             elif task == "finish-setup" and facts["installation"] == facts["account"] == "verified":
                 if facts["configuration"] != "verified":
                     actions.append("setup.finalize")
@@ -248,6 +285,11 @@ class DesktopOnboardingCoordinator:
                     if authentication["actions"][permitted]:
                         actions.append(action)
         protected_recovery = view.scope.get("protected_recovery")
+        account_passkey = (self.account_passkeys.displayed(selected_decision)
+            if (self.account_passkeys is not None and decision is not None
+                and decision["action"] == "connect-account" and protected_recovery is None) else None)
+        if account_passkey == "working":
+            actions = [action for action in actions if action not in {"account.confirm", "auth.switch"}]
         if protected_recovery is not None:
             # A recovery presentation has an independent owner. Neither
             # ordinary enrollment nor activation may interpret it as their own.
@@ -272,6 +314,7 @@ class DesktopOnboardingCoordinator:
             "generation": session.generation, "revision": revision, "expires_at": session.expires_at,
             "scope_digest": digest({"journey_id": journey_id, "generation": session.generation,
                 "revision": revision, "stage": session.stage, "facts": facts, "scope": view.scope, "reason": reason,
+                **({"browser_recheck": recheck} if recheck is not None else {}),
                 "permitted_actions": None if view.permitted_actions is None else sorted(view.permitted_actions)}),
             "next_task": task, "facts": facts, "local_ready": local_ready,
             "full_ready": local_ready and facts["activation"] == "verified" and facts["analysis"] == "verified",
@@ -280,9 +323,39 @@ class DesktopOnboardingCoordinator:
             "continuation_available": view.scope.get("source_recovery") is not None,
             "creator_label": creator_label(view.scope.get("browser"), view.scope.get("creator_account_id")),
             "authentication": authentication, "analysis_readiness": view.analysis_readiness.projection(),
+            **({"account_passkey": account_passkey} if account_passkey is not None else {}),
             **({"authority_recovery": protected_recovery["state"]} if protected_recovery is not None else {}),
             **({"authority_recovery_browser": protected_recovery["browser_phase"]}
                 if protected_recovery is not None and "browser_phase" in protected_recovery else {})}, kind="snapshot")
+
+    async def create_account_passkey(self, session, expected, *, actor=None):
+        if self.account_passkeys is None or set(expected) != {"generation", "revision", "scope_digest"}:
+            raise CommandRefused("action_unavailable")
+
+        def selected():
+            with self.store.database.shared_reads(), self.store.database.read() as connection:
+                current = self._current(connection, session)
+                journey_id = self._selected(connection, current)
+                view = self.owner.read(journey_id, actor=actor, connection=connection)
+                snapshot = self._snapshot(connection, current, actor=actor, view=view)
+                return journey_id, view.scope.get("desktop_decision"), snapshot
+
+        journey_id, selection, snapshot = await asyncio.to_thread(selected)
+        if (journey_id is None or selection is None or snapshot.get("account_passkey") != "available"
+                or any(expected[key] != snapshot[key] for key in expected)):
+            raise CommandRefused("setup_changed")
+
+        def authorize():
+            current_journey, current_selection, current_view = selected()
+            if (self._closed or current_journey != journey_id or current_selection != selection
+                    or current_view.get("account_passkey") not in {"available", "working"}
+                    or current_view["decision_status"] is None
+                    or current_view["decision_status"]["state"] != "confirmation-required"):
+                from app.security.hosted_grants import HostedGrantUnavailable
+
+                raise HostedGrantUnavailable("The passkey setup presentation changed")
+
+        return await self.account_passkeys.create(journey_id, selection, session=session, authorize=authorize)
 
     @staticmethod
     def _public(row):
@@ -361,6 +434,17 @@ class DesktopOnboardingCoordinator:
         scope = dict(view.scope)
         action = command["action"]
         authentication = snapshot["authentication"]
+        if action == "browser.access" and current.stage == "setup" and snapshot["next_task"] == "account-connection":
+            recheck = self._browser_recheck(connection, current, scope)
+            if recheck is None:
+                raise CommandRefused("setup_changed")
+            scope["browser_recheck"] = recheck
+        elif action == "browser.access" and snapshot["next_task"] == "browser-access":
+            previous_recheck = self._unfinished_browser_recheck(connection, current, snapshot["journey_id"],
+                scope.get("desktop_authentication"))
+            if previous_recheck is not None:
+                scope.update(browser_recheck=previous_recheck["browser_recheck"], browser=previous_recheck["browser"],
+                    creator_account_id=previous_recheck["creator_account_id"])
         protected_recovery = scope.get("protected_recovery")
         if protected_recovery is not None:
             if command.get("recover_authority") is not True or "replace_ceremony" in command:
@@ -635,7 +719,7 @@ class DesktopOnboardingCoordinator:
             outcome = result
             self._settle(operation, result)
             if result.state != "outcome_unknown":
-                await self._refresh_authentication_parent(operation)
+                self._refresh_authentication_parent(operation)
             return result
         finally:
             self._finish_worker(operation_id, asyncio.current_task(), outcome)
@@ -666,18 +750,23 @@ class DesktopOnboardingCoordinator:
         except Exception:
             return None
 
-    async def _refresh_authentication_parent(self, operation):
+    def _refresh_authentication_parent(self, operation):
         parent = self._authentication_parent(operation)
         if parent is None:
             return
         running = self._workers.get(parent["operation_id"])
-        if running is not None and not running.done():
-            # Its read may have started before the child changed admission. Keep
-            # one fresh read after that worker, including during drain.
-            await asyncio.shield(running)
-            parent = self._authentication_parent(operation)
-        if parent is not None:
+        if running is None or running.done():
             self._start(parent, reconcile=True, actor=None)
+            return
+
+        # The current read may predate the child's outcome. Recheck after it
+        # finishes so the watcher can keep settling other operations meanwhile.
+        def refresh_after_parent(_):
+            current = self._authentication_parent(operation)
+            if current is not None:
+                self._start(current, reconcile=True, actor=None)
+
+        running.add_done_callback(refresh_after_parent)
 
     def _settle(self, operation, result):
         with self.store.database.transaction() as connection:
@@ -692,6 +781,7 @@ class DesktopOnboardingCoordinator:
             settled = getattr(self.owner, "settled", None)
             if settled is not None:
                 settled(operation, result)
+        return bool(changed)
 
     def _pending(self):
         with self.store.database.read() as connection:
@@ -786,7 +876,8 @@ class DesktopOnboardingCoordinator:
                         if prefetch is not None:
                             prefetch.cancel()
                     if observed is not None:
-                        self._settle(operation, observed)
+                        if self._settle(operation, observed) and observed.state in {"completed", "refused"}:
+                            self._refresh_authentication_parent(operation)
                         continue
                     remaining.append(operation)
                     if operation["operation_id"] not in self._workers and recoverable:

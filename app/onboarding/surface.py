@@ -66,7 +66,7 @@ def setup_shell(request: Request, *, browser=False, receiving_origin=None, acces
     except OSError:
         raise HTTPException(503, "Setup assets are unavailable") from None
     script, style = first_paint_csp(document)
-    if not receiving_origin:
+    if not browser and not receiving_origin:
         document = _with_release_presentation(document)
     if access_ticket is not None:
         document = document.replace("</body>", f'<template id="access-document-entry">{escape(access_ticket)}</template></body>', 1)

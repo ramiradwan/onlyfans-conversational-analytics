@@ -43,6 +43,7 @@ LOCAL_ARCHIVE_SURFACES = {
     "POST /api/v1/saved-data/available",
     "POST /api/v1/saved-data/login/begin",
     "POST /api/v1/saved-data/login/finish",
+    "POST /api/v1/saved-data/login/windows-hello",
     "POST /api/v1/saved-data/view",
     "POST /api/v1/saved-data/export",
     "POST /api/v1/saved-data/delete",
@@ -204,6 +205,22 @@ def test_no_exemption_outlives_the_route_it_excuses() -> None:
         + "\n".join(stale)
     )
     assert all(reason.strip() for reason in UNGATED_SURFACES.values())
+
+
+@pytest.mark.parametrize(("path", "wrong_gate"), [
+    ("/api/v1/saved-data/login/windows-hello", require_activated_runtime),
+    ("/api/v1/webauthn/login/windows-hello", require_local_installation),
+])
+def test_windows_hello_logins_require_their_own_gate(path, wrong_gate) -> None:
+    application = FastAPI()
+
+    @application.post(path, dependencies=[Depends(wrong_gate)])
+    def login() -> None:
+        pass
+
+    surface = f"POST {path}"
+    assert surface in _ungated_surfaces(application)
+    assert surface not in UNGATED_SURFACES
 
 
 def test_the_guard_reports_an_ungated_router() -> None:

@@ -7,7 +7,7 @@ import pytest
 
 from app.onboarding.admission import AdmissionRefused, ScopedAdmissions
 from app.onboarding.browser_tasks import BrowserTasks, validate_observation
-from app.onboarding.coordinator import DesktopOnboardingCoordinator
+from app.onboarding.coordinator import CommandRefused, DesktopOnboardingCoordinator
 from app.persistence.auth import SQLiteAuthenticationStore
 from app.provisioning.desktop_onboarding import ProvisioningSetupOwner
 from app.security.hosted_grants import HostedGrantUnavailable
@@ -137,6 +137,114 @@ def observation(browser):
         "admission_generation": browser.generation, "extension_id": "a" * 32, "instance_id": str(uuid4()),
         "epoch": str(uuid4()), "revision": 1, "account_generation": 1, "consent_generation": 1,
         "draft_scope_id": str(uuid4()), "disclosure_bundle_id": "a" * 64, "state": "ready", "creator_account_id": "creator-test"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("initial_selection", [False, True])
+async def test_desktop_browser_retry_requires_a_fresh_observation_before_reselecting(setup, initial_selection):
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+    from app.onboarding.admission_routes import ORIGIN
+    from app.onboarding.authentication import DesktopAuthentication
+    from app.onboarding.browser_routes import browser_router
+    from app.onboarding.ceremonies import BrowserCeremonies
+    from app.security.installation_key import InstallationKeyAuthority
+    from test_browser_ceremony_client import NOW, vector
+    from test_desktop_authentication import AuthenticationClient
+    from test_desktop_browser_routes import headers
+    from test_desktop_ceremonies import Client, authorized
+    from test_installation_key import EmulatedPlatformProvider
+
+    coordinator, tasks, native, now = setup
+    binding = dict(vector("prepare")["request"]["binding"])
+    now[0] = NOW
+    native = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(), role="desktop")
+    setup = coordinator, tasks, native, now
+    owner = coordinator.owner
+    owner.key = InstallationKeyAuthority(owner.store, EmulatedPlatformProvider())
+    key = owner.key.ensure_ready()
+    request, _, browser = await browser_access(setup)
+    observed = observation(browser)
+    tasks.observe(browser, observed)
+    await coordinator.reconcile(native, request["operation_id"])
+    await coordinator.drain()
+    binding.update(installation_key_id=key.installation_key_id, installation_key_jkt=key.installation_key_jkt,
+        intended_creator_id=observed["creator_account_id"])
+    client = AuthenticationClient()
+    owner.ceremonies = ceremonies = BrowserCeremonies(owner.store, Client(), hosted_origin="https://provider.example")
+    ceremonies.authentication = auth = DesktopAuthentication(owner.store, ceremonies, client, providers=("google", "default"))
+    request = command(coordinator.read(native), "account.connect")
+    if initial_selection:
+        request["provider"] = "google"
+    parent, _ = coordinator._accept(native, request)
+    await ceremonies.prepare(parent["operation_id"], binding, authorize=authorized)
+    await auth.refresh(parent["operation_id"], authorize=authorized)
+    if initial_selection:
+        selected = parent
+        await auth.execute(selected, authorize=authorized, read_guard=authorized, reconcile=False)
+        tasks.prepare(selected, "browser.authentication")
+    else:
+        selected, _ = coordinator._accept(native, {**command(coordinator.read(native), "auth.select"), "provider": "google"})
+        coordinator._start(selected, reconcile=False, actor=None)
+        await coordinator.drain()
+    old = next(task for task in tasks.current_native(native) if task["operation_id"] == selected["operation_id"])
+    code = coordinator.admissions.reissue_task_entry(native.identifier, generation=native.generation, task_id=old["task_id"])
+    helper = coordinator.admissions.consume(code, role="browser_task")
+    app = FastAPI()
+    app.include_router(browser_router(coordinator, tasks, ceremonies))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN) as http:
+        assert "browser.access" not in coordinator.read(native)["allowed_actions"]
+        ended = await http.post("/api/v1/browser-tasks/ended", json={"reason": "task_changed"}, headers=headers(helper))
+        assert ended.status_code == 200
+        old_route = f"/api/v1/desktop/browser-tasks/{old['task_id']}/open"
+        assert (await http.post(old_route, json={}, headers=headers(native))).json() == {"state": "unavailable"}
+
+        retry = command(coordinator.read(native))
+        duplicate = {**retry, "operation_id": str(uuid4())}
+        await coordinator.command(native, retry)
+        await coordinator.command(native, retry)
+        with pytest.raises(CommandRefused) as refused:
+            await coordinator.command(native, duplicate)
+        assert refused.value.reason == "setup_changed"
+        await coordinator.drain()
+        waiting = coordinator.read(native)
+        assert coordinator.receipt(native, retry["operation_id"])["state"] == "waiting"
+        assert waiting["next_task"] == "browser-access" and "auth.select" not in waiting["allowed_actions"]
+        with pytest.raises(CommandRefused) as refused:
+            await coordinator.command(native, {**command(waiting, "auth.select"), "provider": "google"})
+        assert refused.value.reason == "action_unavailable"
+        access, = [task for task in tasks.current_native(native) if task["purpose"] == "browser.access"]
+        assert access["operation_id"] == retry["operation_id"]
+        assert tasks.attachment(access) == {"entry_source": "desktop", "participant": None,
+            "creator_account_id": observed["creator_account_id"]}
+        code = coordinator.admissions.reissue_task_entry(native.identifier, generation=native.generation, task_id=access["task_id"])
+        fresh = coordinator.admissions.consume(code, role="browser_task")
+        refreshed = {**observed, "task_id": fresh.task_id, "admission_generation": fresh.generation,
+            "draft_scope_id": str(uuid4()), "revision": observed["revision"] + 1}
+        for change in ({"instance_id": str(uuid4())}, {"disclosure_bundle_id": "b" * 64},
+                       {"creator_account_id": "another-creator"}, {"journey_id": str(uuid4())}):
+            result = await http.post("/api/v1/browser-tasks/observation", json={**refreshed, **change}, headers=headers(fresh))
+            assert result.status_code == 409
+        assert coordinator.receipt(native, retry["operation_id"])["state"] == "waiting"
+        assert [verb for verb, _ in client.calls if verb != "read"] == ["select", "cancel"]
+        result = await http.post("/api/v1/browser-tasks/observation", json=refreshed, headers=headers(fresh))
+        assert result.status_code == 200
+        await coordinator.drain()
+        assert coordinator.receipt(native, retry["operation_id"])["state"] == "completed"
+        ready = coordinator.read(native)
+        assert ready["next_task"] == "account-connection" and ready["authentication"]["state"] == "retired"
+        replacement = {**command(ready, "auth.select"), "provider": "google"}
+        await coordinator.command(native, replacement)
+        await coordinator.command(native, replacement)
+        await coordinator.drain()
+        assert [verb for verb, _ in client.calls if verb != "read"] == ["select", "cancel", "select"]
+        successor, = [task for task in tasks.current_native(native) if task["purpose"] == "browser.authentication"]
+        assert successor["operation_id"] == replacement["operation_id"]
+        assert tasks.attachment(successor)["participant"]["draft_scope_id"] == refreshed["draft_scope_id"]
+        assert (await http.post(old_route, json={}, headers=headers(native))).json() == {"state": "unavailable"}
+        replay = await http.post("/api/v1/browser-tasks/ended", json={"reason": "task_changed"}, headers=headers(helper))
+        assert replay.status_code == 401
+    await owner.stop()
 
 
 @pytest.mark.asyncio
