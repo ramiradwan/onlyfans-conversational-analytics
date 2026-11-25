@@ -385,7 +385,7 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
           </Stack>}
           {!awaiting && (active || openingWindow) && expiration}
           {active && !awaiting && !failed && <DialogContentText>
-            In the extension settings, choose Continue setup. Then choose Compare connection codes.
+            In the extension settings, choose Connection details, then Open code comparison.
           </DialogContentText>}
           {!failed && (rechecking || (active || openingWindow) && !awaiting) && (
             <Box sx={{ '& .onboarding-status:not(:empty)': { color: 'text.secondary', overflowWrap: 'anywhere' } }}>

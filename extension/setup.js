@@ -7,7 +7,7 @@ import { LEGAL_ACCEPT_TERMS_MESSAGE_TYPE, LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE,
   LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE, LEGAL_CHOOSE_MODE_MESSAGE_TYPE } from './runtime/legal-activation-controller.mjs';
 import { createSurfaceClient, openSurface, send, secureExternalUrl, NoticeError } from './ui/surface-client.mjs';
 import { supportChannelLabels } from './ui/support-channels.mjs';
-import { customerJourney, needsAgreement, modeChoiceAvailable } from './ui/presentation.mjs';
+import { customerJourney, hasModeAccess, manualPairingAction, modeChoiceAvailable, needsAgreement } from './ui/presentation.mjs';
 import { element, show, text, renderLoading, renderJourney, renderLegalLinks, createPageActions } from './ui/dom.mjs';
 import { requestAnalyticsAccess, transition, restoreAccess, openCreatorAccount } from './ui/actions.mjs';
 import { createDesktopLaunch } from './ui/desktop-launch.mjs';
@@ -113,10 +113,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 const initialWorkspace = readWorkspace();
 
-function hasModeAccess(status, mode) {
-  return status.onlyfans_permission === true && (mode === 'preview' || status.local_service_permission === true);
-}
-
 async function validateReview(transactionId) {
   validationPending = transactionId;
   validationFailed = null;
@@ -195,19 +191,15 @@ async function selectModeReview(mode) {
   saveReviewChoice(mode);
   render(client.model);
 }
-function manualPairingAction({ status, legal, pairing }) {
-  if (browserTask || workspacePending || location.hash.startsWith('#journey=')
-    || !legal?.configured || legal.requires_reauthorization
-    || status?.consent.mode !== 'full' || !hasModeAccess(status, 'full')
-    || pairing.desktop_attempt || pairing.desktop_control) return null;
-  if (pairing.owns_attempt && ['pairing', 'compare'].includes(pairing.state)) return 'cancel';
-  return ['unpaired', 'desktop_not_ready', 'pairing_failed'].includes(pairing.state) ? 'pair' : null;
+function standalonePairingAction(model) {
+  if (browserTask || workspacePending || location.hash.startsWith('#journey=')) return null;
+  return manualPairingAction(model);
 }
 
 function renderDesktop(model, journey) {
   const launch = desktopLaunch.state;
   const opening = launch === 'opening';
-  const manualAction = manualPairingAction(model);
+  const manualAction = standalonePairingAction(model);
   const comparison = model.pairing?.state === 'compare' && model.pairing.owns_attempt && model.pairing.comparison_code;
   const compare = journey?.id === 'pairing_in_progress' && comparison;
   const passiveConnection = journey?.id === 'setup_incomplete' && model.pairing?.state === 'unavailable';
@@ -403,7 +395,7 @@ async function runJourneyAction(action) {
     setFullReview(false); render(client.model); return;
   }
   if (action === 'pair' || action === 'cancel') {
-    if (manualPairingAction(client.model) === action) client.post(action);
+    if (standalonePairingAction(client.model) === action) client.post(action);
     return;
   }
   if (action === 'open_desktop') return desktopLaunch.launch(client.model);
