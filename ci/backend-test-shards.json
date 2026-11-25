@@ -409,6 +409,7 @@
     "tests/stateful/test_analytics_equivalence.py": 4,
     "tests/stateful/test_brain_ingestion.py": 1,
     "tests/stateful/test_brain_persistent_ingestion.py": 4,
+    "tests/test_account_passkey_authority.py": 3,
     "tests/test_activation_enforcement.py": 3,
     "tests/test_activation_gate.py": 2,
     "tests/test_activation_read_scope.py": 2,
@@ -771,6 +772,10 @@
       {
         "selector": "tests/test_desktop_authentication.py",
         "reason": "Provider choices, attempt binding and response-loss recovery persist in the Windows encrypted authentication journal."
+      },
+      {
+        "selector": "tests/test_account_passkey_authority.py",
+        "reason": "Windows must preserve the account passkey binding and withdrawal across restart and require a fresh assertion after locking saved data."
       },
       {
         "selector": "tests/test_desktop_decisions.py",
@@ -1371,6 +1376,7 @@
   },
   "windows_platform_shards": {
     "tests/test_access_document.py": 1,
+    "tests/test_account_passkey_authority.py": 3,
     "tests/test_activation_gate.py": 3,
     "tests/test_activation_reconciliation_owner.py": 1,
     "tests/test_activation_review_replacement_owner.py": 3,
@@ -1568,6 +1574,7 @@
       "tests/test_upgrade_lifecycle.py": 2.545206900001176
     },
     "unmeasured_files": [
+      "tests/test_account_passkey_authority.py",
       "tests/test_activation_reconciliation_owner.py",
       "tests/test_activation_review_replacement_owner.py",
       "tests/test_installation_authority_recovery_owner.py",
