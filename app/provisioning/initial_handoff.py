@@ -80,6 +80,10 @@ class InitialInstallationEnrollment:
     def accepted_work(self):
         return self._effects.accepted_work() + self._original_effects.accepted_work()
 
+    def has_live_work(self, journey_id: str) -> bool:
+        task = self._tasks.get(journey_id)
+        return not self._stopped and task is not None and not task.done()
+
     def bind_effect_gate(self, lock, guard):
         self._effects.bind_effect_gate(lock, guard)
         self._original_effects.bind_effect_gate(lock, lambda _: None)
@@ -176,6 +180,20 @@ class InitialInstallationEnrollment:
             raise InitialHandoffRefused("journey_unavailable")
         return row
 
+    def _authorize_completion(self, row: dict, scope: dict) -> None:
+        try:
+            current = self._current_journey(row["journey_id"])
+        except InitialHandoffRefused:
+            raise HostedGrantUnavailable("Initial completion authority is unavailable") from None
+        fields = ("operation_id", "installation_id", "handoff_reference", "handoff_expires_at", "expires_at", "scope_json")
+        if current["state"] != "completing" or any(current[name] != row[name] for name in fields):
+            raise HostedGrantUnavailable("Initial completion authority changed")
+        deadline = row["handoff_expires_at"]
+        if deadline is None or datetime.fromisoformat(deadline) <= self.store._now():
+            raise HostedGrantUnavailable("Initial completion authority expired")
+        if self.authorize_scope is not None:
+            self.authorize_scope(row["journey_id"], scope)
+
     def _browser_entry(self, row: dict) -> dict:
         return {"state": "waiting", "journey_id": row["journey_id"],
                 "handoff_reference": row["handoff_reference"]}
@@ -215,7 +233,10 @@ class InitialInstallationEnrollment:
             return
         existing = self._tasks.get(journey_id)
         if existing is None or existing.done():
-            self._tasks[journey_id] = asyncio.create_task(self._run(journey_id))
+            task = asyncio.create_task(self._run(journey_id))
+            self._tasks[journey_id] = task
+            # The end of bounded owner work also changes its read-only projection.
+            task.add_done_callback(lambda _: events.publish())
 
     async def pause_terminal_wait(self, journey_id: str, operation_id: str) -> None:
         """Stop only an idle wait after its caller obtained an exact terminal read."""
@@ -257,8 +278,8 @@ class InitialInstallationEnrollment:
             await self._continuity(row)
             return
         if row["state"] in {"unknown", "completing"}:
-            # An interrupted completion is reconciled using a fresh proof, never
-            # reissued. No cached bootstrap response is retained.
+            # A resumed owner reads the original receipt with a fresh proof.
+            # Only a live transport can prove that transmission never began.
             try:
                 await self._recover(row)
                 await self._continuity(self.journeys.get(journey_id))
@@ -288,7 +309,7 @@ class InitialInstallationEnrollment:
                         row = self._current_update(journey_id, state="completing", scope_json=json.dumps(scope, separators=(",", ":")))
                         events.publish()
                         result = await self._effects.run(self.client.complete, {**request, "scope": scope},
-                            **({"before_send": lambda: self.authorize_scope(journey_id, scope)} if self.authorize_scope is not None else {}),
+                            before_send=lambda: self._authorize_completion(row, scope),
                             journey_id=journey_id)
                         if result["status"] == "completed":
                             bootstrap = result["bootstrap"]

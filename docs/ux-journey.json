@@ -1483,6 +1483,11 @@
       "evidence": [
         {
           "kind": "unit",
+          "file": "extension/tests/surface-client-recovery.test.mjs",
+          "name": "F09 cannot settle a replacement port from an old paired channel"
+        },
+        {
+          "kind": "unit",
           "file": "extension/tests/customer-journey.test.mjs",
           "name": "Full is ready only after secure delivery, commercial authority, and analysis admission"
         }
@@ -2052,6 +2057,11 @@
         }
       ],
       "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktopOnboarding-integration.test.ts",
+          "name": "returns the completed activation receipt independently of older helper feedback"
+        },
         {
           "kind": "unit",
           "file": "frontend/tests/CommercialActivationControls.test.tsx",
@@ -2755,6 +2765,16 @@
         }
       ],
       "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "shows Finish setup at its first frame even while access feedback still exists"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_browser_task_events.py",
+          "name": "test_scoped_stream_pairs_current_feedback_with_its_snapshot"
+        },
         {
           "kind": "unit",
           "file": "frontend/tests/desktop-setup.test.js",
@@ -3851,6 +3871,11 @@
         }
       ],
       "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-enrollment.test.js",
+          "name": "retires a failed ceremony only after verified current authentication"
+        },
         {
           "kind": "unit",
           "file": "frontend/tests/desktop-setup.test.js",

@@ -1,6 +1,18 @@
 import { deriveCustomerJourney } from '../runtime/customer-journey.mjs';
 import { secureExternalUrl } from './surface-client.mjs';
 
+export function hasModeAccess(status, mode) {
+  return status.onlyfans_permission === true && (mode === 'preview' || status.local_service_permission === true);
+}
+
+export function manualPairingAction({ status, legal, pairing }) {
+  if (!legal?.configured || legal.requires_reauthorization
+    || status?.consent.mode !== 'full' || !hasModeAccess(status, 'full')
+    || pairing.desktop_attempt || pairing.desktop_control) return null;
+  if (pairing.owns_attempt && ['pairing', 'compare'].includes(pairing.state)) return 'cancel';
+  return ['unpaired', 'desktop_not_ready', 'pairing_failed'].includes(pairing.state) ? 'pair' : null;
+}
+
 export function phaseLabel(status) {
   return ({ off: 'Analytics off', preview: 'Preview on', identity: 'Full setup in progress',
     full: status.delivery?.transport_state === 'authenticated' ? 'Desktop connected' : 'Full setup in progress',

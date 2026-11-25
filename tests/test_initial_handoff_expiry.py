@@ -161,6 +161,49 @@ async def test_live_unresolved_completion_resumes_without_another_prepare(expiry
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("boundary", ["prepared_deadline", "authorization_scope"])
+async def test_live_completion_cannot_send_after_original_authority_changes(expiry_case, boundary):
+    clock, _, client, worker, _, _ = expiry_case
+    original = worker.journeys.open()
+    journey = original["journey_id"]
+    scope = {"installation_id": original["installation_id"], "installation_key_jkt": "A" * 43}
+    protected_sends = []
+    receipt_reads = []
+
+    class AuthorizedStream:
+        async def events(self, envelope):
+            yield {"status": "authorized", "revision": 1, "scope": scope}
+
+    def complete(request, *, before_send):
+        before_send()
+        if boundary == "prepared_deadline":
+            clock[0] += timedelta(minutes=10)
+        else:
+            worker.journeys.update(journey, state="completing", scope_json=json.dumps({**scope, "changed": True}))
+        before_send()
+        protected_sends.append(request["operation_id"])
+
+    async def recover(row):
+        receipt_reads.append(row["operation_id"])
+        raise HostedGrantUnavailable("Fixture has no committed receipt")
+
+    worker.stream = AuthorizedStream()
+    client.complete = complete
+    worker._recover = recover
+    try:
+        await worker.prepare(journey)
+        operation = worker.journeys.get(journey)["operation_id"]
+        await worker._run(journey)
+        saved = worker.journeys.get(journey)
+        assert saved["operation_id"] == operation
+        assert saved["state"] == "unknown"
+        assert not protected_sends
+        assert receipt_reads == [operation]
+    finally:
+        await worker.stop()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("state", ["unknown", "completing"])
 async def test_expired_unresolved_completion_requires_exact_workspace_receipt_recovery(expiry_case, state):
     clock, store, client, worker, resumed, key_reads = expiry_case

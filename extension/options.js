@@ -1,6 +1,6 @@
 import { UI_CLEAR_PREVIEW_MESSAGE_TYPE, UI_DELETE_LOCAL_DATA_MESSAGE_TYPE } from './runtime/consent-controller.mjs';
 import { createSurfaceClient, openSurface, send } from './ui/surface-client.mjs';
-import { phaseLabel } from './ui/presentation.mjs';
+import { manualPairingAction, phaseLabel } from './ui/presentation.mjs';
 import { element, show, text, renderLoading, renderReadiness, renderLegalLinks, createPageActions } from './ui/dom.mjs';
 import { transition, restoreAccess, allowHistory } from './ui/actions.mjs';
 import { createHandoffFinisher } from './ui/handoff.mjs';
@@ -20,6 +20,9 @@ const client = createSurfaceClient((model) => { if (model.status) failed = false
 const page = createPageActions(client, render);
 // Pause lives in the setup page, or in the desktop app while it can control this browser.
 const mutations = ['revoke', 'forget-companion', 'history', 'clear-preview', 'delete-local-data', 'restore-access'];
+function canOpenCodeComparison(model) {
+  return location.hash !== '#history' && manualPairingAction(model) === 'pair';
+}
 function render(model) {
   const { status, legal } = model;
   renderLoading(status, failed);
@@ -35,6 +38,7 @@ function render(model) {
   } else historyStatusRegion.removeAttribute('aria-busy');
   for (const id of ['capture', 'connection', 'data']) show(id, status !== null || id === 'connection' && historyHandoff && !failed);
   for (const id of mutations) page.lock(id, !status);
+  show('open-code-comparison', canOpenCodeComparison(model));
   renderLegalLinks(legal);
   const historyChosen = Boolean(status?.history_choice_revision) && model.pairing.state === 'paired';
   const canAllowHistory = historyChosen && !status.history_permission;
@@ -95,6 +99,9 @@ page.bind('clear-preview', () => send({ type: UI_CLEAR_PREVIEW_MESSAGE_TYPE }), 
 page.bind('restore-access', () => restoreAccess(client.model));
 page.bind('history', () => allowHistory(client.model.status?.history_choice_revision));
 page.bind('open-setup', () => openSurface('setup'));
+page.bind('open-code-comparison', () => {
+  if (canOpenCodeComparison(client.model)) return chrome.tabs.create({ url: chrome.runtime.getURL('setup.html') });
+});
 page.bind('open-dashboard', () => chrome.tabs.create({ url: client.model.config.dashboard_url }));
 page.bind('manage-desktop-data', () => chrome.tabs.create({ url: client.model.config.history_settings_url }));
 element('open-connection-details').addEventListener('click', () => element('connection-details-dialog').showModal());

@@ -50,6 +50,12 @@ SLOW_MS = 25
 SINK_DIRECTORY = "diagnostics"
 SINK_FILENAME = "sign-in-timing.log"
 SINK_LIMIT_BYTES = 65_536
+_RECOVERY_PREPARE_STAGES = frozenset({"request", "key", "challenge", "proof", "submit", "result"})
+_RECOVERY_PREPARE_FAILURES = frozenset({
+    "invalid_request", "guard_refused", "key_unavailable", "connection_setup",
+    "transmission", "response_timeout", "transport_unknown", "http_failure",
+    "provider_refusal", "invalid_response", "proof_budget_exhausted", "proof_unavailable",
+})
 _sink_lock = threading.Lock()
 _sink: Path | None = None
 
@@ -104,6 +110,15 @@ def observe(operation, phase, status, elapsed_ms, *, http=None):
     logger.info("event=sign_in_phase operation=%s phase=%s status=%s elapsed_ms=%s%s",
         operation, phase, status, round(elapsed_ms), suffix)
     _append(f"sign_in_phase operation={operation} phase={phase} status={status} elapsed_ms={round(elapsed_ms)}{suffix}")
+
+
+def recovery_prepare_failure(stage: str, category: str) -> None:
+    """Record a closed recovery failure without request or exception details."""
+    if stage not in _RECOVERY_PREPARE_STAGES or category not in _RECOVERY_PREPARE_FAILURES:
+        raise ValueError("Invalid recovery preparation failure")
+    line = f"authority_recovery_prepare_failure stage={stage} category={category}"
+    logger.info("event=%s", line)
+    _append(line)
 
 
 @contextmanager

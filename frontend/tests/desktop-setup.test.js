@@ -143,8 +143,16 @@ it('selects the saved setup theme before the entry module can paint', () => {
   runInNewContext(setupThemeInitializer, {document: earlyDocument, localStorage: {getItem: () => 'dark'}});
   expect(earlyDocument.documentElement.dataset.colorScheme).toBe('dark');
   expect(meta.setAttribute).toHaveBeenCalledWith('content', 'dark');
-  expect(markup.indexOf('src="/setup-theme-init.js"')).toBeGreaterThan(0);
-  expect(markup.indexOf('src="/setup-theme-init.js"')).toBeLessThan(markup.indexOf('type="module"'));
+  expect(markup.indexOf('<script data-setup-first-paint>')).toBeGreaterThan(0);
+  expect(markup.indexOf('<script data-setup-first-paint>')).toBeLessThan(markup.indexOf('type="module"'));
+  expect(markup).not.toContain('src="/setup-theme-init.js"');
+  expect(markup).toContain('<style data-setup-first-paint>');
+  runInNewContext(setupThemeInitializer, {document: earlyDocument, localStorage: {getItem: () => 'light'}});
+  expect(earlyDocument.documentElement.dataset.colorScheme).toBe('light');
+  expect(meta.setAttribute).toHaveBeenCalledWith('content', 'light');
+  runInNewContext(setupThemeInitializer, {document: earlyDocument, localStorage: {getItem: () => 'system'}});
+  expect(earlyDocument.documentElement.dataset.colorScheme).toBeUndefined();
+  expect(meta.setAttribute).toHaveBeenCalledWith('content', 'light dark');
   const denied = {document: {documentElement: {dataset: {}}}};
   Object.defineProperty(denied, 'localStorage', {get: () => {throw new Error('denied');}});
   expect(() => runInNewContext(setupThemeInitializer, denied)).not.toThrow();
@@ -1303,12 +1311,30 @@ describe('desktop setup presentation', () => {
   it('distinguishes browser sign-in from accepted work without declaring local readiness', () => {
     mount();
     for (const [state, slot, message] of [['awaiting-authentication', 'task-status', 'Finish signing in in your browser. This window continues by itself.'],
-      ['accepted', 'task-pending', 'Account connected. Moving to the next step…']]) {
+      ['accepted', 'task-pending', 'Connecting your account…']]) {
       renderSetup(document, { snapshot: { ...initial(), next_task: 'account-connection', allowed_actions: [],
         decision_status: { operation_id: operationId, state }, pending_operations: [{ ...record, action: 'account.connect' }] }, connected: true });
       expect(document.getElementById(slot).textContent).toBe(message);
       expect(document.getElementById('task-action').hidden).toBe(true);
       expect(document.getElementById('open-dashboard')).toBeNull();
+    }
+  });
+
+  it('keeps accepted account connection in progress and shows a genuine refusal', () => {
+    mount();
+    const snapshot = { ...initial(), next_task: 'account-connection', allowed_actions: [],
+      decision_status: { operation_id: operationId, state: 'accepted' },
+      pending_operations: [{ ...record, action: 'account.connect' }] };
+    for (const [reason, pending, status] of [
+      ['none', 'Connecting your account\u2026', ''],
+      ['operation_unconfirmed', 'Checking your connection\u2026', ''],
+      ['authority_unavailable', '', 'Account authorization is unavailable.'],
+      ['none', 'Connecting your account\u2026', ''],
+    ]) {
+      renderSetup(document, { snapshot: { ...snapshot, reason }, connected: true });
+      expect(document.getElementById('task-pending').textContent).toBe(pending);
+      expect(document.getElementById('task-status').textContent).toBe(status);
+      expect(document.getElementById('task-action').hidden).toBe(true);
     }
   });
 
@@ -1986,6 +2012,24 @@ it('protected recovery never enables stale controls during a command or disconne
   expect(authorityRecoveryView({ snapshot: value, connected: true, pending: 'new', pendingAction: 'auth.cancel' }).cancel).toBe(false);
   expect(authorityRecoveryView({ snapshot: value, connected: true, browserLaunchPending: true }).action).toBeNull();
   expect(authorityRecoveryView({ snapshot: value, connected: true, error: 'chrome_unavailable' }).status).toBe('Install the required browser to continue.');
+});
+
+it('shows blocked recovery when the original account connection is still pending', () => {
+  document.documentElement.innerHTML = markup;
+  const command = { operation_id: operationId, action: 'account.connect', state: 'accepted', reason: 'none' };
+  const preparing = { ...initial(), journey_id: operationId, next_task: 'account-connection',
+    authority_recovery: 'preparing', allowed_actions: [], pending_operations: [command] };
+  const state = { connected: true, pending: operationId, pendingAction: 'account.connect' };
+  renderSetup(document, { ...state, snapshot: preparing });
+  expect(document.getElementById('task-pending').textContent).toBe('Preparing sign-in…');
+  expect(document.getElementById('task-action').hidden).toBe(true);
+
+  renderSetup(document, { ...state, snapshot: { ...preparing, revision: preparing.revision + 1,
+    authority_recovery: 'blocked', pending_operations: [{ ...command, state: 'outcome_unknown', reason: 'operation_unconfirmed' }] } });
+  expect(document.getElementById('task-title').textContent).toBe('Can’t open your analytics right now');
+  expect(document.getElementById('task-pending').textContent).toBe('');
+  expect(document.getElementById('task-action').hidden).toBe(true);
+  expect(document.getElementById('protected-cancel').hidden).toBe(true);
 });
 
 it('preflights Chrome before spending a protected launch and never auto-opens a replacement', async () => {

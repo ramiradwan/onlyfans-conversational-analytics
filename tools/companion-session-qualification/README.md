@@ -23,7 +23,7 @@ to canonical storage; a 512 KiB inbound protocol record exercises the bounded
 browser fragment queue. The inbound command fixture is observed, never executed.
 
 Run through the driver with `PYTHON` pointing to an interpreter that has
-`requirements-dev.txt` installed. Port 17871 must be free. CI runs Chrome 132 and
+`requirements-dev.txt` installed. Port 17871 must be free. CI runs the readiness epoch check with Chrome 132 and
 current Chromium and retains the report alongside the hostile-listener,
 independent-oracle, and frozen-runtime evidence.
 

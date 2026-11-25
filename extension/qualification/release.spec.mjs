@@ -1,6 +1,7 @@
 import { test, expect, chromium } from '@playwright/test';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { UUID } from '../../shared/browser-tasks/wire.mjs';
 
 test('extracted release starts disabled, records UI choices and deletes without a companion', async () => {
   if (!process.env.EXTENSION_ARTIFACT_DIR) throw new Error('EXTENSION_ARTIFACT_DIR is required');
@@ -13,6 +14,11 @@ test('extracted release starts disabled, records UI choices and deletes without 
   });
   try {
     const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
+    const expectOnlyBridgeAccess = async () => {
+      const { origins = [], permissions = [] } = await worker.evaluate(() => chrome.permissions.getAll());
+      expect(origins).toEqual(['http://bridge.localhost/*']);
+      expect(permissions).not.toContain('webRequest');
+    };
     const extensionId = new URL(worker.url()).hostname;
     const session = await context.newCDPSession(context.pages()[0]);
     const version = await session.send('Browser.getVersion');
@@ -26,14 +32,17 @@ test('extracted release starts disabled, records UI choices and deletes without 
     const popup = await context.newPage();
     await popup.goto(`chrome-extension://${extensionId}/popup.html`);
     await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
+    await expectOnlyBridgeAccess();
     const openedSetup = context.waitForEvent('page');
     await popup.locator('#journey-primary').click();
     const setup = await openedSetup;
-    await setup.waitForURL(`chrome-extension://${extensionId}/setup.html`);
+    const setupPage = `chrome-extension://${extensionId}/setup.html`;
+    await setup.waitForURL(url => {
+      const journeyId = url.hash.slice('#journey='.length);
+      return UUID.test(journeyId) && url.href === `${setupPage}#journey=${journeyId}`;
+    });
     await expect(setup.locator('#legal-unavailable')).toBeHidden();
     await expect(setup.locator('#start-choice')).toBeVisible();
-    const access = () => worker.evaluate(() => chrome.permissions.getAll());
-    expect((await access()).origins ?? []).toEqual([]);
     await setup.locator('#start-preview').click();
     await expect(setup.locator('#pre-mode')).toBeVisible();
     await setup.locator('#not-now-preview').click();
@@ -44,7 +53,7 @@ test('extracted release starts disabled, records UI choices and deletes without 
     await expect(setup.locator('#enable-preview')).toBeEnabled();
     await expect(setup.locator('#mode-permission-note')).toBeVisible();
     await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
-    expect((await access()).origins ?? []).toEqual([]);
+    await expectOnlyBridgeAccess();
     const openedOptions = context.waitForEvent('page');
     await setup.locator('#open-options').click();
     const options = await openedOptions;

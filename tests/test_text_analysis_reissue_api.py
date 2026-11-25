@@ -117,6 +117,9 @@ def test_one_use_browser_entry_has_no_authority_or_hidden_coordinates(http):
         landing = browser.get('/text-analysis-reissue/entry')
         assert landing.status_code == 200 and 'entry_code' not in landing.text
         assert "frame-ancestors 'none'" in landing.headers['content-security-policy']
+        script = browser.get('/text-analysis-reissue/entry.js')
+        assert script.status_code == 200 and script.headers['content-type'].startswith('text/javascript')
+        assert script.text == (text_analysis_reissue._assets / 'reissue_entry.js').read_text(encoding='utf-8')
         opened = browser.post(PATH + '/browser-entry/consume', json={'code': entry.json()['entry_code']}, headers={'Origin': ORIGIN})
         assert opened.status_code == 200, opened.text
         assert opened.json() == {'url': 'https://example.test/v2/onboarding/text-analysis-license-reissues/' + 'A'*43}

@@ -42,6 +42,10 @@ _STARTUP_TIMEOUT_SECONDS = 15
 _TEST_DATABASE_KEY_ENVIRONMENT_NAME = "OFCA_TEST_DATABASE_MASTER_KEY_HEX"
 _PROVISIONING_HANDOFF_TOKEN = "packaged-provisioning-handoff-token-0001"
 _PROVISIONING_EXTENSION_ID = "abcdefghijklmnopabcdefghijklmnop"
+_REISSUE_ENTRY_ASSETS = (
+    ("/text-analysis-reissue/entry", "reissue_entry.html"),
+    ("/text-analysis-reissue/entry.js", "reissue_entry.js"),
+)
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = ROOT / "packaging" / "build-windows.ps1"
 SMOKE_SCRIPT = ROOT / "tools" / "packaging-smoke" / "run.ps1"
@@ -441,6 +445,14 @@ def _assert_packaged_runtime_serves_homepage(
             f"bundled homepage (status {homepage.status})"
         )
         assert "<!doctype html" in homepage.body.lower()
+        browser_headers = {"Host": "bridge.localhost:17871"}
+        for path, filename in _REISSUE_ENTRY_ASSETS:
+            status, _, body = _raw_request("GET", path, headers=browser_headers)
+            assert status == 503, f"Configured licence recovery must require activation at {path}"
+            assert json.loads(body)["detail"] == "The local runtime is not activated"
+            relative = Path("app/onboarding") / filename
+            shipped = artifact / "_internal" / relative
+            assert shipped.read_bytes() == (ROOT / relative).read_bytes()
     finally:
         _stop_brain(process)
 
@@ -560,14 +572,15 @@ def _assert_packaged_runtime_serves_provisioning_surface(
             ("/onboarding/entry", "text/html"),
             ("/onboarding/entry.css", "text/css"),
             ("/onboarding/entry.js", "text/javascript"),
-            ("/text-analysis-reissue/entry", "text/html"),
-            ("/text-analysis-reissue/entry.js", "text/javascript"),
         ):
             status, headers, content = _raw_request("GET", path, headers=browser_headers)
             assert status == 200 and content, (
                 f"resource_failure: native admission asset {path} returned {status}"
             )
             assert headers["content-type"].startswith(content_type)
+        for path, _ in _REISSUE_ENTRY_ASSETS:
+            status, _, _ = _raw_request("GET", path, headers=browser_headers)
+            assert status == 404, f"Restricted setup exposes configured licence recovery at {path}"
 
         status, _, _ = _raw_request(
             "POST", "/api/v1/provisioning/handoff", headers=json_headers, body=b"{}"
@@ -930,12 +943,20 @@ def test_real_installed_launcher_starts_the_frozen_brain_and_owns_its_listener(
     falsifier_smoke_run_root = falsifier_root / "smoke"
     try:
         installer = _build_real_installer(packaged_build_python, build_output)
+        artifact = build_output / "dist" / "Brain"
         provisioning_cwd = smoke_run_root / "provisioning-cwd"
         provisioning_cwd.mkdir(parents=True)
         _assert_packaged_runtime_serves_provisioning_surface(
-            build_output / "dist" / "Brain",
+            artifact,
             data_directory=smoke_run_root / "provisioning-data",
             working_directory=provisioning_cwd,
+        )
+        configured_cwd = smoke_run_root / "configured-cwd"
+        configured_cwd.mkdir()
+        configured_data = smoke_run_root / "configured-data"
+        _write_runtime_configuration(configured_data)
+        _assert_packaged_runtime_serves_homepage(
+            artifact, data_directory=configured_data, working_directory=configured_cwd
         )
         result, transcript = _run_installed_launcher_smoke(installer, smoke_run_root)
         _assert_installed_launcher_listener(result, transcript)

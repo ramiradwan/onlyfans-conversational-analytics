@@ -288,6 +288,38 @@ def verified_grant_bindings(
     return bindings, account, references
 
 
+def initial_membership_scope_pending(store: SQLiteAuthenticationStore, request: FinalizationRequest) -> bool:
+    """Recognize only the verified initial tuple awaiting its first membership refresh.
+
+    This predicate is presentation-only. It cannot satisfy finalization and
+    rejects mismatched, expired, ambiguous or revoked authority.
+    """
+    try:
+        candidate = _approved_candidate(store, request.association_request_id)
+        selected = _one_grant_per_required_type(store.verified_grants(), _required_provisioning_grant_types(store))
+        key = store.installation_key_reference()
+        if key is None:
+            return False
+        _require_coherent_tuple(selected, candidate=candidate, key=key)
+        binding, membership = selected[CREATOR_ACCOUNT_BINDING], selected[MEMBERSHIP_SNAPSHOT]
+        _bridge_role(membership.membership_roles)
+        if (binding.creator_account_id != candidate.creator_account_id
+                or binding.creator_account_id != request.detected_creator_account_id
+                or membership.allowed_creator_account_ids != ()):
+            return False
+        now = store._now()
+        if any(not grant.valid_from <= now < grant.expires_at for grant in selected.values()):
+            return False
+        return not any(store.scope_is_revoked(scope) for scope in (
+            RevocationKey(RevocationScopeType.PRINCIPAL, membership.subject),
+            RevocationKey(RevocationScopeType.INSTALLATION, candidate.installation_id),
+            RevocationKey(RevocationScopeType.CREATOR_ACCOUNT, candidate.creator_account_id),
+            *(RevocationKey(RevocationScopeType.VERIFIED_GRANT, grant.reference_id) for grant in selected.values()),
+        ))
+    except (FinalizationRefused, ValueError, KeyError):
+        return False
+
+
 def _continued_candidate(store: AuthenticationStore, request: FinalizationRequest,
                          journey_id: str) -> ProvisioningCandidate:
     """The authenticated application session supplies this local reference."""

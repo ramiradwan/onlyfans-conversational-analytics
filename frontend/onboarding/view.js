@@ -371,12 +371,15 @@ export function renderSetup(document, state) {
   const pendingMessage = terminal ? '' : reconnectingChrome ? 'Reconnecting…' : preparingChrome ? 'Getting the browser ready…'
     : confirmingUnknown ? 'Checking whether your setup finished…'
       : finalizing && !reason ? 'Preparing this computer…'
-        : accepted && task === 'account-connection' && !reason ? 'Account connected. Moving to the next step…'
+        : accepted && task === 'account-connection' && (!reason || reason === 'operation_unconfirmed')
+          ? reason === 'operation_unconfirmed' ? 'Checking your connection…' : 'Connecting your account…'
           : connecting && browserReopen.hidden ? pairingProgress : '';
   updateStatus(get('task-pending'), pendingMessage, 'progress');
   get('task-pending').hidden = !pendingMessage;
   const status = terminal ? '' : lapsed ? reason !== 'authority_unavailable' && reasonMessage
-    : reconnectingChrome || preparingChrome && reason === 'browser_preparing' || confirmingUnknown && (!reason || reason === 'operation_unconfirmed') ? ''
+    : reconnectingChrome || preparingChrome && reason === 'browser_preparing'
+      || confirmingUnknown && (!reason || reason === 'operation_unconfirmed')
+      || accepted && task === 'account-connection' && reason === 'operation_unconfirmed' ? ''
       : replacing ? progress : endedPrompt ? signInMessage : unfinished ? 'Sign-in did not finish.'
         : reasonMessage || (!pendingMessage && (connecting ? pairingProgress : progress));
   updateStatus(taskStatus, status, connecting && !reason ? 'progress' : taskTone);

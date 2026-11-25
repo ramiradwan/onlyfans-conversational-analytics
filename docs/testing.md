@@ -254,3 +254,26 @@ For diagnosis, open the group's job summary and `visual-diagnostics-<group>-<sou
 [Retention Phase-B evidence](../.github/workflows/retention-phase-b-evidence.yml) starts from a successful exact Product CI run instead of polling for one. The supplement remains an explicit workflow.
 
 See [Product qualification](qualification.md) and [Windows acceptance](installation-and-acceptance.md) for release checks.
+
+## Desktop onboarding reliability
+
+Run the desktop setup, enrollment, adapter and continuation tests with the
+browser-task admission, coordinator, pairing, activation and WebAuthn tests.
+Qualify popup readiness on the authenticated companion channel with
+`extension/qualification/companion-production-browser.mjs --readiness-epoch`.
+The harness uses a synthetic consent choice and holds replies after they reach
+Brain. It exercises Chromium and the production companion modules.
+
+Keep source and installed results separate. For a baseline and candidate
+comparison, record the exact Product, extension, Provider and Contracts
+coordinates. Use matching hardware and scenario order. Run at least 30 trials
+per timing scenario and record p50, p95 and max, request counts and idle CPU.
+Measure the time to a current action or readiness indication. Record deliberate
+holds and external delays separately, and retain the seed and trace for each
+failed schedule.
+
+Use the installed Windows journey before qualifying the refactor. Exercise both
+installation orders, both boot roots, restart and upgrade, and recovery after
+lost replies or interrupted pairing. Include verification of local passkeys,
+account and profile changes, and recovery of the original optional activation.
+Record the supported Windows, browser and WebView2 versions with each result.

@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import { readFileSync } from 'node:fs';
 import { build } from 'esbuild';
 import { payload } from '../test-fixtures/browser-task.mjs';
+import { hasModeAccess, manualPairingAction } from '../ui/presentation.mjs';
 import { createFullReviewPersistence, fullReviewIntent, FULL_REVIEW_INTENT_KEY } from '../runtime/onboarding-full-intent.mjs';
 
 const record = { journey_id: '11111111-1111-4111-8111-111111111111',
@@ -32,6 +33,7 @@ const stubs = {
     desktopOwnsCapture=(model)=>(model.status?.consent.mode==='full'
       || (model.status?.consent.mode==='paused' && model.status?.consent.resume_mode==='full'))
       && model.pairing?.desktop_control===true,
+    hasModeAccess=fixture.hasModeAccess, manualPairingAction=fixture.manualPairingAction,
     needsAgreement=()=>false, modeChoiceAvailable=()=>false;`,
   'dom.mjs': `export const element=fixture.element, show=fixture.show, text=(id,value)=>{element(id).textContent=value};
     export const renderLoading=()=>{},renderJourney=()=>{},renderReadiness=()=>{},renderLegalLinks=()=>{};
@@ -65,7 +67,7 @@ async function initialize(saved, admitted = record, intent = null, options = {})
   const admittedRead = new Promise((resolve) => { admit = resolve; });
   const listeners = [];
   const state = { intent };
-  const fixture = { model: structuredClone(options.model ?? model), element, actions,
+  const fixture = { model: structuredClone(options.model ?? model), element, actions, hasModeAccess, manualPairingAction,
     journey: options.journey ?? { id: 'preview_available', title: 'Preview is ready' },
     show(id, visible) { element(id).hidden = !visible; visibility.push([id, visible]); },
     async send(message) {

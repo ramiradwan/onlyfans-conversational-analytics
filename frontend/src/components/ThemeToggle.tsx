@@ -5,6 +5,7 @@ import MonitorIcon from '@mui/icons-material/Monitor';
 import { IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Tooltip } from '@mui/material';
 import { useColorScheme } from '@mui/material/styles';
 import * as React from 'react';
+import { syncDesktopAppearance } from '../services/desktopWindow';
 
 /** Matches the `Mode` union accepted by MUI's `useColorScheme().setMode`. */
 type Mode = 'light' | 'dark' | 'system';
@@ -30,6 +31,14 @@ export function ThemeToggle() {
   React.useEffect(() => {
     setMounted(true);
   }, []);
+
+  // The native mirror is presentation-only and survives the WebView's
+  // navigation. MUI retains its own preference for the browser dashboard.
+  React.useEffect(() => {
+    if (mode === 'light' || mode === 'dark' || mode === 'system') {
+      void syncDesktopAppearance(mode).catch(() => {});
+    }
+  }, [mode]);
 
   if (!mounted || !mode) return null;
 

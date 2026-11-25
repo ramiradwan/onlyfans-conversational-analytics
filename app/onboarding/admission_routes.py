@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.onboarding.admission import AdmissionRefused, ScopedAdmissions, csrf_token
+from app.onboarding.theme_presentation import first_paint_csp
 
 ORIGIN = "http://bridge.localhost:17871"
 HOST = "bridge.localhost:17871"
@@ -126,9 +127,11 @@ def admission_router(admissions: ScopedAdmissions, *, launcher_token: str, prote
         if request.url.query:
             raise HTTPException(400, "Entry credentials belong in the private link fragment")
         form = "'self'" if request.url.path == "/browser-tasks/access-entry" else "'none'"
-        return HTMLResponse((ASSETS / "entry.html").read_text(encoding="utf-8"), headers=HEADERS | {
+        document = (ASSETS / "entry.html").read_text(encoding="utf-8")
+        script, style = first_paint_csp(document)
+        return HTMLResponse(document, headers=HEADERS | {
             "Referrer-Policy": "same-origin" if request.url.path == "/browser-tasks/access-entry" else "no-referrer",
-            "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action " + form})
+            "Content-Security-Policy": f"default-src 'none'; script-src 'self'{script}; style-src 'self'{style}; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action " + form})
 
     @router.get("/onboarding/entry.css", include_in_schema=False)
     def landing_stylesheet(request: Request):

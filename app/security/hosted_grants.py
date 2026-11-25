@@ -14,6 +14,7 @@ from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from enum import StrEnum
 from functools import lru_cache
 from threading import Lock, Thread
 from time import monotonic, sleep
@@ -194,8 +195,17 @@ class CreatorAssociationPending(CreatorAssociationRefused):
     """A different creator association remains pending."""
 
 
-class _TransportFailure(RuntimeError):
-    pass
+class HostedFailureStage(StrEnum):
+    CONNECTION_SETUP = "connection_setup"
+    TRANSMISSION = "transmission"
+    RESPONSE_TIMEOUT = "response_timeout"
+    UNKNOWN = "unknown"
+
+
+class HostedTransportFailure(HostedGrantUnavailable):
+    def __init__(self, message: str, *, stage: HostedFailureStage = HostedFailureStage.UNKNOWN) -> None:
+        super().__init__(message)
+        self.stage = stage
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,26 +233,45 @@ class InstallationProofAuthority(Protocol):
     def sign_challenge(self, challenge: bytes) -> InstallationProof: ...
 
 
-def _connection_timing():
-    """Record new TCP and TLS connection durations under closed timing labels."""
-    started = {}
-    stages = {"connection.connect_tcp": "connect", "connection.start_tls": "tls"}
+class _HostedRequestTrace:
+    """Retain connection timings and whether sending this request began."""
 
-    def trace(name, info):
+    _connection_stages = {"connection.connect_tcp": "connect", "connection.start_tls": "tls"}
+
+    def __init__(self) -> None:
+        self._started: dict[str, float] = {}
+        self._connection_failed = False
+        self._transmission_started = False
+
+    def __call__(self, name, _info) -> None:
         event, _, outcome = name.rpartition(".")
-        stage = stages.get(event)
+        if outcome == "started" and event.endswith((".send_request_headers", ".send_request_body")):
+            self._transmission_started = True
+        stage = self._connection_stages.get(event)
         if stage is None:
             return
         if outcome == "started":
-            started[stage] = monotonic()
-        elif stage in started:
+            self._started[stage] = monotonic()
+        elif stage in self._started:
+            self._connection_failed |= outcome == "failed"
             from app.onboarding import timing
             try:
                 timing.observe("transport", stage, "ok" if outcome == "complete" else "error",
-                               max(0.0, (monotonic() - started.pop(stage)) * 1000))
+                               max(0.0, (monotonic() - self._started.pop(stage)) * 1000))
             except ValueError:
                 pass
-    return trace
+
+    def failure_stage(self, error: Exception) -> HostedFailureStage:
+        if isinstance(error, HostedTransportFailure):
+            return error.stage
+        if (isinstance(error, (httpx.ConnectError, httpx.ConnectTimeout))
+                and self._connection_failed and not self._transmission_started):
+            return HostedFailureStage.CONNECTION_SETUP
+        if isinstance(error, (httpx.WriteError, httpx.WriteTimeout)):
+            return HostedFailureStage.TRANSMISSION
+        if isinstance(error, httpx.ReadTimeout):
+            return HostedFailureStage.RESPONSE_TIMEOUT
+        return HostedFailureStage.UNKNOWN
 
 
 def require_hosted_origin(base_url: str) -> str:
@@ -310,31 +339,32 @@ class HTTPXHostedTransport:
     ) -> TransportResponse:
         deadline = monotonic() + self._timeout_seconds
         self._used_at = monotonic()
+        trace = _HostedRequestTrace()
         try:
             with self._client.stream(method, path, json=json_body,
-                                     extensions={"trace": _connection_timing()}) as response:
+                                     extensions={"trace": trace}) as response:
                 if monotonic() >= deadline:
-                    raise _TransportFailure("Hosted response exceeded deadline")
+                    raise HostedTransportFailure("Hosted response exceeded deadline", stage=HostedFailureStage.RESPONSE_TIMEOUT)
                 if response.headers.get("content-encoding", "identity").strip().lower() != "identity":
-                    raise _TransportFailure("Hosted response encoding is unsupported")
+                    raise HostedTransportFailure("Hosted response encoding is unsupported")
                 body = bytearray()
                 # Encoding is checked before iteration so decompression cannot
                 # allocate an unbounded buffer before the JSON size check.
                 for chunk in response.iter_raw():
                     if monotonic() >= deadline:
-                        raise _TransportFailure("Hosted response exceeded deadline")
+                        raise HostedTransportFailure("Hosted response exceeded deadline", stage=HostedFailureStage.RESPONSE_TIMEOUT)
                     if len(body) + len(chunk) > _MAX_RESPONSE_BYTES:
-                        raise _TransportFailure("Hosted response exceeds size limit")
+                        raise HostedTransportFailure("Hosted response exceeds size limit")
                     body.extend(chunk)
                 if monotonic() >= deadline:
-                    raise _TransportFailure("Hosted response exceeded deadline")
+                    raise HostedTransportFailure("Hosted response exceeded deadline", stage=HostedFailureStage.RESPONSE_TIMEOUT)
                 return TransportResponse(
                     response.status_code,
                     bytes(body),
                     response.headers.get("content-type", ""),
                 )
-        except Exception:
-            raise _TransportFailure("Hosted request failed") from None
+        except Exception as error:
+            raise HostedTransportFailure("Hosted request failed", stage=trace.failure_stage(error)) from None
 
     def warm(self) -> bool:
         """Open a pooled connection in the background unless one was used recently.
@@ -353,7 +383,7 @@ class HTTPXHostedTransport:
         try:
             self._used_at = monotonic()
             with self._client.stream("GET", WARM_PATH, headers={"Accept": "*/*"},
-                                     extensions={"trace": _connection_timing()}) as response:
+                                     extensions={"trace": _HostedRequestTrace()}) as response:
                 size = 0
                 # Read the bounded answer so the connection returns to the pool.
                 for chunk in response.iter_raw():

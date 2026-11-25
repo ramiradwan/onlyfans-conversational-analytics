@@ -646,11 +646,53 @@ test('paused Preview keeps Resume in the extension even with an existing desktop
   await expect.poll(async () => (await calls(page)).filter((call) => call.type === 'ofca.ui.transition').length).toBe(1);
 });
 
+test('standalone Full setup starts and cancels its own manual comparison', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 760 });
+  await renderSurfaceState(page, { ...SURFACE_STATES.pairing_required, hash: '', reachable: false });
+  await page.evaluate(() => { document.documentElement.style.fontSize = '32px'; });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  const start = page.getByRole('button', { name: 'Compare connection codes' });
+  const cancel = page.getByRole('button', { name: 'Cancel comparison' });
+  const pairingCommands = async () => (await calls(page)).filter(call => ['pair', 'cancel'].includes(call.type));
+  await expect(start).toBeEnabled();
+  expect(await pairingCommands()).toEqual([]);
+  await start.click();
+  await expect(page.getByLabel('Connection code', { exact: true })).toHaveText('483 217');
+  await expect(cancel).toBeVisible();
+  expect(await pairingCommands()).toEqual([{ type: 'pair' }]);
+  await cancel.click();
+  await expect(start).toBeVisible();
+  await expect(page.getByLabel('Connection code', { exact: true })).toBeHidden();
+  expect(await pairingCommands()).toEqual([{ type: 'pair' }, { type: 'cancel' }]);
+});
+
+test('manual comparison respects consent, browser access and attempt ownership', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.pairing_required, hash: '', reachable: false });
+  const start = page.getByRole('button', { name: 'Compare connection codes' });
+  const cancel = page.getByRole('button', { name: 'Cancel comparison' });
+  for (const state of [
+    { localPermissionGranted: false }, { permissionGranted: false }, { reauthorization: true },
+    { mode: 'paused', resume: 'full' }, { desktopAttempt: true }, { desktopControl: true },
+    { pairing: 'compare', otherPairingOwner: true }, { pairing: 'paired', paired: true },
+  ]) {
+    await expect(start).toBeVisible();
+    await page.evaluate(next => window.__surfaceFixture.change(next), state);
+    await expect(start).toBeHidden();
+    await expect(cancel).toBeHidden();
+    await page.evaluate(() => window.__surfaceFixture.change({
+      mode: 'full', pairing: 'unpaired', paired: false, permissionGranted: true, localPermissionGranted: true,
+      reauthorization: false, desktopAttempt: false, desktopControl: false, otherPairingOwner: false,
+    }));
+  }
+  expect((await calls(page)).filter(call => ['pair', 'cancel'].includes(call.type))).toEqual([]);
+});
+
 test('the compact setup window for the desktop app shows only its task', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.pairing_required, browserTask: true });
   await expect(page.locator('#journey-title')).toHaveText('Browser access is ready');
   await expect(page.locator('main')).toHaveAttribute('data-requirement', 'browser-access-ready');
   await expect(page.locator('#setup-progress, #pairing-code')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Compare connection codes' })).toBeHidden();
 });
 
 test('while the desktop app controls a paused browser, resume points to the desktop app', async ({ page }) => {
@@ -667,6 +709,40 @@ for (const [name, visible] of [['connection', true], ['connection_desktop_contro
     await expect(page.locator('#forget-companion')).toBeVisible({ visible });
   });
 }
+
+test('extension settings opens an independent comparison page from Connection details', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  await renderSurfaceState(page, { ...SURFACE_STATES.connection, paired: false, reachable: false });
+  await page.evaluate(() => { document.documentElement.style.fontSize = '32px'; });
+  await expect(page.getByRole('button', { name: 'Continue setup' })).toBeVisible();
+  await page.getByRole('button', { name: 'Connection details' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Connection details' });
+  const start = dialog.getByRole('button', { name: 'Open code comparison' });
+  await expect(start).toBeEnabled();
+  for (const state of [{ localPermissionGranted: false }, { reauthorization: true }, { desktopAttempt: true }]) {
+    await page.evaluate(value => window.__surfaceFixture.change(value), state);
+    await expect(start).toBeHidden();
+    await page.evaluate(() => window.__surfaceFixture.change({
+      localPermissionGranted: true, reauthorization: false, desktopAttempt: false,
+    }));
+    await expect(start).toBeEnabled();
+  }
+  await start.click();
+  const setupUrl = new URL('/setup.html', page.url()).href;
+  await expect.poll(async () => (await calls(page)).filter(call => call.type === 'tab'))
+    .toEqual([{ type: 'tab', url: setupUrl }]);
+  expect((await calls(page)).some(call => ['pair', 'cancel', 'ofca.ui.open-surface'].includes(call.type))).toBe(false);
+  const setup = await page.context().newPage();
+  try {
+    await renderSurfaceState(setup, { ...SURFACE_STATES.pairing_required, hash: '', reachable: false });
+    await expect(setup).toHaveURL(setupUrl);
+    await setup.getByRole('button', { name: 'Compare connection codes' }).click();
+    await expect(setup.getByLabel('Connection code', { exact: true })).toHaveText('483 217');
+    expect((await calls(setup)).filter(call => call.type === 'pair')).toEqual([{ type: 'pair' }]);
+  } finally {
+    await setup.close();
+  }
+});
 
 test('history recovery does not promise collection is ready after waking the tab', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.connection, sleeping: true });
@@ -810,11 +886,12 @@ for (const width of [320, 390, 600]) {
       await expect(page.locator('#history-health')).toBeEmpty();
       await expect(page.locator('#pending-count')).toHaveText('0');
       expect(await boxes(), 'cleared status').toEqual(initial);
-      await dialog.locator('button').scrollIntoViewIfNeeded();
-      const close = await dialog.locator('button').boundingBox();
+      const closeAction = dialog.getByRole('button', { name: 'Close', exact: true });
+      await closeAction.scrollIntoViewIfNeeded();
+      const close = await closeAction.boundingBox();
       expect(close.y).toBeGreaterThanOrEqual(0);
       expect(close.y + close.height).toBeLessThanOrEqual(641);
-      await dialog.locator('button').click();
+      await closeAction.click();
       await expect(dialog).not.toBeVisible();
     });
 
