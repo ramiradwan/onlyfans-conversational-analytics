@@ -37,6 +37,7 @@
     "_internal/app/onboarding/reissue_entry.html",
     "_internal/app/onboarding/reissue_entry.js",
     "_internal/shared/desktop-onboarding/schema-v2.json",
+    "_internal/shared/desktop-onboarding/wire-limits.json",
     "_internal/shared/browser-tasks/schema.json",
     "_internal/app/static/dist/setup-code/index.html",
     "_internal/app/core/signing-parameter-release.json",

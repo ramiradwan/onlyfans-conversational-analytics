@@ -1,6 +1,8 @@
+export const ONBOARDING_JSON_BYTES = 4096;
+
 /** Parse a bounded wire document without JSON.parse's duplicate-key overwrite. */
-export function parseOnboardingJson(text) {
-  if (typeof text !== 'string' || new TextEncoder().encode(text).byteLength > 4096) {
+export function parseOnboardingJson(text, byteLimit = ONBOARDING_JSON_BYTES) {
+  if (typeof text !== 'string' || new TextEncoder().encode(text).byteLength > byteLimit) {
     throw new TypeError('Invalid onboarding document');
   }
   const stack = [];

@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runInNewContext } from 'node:vm';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import wireLimits from '../../shared/desktop-onboarding/wire-limits.json' with { type: 'json' };
+import wireVectors from '../../shared/desktop-onboarding/wire-vectors.json' with { type: 'json' };
 import generatedContract from '../onboarding/generated-contract.js?raw';
 import setupThemeInitializer from '../public/setup-theme-init.js?raw';
 import markup from '../onboarding/index.html?raw';
@@ -2329,4 +2332,55 @@ describe('one-click provider sign-in across ceremony and source replacement', ()
       subject.stop();
     });
   });
+});
+
+function fragmentedEvent(bytes, fragmentSize = 127) {
+  const stream = new ReadableStream({ start(controller) {
+    for (let offset = 0; offset < bytes.length; offset += fragmentSize) {
+      controller.enqueue(bytes.subarray(offset, offset + fragmentSize));
+    }
+    controller.close();
+  } });
+  return async () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } });
+}
+
+it.each(wireVectors.descriptions)('decodes the backend UTF-8 snapshot vector for $name', async variant => {
+  const reference = structuredClone(wireVectors.snapshot);
+  reference.decision.offer.description = variant.pattern.repeat(variant.repeat);
+  const payload = JSON.stringify(reference);
+  const bytes = new TextEncoder().encode(payload);
+  expect(bytes.byteLength).toBe(variant.utf8_bytes);
+  expect(createHash('sha256').update(bytes).digest('hex')).toBe(variant.sha256);
+  const receive = vi.fn(raw => snapshot(raw, reference.generation));
+  const event = new TextEncoder().encode('event: setup\r\ndata: ' + payload + '\r\n\r\n');
+  await expect(setupEvents(fragmentedEvent(event), {}, new AbortController().signal, receive))
+    .rejects.toThrow('stream_unavailable');
+  expect(receive).toHaveBeenCalledExactlyOnceWith(payload);
+  expect(receive.mock.results[0].value).toEqual(reference);
+});
+
+it('bounds a desktop snapshot by UTF-8 bytes across multiple data lines', async () => {
+  const content = JSON.stringify(initial());
+  const data = content + '\n' + ' '.repeat(wireLimits.document_utf8_bytes - content.length - 1);
+  const event = payload => new TextEncoder().encode('event: setup\ndata: ' + payload.replace('\n', '\ndata: ') + '\n\n');
+  const receive = vi.fn(raw => snapshot(raw, generation));
+  const signal = new AbortController().signal;
+  await expect(setupEvents(fragmentedEvent(event(data)), {}, signal, receive)).rejects.toThrow('stream_unavailable');
+  expect(receive).toHaveBeenCalledExactlyOnceWith(data);
+  await expect(setupEvents(fragmentedEvent(event(data + ' ')), {}, signal, receive)).rejects.toThrow('invalid_stream');
+  expect(receive).toHaveBeenCalledTimes(1);
+  expect(() => snapshot(data + ' ', generation)).toThrow('Invalid onboarding document');
+});
+
+it('rejects malformed UTF-8, duplicate fields and oversized unrelated events', async () => {
+  const receive = vi.fn();
+  const signal = new AbortController().signal;
+  const malformed = new TextEncoder().encode('event: setup\ndata: "x"\n\n');
+  malformed[malformed.indexOf(120)] = 0xff;
+  await expect(setupEvents(fragmentedEvent(malformed, 1), {}, signal, receive)).rejects.toThrow();
+  const unrelated = new TextEncoder().encode('event: browser-notices\ndata: ' + ' '.repeat(4097) + '\n\n');
+  await expect(setupEvents(fragmentedEvent(unrelated), {}, signal, receive)).rejects.toThrow('invalid_stream');
+  expect(receive).not.toHaveBeenCalled();
+  expect(() => snapshot(JSON.stringify(initial()).replace('{', '{"revision":0,'), generation))
+    .toThrow('Duplicate onboarding field');
 });

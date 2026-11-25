@@ -11,6 +11,9 @@ from app.core.resource_paths import resource_path
 
 PROFILE = "desktop-onboarding.v1"
 SNAPSHOT_PROFILE = "desktop-onboarding.v2"
+DOCUMENT_UTF8_BYTES = json.loads(
+    resource_path("shared/desktop-onboarding/wire-limits.json").read_text("utf-8")
+)["document_utf8_bytes"]
 ACTIONS = frozenset({"browser.access", "account.connect", "account.confirm", "setup.finalize", "browser.pair", "activation.review", "activation.confirm", "auth.select", "auth.cancel", "auth.switch"})
 REASONS = frozenset({"none", "operation_unconfirmed", "authority_unavailable", "browser_unavailable",
                      "account_mismatch", "operation_expired", "operation_refused", "activation_unavailable"})
@@ -33,7 +36,7 @@ def validator():
 
 def validate(value: dict, *, kind: str) -> dict:
     try:
-        if not isinstance(value, dict) or value.get("kind") != kind or len(canonical(value)) > 16_384:
+        if not isinstance(value, dict) or value.get("kind") != kind or len(canonical(value)) > DOCUMENT_UTF8_BYTES:
             raise ValueError()
         validator().validate(value)
     except (ValidationError, ValueError, TypeError, RecursionError):
