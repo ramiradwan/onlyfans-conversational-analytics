@@ -27,6 +27,7 @@ export interface DesktopSnapshot {
   journey_id: string | null;
   generation: string;
   revision: number;
+  account_passkey?: 'available' | 'working' | 'created';
   facts: Record<string, string>;
   local_ready: boolean;
   full_ready: boolean;

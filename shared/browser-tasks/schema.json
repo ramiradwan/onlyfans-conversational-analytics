@@ -223,7 +223,7 @@
         "entry_url": {
           "type": "string",
           "maxLength": 2048,
-          "pattern": "^https://[^/?#@]+/onboarding/browser-ceremonies/[A-Za-z0-9_-]{43}$"
+          "pattern": "^https://[^/?#@]+/onboarding/browser-ceremonies/[A-Za-z0-9_-]{43}(/passkey-enrollment)?$"
         },
         "ceremony_id": {
           "type": "string",

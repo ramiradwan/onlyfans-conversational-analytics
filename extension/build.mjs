@@ -1059,7 +1059,8 @@ async function buildArtifact(
 }
 
 export function validateOnboardingReleaseConfig(document, { required = false } = {}) {
-  assert.deepEqual(Object.keys(document).filter(key => key !== 'support_channels').sort(),
+  // The desktop owns account passkey settings. The Agent projects only the hosted origin here.
+  assert.deepEqual(Object.keys(document).filter(key => key !== 'support_channels' && key !== 'account_passkey').sort(),
     ['authentication_providers', 'hosted_api_origin', 'schema', 'setup_transfer_receiver_url']);
   assert.equal(document.schema, 'ofca-customer-release/v2');
   const providers = document.authentication_providers;

@@ -187,6 +187,34 @@ class BrowserTasks:
         active = [task for task in self.current_native(session) if task["state"] != "completed"]
         return self.helpers.notices(active, scoped=scoped)
 
+    def authentication_recheck(self, connection, session, scope):
+        auth = scope.get("desktop_authentication")
+        browser = scope.get("browser")
+        if (session.stage != "setup" or auth is None or auth["state"] != "selected"
+                or not auth["actions"]["open_browser"] or auth["authentication_attempt"] is None
+                or browser is None or browser["state"] not in {"ready", "paused"}
+                or browser["creator_account_id"] != scope["creator_account_id"] or scope["key"] is None):
+            return None
+        task = connection.execute(
+            "SELECT t.*,o.owner_scope_json FROM desktop_browser_tasks t "
+            "JOIN desktop_setup_operations o ON o.operation_id=t.operation_id "
+            "WHERE t.operation_id=? AND t.journey_id=? AND t.desktop_generation=? AND t.stage='setup' "
+            "AND t.purpose='browser.authentication' AND t.expires_at>? "
+            "AND t.state IN ('pending','accepted','outcome_unknown') "
+            "AND o.state IN ('accepted','waiting','outcome_unknown') "
+            "AND NOT EXISTS (SELECT 1 FROM protected_recovery_browser_dispatches d WHERE d.task_id=t.task_id)",
+            (auth["browser_operation_id"], browser["journey_id"], session.generation, self.admissions._now())).fetchone()
+        if task is None or not self.helpers.needs_browser_recheck(task["task_id"], task["admission_generation"]):
+            return None
+        original = json.loads(task["owner_scope_json"])
+        if (original.get("creator_account_id") != browser["creator_account_id"] or original.get("key") != scope["key"]
+                or original.get("browser") is None or any(original["browser"][name] != browser[name]
+                    for name in ("instance_id", "disclosure_bundle_id"))):
+            return None
+        return {name: task[name] for name in ("task_id", "operation_id", "admission_generation")} | {
+            "parent_operation_id": auth["operation_id"],
+            "attempt_id": auth["authentication_attempt"]["authentication_attempt_id"]}
+
     @staticmethod
     def public(task):
         return {name: task[name] for name in ("task_id", "journey_id", "operation_id", "purpose", "scope_digest",
@@ -201,6 +229,10 @@ class BrowserTasks:
         if root is None or operation is None:
             raise AdmissionRefused("browser_scope_changed")
         scope = json.loads(operation["owner_scope_json"])
+        if scope.get("browser_recheck") is not None:
+            # The desktop requested a read of the current draft. Pin the creator
+            # and compare the browser and disclosure before accepting the observation.
+            return {"entry_source": "desktop", "participant": None, "creator_account_id": scope["creator_account_id"]}
         browser = scope.get("browser")
         participant = None if browser is None else {key: browser[key] for key in (
             "instance_id", "draft_scope_id", "disclosure_bundle_id")}
@@ -220,6 +252,12 @@ class BrowserTasks:
                     or any(value[name] != task[name] for name in ("task_id", "journey_id", "admission_generation"))
                     or value["extension_id"] != self.extension_id):
                 raise AdmissionRefused("browser_scope_changed")
+            if task["purpose"] == "browser.access":
+                operation = connection.execute("SELECT owner_scope_json FROM desktop_setup_operations WHERE operation_id=?",
+                    (task["operation_id"],)).fetchone()
+                scope = {} if operation is None else json.loads(operation["owner_scope_json"])
+                if scope.get("browser_recheck") is not None:
+                    self._check_recheck_observation(connection, scope, value)
             prior = connection.execute("SELECT * FROM desktop_browser_observations WHERE task_id=?", (task["task_id"],)).fetchone()
             encoded = canonical(value).decode()
             if prior is not None and prior["admission_generation"] == task["admission_generation"]:
@@ -238,6 +276,19 @@ class BrowserTasks:
             self._save_progress(connection, value)
             self.admissions._require(connection, session.identifier, role="browser_task", generation=session.generation)
         events.publish()
+
+    def _check_recheck_observation(self, connection, scope, value):
+        previous = scope["browser"]
+        key = self.store.installation_key_reference(connection=connection)
+        if (key is None or scope["key"] != {"installation_key_id": key.installation_key_id,
+                "installation_key_jkt": key.installation_key_jkt}
+                or value["state"] not in {"ready", "paused"} or value["creator_account_id"] != scope["creator_account_id"]
+                or any(value[name] != previous[name] for name in ("journey_id", "instance_id", "disclosure_bundle_id"))):
+            raise AdmissionRefused("browser_scope_changed")
+        connection.execute("UPDATE desktop_browser_tasks SET state='cancelled' "
+            "WHERE task_id=? AND admission_generation=? AND journey_id=? AND purpose IN ('browser.access','browser.identity') "
+            "AND state NOT IN ('cancelled','expired')",
+            (previous["task_id"], previous["admission_generation"], value["journey_id"]))
 
     def read(self, journey_id, *, operation_id=None):
         rows = self._observations(journey_id, operation_id=operation_id)
@@ -292,6 +343,7 @@ class BrowserTasks:
         rows = connection.execute("SELECT o.observation_json FROM desktop_browser_observations o "
             "JOIN desktop_browser_tasks t ON t.task_id=o.task_id WHERE t.operation_id=? "
             "AND t.admission_generation=o.admission_generation AND t.expires_at>? "
+            "AND t.state NOT IN ('cancelled','expired') "
             "AND t.purpose IN ('browser.access','browser.identity')", (require_journey(operation_id), self.admissions._now())).fetchall()
         if len(rows) == 1:
             self._save_progress(connection, validate_observation(json.loads(rows[0]["observation_json"])))

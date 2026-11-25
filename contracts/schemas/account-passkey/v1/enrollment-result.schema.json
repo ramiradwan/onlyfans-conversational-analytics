@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/enrollment-result.schema.json",
+  "title": "Account passkey committed enrollment result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "state",
+    "enrollment_id",
+    "attempt_id",
+    "credential_id",
+    "registered_at",
+    "receipt_expires_at"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:account-passkey-enrollment:v1"
+    },
+    "state": {
+      "const": "registered"
+    },
+    "enrollment_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "attempt_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "credential_id": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 1364,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "registered_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "receipt_expires_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    }
+  }
+}

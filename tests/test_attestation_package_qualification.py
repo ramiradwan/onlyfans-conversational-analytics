@@ -34,7 +34,7 @@ from tools import engineering_attestation as producer
 pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat, pytest.mark.serial]
 
 
-def test_workspace_policy_accepts_optional_support_without_widening_origin(tmp_path, monkeypatch):
+def test_workspace_policy_accepts_optional_release_fields_without_widening_origin(tmp_path, monkeypatch):
     path = tmp_path / "release.json"
     monkeypatch.setattr(producer, "CUSTOMER_RELEASE_CONFIG", path)
     release = {
@@ -42,6 +42,7 @@ def test_workspace_policy_accepts_optional_support_without_widening_origin(tmp_p
         "setup_transfer_receiver_url": "https://api.example.com/public/onboarding/setup",
         "authentication_providers": ["default"],
         "support_channels": {"whatsapp": "https://help.example.com/"},
+        "account_passkey": {"rp_id": "native-only.example.com"},
     }
     path.write_text(json.dumps(release), encoding="utf-8")
     manifest = {"host_permissions": ["http://bridge.localhost/*"],
@@ -49,6 +50,8 @@ def test_workspace_policy_accepts_optional_support_without_widening_origin(tmp_p
     assert producer._qualified_workspace_policy(manifest)
     assert not producer._qualified_workspace_policy({**manifest,
         "host_permissions": [*manifest["host_permissions"], "https://help.example.com/*"]})
+    assert not producer._qualified_workspace_policy({**manifest,
+        "host_permissions": [*manifest["host_permissions"], "https://native-only.example.com/*"]})
     for extra in ({"extra": True}, {"setup_transfer_receiver_url": "https://help.example.com/public/onboarding/setup"}):
         path.write_text(json.dumps({**release, **extra}), encoding="utf-8")
         assert not producer._qualified_workspace_policy(manifest)
@@ -158,10 +161,11 @@ def test_workspace_policy_names_no_hosted_origin(tmp_path, monkeypatch, receiver
 def test_api_only_extension_build_omits_receiver_messaging_access(tmp_path):
     _require_extension_toolchain()
     origin = "https://setup.example.com"
+    native_rp = "native-only.example.com"
     config = tmp_path / "customer-release.json"
     config.write_text(json.dumps({"schema": "ofca-customer-release/v2",
         "setup_transfer_receiver_url": "", "hosted_api_origin": origin,
-        "authentication_providers": ["default"]}), encoding="utf-8")
+        "authentication_providers": ["default"], "account_passkey": {"rp_id": native_rp}}), encoding="utf-8")
     output = tmp_path / "extension"
     arguments = [f"--outdir={output}", f"--customer-release-config={config}"]
     for flags in ([], ["--audit"]):
@@ -171,6 +175,8 @@ def test_api_only_extension_build_omits_receiver_messaging_access(tmp_path):
     assert manifest["host_permissions"] == ["http://bridge.localhost/*"]
     assert manifest["externally_connectable"] == {"matches": ["http://bridge.localhost:17871/*"]}
     assert origin not in json.dumps(manifest)
+    assert all(native_rp.encode() not in artifact.read_bytes()
+               for artifact in output.rglob("*") if artifact.is_file())
 
 
 @pytest.fixture(scope="module")

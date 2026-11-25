@@ -1,0 +1,49 @@
+{
+  "profile": "urn:bridge-clean:account-passkey-local-binding:v1",
+  "governing_adr": "docs/adr/0061-account-passkey-enrollment-and-independent-local-binding.md",
+  "messages": {
+    "local-binding-read-request": "schemas/account-passkey/v1/local-binding-read-request.schema.json",
+    "local-binding-read-response": "schemas/account-passkey/v1/local-binding-read-response.schema.json",
+    "local-binding-payload": "schemas/account-passkey/v1/local-binding-payload.schema.json",
+    "local-trust-set": "schemas/account-passkey/v1/local-trust-set.schema.json"
+  },
+  "request_max_bytes": 24576,
+  "response_max_bytes": 16384,
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "jws": {
+    "alg": "ES256",
+    "typ": "urn:bridge-clean:account-passkey-local-binding:v1",
+    "issuer": "urn:bridge-clean:commercial-control-plane",
+    "audience": "urn:bridge-clean:local-brain:account-passkey-local-binding",
+    "purpose": "account-passkey-local-binding",
+    "payload_schema": "schemas/account-passkey/v1/local-binding-payload.schema.json",
+    "protected_header_exact_members": [
+      "alg",
+      "kid",
+      "typ"
+    ],
+    "canonical_json": "RFC8785",
+    "signature_encoding": "ieee-p1363-low-s"
+  },
+  "notes": "profiles/account-passkey-enrollment/v1/policy.md",
+  "claims_role": "durable-installation-bound-public-credential",
+  "offline_assertion": {
+    "native_origin": "dipsy-desktop://saved-data",
+    "challenge_bytes": 32,
+    "challenge_ttl_seconds": 120,
+    "user_presence": "required",
+    "user_verification": "required",
+    "single_use": true
+  },
+  "record_digest": "lowercase-hex(SHA-256(exact-ASCII-compact-JWS))",
+  "trust_policy": {
+    "key_lookup": "immutable-pinned-per-purpose-trust-set-by-kid",
+    "at_issuance": "not_before-inclusive-retire_at-exclusive",
+    "transition": "verified-release-trust-set-increasing-sequence",
+    "rollback": "reject",
+    "production_usable_fixture_keys": false,
+    "manifest_schema": "schemas/account-passkey/v1/local-trust-set.schema.json",
+    "known_revocation": "reject-regardless-of-iat"
+  }
+}

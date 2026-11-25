@@ -240,6 +240,22 @@ def startup(monkeypatch, tmp_path):
         assert not collector.is_alive()
 
 
+
+def test_windowed_startup_without_console_streams(monkeypatch, startup):
+    import sys
+    import uvicorn
+    from uvicorn.config import Config
+
+    monkeypatch.setattr(uvicorn, "Config", Config)
+    monkeypatch.setattr(packaged_entry, "select_brain_application", lambda **kwargs: startup.application)
+    monkeypatch.setattr(packaged_entry, "supervised_server",
+                        lambda configuration, application: SimpleNamespace(run=lambda: None))
+    with monkeypatch.context() as windowed:
+        windowed.setattr(sys, "stdout", None)
+        windowed.setattr(sys, "stderr", None)
+        assert packaged_entry.run_brain() == 0
+
+
 def test_unpolled_validating_stretch_keeps_pipe_alive(monkeypatch, startup):
     interval = 0.03
     monkeypatch.setattr(status, "HEARTBEAT_SECONDS", interval)

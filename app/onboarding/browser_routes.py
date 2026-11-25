@@ -254,7 +254,14 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
             raise HTTPException(400, "Invalid browser task request")
         session, task = task_session(request, mutation=True)
         if task["state"] != "completed":
-            tasks.helpers.notice(task["task_id"], session.generation, value["reason"])
+            recheck = False
+            if value["reason"] == "task_changed" and session.stage == "setup" and task["purpose"] == "browser.authentication":
+                try:
+                    attachment = tasks.attachment(task)
+                    recheck = attachment["participant"] is not None and attachment["creator_account_id"] is not None
+                except AdmissionRefused:
+                    raise HTTPException(409, "Browser task changed") from None
+            tasks.helpers.notice(task["task_id"], session.generation, value["reason"], recheck=recheck)
         return JSONResponse({"state": "recorded"}, headers=HEADERS)
 
     @router.get("/api/v1/desktop/browser-tasks/notices")
@@ -283,6 +290,11 @@ def browser_router(coordinator, tasks, ceremonies, *, pairing=None):
                 generation=session.generation)
             task = connection.execute("SELECT * FROM desktop_browser_tasks WHERE task_id=?", (task_id,)).fetchone()
             if coordinator.admissions._protected_task(connection,task_id):
+                return None
+            if task is not None and task["stage"] == "setup" and task["purpose"] == "browser.authentication" and (
+                    tasks.helpers.needs_browser_recheck(task_id, task["admission_generation"])
+                    or connection.execute("SELECT 1 FROM desktop_authentication_closures WHERE task_id=?",
+                                          (task_id,)).fetchone()):
                 return None
         if (task is None or task["journey_id"] != parent["journey_id"]
                 or task["expires_at"] <= coordinator.admissions._now()

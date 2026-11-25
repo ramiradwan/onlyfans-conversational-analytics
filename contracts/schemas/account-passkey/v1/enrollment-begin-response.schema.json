@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/enrollment-begin-response.schema.json",
+  "title": "Account passkey enrollment options v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "enrollment_id",
+    "attempt_id",
+    "challenge",
+    "rp_id",
+    "user_handle",
+    "display_label",
+    "expires_at"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:account-passkey-enrollment:v1"
+    },
+    "enrollment_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "attempt_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "challenge": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "rp_id": {
+      "type": "string",
+      "maxLength": 253,
+      "format": "hostname",
+      "pattern": "^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$"
+    },
+    "user_handle": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "display_label": {
+      "type": "string",
+      "pattern": "^Dipsy passkey [A-Z0-9]{6}$",
+      "minLength": 20,
+      "maxLength": 20
+    },
+    "expires_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "profile": "urn:bridge-clean:account-passkey-hosted:v1",
+  "governing_adr": "docs/adr/0061-account-passkey-enrollment-and-independent-local-binding.md",
+  "messages": {
+    "hosted-begin-request": "schemas/account-passkey/v1/hosted-begin-request.schema.json",
+    "hosted-begin-response": "schemas/account-passkey/v1/hosted-begin-response.schema.json",
+    "hosted-finish-request": "schemas/account-passkey/v1/hosted-finish-request.schema.json",
+    "hosted-finish-response": "schemas/account-passkey/v1/hosted-finish-response.schema.json",
+    "credential-list-response": "schemas/account-passkey/v1/credential-list-response.schema.json",
+    "removal-begin-request": "schemas/account-passkey/v1/removal-begin-request.schema.json",
+    "removal-begin-response": "schemas/account-passkey/v1/removal-begin-response.schema.json",
+    "removal-step-up-request": "schemas/account-passkey/v1/removal-step-up-request.schema.json",
+    "removal-finish-request": "schemas/account-passkey/v1/removal-finish-request.schema.json",
+    "removal-finish-response": "schemas/account-passkey/v1/removal-finish-response.schema.json",
+    "browser-error": "schemas/account-passkey/v1/browser-error.schema.json"
+  },
+  "request_max_bytes": 24576,
+  "response_max_bytes": 16384,
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "production_rp_id": "dipsy.fi",
+  "production_browser_origin": "https://account.dipsy.fi",
+  "session_cookie": {
+    "name": "__Host-cccp-customer",
+    "secure": true,
+    "http_only": true,
+    "same_site": "Lax",
+    "path": "/",
+    "domain_attribute": false
+  },
+  "frame_ancestors": "none",
+  "browser_challenge_max_seconds": 120,
+  "session_max_seconds_from_verification": 1800,
+  "routine_session_method": "service-passkey",
+  "directory_observation_reuse": {
+    "on": "transient-failure-only",
+    "age_seconds_lt": 300
+  },
+  "secret_transport": "host-only-cookie; no bearer credential in JSON or navigation",
+  "removal_action_profile": "urn:bridge-clean:account-passkey-action-evidence:v1",
+  "notes": "profiles/account-passkey-enrollment/v1/policy.md",
+  "refusal_status": {
+    "invalid": 400,
+    "authentication_required": 401,
+    "authorization_denied": 403,
+    "operation_conflict": 409,
+    "expired": 410,
+    "rate_limited": 429,
+    "temporarily_unavailable": 503
+  }
+}

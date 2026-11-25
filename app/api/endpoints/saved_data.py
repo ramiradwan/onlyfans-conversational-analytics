@@ -16,12 +16,17 @@ from app.api.endpoints.webauthn import (
 from app.api.security import verify_same_origin
 from app.bootstrap import transport_manager
 from app.core.config import settings
+from app.onboarding.admission import AdmissionRefused
+from app.onboarding.admission_routes import GENERATION, authorize_desktop_passkey
+from app.persistence.account_passkey import AccountPasskeyBindings
 from app.persistence.archive_export import CreatorVaultExporter
 from app.persistence.auth import AuthenticationStateError, SavedDataOwner, SQLiteAuthenticationStore
 from app.persistence.retention import RetentionPolicyError
+from app.security.account_passkey_windows import WindowsHelloRefused
 from app.security.activation_gate import REQUIRED_GRANTS, current_activation
+from app.security.signed_objects import SignedObjectRejected
 from app.security.installation_key import InstallationKeyAuthority, InstallationKeyError, WindowsCNGInstallationKeyProvider
-from app.security.saved_data import SavedDataSessions
+from app.security.saved_data import InitialSavedDataAccess, SavedDataSessions
 from app.security.webauthn import WebAuthnService, WebAuthnVerificationError
 from app.services.saved_results import saved_result_document, saved_result_page
 
@@ -56,29 +61,61 @@ def _locked() -> HTTPException:
     return HTTPException(403, "Saved data is locked", headers={"Cache-Control": "no-store"})
 
 
-def _owner(store: SQLiteAuthenticationStore) -> SavedDataOwner:
+def _account_passkey(request: Request):
+    return getattr(request.app.state, "account_passkey_authority", None)
+
+
+def start_account_passkey_withdrawals(application) -> None:
+    authority = getattr(application.state, "account_passkey_authority", None)
+    if authority is not None:
+        authority.start(_sessions)
+
+
+def stage_initial_access(access: InitialSavedDataAccess) -> None:
+    _sessions.stage_initial(access)
+
+
+def _access_owner(request, store, connection) -> SavedDataOwner | None:
+    if not AccountPasskeyBindings(store).has_retained_authority(connection):
+        return store.saved_data_owner(connection)
+    authority = _account_passkey(request)
+    if authority is None:
+        return None
+    try:
+        active = authority.active(connection)
+    except (AuthenticationStateError, SignedObjectRejected):
+        return None
+    return None if active is None else active[0].owner
+
+
+def _owner(request: Request, store: SQLiteAuthenticationStore) -> SavedDataOwner:
     with store.database.transaction(immediate=False) as connection:
-        owner = store.saved_data_owner(connection)
+        owner = _access_owner(request, store, connection)
     if owner is None:
         raise _locked()
     return owner
 
 
 @router.post("/available")
-def available(store: SQLiteAuthenticationStore = Depends(authentication_store)) -> dict[str, bool]:
+def available(request: Request, store: SQLiteAuthenticationStore = Depends(authentication_store)) -> dict[str, bool]:
     with store.database.transaction(immediate=False) as connection:
-        if store.saved_data_owner(connection) is None:
+        owner = _access_owner(request, store, connection)
+        if owner is None:
             return {"available": False}
+        result = {"available": True}
         if store.lapsed_account_authority(connection) == "expired":
-            return {"available": True, "authorization_expired": True}
-        return {"available": True}
+            result["authorization_expired"] = True
+        return result
 
 
 @router.post("/login/begin")
-def begin(store: SQLiteAuthenticationStore = Depends(authentication_store),
+def begin(request: Request, store: SQLiteAuthenticationStore = Depends(authentication_store),
           service: WebAuthnService = Depends(webauthn_service)) -> dict[str, object]:
+    owner = _owner(request, store)
+    if owner.account_passkey_binding is not None:
+        return {"windows_hello": True}
     try:
-        return service.begin_saved_data(_owner(store))
+        return service.begin_saved_data(owner)
     except AuthenticationStateError:
         raise _locked() from None
 
@@ -87,25 +124,48 @@ def begin(store: SQLiteAuthenticationStore = Depends(authentication_store),
 async def finish(request: Request, response: Response, store: SQLiteAuthenticationStore = Depends(authentication_store),
                  service: WebAuthnService = Depends(webauthn_service)) -> dict:
     body = await _validated_finish_body(request, LoginFinishRequest)
-    owner = _owner(store)
+    owner = _owner(request, store)
+    if owner.account_passkey_binding is not None:
+        raise _locked()
     try:
         service.verify_saved_data(owner, body.assertion())
     except (WebAuthnVerificationError, AuthenticationStateError):
         raise _locked() from None
     with store.database.transaction() as connection:
-        if store.saved_data_owner(connection) != owner:
+        if _access_owner(request, store, connection) != owner:
             raise _locked()
         lifetime = min(settings.bridge_session_ttl_seconds, 900)
         token, csrf = _sessions.issue(owner, lifetime)
+    return _session_cookie(response, token, csrf, lifetime)
+
+
+def _session_cookie(response: Response, token: str, csrf: str, lifetime: int) -> dict:
     response.set_cookie(COOKIE, token, secure=True, httponly=True, samesite="strict", path=PREFIX)
     return {"csrf_token": csrf, "expires_in": lifetime}
+
+
+@router.post("/login/windows-hello")
+def login_windows_hello(request: Request, response: Response) -> dict:
+    authority = _account_passkey(request)
+    if authority is None:
+        raise _locked()
+    lifetime = min(settings.bridge_session_ttl_seconds, 900)
+    try:
+        authorize = authorize_desktop_passkey(request)
+        token, csrf = authority.unlock(_sessions, authorize=authorize, lifetime=lifetime,
+                                      generation=request.headers[GENERATION])
+    except WindowsHelloRefused as error:
+        raise HTTPException(409, error.reason, headers={"Cache-Control": "no-store"}) from None
+    except (AdmissionRefused, AuthenticationStateError, SignedObjectRejected, WebAuthnVerificationError):
+        raise _locked() from None
+    return _session_cookie(response, token, csrf, lifetime)
 
 
 @contextmanager
 def _opened(request: Request, store: SQLiteAuthenticationStore):
     # Hold the installation's authority fence until the canonical read or delete commits.
     with store.database.transaction() as connection:
-        owner = store.saved_data_owner(connection)
+        owner = _access_owner(request, store, connection)
         token = request.cookies.get(COOKIE, "")
         csrf = request.headers.get("x-csrf-token", "")
         if owner is None or not _sessions.accepts(owner, token, csrf):

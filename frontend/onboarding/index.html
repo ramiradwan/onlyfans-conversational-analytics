@@ -102,6 +102,15 @@
             </dd>
           </div>
         </dl>
+        <section id="account-passkey-setup" data-journey-state="desktop.setup_account_passkey" hidden>
+          <p id="account-passkey-description">Use one passkey to sign in to Dipsy and open saved data on this computer.</p>
+          <div class="setup-actions">
+            <button id="account-passkey-create" type="button" aria-describedby="account-passkey-description account-passkey-status">Create passkey</button>
+            <button id="account-passkey-later" class="secondary" type="button">Finish later</button>
+          </div>
+          <p id="account-passkey-status" class="task-status" role="status" aria-live="polite" hidden></p>
+          <p id="account-passkey-help" class="task-status" hidden></p>
+        </section>
         <section id="local-access" aria-labelledby="local-access-title" data-journey-state="desktop.setup_local_access" hidden>
           <h2 id="local-access-title" class="desktop-sr-only">Access on this computer</h2>
           <p id="local-access-description" hidden></p>

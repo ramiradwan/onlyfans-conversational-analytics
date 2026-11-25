@@ -1,5 +1,5 @@
 {
-  "aggregate_bundle_sha256": "807e30c61bf9135fa184c6c76b7f8eb24d0f27877db4550ba63b41b53246c6b6",
+  "aggregate_bundle_sha256": "92594e80beb1297267b5c9f6afc32f30b7ba3c104f03b1781c90217ca2021db2",
   "conformance_manifests": [
     {
       "export": "installation-setup-continuation-v1",
@@ -149,7 +149,7 @@
   ],
   "consumer_pin_version": 4,
   "contract_manifest_path": "manifest.json",
-  "contract_manifest_sha256": "6b504f6ae2939519ef004cdc4f557a7451f6aaa84dc7344b19a7c0e6af5a3d06",
+  "contract_manifest_sha256": "f10ad61c8f94bcd5830a9307ab5845de3c0f137e46a6eb0ce0e74888caeaf265",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -236,12 +236,19 @@
       "sha256": "58d266fcee4f987091b67ee3adf6e517531606a226d35b75c5870b748908e504"
     }
   ],
-  "source_commit": "41061fc8c7e2148ecfda86531564a64e2f41bdef",
+  "source_commit": "40976d7134be4f2e37430078365aca03bac8a89b",
   "source_contract_manifest_path": "source-contract-manifest/contract-manifest.json",
-  "source_contract_manifest_sha256": "605c147e2e1cd2b7aa866261aaad135008b1b16ae6bd1bb9cbfca17fb8df2b76",
+  "source_contract_manifest_sha256": "257b470e66a8ee922aac2dbd86bcb6f01a3f90e77a88aed533e6199d5de20263",
   "source_repository": "ramiradwan/creator-platform-contracts",
-  "source_tree": "60620971820793872120a5abc16bfbae6f468982",
+  "source_tree": "1278fb4224aca5bec4f9f586c1dceace73a72002",
   "supported_profiles": [
+    "urn:bridge-clean:account-passkey-action-evidence:v1",
+    "urn:bridge-clean:account-passkey-enrollment:v1",
+    "urn:bridge-clean:account-passkey-hosted:v1",
+    "urn:bridge-clean:account-passkey-initial-local-access:v1",
+    "urn:bridge-clean:account-passkey-installation-proof:v1",
+    "urn:bridge-clean:account-passkey-local-binding:v1",
+    "urn:bridge-clean:account-passkey-local-withdrawal:v1",
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
     "urn:bridge-clean:bootstrap-recovery:v3",

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/local-binding-read-response.schema.json",
+  "title": "Exact signed local credential binding or withdrawal v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "record",
+        "state"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:account-passkey-local-binding:v1"
+        },
+        "record": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+        },
+        "state": {
+          "const": "active"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "record",
+        "state"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:account-passkey-local-binding:v1"
+        },
+        "record": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+        },
+        "state": {
+          "const": "withdrawn"
+        }
+      }
+    }
+  ]
+}

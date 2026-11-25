@@ -2533,6 +2533,10 @@
       },
       "transitions": [
         {
+          "to": "desktop.setup_account_passkey",
+          "by": "system"
+        },
+        {
           "to": "desktop.setup_finish",
           "by": "system"
         },
@@ -3849,6 +3853,32 @@
           "kind": "unit",
           "file": "frontend/tests/freshnessNavigation.test.tsx",
           "name": "keeps a failed browser action visible with a next step"
+        }
+      ]
+    },
+    {
+      "id": "desktop.setup_account_passkey",
+      "surface": "desktop.setup",
+      "anchor": {
+        "file": "frontend/onboarding/index.html",
+        "text": "data-journey-state=\"desktop.setup_account_passkey\""
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_account_connection",
+          "by": "user",
+          "action": "account-passkey-later"
+        },
+        {
+          "to": "desktop.setup_account_connection",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "keeps account connection separate from the account passkey prompt"
         }
       ]
     },

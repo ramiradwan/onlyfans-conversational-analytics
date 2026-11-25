@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/browser-error.schema.json",
+  "title": "Browser account passkey public refusal v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "error"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:account-passkey-hosted:v1"
+    },
+    "error": {
+      "type": "string",
+      "enum": [
+        "invalid",
+        "authentication_required",
+        "authorization_denied",
+        "operation_conflict",
+        "expired",
+        "rate_limited",
+        "temporarily_unavailable"
+      ]
+    },
+    "support_ref": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    }
+  }
+}

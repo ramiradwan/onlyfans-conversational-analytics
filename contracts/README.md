@@ -62,3 +62,9 @@ The delivery-recovery family pins the independent installation-key proof, genera
 The deferred setup preparation policy and supplemental lifecycle vectors describe Provider-owned continuation of an already accepted preparation. They add no wire profile or proof purpose. Brain observes the original review through existing reads and still requires explicit confirmation of a validated offer, as governed by [ADR 0053](../docs/adr/0053-observe-deferred-activation-offer-preparation.md).
 
 The text-analysis authority family pins its vectors, test-only trust set and generator version separately. Its twelve-profile supported-set object is independent of the consumer pin’s complete profile inventory. Importing purchase profiles does not implement their operations. Snapshot adoption enables no execution or production authority.
+
+The account passkey v1 schemas, profiles and OpenAPI document come from the
+published source manifest. QA and production load these schema bytes from the
+installed snapshot. Each release descriptor supplies its environment's signer
+trust. The private qualification vectors and their fixture trust stay in the
+Contracts repository.

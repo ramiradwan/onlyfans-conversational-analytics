@@ -247,7 +247,8 @@ source = json.loads(source_bytes.decode("utf-8"))
 selected = source if selected_bytes == source_bytes else json.loads(selected_bytes.decode("utf-8"))
 validate_customer_release_document(source, require_hosted=release)
 config = validate_customer_release_document(selected, require_hosted=release)
-if any(selected[field] != source[field] for field in source if field != "support_channels"):
+if any(selected.get(field) != source.get(field)
+       for field in source.keys() | selected.keys() if field != "support_channels"):
     raise SystemExit("The customer release authority fields differ from the source document")
 if config.support_channels and sys.argv[6] == "prebuilt":
     raise SystemExit("Configured support requires a native asset build")

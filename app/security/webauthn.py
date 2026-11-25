@@ -949,6 +949,7 @@ def _registration_authenticator_data(
     *,
     relying_party_id: str,
     expected_credential_id: bytes,
+    verify_cose: Callable[[object, bytes], bytes] | None = None,
 ) -> _RegistrationData:
     attestation = _base64url_decode(
         encoded_attestation, maximum=_AUTHENTICATOR_DATA_LIMIT
@@ -981,7 +982,10 @@ def _registration_authenticator_data(
         raise WebAuthnVerificationError("Attested credential ID does not match")
     key_decoder = _CborDecoder(authenticator_data, offset=credential_id_end)
     cose_key = key_decoder.decode()
-    public_key = _decode_es256_cose_key(cose_key)
+    if verify_cose is None:
+        public_key = _decode_es256_cose_key(cose_key)
+    else:
+        public_key = verify_cose(cose_key, authenticator_data[credential_id_end:key_decoder.offset])
     _verify_extensions(authenticator_data, flags, key_decoder)
     return _RegistrationData(public_key, signature_count)
 

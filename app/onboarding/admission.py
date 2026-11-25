@@ -70,6 +70,19 @@ class ScopedAdmissions:
         return bool(row is not None and row["state"] == "active" and row["stage"] == self.stage
             and row["expires_at"] > self._now() and (journey_id is None or row["journey_id"] == journey_id))
 
+    def continue_in_runtime(self, identifier: str, generation: str) -> None:
+        """Keep the same admitted native document and expiry during setup completion."""
+        if self.stage != "setup":
+            raise AdmissionRefused("session_invalid")
+        with self.authentication.database.transaction() as connection:
+            self._require(connection, identifier, role="desktop", generation=generation)
+            if connection.execute("SELECT 1 FROM desktop_presentations WHERE state='pending' AND expires_at>?",
+                                  (self._now(),)).fetchone():
+                raise AdmissionRefused("presentation_replaced")
+            connection.execute("UPDATE desktop_presentations SET stage='runtime' WHERE generation=?", (generation,))
+            connection.execute("UPDATE desktop_admission_sessions SET stage='runtime' WHERE session_digest=?",
+                               (_digest(identifier),))
+
     def prepare_desktop(self, journey_id: str | None = None, *, replacing_generation: str | None = None) -> str:
         """A verified launcher may request a presentation, without choosing an account."""
         if journey_id is not None:

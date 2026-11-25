@@ -76,6 +76,41 @@ for (const purpose of ['browser.authentication', 'browser.access', 'browser.iden
   });
 }
 
+test('a returning creator needs a new browser observation after the setup draft changes', async t => {
+  const h = identityNavigation();
+  t.after(() => h.identity.unregister());
+  await h.confirm();
+
+  const firstAccess = payload();
+  const first = await h.owner.read(await h.owner.attach(firstAccess));
+  assert.equal(first.state, 'ready');
+  const participant = ({ instance_id, draft_scope_id, disclosure_bundle_id }) =>
+    ({ instance_id, draft_scope_id, disclosure_bundle_id });
+  const auth = { ...payload(), task: { ...firstAccess.task, task_id: id(31), purpose: 'browser.authentication' },
+    participant: participant(first), creator_account_id: first.creator_account_id };
+
+  // Confirm losing the creator, then prove that same creator again.
+  await h.confirm(null);
+  await h.onboarding.browserTaskContext(firstAccess.task.journey_id);
+  await h.confirm();
+  await assert.rejects(h.owner.attach(auth), /task_changed/);
+
+  const freshAccess = { ...payload(), task: { ...firstAccess.task, task_id: id(32) },
+    creator_account_id: first.creator_account_id };
+  const refreshed = await h.owner.read(await h.owner.attach(freshAccess));
+  assert.equal(refreshed.state, 'ready');
+  assert.equal(refreshed.creator_account_id, first.creator_account_id);
+  assert.equal(refreshed.instance_id, first.instance_id);
+  assert.equal(refreshed.disclosure_bundle_id, first.disclosure_bundle_id);
+  assert.notEqual(refreshed.draft_scope_id, first.draft_scope_id);
+
+  const freshAuth = { ...auth, task: { ...auth.task, task_id: id(33) }, participant: participant(refreshed) };
+  const resumed = await h.owner.read(await h.owner.attach(freshAuth));
+  assert.equal(resumed.state, 'ready');
+  assert.equal(resumed.creator_account_id, first.creator_account_id);
+  await assert.rejects(h.owner.attach(auth), /task_changed/);
+});
+
 function harness() {
   const local = {}, session = {}, calls = { identity: 0, opened: 0, creator: 0 }, contexts = [], writes = [];
   const draft_scope = { scope_id: id(7), disclosure_bundle_id: 'b'.repeat(64) };

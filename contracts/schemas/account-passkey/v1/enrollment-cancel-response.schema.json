@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/enrollment-cancel-response.schema.json",
+  "title": "Account passkey enrollment cancellation result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "state",
+    "enrollment_id",
+    "attempt_id"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:account-passkey-enrollment:v1"
+    },
+    "state": {
+      "const": "cancelled"
+    },
+    "enrollment_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "attempt_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    }
+  }
+}

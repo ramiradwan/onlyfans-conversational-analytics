@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/local-binding-read-request.schema.json",
+  "title": "Account passkey binding-read v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request",
+    "proof"
+  ],
+  "properties": {
+    "request": {
+      "$ref": "definitions.schema.json#/$defs/binding-read"
+    },
+    "proof": {
+      "$ref": "definitions.schema.json#/$defs/installation-proof"
+    }
+  }
+}

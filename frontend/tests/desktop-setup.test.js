@@ -1652,6 +1652,71 @@ it.each([
 });
 
 
+it('rechecks a changed draft from Open browser before launching one fresh sign-in', async () => {
+  const parent = '33333333-3333-4333-8333-333333333333';
+  const refresh = '44444444-4444-4444-8444-444444444444';
+  const replacement = '55555555-5555-4555-8555-555555555555';
+  const attempt = '66666666-6666-7666-8666-666666666666';
+  const access = { ...record, operation_id: refresh, state: 'waiting' };
+  const parentRecord = { ...record, operation_id: parent, action: 'account.connect', state: 'waiting' };
+  const child = { ...record, action: 'auth.select', state: 'waiting' };
+  const auth = { operation_id: parent, browser_operation_id: operationId, state: 'selected',
+    choices: { google: true, 'microsoft-personal': false, telegram: false, tiktok: false, default: true },
+    actions: { select: false, cancel: true, open_browser: true, switch_account: false },
+    authentication_attempt: { authentication_attempt_id: attempt, provider: 'google', mode: 'sign-in' } };
+  const original = { ...initial(), journey_id: parent, next_task: 'account-connection',
+    facts: { ...initial().facts, browser_access: 'verified' }, pending_operations: [parentRecord, child],
+    allowed_actions: ['browser.access', 'auth.cancel'], authentication: auth };
+  const notices = [{ task_id: parent, operation_id: operationId, admission_generation: generation, reason: 'task_changed' }];
+  let publish, receipt = access;
+  const commands = [], states = [], ids = [refresh, replacement];
+  const openBrowser = vi.fn(async () => true);
+  const subject = new DesktopSetupClient({ generation, openBrowser, storage: storage(), uuid: () => ids.shift(),
+    receive: state => states.push(state), stream: async (_request, _headers, _signal, listener) => {
+      publish = (snapshot, browser_notices = []) => listener(JSON.stringify({ snapshot, browser_notices }), SCOPED_SETUP_EVENT);
+      publish(original, notices);
+    }, request: async (url, options) => {
+      if (url.endsWith('/session')) return response(session);
+      if (url.endsWith('/commands')) {
+        const body = JSON.parse(options.body);
+        commands.push(body);
+        return response({ ...record, operation_id: body.operation_id, action: body.action }, 202);
+      }
+      if (url.endsWith(refresh)) return response(receipt);
+      return response({ ...child, operation_id: replacement });
+    } });
+  await subject.connect();
+  subject.remember(operationId);
+  expect(states.at(-1).error).toBe('browser_recheck_required');
+  document.documentElement.innerHTML = markup;
+  renderSetup(document, states.at(-1));
+  expect(document.getElementById('task-status').textContent).toBe('Browser setup changed. Open Chrome to continue.');
+  expect(document.getElementById('browser-reopen').hidden).toBe(false);
+  const first = subject.launchBrowser(true, operationId);
+  await subject.launchBrowser(true, operationId);
+  await first;
+  expect(commands.map(value => value.action)).toEqual(['browser.access']);
+  expect(openBrowser.mock.calls.map(([, operation]) => operation)).toEqual([refresh]);
+  publish({ ...original, revision: 1, next_task: 'browser-access', authentication: null, allowed_actions: [],
+    pending_operations: [parentRecord, access] });
+  const ready = { ...original, revision: 2, pending_operations: [parentRecord], allowed_actions: ['auth.select'],
+    authentication: { ...auth, state: 'retired', actions: { select: true, cancel: false, open_browser: false, switch_account: true } } };
+  publish(ready);
+  await subject.receipt(refresh);
+  expect(commands).toHaveLength(1);
+
+  receipt = { ...access, state: 'completed' };
+  await subject.receipt(refresh);
+  await vi.waitFor(() => expect(commands).toHaveLength(2));
+  publish(ready);
+  await subject.launchBrowser(true, operationId);
+  expect(commands[1]).toMatchObject({ action: 'auth.select', provider: 'google', operation_id: replacement });
+  await vi.waitFor(() => expect(openBrowser.mock.calls.map(([, operation]) => operation)).toEqual([refresh, replacement]));
+  expect(ids).toHaveLength(0);
+  subject.stop();
+});
+
+
 describe('scoped helper notices in the desktop', () => {
   const taskID = '33333333-3333-4333-8333-333333333333';
   const taskGeneration = '44444444-4444-4444-8444-444444444444';
@@ -2561,4 +2626,39 @@ describe('correlated desktop interaction outcomes', () => {
       });
     } finally { client.stop(); }
   });
+});
+
+it('keeps account connection separate from the account passkey prompt', () => {
+  document.documentElement.innerHTML = markup;
+  const decision = {
+    operation_id: operationId, action: 'connect-account', creator_id: 'creator-fixture',
+    computer_name: 'Test computer', expires_at: '2038-01-01T00:00:00.000Z',
+  };
+  const base = { ...initial(), next_task: 'account-connection', decision,
+    allowed_actions: ['account.confirm'], facts: { ...initial().facts, browser_access: 'verified' } };
+  const render = (value, state = {}) => renderSetup(document, { connected: true, error: null,
+    snapshot: { ...base, account_passkey: value }, ...state });
+  render('available');
+  expect(document.getElementById('account-passkey-create').hidden).toBe(false);
+  expect(document.getElementById('task-action').hidden).toBe(true);
+  const help = document.getElementById('account-passkey-help');
+  expect(help.hidden).toBe(true);
+  document.getElementById('support-channels').innerHTML =
+    '<span data-channel="account-passkey">https://account.dipsy.fi/account/passkeys/help</span>';
+  const reference = 'A'.repeat(43);
+  render('available', { passkeySupportRef: reference });
+  expect(document.getElementById('account-passkey-status').textContent).toContain(reference);
+  expect(help.hidden).toBe(false);
+  expect(help.textContent).toBe('Get help at https://account.dipsy.fi/account/passkeys/help');
+  render('working');
+  expect(document.getElementById('account-passkey-create').disabled).toBe(true);
+  expect(document.getElementById('task-action').hidden).toBe(true);
+  expect(help.hidden).toBe(true);
+  expect(help.textContent).toBe('');
+  render('available', { passkeyDeferred: true });
+  expect(document.getElementById('account-passkey-create').hidden).toBe(true);
+  expect(document.getElementById('task-action').dataset.action).toBe('account.confirm');
+  render('created');
+  expect(document.getElementById('account-passkey-status').textContent).toBe('Passkey created.');
+  expect(document.getElementById('task-action').dataset.action).toBe('account.confirm');
 });

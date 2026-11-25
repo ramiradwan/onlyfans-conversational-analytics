@@ -25,7 +25,7 @@ class HelperStreams:
 
     def __init__(self):
         self._live: dict[tuple[str, str], dict] = {}
-        self._notices: dict[tuple[str, str], str] = {}
+        self._notices: dict[tuple[str, str], tuple[str, bool]] = {}
         # task_id -> (generation, timer). A satisfied or fired backstop keeps its generation with no timer.
         self._backstops: dict[str, tuple[str, asyncio.TimerHandle | None]] = {}
         self._expiring: set[asyncio.Task] = set()
@@ -68,27 +68,32 @@ class HelperStreams:
         entry["ack"].set_result(True)
         return True
 
-    def notice(self, task_id, generation, reason):
+    def notice(self, task_id, generation, reason, *, recheck=False):
         """Record one display-only notice per generation. It changes no task state."""
         if reason not in NOTICES:
             raise ValueError("Unknown browser notice")
         key = (task_id, generation)
-        if key in self._notices:
+        saved = (reason, recheck and reason == "task_changed")
+        previous = self._notices.get(key)
+        if previous is not None and not (saved[1] and previous in {("unavailable", False), ("task_changed", False)}):
             return False
-        if len(self._notices) >= 64:
+        if previous is None and len(self._notices) >= 64:
             self._notices.pop(next(iter(self._notices)))
-        self._notices[key] = reason
+        self._notices[key] = saved
         events.publish()
         return True
+
+    def needs_browser_recheck(self, task_id, generation):
+        return self._notices.get((task_id, generation)) == ("task_changed", True)
 
     def notices(self, tasks, *, scoped=False):
         notices = []
         for task in sorted(tasks, key=lambda item: item["task_id"]):
             task_id, generation = task["task_id"], task["admission_generation"]
-            reason = self._notices.get((task_id, generation))
-            if reason is None:
+            saved = self._notices.get((task_id, generation))
+            if saved is None:
                 continue
-            notice = {"task_id": task_id, "reason": reason}
+            notice = {"task_id": task_id, "reason": saved[0]}
             if scoped:
                 notice.update(admission_generation=generation, operation_id=task["operation_id"])
             notices.append(notice)
@@ -146,7 +151,7 @@ class HelperStreams:
         except Exception:
             return
         key = (task_id, generation)
-        if self._notices.get(key) == "task_changed":
+        if self._notices.get(key) == ("task_changed", False):
             del self._notices[key]
         self.notice(task_id, generation, "unavailable")
         entry = self._live.get((task_id, generation))

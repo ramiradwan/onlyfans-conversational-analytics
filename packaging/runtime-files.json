@@ -154,7 +154,8 @@
         "0052_lost_enrollment_evidence.sql": "35240165cd5a4dfa83d7a53e52813713a08a96b71b41f2dcac93369f37b1e1a3",
         "0053_protected_recovery_retirement.sql": "b69dacf80c45b2f066df26ffa499408beaac5cc5d326d516cf45c72a347564d6",
         "0054_saved_data_challenges.sql": "afe2f86dca74f664cddc05545112010c3e534e0befa0598a1d261d653fec242f",
-        "0055_companion_setup_configuration.sql": "9e11ad438b2c860d54e1cdae1338ebbc274eed157f28d5f3367c92daad24a967"
+        "0055_companion_setup_configuration.sql": "9e11ad438b2c860d54e1cdae1338ebbc274eed157f28d5f3367c92daad24a967",
+        "0056_account_passkey_authority.sql": "bc21a5101187cf31804d4bbecf62eac20ac5338cb28e7a0cf043a8e92f294405"
       }
     },
     {
@@ -206,10 +207,10 @@
   ],
   "contracts": {
     "path": "_internal/contracts",
-    "manifest_sha256": "6b504f6ae2939519ef004cdc4f557a7451f6aaa84dc7344b19a7c0e6af5a3d06",
-    "consumer_pin_sha256": "beb8187977b816e3ae1604314e9fb9d27cb417555619cee400ae44e1a5486486",
+    "manifest_sha256": "f10ad61c8f94bcd5830a9307ab5845de3c0f137e46a6eb0ce0e74888caeaf265",
+    "consumer_pin_sha256": "bbd45a8d631e4ab5197058319d6f2d0d2678705c139d09434a1a18515d1dce4e",
     "root_file_sha256": {
-      "loader.py": "766f1e067ab29489ff8d97eefd2357c8fe214aa5ee42a779eea11b4795538c0f",
+      "loader.py": "738eb6c06c63813ad72a5da7d08d3b741aba968a93535655317249069cfc820c",
       "verify.py": "e954e65aba92ffb85619ada60fafbc0e68a7c0e80947da84f4a6b1d6580b708e"
     },
     "root_files": [

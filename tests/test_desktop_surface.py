@@ -82,6 +82,28 @@ def test_support_projection_preserves_closed_setup_admission(compiled, tmp_path,
     assert client.get("/static/dist/release.json").status_code == 404
 
 
+def test_passkey_help_uses_the_configured_account_origin_without_an_admission(compiled, tmp_path, monkeypatch):
+    from app.core.customer_release import DEVELOPMENT_CUSTOMER_RELEASE_ENV
+
+    client, _ = compiled
+    release = tmp_path / "release.json"
+    release.write_text(json.dumps({
+        "schema": "ofca-customer-release/v2",
+        "hosted_api_origin": "https://account.dipsy.fi",
+        "setup_transfer_receiver_url": "",
+        "authentication_providers": ["default"],
+        "account_passkey": {
+            "environment": "production", "rp_id": "dipsy.fi", "contract_revision": "1" * 40,
+            "trust": "{}", "trust_sha256": "2" * 64, "trust_sequence": 1,
+        },
+    }), encoding="utf-8")
+    monkeypatch.setenv(DEVELOPMENT_CUSTOMER_RELEASE_ENV, str(release))
+    response = client.get("/onboarding")
+    assert response.status_code == 200
+    assert '<span data-channel="account-passkey">https://account.dipsy.fi/account/passkeys/help</span>' in response.text
+    assert "set-cookie" not in response.headers
+
+
 @pytest.mark.parametrize("missing", ["manifest.json", "onboarding/index.html", "assets/setup.js"])
 def test_missing_generated_setup_assets_are_unavailable(compiled, missing):
     client, directory = compiled

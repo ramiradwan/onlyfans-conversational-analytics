@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/removal-finish-response.schema.json",
+  "title": "Browser account passkey removal outcome v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "state",
+    "credential_ref"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:account-passkey-hosted:v1"
+    },
+    "state": {
+      "const": "removed"
+    },
+    "credential_ref": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    }
+  }
+}

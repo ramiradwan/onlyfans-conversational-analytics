@@ -3,6 +3,8 @@ import asyncio
 from contextlib import asynccontextmanager
 import socket
 import threading
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import httpx
 import pytest
@@ -14,10 +16,102 @@ from app.onboarding.coordinator import CommandRefused
 from app.onboarding.routes import desktop_router
 from app.provisioning.events import events
 from app.packaged_entry import supervised_server, ObservedApplication
+from app.packaged_transition import SetupRuntimeTransition
 from app.core.bootstrap_status import BootstrapStatus
 from test_desktop_coordinator import command, setup as coordinator_setup
 
 pytestmark = [pytest.mark.ci_tier("integration"), pytest.mark.windows_compat, pytest.mark.serial]
+
+
+@pytest.mark.asyncio
+async def test_account_passkey_setup_drains_before_configured_routes_on_same_listener(monkeypatch):
+    from app.api.endpoints import saved_data
+
+    order = []
+    draining = asyncio.Event()
+    release = asyncio.Event()
+    setup_closed = asyncio.Event()
+    access = object()
+    restart = Mock()
+    stage = Mock(side_effect=lambda _: order.append("access-staged"))
+    monkeypatch.setattr(saved_data, "stage_initial_access", stage)
+    continue_presentation = Mock(side_effect=lambda *_: order.append("presentation-continued"))
+
+    @asynccontextmanager
+    async def setup_lifecycle(application):
+        yield
+        assert setup_closed.is_set()
+        order.append("setup-drained")
+
+    setup = FastAPI(lifespan=setup_lifecycle)
+    setup.state.desktop_setup_core = SimpleNamespace(account_passkeys=SimpleNamespace(
+        take_initial_access=Mock(return_value=(SimpleNamespace(identifier="fixture", generation="generation"), access)),
+    ))
+    setup.state.desktop_admissions = SimpleNamespace(continue_in_runtime=continue_presentation)
+    setup.state.desktop_coordinator = SimpleNamespace(begin_shutdown=draining.set)
+
+    @setup.get("/state")
+    async def hold_setup():
+        try:
+            await draining.wait()
+            await release.wait()
+            return {"mode": "setup"}
+        finally:
+            setup_closed.set()
+
+    @asynccontextmanager
+    async def runtime_lifecycle(application):
+        order.append("runtime-started")
+        yield
+        order.append("runtime-drained")
+
+    runtime = FastAPI(lifespan=runtime_lifecycle)
+
+    @runtime.get("/state")
+    async def read_runtime():
+        return {"mode": "runtime"}
+
+    async def load_runtime():
+        assert order == ["setup-drained"]
+        return runtime
+
+    transition = SetupRuntimeTransition(setup, load_runtime=load_runtime, exit_for_restart=restart)
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.setblocking(False)
+    port = listener.getsockname()[1]
+    server = supervised_server(uvicorn.Config(
+        transition, host="127.0.0.1", port=port, lifespan="on", log_level="critical",
+    ), transition)
+    serving = asyncio.create_task(server.serve(sockets=[listener]))
+    try:
+        async with asyncio.timeout(5), httpx.AsyncClient(
+            base_url=f"http://127.0.0.1:{port}", trust_env=False,
+        ) as client:
+            while not server.started:
+                await asyncio.sleep(.01)
+            hold = asyncio.create_task(client.get("/state"))
+            while transition._idle.is_set():
+                await asyncio.sleep(.01)
+            assert transition.request()
+            await draining.wait()
+            assert (await client.get("/state")).status_code == 503
+            assert not order
+            release.set()
+            assert (await hold).json() == {"mode": "setup"}
+            while not transition.configured and not restart.called:
+                await asyncio.sleep(.01)
+            restart.assert_not_called()
+            assert (await client.get("/state")).json() == {"mode": "runtime"}
+            assert order == ["setup-drained", "runtime-started", "presentation-continued", "access-staged"]
+            stage.assert_called_once_with(access)
+            continue_presentation.assert_called_once_with("fixture", "generation")
+    finally:
+        release.set()
+        server.should_exit = True
+        await asyncio.wait_for(serving, 5)
+        listener.close()
+    assert order[-1] == "runtime-drained"
 
 
 @pytest.mark.asyncio

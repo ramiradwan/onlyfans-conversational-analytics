@@ -41,7 +41,8 @@ def test_process_entries_share_explicit_windows_loop_and_preserve_other_defaults
 
     def configuration(application, **keywords):
         assert keywords['loop'] == expected and keywords['workers'] == 1
-        selected = uvicorn.Config(application, log_config=None, **keywords)
+        keywords.setdefault("log_config", None)
+        selected = uvicorn.Config(application, **keywords)
         configurations.append(selected)
         return selected
 
@@ -53,7 +54,8 @@ def test_process_entries_share_explicit_windows_loop_and_preserve_other_defaults
         assert len(calls) == (1 if entry == entries[0] else 2)
         for call in calls:
             namespace = {'uvicorn': types.SimpleNamespace(Config=configuration, run=configuration),
-                'observed_application': object(), 'app': object(), 'uvicorn_loop': server_loop.uvicorn_loop}
+                'observed_application': object(), 'app': object(), 'uvicorn_loop': server_loop.uvicorn_loop,
+                'log_config': None}
             eval(compile(ast.Expression(call), str(entry), 'eval'), namespace)
         if entry == entries[1]:
             runners = [node for node in ast.walk(tree) if isinstance(node, ast.Call)

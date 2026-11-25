@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/removal-begin-response.schema.json",
+  "title": "Browser account passkey removal proof options v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "method",
+        "attempt_id",
+        "challenge",
+        "rp_id",
+        "expires_at",
+        "credential_ref",
+        "display_label",
+        "local_access_effect",
+        "ends_current_session"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:account-passkey-hosted:v1"
+        },
+        "method": {
+          "const": "service-passkey"
+        },
+        "attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "challenge": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "rp_id": {
+          "type": "string",
+          "maxLength": 253,
+          "format": "hostname",
+          "pattern": "^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$"
+        },
+        "expires_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "credential_ref": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "display_label": {
+          "type": "string",
+          "pattern": "^Dipsy passkey [A-Z0-9]{6}$",
+          "minLength": 20,
+          "maxLength": 20
+        },
+        "local_access_effect": {
+          "enum": [
+            "no-local-binding",
+            "may-lose-offline-access"
+          ]
+        },
+        "ends_current_session": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "method",
+        "attempt_id",
+        "expires_at",
+        "credential_ref",
+        "display_label",
+        "local_access_effect",
+        "ends_current_session"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:account-passkey-hosted:v1"
+        },
+        "method": {
+          "const": "entra-action"
+        },
+        "attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "expires_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "credential_ref": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "display_label": {
+          "type": "string",
+          "pattern": "^Dipsy passkey [A-Z0-9]{6}$",
+          "minLength": 20,
+          "maxLength": 20
+        },
+        "local_access_effect": {
+          "enum": [
+            "no-local-binding",
+            "may-lose-offline-access"
+          ]
+        },
+        "ends_current_session": {
+          "type": "boolean"
+        }
+      }
+    }
+  ]
+}

@@ -13,6 +13,7 @@ export const desktopRecovery = Object.freeze({
   action_unavailable: 'authorization_refused',
   authority_unavailable: 'owner_unavailable',
   browser_unavailable: 'browser_disconnected',
+  browser_recheck_required: 'browser_disconnected',
   chrome_unavailable: 'browser_disconnected',
   browser_preparing: 'operation_pending',
   extension_unavailable: 'browser_disconnected',

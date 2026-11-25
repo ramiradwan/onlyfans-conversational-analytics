@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/initial-local-access-response.schema.json",
+  "title": "One-use initial local access result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "record"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:account-passkey-initial-local-access:v1"
+    },
+    "record": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+    }
+  }
+}

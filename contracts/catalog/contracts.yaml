@@ -1754,3 +1754,141 @@ contracts:
     openapi_operations:
     - issueComplimentaryActivationReviewReplacementProofChallengeV1
     governing_adr: docs/adr/0060-operation-scoped-authority-recovery.md
+  - id: account-passkey-enrollment-v1
+    owner: identity
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Prepare and commit the exact initial native account credential.
+    profile: urn:bridge-clean:account-passkey-enrollment:v1
+    classification: customer-identity
+    retention_class: onboarding-working-state
+    max_request_bytes: 24576
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/account-passkey/v1/definitions.schema.json
+    - schemas/account-passkey/v1/enrollment-begin-request.schema.json
+    - schemas/account-passkey/v1/enrollment-finish-request.schema.json
+    - schemas/account-passkey/v1/enrollment-receipt-request.schema.json
+    - schemas/account-passkey/v1/enrollment-cancel-request.schema.json
+    - schemas/account-passkey/v1/enrollment-begin-response.schema.json
+    - schemas/account-passkey/v1/enrollment-result.schema.json
+    - schemas/account-passkey/v1/enrollment-cancel-response.schema.json
+    - schemas/account-passkey/v1/native-error.schema.json
+    openapi_operations:
+    - beginAccountPasskeyEnrollmentV1
+    - finishAccountPasskeyEnrollmentV1
+    - readAccountPasskeyEnrollmentReceiptV1
+    - cancelAccountPasskeyEnrollmentV1
+    governing_adr: docs/adr/0061-account-passkey-enrollment-and-independent-local-binding.md
+  - id: account-passkey-installation-proof-v1
+    owner: identity
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Prove possession of the exact admitted installation key for one native operation.
+    profile: urn:bridge-clean:account-passkey-installation-proof:v1
+    classification: customer-identity
+    retention_class: onboarding-working-state
+    max_request_bytes: 24576
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/account-passkey/v1/proof-challenge-request.schema.json
+    - schemas/account-passkey/v1/proof-challenge-response.schema.json
+    openapi_operations:
+    - issueAccountPasskeyInstallationProofChallengeV1
+    governing_adr: docs/adr/0061-account-passkey-enrollment-and-independent-local-binding.md
+  - id: account-passkey-hosted-v1
+    owner: identity
+    producer: commercial-control-plane
+    consumer: account-browser
+    purpose: Authenticate by the hosted passkey and manage the selected credential.
+    profile: urn:bridge-clean:account-passkey-hosted:v1
+    classification: customer-identity
+    retention_class: onboarding-working-state
+    max_request_bytes: 24576
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/account-passkey/v1/hosted-begin-request.schema.json
+    - schemas/account-passkey/v1/hosted-begin-response.schema.json
+    - schemas/account-passkey/v1/hosted-finish-request.schema.json
+    - schemas/account-passkey/v1/hosted-finish-response.schema.json
+    - schemas/account-passkey/v1/credential-list-response.schema.json
+    - schemas/account-passkey/v1/removal-begin-request.schema.json
+    - schemas/account-passkey/v1/removal-begin-response.schema.json
+    - schemas/account-passkey/v1/removal-step-up-request.schema.json
+    - schemas/account-passkey/v1/removal-finish-request.schema.json
+    - schemas/account-passkey/v1/removal-finish-response.schema.json
+    - schemas/account-passkey/v1/browser-error.schema.json
+    openapi_operations:
+    - beginAccountPasskeySignInV1
+    - finishAccountPasskeySignInV1
+    - listAccountPasskeyCredentialsV1
+    - beginAccountPasskeyRemovalV1
+    - startAccountPasskeyRemovalStepUpV1
+    - finishAccountPasskeyRemovalV1
+    governing_adr: docs/adr/0061-account-passkey-enrollment-and-independent-local-binding.md
+  - id: account-passkey-action-evidence-v1
+    owner: identity
+    producer: commercial-control-plane
+    consumer: commercial-control-plane
+    purpose: Represent exact server-held evidence for the selected credential removal.
+    profile: urn:bridge-clean:account-passkey-action-evidence:v1
+    classification: customer-identity
+    retention_class: onboarding-working-state
+    max_request_bytes: 24576
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/account-passkey/v1/action-evidence.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0061-account-passkey-enrollment-and-independent-local-binding.md
+  - id: account-passkey-local-binding-v1
+    owner: identity
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Deliver the signed installation-bound account credential or its known withdrawal.
+    profile: urn:bridge-clean:account-passkey-local-binding:v1
+    classification: customer-identity
+    retention_class: trust-ceremony-evidence
+    max_request_bytes: 24576
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/account-passkey/v1/local-binding-read-request.schema.json
+    - schemas/account-passkey/v1/local-binding-read-response.schema.json
+    - schemas/account-passkey/v1/local-binding-payload.schema.json
+    - schemas/account-passkey/v1/local-trust-set.schema.json
+    openapi_operations:
+    - readAccountPasskeyLocalBindingV1
+    governing_adr: docs/adr/0061-account-passkey-enrollment-and-independent-local-binding.md
+  - id: account-passkey-initial-local-access-v1
+    owner: identity
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Allow one independent initial local access for the exact committed connection.
+    profile: urn:bridge-clean:account-passkey-initial-local-access:v1
+    classification: customer-identity
+    retention_class: onboarding-working-state
+    max_request_bytes: 24576
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/account-passkey/v1/initial-local-access-request.schema.json
+    - schemas/account-passkey/v1/initial-local-access-response.schema.json
+    - schemas/account-passkey/v1/initial-local-access-payload.schema.json
+    openapi_operations:
+    - issueAccountPasskeyInitialLocalAccessV1
+    governing_adr: docs/adr/0061-account-passkey-enrollment-and-independent-local-binding.md
+  - id: account-passkey-local-withdrawal-v1
+    owner: identity
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Fence an exact known withdrawn local credential and acknowledge receipt.
+    profile: urn:bridge-clean:account-passkey-local-withdrawal:v1
+    classification: customer-identity
+    retention_class: trust-ceremony-evidence
+    max_request_bytes: 24576
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/account-passkey/v1/local-withdrawal-ack-request.schema.json
+    - schemas/account-passkey/v1/local-withdrawal-ack-response.schema.json
+    - schemas/account-passkey/v1/local-withdrawal-payload.schema.json
+    openapi_operations:
+    - ackAccountPasskeyLocalWithdrawalV1
+    governing_adr: docs/adr/0061-account-passkey-enrollment-and-independent-local-binding.md

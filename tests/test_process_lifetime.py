@@ -61,13 +61,28 @@ def test_windowed_child_observes_parent_eof_and_joins(tmp_path, parent_closes):
     marker = tmp_path / "ready"
     result = tmp_path / "result"
     script = """
-import sys, threading
+import os, sys, threading
 from pathlib import Path
-from app.core.process_lifetime import parent_lifetime
+from app.core.process_lifetime import HANDLE_ENV, parent_lifetime
+from app.security.account_passkey_windows import WindowsHelloBroker
+
+class BrokerWithoutNativeCalls(WindowsHelloBroker):
+    def __init__(self, *, rp_id, parent_pid):
+        self.parent_pid = parent_pid
+
+sys.platform = 'win32'
+sys.frozen = True
+os.environ['LOCAL_PROVISIONING_HANDOFF_TOKEN'] = 'test-launcher'
+rp_id = 'dipsy.test'
+assert BrokerWithoutNativeCalls.for_installed_desktop(rp_id=rp_id) is None
 stopped = threading.Event()
 with parent_lifetime(stopped.set):
+    assert HANDLE_ENV not in os.environ
+    broker = BrokerWithoutNativeCalls.for_installed_desktop(rp_id=rp_id)
+    assert broker is not None and broker.parent_pid == os.getppid()
     Path(sys.argv[1]).write_text('ready')
     observed = stopped.wait(5 if sys.argv[3] == 'True' else .2)
+assert BrokerWithoutNativeCalls.for_installed_desktop(rp_id=rp_id) is None
 Path(sys.argv[2]).write_text(str(observed))
 """
     process = None

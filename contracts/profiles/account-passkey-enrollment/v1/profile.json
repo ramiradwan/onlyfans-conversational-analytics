@@ -1,0 +1,50 @@
+{
+  "profile": "urn:bridge-clean:account-passkey-enrollment:v1",
+  "governing_adr": "docs/adr/0061-account-passkey-enrollment-and-independent-local-binding.md",
+  "messages": {
+    "definitions": "schemas/account-passkey/v1/definitions.schema.json",
+    "enrollment-begin-request": "schemas/account-passkey/v1/enrollment-begin-request.schema.json",
+    "enrollment-finish-request": "schemas/account-passkey/v1/enrollment-finish-request.schema.json",
+    "enrollment-receipt-request": "schemas/account-passkey/v1/enrollment-receipt-request.schema.json",
+    "enrollment-cancel-request": "schemas/account-passkey/v1/enrollment-cancel-request.schema.json",
+    "enrollment-begin-response": "schemas/account-passkey/v1/enrollment-begin-response.schema.json",
+    "enrollment-result": "schemas/account-passkey/v1/enrollment-result.schema.json",
+    "enrollment-cancel-response": "schemas/account-passkey/v1/enrollment-cancel-response.schema.json",
+    "native-error": "schemas/account-passkey/v1/native-error.schema.json"
+  },
+  "request_max_bytes": 24576,
+  "response_max_bytes": 16384,
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "proof_profile": "urn:bridge-clean:account-passkey-installation-proof:v1",
+  "native_origin": "dipsy-desktop://passkey-enrollment",
+  "production_rp_id": "dipsy.fi",
+  "registration_algorithm": "ES256",
+  "attestation": "none",
+  "resident_key": "required",
+  "user_presence": "required",
+  "user_verification": "required",
+  "raw_id_limit_bytes": 1023,
+  "begin_expiry": "earliest-of-source-operation-session-token-and-300-seconds-from-begin",
+  "signed_authentication_age": {
+    "minimum_seconds": 0,
+    "maximum_seconds_inclusive": 300
+  },
+  "receipt_recovery_max_seconds": 1800,
+  "receipt_recovery": "same-committed-result-exact-key-proof-current-source-scope-without-authority",
+  "cleanup_max_seconds": 86400,
+  "notes": "profiles/account-passkey-enrollment/v1/policy.md",
+  "refusal_status": {
+    "invalid": 400,
+    "proof_invalid": 401,
+    "authorization_denied": 403,
+    "operation_conflict": 409,
+    "not_ready": 409,
+    "result_unavailable": 410,
+    "expired": 410,
+    "rate_limited": 429,
+    "temporarily_unavailable": 503
+  },
+  "source_binding_digest": "lowercase-hex(SHA-256(RFC8785(browser-ceremony:v1 binding)))",
+  "source_admission_generation": "server-resolved-from-exact-ceremony-and-stored-attempt"
+}

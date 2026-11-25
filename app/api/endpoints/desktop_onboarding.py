@@ -48,7 +48,7 @@ def configure_desktop_setup(application, *, launcher_token, grant_refresh=lambda
     core = build_desktop_setup(store=store, stage="runtime", extension_id=settings.extension_id,
         hosted_origin=origin, authentication_providers=release.authentication_providers,
         finalize=finalize, completion_ready=durable_completion_reader(lambda: store, data_directory=directory),
-        adapt_owner=runtime_owner)
+        adapt_owner=runtime_owner, account_passkey_release=release.account_passkey)
 
     def actor(request, mutation):
         def policy():

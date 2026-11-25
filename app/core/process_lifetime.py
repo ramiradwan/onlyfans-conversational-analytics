@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from contextvars import ContextVar
 import os
 import select
 import stat
@@ -11,6 +12,13 @@ import threading
 
 HANDLE_ENV = "BRAIN_PARENT_LIFETIME_HANDLE"
 PARENT_SHUTDOWN_SECONDS = 30
+_PARENT_OBSERVER: ContextVar[threading.Thread | None] = ContextVar("parent_lifetime_observer", default=None)
+
+
+def parent_lifetime_active() -> bool:
+    """Report whether this bootstrap has a running inherited-pipe observer."""
+    observer = _PARENT_OBSERVER.get()
+    return observer is not None and observer.is_alive()
 
 
 def _shutdown_watchdog(stopped, *, force_exit=os._exit, timeout=PARENT_SHUTDOWN_SECONDS):
@@ -98,7 +106,11 @@ def parent_lifetime(request_exit, *, drained=lambda: True):
     thread = threading.Thread(target=observe, name="parent-lifetime", daemon=True)
     try:
         thread.start()
-        yield
+        token = _PARENT_OBSERVER.set(thread)
+        try:
+            yield
+        finally:
+            _PARENT_OBSERVER.reset(token)
     finally:
         stopped.set()
         try:

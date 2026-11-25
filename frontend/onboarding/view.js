@@ -27,6 +27,7 @@ const errors = {
   operation_refused: 'The action was refused.',
   authority_unavailable: 'Account authorization is unavailable.',
   browser_unavailable: 'The browser connection is unavailable.',
+  browser_recheck_required: 'Browser setup changed. Open Chrome to continue.',
   chrome_unavailable: 'Install the required browser to continue setup.',
   browser_preparing: 'The browser task is being prepared.',
   extension_unavailable: 'Install or turn on the extension in your browser to continue setup.',
@@ -115,7 +116,7 @@ export function renderSetup(document, state) {
     updateStatus(pendingRow, pending ? recovery.status : '', 'progress');
     updateStatus(taskStatus, pending ? '' : recovery.status, recovery.tone);
     for (const id of ['header-account-avatar', 'header-account-name', 'header-account-handle', 'decision-provider']) get(id).textContent = '';
-    for (const id of ['local-access', 'local-authenticate', 'decision-details', 'decision-sign-in', 'decision-provider', 'header-account', 'sign-in-options',
+    for (const id of ['account-passkey-setup', 'local-access', 'local-authenticate', 'decision-details', 'decision-sign-in', 'decision-provider', 'header-account', 'sign-in-options',
       'browser-reopen', 'sign-in-switch', 'sign-in-back', 'setup-code-open']) get(id).hidden = true;
     const primary = get('task-action'), cancel = get('protected-cancel');
     primary.hidden = !recovery.action;
@@ -351,9 +352,28 @@ export function renderSetup(document, state) {
     : allowed.find(item => actions[item] && (item !== 'browser.access' || task === 'browser-access')
       && (item !== 'account.connect' || sourceContinuationFallback));
   const taskAction = get('task-action');
+  const passkey = value?.account_passkey;
+  const passkeySetup = Boolean(passkey && decision && !unavailable && !showingProviders && !accepted);
+  const passkeyBusy = passkey === 'working' || state.acting === 'passkey.create';
+  const offerPasskey = passkeySetup && passkey !== 'created' && !state.passkeyDeferred;
+  const supportRef = passkeySetup && !passkeyBusy && passkey !== 'created' ? state.passkeySupportRef : null;
+  const passkeyMessage = passkeyBusy ? 'Waiting for Windows Hello…' : passkey === 'created' ? 'Passkey created.'
+    : supportRef ? `Dipsy couldn’t set up your passkey. Share reference ${supportRef} with support.` : state.passkeyMessage;
+  get('account-passkey-setup').hidden = !passkeySetup || (!offerPasskey && !passkeyMessage);
+  get('account-passkey-description').hidden = !offerPasskey;
+  get('account-passkey-create').hidden = !offerPasskey;
+  get('account-passkey-create').disabled = controlsDisabled || passkeyBusy;
+  get('account-passkey-later').hidden = !offerPasskey;
+  get('account-passkey-later').disabled = controlsDisabled || passkeyBusy;
+  get('account-passkey-status').textContent = passkeySetup ? passkeyMessage || '' : '';
+  get('account-passkey-status').hidden = !passkeySetup || !passkeyMessage;
+  const helpUrl = supportRef && get('support-channels')?.content.querySelector('[data-channel="account-passkey"]')?.textContent;
+  get('account-passkey-help').textContent = helpUrl ? `Get help at ${helpUrl}` : '';
+  get('account-passkey-help').hidden = !helpUrl;
   const submittingPair = state.acting === 'browser.pair' || state.pendingAction === 'browser.pair';
   taskAction.hidden = unavailable || reason === 'chrome_unavailable' || !action || showingProviders || accepted || !localAccessReady
-    || startingChrome || confirmingUnknown || action === 'browser.pair' && (!pairingAvailable || pending && !submittingPair);
+    || startingChrome || confirmingUnknown || action === 'account.confirm' && (offerPasskey || passkeyBusy)
+    || action === 'browser.pair' && (!pairingAvailable || pending && !submittingPair);
   taskAction.disabled = controlsDisabled || replacing || action === 'browser.pair' && submittingPair
     || (!canReplaceFallback && (decision ? Boolean(state.pending) : pending));
   taskAction.textContent = canReplaceFallback ? 'Sign in again' : value?.continuation_available && action === 'account.connect' ? 'Continue setup'

@@ -1,0 +1,25 @@
+{
+  "profile": "urn:bridge-clean:account-passkey-action-evidence:v1",
+  "governing_adr": "docs/adr/0061-account-passkey-enrollment-and-independent-local-binding.md",
+  "messages": {
+    "action-evidence": "schemas/account-passkey/v1/action-evidence.schema.json"
+  },
+  "request_max_bytes": 24576,
+  "response_max_bytes": 16384,
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "server_held": true,
+  "purpose": "remove-account-passkey",
+  "methods": [
+    "service-passkey",
+    "entra-action"
+  ],
+  "max_age_seconds_inclusive": 300,
+  "expires": "no-later-than-original-intent-and-source-session",
+  "scope_digest": "lowercase-hex(SHA-256(RFC8785(removal-scope)))",
+  "single_use": true,
+  "notes": "profiles/account-passkey-enrollment/v1/policy.md",
+  "session_binding_digest": "lowercase-hex(SHA-256(RFC8785(session-binding)))",
+  "scope_schema": "schemas/account-passkey/v1/definitions.schema.json#/$defs/removal-scope",
+  "session_binding_schema": "schemas/account-passkey/v1/definitions.schema.json#/$defs/session-binding"
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/initial-local-access-request.schema.json",
+  "title": "Account passkey initial-local-access v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request",
+    "proof"
+  ],
+  "properties": {
+    "request": {
+      "$ref": "definitions.schema.json#/$defs/initial-local-access"
+    },
+    "proof": {
+      "$ref": "definitions.schema.json#/$defs/installation-proof"
+    }
+  }
+}

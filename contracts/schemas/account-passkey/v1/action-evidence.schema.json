@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/account-passkey/v1/action-evidence.schema.json",
+  "title": "Server-held exact passkey action evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "purpose",
+    "method",
+    "subject_handle",
+    "session_binding_digest",
+    "authorization_ref",
+    "credential_ref",
+    "scope_digest",
+    "verified_at",
+    "expires_at"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:account-passkey-action-evidence:v1"
+    },
+    "purpose": {
+      "const": "remove-account-passkey"
+    },
+    "method": {
+      "enum": [
+        "service-passkey",
+        "entra-action"
+      ]
+    },
+    "subject_handle": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "session_binding_digest": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+    },
+    "authorization_ref": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "credential_ref": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "scope_digest": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+    },
+    "verified_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "expires_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    }
+  }
+}

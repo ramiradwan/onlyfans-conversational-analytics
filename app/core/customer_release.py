@@ -39,11 +39,22 @@ class CustomerReleaseConfigurationError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class AccountPasskeyRelease:
+    environment: str
+    rp_id: str
+    contract_revision: str
+    trust: str
+    trust_sha256: str
+    trust_sequence: int
+
+
+@dataclass(frozen=True, slots=True)
 class CustomerReleaseConfig:
     setup_transfer_receiver_url: str
     hosted_api_origin: str
     authentication_providers: tuple[str, ...] = ("default",)
     support_channels: tuple[tuple[str, str], ...] = ()
+    account_passkey: AccountPasskeyRelease | None = None
 
     @property
     def hosted_configured(self) -> bool:
@@ -130,13 +141,43 @@ def _support_channels(value: object) -> tuple[tuple[str, str], ...]:
                  if (address := _support_address(value.get(channel))) is not None)
 
 
+def _account_passkey_release(value: object, origin: str) -> AccountPasskeyRelease:
+    failure = CustomerReleaseConfigurationError("The account passkey release is invalid")
+    if not isinstance(value, Mapping):
+        raise failure
+    fields = {"environment", "rp_id", "contract_revision", "trust", "trust_sha256", "trust_sequence"}
+    environment = value.get("environment")
+    if set(value) != fields or environment not in ("production", "qa"):
+        raise failure
+    rp_id = value["rp_id"]
+    if environment == "production":
+        if origin != "https://account.dipsy.fi" or rp_id != "dipsy.fi":
+            raise failure
+    elif (not isinstance(rp_id, str) or not rp_id.endswith(".dipsy.fi")
+          or rp_id == "account.dipsy.fi" or origin != "https://" + rp_id
+          or not re.fullmatch(rf"{_DNS_LABEL}\.dipsy\.fi", rp_id)):
+        raise failure
+    for name, size in (("contract_revision", 40), ("trust_sha256", 64)):
+        item = value[name]
+        if not isinstance(item, str) or re.fullmatch(rf"[0-9a-f]{{{size}}}", item) is None:
+            raise failure
+    sequence = value["trust_sequence"]
+    trust = value["trust"]
+    if (type(sequence) is not int or sequence < 1
+            or not isinstance(trust, str) or not 0 < len(trust) <= 131_072):
+        raise failure
+    return AccountPasskeyRelease(
+        environment, rp_id, value["contract_revision"], trust, value["trust_sha256"], sequence
+    )
+
+
 def validate_customer_release_document(
     document: object,
     *,
     require_hosted: bool = False,
 ) -> CustomerReleaseConfig:
     if (not isinstance(document, Mapping)
-            or set(document) - {"support_channels"} != _REQUIRED_FIELDS):
+            or set(document) - {"support_channels", "account_passkey"} != _REQUIRED_FIELDS):
         raise CustomerReleaseConfigurationError("customer release document has an invalid shape")
     if document["schema"] != CUSTOMER_RELEASE_SCHEMA:
         raise CustomerReleaseConfigurationError("customer release schema is unsupported")
@@ -167,8 +208,9 @@ def validate_customer_release_document(
         raise CustomerReleaseConfigurationError(
             "a production release requires a hosted API origin"
         )
+    passkey = _account_passkey_release(document["account_passkey"], api_origin) if "account_passkey" in document else None
     return CustomerReleaseConfig(receiver_url, api_origin, tuple(providers),
-                                 _support_channels(document.get("support_channels")))
+                                 _support_channels(document.get("support_channels")), passkey)
 
 
 def load_customer_release_config(

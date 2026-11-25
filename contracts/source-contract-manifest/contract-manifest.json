@@ -12,8 +12,8 @@
     },
     {
       "path": "catalog/contracts.yaml",
-      "sha256": "888d5f6f4ebd14587d621e62ddc14c2dd2a4357608a4475efd9022a61ec4df8f",
-      "size": 87447
+      "sha256": "32457ab5d541f21fe140da0fc4715c159e186c831a8a740a9f18458131477ede",
+      "size": 94191
     },
     {
       "path": "catalog/deferred-setup-preparation-policy-v1.json",
@@ -44,6 +44,11 @@
       "path": "catalog/text-analysis-license-reissue-response-qualification-policy-v1.json",
       "sha256": "58d266fcee4f987091b67ee3adf6e517531606a226d35b75c5870b748908e504",
       "size": 4947
+    },
+    {
+      "path": "openapi/account-passkey-v1.openapi.yaml",
+      "sha256": "d5b302f833f77be78963fa7ef05694e0d0139abcb82491a5241aa93c2cffb513",
+      "size": 44074
     },
     {
       "path": "openapi/bootstrap-recovery-v2.openapi.yaml",
@@ -219,6 +224,46 @@
       "path": "openapi/text-analysis-preview-acquisition-v1.openapi.yaml",
       "sha256": "0d8c5328826815de24b79cb7b429a29a1abc5779001cb82695bf6cdb6c9b92d9",
       "size": 10769
+    },
+    {
+      "path": "profiles/account-passkey-action-evidence/v1/profile.json",
+      "sha256": "b27c1207ac299905d8f8ae25c0f9051b9eb41bf433de6e7c7984b9f4b02aeef5",
+      "size": 1059
+    },
+    {
+      "path": "profiles/account-passkey-enrollment/v1/policy.md",
+      "sha256": "9ee64b5724bca562169161772d4874ea63e7e66c6fd1b2e11518e716fc152bd0",
+      "size": 24410
+    },
+    {
+      "path": "profiles/account-passkey-enrollment/v1/profile.json",
+      "sha256": "d7324a999255e22012cabb8c21386bec6612291ec4da15178dd033c9f4891e08",
+      "size": 2395
+    },
+    {
+      "path": "profiles/account-passkey-hosted/v1/profile.json",
+      "sha256": "d7a731866186bbefcd4940c58ce246a0ad9a63e426778d900f36ff911d861d93",
+      "size": 2334
+    },
+    {
+      "path": "profiles/account-passkey-initial-local-access/v1/profile.json",
+      "sha256": "ab75a908e623eff252ec6a9b57b8a80ae7830fa404d4a8473d2d75206264876a",
+      "size": 2015
+    },
+    {
+      "path": "profiles/account-passkey-installation-proof/v1/profile.json",
+      "sha256": "0cfedac098fe7603c223d6a132a1e8f3157be3807241c5251b9c3258827a7715",
+      "size": 2087
+    },
+    {
+      "path": "profiles/account-passkey-local-binding/v1/profile.json",
+      "sha256": "9e18a6431480ea859e0931657c4aad29540085e0b67aaabf53cc3bc2e2b5fbbb",
+      "size": 2095
+    },
+    {
+      "path": "profiles/account-passkey-local-withdrawal/v1/profile.json",
+      "sha256": "2857af0e62a7f6a26d72cf2e148db3e09f96c270192421a13bed5d4dc3227028",
+      "size": 1975
     },
     {
       "path": "profiles/bootstrap-recovery/v3/profile.json",
@@ -609,6 +654,171 @@
       "path": "profiles/text-analysis-supported-profiles/v1/profile.json",
       "sha256": "cd915cc3918743b62fd3dbf87fd76416ea99f4779b32aff95da6967d1d67994b",
       "size": 2556
+    },
+    {
+      "path": "schemas/account-passkey/v1/action-evidence.schema.json",
+      "sha256": "9e23919db008177011ea3dd70fe9b94605992e6c60f65f35235d133e1ce0e18a",
+      "size": 1514
+    },
+    {
+      "path": "schemas/account-passkey/v1/browser-error.schema.json",
+      "sha256": "69a1a22be495d7cd2363feba2b64d7d6b6eaa9c23160f100244c6156e16e992d",
+      "size": 797
+    },
+    {
+      "path": "schemas/account-passkey/v1/credential-list-response.schema.json",
+      "sha256": "93c47aeba9f75445265a147538f75324ce37fe572b73119235ab14dc48155c8b",
+      "size": 1147
+    },
+    {
+      "path": "schemas/account-passkey/v1/definitions.schema.json",
+      "sha256": "1747c2cf4f3781a74766f63ebe53acda1ac2cbd9102beee188a781114c58c4f8",
+      "size": 12032
+    },
+    {
+      "path": "schemas/account-passkey/v1/enrollment-begin-request.schema.json",
+      "sha256": "e11825f6fc36fc55f69a900b72078b213d0c2cfd0f28555d88d8ee7b3402a931",
+      "size": 528
+    },
+    {
+      "path": "schemas/account-passkey/v1/enrollment-begin-response.schema.json",
+      "sha256": "dc4fb3b206755e9bad59dd240aa3e33aad2644cffade5c87d33da38f47597b84",
+      "size": 1363
+    },
+    {
+      "path": "schemas/account-passkey/v1/enrollment-cancel-request.schema.json",
+      "sha256": "f8f1db331ce4eb9368e093427c5c5d20dce406c43477917e4a4002447d6024eb",
+      "size": 531
+    },
+    {
+      "path": "schemas/account-passkey/v1/enrollment-cancel-response.schema.json",
+      "sha256": "9494484823b5b9cc5e56510fce3e4b71c109e174c6cc82d5feb02feb96c50400",
+      "size": 746
+    },
+    {
+      "path": "schemas/account-passkey/v1/enrollment-finish-request.schema.json",
+      "sha256": "d83be03060acaa45181ade31d8fbbaca6a4708a26d40e383cff0be395d415a49",
+      "size": 531
+    },
+    {
+      "path": "schemas/account-passkey/v1/enrollment-receipt-request.schema.json",
+      "sha256": "2f3e0152617535f09276d66c0a9c8b501eea5804ac33d59b6f4abf12ee999f79",
+      "size": 534
+    },
+    {
+      "path": "schemas/account-passkey/v1/enrollment-result.schema.json",
+      "sha256": "92033a6a4083f3cc4cd3f963e1f248be399e03cd92bc888e26e962d25bbf2055",
+      "size": 1151
+    },
+    {
+      "path": "schemas/account-passkey/v1/hosted-begin-request.schema.json",
+      "sha256": "946c2399fb1a61d106f6610806048a39994f01051a442cbf82cd04ae0db683c3",
+      "size": 424
+    },
+    {
+      "path": "schemas/account-passkey/v1/hosted-begin-response.schema.json",
+      "sha256": "f6c45bcf61f7cda81f3e8fc8c50318ceaf166027cafdca3c94c1f4e928ffb920",
+      "size": 956
+    },
+    {
+      "path": "schemas/account-passkey/v1/hosted-finish-request.schema.json",
+      "sha256": "08c6867eef4e45197b21134e095c52943b9e1dd089060264220ba4dbdd1ccb5f",
+      "size": 668
+    },
+    {
+      "path": "schemas/account-passkey/v1/hosted-finish-response.schema.json",
+      "sha256": "1eec509121db8450989a62effe89d5a2c25971c8aed27532e2244eff9a0a2468",
+      "size": 631
+    },
+    {
+      "path": "schemas/account-passkey/v1/initial-local-access-payload.schema.json",
+      "sha256": "6900e7a9e22ffaf1440fe5156bbbffd0e870b37181f2dfa9feaf561433b033c4",
+      "size": 2665
+    },
+    {
+      "path": "schemas/account-passkey/v1/initial-local-access-request.schema.json",
+      "sha256": "a0778628d9b97d8c08f78d7612d629f8cc59fbbf1542d43702dc1d279d28004f",
+      "size": 540
+    },
+    {
+      "path": "schemas/account-passkey/v1/initial-local-access-response.schema.json",
+      "sha256": "9fe172e7efd47a8a630201382ae0dab19711446f19b11f830b184086df69debe",
+      "size": 556
+    },
+    {
+      "path": "schemas/account-passkey/v1/local-binding-payload.schema.json",
+      "sha256": "e5b9cd50a111eb7a04939104903397a5a28d719b53f38d09236c154c0caf1be3",
+      "size": 1940
+    },
+    {
+      "path": "schemas/account-passkey/v1/local-binding-read-request.schema.json",
+      "sha256": "340af1243ec0eaead93e71b67c614cc958f0fefbd31132f5f502449b9a181466",
+      "size": 522
+    },
+    {
+      "path": "schemas/account-passkey/v1/local-binding-read-response.schema.json",
+      "sha256": "885aa80b16b76db6553e0db5ffd63f3fc3c6adc8f5767c2e06bc2a2ced356d45",
+      "size": 1181
+    },
+    {
+      "path": "schemas/account-passkey/v1/local-trust-set.schema.json",
+      "sha256": "fbcac0e631d179075b8a60588eb91f529040e6139d5bdf63ca8953047593f173",
+      "size": 3016
+    },
+    {
+      "path": "schemas/account-passkey/v1/local-withdrawal-ack-request.schema.json",
+      "sha256": "75186a3cd9c6a2e989b55060e01f4c4799748dc57379599ea7f1800e50599dcf",
+      "size": 528
+    },
+    {
+      "path": "schemas/account-passkey/v1/local-withdrawal-ack-response.schema.json",
+      "sha256": "0a62b2794cc5539889b6da4c8b5a3b61e761fdca4383b9639d68ceab8a816453",
+      "size": 517
+    },
+    {
+      "path": "schemas/account-passkey/v1/local-withdrawal-payload.schema.json",
+      "sha256": "e1499bfa3eac589a7c04bb2c163d1ca83b8b73f4e6318d6d88ff9596a1c521d3",
+      "size": 1918
+    },
+    {
+      "path": "schemas/account-passkey/v1/native-error.schema.json",
+      "sha256": "5383daa2595757c273c784c28b2c056cf8b24af196ac76c353e0f910771ad52c",
+      "size": 730
+    },
+    {
+      "path": "schemas/account-passkey/v1/proof-challenge-request.schema.json",
+      "sha256": "839bdff54ab2c194954acad04c85cf9459a4484576f6c040beace51acd655388",
+      "size": 3368
+    },
+    {
+      "path": "schemas/account-passkey/v1/proof-challenge-response.schema.json",
+      "sha256": "930e890b8c5dbaaca23c1aadce2d3165a6e7bc38100f78f35b574f6f376ca05e",
+      "size": 818
+    },
+    {
+      "path": "schemas/account-passkey/v1/removal-begin-request.schema.json",
+      "sha256": "c1e894272331f972ae4bd196e29d3e78a27bca615a93cb0bb931fb36a5002936",
+      "size": 664
+    },
+    {
+      "path": "schemas/account-passkey/v1/removal-begin-response.schema.json",
+      "sha256": "2047f2221cd203ccdf63b4b80248b63525c1d203f50e399f29a8aa443af75434",
+      "size": 3030
+    },
+    {
+      "path": "schemas/account-passkey/v1/removal-finish-request.schema.json",
+      "sha256": "004a1ee276e2c8f175b2202779a7bd7f4efa37dbb855b339e5392b92a84189e2",
+      "size": 1523
+    },
+    {
+      "path": "schemas/account-passkey/v1/removal-finish-response.schema.json",
+      "sha256": "e006bef82be64202bbf6c3e3c3b5a5004847b49637e2eb86e1c8853f648880c3",
+      "size": 617
+    },
+    {
+      "path": "schemas/account-passkey/v1/removal-step-up-request.schema.json",
+      "sha256": "439b7bb2790b7669cfcf1d9f0d6b202dc76705ebdf67573be6932277a9d3a522",
+      "size": 560
     },
     {
       "path": "schemas/browser-authentication-selection/v1/cancel-request.schema.json",
@@ -2458,6 +2668,13 @@
   ],
   "manifest_version": 1,
   "profiles": [
+    "urn:bridge-clean:account-passkey-action-evidence:v1",
+    "urn:bridge-clean:account-passkey-enrollment:v1",
+    "urn:bridge-clean:account-passkey-hosted:v1",
+    "urn:bridge-clean:account-passkey-initial-local-access:v1",
+    "urn:bridge-clean:account-passkey-installation-proof:v1",
+    "urn:bridge-clean:account-passkey-local-binding:v1",
+    "urn:bridge-clean:account-passkey-local-withdrawal:v1",
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
     "urn:bridge-clean:bootstrap-recovery:v3",

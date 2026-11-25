@@ -2,7 +2,7 @@ import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Link,
   ListItem, ListItemText, Paper, Stack, Typography } from '@mui/material';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { requestLocalAssertion, type LoginOptions } from '../../shared-setup/webauthn';
+import { requestLocalAssertion, windowsHelloHeaders, type LoginOptions } from '../../shared-setup/webauthn';
 import { OnboardingWorkspace } from '../components/OnboardingWorkspace';
 import { exportSavedJson } from '../services/savedDataExport';
 
@@ -16,6 +16,7 @@ interface ResultRef { contribution_id: string; kind: 'Full' | 'Preview' }
 interface ResultPage { items: ResultRef[]; next: string | null }
 
 class Locked extends Error {}
+class HelloRefused extends Error {}
 class NoSavedMetrics extends Error {}
 
 interface SavedMetrics {
@@ -23,11 +24,19 @@ interface SavedMetrics {
 }
 
 async function post(path: string, signal: AbortSignal, csrf?: string, body?: object) {
+  const native = path === 'login/windows-hello' ? await windowsHelloHeaders(signal) : {};
   const response = await fetch(`/api/v1/saved-data/${path}`, {
     method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal,
-    headers: { ...(csrf && { 'X-CSRF-Token': csrf }), ...(body && { 'Content-Type': 'application/json' }) },
+    headers: { ...native, ...(csrf && { 'X-CSRF-Token': csrf }), ...(body && { 'Content-Type': 'application/json' }) },
     body: body && JSON.stringify(body),
   });
+  if (path === 'login/windows-hello' && response.status === 409) {
+    const { detail } = await response.json();
+    const message = detail === 'permission_required' ? 'Allow Dipsy to use passkeys in Windows Settings, then try again.'
+      : detail === 'foreground_required' ? 'Bring Dipsy to the front, then try again.'
+        : detail === 'cancelled' ? 'Windows Hello was cancelled.' : 'Windows Hello could not open your saved data.';
+    throw new HelloRefused(message);
+  }
   if ([401, 403, 503].includes(response.status)) throw new Locked();
   if (path === 'metrics' && response.status === 404) throw new NoSavedMetrics();
   if (!response.ok) throw new Error('Request failed');
@@ -70,9 +79,14 @@ export function SavedDataView() {
     try {
       let csrf = session?.csrf;
       if (action === 'unlock') {
-        const options: LoginOptions = await (await post('login/begin', signal)).json();
-        const assertion = await requestLocalAssertion(options, signal);
-        const issued = await (await post('login/finish', signal, undefined, assertion)).json();
+        const options: LoginOptions | { windows_hello: true } = await (await post('login/begin', signal)).json();
+        let issued;
+        if ('windows_hello' in options) {
+          issued = await (await post('login/windows-hello', signal)).json();
+        } else {
+          const assertion = await requestLocalAssertion(options, signal);
+          issued = await (await post('login/finish', signal, undefined, assertion)).json();
+        }
         csrf = issued.csrf_token;
         setSession({ csrf: issued.csrf_token, deadline: Date.now() + issued.expires_in * 1000 });
       }
@@ -131,7 +145,7 @@ export function SavedDataView() {
         setNotice('No saved metrics are available for this account.');
         return;
       }
-      setNotice(action === 'unlock'
+      setNotice(error instanceof HelloRefused ? error.message : action === 'unlock'
         ? 'Saved data is locked. Try your existing passkey. If Windows has blocked passkeys for this app, allow them in Windows Settings and try again.'
         : error instanceof Locked ? 'Unlock your saved data again.' : 'The request did not finish. Open your saved data again to check it.');
     } finally {
