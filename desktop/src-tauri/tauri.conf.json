@@ -9,7 +9,7 @@
     "withGlobalTauri": true,
     "security": {
       "csp": "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; connect-src ipc: http://ipc.localhost; font-src 'self'",
-      "capabilities": ["desktop", "window-frame"]
+      "capabilities": ["desktop", "window-frame", "account"]
     }
   },
   "bundle": { "active": false, "icon": ["../../packaging/windows/conversation-analytics.ico"] }

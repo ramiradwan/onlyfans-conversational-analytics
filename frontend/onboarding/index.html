@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-microsoft-picker="false">
+<html lang="en" data-microsoft-picker="false" data-account-passkey="false">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -107,6 +107,8 @@
           <div class="setup-actions">
             <button id="account-passkey-create" type="button" aria-describedby="account-passkey-description account-passkey-status">Create passkey</button>
             <button id="account-passkey-later" class="secondary" type="button">Finish later</button>
+            <button id="account-passkey-resume" type="button" aria-describedby="task-description account-passkey-status" hidden>Continue setup</button>
+            <button id="account-passkey-settings" class="secondary" type="button" hidden>Open Windows settings</button>
           </div>
           <p id="account-passkey-status" class="task-status" role="status" aria-live="polite" hidden></p>
         </section>
@@ -115,6 +117,7 @@
           <p id="local-access-description" hidden></p>
           <div class="setup-actions">
             <button id="local-authenticate" type="button" aria-describedby="task-description local-access-description local-auth-status" hidden>Create passkey</button>
+            <button id="local-auth-settings" class="secondary" type="button" hidden>Open Windows settings</button>
             <p class="task-status" id="local-auth-pending" role="status" aria-live="polite" hidden></p>
           </div>
           <p class="task-status" id="local-auth-status" role="status" aria-live="polite"></p>

@@ -41,7 +41,7 @@ _OFFLINE_OWNER_SEAL = object()
 SECURITY_TABLES = (
     'auth_store_identity','installation_key_reference','auth_revocation_state',
     'verified_grant_references','hosted_grant_tombstones','webauthn_credentials',
-    'account_passkey_authority','account_passkey_trust_sequence',
+    'account_passkey_authority','account_passkey_trust_sequence','desktop_access_lock',
     'agent_pairings','agent_pairing_grants','companion_pairing_generations','companion_pairing_windows',
     'bridge_sessions','bridge_session_grants','auth_challenges','runtime_tickets','runtime_ticket_grants',
     'auth_revocation_bindings','authorized_account_bindings','authorized_account_binding_grants',
@@ -52,6 +52,7 @@ SECURITY_TABLES = (
     'desktop_authentication_commands','desktop_authentication_closures','desktop_browser_ceremonies',
     'desktop_browser_ceremony_replacements','desktop_browser_ceremony_successors',
     'desktop_pairing_operations','desktop_activation_sources','desktop_admission_entries',
+    'desktop_account_passkey_attempts',
     'desktop_activation_reconciliations','desktop_activation_review_replacements',
     'installation_authority_recoveries','lost_enrollment_evidence',
     'protected_recovery_ceremonies','protected_recovery_authentication_children',

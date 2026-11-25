@@ -2,6 +2,7 @@
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -163,6 +164,16 @@ def test_real_compiled_entries_load_before_admission(entry, configured):
             assert client.get("/static/dist/setup-theme-init.js").status_code == 404
             assert client.get("/static/dist/setup-theme-init.js", headers={"Host": "outside.example"}).status_code == 421
             assert client.get("/static/dist/manifest.json").status_code == 404
+
+
+def test_only_composed_native_setup_explains_automatic_passkey_enrollment():
+    app = FastAPI()
+    app.include_router(surface.setup_surface_router())
+    with TestClient(app, base_url=ORIGIN) as client:
+        assert 'data-account-passkey="false"' in client.get("/onboarding").text
+        app.state.desktop_setup_core = SimpleNamespace(account_passkeys=object())
+        assert 'data-account-passkey="true"' in client.get("/onboarding").text
+        assert 'data-account-passkey="true"' not in client.get("/browser-tasks").text
 
 
 @pytest.mark.parametrize("origin,expected", [

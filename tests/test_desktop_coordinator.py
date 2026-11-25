@@ -2,6 +2,7 @@ import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -84,6 +85,57 @@ def test_reads_do_not_create_journeys_tasks_operations_or_owner_work(setup):
         assert coordinator.read(session) == first
     assert table_counts(coordinator) == before
     assert not owner.calls and not owner.admissions
+
+
+@pytest.mark.asyncio
+async def test_passkey_pause_stops_connect_and_resumes_after_reopening_the_desktop(setup):
+    coordinator, owner, session, now = setup
+    await coordinator.command(session, command(coordinator.read(session)))
+    await coordinator.drain()
+    owner.facts["browser_access"] = "verified"
+    selection = {
+        "operation_id": str(uuid4()),
+        "projection": {"decision": {
+            "action": "connect-account", "creator_id": "creator-fixture",
+            "expires_at": "2026-01-01T00:05:00.000Z", "computer_name": "QA computer",
+        }},
+    }
+    owner.scope["desktop_decision"] = selection
+    passkeys = SimpleNamespace(displayed=lambda *_args, **_kwargs: "available")
+    coordinator.account_passkeys = passkeys
+    available = coordinator.read(session)
+    old_confirm = command(available, "account.confirm")
+    assert coordinator.set_passkey_paused(session, old_confirm["expected"], paused=True) == "paused"
+    paused = coordinator.read(session)
+    assert paused["account_passkey"] == "paused"
+    assert paused["allowed_actions"] == []
+    with pytest.raises(CommandRefused) as stale:
+        await coordinator.command(session, old_confirm)
+    assert stale.value.reason == "setup_changed"
+    with pytest.raises(CommandRefused) as current:
+        await coordinator.command(session, command(paused, "account.confirm"))
+    assert current.value.reason == "action_unavailable"
+
+    # The original sign-in may expire while paused. The normal native entry
+    # selects the durable journey and does not extend its source.
+    now[0] += timedelta(minutes=6)
+    del owner.scope["desktop_decision"]
+    reopened = SQLiteAuthenticationStore(coordinator.store.database.path, clock=lambda: now[0])
+    admissions = ScopedAdmissions(reopened, stage="setup")
+    next_session = admissions.consume(admissions.prepare_desktop(), role="desktop")
+    coordinator = DesktopOnboardingCoordinator(admissions, owner, account_passkeys=passkeys)
+    recovered = coordinator.read(next_session)
+    assert recovered["journey_id"] == paused["journey_id"]
+    assert not recovered["pending_operations"] and recovered["account_passkey"] == "paused"
+    assert recovered["allowed_actions"] == [] and recovered["decision"] is None
+    with pytest.raises(AdmissionRefused):
+        coordinator.set_passkey_paused(session, command(recovered)["expected"], paused=False)
+    assert coordinator.set_passkey_paused(next_session, command(recovered)["expected"], paused=False) == "resumed"
+    resumed = coordinator.read(next_session)
+    assert resumed["facts"]["browser_access"] == "verified"
+    assert resumed["allowed_actions"] == ["account.connect"]
+    assert "account_passkey" not in resumed
+    assert len(owner.calls) == 1
 
 
 @pytest.mark.parametrize("activation", ["missing", "unknown", "verified"])

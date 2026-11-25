@@ -25,6 +25,19 @@ def manager() -> InMemoryTransportManager:
     return InMemoryTransportManager(create_canonical_repositories("memory"))
 
 
+def test_account_passkey_bridge_ticket_belongs_to_the_ordinary_local_session():
+    transport = manager()
+    parent = str(uuid4())
+    ticket = transport.issue_bridge_ticket(principal_id=PRINCIPAL, creator_account_id=ACCOUNT,
+        role="creator", parent_session_id=parent, now=NOW)
+    assert transport.authenticate(ticket, ACCOUNT, role="bridge", bridge_session_id=uuid4(),
+                                  parent_session_id=parent, now=NOW) == (PRINCIPAL, ACCOUNT)
+    for other in (None, str(uuid4())):
+        with pytest.raises(AuthenticationError):
+            transport.authenticate(ticket, ACCOUNT, role="bridge", bridge_session_id=uuid4(),
+                                   parent_session_id=other, now=NOW)
+
+
 def test_pairing_is_single_use_and_reconnect_survives_manager_recreation() -> None:
     first = manager()
     installation = uuid4()

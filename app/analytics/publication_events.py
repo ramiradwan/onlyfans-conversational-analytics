@@ -27,6 +27,15 @@ class PublicationEvents:
     def publish(self, account):
         with self._lock:
             listeners = tuple(item for item in self._listeners if item[0] == account)
+        self._signal(listeners)
+
+    def recheck_sessions(self):
+        with self._lock:
+            listeners = tuple(self._listeners)
+        self._signal(listeners)
+
+    @staticmethod
+    def _signal(listeners):
         for _, loop, signal in listeners:
             try:
                 loop.call_soon_threadsafe(signal.set)

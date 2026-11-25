@@ -839,6 +839,59 @@ class SQLiteAuthenticationStore:
         if cursor.rowcount != 1:
             raise AuthenticationStateError("Authorization epoch update failed")
 
+    @staticmethod
+    def desktop_lock_state(connection: sqlite3.Connection) -> tuple[int, bool]:
+        row = connection.execute("SELECT generation, locked FROM desktop_access_lock WHERE singleton=1").fetchone()
+        if row is None:
+            raise AuthenticationStateError("Desktop lock state is unavailable")
+        return int(row["generation"]), bool(row["locked"])
+
+    @capture_authority_change
+    def lock_desktop(self, policy: RuntimePolicy, retire_access: Callable[[], None]) -> None:
+        """Lock this installation without changing its grants, credentials or pairing."""
+        identity = policy.identity
+        if identity is None or not identity.session_id:
+            raise AuthenticationStateError("An unlocked desktop session is required")
+        with self.database.transaction() as connection:
+            now = self._now()
+            session = self._require_session_current(connection, identity.session_id, now)
+            if ((session["principal_id"], session["creator_account_id"], session["role"])
+                    != (identity.principal_id, identity.creator_account_id, identity.role)):
+                raise AuthenticationStateError("Desktop session changed")
+            native_binding = connection.execute(
+                "SELECT 1 FROM account_passkey_authority WHERE credential_id=? "
+                "AND principal_id=? AND creator_account_id=? AND binding_record IS NOT NULL",
+                (session["credential_id"], identity.principal_id, identity.creator_account_id),
+            ).fetchone()
+            if native_binding is None or self.desktop_lock_state(connection)[1]:
+                raise AuthenticationStateError("Account passkey session is unavailable")
+            connection.execute("UPDATE desktop_access_lock SET generation=generation+1, locked=1 WHERE singleton=1")
+            timestamp = _time_text(now)
+            connection.execute("UPDATE bridge_sessions SET revoked_at=? WHERE revoked_at IS NULL", (timestamp,))
+            connection.execute(
+                "UPDATE runtime_tickets SET invalidated_at=? WHERE parent_session_id IS NOT NULL "
+                "AND invalidated_at IS NULL AND consumed_at IS NULL", (timestamp,),
+            )
+            self._increment_authorization_epoch(connection)
+            retire_access()
+
+    def unlock_desktop_after_assertion(self, connection: sqlite3.Connection, expected_generation: int) -> None:
+        """Only the fresh ordinary assertion owner calls this in its session issuance transaction."""
+        generation, locked = self.desktop_lock_state(connection)
+        if generation != expected_generation:
+            raise AuthenticationStateError("Desktop lock changed during verification")
+        if locked:
+            connection.execute("UPDATE desktop_access_lock SET locked=0 WHERE singleton=1")
+            self._increment_authorization_epoch(connection)
+
+    def desktop_session_is_open(self, session_id: str) -> bool:
+        with self.database.read() as connection:
+            row = connection.execute(
+                "SELECT revoked_at, expires_at FROM bridge_sessions WHERE session_id=?", (session_id,),
+            ).fetchone()
+            return bool(row and row["revoked_at"] is None and _parse_time(row["expires_at"]) > self._now()
+                        and not self.desktop_lock_state(connection)[1])
+
     @capture_authority_change
     def reserve_installation_key(
         self, reservation: InstallationKeyReservation
@@ -2148,6 +2201,8 @@ class SQLiteAuthenticationStore:
     def _issue_bridge_session(
         self, connection: sqlite3.Connection, issue: BridgeSessionIssue
     ) -> IssuedBridgeSession:
+        if self.desktop_lock_state(connection)[1]:
+            raise AuthenticationStateError("The desktop is locked")
         if issue.role not in {"creator", "operator"}:
             raise ValueError("Bridge session role must be creator or operator")
         grants = _unique(issue.grant_reference_ids)
@@ -2541,7 +2596,8 @@ class SQLiteAuthenticationStore:
             "SELECT * FROM agent_pairings WHERE pairing_id = ?", (session.pairing_id,)
         ).fetchone()
         if (
-            now >= session.expires_at
+            self.desktop_lock_state(connection)[1]
+            or now >= session.expires_at
             or row is None
             or row["revoked_at"] is not None
             or row["pairing_generation"] != session.generation
@@ -2621,6 +2677,8 @@ class SQLiteAuthenticationStore:
         if not references:
             raise ValueError("runtime policy requires verified grant references")
         with self.database.read() as connection:
+            if identity.role == "agent" and self.desktop_lock_state(connection)[1]:
+                raise AuthenticationStateError("The desktop is locked")
             now = self._now()
             rows = [
                 connection.execute(

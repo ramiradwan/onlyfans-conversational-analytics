@@ -7,6 +7,8 @@ import { openBrowserTask, openSetupCode, presentationGuard } from './browser-tas
 import { DesktopEnrollment } from './enrollment.js';
 import { savedDataEntry, savedDataLinkText, savedDataUrl } from '../shared-setup/saved-data-entry.js';
 import { authorityRecoveryView, authorityRecoveryOptions } from '../shared-setup/authority-recovery.js';
+import { followPasskeyOpen, nativePasskeyPresentation, openPasskeySettings, passkeyPermissionMessage,
+  passkeyWindow } from '../shared-setup/passkey-window.js';
 
 applyTheme(document);
 const savedDataLink = document.getElementById('saved-data-open');
@@ -37,15 +39,17 @@ try {
   let replacingCeremony = false;
   let provider = null;
   let finished = false;
-  let runtimeObserved = false;
+  let runtimeObserved = false, setupGeneration = null;
   let chromeAvailable = false, chromeScope = null, chromeCheck = 0;
   const actionScope = state => {
     const value = state.snapshot;
     return state.connected && value ? JSON.stringify([value.generation, value.journey_id, value.next_task,
       value.authentication?.operation_id, value.authentication?.authentication_attempt?.authentication_attempt_id]) : null;
   };
-  let passkeyDeferredFor = null;
   let passkeyFeedback = null;
+  const explainsPasskey = () => document.documentElement.dataset.accountPasskey === 'true' && client?.session?.stage === 'setup'
+    && current.snapshot?.next_task === 'account-connection'
+    && !current.snapshot.decision && current.snapshot.authority_recovery === undefined;
   const beginAction = (name) => {
     const owner = { scope: actionScope(current) };
     activeAction = owner; acting = name; render();
@@ -85,14 +89,18 @@ try {
       && authentication?.checked === true && authentication.authenticated === true
       && !authentication.busy && !authentication.error;
     const passkey = current.connected && passkeyFeedback?.generation === current.snapshot?.generation
-      && passkeyFeedback?.operation === current.snapshot?.decision?.operation_id
+      && passkeyFeedback?.operation === (current.snapshot?.decision?.operation_id ?? null)
       ? passkeyFeedback : null;
     renderSetup(document, { ...current, choosingAccount, acting, provider, authentication, continuing, chromeAvailable, replacingCeremony,
       savedAuthorizationExpired: entry === 'authorization-expired',
-      passkeyDeferred: passkeyDeferredFor !== null && passkeyDeferredFor === current.snapshot?.decision?.operation_id,
-      passkeyMessage: passkey?.message, passkeySupportRef: passkey?.supportRef });
+      explainsPasskey: explainsPasskey(), passkeyMessage: passkey?.message, passkeySupportRef: passkey?.supportRef,
+      nativePasskey: nativePasskeyPresentation(), passkeyPermission: passkey?.outcome === 'permission_required' });
+    const passkeyDeadline = acting ? null : client?.takeReturnedPasskey();
+    if (passkeyDeadline) void startForegroundPasskey(current.snapshot, passkeyDeadline);
+    if (!setupGeneration) passkeyOpen.check();
     if (continuing) {
       finished = true;
+      void passkeyWindow('discard_passkey_unlock');
       location.replace('/');
     }
   };
@@ -104,6 +112,12 @@ try {
     render();
     return client.connect();
   } });
+  const passkeyOpen = followPasskeyOpen(() => {
+    const authentication = enrollment.state;
+    return !finished && current.connected && client?.session?.stage === 'runtime' && !current.snapshot?.authority_recovery
+      && authentication.checked && authentication.nativeRequired && authentication.enrolled
+      && !authentication.authenticated && !authentication.busy && !authentication.access;
+  }, () => { void enrollment.authenticate(); });
   client = new DesktopSetupClient({ generation: fields.get('presentation'), receive: state => {
     if (activeAction && activeAction.scope !== actionScope(state)) {
       activeAction = null; acting = null; replacingCeremony = false;
@@ -113,20 +127,33 @@ try {
     if (!acting && !state.continuingProvider && (!state.pending || state.error
       || current.continuingProvider && state.pending === current.pending)) provider = null;
     const restored = current.snapshot?.authority_recovery && state.connected && !state.snapshot?.authority_recovery;
+    const wasPaused = current.snapshot?.account_passkey === 'paused';
     current = state;
+    if (client.session?.stage === 'setup' && state.connected && setupGeneration !== client.generation) {
+      setupGeneration = client.generation;
+      void passkeyWindow('discard_passkey_unlock');
+    }
     if (client.session?.stage === 'runtime' && state.connected && !runtimeObserved) {
       runtimeObserved = true;
       checkSavedData();
     }
     if (restored && client.session?.stage === 'runtime') { void enrollment.check(); render(); return; }
     render();
+    if (!wasPaused && state.connected && state.snapshot?.account_passkey === 'paused' && acting === 'passkey.pause') {
+      document.getElementById('account-passkey-resume').focus();
+    }
     if (client.session?.stage === 'runtime' && state.connected && !state.snapshot?.authority_recovery
-      && !enrollment.state.checked && !enrollment.state.busy) void enrollment.check();
+      && !enrollment.state.checked && !enrollment.state.busy) {
+      const initial = setupGeneration === client.generation && nativePasskeyPresentation() ? presentationGuard(client) : null;
+      void enrollment.check({ initial });
+    }
   }, openBrowser: openBrowserTask });
   const act = async (action, options, continued = null) => {
     if (acting) return;
     const owner = beginAction(action);
-    const work = continued ? client.act(action, options, continued) : client.act(action, options);
+    const enrollmentIntent = explainsPasskey() && ['account.connect', 'auth.select'].includes(action);
+    const step = enrollmentIntent ? { ...continued, enrollPasskey: true } : continued;
+    const work = step ? client.act(action, options, step) : client.act(action, options);
     const presented = presentationGuard(client);
     try {
       const result = await work;
@@ -216,25 +243,60 @@ try {
       }
     } finally { endAction(owner); }
   });
-  document.getElementById('account-passkey-later').addEventListener('click', () => {
-    if (acting || !current.connected || current.snapshot?.account_passkey !== 'available') return;
-    passkeyDeferredFor = current.snapshot.decision.operation_id;
-    passkeyFeedback = null;
-    render();
-    document.getElementById('task-action').focus();
+  const expectedPasskey = value => ({
+    generation: value.generation, revision: value.revision, scope_digest: value.scope_digest,
   });
-  document.getElementById('account-passkey-create').addEventListener('click', async () => {
+
+  async function changePasskeyPause(paused) {
     const value = current.snapshot;
-    if (acting || !current.connected || value?.account_passkey !== 'available' || !value.decision) return;
+    if (acting || finished || !current.connected || (paused
+      ? !['available', 'recoverable'].includes(value?.account_passkey)
+      : value?.account_passkey !== 'paused')) return;
+    client.discardReturnedPasskey();
+    passkeyFeedback = null;
+    const action = paused ? 'pause' : 'resume';
+    const owner = beginAction('passkey.' + action);
+    const presented = presentationGuard(client);
+    try {
+      const result = await client.json('/api/v1/desktop/setup/passkey/' + action, expectedPasskey(value));
+      if (result?.outcome !== (paused ? 'paused' : 'resumed')) throw new Error('setup_status_unavailable');
+    }
+    catch {
+      if (!finished && activeAction === owner && presented()) {
+        passkeyFeedback = { generation: value.generation, operation: value.decision?.operation_id ?? null,
+          message: paused ? 'Dipsy couldn’t confirm that setup paused.' : 'Dipsy couldn’t resume setup. Try again.' };
+      }
+    } finally {
+      if (!finished && presented()) client.wake();
+      endAction(owner);
+      if (paused && current.snapshot?.account_passkey === 'paused') document.getElementById('account-passkey-resume').focus();
+    }
+  }
+
+  async function startForegroundPasskey(value, deadline) {
+    const presented = presentationGuard(client);
+    try {
+      if (!await passkeyWindow('passkey_foreground') || !presented() || document.hidden || Date.now() >= deadline
+        || current.snapshot?.decision?.operation_id !== value.decision.operation_id
+        || Date.parse(current.snapshot.decision.expires_at) <= Date.now()
+        || current.snapshot.authentication?.state !== 'admitted'
+        || current.snapshot.authentication.authentication_attempt?.authentication_attempt_id
+          !== value.authentication.authentication_attempt.authentication_attempt_id) return;
+      await createPasskey();
+    } catch { /* The explicit Create passkey action is still available. */ }
+  }
+
+  async function createPasskey() {
+    const value = current.snapshot;
+    if (acting || finished || !current.connected || !['available', 'recoverable'].includes(value?.account_passkey) || !value.decision) return;
+    client.discardReturnedPasskey();
     passkeyFeedback = null;
     const owner = beginAction('passkey.create');
     const presented = presentationGuard(client);
     let outcome = 'unavailable';
     let supportRef;
     try {
-      const result = await client.json('/api/v1/desktop/setup/passkey', {
-        generation: value.generation, revision: value.revision, scope_digest: value.scope_digest,
-      });
+      const result = await client.json('/api/v1/desktop/setup/passkey', expectedPasskey(value));
       outcome = result?.outcome;
       if (outcome === 'unavailable' && typeof result.support_ref === 'string'
           && /^[A-Za-z0-9_-]{43}$/u.test(result.support_ref)) supportRef = result.support_ref;
@@ -243,14 +305,14 @@ try {
       if (!finished && activeAction === owner && presented()) {
         const messages = {
           cancelled: 'Passkey setup was cancelled.',
-          permission_required: 'Allow Dipsy to use passkeys in Windows Settings, then try again.',
+          permission_required: passkeyPermissionMessage,
           foreground_required: 'Bring Dipsy to the front, then try again.',
           credential_unavailable: 'Windows Hello could not find a passkey for this account.',
         };
         passkeyFeedback = {
           generation: value.generation,
           operation: value.decision.operation_id,
-          supportRef,
+          supportRef, outcome,
           message: outcome === 'created' ? 'Passkey created.'
             : Object.hasOwn(messages, outcome) ? messages[outcome] : 'Dipsy couldn’t confirm passkey setup. Try again or finish later.',
         };
@@ -258,8 +320,19 @@ try {
       }
       endAction(owner);
     }
+  }
+  document.getElementById('account-passkey-later').addEventListener('click', () => { void changePasskeyPause(true); });
+  document.getElementById('account-passkey-resume').addEventListener('click', () => { void changePasskeyPause(false); });
+  document.getElementById('account-passkey-create').addEventListener('click', () => { void createPasskey(); });
+  document.getElementById('local-authenticate').addEventListener('click', () => {
+    void passkeyWindow('discard_passkey_unlock');
+    void enrollment.authenticate();
   });
-  document.getElementById('local-authenticate').addEventListener('click', () => { void enrollment.authenticate(); });
+  for (const id of ['account-passkey-settings', 'local-auth-settings']) {
+    document.getElementById(id).addEventListener('click', event => {
+      if (!event.currentTarget.hidden && !event.currentTarget.disabled) void openPasskeySettings();
+    });
+  }
   const onWake = () => {
     if (finished) return;
     checkSavedData();
@@ -276,6 +349,7 @@ try {
     window.removeEventListener('focus', onWake);
     document.removeEventListener('visibilitychange', onVisibility);
     client.stop();
+    passkeyOpen.stop();
     enrollment.stop();
   });
   updateEntryView = render;

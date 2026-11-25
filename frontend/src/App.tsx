@@ -16,6 +16,7 @@ import { colorSchemeProps, theme } from './theme';
 import { protocolErrorText } from './utils/statusCopy';
 import { SavedDataView } from './views/SavedDataView';
 import { WebAuthnAccessView } from './views/WebAuthnAccessView';
+import { passkeyWindow } from '../shared-setup/passkey-window.js';
 import { savedDataEntry, savedDataLinkText, savedDataUrl } from '../shared-setup/saved-data-entry';
 
 const globalStyles = (
@@ -71,6 +72,9 @@ function RuntimeApp() {
   const hasSessionIdentity = Boolean(
     config.CREATOR_ID && config.BRIDGE_AUTH_TICKET && userRole !== null,
   );
+  useEffect(() => {
+    if (hasSessionIdentity) void passkeyWindow('discard_passkey_unlock');
+  }, [hasSessionIdentity]);
   useEffect(() => {
     const {
       BRIDGE_AUTH_TICKET,

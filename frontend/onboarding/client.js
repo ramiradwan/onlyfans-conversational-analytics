@@ -50,6 +50,7 @@ export class DesktopSetupClient {
     this.providerContinuation = null;
     this.launchRequested = false;
     this.focusIntent = null;
+    this.passkeyReturn = null;
     this.value = null;
     this.session = null;
     this.connected = false;
@@ -146,9 +147,57 @@ export class DesktopSetupClient {
       && authentication.authentication_attempt?.authentication_attempt_id === intent.selected.attempt;
     if (!intent.opened || !(intent.confirmed || admitted || withdrawn || terminal)) return;
     this.focusIntent = null;
+    const attempt = intent.selected?.attempt ?? authentication?.authentication_attempt?.authentication_attempt_id;
+    const sameAccountSignIn = intent.passkeyParent && attempt && !withdrawn && !terminal && !terminalAuthentication
+      && (intent.confirmed || admitted)
+      && (!intent.selected || intent.selected.parent === intent.passkeyParent)
+      && (!authentication?.operation_id || authentication.operation_id === intent.passkeyParent);
+    const enrollment = sameAccountSignIn ? {
+      generation: intent.generation, journey: intent.journey, epoch: intent.epoch, parent: intent.passkeyParent,
+      attempt,
+      deadline: intent.deadline, returned: false,
+    } : null;
+    if (enrollment) this.passkeyReturn = enrollment;
     // The native owner additionally requires Chrome or this window foreground.
     // Window focus has no bearing on authentication or operation completion.
-    try { void Promise.resolve(this.focusWindow()).catch(() => undefined); } catch { /* Presentation only. */ }
+    const refused = () => { if (this.passkeyReturn === enrollment) this.passkeyReturn = null; };
+    try {
+      void Promise.resolve(this.focusWindow()).then(() => {
+        if (enrollment && this.passkeyReturn === enrollment) {
+          enrollment.returned = true;
+          this.notify();
+        }
+      }, refused);
+    } catch { refused(); }
+  }
+
+  takeReturnedPasskey() {
+    const intent = this.passkeyReturn, value = this.value, auth = value?.authentication;
+    if (!intent) return null;
+    if (!this.connected || this.session?.stage !== 'setup' || intent.epoch !== this.launchEpoch
+      || value?.generation !== intent.generation || value.journey_id !== intent.journey || intent.deadline <= this.now()
+      || value.next_task !== 'account-connection' || value.authority_recovery !== undefined
+      || value.decision && value.decision.operation_id !== intent.parent
+      || auth?.operation_id && auth.operation_id !== intent.parent
+      || auth?.authentication_attempt && auth.authentication_attempt.authentication_attempt_id !== intent.attempt
+      || ['retired', 'expired', 'unavailable', 'reauthentication-required', 'replacement-required'].includes(auth?.state)
+      || ['paused', 'working', 'created', 'recoverable'].includes(value.account_passkey)) {
+      this.passkeyReturn = null;
+      return null;
+    }
+    if (!intent.returned || value.account_passkey !== 'available' || value.decision?.action !== 'connect-account'
+      || auth?.state !== 'admitted' || auth.operation_id !== intent.parent
+      || auth.authentication_attempt?.authentication_attempt_id !== intent.attempt) return null;
+    this.passkeyReturn = null;
+    const deadline = Math.min(intent.deadline, Date.parse(value.decision.expires_at));
+    return deadline > this.now() ? deadline : null;
+  }
+
+  discardReturnedPasskey() {
+    this.passkeyReturn = null;
+    if (this.focusIntent) this.focusIntent.passkeyParent = null;
+    if (this.intent) this.intent.passkeyParent = null;
+    if (this.providerContinuation) this.providerContinuation.enrollPasskey = false;
   }
 
   markLaunch(operationId, phase) {
@@ -347,6 +396,7 @@ export class DesktopSetupClient {
     } catch (error) {
       if (!controller.signal.aborted && !this.stopped) {
         this.connected = false;
+        this.discardReturnedPasskey();
         this.intent = null;
         this.launchOperation = null;
         this.recoverySignIn = null;
@@ -525,7 +575,7 @@ export class DesktopSetupClient {
     }
     this.providerContinuation = null;
     if (this.pending === step.replaceOperation && !replacementPending) this.remember(null);
-    void this.act('auth.select', { provider: step.provider }).catch(() => {
+    void this.act('auth.select', { provider: step.provider }, step.enrollPasskey ? { enrollPasskey: true } : null).catch(() => {
       this.notify();
     });
   }
@@ -600,11 +650,17 @@ export class DesktopSetupClient {
     this.operationError = null;
     this.protectedLaunchError = null;
     this.launchEpoch++;
+    this.passkeyReturn = null;
     this.focusIntent = null;
     const epoch = this.launchEpoch;
     const current = presentationGuard(this);
+    const enrollPasskey = continued?.enrollPasskey === true && this.session?.stage === 'setup'
+      && this.value.next_task === 'account-connection' && !this.value.decision
+      && this.value.authority_recovery === undefined && !intent.recover_authority;
     this.intent = { task: this.value.next_task, action, operationId: intent.operation_id, confirmed: false,
-      initialAuthentication: action === 'account.connect' && intent.provider !== undefined };
+      initialAuthentication: action === 'account.connect' && intent.provider !== undefined,
+      passkeyParent: enrollPasskey && action === 'account.connect' ? intent.operation_id
+        : enrollPasskey && action === 'auth.select' ? authentication?.operation_id : null };
     this.remember(intent.operation_id);
     // An explicit protected sign-in continues through the default selection and
     // the Chrome launch. Neither later step needs its own click.
@@ -624,7 +680,7 @@ export class DesktopSetupClient {
       ? { epoch, journey: this.value.journey_id,
           parent: action === 'account.connect' ? intent.operation_id : authentication.operation_id,
           provider: continueProvider, kind: action === 'account.connect' ? 'source' : 'ceremony',
-          replaceOperation: intent.operation_id, until: this.now() + RECOVERY_SIGN_IN_MS }
+          replaceOperation: intent.operation_id, enrollPasskey, until: this.now() + RECOVERY_SIGN_IN_MS }
       : null;
     if (recheckProvider) {
       this.providerContinuation = { epoch, journey: this.value.journey_id, parent: authentication.operation_id,
@@ -751,7 +807,8 @@ export class DesktopSetupClient {
     this.launchRequested = false;
     if (explicit || !this.focusIntent || this.focusIntent.operationId !== operationId || this.focusIntent.epoch !== epoch) {
       this.focusIntent = { operationId, epoch, generation: this.generation, journey: this.value?.journey_id,
-        deadline: Math.min(this.value?.expires_at * 1000 || 0, this.now() + 180000), opened: false, confirmed: false };
+        deadline: Math.min(this.value?.expires_at * 1000 || 0, this.now() + 180000), opened: false, confirmed: false,
+        passkeyParent: !explicit && this.intent?.operationId === operationId ? this.intent.passkeyParent : null };
     }
     if (explicit && this.operationError?.operationId === operationId) this.operationError = null;
     this.returnFocus();

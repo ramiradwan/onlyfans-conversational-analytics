@@ -2,9 +2,13 @@ import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Link,
   ListItem, ListItemText, Paper, Stack, Typography } from '@mui/material';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { nativePasskeyPresentation, openPasskeySettings, passkeyPermissionMessage, passkeyWindow } from '../../shared-setup/passkey-window.js';
+import { savedDataEntry } from '../../shared-setup/saved-data-entry';
 import { requestLocalAssertion, windowsHelloHeaders, type LoginOptions } from '../../shared-setup/webauthn';
 import { OnboardingWorkspace } from '../components/OnboardingWorkspace';
+import { getConfig } from '../config/fastapiConfig';
 import { exportSavedJson } from '../services/savedDataExport';
+import { usePasskeyOpen } from '../services/usePasskeyOpen';
 
 interface Archive {
   messages: { id: string; text: string | null; sent_at: string }[];
@@ -16,7 +20,9 @@ interface ResultRef { contribution_id: string; kind: 'Full' | 'Preview' }
 interface ResultPage { items: ResultRef[]; next: string | null }
 
 class Locked extends Error {}
-class HelloRefused extends Error {}
+class HelloRefused extends Error {
+  constructor(message: string, readonly permissionRequired = false) { super(message); }
+}
 class NoSavedMetrics extends Error {}
 
 interface SavedMetrics {
@@ -32,10 +38,10 @@ async function post(path: string, signal: AbortSignal, csrf?: string, body?: obj
   });
   if (path === 'login/windows-hello' && response.status === 409) {
     const { detail } = await response.json();
-    const message = detail === 'permission_required' ? 'Allow Dipsy to use passkeys in Windows Settings, then try again.'
+    const message = detail === 'permission_required' ? passkeyPermissionMessage
       : detail === 'foreground_required' ? 'Bring Dipsy to the front, then try again.'
         : detail === 'cancelled' ? 'Windows Hello was cancelled.' : 'Windows Hello could not open your saved data.';
-    throw new HelloRefused(message);
+    throw new HelloRefused(message, detail === 'permission_required');
   }
   if ([401, 403, 503].includes(response.status)) throw new Locked();
   if (path === 'metrics' && response.status === 404) throw new NoSavedMetrics();
@@ -52,11 +58,22 @@ export function SavedDataView() {
   const [shownResult, setShownResult] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<SavedMetrics | null>(null);
   const [notice, setNotice] = useState('');
+  const [permission, setPermission] = useState(false);
+  const [nativeEntryReady, setNativeEntryReady] = useState(false);
+  const nativePresentation = nativePasskeyPresentation();
   const current = useRef<AbortController | null>(null);
+  useEffect(() => {
+    if (!nativePresentation) return;
+    const controller = new AbortController();
+    void savedDataEntry(controller.signal).then(entry => {
+      if (!controller.signal.aborted) setNativeEntryReady(entry !== 'unavailable');
+    });
+    return () => controller.abort();
+  }, [nativePresentation]);
   const lock = useCallback(() => {
     current.current?.abort();
     current.current = null;
-    setBusy(false); setConfirming(null); setArchive(null); setSession(null); setNotice('');
+    setBusy(false); setConfirming(null); setArchive(null); setSession(null); setNotice(''); setPermission(false);
     setResults(null); setShownResult(null); setMetrics(null);
   }, []);
   useEffect(() => {
@@ -66,25 +83,38 @@ export function SavedDataView() {
   useEffect(() => {
     if (!session) return undefined;
     const timer = window.setTimeout(lock, Math.max(0, session.deadline - Date.now()));
-    return () => window.clearTimeout(timer);
+    const events = getConfig().ACCOUNT_PASSKEY_ENABLED && typeof EventSource === 'function'
+      ? new EventSource('/api/v1/saved-data/session/events') : null;
+    events?.addEventListener('access', event => {
+      try {
+        if (JSON.parse((event as MessageEvent<string>).data).access === 'available') return;
+      } catch { /* Clear the archive when its session can no longer be confirmed. */ }
+      lock();
+    });
+    if (events) events.onerror = lock;
+    return () => { window.clearTimeout(timer); events?.close(); };
   }, [session, lock]);
 
   async function act(action: 'unlock' | 'export' | 'delete' | 'lock' | 'more' | 'results' | 'open-result' | 'export-result' | 'metrics' | 'export-metrics',
-    resultRef?: ResultRef) {
+    resultRef?: ResultRef, automatic = false) {
     if (current.current) return;
     const controller = new AbortController();
     current.current = controller;
     const { signal } = controller;
-    setBusy(true); setNotice(''); setConfirming(null);
+    setBusy(true); setNotice(''); setConfirming(null); setPermission(false);
     try {
       let csrf = session?.csrf;
       if (action === 'unlock') {
+        if (nativePresentation && !automatic) await passkeyWindow('discard_passkey_unlock');
+        if (signal.aborted) return;
         const options: LoginOptions | { windows_hello: true } = await (await post('login/begin', signal)).json();
         let issued;
-        if ('windows_hello' in options) {
+        if ('windows_hello' in options && options.windows_hello === true) {
+          if (!nativePresentation) throw new HelloRefused('Open saved data from the Dipsy desktop app.');
           issued = await (await post('login/windows-hello', signal)).json();
         } else {
-          const assertion = await requestLocalAssertion(options, signal);
+          if (automatic) return;
+          const assertion = await requestLocalAssertion(options as LoginOptions, signal);
           issued = await (await post('login/finish', signal, undefined, assertion)).json();
         }
         csrf = issued.csrf_token;
@@ -92,6 +122,7 @@ export function SavedDataView() {
       }
       if (!csrf) throw new Locked();
       if (action === 'lock') {
+        if (nativePresentation) await passkeyWindow('discard_passkey_unlock');
         await post('lock', signal, csrf);
         lock();
       } else if (action === 'export') {
@@ -145,13 +176,17 @@ export function SavedDataView() {
         setNotice('No saved metrics are available for this account.');
         return;
       }
+      setPermission(error instanceof HelloRefused && error.permissionRequired);
       setNotice(error instanceof HelloRefused ? error.message : action === 'unlock'
-        ? 'Saved data is locked. Try your existing passkey. If Windows has blocked passkeys for this app, allow them in Windows Settings and try again.'
+        ? 'Saved data is still locked. Try your passkey again.'
         : error instanceof Locked ? 'Unlock your saved data again.' : 'The request did not finish. Open your saved data again to check it.');
     } finally {
       if (current.current === controller) { current.current = null; setBusy(false); }
     }
   }
+
+  usePasskeyOpen(nativeEntryReady && nativePresentation && !busy && !session,
+    () => { void act('unlock', undefined, true); });
 
   return <OnboardingWorkspace>
     <Paper variant="outlined" sx={{ p: { xs: 2, sm: 4 } }}>
@@ -200,6 +235,7 @@ export function SavedDataView() {
           <Button variant="contained" disabled={busy} onClick={() => void act('unlock')}>
             {busy ? 'Waiting for your passkey…' : 'Unlock saved data'}
           </Button>
+          {permission && nativePresentation && !busy && <Button onClick={() => void openPasskeySettings()}>Open Windows settings</Button>}
         </>}
         {notice && <Typography role="status">{notice}</Typography>}
         <Link href="/">Back to Dipsy</Link>

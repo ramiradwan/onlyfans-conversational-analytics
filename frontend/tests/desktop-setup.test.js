@@ -8,6 +8,7 @@ import generatedContract from '../onboarding/generated-contract.js?raw';
 import setupThemeInitializer from '../public/setup-theme-init.js?raw';
 import markup from '../onboarding/index.html?raw';
 import { DesktopSetupClient } from '../onboarding/client.js';
+import { DesktopEnrollment } from '../onboarding/enrollment.js';
 import { snapshot } from '../onboarding/contract.js';
 import { SCOPED_SETUP_EVENT, setupEvents } from '../onboarding/events.js';
 import { openProtectedBrowser } from '../onboarding/browser-task.js';
@@ -2628,6 +2629,74 @@ describe('correlated desktop interaction outcomes', () => {
   });
 });
 
+it.each(['allowed', 'no-intent', 'background', 'expired', 'replaced', 'missing-attempt'])(
+  'opens enrollment only for the matching foreground sign-in and current decision (%s)', async kind => {
+    const parent = '33333333-3333-4333-8333-333333333333';
+    const journey = '44444444-4444-4444-8444-444444444444';
+    const attempt = '0199b234-5678-7000-8000-000000000002';
+    const selection = { operation_id: parent, browser_operation_id: null, state: 'selection-required',
+      choices: { google: true, 'microsoft-personal': true, telegram: false, tiktok: false, default: true },
+      authentication_attempt: null, actions: { select: true, cancel: true, open_browser: false, switch_account: false } };
+    const original = { ...initial(), journey_id: journey, next_task: 'account-connection',
+      authentication: selection, allowed_actions: ['auth.select'] };
+    const authRecord = { ...record, action: 'auth.select', state: 'waiting' };
+    let publish, now = 1000;
+    const focusWindow = vi.fn(async () => { if (kind === 'background') throw Error('window_focus_deferred'); });
+    const openBrowser = vi.fn(async () => true);
+    const client = new DesktopSetupClient({ generation, now: () => now, uuid: () => operationId,
+      focusWindow, openBrowser, receive: vi.fn(), storage: storage(),
+      request: async path => {
+        if (path.endsWith('/session')) return response(session);
+        if (path.endsWith('/commands')) return response(authRecord, 202);
+        return response(authRecord);
+      },
+      stream: async (_request, _headers, _signal, receive) => {
+        publish = value => receive(JSON.stringify(value)); publish(original);
+      } });
+    try {
+      await client.connect();
+      const signingIn = client.act('auth.select', { provider: 'default' },
+        kind === 'no-intent' ? null : { enrollPasskey: true });
+      await vi.waitFor(() => expect(openBrowser).toHaveBeenCalledOnce());
+      await signingIn;
+      const authentication = { ...selection, state: 'selected', browser_operation_id: operationId,
+        authentication_attempt: { authentication_attempt_id: attempt, provider: 'default', mode: 'sign-in' },
+        actions: { select: false, cancel: true, open_browser: true, switch_account: false } };
+      if (kind !== 'missing-attempt') {
+        publish({ ...original, revision: 1, authentication, pending_operations: [authRecord], allowed_actions: [] });
+      }
+      const decision = { operation_id: kind === 'replaced' ? operationId : parent, action: 'connect-account',
+        creator_id: 'creator-fixture', computer_name: 'Test computer', expires_at: '2033-01-01T00:00:00.000Z' };
+      const joined = { ...original, revision: 2, decision, pending_operations: [], allowed_actions: ['account.confirm'],
+        authentication: { ...authentication, state: 'admitted', actions: { ...authentication.actions, open_browser: false },
+          authentication_attempt: kind === 'missing-attempt' ? null : authentication.authentication_attempt },
+        account_passkey: 'available' };
+      publish(joined);
+      if (kind === 'expired') now += 180_000;
+      await Promise.resolve();
+      expect(client.takeReturnedPasskey()).toBe(kind === 'allowed' ? 181_000 : null);
+      expect(client.takeReturnedPasskey()).toBeNull();
+      expect(client.value.allowed_actions).toEqual(['account.confirm']);
+    } finally { client.stop(); }
+  });
+
+it.each(['issued', 'unavailable', 'already-authenticated', 'ordinary-open', 'replaced-presentation'])(
+  'reads the first local session once and never starts an assertion after handoff (%s)', async outcome => {
+    const api = {
+      state: vi.fn(async () => ({ nativeRequired: true, enrolled: true, authenticated: outcome === 'already-authenticated' })),
+      initial: vi.fn(async () => outcome === 'issued'),
+      login: vi.fn(),
+    };
+    const refresh = vi.fn();
+    const enrollment = new DesktopEnrollment({ api, refresh, receive: vi.fn() });
+    await enrollment.check({ initial: outcome === 'ordinary-open' ? null : () => outcome !== 'replaced-presentation' });
+    expect(api.initial).toHaveBeenCalledTimes(['issued', 'unavailable'].includes(outcome) ? 1 : 0);
+    expect(enrollment.state.authenticated).toBe(['issued', 'already-authenticated'].includes(outcome));
+    expect(refresh).toHaveBeenCalledTimes(outcome === 'issued' ? 1 : 0);
+    expect(api.login).not.toHaveBeenCalled();
+    enrollment.stop();
+  });
+
 it('keeps account connection separate from the account passkey prompt', () => {
   document.documentElement.innerHTML = markup;
   const decision = {
@@ -2663,9 +2732,19 @@ it('keeps account connection separate from the account passkey prompt', () => {
   expect(document.getElementById('task-action').hidden).toBe(true);
   expect(status.textContent).not.toContain(reference);
   expect(status.textContent).not.toContain('Get help');
-  render('available', { passkeyDeferred: true });
+  render('paused', { snapshot: { ...base, decision: undefined, allowed_actions: [], account_passkey: 'paused' } });
+  expect(document.getElementById('task-title').textContent).toBe('Setup paused');
+  expect(document.getElementById('account-passkey-resume').hidden).toBe(false);
   expect(document.getElementById('account-passkey-create').hidden).toBe(true);
-  expect(document.getElementById('task-action').dataset.action).toBe('account.confirm');
+  expect(document.getElementById('task-action').hidden).toBe(true);
+  render('recoverable');
+  expect(document.getElementById('account-passkey-resume').hidden).toBe(true);
+  expect(document.getElementById('account-passkey-create').textContent).toBe('Resume passkey setup');
+  expect(document.getElementById('task-action').hidden).toBe(true);
+  render('available', { nativePasskey: true, passkeyPermission: true });
+  expect(document.getElementById('account-passkey-settings').hidden).toBe(false);
+  render('available', { nativePasskey: true });
+  expect(document.getElementById('account-passkey-settings').hidden).toBe(true);
   render('created');
   expect(document.getElementById('account-passkey-status').textContent).toBe('Passkey created.');
   expect(document.getElementById('task-action').dataset.action).toBe('account.confirm');

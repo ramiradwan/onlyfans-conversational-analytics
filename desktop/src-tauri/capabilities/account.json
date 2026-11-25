@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "account",
+  "description": "Open passkey management from the desktop Account page.",
+  "windows": ["main"],
+  "platforms": ["windows"],
+  "local": false,
+  "remote": { "urls": ["http://bridge.localhost:17871/account"] },
+  "permissions": ["allow-desktop-account-passkeys"]
+}

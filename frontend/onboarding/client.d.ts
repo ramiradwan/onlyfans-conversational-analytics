@@ -27,7 +27,7 @@ export interface DesktopSnapshot {
   journey_id: string | null;
   generation: string;
   revision: number;
-  account_passkey?: 'available' | 'working' | 'created';
+  account_passkey?: 'available' | 'working' | 'created' | 'paused' | 'recoverable';
   facts: Record<string, string>;
   local_ready: boolean;
   full_ready: boolean;
@@ -73,9 +73,11 @@ export class DesktopSetupClient {
   connect(): Promise<void>;
   wake(): void;
   act(action: string, options?: { provider?: SignInProvider; replace_ceremony?: true; recover_authority?: true },
-    continued?: { continueProvider?: SignInProvider; until?: number } | null): Promise<DesktopInteractionOutcome>;
+    continued?: { continueProvider?: SignInProvider; until?: number; enrollPasskey?: boolean } | null): Promise<DesktopInteractionOutcome>;
   reconcile(selectedOperation?: string): Promise<DesktopInteractionOutcome>;
   launchBrowser(explicit?: boolean, selectedOperation?: string): Promise<DesktopInteractionOutcome>;
   launchProtectedBrowser(): Promise<DesktopInteractionOutcome>;
+  takeReturnedPasskey(): number | null;
+  discardReturnedPasskey(): void;
   stop(): void;
 }

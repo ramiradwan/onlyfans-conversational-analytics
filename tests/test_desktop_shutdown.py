@@ -24,9 +24,7 @@ pytestmark = [pytest.mark.ci_tier("integration"), pytest.mark.windows_compat, py
 
 
 @pytest.mark.asyncio
-async def test_account_passkey_setup_drains_before_configured_routes_on_same_listener(monkeypatch):
-    from app.api.endpoints import saved_data
-
+async def test_account_passkey_setup_drains_before_configured_routes_on_same_listener():
     order = []
     draining = asyncio.Event()
     release = asyncio.Event()
@@ -34,7 +32,6 @@ async def test_account_passkey_setup_drains_before_configured_routes_on_same_lis
     access = object()
     restart = Mock()
     stage = Mock(side_effect=lambda _: order.append("access-staged"))
-    monkeypatch.setattr(saved_data, "stage_initial_access", stage)
     continue_presentation = Mock(side_effect=lambda *_: order.append("presentation-continued"))
 
     @asynccontextmanager
@@ -66,6 +63,7 @@ async def test_account_passkey_setup_drains_before_configured_routes_on_same_lis
         order.append("runtime-drained")
 
     runtime = FastAPI(lifespan=runtime_lifecycle)
+    runtime.state.account_passkey_authority = SimpleNamespace(stage_initial=stage)
 
     @runtime.get("/state")
     async def read_runtime():

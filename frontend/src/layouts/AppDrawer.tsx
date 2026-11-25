@@ -1,3 +1,4 @@
+import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import InboxIcon from '@mui/icons-material/Inbox';
@@ -131,7 +132,7 @@ export function AppDrawer({
 }: AppDrawerProps) {
   const theme = useTheme();
   const { railInset } = componentTokens.shell;
-  const { canViewAnalytics, canViewDashboard, canViewInbox, canViewSettings } = usePermissions();
+  const { canViewAccount, canViewAnalytics, canViewDashboard, canViewInbox, canViewSettings } = usePermissions();
   const closeMobileDrawer = onDrawerClose ?? onDrawerToggle;
 
   const navigationItems: NavigationItem[] = [
@@ -146,6 +147,9 @@ export function AppDrawer({
       : []),
     ...(canViewSettings
       ? [{ to: '/settings', icon: <SettingsOutlinedIcon />, label: 'Settings' }]
+      : []),
+    ...(canViewAccount
+      ? [{ to: '/account', icon: <AccountCircleOutlinedIcon />, label: 'Account' }]
       : []),
   ];
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from urllib.parse import urlsplit
 
 from fastapi import Depends, HTTPException, Request
+from starlette.requests import HTTPConnection
 
 from app.core.config import settings
 from app.persistence.auth import SQLiteAuthenticationStore
@@ -68,23 +69,29 @@ def webauthn_session_token(identity: AuthContext, session_value: str) -> str:
     return issue_local_session_token(envelope)
 
 
-def _allows_anonymous_reauthentication(request: Request) -> bool:
+def _allows_anonymous_reauthentication(request: HTTPConnection) -> bool:
     path = request.url.path
     # Desktop reads have their own role/generation admission. An expired or
     # foreign operator cookie must not hide the local sign-in projection.
     # Commands still require the current authenticated operator and CSRF.
-    return (path == "/" or path.startswith("/api/v1/webauthn/")
-        or request.method == "GET" and path in {
+    return (path == "/" or request.scope.get("method") == "GET" and path in {
+            "/inbox", "/analytics", "/graph-explorer", "/settings", "/account"}
+        or path.startswith("/api/v1/webauthn/")
+        or request.scope.get("method") == "GET" and path in {
             "/api/v1/desktop/setup", "/api/v1/desktop/setup/events"})
 
 
-def _invalid_session_policy(request: Request, detail: str) -> RuntimePolicy:
+def _invalid_session_policy(request: HTTPConnection, detail: str) -> RuntimePolicy:
     if _allows_anonymous_reauthentication(request):
         return build_runtime_policy()
     raise HTTPException(status_code=401, detail=detail)
 
 
 def get_runtime_policy(request: Request) -> RuntimePolicy:
+    return connection_runtime_policy(request)
+
+
+def connection_runtime_policy(request: HTTPConnection) -> RuntimePolicy:
     """Build one policy from current durable state and an optional session identity."""
 
     token = request.cookies.get(settings.bridge_session_cookie_name)

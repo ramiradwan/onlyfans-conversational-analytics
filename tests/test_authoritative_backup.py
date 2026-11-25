@@ -69,7 +69,7 @@ def test_pinned_snapshots_survive_later_auth_and_canonical_commits(tmp_path,monk
         restore_authoritative_backup(offline(owner),tmp_path/'set')
 
 
-@pytest.mark.parametrize('mutation',['revocation','withdrawal','module_revocation','counter'])
+@pytest.mark.parametrize('mutation',['revocation','withdrawal','module_revocation','desktop_lock','counter'])
 def test_security_projection_rejects_newer_denial_or_counter_without_publish(tmp_path,mutation):
     # The actual original module fixture is imported only for its own case.
     if mutation=='module_revocation':
@@ -94,6 +94,8 @@ def test_security_projection_rejects_newer_denial_or_counter_without_publish(tmp
             state['withdrawals']=['a'*64]
             raw=json.dumps(state,separators=(',',':'),sort_keys=True)
             a.execute('UPDATE nlp_dependency_authority SET state_json=?,state_sha256=?',(raw,hashlib.sha256(raw.encode()).hexdigest()))
+        elif mutation=='desktop_lock':
+            a.execute("UPDATE desktop_access_lock SET generation=generation+1, locked=1 WHERE singleton=1")
         elif mutation=='module_revocation':
             a.execute("UPDATE text_analysis_authority_references SET state='revoked',version=version+1 WHERE reference_id=?",(ref.reference_id,))
         else:

@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { OnboardingWorkspace, TrustTask } from './OnboardingWorkspace';
 import { OnboardingAction, OnboardingStatus } from './ui/OnboardingCard';
+import { openPasskeySettings } from '../../shared-setup/passkey-window.js';
 import { expiredAccessDescription, expiredAccessTitle } from '../../shared-setup/saved-data-entry';
 import type { AccessState } from '../../shared-setup/webauthn';
 import { componentTokens, effectTokens } from '../theme';
@@ -15,21 +16,25 @@ const accessCopy = {
 
 export function OnboardingPasskeyTask({
   busy, checking, enrolled, error, authenticate, statusUnavailable = false,
-  readingStatus = false, access = null, sessionNotice,
+  readingStatus = false, access = null, sessionNotice, nativeRequired = false, nativePresentation = false, passkeyPermission = false,
 }: {
+  nativeRequired?: boolean; nativePresentation?: boolean; passkeyPermission?: boolean;
   statusUnavailable?: boolean; readingStatus?: boolean; access?: AccessState | null;
   busy: boolean; checking: boolean; enrolled: boolean | null;
   error: string | null; sessionNotice?: string; authenticate(enroll: boolean): Promise<void>;
 }) {
   const lapsed = checking || access === null ? null : accessCopy[access];
-  const create = enrolled === false;
-  const canAct = !checking && !statusUnavailable && !lapsed;
+  const create = enrolled === false && !nativeRequired;
+  const needsDesktop = nativeRequired && (!nativePresentation || enrolled === false);
+  const canAct = !checking && !statusUnavailable && !lapsed && !needsDesktop;
   const family = checking ? 'checking' : access ?? (statusUnavailable ? 'unavailable' : create ? 'create' : 'sign-in');
   const title = lapsed?.title ?? (checking ? 'Checking this computer…' : statusUnavailable ? 'Can’t check your passkey right now'
-    : create ? 'Protect your analytics on this computer' : 'Confirm it’s you');
-  const body = lapsed?.body ?? (checking || statusUnavailable ? undefined : create
-    ? 'Create a passkey. Your computer will ask you to confirm it’s you, so only you can open your analytics here.'
-    : 'Your computer will ask you to confirm it’s you.');
+    : needsDesktop ? (nativePresentation ? 'Finish passkey setup' : 'Open Dipsy')
+      : create ? 'Protect your analytics on this computer' : 'Confirm it’s you');
+  const body = lapsed?.body ?? (checking || statusUnavailable ? undefined : needsDesktop
+    ? enrolled === false ? 'Finish setting up your passkey in the Dipsy desktop app.' : 'Unlock Dipsy in the desktop app.'
+    : create ? 'Create a passkey. Your computer will ask you to confirm it’s you, so only you can open your analytics here.'
+      : 'Your computer will ask you to confirm it’s you.');
   const status = lapsed ? lapsed.status : error ?? (statusUnavailable ? 'This page updates by itself.' : sessionNotice);
   const success = status === 'Passkey created. Sign in to continue.';
   const failed = Boolean(error && !lapsed && !success);
@@ -86,9 +91,11 @@ export function OnboardingPasskeyTask({
               }} onClick={() => {
                 returnFocus.current = document.activeElement === action.current;
                 begin(create);
-              }}>{create ? 'Create passkey' : 'Sign in with passkey'}</Button>}
+              }}>{create ? 'Create passkey' : nativeRequired ? 'Unlock' : 'Sign in with passkey'}</Button>}
+              {!busy && nativePresentation && passkeyPermission && <Button disabled={readingStatus}
+                onClick={() => void openPasskeySettings()}>Open Windows settings</Button>}
             </OnboardingAction>
-            {enrolled === null && <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>First time on this computer?{' '}
+            {enrolled === null && !nativeRequired && <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>First time on this computer?{' '}
               <Link component="button" type="button" disabled={busy || readingStatus} onClick={() => begin(true)} sx={{
                 font: 'inherit', verticalAlign: 'baseline', maxWidth: '100%', overflowWrap: 'anywhere',
                 '&:focus-visible': { outline: `${effectTokens.focus.width} solid`, outlineColor: 'primary.main', outlineOffset: effectTokens.focus.offset },

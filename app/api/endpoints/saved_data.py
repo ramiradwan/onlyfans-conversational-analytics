@@ -26,7 +26,7 @@ from app.security.account_passkey_windows import WindowsHelloRefused
 from app.security.activation_gate import REQUIRED_GRANTS, current_activation
 from app.security.signed_objects import SignedObjectRejected
 from app.security.installation_key import InstallationKeyAuthority, InstallationKeyError, WindowsCNGInstallationKeyProvider
-from app.security.saved_data import InitialSavedDataAccess, SavedDataSessions
+from app.security.saved_data import SavedDataSessions
 from app.security.webauthn import WebAuthnService, WebAuthnVerificationError
 from app.services.saved_results import saved_result_document, saved_result_page
 
@@ -34,6 +34,10 @@ from app.services.saved_results import saved_result_document, saved_result_page
 PREFIX = "/api/v1/saved-data"
 COOKIE = "dipsy_saved_data"
 _sessions = SavedDataSessions()
+
+
+def lock_saved_views() -> None:
+    _sessions.lock_all()
 
 
 def require_local_installation(store: SQLiteAuthenticationStore = Depends(authentication_store)) -> None:
@@ -48,7 +52,11 @@ def require_local_installation(store: SQLiteAuthenticationStore = Depends(authen
 
 
 def _request(request: Request, response: Response) -> None:
-    verify_same_origin(request)
+    if request.method == "GET" and request.url.path == PREFIX + "/session/events":
+        from app.api.endpoints.webauthn import _require_same_origin_read
+        _require_same_origin_read(request)
+    else:
+        verify_same_origin(request)
     response.headers["Cache-Control"] = "no-store"
 
 
@@ -65,22 +73,27 @@ def _account_passkey(request: Request):
     return getattr(request.app.state, "account_passkey_authority", None)
 
 
+@router.get("/session/events")
+def saved_session_events(request: Request):
+    """Notify the open archive when its own local session ends."""
+    from app.api.endpoints.webauthn import AccessEventResponse, access_streams
+    token = request.cookies.get(COOKIE, "")
+    return AccessEventResponse(access_streams(request.app),
+        lambda: "available" if _sessions.is_open(token) else "locked", lambda: None)
+
+
 def start_account_passkey_withdrawals(application) -> None:
     authority = getattr(application.state, "account_passkey_authority", None)
     if authority is not None:
         authority.start(_sessions)
 
 
-def stage_initial_access(access: InitialSavedDataAccess) -> None:
-    _sessions.stage_initial(access)
-
-
 def _access_owner(request, store, connection) -> SavedDataOwner | None:
-    if not AccountPasskeyBindings(store).has_retained_authority(connection):
-        return store.saved_data_owner(connection)
     authority = _account_passkey(request)
     if authority is None:
-        return None
+        if AccountPasskeyBindings(store).has_retained_authority(connection):
+            return None
+        return store.saved_data_owner(connection)
     try:
         active = authority.active(connection)
     except (AuthenticationStateError, SignedObjectRejected):

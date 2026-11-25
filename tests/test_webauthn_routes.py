@@ -47,6 +47,8 @@ pytestmark = [pytest.mark.ci_tier('fast')]
 
 
 @pytest.mark.parametrize("path,method,allowed", [
+    ("/account", "GET", True),
+    ("/account", "POST", False),
     ("/api/v1/desktop/setup", "GET", True),
     ("/api/v1/desktop/setup/events", "GET", True),
     ("/api/v1/desktop/setup/commands", "POST", False),
@@ -712,6 +714,33 @@ def _register_public_key(
             enrolled_at=INSTANT - timedelta(minutes=1),
         )
     )
+
+
+@pytest.mark.parametrize("legacy_credential", [False, True])
+def test_account_passkey_release_disables_localhost_enrollment_and_login_before_native_binding(
+    store: SQLiteAuthenticationStore, legacy_credential: bool,
+) -> None:
+    if legacy_credential:
+        _register_public_key(store, ec.generate_private_key(ec.SECP256R1()))
+    policy = _policy(store)
+    application = _application(
+        policy=lambda: policy,
+        authority_port=WebAuthnAuthorityPort(store, clock=lambda: INSTANT),
+        service=_service(store),
+    )
+    application.state.account_passkey_authority = SimpleNamespace(requires_native=lambda _credential: False)
+    headers = {"X-CSRF-Token": csrf_token(policy)}
+    with TestClient(application, base_url=ORIGIN) as browser:
+        base = "/api/v1/webauthn"
+        state = browser.get(base + "/session-state").json()
+        assert state["native_required"] is True and not state["enrolled"] and not state["authenticated"]
+        for path in ("/registration/begin", "/registration/finish", "/login/begin", "/login/finish"):
+            response = browser.post(base + path, json={}, headers=headers)
+            assert response.status_code == 403
+            assert "set-cookie" not in response.headers
+    with store.database.read() as connection:
+        assert connection.execute("SELECT count(*) FROM auth_challenges").fetchone()[0] == 0
+        assert connection.execute("SELECT count(*) FROM bridge_sessions").fetchone()[0] == 0
 
 
 def _registration_payload(
