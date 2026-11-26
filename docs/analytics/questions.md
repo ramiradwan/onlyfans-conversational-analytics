@@ -46,6 +46,8 @@ Amounts, commercial keywords, and stated buying intent are not transaction recor
 
 A conversation matches when the earlier week has at least five participant messages across at least two dates, and the recent week has at least three fewer messages and at most half the earlier count. A covered recent week can have zero messages. Creator messages do not affect the counts. Known system events are excluded. Missing event kinds or sender roles, tied human message times, retention clipping and incomplete coverage leave the conversation undetermined. A known in-window deletion also prevents a complete comparison. If an erased message can no longer be attributed to a chat or time, withhold comparisons it could affect.
 
+A retained conversation counts once as undetermined if an erasure could affect the comparison, even when its last selected message was erased. An erasure with no known conversation limits coverage only for conversations selected on other evidence.
+
 The row shows both counts and links to the last participant message in each nonempty period. The reader uses the normal latest-evidence ordering, pagination, session account and source checks. Message wording and language play no part in the comparison.
 
 ## Result and evidence records

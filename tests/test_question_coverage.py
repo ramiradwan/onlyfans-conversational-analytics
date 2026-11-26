@@ -12,10 +12,11 @@ from app.analytics.opaque_refs import conversation_ref
 from app.analytics.query_canonical import CanonicalQuestionScope
 from app.analytics.query_contracts import QuestionPlan
 from app.analytics.query_execution import QuestionBudget, QuestionLimits, QuestionLimitExceeded
-from app.analytics.query_handlers import no_later_creator_reply
+from app.analytics.query_handlers import no_later_creator_reply, participant_activity_decline
 from app.analytics.source_coverage import AcquisitionCoverage, question_coverage
 from tests.analytics_coverage_fixture import seed_coverage
 from tests.test_analytics_evidence import stored, ACCOUNT, OTHER, NOW
+from tests.test_analytics_query_endpoints import ready
 
 
 pytestmark = [pytest.mark.ci_tier("integration"), pytest.mark.windows_compat]
@@ -113,6 +114,137 @@ def test_activity_withholds_only_conversations_an_erased_message_could_belong_to
     with covered.database.transaction() as db:
         db.execute(barrier, (ACCOUNT, "no-retained-chat", NOW.isoformat()))
     assert coverage() == {a: "partial", b: "partial"}
+
+
+def test_final_message_erasure_preserves_activity_coverage_and_paging(ready):
+    from app.analytics.evidence import EvidenceUnavailable
+    from app.analytics.query_cursor import StaleQuestionCursor
+    from tests.activity_question_fixture import seed_activity_inbox
+    from tests.test_analytics_evidence import policy
+    from tests.test_analytics_query_endpoints import SOURCE_NOW
+
+    account = "activity-coverage"
+    through = SOURCE_NOW - timedelta(days=1)
+    plan = QuestionPlan(question="participant_activity_decline.v1", timezone="UTC",
+        start=through-timedelta(days=14), end=through, cutoff=through, page_size=1)
+    with ready.stored.database.transaction() as db:
+        seed_activity_inbox(db, account, through)
+    ready.resources.source = HistoryAnalyticsSource(ready.stored.history)
+
+    def erase(condition):
+        with ready.stored.database.transaction() as db:
+            db.execute("UPDATE account_messages SET is_deleted=1 WHERE creator_account_id=? " + condition, (account,))
+            db.execute("UPDATE account_heads SET canonical_revision=canonical_revision+1 WHERE creator_account_id=?", (account,))
+        ready.pipeline.project_account(account)
+        ready.resources.source.prepare_question_identity(account)
+
+    def answer(**changes):
+        return ready.resources.execute(policy(account), QuestionPlan.model_validate(
+            {**plan.model_dump(), **changes}))
+
+    for selection in ("AND chat_id='meadow' AND message_id!='meadow-0'", "AND chat_id='meadow'"):
+        erase(selection)
+        first = answer()
+        second = answer(cursor=first.next_cursor)
+        assert first.next_cursor and second.next_cursor is None
+        for page, chat in ((first.page, "orchard"), (second.page, "harbor")):
+            assert (page.evaluated_conversation_count, page.undetermined_conversation_count,
+                    page.total_matching_conversations, page.coverage.history) == (4, 2, 2, "partial")
+            row, = page.rows
+            assert row.conversation_ref == conversation_ref(account, chat)
+            assert all(e.conversation_ref == row.conversation_ref for e in row.evidence)
+        filtered = answer(filters={"conversation_ref": conversation_ref(account, "meadow")}).page
+        assert not filtered.rows and filtered.undetermined_conversation_count == 1
+        assert answer(filters={"conversation_ref": conversation_ref(OTHER, "meadow")}).page.evaluated_conversation_count == 0
+
+    erase("")
+    with pytest.raises(EvidenceUnavailable):
+        ready.resources.resolve(policy(account), first.page.rows[0].evidence[0])
+    with pytest.raises(StaleQuestionCursor):
+        answer(cursor=first.next_cursor)
+    empty = answer()
+    assert empty.question.snapshot.source_message_count == 0
+    assert (empty.page.evaluated_conversation_count, empty.page.undetermined_conversation_count,
+            empty.page.coverage.history) == (4, 4, "partial")
+    assert not empty.page.rows and not empty.next_cursor and empty.page.total_matching_conversations == 0
+
+
+def test_activity_gaps_use_retained_location_and_possible_send_time(covered):
+    requested = question()
+    start = NOW - timedelta(days=14)
+    requested.plan = QuestionPlan(question="participant_activity_decline.v1", timezone="UTC",
+                                  start=start, end=NOW, cutoff=NOW)
+    with covered.database.transaction() as db:
+        db.execute("DELETE FROM account_messages WHERE creator_account_id=? AND chat_id=?", (ACCOUNT, CHATS[0]))
+        db.execute("""INSERT INTO deletion_barriers(creator_account_id,scope_kind,scope_key,deletion_revision,
+            deleted_at,provenance) VALUES (?,'message','unknown-chat',1,?,'synthetic')""", (ACCOUNT, NOW.isoformat()))
+
+    def inspect():
+        budget = QuestionBudget(QuestionLimits(wall_clock_ms=30_000))
+        with covered.database.read() as db:
+            scope = CanonicalQuestionScope(db, ACCOUNT, budget)
+            result = participant_activity_decline(scope, requested, None, budget)
+            assert not result.rows
+            return result.evaluated_conversation_count, result.undetermined_conversation_count
+
+    tombstone = """INSERT INTO entity_tombstones(creator_account_id,entity_kind,entity_id,chat_id,
+        stream_epoch,source_seq,deleted_at) VALUES (?,'message',?,?,1,1,?)"""
+    with covered.database.transaction() as db:
+        db.execute(tombstone, (OTHER, "erased", CHATS[0], NOW.isoformat()))
+        db.execute(tombstone, (ACCOUNT, "no-live-chat", "missing-chat", NOW.isoformat()))
+        db.execute(tombstone, (ACCOUNT, "before", CHATS[0], (start-timedelta(microseconds=1)).isoformat()))
+    assert inspect() == (1, 1)
+    with covered.database.transaction() as db:
+        # The source row is gone. Only the chat and the later deletion time survive.
+        db.execute(tombstone, (ACCOUNT, "erased", CHATS[0], (NOW+timedelta(days=1)).isoformat()))
+    assert inspect() == (2, 2)
+    requested.retention_cutoff_exclusive = NOW
+    assert inspect() == (0, 0)
+
+
+def test_located_erasure_uses_the_send_time_and_exclusive_retention_boundary(covered):
+    requested = question()
+    start = NOW - timedelta(days=14)
+    tick = timedelta(microseconds=1)
+    requested.plan = QuestionPlan(question="participant_activity_decline.v1", timezone="UTC",
+        start=start, end=NOW, cutoff=NOW, filters={"conversation_ref": conversation_ref(ACCOUNT, CHATS[0])})
+    for sent, retained_after, expected in (
+        (start-tick, start-tick*2, 0), (start, start-tick, 1),
+        (start, start, 0), (start+tick, start, 1), (NOW, start, 1), (NOW+tick, start, 0),
+    ):
+        requested.retention_cutoff_exclusive = retained_after
+        with covered.database.transaction() as db:
+            db.execute("""UPDATE account_messages SET is_deleted=1, sent_at=?, updated_at=?
+                WHERE creator_account_id=? AND chat_id=?""",
+                (sent.isoformat(), (NOW+timedelta(days=1)).isoformat(), ACCOUNT, CHATS[0]))
+        budget = QuestionBudget(QuestionLimits(wall_clock_ms=30_000))
+        with covered.database.read() as db:
+            scope = CanonicalQuestionScope(db, ACCOUNT, budget)
+            page = participant_activity_decline(scope, requested, None, budget)
+            assert page.evaluated_conversation_count == page.undetermined_conversation_count == expected
+            assert not page.rows and not scope.locations
+
+
+@pytest.mark.parametrize("hide_chat", [
+    "UPDATE account_chats SET is_deleted=1 WHERE creator_account_id=:account AND chat_id=:chat",
+    """INSERT INTO entity_tombstones(creator_account_id,entity_kind,entity_id,stream_epoch,source_seq,deleted_at)
+       VALUES (:account,'chat',:chat,1,1,:at)""",
+    "INSERT INTO deletion_barriers VALUES (:account,'conversation',:chat,1,:at,'synthetic')",
+    "INSERT INTO deletion_barriers VALUES (:account,'participant','synthetic-participant',1,:at,'synthetic')",
+    """INSERT INTO participant_deletion_chat_scopes(creator_account_id,participant_scope_key,chat_id,
+           deletion_revision,deleted_at) VALUES (:account,'former-participant',:chat,1,:at)""",
+    "INSERT INTO deletion_barriers VALUES (:account,'account','*',1,:at,'synthetic')",
+], ids=["deleted-chat", "chat-tombstone", "conversation-barrier", "participant-barrier",
+        "former-participant-scope", "account-barrier"])
+def test_erased_message_does_not_reintroduce_an_ineligible_chat(covered, hide_chat):
+    requested = question()
+    requested.plan = QuestionPlan(question="participant_activity_decline.v1", timezone="UTC",
+        start=NOW-timedelta(days=14), end=NOW, cutoff=NOW,
+        filters={"conversation_ref": conversation_ref(ACCOUNT, CHATS[0])})
+    with covered.database.transaction() as db:
+        db.execute("UPDATE account_messages SET is_deleted=1 WHERE creator_account_id=? AND chat_id=?", (ACCOUNT, CHATS[0]))
+        db.execute(hide_chat, {"account": ACCOUNT, "chat": CHATS[0], "at": NOW.isoformat()})
+    assert not facts(covered, requested)
 
 
 def test_current_generation_never_borrows_an_old_member_or_stream_order(covered):

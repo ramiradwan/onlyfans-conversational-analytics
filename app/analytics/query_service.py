@@ -238,10 +238,13 @@ class AnalyticsQuestionService:
             or page.evaluated_conversation_count > budget.records_examined
         ):
             raise QuestionResultInvalid()
-        if snapshot.source_message_count == 0 and (
-            page.rows or page.evaluated_conversation_count
-        ):
-            raise QuestionResultInvalid()
+        if snapshot.source_message_count == 0:
+            # Attributable message erasures can survive an empty publication.
+            erasure_only = (plan.question == "participant_activity_decline.v1"
+                            and page.coverage.history != "complete"
+                            and page.evaluated_conversation_count == page.undetermined_conversation_count)
+            if page.rows or (page.evaluated_conversation_count and not erasure_only):
+                raise QuestionResultInvalid()
         if page.coverage.evaluated_start is not None:
             if (
                 not question.retention_cutoff_exclusive

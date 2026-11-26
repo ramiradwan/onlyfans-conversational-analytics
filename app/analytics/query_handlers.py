@@ -69,7 +69,7 @@ def _page(session: QuestionFactsSession, question, after, budget, *, reason):
                     and not _system(m)]
         selected = [m for m in messages if question.plan.start <= m.sent_at
                     and (m.sent_at < question.plan.end or (activity and m.sent_at == question.plan.end))]
-        if not selected:
+        if not selected and not (activity and conversation.has_removed_activity):
             continue
         evaluated += 1
         coverage_values.add(conversation.coverage)

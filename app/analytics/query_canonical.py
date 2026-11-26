@@ -1,5 +1,6 @@
 """Bounded source selection within a gateway-owned canonical connection."""
 
+from datetime import timedelta
 from functools import cached_property
 
 from app.analytics.errors import CanonicalAccountNotFound, ProjectionUnavailable
@@ -43,8 +44,9 @@ class CanonicalQuestionScope:
         start = question.retention_cutoff_exclusive
         gaps = set()
         if activity:
-            start = max(start, question.plan.start)
-            gaps = self._removed_activity(start, question.plan.end, budget)
+            start = max(start + timedelta(microseconds=1), question.plan.start)
+            if start <= question.plan.end:
+                gaps = self._removed_activity(start, question.plan.end, budget)
         candidates = db.execute("""SELECT DISTINCT m.chat_id
             FROM account_messages AS m JOIN account_chats AS c
               ON c.creator_account_id=m.creator_account_id AND c.chat_id=m.chat_id
@@ -55,8 +57,9 @@ class CanonicalQuestionScope:
             (account, question.plan.start.isoformat(), question.plan.end.isoformat(),
              budget.limits.max_records - budget.records_examined + 1)).fetchall()
         budget.consume(len(candidates))
-        for candidate in candidates:
-            chat = str(candidate[0])
+        chats = {row[0] for row in candidates}
+        chats.update(gaps - {None})
+        for chat in sorted(chats):
             cref = conversation_ref(account, chat)
             if question.plan.filters.conversation_ref not in {None, cref}:
                 continue
@@ -89,12 +92,12 @@ class CanonicalQuestionScope:
             coverage = question_coverage(self.coverage.conversation(chat), question)
             if coverage == "complete" and (chat in gaps or None in gaps):
                 coverage = "partial"
-            yield QuestionConversation(cref, tuple(messages), coverage)
+            yield QuestionConversation(cref, tuple(messages), coverage, has_removed_activity=chat in gaps)
         self.check(budget)
 
     def _removed_activity(self, start, end, budget):
         """An erased message cannot supply evidence that activity fell."""
-        rows = self.connection.execute("""
+        rows = self.connection.execute(f"""
             WITH removed(chat_id, sent_at, removed_at) AS (
               SELECT chat_id, sent_at, updated_at FROM account_messages
                 WHERE creator_account_id=:account AND is_deleted=1
@@ -109,9 +112,11 @@ class CanonicalQuestionScope:
                   AND t.entity_kind='message' AND t.entity_id=b.scope_key
                 WHERE b.creator_account_id=:account AND b.scope_kind='message'
             )
-            SELECT chat_id,sent_at,removed_at FROM removed
+            SELECT r.chat_id,r.sent_at,r.removed_at FROM removed r
+              LEFT JOIN account_chats c ON c.creator_account_id=:account AND c.chat_id=r.chat_id
               WHERE julianday(coalesce(sent_at,removed_at)) >= julianday(:start)-0.00002
                 AND (sent_at IS NULL OR julianday(sent_at) <= julianday(:end)+0.00002)
+                AND (r.chat_id IS NULL OR (c.is_deleted=0 {LIVE_CHAT}))
               LIMIT :limit
             """, {"account": self.account, "start": start.isoformat(), "end": end.isoformat(),
                   "limit": budget.limits.max_records - budget.records_examined + 1})
@@ -125,17 +130,21 @@ class CanonicalQuestionScope:
         return gaps
 
 
-LIVE_MESSAGE = """
+LIVE_CHAT = """
     AND NOT EXISTS (SELECT 1 FROM entity_tombstones AS t
-        WHERE t.creator_account_id=m.creator_account_id
-          AND ((t.entity_kind='message' AND t.entity_id=m.message_id)
-            OR (t.entity_kind='chat' AND t.entity_id=m.chat_id)))
+        WHERE t.creator_account_id=c.creator_account_id AND t.entity_kind='chat' AND t.entity_id=c.chat_id)
     AND NOT EXISTS (SELECT 1 FROM deletion_barriers AS b
-        WHERE b.creator_account_id=m.creator_account_id
+        WHERE b.creator_account_id=c.creator_account_id
           AND ((b.scope_kind='account' AND b.scope_key='*')
-            OR (b.scope_kind='conversation' AND b.scope_key=m.chat_id)
-            OR (b.scope_kind='message' AND b.scope_key=m.message_id)
+            OR (b.scope_kind='conversation' AND b.scope_key=c.chat_id)
             OR (b.scope_kind='participant' AND b.scope_key=c.platform_user_id)))
     AND NOT EXISTS (SELECT 1 FROM participant_deletion_chat_scopes AS p
-        WHERE p.creator_account_id=m.creator_account_id AND p.chat_id=m.chat_id)
+        WHERE p.creator_account_id=c.creator_account_id AND p.chat_id=c.chat_id)
+"""
+
+LIVE_MESSAGE = LIVE_CHAT + """
+    AND NOT EXISTS (SELECT 1 FROM entity_tombstones AS t
+        WHERE t.creator_account_id=m.creator_account_id AND t.entity_kind='message' AND t.entity_id=m.message_id)
+    AND NOT EXISTS (SELECT 1 FROM deletion_barriers AS b
+        WHERE b.creator_account_id=m.creator_account_id AND b.scope_kind='message' AND b.scope_key=m.message_id)
 """
