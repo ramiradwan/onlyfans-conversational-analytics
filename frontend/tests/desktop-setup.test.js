@@ -1117,15 +1117,16 @@ describe('desktop setup presentation', () => {
     expect([...document.querySelectorAll('[data-provider]')].every(button => button.disabled)).toBe(true);
   });
 
-  it('waits without redundant launch or cancel buttons and binds recovery to the current attempt', () => {
+  it('keeps normal sign-in waiting free of redundant actions and binds recovery to the current attempt', () => {
     mount();
     const value = { ...initial(), next_task: 'account-connection', allowed_actions: ['auth.switch', 'auth.cancel'],
       authentication: { ...signIn(), operation_id: operationId, browser_operation_id: operationId, state: 'selected',
-        actions: { select: false, cancel: true, open_browser: true, switch_account: true } },
+        actions: { select: false, cancel: true, open_browser: true, switch_account: true },
+        authentication_attempt: { authentication_attempt_id: '0199b234-5678-7000-8000-000000000002', provider: 'google', mode: 'sign-in' } },
       pending_operations: [{ ...record, action: 'auth.select', state: 'waiting' }] };
     renderSetup(document, { snapshot: value, connected: true, pending: operationId });
     expect(document.getElementById('task-status').textContent).toBe('Finish signing in in your browser. This window continues by itself.');
-    expect(document.getElementById('sign-in-cancel')).toBeNull();
+    expect(document.querySelector('#sign-in-cancel:not([hidden])')).toBeNull();
     expect(document.getElementById('browser-reopen').hidden).toBe(true);
     expect(document.getElementById('sign-in-switch').hidden).toBe(true);
     renderSetup(document, { snapshot: value, connected: true, error: 'browser_unavailable' });
@@ -1141,7 +1142,9 @@ describe('desktop setup presentation', () => {
     expect(document.getElementById('browser-reopen').hidden).toBe(true);
     expect(document.getElementById('sign-in-switch').hidden).toBe(false);
     renderSetup(document, { snapshot: { ...value, decision_status: { operation_id: operationId, state: 'accepted' } }, connected: true });
-    for (const id of ['browser-reopen', 'sign-in-switch', 'sign-in-options']) expect(document.getElementById(id).hidden).toBe(true);
+    for (const id of ['browser-reopen', 'sign-in-cancel', 'sign-in-switch', 'sign-in-options']) {
+      expect(document.querySelector('#' + id + ':not([hidden])')).toBeNull();
+    }
   });
 
   it.each(['browser_needs_account', 'browser_needs_consent', 'browser_needs_permission'])(

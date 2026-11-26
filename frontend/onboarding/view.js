@@ -72,10 +72,23 @@ const actionTasks = {
   'activation.review': 'complete', 'activation.confirm': 'complete',
 };
 
+const hasLiveSnapshot = ({ connected, snapshot }) => connected && snapshot?.expires_at * 1000 > Date.now();
+
+export function canCancelOrdinarySignIn(state) {
+  const value = state.snapshot;
+  const signIn = value?.authentication;
+  // Ordinary waiting needs no extra control. Offer cancellation for the exact unresolved child.
+  return hasLiveSnapshot(state) && value.next_task === 'account-connection' && value.authority_recovery === undefined
+    && value.allowed_actions.includes('auth.cancel') && signIn?.state === 'selected' && signIn.actions.cancel === true
+    && Boolean(signIn.operation_id && signIn.authentication_attempt?.authentication_attempt_id)
+    && value.pending_operations.some(item => item.operation_id === signIn.browser_operation_id && item.state === 'outcome_unknown')
+    && (!state.pending || state.pending === signIn.operation_id || state.pending === signIn.browser_operation_id);
+}
+
 export function renderSetup(document, state) {
   const get = id => document.getElementById(id);
   const value = state.snapshot;
-  const snapshotLive = state.connected && value?.expires_at * 1000 > Date.now();
+  const snapshotLive = hasLiveSnapshot(state);
   const recovery = authorityRecoveryView(state, state.acting);
   const main = document.querySelector('main');
   const card = main.querySelector('.setup-task-card');
@@ -118,7 +131,7 @@ export function renderSetup(document, state) {
     updateStatus(taskStatus, pending ? '' : recovery.status, recovery.tone);
     for (const id of ['header-account-avatar', 'header-account-name', 'header-account-handle', 'decision-provider']) get(id).textContent = '';
     for (const id of ['account-passkey-setup', 'local-access', 'local-authenticate', 'decision-details', 'decision-sign-in', 'decision-provider', 'header-account', 'sign-in-options',
-      'browser-reopen', 'sign-in-switch', 'sign-in-back', 'setup-code-open']) get(id).hidden = true;
+      'browser-reopen', 'sign-in-cancel', 'sign-in-switch', 'sign-in-back', 'setup-code-open']) get(id).hidden = true;
     const primary = get('task-action'), cancel = get('protected-cancel');
     primary.hidden = !recovery.action;
     primary.disabled = recovery.disabled;
@@ -426,6 +439,9 @@ export function renderSetup(document, state) {
   get('sign-in-switch').hidden = !canSwitch || choosingAccount || unavailable || paused;
   get('sign-in-switch').disabled = controlsDisabled;
   get('decision-sign-in').hidden = !hasConfirmedProvider && get('sign-in-switch').hidden;
+  const cancelSignIn = get('sign-in-cancel');
+  cancelSignIn.hidden = unavailable || paused || accepted || !localAccessReady || !canCancelOrdinarySignIn(state);
+  cancelSignIn.disabled = controlsDisabled;
   get('sign-in-back').hidden = !choosingAccount || unavailable;
   get('sign-in-back').disabled = controlsDisabled;
   for (const group of document.querySelectorAll('.setup-actions')) {

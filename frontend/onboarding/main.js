@@ -2,7 +2,7 @@ import '../shared-setup/shell.css';
 import '../shared-setup/providers.css';
 import { applyTheme } from '../shared-setup/presentation.js';
 import { DesktopSetupClient } from './client.js';
-import { renderSetup } from './view.js';
+import { canCancelOrdinarySignIn, renderSetup } from './view.js';
 import { openBrowserTask, openSetupCode, presentationGuard } from './browser-task.js';
 import { DesktopEnrollment } from './enrollment.js';
 import { savedDataEntry, savedDataLinkText, savedDataUrl } from '../shared-setup/saved-data-entry.js';
@@ -175,6 +175,11 @@ try {
       if (!finished && activeAction === owner && presented()) void client.connect();
     } finally { endAction(owner); }
   };
+  document.getElementById('sign-in-cancel').addEventListener('click', event => {
+    const button = event.currentTarget;
+    if (finished || button.hidden || button.disabled || !canCancelOrdinarySignIn(current)) return;
+    void act('auth.cancel', {});
+  });
   document.getElementById('protected-cancel').addEventListener('click', () => { void protectedAct('auth.cancel'); });
   document.getElementById('task-action').addEventListener('click', event => {
     const button = event.currentTarget;
