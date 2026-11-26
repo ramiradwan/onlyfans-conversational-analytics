@@ -239,6 +239,7 @@
     "tests/test_creator_vault_retention.py": 5,
     "tests/test_current_session_onboarding_client.py": 6,
     "tests/test_customer_release.py": 1,
+    "tests/test_desktop_account_lock.py": 2,
     "tests/test_desktop_activation.py": 8,
     "tests/test_desktop_admission.py": 8,
     "tests/test_desktop_authentication.py": 8,
@@ -701,34 +702,32 @@
   },
   "maintenance": {
     "method": "preserve existing owners; allocate new files by selected node count",
-    "inventory_sha256": "6aa87ccc6be1d3b98f17b4183c5f013b038169254b0886e9fab3e63e47c210e7",
+    "inventory_sha256": "9950d0747d7e2aed75023dd83cfe712afacc90d8ed82c07eb0262fa62b14b30a",
     "changes": {
       "full": {
         "added": [
-          "tests/test_account_passkey_authority.py"
+          "tests/test_desktop_account_lock.py"
         ],
         "removed": [],
         "modeled_load": {
           "1": 1332,
-          "2": 1113,
+          "2": 1118,
           "3": 2415,
-          "4": 1118,
-          "5": 2434,
-          "6": 1365,
-          "7": 3386,
+          "4": 1120,
+          "5": 2436,
+          "6": 1366,
+          "7": 3387,
           "8": 2948
         }
       },
       "platform": {
-        "added": [
-          "tests/test_account_passkey_authority.py"
-        ],
+        "added": [],
         "removed": [],
         "modeled_load": {
-          "1": 422,
-          "2": 425,
+          "1": 425,
+          "2": 437,
           "3": 411,
-          "4": 481,
+          "4": 482,
           "5": 422
         }
       },

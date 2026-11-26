@@ -477,6 +477,7 @@
     "tests/test_creator_vault_deletion_operations.py": 1,
     "tests/test_creator_vault_export.py": 2,
     "tests/test_creator_vault_retention.py": 2,
+    "tests/test_desktop_account_lock.py": 2,
     "tests/test_desktop_activation.py": 4,
     "tests/test_desktop_setup_transfer.py": 2,
     "tests/test_desktop_shutdown.py": 4,

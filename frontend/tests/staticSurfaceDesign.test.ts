@@ -71,7 +71,13 @@ describe('native surface font delivery', () => {
       "default-src 'none'", "style-src 'self'", "script-src 'self'", "img-src 'self'",
       'connect-src ipc: http://ipc.localhost', "font-src 'self'",
     ]);
-    expect(capabilities).toEqual(['desktop', 'window-frame']);
+    expect(capabilities).toEqual(['desktop', 'window-frame', 'account']);
+    const account = JSON.parse(read('desktop/src-tauri/capabilities/account.json'));
+    expect(account.windows).toEqual(['main']);
+    expect(account.platforms).toEqual(['windows']);
+    expect(account.local).toBe(false);
+    expect(account.remote).toEqual({ urls: ['http://bridge.localhost:17871/account'] });
+    expect(account.permissions).toEqual(['allow-desktop-account-passkeys']);
   });
 
   it('packages each native mask as the same outline SVG at a relative URL', () => {
