@@ -1074,7 +1074,11 @@ export const componentTokens = {
   },
   "MuiButton": {
     "activeScale": 0.97,
-    "borderRadius": 12
+    "borderRadius": 12,
+    "textInset": {
+      "medium": 8,
+      "small": 5
+    }
   },
   "MuiListItemButton": {
     "activeScale": 0.97,
@@ -1085,6 +1089,11 @@ export const componentTokens = {
   },
   "MuiPaper": {
     "borderRadius": 20
+  },
+  "MuiSwitch": {
+    "thumbSize": 16,
+    "trackHeight": 24,
+    "trackWidth": 40
   },
   "MuiTooltip": {
     "borderRadius": 8
@@ -1104,6 +1113,14 @@ export const componentTokens = {
     "avatarSize": 34,
     "nameMinWidth": "8rem",
     "stackedRowMaxWidth": "14rem"
+  },
+  "SettingsSection": {
+    "iconGap": 12,
+    "iconSize": 20,
+    "iconTile": 40,
+    "rowMinHeight": 56,
+    "stackHeaderBelow": 224,
+    "statusColumn": 160
   },
   "StatusChip": {
     "borderRadius": 999,

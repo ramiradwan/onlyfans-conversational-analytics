@@ -1,10 +1,15 @@
+import DesktopWindowsOutlined from '@mui/icons-material/DesktopWindowsOutlined';
+import ExtensionOutlined from '@mui/icons-material/ExtensionOutlined';
 import { Box, Button, Stack, Typography } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 
 import { Panel } from './ui';
 import type { BrowserSurfacePayload } from '../protocol';
+import { componentTokens } from '../theme';
 import { extensionLabel, type ExtensionConnection } from '../utils/statusCopy';
 import { OnboardingCard, OnboardingPill, OnboardingSpot } from './ui/OnboardingCard';
+
+const textInset = componentTokens.MuiButton.textInset.small;
 
 /** Connection summary for the dashboard. */
 export function DashboardConnection({ browser, connection, desktopConnected, canViewSettings }: {
@@ -24,15 +29,20 @@ export function DashboardConnection({ browser, connection, desktopConnected, can
     <Stack direction={{ xs: 'column', sm: 'row' }} useFlexGap
       sx={{ gap: { xs: 1, sm: 3 }, flexWrap: 'wrap', alignItems: { sm: 'center' } }}>
       {[
-        { label: 'Desktop app', status: desktopConnected ? 'Connected' : 'Not connected' },
-        { label: 'Browser extension', status: browserLabel },
-      ].map(({ label, status }) => <Stack key={label} direction="row" useFlexGap
+        { label: 'Desktop app', status: desktopConnected ? 'Connected' : 'Not connected', Icon: DesktopWindowsOutlined },
+        { label: 'Browser extension', status: browserLabel, Icon: ExtensionOutlined },
+      ].map(({ label, status, Icon }) => <Stack key={label} direction="row" useFlexGap
         sx={{ gap: 1, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>{label}</Typography>
+        <Stack direction="row" useFlexGap sx={{ gap: 0.75, alignItems: 'center', color: 'text.secondary' }}>
+          <Icon aria-hidden focusable="false" sx={{ fontSize: '1.125rem' }} />
+          <Typography variant="body2" sx={{ color: 'inherit' }}>{label}</Typography>
+        </Stack>
         <OnboardingPill tone={status === 'Connected' ? 'progress' : 'neutral'}>{status}</OnboardingPill>
       </Stack>)}
+      {/* The label rather than the button padding lines up with the text, at the start or the end of the row. */}
       {canViewSettings && <Button component={RouterLink} to="/settings#browser-extension" size="small"
-        aria-label="Manage browser extension" sx={{ alignSelf: 'flex-start' }}>Manage</Button>}
+        aria-label="Manage browser extension" sx={{ alignSelf: 'flex-start',
+          marginInlineStart: { xs: `-${textInset}px`, sm: 0 }, marginInlineEnd: { sm: `-${textInset}px` } }}>Manage</Button>}
     </Stack>
   </Panel>;
 }

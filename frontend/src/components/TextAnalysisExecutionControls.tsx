@@ -1,8 +1,9 @@
+import AutoModeOutlined from '@mui/icons-material/AutoModeOutlined';
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField, Typography } from '@mui/material';
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 
-import { Panel, SectionHeader, type SectionStatus } from './ui';
+import { Panel, SectionHeader, SessionHold, useReportedStatus, type SectionStatus } from './ui';
 import { StatusLine } from './ui/ReservedRegion';
 import type { EnrollmentCommand } from '../analytics/textAnalysisContract';
 import { nlpDependenciesApi, type NlpDependenciesApi, type NlpDependencyProfile } from '../services/nlpDependenciesApi';
@@ -16,6 +17,7 @@ export interface TextAnalysisControlProps {
   client?: TextAnalysisClient;
   dependenciesApi?: NlpDependenciesApi;
   transport?: Pick<BridgeTransportStore, 'getState' | 'subscribe'>;
+  onStatus?: (status: SectionStatus | null) => void;
 }
 export const approvedTextAnalysisProfile = (profile: NlpDependencyProfile) => profile.catalogued && !profile.withdrawn
   && profile.languages?.includes('en') && profile.tasks !== null && profile.tasks.length > 0
@@ -26,11 +28,21 @@ export function TextAnalysisExecutionControls(props: TextAnalysisControlProps) {
   const context = useSyncExternalStore(transport.subscribe, transport.getState, transport.getState);
   const role = useUserRole();
   const binding = textAnalysisScopeKey(context, role, props.creatorAccountId);
-  return <ExecutionSession key={binding} {...props} transport={transport} />;
+  // A reconnect starts a new session for the same account. The panel keeps its height until that session has
+  // read its state.
+  const identity = JSON.stringify([props.creatorAccountId, context.creatorAccountId, role]);
+  const [settledScope, setSettledScope] = useState<string | null>(null);
+  const settle = useCallback(() => setSettledScope(binding), [binding]);
+  return <SessionHold scope={binding} identity={identity} settled={settledScope === binding}>
+    <ExecutionSession key={binding} {...props} transport={transport} onSettled={settle} />
+  </SessionHold>;
 }
-function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDependenciesApi, transport = bridgeTransportStore }: TextAnalysisControlProps) {
+function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDependenciesApi, transport = bridgeTransportStore, onStatus, onSettled }:
+  TextAnalysisControlProps & { onSettled?: () => void }) {
   const store = useMemo(() => createTextAnalysisExecutionStore(client), [client]);
   const state = useStore(store);
+  const settled = !state.busy && (state.view !== null || state.status === 'error');
+  useEffect(() => { if (settled) onSettled?.(); }, [settled, onSettled]);
   const [profiles, setProfiles] = useState<NlpDependencyProfile[]>([]);
   const [profile, setProfile] = useState('');
   const [review, setReview] = useState<EnrollmentCommand | null>(null);
@@ -60,7 +72,7 @@ function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDepen
     state.recoveryConflict ? 'The original request meaning could not be verified. New processing changes are unavailable.' : null,
   ].filter(Boolean).join(' ');
   const headerStatus: SectionStatus | null = state.status === 'error' || state.recoveryOverflow || state.recoveryConflict
-    ? { label: 'Needs attention', tone: 'error' }
+    ? { label: 'Needs attention', tone: 'warning' }
     : state.busy
       ? { label: 'Checking…', tone: 'default' }
       : !current
@@ -72,11 +84,13 @@ function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDepen
             : current.state === 'paused'
               ? { label: 'Paused', tone: 'warning' }
               : { label: 'Retired', tone: 'default' };
+  useReportedStatus(onStatus, headerStatus);
   function open(action: EnrollmentCommand['action']) { setReview(store.actions.buildCommand(action, selected?.profile_sha256)); }
   return <Panel component="section" aria-label="Account text processing">
     <SectionHeader
+      icon={<AutoModeOutlined />}
       title="Account text processing"
-      summary="Enable automatic processing for this account, pause it, or retire its enrollment. Downloads and Engine installation are separate."
+      summary="Analyze this account's new messages automatically."
       status={headerStatus}
     />
     <Stack spacing={1.75} data-journey-state="textanalysis.processing_controls">
@@ -84,7 +98,7 @@ function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDepen
         <Button size="small" variant="outlined" disabled={state.busy} onClick={() => void store.actions.refresh()}>Check processing status</Button>
       </Stack>
         <StatusLine id="processing-feedback" text={feedback || null}
-          summary={state.status === 'error' || state.recoveryOverflow || state.recoveryConflict ? 'Needs attention' : state.busy ? 'Checking…' : 'Status'} detailsOnly
+          summary={state.status === 'error' || state.recoveryOverflow || state.recoveryConflict ? 'Needs attention' : state.busy ? 'Checking…' : 'Status'} detailsOnly quietSummary
           tone={state.status === 'error' || state.recoveryOverflow || state.recoveryConflict ? 'error' : 'secondary'} />
       {current && <>
         <Box
@@ -122,7 +136,7 @@ function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDepen
         <TextField
           select
           size="small"
-          label="Approved processing profile"
+          label="Profile"
           value={profile}
           sx={{ maxWidth: 360 }}
           onChange={(event) => { setProfile(event.target.value); setReview(null); }}
@@ -132,7 +146,7 @@ function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDepen
         </TextField>
         {profiles.length === 0 && (
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            No approved profiles are currently available. Saved results remain separate.
+            No approved profiles are available.
           </Typography>
         )}
         <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
@@ -141,9 +155,6 @@ function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDepen
           <Button size="small" variant="outlined" disabled={blocked || current.state !== 'paused' || !current.capsule_available} onClick={() => open('resume')}>Resume processing</Button>
           <Button size="small" color="error" disabled={blocked || !current.enrollment_id || current.state === 'retired'} onClick={() => open('retire')}>Retire processing</Button>
         </Stack>
-        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-          Pausing and retirement preserve saved results. Source deletion and retention still apply. Replacing a profile creates a separate enrollment.
-        </Typography>
       </>}
       {state.observations.map((item, index) => (
         <Stack
@@ -176,8 +187,7 @@ function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDepen
       <DialogContent data-journey-state="textanalysis.processing_review">{review && <Stack spacing={1}>
         <Typography variant="body2">{({ enable: 'Enable processing', replace: 'Replace the processing profile', pause: 'Pause processing', resume: 'Resume processing', retire: 'Retire processing' })[review.action]}.</Typography>
         {review.expected_profile_sha256 && <Typography variant="body2">Approved profile: {profiles.find((entry) => entry.profile_sha256 === review.expected_profile_sha256)?.profile_id} · {profiles.find((entry) => entry.profile_sha256 === review.expected_profile_sha256)?.revision}.</Typography>}
-        <Typography variant="caption" sx={{ color: 'text.secondary' }}>Enabling does not download files or promise offline readiness. Current execution rights are checked by the app.</Typography>
-        {review.action === 'retire' && <Typography variant="caption" sx={{ color: 'text.secondary' }}>Retirement stops further processing under this enrollment and preserves saved results.</Typography>}
+        {review.action === 'retire' && <Typography variant="caption" sx={{ color: 'text.secondary' }}>Processing stops for this account. Saved results stay.</Typography>}
       </Stack>}</DialogContent>
       <DialogActions><Button size="small" onClick={() => setReview(null)}>Back</Button><Button size="small" variant="contained" disabled={state.busy || !review} onClick={() => {
         if (review) { const command = review; setReview(null); void store.actions.submit(command); }

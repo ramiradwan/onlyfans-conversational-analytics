@@ -278,7 +278,7 @@ describe('NlpDependencyControls', () => {
     await waitFor(() => expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBeTruthy());
     await readFeedback(/Text analysis is unavailable until a qualified profile/);
     fireEvent.click(screen.getByRole('button', { name: 'Review Engine installation' }));
-    expect(await screen.findByText(/A verified Engine installation quote is unavailable/)).toBeTruthy();
+    expect(await screen.findByText('Engine installation isn’t available right now.')).toBeTruthy();
     expect(engineApi.review).toHaveBeenCalledOnce(); expect(engineApi.start).not.toHaveBeenCalled();
     expect(api.command).not.toHaveBeenCalled();
   });
@@ -303,7 +303,7 @@ describe('NlpDependencyControls', () => {
     const dialog = within(screen.getByRole('dialog', { name: 'Review download costs' }));
     expect(dialog.getByText('Supported languages: en, fi, sv.')).toBeTruthy();
     expect(dialog.getByText('Supported tasks: Message topics, Exact mentions.')).toBeTruthy();
-    expect(dialog.getByText(/Review Engine installation separately/)).toBeTruthy();
+    // The full-profile total stays labelled as a declared budget.
     expect(dialog.getByText(/Profile-declared complete download budget:/)).toBeTruthy();
     expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['plan']);
   });
@@ -378,7 +378,7 @@ describe('NlpDependencyControls', () => {
     const api = fixture(unavailable); render(view(api));
     await waitFor(() => expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBeTruthy());
     await readFeedback(/Text analysis is unavailable until/);
-    expect(screen.getByText(/other analytics remain available/)).toBeTruthy();
+    expect(screen.getByText('Find topics and mentions in your messages.')).toBeTruthy();
     expect(api.get).toHaveBeenCalledTimes(1); expect(api.command).not.toHaveBeenCalled(); expect(api.observe).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole('button', { name: 'Check status' }));
     await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
@@ -391,7 +391,8 @@ describe('NlpDependencyControls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Download reviewed files' }));
     await waitFor(() => expect(api.command).toHaveBeenCalledWith({ action: 'acquire', profile_id: profile.profile_id, revision: profile.revision, operation_id: quote.operation_id }, expect.any(AbortSignal)));
     expect(await screen.findByText(/2 verified files retained/)).toBeTruthy();
-    expect(screen.getByText(/interrupted file restarts/)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByRole('button', { name: 'Cancel download' })).toBeTruthy();
   });
   it('keeps download pause resume and cancellation distinct from processing controls', async () => {
     const api = fixture({ ...status, selected: { profile_id: profile.profile_id, revision: profile.revision, profile_sha256: profile.profile_sha256, mode: 'enabled', selection_epoch: 1, admission_epoch: 1 } });
@@ -444,15 +445,13 @@ describe('NlpDependencyControls', () => {
     render(view(api));
     expect(await screen.findByRole('button', { name: 'Resume download' })).toBeTruthy();
     expect(api.command).not.toHaveBeenCalled();
-    expect(screen.getByText(/interrupted file restarts/)).toBeTruthy();
   });
-  it('discloses range recovery and full-restart fallback without starting a download', async () => {
+  it('offers to resume a range-capable interrupted download without starting it', async () => {
     const paused: NlpDependencyObservation = { ...observation, state: 'interrupted', in_flight: false, resume_granularity: 'verified_files_and_rehashed_prefix' };
     const api = fixture({ ...status, acquisitions: [paused], resume_granularity: 'verified_files_and_rehashed_prefix' });
     api.observe.mockResolvedValue(paused);
     render(view(api));
-    expect(await screen.findByText(/Resume rechecks saved bytes/)).toBeTruthy();
-    expect(screen.getByText(/Otherwise the interrupted file restarts/)).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Resume download' })).toHaveProperty('disabled', false);
     expect(api.command).not.toHaveBeenCalled();
   });
   it('recovers an accepted download after a lost command response through cached status', async () => {

@@ -218,12 +218,9 @@ export function VaultRowsSkeleton() {
   return (
     <Stack aria-busy="true" aria-label="Loading stored message settings">
       {['Archive', 'Download a copy', 'Delete messages'].map((title) => (
-        <Box key={title}>
-          <Divider />
-          <SettingRow title={title} sx={{ px: 3, py: 2 }}
-            description={<QuietBar width="min(100%, 16rem)" height={10} />}
-            action={<QuietBar width={128} height={32} />} />
-        </Box>
+        <SettingRow key={title} title={title}
+          description={<QuietBar width="min(100%, 16rem)" height={10} />}
+          action={<QuietBar width={128} height={32} />} />
       ))}
     </Stack>
   );

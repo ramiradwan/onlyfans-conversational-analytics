@@ -22,7 +22,7 @@ export function StatusChip({ label, longestLabel, sx, tone = 'default', settled 
       {...props}
       size={size}
       label={longestLabel ? (
-        <Box component="span" sx={{
+        <Box component="span" data-status-measure sx={{
           display: 'grid',
           textAlign: 'center',
           // The widest label sets the size while the visible label stays centered.
@@ -34,7 +34,7 @@ export function StatusChip({ label, longestLabel, sx, tone = 'default', settled 
           },
         }}>
           <Box component="span" sx={{ gridArea: '1 / 1', position: 'relative' }}>
-            <Box component="span" sx={{
+            <Box component="span" data-status-label sx={{
               position: 'absolute',
               left: '50%',
               transform: 'translateX(-50%)',

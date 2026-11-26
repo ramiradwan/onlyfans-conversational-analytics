@@ -107,7 +107,9 @@ for (const mode of ['light', 'dark']) test(`keyboard code comparison keeps the S
     await options.scrollIntoViewIfNeeded();
     await settle(page);
     const sections = '[data-settings-section]';
-    const bounds = () => page.locator(sections).evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().toJSON()));
+    // Sections this installation doesn't offer stay mounted but unrendered, so only rendered ones are measured.
+    const bounds = () => page.locator(sections).evaluateAll(nodes => nodes.filter(node => node.getClientRects().length > 0)
+      .map(node => node.getBoundingClientRect().toJSON()));
     const baseline = await bounds();
     assert(await textFits(page.getByText('Connect the extension to this app', { exact: true })));
     const notice = page.locator('[data-reserved-region="browser-feedback"]');
@@ -202,7 +204,9 @@ test('Settings shows full history status inline at 320px and doubled text', asyn
     await page.evaluate(async () => { await document.fonts.ready; document.documentElement.style.fontSize = '200%'; });
     await status.scrollIntoViewIfNeeded();
     assert(await textFits(status));
-    assert(await history.getByRole('button', { name: 'Pause', exact: true }).isVisible());
+    const toggle = history.getByRole('switch', { name: 'Add older messages', exact: true });
+    assert(await toggle.isVisible());
+    assert(await toggle.isChecked());
     await push(page, 'browser', { history_permission: 'missing' });
     await status.getByText('Older messages start syncing after you allow access in your browser.', { exact: true }).waitFor();
     assert(await textFits(status));
@@ -351,7 +355,7 @@ for (const scale of [1, 2]) test(`processing feedback stays stable through disco
   const owner = await context({ viewport: { width: 390, height: 844 }, colorScheme: 'light', reducedMotion: 'reduce' });
   const page = await owner.newPage();
   try {
-    await page.goto(`${harness.base}?workspace=settings&state=populated&mode=light`, { waitUntil: 'networkidle' });
+    await page.goto(`${harness.base}?workspace=settings&state=populated&mode=light&text-analysis`, { waitUntil: 'networkidle' });
     await page.getByRole('region', { name: 'Optional text analysis', exact: true }).waitFor();
     await page.evaluate(async scale => { await document.fonts.ready; document.documentElement.style.fontSize = `${16 * scale}px`; }, scale);
     await settle(page);
@@ -361,7 +365,7 @@ for (const scale of [1, 2]) test(`processing feedback stays stable through disco
       const { bridgeTransportStore } = await import('/src/store/transportStore.ts');
       bridgeTransportStore.markDisconnected();
     });
-    await page.getByText('Extension linked to this app', { exact: true }).waitFor();
+    await page.locator('[data-journey-state="desktop.extension_pairing"]').getByText('Not connected', { exact: true }).waitFor();
     await settleNativeWatcher(page);
     const report = await passiveReport(page);
     const containmentIds = new Set(await page.locator('#text-analysis [data-reserved-region], [data-reserved-region="settings-vault"], [data-reserved-region="settings-vault"] [data-reserved-region]')
@@ -404,7 +408,7 @@ for (const mode of ['light', 'dark']) test(`compact Settings keeps passive brows
       assert.deepEqual(await section.boundingBox(), baseline, 'A passive browser update resized the compact section');
       assert.deepEqual(await page.locator('#full-analytics').boundingBox(), full, 'A passive update moved Full activation');
     }
-    await page.getByRole('button', { name: 'Pause collecting', exact: true }).click();
+    await page.getByRole('switch', { name: 'Collect new messages', exact: true }).click();
     await push(page, 'resolve', 'browser.setCapture', 'unreachable');
     await settle(page);
     await push(page, 'companion', { creator_account_id: 'story-only-account', revision: 7, changed_at: '2026-09-29T10:00:00Z' });
@@ -433,7 +437,7 @@ for (const width of [320, 390]) test(`shared browser feedback retains every mess
   const page = await owner.newPage();
   try {
     await settings(page, 'light', 2);
-    await page.getByRole('button', { name: 'Pause collecting', exact: true }).click();
+    await page.getByRole('switch', { name: 'Collect new messages', exact: true }).click();
     await push(page, 'resolve', 'browser.setCapture', 'unreachable');
     await push(page, 'companion', { creator_account_id: 'story-only-account', revision: 8, changed_at: '2026-09-29T10:00:00Z' });
     await page.waitForFunction(() => window.__workspaceFixture.pending().includes('pairing.pins'));

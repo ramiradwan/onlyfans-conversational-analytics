@@ -336,6 +336,51 @@ export const theme = createTheme({
         }),
       },
     },
+    MuiSwitch: {
+      // The focus ring on the track replaces MUI's ripple.
+      defaultProps: { disableRipple: true },
+      styleOverrides: {
+        root: {
+          width: componentTokens.MuiSwitch.trackWidth,
+          height: componentTokens.MuiSwitch.trackHeight,
+          padding: 0,
+          overflow: 'visible',
+        },
+        // Off, a control-border outline and thumb keep 3:1 against the surface. On, the accent fills the track.
+        switchBase: ({ theme }: { theme: Theme }) => ({
+          padding: 0,
+          margin: (componentTokens.MuiSwitch.trackHeight - componentTokens.MuiSwitch.thumbSize) / 2,
+          transition: transition(['transform']),
+          '&:hover': { backgroundColor: 'transparent' },
+          '& .MuiSwitch-thumb': { backgroundColor: theme.vars.palette.surface.controlBorder },
+          '&.Mui-checked': {
+            transform: `translateX(${componentTokens.MuiSwitch.trackWidth - componentTokens.MuiSwitch.trackHeight}px)`,
+            '& .MuiSwitch-thumb': { backgroundColor: theme.vars.palette.primary.contrastText },
+            '& + .MuiSwitch-track': {
+              backgroundColor: theme.vars.palette.primary.main,
+              borderColor: theme.vars.palette.primary.main,
+              opacity: 1,
+            },
+          },
+          '&.Mui-disabled .MuiSwitch-thumb': { opacity: 0.6 },
+          '&.Mui-disabled + .MuiSwitch-track': { opacity: 0.38 },
+          '&.Mui-focusVisible + .MuiSwitch-track': focusRing(theme),
+        }),
+        thumb: {
+          width: componentTokens.MuiSwitch.thumbSize,
+          height: componentTokens.MuiSwitch.thumbSize,
+          boxShadow: 'none',
+        },
+        track: ({ theme }: { theme: Theme }) => ({
+          boxSizing: 'border-box',
+          borderRadius: componentTokens.MuiSwitch.trackHeight / 2,
+          border: `${effectTokens.borders.thin} solid ${theme.vars.palette.surface.controlBorder}`,
+          backgroundColor: theme.vars.palette.surface.subtle,
+          opacity: 1,
+          transition: transition(['background-color', 'border-color', 'opacity']),
+        }),
+      },
+    },
     MuiTableCell: {
       styleOverrides: {
         root: { fontVariantNumeric: brandTypography.numeric },

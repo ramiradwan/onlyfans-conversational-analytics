@@ -1,9 +1,11 @@
 import { keyframes } from '@emotion/react';
+import ErrorOutlineOutlined from '@mui/icons-material/ErrorOutlineOutlined';
 import { Alert, Box, Button, Dialog, DialogContent, DialogTitle, Typography, type SxProps, type Theme } from '@mui/material';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 import { RevealGroup } from './RevealGroup';
 import { SettingsSectionSkeleton } from './Skeletons';
+import { VisuallyHidden } from './VisuallyHidden';
 import { componentTokens } from '../../theme';
 
 const sizes = componentTokens.reserved;
@@ -79,7 +81,11 @@ export function ReservedNotice({ id, notice, essential = false }: { id: string; 
   </ReservedRegion>;
 }
 
-export function StatusLine({ id, text, tone = 'secondary', essential = false, size, summary, detailsOnly = false, reserveTexts }: { id: string; text: string | null; tone?: 'secondary' | 'error'; essential?: boolean; size?: Size; summary?: string; detailsOnly?: boolean; reserveTexts?: readonly string[] }) {
+// Error lines lead with an icon so the tone never rests on colour alone.
+const errorIconStyle = { flex: 'none', fontSize: '1rem', mt: '0.125rem', color: 'error.main' } as const;
+const errorIconSpace = 'calc(1rem + 4px)';
+
+export function StatusLine({ id, text, tone = 'secondary', essential = false, size, summary, detailsOnly = false, quietSummary = false, reserveTexts }: { id: string; text: string | null; tone?: 'secondary' | 'error'; essential?: boolean; size?: Size; summary?: string; detailsOnly?: boolean; quietSummary?: boolean; reserveTexts?: readonly string[] }) {
   const [expandedText, setExpandedText] = useState<string | null>(null);
   const open = text !== null && expandedText === text;
   if (expandedText !== null && expandedText !== text) setExpandedText(null);
@@ -101,14 +107,26 @@ export function StatusLine({ id, text, tone = 'secondary', essential = false, si
     ))}
     <Typography data-region-content variant="body2" role={tone === 'error' ? 'alert' : 'status'}
       sx={{ ...(reserveTexts?.length ? { gridArea: '1 / 1' } : {}), lineHeight: '1.25rem', overflowWrap: 'anywhere', visibility: text ? 'visible' : 'hidden', color: tone === 'error' ? 'error.main' : 'text.secondary' }}>
+      {tone === 'error' && text && <ErrorOutlineOutlined aria-hidden focusable="false"
+        sx={{ ...errorIconStyle, mt: 0, mr: 0.5, verticalAlign: '-0.1875rem' }} />}
       {text || '\u00a0'}
     </Typography>
   </Box>;
+  const summaryText = summary ?? 'Details available';
+  // A quiet summary is announced but not shown, since the section's status chip already says it and carries its tone.
+  const quiet = details && quietSummary;
   return <><ReservedRegion id={id} size={{ xs: sizes.statusLine.narrow, sm: sizes.statusLine.wide }}>
-    <Box ref={probe} aria-hidden sx={probeStyle}><Typography variant="body2" data-fit-text={text} sx={{ lineHeight: '1.25rem', overflowWrap: 'anywhere' }} /></Box>
-    <Box data-region-content sx={{ display: 'flex', columnGap: 1, rowGap: 0, flexWrap: 'wrap', alignItems: 'flex-start', visibility: text ? 'visible' : 'hidden' }}>
-      <Typography variant="body2" role={tone === 'error' && (!details || detailsOnly) ? 'alert' : 'status'} sx={{ lineHeight: '1.25rem', overflowWrap: 'anywhere', color: tone === 'error' ? 'error.main' : 'text.secondary' }}>{details ? summary ?? 'Details available' : text || '\u00a0'}</Typography>
-      {details && <Button onClick={() => setExpandedText(text)} size="small" sx={{ p: 0, minWidth: 0, lineHeight: '1.25rem', flex: 'none' }}>Show details</Button>}
+    <Box ref={probe} aria-hidden sx={probeStyle}><Typography variant="body2" data-fit-text={text} sx={{ lineHeight: '1.25rem', overflowWrap: 'anywhere', paddingInlineStart: tone === 'error' ? errorIconSpace : 0 }} /></Box>
+    <Box data-region-content sx={{ display: 'flex', columnGap: 1, rowGap: 0, alignItems: 'flex-start', visibility: text ? 'visible' : 'hidden' }}>
+      {tone === 'error' && !quiet && <ErrorOutlineOutlined aria-hidden focusable="false" sx={{ ...errorIconStyle, mr: -0.5 }} />}
+      <Box sx={{ display: 'flex', columnGap: 1, rowGap: 0, flexWrap: 'wrap', alignItems: 'flex-start', minWidth: 0 }}>
+        {quiet ? <VisuallyHidden role={tone === 'error' && detailsOnly ? 'alert' : 'status'}>{summaryText}</VisuallyHidden>
+          : <Typography variant="body2" role={tone === 'error' && (!details || detailsOnly) ? 'alert' : 'status'}
+            sx={{ lineHeight: '1.25rem', overflowWrap: 'anywhere', color: tone === 'error' ? 'error.main' : 'text.secondary' }}>
+            {details ? summaryText : text || '\u00a0'}
+          </Typography>}
+        {details && <Button onClick={() => setExpandedText(text)} size="small" sx={{ p: 0, minWidth: 0, lineHeight: '1.25rem', flex: 'none' }}>Show details</Button>}
+      </Box>
     </Box>
   </ReservedRegion><Dialog open={open} onClose={() => setExpandedText(null)}><DialogTitle>Details</DialogTitle><DialogContent sx={detailStyle}><Typography role={tone === 'error' ? 'alert' : undefined}>{text}</Typography></DialogContent><Button onClick={() => setExpandedText(null)}>Close</Button></Dialog></>;
 }

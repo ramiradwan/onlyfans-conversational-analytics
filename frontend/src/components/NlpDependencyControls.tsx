@@ -1,10 +1,11 @@
+import ManageSearchOutlined from '@mui/icons-material/ManageSearchOutlined';
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Stack, Typography } from '@mui/material';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { EngineDependencyControls } from './EngineDependencyControls';
 import { TextAnalysisExecutionControls } from './TextAnalysisExecutionControls';
 import { TextAnalysisReissueControls } from './TextAnalysisReissueControls';
-import { Panel, SectionHeader, useRevealHold, type SectionStatus } from './ui';
+import { Panel, SectionHeader, SessionHold, useReportedStatus, useRevealHold, type SectionMenuItem, type SectionStatus } from './ui';
 import { StatusLine } from './ui/ReservedRegion';
 import type { EngineAcquisitionApi } from '../api/engineAcquisition';
 import { usePermissions } from '../hooks/usePermissions';
@@ -62,23 +63,68 @@ function pendingAcquisition(status: NlpDependencyStatus) {
     ?? acquisitions.find((item) => ['paused', 'interrupted'].includes(item.state));
 }
 
+type TextAnalysisPart = 'reissue' | 'engine' | 'dependencies' | 'processing';
+const TEXT_ANALYSIS_PARTS: readonly TextAnalysisPart[] = ['reissue', 'engine', 'dependencies', 'processing'];
+
 /** Account-bound presentation. Changing accounts discards the prior account's view immediately. */
-export function NlpDependencyControls({ api = nlpDependenciesApi, engineApi, client, reissueApi, creatorAccountId }: Props) {
+export function NlpDependencyControls({ api = nlpDependenciesApi, engineApi, client, reissueApi, creatorAccountId, onAttentionChange, onAvailabilityChange }: Props & {
+  /** Reports whether any text analysis section needs attention, for the Settings index. */
+  onAttentionChange?: (attention: boolean) => void;
+  /** Reports whether this installation offers text analysis. Every part loads either way. */
+  onAvailabilityChange?: (available: boolean) => void;
+}) {
   const { isCreator } = usePermissions();
   const transport = useSyncExternalStore(bridgeTransportStore.subscribe, bridgeTransportStore.getState, bridgeTransportStore.getState);
   const [apiBinding, setApiBinding] = useState({ api, revision: 0 });
   if (apiBinding.api !== api) setApiBinding({ api, revision: apiBinding.revision + 1 });
+  const [attention, setAttention] = useState<ReadonlySet<TextAnalysisPart>>(() => new Set());
+  const reporters = useMemo(() => Object.fromEntries(TEXT_ANALYSIS_PARTS.map((part) => [part, (status: SectionStatus | null) => {
+    setAttention((current) => {
+      const needs = status?.label === 'Needs attention';
+      if (needs === current.has(part)) return current;
+      const next = new Set(current);
+      if (needs) next.add(part); else next.delete(part);
+      return next;
+    });
+  }])) as Record<TextAnalysisPart, (status: SectionStatus | null) => void>, []);
+  const [available, setAvailable] = useState(false);
+  useEffect(() => { onAttentionChange?.(available && attention.size > 0); }, [attention, available, onAttentionChange]);
+  useEffect(() => () => onAttentionChange?.(false), [onAttentionChange]);
+  useEffect(() => { onAvailabilityChange?.(available); }, [available, onAvailabilityChange]);
+  useEffect(() => () => onAvailabilityChange?.(false), [onAvailabilityChange]);
   const account = isCreator ? creatorAccountId : null;
   const binding = `${creatorAccountId}:${isCreator}:${transport.session?.connection_id ?? ''}:${transport.session?.bridge_session_id ?? ''}`;
-  return <Stack spacing={0} divider={<Divider />}>
-    <TextAnalysisReissueControls creatorAccountId={account} api={reissueApi} />
-    <EngineDependencyControls key={`engine:${binding}`} account={account} api={engineApi} />
-    <DependencySession key={`${binding}:${apiBinding.revision}`} api={api} account={account} />
-    <TextAnalysisExecutionControls creatorAccountId={account} client={client} dependenciesApi={api} />
+  const dependencyKey = `${binding}:${apiBinding.revision}`;
+  const [recoveryMenu, setRecoveryMenu] = useState<readonly SectionMenuItem[] | null>(null);
+
+  // A reconnect starts a new dependency session, which reads its status again. Until that read settles the
+  // panel keeps its last settled height, so the parts below it never move.
+  const [settledDependencies, setSettledDependencies] = useState<string | null>(null);
+  const settle = useCallback(() => setSettledDependencies(dependencyKey), [dependencyKey]);
+
+  // The view decides visibility. Recovery comes last and shows only while one is under way. It starts from the
+  // text analysis menu, because only someone moving from another computer needs it.
+  return <Stack spacing={0}>
+    <Stack spacing={0} divider={<Divider />}>
+      <EngineDependencyControls key={`engine:${binding}`} account={account} api={engineApi} onStatus={reporters.engine} />
+      <SessionHold scope={dependencyKey} identity={`${creatorAccountId}:${isCreator}`} settled={settledDependencies === dependencyKey}>
+        <DependencySession key={dependencyKey} api={api} account={account} onStatus={reporters.dependencies}
+          onAvailability={setAvailable} onSettled={settle} menu={recoveryMenu} />
+      </SessionHold>
+      <TextAnalysisExecutionControls creatorAccountId={account} client={client} dependenciesApi={api} onStatus={reporters.processing} />
+    </Stack>
+    <TextAnalysisReissueControls creatorAccountId={account} api={reissueApi} onStatus={reporters.reissue} onMenu={setRecoveryMenu} />
   </Stack>;
 }
 
-function DependencySession({ api, account }: { api: NlpDependenciesApi; account: string | null }) {
+function DependencySession({ api, account, onStatus, onAvailability, onSettled, menu }: {
+  api: NlpDependenciesApi; account: string | null; onStatus?: (status: SectionStatus | null) => void;
+  /** True once a read shows that this installation has text analysis configured. */
+  onAvailability?: (available: boolean) => void;
+  /** Called once this session's first read has settled. */
+  onSettled?: () => void;
+  menu?: readonly SectionMenuItem[] | null;
+}) {
   const [status, setStatus] = useState<NlpDependencyStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
@@ -184,6 +230,13 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
   };
   const unavailable = !account || !status?.configured || readFailure !== null;
   const loading = Boolean(account && !status && !error);
+  const configured = Boolean(account && status?.configured);
+  // A reload keeps the last answer until it completes, so a reconnect doesn't hide and show the section.
+  useEffect(() => {
+    if (loading) return;
+    onAvailability?.(configured);
+    onSettled?.();
+  }, [configured, loading, onAvailability, onSettled]);
   const feedback = [
     busy ? 'Updating text analysis settings…' : null,
     error ? 'Text analysis settings could not be updated. Your existing selection may still be active. Check status before trying again.' : null,
@@ -206,7 +259,7 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
   const headerStatus: SectionStatus = loading || busy
     ? { label: 'Checking…', tone: 'default' }
     : error || readFailure !== null
-      ? { label: 'Needs attention', tone: 'error' }
+      ? { label: 'Needs attention', tone: 'warning' }
       : unavailable
         ? { label: 'Unavailable', tone: 'default' }
         : status?.profiles.some((item) => item.installed && item.prepared)
@@ -214,24 +267,25 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
           : status?.profiles.some((item) => item.installed)
             ? { label: 'Installed', tone: 'info' }
             : { label: 'Not installed', tone: 'default' };
+  useReportedStatus(onStatus, headerStatus);
   const feedbackLine = <StatusLine id="dependency-feedback" text={feedback || null}
     summary={error ? 'Needs attention' : loading || busy ? 'Checking…' : unavailable ? 'Unavailable' : 'Status'}
-    detailsOnly tone={error ? 'error' : 'secondary'} />;
+    detailsOnly quietSummary tone={error ? 'error' : 'secondary'} />;
   return (
     <Panel component="section" aria-label="Optional text analysis">
       <SectionHeader
+        icon={<ManageSearchOutlined />}
         title="Optional text analysis"
-        summary="Find topics and mentions in messages. Setup is optional; other analytics remain available."
+        summary="Find topics and mentions in your messages."
         status={headerStatus}
+        menu={menu ?? undefined}
       />
-      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-        Language and task support are profile-specific. Review the profile before choosing it.
-      </Typography>
       {(account || readFailure === 'authentication') && (
         <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
           {account && <Button size="small" variant="outlined" disabled={busy} onClick={() => { void checkStatus(); }}>Check status</Button>}
-          {!loading && !unavailable && status && (
-            <Button size="small" variant="outlined" disabled={busy} onClick={() => { void run({ action: 'refresh' }); }}>Check available profiles</Button>
+          {/* Always present, so a reload never rewraps the row. */}
+          {account && (
+            <Button size="small" variant="outlined" disabled={busy || loading || unavailable || !status} onClick={() => { void run({ action: 'refresh' }); }}>Check available profiles</Button>
           )}
           {readFailure === 'authentication' && <Button size="small" variant="outlined" component="a" href="/">Sign in again</Button>}
         </Stack>
@@ -268,9 +322,6 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
               </Stack>
             </Stack>
           ))}
-          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-            Manage this account’s processing in the processing controls below. Download controls apply to shared files on this device.
-          </Typography>
         </Stack>
       )}
       {operation && (
@@ -286,15 +337,9 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
           }}
         >
           <Typography variant="subtitle2">Download: {operation.profile_id ?? 'selected profile'} · {operation.revision ?? 'unknown revision'}</Typography>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            Downloads are shared on this device. Download controls do not change this account’s processing settings.
-          </Typography>
           <Typography variant="body2">{readFailure !== null
             ? `Last confirmed progress: ${number.format(operation.verified_files)} verified files. Current state is unknown.`
             : `${operationState}. ${number.format(operation.verified_files)} verified files retained.`}</Typography>
-          <Typography variant="caption" sx={{ color: 'text.secondary' }}>{operation.resume_granularity === 'verified_files_and_rehashed_prefix'
-            ? 'Resume rechecks saved bytes and downloads the remainder when the server supports ranges. Otherwise the interrupted file restarts. Cancelling may discard staged files.'
-            : 'Resume reuses verified files. The interrupted file restarts; this is not byte-level resume. Cancelling may discard staged files.'}</Typography>
           <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', pt: 0.5 }}>
             <Button size="small" variant="outlined" disabled={busy || unavailable || operation.state !== 'running'} onClick={() => { void run({ action: 'pause', operation_id: operation.id }); }}>Pause download</Button>
             <Button size="small" variant="outlined" disabled={busy || unavailable || !['paused', 'interrupted'].includes(operation.state) || operation.in_flight} onClick={() => { void run({ action: 'resume', operation_id: operation.id }); }}>Resume download</Button>
@@ -306,7 +351,6 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
         <DialogTitle id="text-analysis-cost-title">Review download costs</DialogTitle>
         <DialogContent data-journey-state="textanalysis.cost_review">
           {review && <Stack spacing={1}>
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>This plan downloads model data. Review Engine installation separately. Full-profile totals are declared budgets.</Typography>
             <Typography>{review.profile.profile_id} · {review.profile.revision}</Typography>
             <ProfileSupport profile={review.profile} />
             {([
@@ -316,14 +360,13 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
               ['Rollback space', review.plan.rollback_bytes], ['Peak memory during transition', review.plan.transition_peak_memory_bytes],
             ] as const).map(([label, value]) => <Typography key={label}>{label}: {formatBytes(value)}</Typography>)}
             <Typography>Processing threads: {number.format(review.plan.inference_threads)}</Typography>
-            <Typography>Downloading does not enable processing. Prepare the installed files and explicitly choose the profile afterward.</Typography>
+            <Typography>After the download, prepare the files and choose this profile for your account.</Typography>
           </Stack>}
         </DialogContent>
         <DialogActions><Button onClick={() => setReview(null)}>Back</Button><Button disabled={busy || unavailable || !reviewMatchesStatus} onClick={() => { if (review && reviewMatchesStatus) void run({ action: 'acquire', profile_id: review.profile.profile_id, revision: review.profile.revision, operation_id: review.plan.operation_id }); }}>Download reviewed files</Button></DialogActions>
       </Dialog>
       <Dialog open={removal !== null} onClose={() => setRemoval(null)} aria-labelledby="text-analysis-remove-title">
         <DialogTitle id="text-analysis-remove-title">Remove installed profile?</DialogTitle>
-        <DialogContent>Files still used by an account or an active operation are retained. Other analytics and stored messages are preserved.</DialogContent>
         <DialogActions><Button onClick={() => setRemoval(null)}>Keep profile</Button><Button disabled={busy || unavailable} onClick={() => { if (removal) void run({ action: 'remove', profile_id: removal.profile_id, revision: removal.revision }); setRemoval(null); }}>Remove profile</Button></DialogActions>
       </Dialog>
     </Panel>

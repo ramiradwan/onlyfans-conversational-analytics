@@ -4,6 +4,7 @@ import {
   Popover,
   Stack,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 
@@ -255,6 +256,7 @@ function NumbersBasis({
   const open = anchor !== null;
   const detailsId = useId();
   const titleId = useId();
+  const popoverEdge = useMediaQuery((theme) => theme.breakpoints.up('sm')) ? 'right' : 'left';
   const updated = updatesStopped ? formatLocal(sample?.asOf ?? null, LOCAL_TIME_FORMAT) : null;
   const start = formatLocal(evidence.observedStart, LOCAL_DATE_FORMAT);
   const end = formatLocal(evidence.observedEnd, LOCAL_DATE_FORMAT);
@@ -290,14 +292,15 @@ function NumbersBasis({
           aria-haspopup="dialog"
           onClick={(event) => setAnchor(event.currentTarget)}
           size="small"
-          sx={{ ...DETAILS_BUTTON_SX, whiteSpace: 'nowrap', flexShrink: 0 }}
+          // Details keeps the end of the row whether or not the basis caption shows.
+          sx={{ ...DETAILS_BUTTON_SX, whiteSpace: 'nowrap', flexShrink: 0, marginInlineStart: { sm: 'auto' } }}
         >
           Details
         </Button>
       </Stack>
       <Popover
         anchorEl={anchor}
-        anchorOrigin={{ horizontal: 'left', vertical: 'bottom' }}
+        anchorOrigin={{ horizontal: popoverEdge, vertical: 'bottom' }}
         id={detailsId}
         onClose={() => setAnchor(null)}
         open={open}
@@ -308,7 +311,7 @@ function NumbersBasis({
             sx: { maxWidth: 360, p: 2 },
           },
         }}
-        transformOrigin={{ horizontal: 'left', vertical: 'top' }}
+        transformOrigin={{ horizontal: popoverEdge, vertical: 'top' }}
       >
         <Typography component="h2" id={titleId} variant="subtitle2" sx={{ mb: 1 }}>
           How these numbers are counted

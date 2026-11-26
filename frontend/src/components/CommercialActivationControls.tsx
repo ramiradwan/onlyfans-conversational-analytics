@@ -1,3 +1,4 @@
+import InsightsOutlined from '@mui/icons-material/InsightsOutlined';
 import {
   Box,
   Button,
@@ -27,6 +28,7 @@ import { OnboardingAction, OnboardingSpot, OnboardingStatus } from './ui/Onboard
 import { offerPriceColors } from '../theme/generated/tokens';
 
 const ACTIVATION_BODY = 'Conversation insights, like your most common topics, stored on this computer.';
+const ANALYTICS_BENEFIT = 'Tone, reply, and topic insights.';
 const ACTIVATION_PENDING = 'Checking your activation…';
 const SIGN_IN_SWITCH = 'Use a different sign-in for Full analytics';
 const CONTROL_HEIGHT = componentTokens.staticUi.controlHeight;
@@ -65,6 +67,7 @@ export function CommercialActivationControls({
   creatorAccountId,
   presentationIntent,
   dashboard = false,
+  onStatusChange,
 }: {
   api?: CapabilityLicenseApi;
   onboarding?: DesktopOnboardingApi;
@@ -72,6 +75,8 @@ export function CommercialActivationControls({
   creatorAccountId?: string | null;
   presentationIntent?: FullPresentationIntent;
   dashboard?: boolean;
+  /** Reports the section's status label, for the Settings index. */
+  onStatusChange?: (label: string | null) => void;
 }) {
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const sectionTitleId = useId();
@@ -411,9 +416,13 @@ export function CommercialActivationControls({
     : classifiedMismatch ? 'Full analytics unavailable' : showPrompt ? 'Turn on Full analytics' : 'Full analytics';
   const guided = dashboard || pending || terminalUnknown || classifiedMismatch;
   const status = fullReady ? 'On' : activeButBlocked ? 'Needs attention' : activationRequired && !pending && !terminalUnknown ? 'Off' : null;
+  useEffect(() => { onStatusChange?.(status); }, [onStatusChange, status]);
+  useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
   const unavailable = !decision && !authentication && !accepted && activationRequired && !allowed.includes('activation.review') && !pendingActivation && desktop.connected;
   const inlineFeedback = !dialogOpen && !pending ? feedback || (unavailable ? 'The activation request is unavailable.'
-    : fullReady && !embedded ? 'Tone, reply, and topic insights.' : null) : null;
+    : fullReady && !embedded ? ANALYTICS_BENEFIT : null) : null;
+  // In Settings the benefit reads as the section's description, so it carries no status icon.
+  const benefitOnly = inlineFeedback === ANALYTICS_BENEFIT && !dashboard;
   const codeFeedback = codeError || (canRedeem ? null : feedback);
   const offerFeedback = !desktop.connected ? feedback : noticeError || (opening ? feedback : null);
   const showSwitch = canSwitch && !choosingAccount;
@@ -421,7 +430,8 @@ export function CommercialActivationControls({
     && currentAuthority && !desktop.browserLaunchPending && (authentication?.state === 'admitted' || browserLaunchFailed);
   const hasActions = pending || canEnterCode || showReview || showBrowser || showSwitch || choosingAccount;
   const inlineStatus = inlineFeedback && <Box id={feedbackId} role={noticeError || terminalUnknown ? 'alert' : undefined}>
-    <OnboardingStatus tone={noticeError || terminalUnknown ? 'error' : classifiedMismatch ? 'attention' : 'neutral'} live={!noticeError && !terminalUnknown}>{inlineFeedback}</OnboardingStatus>
+    {benefitOnly ? <Typography role="status" variant="body2" sx={{ color: 'text.secondary' }}>{inlineFeedback}</Typography>
+      : <OnboardingStatus tone={noticeError || terminalUnknown ? 'error' : classifiedMismatch ? 'attention' : 'neutral'} live={!noticeError && !terminalUnknown}>{inlineFeedback}</OnboardingStatus>}
   </Box>;
 
   if (dashboard && promptDismissed && !dialogOpen && !pending && !inlineFeedback && !authentication && !pendingActivation) return null;
@@ -443,7 +453,9 @@ export function CommercialActivationControls({
           tabIndex: -1,
           sx: guided ? { ...taskTitleSx, fontSize: { xs: '1.25rem', sm: '1.375rem' } } : undefined,
         }}
-        status={dashboard ? undefined : status && { label: status, tone: fullReady ? 'success' : 'default' }}
+        icon={guided ? undefined : <InsightsOutlined />}
+        status={dashboard ? undefined : status && {
+          label: status, tone: fullReady ? 'success' : activeButBlocked ? 'warning' : 'default' }}
       />
     </Box>}
     {showPrompt && <Typography color="text.secondary" sx={{ maxWidth: '60ch' }}>{ACTIVATION_BODY}</Typography>}

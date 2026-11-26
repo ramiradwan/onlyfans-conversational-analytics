@@ -1,5 +1,5 @@
 import { ThemeProvider } from '@mui/material/styles';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CompanionPairingControls } from '../src/components/CompanionPairingControls';
@@ -48,10 +48,12 @@ describe('CompanionPairingControls connection semantics', () => {
       </ThemeProvider>,
     );
 
-    expect(await screen.findByText('Extension linked to this app')).toBeTruthy();
+    // The durable link keeps its disconnect action while the current connection reads as not connected.
+    expect(await screen.findByRole('button', { name: 'Browser extension options' })).toBeTruthy();
     expect(screen.queryByText('Connection interrupted')).toBeNull();
     expect(screen.queryByText('Connected to this app')).toBeNull();
     expect(screen.getByText('Not connected')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Disconnect browser extension 1' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Browser extension options' }));
+    expect(screen.getByRole('menuitem', { name: 'Disconnect browser extension' })).toBeTruthy();
   });
 });

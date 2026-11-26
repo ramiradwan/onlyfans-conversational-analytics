@@ -72,7 +72,7 @@ function fixture() {
 }
 async function review() {
   await screen.findByText('Processing: not enrolled.');
-  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Approved processing profile' }));
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Profile' }));
   fireEvent.click(await screen.findByRole('option', { name: 'profile.synthetic · 1' }));
   fireEvent.click(screen.getByRole('button', { name: 'Review enablement' }));
   return within(await screen.findByRole('dialog', { name: 'Review processing change' }));
@@ -104,7 +104,6 @@ describe('Account processing controls', () => {
     expect(x.api.retain).not.toHaveBeenCalled(); expect(x.api.command).not.toHaveBeenCalled();
     expect(x.dependencies.command).not.toHaveBeenCalled();
     const dialog = await review();
-    expect(dialog.getByText(/Enabling does not download files or promise offline readiness/)).toBeTruthy();
     expect(document.querySelector('[data-journey-state="textanalysis.processing_review"]')).toBeTruthy();
     expect(x.api.retain).not.toHaveBeenCalled();
     fireEvent.click(dialog.getByRole('button', { name: 'Confirm processing change' }));
@@ -154,7 +153,7 @@ describe('Account processing controls', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Review processing change' })).toBeNull());
     if (change === 'disconnect') {
       await readFeedback(/Connect with an authorized creator session/);
-      expect(screen.queryByRole('combobox', { name: 'Approved processing profile' })).toBeNull();
+      expect(screen.queryByRole('combobox', { name: 'Profile' })).toBeNull();
     }
     expect(x.api.retain).not.toHaveBeenCalled(); expect(x.api.command).not.toHaveBeenCalled();
   });

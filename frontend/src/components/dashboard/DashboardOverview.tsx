@@ -108,10 +108,11 @@ export function DashboardOverview({
       <Stat label="Conversations">
         <Typography variant="kpi" data-reserved-region="metric-conversations" sx={headlineCount} data-visual="conversation-total"><CountValue value={isLoading ? undefined : conversations} step={0} /></Typography>
         {isLoading && progress === null ? <LoadingCaption>Loading overview…</LoadingCaption> : progress && (
-          <Stack spacing={1} sx={{ maxWidth: 280, alignSelf: 'start' }}>
+          // The bar and caption repeat the split bar's geometry so both columns end on one baseline.
+          <Stack spacing={1.5} useFlexGap sx={{ maxWidth: 280, alignSelf: 'start' }}>
             <LinearProgress
               data-journey-state="desktop.history_syncing"
-              sx={{ visibility: progress.complete ? 'hidden' : 'visible',
+              sx={{ visibility: progress.complete ? 'hidden' : 'visible', mt: 1, height: 8, borderRadius: 999,
                 ...(progress.percent === null ? {
                   '& .MuiLinearProgress-bar1': {
                     left: 0, right: 0, width: '100%', transformOrigin: 'left center',

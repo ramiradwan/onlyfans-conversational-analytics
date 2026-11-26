@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -281,8 +281,11 @@ describe('signed Bridge role bootstrap', () => {
     protectedRoute = <MessageHistoryControls store={store} desktopApi={fixture.api}
       api={{ get: async () => settings, update, revoke: vi.fn() }} browserApi={{ open, setCapture: vi.fn() }} />;
     render(<App />);
-    const consent = await screen.findByRole('checkbox', { name: 'I allow read-only syncing of my older messages to this computer.' });
-    const allow = screen.getByRole('button', { name: 'Turn on message history' });
+    // Settings asks for consent in a dialog opened from the history switch.
+    fireEvent.click(await screen.findByRole('switch', { name: 'Add older messages' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Turn on message history?' }));
+    const consent = dialog.getByRole('checkbox', { name: 'I allow read-only syncing of my older messages to this computer.' });
+    const allow = dialog.getByRole('button', { name: 'Turn on message history' });
     expect(allow).toHaveProperty('disabled', true);
     fireEvent.click(consent);
     fireEvent.click(allow);

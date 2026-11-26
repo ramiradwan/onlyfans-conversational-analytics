@@ -9,6 +9,7 @@ import { CompanionPairingControls } from '../components/CompanionPairingControls
 import { CreatorVaultControls } from '../components/CreatorVaultControls';
 import { NlpDependencyControls } from '../components/NlpDependencyControls';
 import { ReservedSection } from '../components/ui/ReservedRegion';
+import { SETTINGS_SECTION_INDENT } from '../components/ui/SettingsSection';
 import type { CompanionPairingApi } from '../services/companionPairingApi';
 import type { CreatorVaultApi } from '../services/creatorVaultApi';
 import type { HistorySettingsApi } from '../services/historySettingsApi';
@@ -23,11 +24,19 @@ const SettingsSurface = styled(Paper)(({ theme }) => ({
   backgroundColor: theme.vars.palette.background.paper,
   overflow: 'hidden',
   ...theme.effects.cardBorder(theme),
+  // From sm up each section's icon hangs in this indent, so all its content shares the title's edge.
+  [theme.breakpoints.up('sm')]: {
+    '& > [data-settings-section]': { '--settings-indent': SETTINGS_SECTION_INDENT },
+  },
   '& > [data-settings-section] [data-surface-emphasis]': {
     backgroundColor: 'transparent',
     backgroundImage: 'none',
     borderRadius: 0,
     boxShadow: 'none',
+    paddingInlineStart: `calc(${theme.spacing(3)} + var(--settings-indent, 0px))`,
+  },
+  '& > [data-settings-section] [data-visual="settings-loading"]': {
+    paddingInlineStart: `calc(${theme.spacing(3)} + var(--settings-indent, 0px))`,
   },
   '& > [data-settings-section] [data-surface-emphasis]::before': {
     display: 'none',
@@ -87,6 +96,9 @@ const SETTINGS_GROUPS: readonly SettingsGroup[] = [
 const ALL_SECTIONS: readonly SettingsSection[] = SETTINGS_GROUPS.flatMap((group) => group.sections);
 const ALL_SECTION_IDS: readonly SettingsSectionId[] = ALL_SECTIONS.map((section) => section.id);
 const sectionAnchorSx = { scrollMarginBlockStart: { xs: '3rem', md: '1rem' } };
+// The index names a status only when a section needs the creator.
+const ATTENTION_LABELS: ReadonlySet<string> = new Set(['Needs attention', 'Not responding']);
+const attentionHint = (label: string | null) => label !== null && ATTENTION_LABELS.has(label) ? label : null;
 
 export interface SettingsWithVaultViewProps {
   browserApi?: ComponentProps<typeof CompanionPairingControls>['browserApi'];
@@ -123,6 +135,13 @@ export default function SettingsWithVaultView({
     ALL_SECTION_IDS.includes(initialHash) ? initialHash : 'browser-extension',
   );
   const [historySummary, setHistorySummary] = useState<string | null>(null);
+  const [analyticsSummary, setAnalyticsSummary] = useState<string | null>(null);
+  const [textAnalysisAttention, setTextAnalysisAttention] = useState(false);
+  // Text analysis appears only where this installation can run it.
+  const [textAnalysisAvailable, setTextAnalysisAvailable] = useState(false);
+  const shown = (section: SettingsSection) => section.id !== 'text-analysis' || textAnalysisAvailable;
+  const groups = SETTINGS_GROUPS.map((group) => ({ ...group, sections: group.sections.filter(shown) }));
+  const sections = ALL_SECTIONS.filter(shown);
 
   useEffect(() => {
     const hashId = location.hash.replace(/^#/, '') as SettingsSectionId;
@@ -152,7 +171,8 @@ export default function SettingsWithVaultView({
       const rootTop = root.getBoundingClientRect().top;
       let current: SettingsSectionId = ALL_SECTION_IDS[0];
       for (const el of elements) {
-        if (el.getBoundingClientRect().top - rootTop <= 140) {
+        // A hidden section has no boxes and never becomes current.
+        if (el.getClientRects().length > 0 && el.getBoundingClientRect().top - rootTop <= 140) {
           current = el.id as SettingsSectionId;
         }
       }
@@ -177,8 +197,11 @@ export default function SettingsWithVaultView({
         : browserSurface.capture === 'off' ? 'Off' : 'Connected';
 
   const sectionHint = (id: SettingsSectionId): string | null => {
-    if (id === 'browser-extension') return extensionSummary;
+    if (id === 'browser-extension') return attentionHint(extensionSummary);
+    // Message history reports only the statuses that need the creator.
     if (id === 'message-history') return historySummary;
+    if (id === 'full-analytics') return attentionHint(analyticsSummary);
+    if (id === 'text-analysis') return textAnalysisAttention ? 'Needs attention' : null;
     return null;
   };
 
@@ -196,7 +219,7 @@ export default function SettingsWithVaultView({
         <Box>
           <Typography component="h1" variant="h4">Settings</Typography>
           <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>
-            Manage browser capture, analytics access, local text processing, and message retention.
+            Manage collection, analytics, and stored messages.
           </Typography>
         </Box>
 
@@ -218,7 +241,7 @@ export default function SettingsWithVaultView({
             borderColor: 'divider',
           }}
         >
-          {ALL_SECTIONS.map((section) => {
+          {sections.map((section) => {
             const active = activeSection === section.id;
             return (
               <ButtonBase
@@ -265,7 +288,7 @@ export default function SettingsWithVaultView({
             }}
           >
             <Stack spacing={2.5}>
-              {SETTINGS_GROUPS.map((group) => (
+              {groups.map((group) => (
                 <Box key={group.id}>
                   <Typography
                     component="p"
@@ -387,16 +410,21 @@ export default function SettingsWithVaultView({
                       api={activationApi}
                       onboarding={onboardingApi}
                       creatorAccountId={transport.creatorAccountId}
+                      onStatusChange={setAnalyticsSummary}
                     />
                   </ReservedSection>
                 </Box>
-                <Box id="text-analysis" data-settings-section tabIndex={-1} sx={sectionAnchorSx}>
-                  <ReservedSection grow id="settings-text-analysis" size={{ xs: 0, sm: 0 }} title="Optional text analysis" label="Loading…">
+                {/* Mounted while hidden, so its status loads with the page and showing it moves nothing. */}
+                <Box id="text-analysis" data-settings-section tabIndex={-1}
+                  sx={{ ...sectionAnchorSx, ...(textAnalysisAvailable ? {} : { display: 'none' }) }}>
+                  <ReservedSection grow id="settings-text-analysis" size={{ xs: 0, sm: 0 }} title="Text analysis" label="Loading…">
                     <NlpDependencyControls
                       api={nlpApi}
                       client={textAnalysisClient}
                       reissueApi={textAnalysisReissueApi}
                       creatorAccountId={transport.creatorAccountId}
+                      onAttentionChange={setTextAnalysisAttention}
+                      onAvailabilityChange={setTextAnalysisAvailable}
                     />
                   </ReservedSection>
                 </Box>

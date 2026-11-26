@@ -418,7 +418,7 @@ return [
   {
     // Pushed browser state and its controls stack under their text at narrow widths.
     workspace: 'settings', state: 'populated', variant: 'browser-controls', viewports: ['narrow'], modes: ['light', 'dark'],
-    ready: text('New message collection is enabled.'),
+    ready: text('New messages are saved as they arrive.'),
   },
   {
     workspace: 'settings', state: 'populated', variant: 'linked-reconnecting', viewports: ['narrow'], modes: ['light'],
@@ -426,7 +426,10 @@ return [
       const { bridgeTransportStore } = await import('/src/store/transportStore.ts');
       bridgeTransportStore.markDisconnected();
     }),
-    ready: (page) => page.getByText('Extension linked to this app', { exact: true }),
+    // The link survives the lost connection, so the header keeps its options menu while it reads as not connected.
+    ready: (page) => page.locator('[data-journey-state="desktop.extension_pairing"]')
+      .filter({ has: page.getByRole('button', { name: 'Browser extension options', exact: true }) })
+      .getByText('Not connected', { exact: true }),
   },
 ];
 }

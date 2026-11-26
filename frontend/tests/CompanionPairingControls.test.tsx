@@ -110,11 +110,29 @@ describe('companion pairing controls', () => {
     const api = makeApi({ pins: vi.fn(async () => [pin]) });
     mount(api);
     await act(async () => {});
-    await click('Disconnect browser extension 1');
+    // Disconnecting is rare, so it sits in the section menu and still asks first.
+    await click('Browser extension options');
+    await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Disconnect browser extension' })));
     expect(api.revoke).not.toHaveBeenCalled();
     await act(async () => fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Disconnect' })));
     expect(api.revoke).toHaveBeenCalledWith(pin.pairing_id, 4, expect.any(AbortSignal));
-    expect(screen.queryByRole('button', { name: 'Disconnect browser extension 1' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Browser extension options' })).toBeNull();
+  });
+
+  it('names each linked extension in the menu when several are linked', async () => {
+    const pins = [
+      { ...awaiting, state: 'admitted' as const, version: 4, comparison_code: null },
+      { ...awaiting, pairing_id: 'C'.repeat(43), state: 'admitted' as const, version: 2, comparison_code: null },
+    ];
+    const api = makeApi({ pins: vi.fn(async () => pins) });
+    mount(api);
+    await act(async () => {});
+    await click('Browser extension options');
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent))
+      .toEqual(['Disconnect linked extension 1', 'Disconnect linked extension 2']);
+    await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Disconnect linked extension 2' })));
+    await act(async () => fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Disconnect' })));
+    expect(api.revoke).toHaveBeenCalledWith(pins[1].pairing_id, 2, expect.any(AbortSignal));
   });
 
   it('shows the linked browser state pushed through Brain, with controls only for the creator', async () => {
@@ -129,11 +147,13 @@ describe('companion pairing controls', () => {
     }));
     mount(api);
     await act(async () => {});
-    expect(screen.getByText('Paused. Nothing new is collected.')).toBeTruthy();
+    expect(screen.getByText('Paused.')).toBeTruthy();
     expect(screen.getByText('Paused', { exact: true })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Resume collecting' })).toBeNull();
+    const collect = () => screen.getByRole<HTMLInputElement>('switch', { name: 'Collect new messages' });
+    expect(collect().checked).toBe(false);
+    expect(collect()).toHaveProperty('disabled', true);
     await act(async () => useUserStore.getState().actions.setUserRole('creator-ceo'));
-    expect(screen.getByRole('button', { name: 'Resume collecting' })).toBeTruthy();
+    expect(collect()).toHaveProperty('disabled', false);
     expect(screen.queryByText(/managed in the extension/)).toBeNull();
   });
 
@@ -141,7 +161,7 @@ describe('companion pairing controls', () => {
     const api = makeApi({ pins: vi.fn(async () => [{ ...awaiting, state: 'admitted', creator_account_id: 'other' }]) });
     mount(api);
     await act(async () => {});
-    expect(screen.queryByRole('button', { name: 'Disconnect browser extension 1' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Browser extension options' })).toBeNull();
     await click('Browser alert');
     expect(screen.getByRole('alert').textContent).toBe("Connected extensions couldn't be checked.");
   });
@@ -163,7 +183,7 @@ describe('companion pairing controls', () => {
     await act(async () => {});
     expect(document.querySelectorAll('[data-reserved-region="browser-feedback"]')).toHaveLength(1);
     expect(document.querySelector('[data-reserved-region="pairing-result"], [data-reserved-region="pairing-links-feedback"]')).toBeNull();
-    await click('Pause collecting');
+    await act(async () => fireEvent.click(screen.getByRole('switch', { name: 'Collect new messages' })));
     await brainNotice();
     await click('Browser alert');
     const feedback = screen.getByRole('alert');

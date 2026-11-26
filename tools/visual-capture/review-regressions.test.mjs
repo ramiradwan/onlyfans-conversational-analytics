@@ -583,7 +583,7 @@ for (const width of [320, 390]) test(`combined browser recovery follows its cont
     for (const key of await push('pending')) await push('release', key, 'populated');
     await push('browser', { capture: 'active', site_access: 'needs_approval', history_permission: 'missing' });
     await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
-    await page.getByRole('button', { name: 'Pause collecting', exact: true }).click();
+    await page.getByRole('switch', { name: 'Collect new messages', exact: true }).click();
     await push('resolve', 'browser.setCapture', 'unreachable');
     const feedback = page.locator('[data-reserved-region="browser-feedback"]');
     await feedback.locator('[data-region-content]').waitFor({ state: 'visible' });
@@ -591,8 +591,9 @@ for (const width of [320, 390]) test(`combined browser recovery follows its cont
     await settle(page);
     await feedback.scrollIntoViewIfNeeded();
     assert(await page.getByRole('button', { name: 'Allow in extension', exact: true }).first().isVisible());
-    const following = page.getByText('Extension linked to this app', { exact: true });
-    assert(await following.isVisible());
+    // The connection facts sit in the section header, beside its options menu.
+    const header = page.getByRole('button', { name: 'Browser extension options', exact: true });
+    assert(await header.isVisible());
     const geometry = await feedback.evaluate((node) => {
       const bounds = node.getBoundingClientRect();
       const section = node.closest('[data-journey-state="desktop.extension_pairing"]');
@@ -625,7 +626,7 @@ for (const width of [320, 390]) test(`combined browser recovery follows its cont
     assert(geometry.feedbackFits && !geometry.horizontalOverflow, 'All recovery text must remain visible without horizontal scrolling: ' + JSON.stringify(geometry));
     assert(geometry.guidanceBottom <= geometry.feedback.top, 'Browser-location guidance must finish before recovery');
     assert(geometry.feedback.bottom <= geometry.sectionBottom + 1, 'The combined browser section must contain recovery');
-    const previous = await following.boundingBox();
+    const previous = await header.boundingBox();
     assert(previous && previous.y + previous.height <= geometry.feedback.top, 'Connection facts must finish before shared feedback');
     const next = await page.locator('#full-analytics').boundingBox();
     assert(next && next.y >= geometry.feedback.bottom, 'The next section must follow recovery');
@@ -659,7 +660,8 @@ for (const width of [320, 390, 600]) test(`essential activation content stays se
     const geometry = await section.evaluate((node) => {
       const bounds = node.getBoundingClientRect();
       const content = node.querySelector('[data-region-content]').getBoundingClientRect();
-      const sections = [...document.querySelectorAll('[data-settings-section]')];
+      // Sections an installation doesn't offer stay mounted but unrendered, so the next one is the next rendered one.
+      const sections = [...document.querySelectorAll('[data-settings-section]')].filter((section) => section.getClientRects().length > 0);
       const next = sections[sections.indexOf(node.closest('[data-settings-section]')) + 1].getBoundingClientRect();
       const notice = node.querySelector('[role="status"]').getBoundingClientRect();
       const title = node.querySelector('h2');
