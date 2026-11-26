@@ -129,6 +129,26 @@ describe('signed Bridge role bootstrap', () => {
     expect(transport.connect).not.toHaveBeenCalled();
   });
 
+  it.each([true, false])('puts the archive link with the lock controls when saved data is available (%s)', async available => {
+    injectUnauthenticatedConfig();
+    const read = vi.fn(async (url: string) => url === '/api/v1/saved-data/available'
+      ? Response.json({ available }) : new Response(null, { status: 404 }));
+    vi.stubGlobal('fetch', read);
+    render(<App />);
+
+    const control = await screen.findByRole('button', { name: 'Sign in with passkey' });
+    expect(read).toHaveBeenCalledWith('/api/v1/saved-data/available', expect.objectContaining({ method: 'POST' }));
+    const name = 'Open saved data with your passkey';
+    if (available) {
+      const link = await screen.findByRole('link', { name });
+      expect(control.closest('section')?.contains(link)).toBe(true);
+      expect(link.getAttribute('href')).toBe('/?view=saved-data');
+    } else {
+      expect(screen.queryByRole('link', { name })).toBeNull();
+    }
+    expect(webauthnApi.login).not.toHaveBeenCalled();
+  });
+
   it('uses the session-ended copy without a manual reload instruction', () => {
     expect(protocolErrorText(endedSession)).toBe('Your session ended. Sign in to continue.');
   });

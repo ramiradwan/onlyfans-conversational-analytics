@@ -1,25 +1,36 @@
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
-import { Box, Skeleton, Stack, Typography } from '@mui/material';
+import { Box, Link, Skeleton, Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 
 import { Panel } from './ui';
 import { OnboardingCard, OnboardingSpot, type OnboardingCardProps } from './ui/OnboardingCard';
+import { savedDataLinkText, savedDataUrl } from '../../shared-setup/saved-data-entry';
 import { BrandMark } from '../layouts/BrandMark';
 import { DesktopWindowControls } from '../layouts/DesktopWindowControls';
 import { componentTokens } from '../theme';
 
 export interface SetupStep { label: string; complete?: boolean; current?: boolean }
 
-export function TrustTask({ family, spot, visual, busy, placeholder, 'data-journey-state': journeyState, ...content }:
+export function TrustTask({ family, spot, visual, busy, placeholder, savedDataAvailable, status, 'data-journey-state': journeyState, ...content }:
   Omit<OnboardingCardProps, 'composition' | 'spot' | 'heading'> & {
     family: string; spot: 'lock' | 'passkey'; visual: 'passkey-card' | 'authority-recovery-card'; busy: boolean; placeholder?: boolean;
     'data-journey-state': 'desktop.passkey_sign_in' | 'desktop.authority_recovery';
+    savedDataAvailable?: boolean;
   }) {
   return <Box component="main" data-journey-state={journeyState}
     data-visual={visual} data-reserved-region={visual === 'passkey-card' ? visual : undefined} aria-busy={busy}
     sx={{ width: '100%', maxWidth: 560, justifySelf: 'center', minWidth: 0 }}>
     <OnboardingCard key={family} {...content} composition="trust" heading="h1"
       spot={<span data-visual={spot === 'passkey' ? 'passkey-lock' : undefined}><OnboardingSpot icon={spot} /></span>}
+      status={<>
+        {status}
+        {savedDataAvailable && (
+          <Link href={savedDataUrl} variant="body2"
+            sx={{ display: 'block', width: 'fit-content', maxWidth: '100%', mt: 1.5, overflowWrap: 'anywhere' }}>
+            {savedDataLinkText}
+          </Link>
+        )}
+      </>}
       actions={placeholder ? <Box sx={{ mt: 3 }}><Skeleton aria-hidden="true" animation={false} variant="rounded"
         sx={{ width: 'min(100%, 12rem)', height: componentTokens.staticUi.largeControlHeight }} /></Box> : content.actions} />
   </Box>;

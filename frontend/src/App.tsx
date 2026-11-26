@@ -1,4 +1,4 @@
-import { Box, CssBaseline, GlobalStyles, Link } from '@mui/material';
+import { CssBaseline, GlobalStyles } from '@mui/material';
 import { ThemeProvider } from '@mui/material/styles';
 import { useEffect, useState } from 'react';
 import { BrowserRouter } from 'react-router-dom';
@@ -17,7 +17,7 @@ import { protocolErrorText } from './utils/statusCopy';
 import { SavedDataView } from './views/SavedDataView';
 import { WebAuthnAccessView } from './views/WebAuthnAccessView';
 import { passkeyWindow } from '../shared-setup/passkey-window.js';
-import { savedDataEntry, savedDataLinkText, savedDataUrl } from '../shared-setup/saved-data-entry';
+import { savedDataEntry } from '../shared-setup/saved-data-entry';
 
 const globalStyles = (
   <GlobalStyles
@@ -47,7 +47,7 @@ export function App() {
   </ThemeProvider>;
 }
 
-function SavedDataLink() {
+function LockedAccess({ nativePresentation, sessionNotice }: { nativePresentation: boolean; sessionNotice?: string }) {
   const [available, setAvailable] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
@@ -56,9 +56,8 @@ function SavedDataLink() {
     });
     return () => controller.abort();
   }, []);
-  return available
-    ? <Box sx={{ textAlign: 'center', py: 2 }}><Link href={savedDataUrl}>{savedDataLinkText}</Link></Box>
-    : null;
+  return <WebAuthnAccessView recoveryApi={nativePresentation ? authorityRecoveryApi : undefined}
+    sessionNotice={sessionNotice} savedDataAvailable={available} />;
 }
 
 function RuntimeApp() {
@@ -118,8 +117,8 @@ function RuntimeApp() {
         <BrowserRouter>
           <AppRouter />
         </BrowserRouter>
-      ) : <><WebAuthnAccessView recoveryApi={nativePresentation ? authorityRecoveryApi : undefined}
-        sessionNotice={endedSession ? protocolErrorText(endedSession) : undefined} /><SavedDataLink /></>}
+      ) : <LockedAccess nativePresentation={nativePresentation}
+        sessionNotice={endedSession ? protocolErrorText(endedSession) : undefined} />}
     </>
   );
 }

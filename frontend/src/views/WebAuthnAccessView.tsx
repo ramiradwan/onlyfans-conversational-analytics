@@ -30,6 +30,7 @@ interface WebAuthnAccessViewProps {
   onAuthenticated?: () => void;
   recoveryApi?: AuthorityRecoveryApi;
   sessionNotice?: string;
+  savedDataAvailable?: boolean;
 }
 
 export function WebAuthnAccessView({
@@ -37,6 +38,7 @@ export function WebAuthnAccessView({
   onAuthenticated = () => window.location.reload(),
   recoveryApi,
   sessionNotice,
+  savedDataAvailable = false,
 }: WebAuthnAccessViewProps) {
   const desktop = useSyncExternalStore(recoveryApi?.subscribe ?? noSubscribe, recoveryApi?.getState ?? noState);
   const [recoveryActing, setRecoveryActing] = useState<RecoveryAction | null>(null);
@@ -243,7 +245,8 @@ export function WebAuthnAccessView({
     && !busy && !checking && !readingStatus && !recoveringStatus && !sessionWasAuthenticated.current,
   () => { void authenticate(false, true); });
 
-  if (protectedView) return <AuthorityRecoveryTask view={protectedView} act={action => void performRecovery(action)} />;
+  if (protectedView) return <AuthorityRecoveryTask view={protectedView} act={action => void performRecovery(action)}
+    savedDataAvailable={savedDataAvailable} />;
   // Do not flash a stale "expired" message after original restoration or
   // while the admitted native owner is still establishing whether it can help.
   const checkingStatus = checking || recoveringStatus || Boolean(hadProtected.current && desktop.connected && desktop.snapshot)
@@ -251,5 +254,6 @@ export function WebAuthnAccessView({
   return <OnboardingPasskeyTask statusUnavailable={Boolean(api.state) && enrolled === null && !checkingStatus && access === null}
     busy={busy} checking={checkingStatus} readingStatus={readingStatus} enrolled={enrolled}
     error={error} access={access} sessionNotice={sessionNotice} authenticate={authenticate}
-    nativeRequired={nativeRequired} nativePresentation={nativePresentation} passkeyPermission={passkeyPermission} />;
+    nativeRequired={nativeRequired} nativePresentation={nativePresentation} passkeyPermission={passkeyPermission}
+    savedDataAvailable={savedDataAvailable} />;
 }

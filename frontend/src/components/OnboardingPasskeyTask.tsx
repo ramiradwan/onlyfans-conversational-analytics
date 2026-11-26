@@ -17,7 +17,9 @@ const accessCopy = {
 export function OnboardingPasskeyTask({
   busy, checking, enrolled, error, authenticate, statusUnavailable = false,
   readingStatus = false, access = null, sessionNotice, nativeRequired = false, nativePresentation = false, passkeyPermission = false,
+  savedDataAvailable,
 }: {
+  savedDataAvailable?: boolean;
   nativeRequired?: boolean; nativePresentation?: boolean; passkeyPermission?: boolean;
   statusUnavailable?: boolean; readingStatus?: boolean; access?: AccessState | null;
   busy: boolean; checking: boolean; enrolled: boolean | null;
@@ -77,7 +79,7 @@ export function OnboardingPasskeyTask({
       sx={fontState === 'fallback' ? { '& *': { fontFamily: 'Arial, sans-serif !important' } } : undefined}>
       {fontState !== 'loading' && <OnboardingWorkspace trust>
         <TrustTask data-journey-state="desktop.passkey_sign_in" spot="passkey" visual="passkey-card" family={family} busy={busy || checking || readingStatus}
-          title={title} body={body} placeholder={checking}
+          title={title} body={body} placeholder={checking} savedDataAvailable={savedDataAvailable}
           actions={canAct && <>
             <OnboardingAction swap={busy ? 'pending' : undefined}>
               {busy ? <Box role="status" sx={{
