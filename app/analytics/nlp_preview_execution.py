@@ -90,7 +90,8 @@ class PreviewComputeOwner:
                     return None
                 budget = QuestionBudget(QuestionLimits(max_records=100_000,
                     wall_clock_ms=min(30_000, milliseconds)), cancellation_check=source_cancelled)
-                value = self.source.read_evidence_message(binding.spec.creator_account_id, EvidenceLocation(**member.location.model_dump()), budget)
+                value = self.source.read_evidence_message(binding.spec.creator_account_id,
+                    EvidenceLocation(**member.location.model_dump()), budget, exclude_system=True)
                 if (value is None or source_binding(value) != member.source
                         or hashlib.sha256(value.text.encode('utf8')).hexdigest() != member.text_sha256):
                     raise ValueError('knowledge_source_changed')
