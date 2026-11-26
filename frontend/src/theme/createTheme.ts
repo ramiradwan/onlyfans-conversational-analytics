@@ -323,9 +323,16 @@ export const theme = createTheme({
       },
     },
     MuiSkeleton: {
+      defaultProps: {
+        animation: false,
+      },
       styleOverrides: {
         root: ({ theme }: { theme: Theme }) => ({
           backgroundColor: theme.vars.palette.placeholder,
+          '@media (prefers-reduced-motion: reduce)': {
+            animation: 'none',
+            '&::after': { animation: 'none' },
+          },
         }),
       },
     },

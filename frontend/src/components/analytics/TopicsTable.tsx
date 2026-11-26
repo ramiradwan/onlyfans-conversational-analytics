@@ -8,7 +8,6 @@ import {
 } from '../../analytics';
 import { componentTokens, layoutTokens } from '../../theme';
 import { barArrival } from '../../theme/presentationMotion';
-import { ReservedRegion } from '../ui/ReservedRegion';
 
 // The table shows once its panel holds topicTableMinWidth, and the list shows below that.
 const tableFits = `@container topics (min-width: ${componentTokens.analytics.topicTableMinWidth})`;
@@ -114,62 +113,63 @@ export function TopicsTable({ topics }: TopicsTableProps) {
     return <Typography sx={{ color: 'text.secondary' }}>No topics found for these dates.</Typography>;
   }
 
-  // A scrolling list shows part of its next row.
   return (
     <Box sx={{ containerName: 'topics', containerType: 'inline-size' }}>
-      <ReservedRegion id="topics-list" regionRole="scroll" size={{ xs: topicRegionSize.list }} sx={{ [tableFits]: { blockSize: topicRegionSize.table } }}>
-        <NarrowTopics data-region-content aria-label="Topics and trend" style={columnStyle}>
-          {topics.map((topic) => (
-            <NarrowTopic key={topic.id}>
-              <Typography component="p" variant="subtitle2">{topic.label}</Typography>
-              <MagnitudeCell $labelled>
-                <BarTrack aria-hidden="true" data-visual="topic-track">
-                  <Bar style={{ width: `${(topic.volume / maximum) * 100}%` }} />
-                </BarTrack>
-                <Typography component="span" variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                  <Typography component="span" variant="numericBody">{formatCount(topic.volume)}</Typography> messages
-                </Typography>
-              </MagnitudeCell>
-              <NarrowMetadata>
-                <Typography variant="caption">Share {formatPercentValue(topic.sharePercent)}</Typography>
-                <Typography variant="caption">
-                  Change {topic.trendPercent === null ? '—' : formatPercentValue(topic.trendPercent)}
-                </Typography>
-              </NarrowMetadata>
-            </NarrowTopic>
-          ))}
-        </NarrowTopics>
+    <Box data-reserved-region="topics-list" data-region-role="scroll" role="region" aria-label="Topic results" tabIndex={0}
+      sx={{ maxBlockSize: topicRegionSize.list, [tableFits]: { maxBlockSize: topicRegionSize.table },
+        overflowY: 'auto', scrollbarGutter: 'stable', overscrollBehavior: 'contain' }}>
+      <NarrowTopics data-region-content aria-label="Topics and trend" style={columnStyle}>
+        {topics.map((topic) => (
+          <NarrowTopic key={topic.id}>
+            <Typography component="p" variant="subtitle2">{topic.label}</Typography>
+            <MagnitudeCell $labelled>
+              <BarTrack aria-hidden="true" data-visual="topic-track">
+                <Bar style={{ width: `${(topic.volume / maximum) * 100}%` }} />
+              </BarTrack>
+              <Typography component="span" variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                <Typography component="span" variant="numericBody">{formatCount(topic.volume)}</Typography> messages
+              </Typography>
+            </MagnitudeCell>
+            <NarrowMetadata>
+              <Typography variant="caption">Share {formatPercentValue(topic.sharePercent)}</Typography>
+              <Typography variant="caption">
+                Change {topic.trendPercent === null ? '—' : formatPercentValue(topic.trendPercent)}
+              </Typography>
+            </NarrowMetadata>
+          </NarrowTopic>
+        ))}
+      </NarrowTopics>
 
-        <WideTopics data-region-content style={columnStyle}>
-          <table aria-label="Topics and trend" role="table">
-            <thead>
-              <tr role="row">
-                <th scope="col">Topic</th>
-                <th scope="col">Messages</th>
-                <th scope="col">Share</th>
-                <th scope="col">Change from previous period</th>
+      <WideTopics data-region-content style={columnStyle}>
+        <table aria-label="Topics and trend" role="table">
+          <thead>
+            <tr role="row">
+              <th scope="col">Topic</th>
+              <th scope="col">Messages</th>
+              <th scope="col">Share</th>
+              <th scope="col">Change from previous period</th>
+            </tr>
+          </thead>
+          <tbody>
+            {topics.map((topic) => (
+              <tr role="row" key={topic.id}>
+                <td>{topic.label}</td>
+                <td>
+                  <MagnitudeCell>
+                    <BarTrack aria-hidden="true" data-visual="topic-track">
+                      <Bar style={{ width: `${(topic.volume / maximum) * 100}%` }} />
+                    </BarTrack>
+                    <Typography component="span" variant="numericBody">{formatCount(topic.volume)}</Typography>
+                  </MagnitudeCell>
+                </td>
+                <td>{formatPercentValue(topic.sharePercent)}</td>
+                <td>{topic.trendPercent === null ? '—' : formatPercentValue(topic.trendPercent)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {topics.map((topic) => (
-                <tr role="row" key={topic.id}>
-                  <td>{topic.label}</td>
-                  <td>
-                    <MagnitudeCell>
-                      <BarTrack aria-hidden="true" data-visual="topic-track">
-                        <Bar style={{ width: `${(topic.volume / maximum) * 100}%` }} />
-                      </BarTrack>
-                      <Typography component="span" variant="numericBody">{formatCount(topic.volume)}</Typography>
-                    </MagnitudeCell>
-                  </td>
-                  <td>{formatPercentValue(topic.sharePercent)}</td>
-                  <td>{topic.trendPercent === null ? '—' : formatPercentValue(topic.trendPercent)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </WideTopics>
-      </ReservedRegion>
+            ))}
+          </tbody>
+        </table>
+      </WideTopics>
+    </Box>
     </Box>
   );
 }

@@ -391,6 +391,17 @@ export async function measureDashboardOnboarding(page, open) {
     assert.equal(pillStyle.fontSize, 12 * scale);
 
     const details = page.getByRole('button', { name: 'Details', exact: true });
+    const basisBox = await basis.boundingBox();
+    const detailsBox = await details.boundingBox();
+    if (width < 600) {
+      assert(detailsBox.y >= basisBox.y + basisBox.height, 'Details must follow the basis caption on narrow screens');
+      near(detailsBox.x, basisBox.x, 'Details left edge on narrow screens');
+    } else {
+      assert(detailsBox.x >= basisBox.x + basisBox.width, 'Details must follow the caption in the same row');
+      assert(detailsBox.y < basisBox.y + basisBox.height && detailsBox.y + detailsBox.height > basisBox.y, 'Details and the caption must share a row');
+      const basisRegion = await basis.locator('xpath=ancestor::*[@data-reserved-region="dashboard-basis"]').boundingBox();
+      near(detailsBox.x + detailsBox.width, basisRegion.x + basisRegion.width, 'Details right edge');
+    }
     await page.keyboard.press('Tab');
     await details.focus();
     assert((await appearance(details)).focusVisible);
@@ -539,19 +550,24 @@ export async function captureReviewChecks(browser, base, outDir, recorder = null
         await open('home');
         const rail = page.getByLabel('Desktop navigation', { exact: true });
         const paper = await appearance(rail), canvas = { fill: paper.canvas };
+        const { desktopRailWidth } = JSON.parse(await readFile(new URL('../../frontend/src/theme/tokens.json', import.meta.url), 'utf8')).tier3.shell;
+        const itemWidth = 44;
+        const borderWidth = 1;
+        const sideInset = (desktopRailWidth - borderWidth - itemWidth) / 2;
+        near(paper.x, 0, 'rail left edge');
+        near(paper.width, desktopRailWidth, 'rail width');
         const links = rail.getByRole('link'); const boxes = [];
         for (const link of await links.all()) {
           const box = await appearance(link); boxes.push(box);
-          near(box.width, 48, 'rail item width'); near(box.height, 44, 'rail item height');
-          near(box.x - paper.x, 8, 'left inset'); near(paper.x + paper.width - box.x - box.width, 8, 'right inset');
+          near(box.width, itemWidth, 'rail item width'); near(box.height, 44, 'rail item height');
+          near(box.x - paper.x, sideInset, 'left inset'); near(paper.x + paper.width - box.x - box.width, sideInset + borderWidth, 'right inset');
         }
         const header = await appearance(page.getByRole('banner'));
         const heading = await appearance(page.locator('main h1').first());
-        const railInset = JSON.parse(await readFile(new URL('../../frontend/src/theme/tokens.json', import.meta.url), 'utf8')).tier3.shell.railInset;
-        near(paper.y - header.y - header.height, railInset, 'rail gap below header');
-        near(page.viewportSize().height - paper.y - paper.height, railInset, 'rail bottom inset');
-        near(heading.y - header.y - header.height, railInset, 'heading gap below header');
-        near(boxes[0].y - paper.y, 8, 'top inset'); assert.equal(paper.filter, 'none'); assert.equal(paper.fill[3], 1);
+        near(paper.y - header.y - header.height, 0, 'rail gap below header');
+        near(page.viewportSize().height - paper.y - paper.height, 0, 'rail bottom inset');
+        near(heading.y - header.y - header.height, 20, 'heading gap below header');
+        near(boxes[0].y - paper.y, 12, 'top inset'); assert.equal(paper.filter, 'none'); assert.equal(paper.fill[3], 1);
         if (mode === 'dark') assert(paper.fill.slice(0, 3).every((channel, i) => channel > canvas.fill[i]), 'rail must be lighter than canvas');
         const inbox = rail.getByRole('link', { name: 'Inbox', exact: true }); const rest = await appearance(inbox);
         const selected = await appearance(links.first()); await inbox.hover();
@@ -566,7 +582,7 @@ export async function captureReviewChecks(browser, base, outDir, recorder = null
         assert(focus.focusVisible, 'keyboard focus is missing');
         assert.equal(focus.outlineWidth, '2px'); assert.equal(focus.outlineStyle, 'solid'); assert.equal(focus.outlineOffset, '-2px');
         await screenshot(page, `rail-focus-${mode}.png`);
-        return { paper, canvas, header, heading, railInset, boxes, rest, hovered, selected, focus, tooltip };
+        return { paper, canvas, header, heading, sideInset, boxes, rest, hovered, selected, focus, tooltip };
       });
       await record(`${mode}: popup and app brand pixels`, async () => {
         await open('home');

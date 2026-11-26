@@ -9,7 +9,6 @@ import {
   DialogContentText,
   DialogTitle,
   FormControlLabel,
-  Skeleton,
   Stack,
   Typography,
   useMediaQuery,
@@ -18,6 +17,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { Panel, SectionHeader, useRevealHold } from './ui';
 import { StatusLine } from './ui/ReservedRegion';
+import { LoadingCaption } from './ui/Skeletons';
 import { historyRequestRecovery, recoveryClass } from '../../shared-setup/recovery.js';
 import { usePermissions } from '../hooks/usePermissions';
 import type { HistorySettings } from '../protocol';
@@ -38,7 +38,6 @@ const HISTORY_PURPOSE = 'Use older messages to see results sooner.';
 const PERMISSION_PURPOSE = 'Older messages start syncing after you allow access in your browser.';
 const STARTING_HISTORY = 'Starting message history…';
 const ADDING_HISTORY = 'Adding older messages. Message counts update as they arrive.';
-const SETTINGS_HISTORY_ACTIONS = ['Allow browser access', 'Pause', 'Resume'];
 const SETTINGS_HISTORY_STATUS = [ADDING_HISTORY, PERMISSION_PURPOSE,
   'History collection is waiting for the browser extension to connect.',
   'Waiting for the extension to apply message history settings.'];
@@ -61,6 +60,7 @@ export interface MessageHistoryControlsProps {
   reviewCreatorId?: string;
   continuation?: boolean;
   recoveryJournal?: HistoryRecoveryJournal;
+  onStatusLabelChange?: (label: string | null) => void;
 }
 
 interface PermissionReturn {
@@ -101,7 +101,8 @@ function settingsIdentity(value: HistoryBaseline | null): string | null {
 
 /** Shared history consent, permission, progress and management controls. */
 export function MessageHistoryControls({ api = defaultHistorySettingsApi, browserApi = browserControlApi,
-  desktopApi = desktopOnboardingApi, store = bridgeTransportStore, reviewCreatorId, continuation = false, recoveryJournal }: MessageHistoryControlsProps) {
+  desktopApi = desktopOnboardingApi, store = bridgeTransportStore, reviewCreatorId, continuation = false,
+  recoveryJournal, onStatusLabelChange }: MessageHistoryControlsProps) {
   const { canManageHistorySync } = usePermissions();
   const narrowDialog = useMediaQuery(theme => theme.breakpoints.down('sm'));
   const transport = useSyncExternalStore(
@@ -496,6 +497,10 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   const agent = transport.connection === 'connected' ? transport.agent : null;
   const waitingForExtension = settings !== null && !hasConsent && extensionConnection(agent) === 'offline';
   const presentation = settings && !pendingChange ? presentHistory(settings, agent, transport.coverage) : null;
+  const statusLabel = loading ? null : presentation?.label ?? null;
+  useEffect(() => {
+    onStatusLabelChange?.(statusLabel);
+  }, [onStatusLabelChange, statusLabel]);
   const permissionNeeded = hasConsent && settings.desired_state === 'running'
     && agent?.creator_account_id === accountId && agent?.browser?.history_permission === 'missing';
   const reviewScope = continuation && settings && reviewJourney && accountId
@@ -539,10 +544,6 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   const controls = (
     <Panel emphasis={continuation ? 'quiet' : 'secondary'} sx={{ gap: 1.5, ...(continuation ? { p: 0 } : {}) }}>
       {!continuation && <SectionHeader
-        sx={{ minHeight: '1.5rem', display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) 10rem' },
-          gap: { xs: 0.5, sm: 2 }, '& > [aria-live]': { display: 'flex', width: '100%', minHeight: '1.5rem', margin: '0 !important',
-            '& .MuiChip-root': { maxWidth: '100%', height: 'auto', minHeight: '1.5rem' },
-            '& .MuiChip-label': { whiteSpace: 'normal', overflowWrap: 'anywhere' } } }}
         status={presentation}
         title="Message history"
       />}
@@ -550,11 +551,20 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
       {!reviewAvailable && <Alert severity="info">Message history is unavailable for this account right now.</Alert>}
 
       {loading ? (
-        <Stack spacing={1} role="status" aria-label="Loading message history settings">
-          <Skeleton animation={false} width="60%" />
-          <Skeleton animation={false} width="80%" />
-          <Skeleton animation={false} height={40} width="min(12.5rem, 100%)" variant="rounded" />
-        </Stack>
+        <Box
+          role="status"
+          aria-label="Loading message history settings"
+          sx={{
+            bgcolor: 'surface.subtle',
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 1.5,
+            px: 2,
+            py: 1.75,
+          }}
+        >
+          <LoadingCaption>Checking message history settings…</LoadingCaption>
+        </Box>
       ) : settings !== null ? (
         <Stack data-journey-state="desktop.message_history" spacing={1.5}>
           {waitingForExtension ? (
@@ -601,18 +611,10 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
               direction="row"
               useFlexGap
               spacing={1}
-              sx={{ flexWrap: 'wrap', alignItems: 'flex-start',
+              sx={{ flexWrap: 'wrap', alignItems: 'center',
                 '& > button': { minHeight: '2.5rem', maxWidth: '100%', lineHeight: '1.25rem', overflowWrap: 'anywhere' } }}
             >
-              {hasConsent ? (
-                <Box sx={{ display: 'grid', minWidth: 0, maxWidth: '100%',
-                  '& > button': { gridArea: '1 / 1', justifySelf: 'start', minHeight: '2.5rem',
-                    maxWidth: '100%', lineHeight: '1.25rem', overflowWrap: 'anywhere' } }}>
-                  {SETTINGS_HISTORY_ACTIONS.map(label => <Button key={label} variant="outlined"
-                    aria-hidden="true" tabIndex={-1} sx={{ visibility: 'hidden' }}>{label}</Button>)}
-                  {historyAction}
-                </Box>
-              ) : historyAction}
+              {historyAction}
               {!review && !hasConsent && !consentDeferred && (
                 <Button disabled={controlsDisabled} onClick={() => {
                   restoreSettingsFocus.current = true;

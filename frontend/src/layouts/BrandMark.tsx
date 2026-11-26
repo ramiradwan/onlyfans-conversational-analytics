@@ -4,8 +4,7 @@ import { componentTokens, layoutTokens } from '@/theme/generated/tokens';
 
 export const BRAND_MARK_SIZE = 32;
 /** Shared desktop inset for the signed-in shell and the passkey gate. */
-export const BRAND_INSET = componentTokens.shell.railInset
-  + (componentTokens.shell.desktopRailWidth - BRAND_MARK_SIZE) / 2;
+export const BRAND_INSET = (componentTokens.shell.desktopRailWidth - BRAND_MARK_SIZE) / 2;
 
 function ConversationAnalyticsGlyph() {
   return (

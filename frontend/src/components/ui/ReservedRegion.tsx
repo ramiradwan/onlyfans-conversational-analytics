@@ -1,8 +1,9 @@
 import { keyframes } from '@emotion/react';
-import { Alert, Box, Button, Dialog, DialogContent, DialogTitle, Skeleton, Typography, type SxProps, type Theme } from '@mui/material';
+import { Alert, Box, Button, Dialog, DialogContent, DialogTitle, Typography, type SxProps, type Theme } from '@mui/material';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 import { RevealGroup } from './RevealGroup';
+import { SettingsSectionSkeleton } from './Skeletons';
 import { componentTokens } from '../../theme';
 
 const sizes = componentTokens.reserved;
@@ -85,11 +86,12 @@ export function StatusLine({ id, text, tone = 'secondary', essential = false, si
   const { probe, overflow } = useContentFit(text);
   const details = detailsOnly || overflow;
   const minimum = size ?? { xs: sizes.essentialStatusLine.narrow, sm: sizes.essentialStatusLine.wide };
-  if (essential) return <Box data-reserved-region={id} sx={{
-    minHeight: Object.fromEntries(Object.entries(minimum).map(([key, value]) => [key, `${value / 16}rem`])),
+  const essentialSx: SxProps<Theme> = {
+    minHeight: Object.fromEntries(Object.entries(minimum).map(([key, value]) => [key, `${value / 16}rem`])) as Record<string, string>,
     minWidth: 0,
     ...(reserveTexts?.length ? { display: 'grid' } : {}),
-  }}>
+  };
+  if (essential) return <Box data-reserved-region={id} sx={essentialSx}>
     {reserveTexts?.map((copy) => (
       <Typography key={copy} component="span" aria-hidden="true" variant="body2"
         sx={{
@@ -113,24 +115,24 @@ export function StatusLine({ id, text, tone = 'secondary', essential = false, si
 
 export function ReservedValue({ id, value }: { id: string; value: number | null | undefined }) {
   const label = value == null ? '—' : value > 9_999_999 ? '10M+' : new Intl.NumberFormat('en-US').format(value);
-  return <Box component="span" data-reserved-region={id} sx={{ display: 'inline-block', inlineSize: `${sizes.value.chars}ch`, fontVariantNumeric: 'tabular-nums', textAlign: 'end', whiteSpace: 'nowrap' }}>
-    <Box component="span" data-region-content>{value === undefined ? <Skeleton animation={false} /> : label}</Box>
+  return <Box component="span" data-reserved-region={id} sx={{ color: value === undefined ? 'text.disabled' : undefined, display: 'inline-block', inlineSize: `${sizes.value.chars}ch`, fontVariantNumeric: 'tabular-nums', textAlign: 'end', whiteSpace: 'nowrap' }}>
+    <Box component="span" data-region-content>{label}</Box>
   </Box>;
 }
 
-export function LoadingFrame({ label }: { label: string }) {
+export function LoadingFrame({ label, title }: { label: string; title?: string }) {
   const [visible, setVisible] = useState(false);
   useEffect(() => { const timer = setTimeout(() => setVisible(true), sizes.loadingLabelDelayMs); return () => clearTimeout(timer); }, []);
-  return <Box aria-busy="true" data-region-content sx={{ p: 3, display: 'grid', gap: 1.5 }}>
-    <Box sx={{ height: 20 }}>{visible && <Typography role="status" variant="body2" sx={{ animation: `${labelEnter} 200ms ease-out both`, '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }}>{label}</Typography>}</Box>
-    <Skeleton animation={false} variant="rounded" width="40%" height={12} />
-    <Skeleton animation={false} variant="rounded" width="64%" height={12} />
-  </Box>;
+  return (
+    <Box data-region-content sx={{ animation: `${labelEnter} 200ms ease-out both`, '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }}>
+      <SettingsSectionSkeleton title={title} statusLabel={visible ? label : undefined} />
+    </Box>
+  );
 }
 
-export function ReservedSection({ id, size, loading, label, children, grow = false }: { id: string; size: Size; loading?: boolean; label: string; children: ReactNode; grow?: boolean }) {
-  return <ReservedRegion id={id} size={size} grow={grow}><RevealGroup fallback={<LoadingFrame label={label} />}>
-    {loading ? <LoadingFrame label={label} /> : <Box data-region-content>{children}</Box>}
+export function ReservedSection({ id, size, loading, label, title, children, grow = false }: { id: string; size: Size; loading?: boolean; label: string; title?: string; children: ReactNode; grow?: boolean }) {
+  return <ReservedRegion id={id} size={size} grow={grow}><RevealGroup fallback={<LoadingFrame label={label} title={title} />}>
+    {loading ? <LoadingFrame label={label} title={title} /> : <Box data-region-content>{children}</Box>}
   </RevealGroup></ReservedRegion>;
 }
 

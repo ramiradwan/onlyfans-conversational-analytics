@@ -1,4 +1,4 @@
-import { Box, Stack, Typography, type SxProps, type Theme } from '@mui/material';
+import { Box, Stack, Typography, type SxProps, type Theme, type TypographyProps } from '@mui/material';
 import type { ReactNode } from 'react';
 
 import { StatusChip, type StatusTone } from './StatusChip';
@@ -10,32 +10,53 @@ export interface SectionStatus {
 
 /** Settings card heading: title, one-line summary, and a status chip announced on change. */
 export function SectionHeader({
+  headingProps,
   status,
+  statusMeasure,
   sx,
   summary,
   title,
 }: {
+  headingProps?: Pick<TypographyProps<'h2'>, 'id' | 'ref' | 'sx' | 'tabIndex'>;
   status?: SectionStatus | null;
+  statusMeasure?: string;
   sx?: SxProps<Theme>;
   summary?: ReactNode;
   title: string;
 }) {
   return (
-    <Stack direction="row" spacing={2} sx={[{ alignItems: 'flex-start', justifyContent: 'space-between' }, ...(Array.isArray(sx) ? sx : [sx])]}>
-      <Box sx={{ minWidth: 0 }}>
-        <Typography component="h2" variant="h6">
-          {title}
-        </Typography>
-        {summary && (
-          <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.25 }}>
-            {summary}
+    <Box sx={{ containerType: 'inline-size' }}>
+      <Box data-settings-section-header sx={[{
+        display: 'grid',
+        gridTemplateColumns: status === undefined ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) min(50%, 10rem)',
+        alignItems: 'start',
+        columnGap: 1,
+        minBlockSize: status === undefined ? undefined : '1.5rem',
+        '@container (max-width: 14rem)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+      }, ...(Array.isArray(sx) ? sx : [sx])]}>
+        <Box sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+          <Typography component="h2" variant="h6" {...headingProps}>
+            {title}
           </Typography>
+          {summary && (
+            <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.25 }}>
+              {summary}
+            </Typography>
+          )}
+        </Box>
+        {status !== undefined && (
+          <Box aria-live="polite" sx={{ display: 'flex', justifyContent: 'flex-end', minWidth: 0 }}>
+            {status && <StatusChip
+              data-settings-status
+              label={status.label}
+              longestLabel={statusMeasure}
+              size="small"
+              tone={status.tone}
+              sx={{ height: '1.5rem' }} />}
+          </Box>
         )}
       </Box>
-      <Box aria-live="polite" sx={{ flexShrink: 0 }}>
-        {status && <StatusChip label={status.label} size="small" tone={status.tone} />}
-      </Box>
-    </Stack>
+    </Box>
   );
 }
 

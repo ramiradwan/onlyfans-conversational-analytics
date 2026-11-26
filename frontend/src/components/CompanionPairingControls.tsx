@@ -264,7 +264,9 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
             ? { label: 'Paused', tone: 'default' }
             : { label: extensionLabel(connection), tone: 'success' }
       : connectedCount === null
-        ? null
+        ? !embedded && (lastKnownCount.current !== null || listFeedback?.failed)
+          ? { label: 'Needs attention', tone: 'warning' }
+          : null
         : { label: 'Not connected', tone: 'default' };
 
   const attemptFeedback = approved ? connection === 'connected' ? 'Extension connected.' : 'Connection approved. Waiting for the extension.'
@@ -303,11 +305,8 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
       spacing={1.5}
     >
       {!embedded && <SectionHeader
-        sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) 8rem' }, gap: { xs: 0, sm: 2 },
-          '& > [aria-live]': { display: 'flex', width: '100%', minHeight: '1.5rem', margin: '0 !important',
-            '& .MuiChip-root': { maxWidth: '100%', height: 'auto', minHeight: '1.5rem' },
-            '& .MuiChip-label': { whiteSpace: 'normal', overflowWrap: 'anywhere' } } }}
         status={sectionStatus}
+        statusMeasure="Applying settings"
         title="Browser extension"
         summary={!connected && lastKnownCount.current === 0 ? 'Connect the extension to this app' : undefined}
       />}
@@ -327,7 +326,7 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
           <Stack data-pairing-actions direction="row" spacing={1} useFlexGap
             sx={{ flexWrap: 'wrap', alignItems: 'flex-start', pt: 1,
               '& > button': { maxWidth: '100%', overflowWrap: 'anywhere' } }}>
-            {canStart && <Button disabled={opening || manualRecovery} onClick={() => void connect()}
+            {canStart && <Button size="small" disabled={opening || manualRecovery} onClick={() => void connect()}
               variant={connected && !entryError ? 'outlined' : 'contained'}>
               {pendingPairing ? 'Continue connecting' : connected && !entryError ? 'Connect another extension' : 'Connect extension'}
             </Button>}

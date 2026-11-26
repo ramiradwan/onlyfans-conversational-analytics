@@ -14,6 +14,8 @@ import type { LiteralsStore } from '../../store/literalsStore';
 import { bridgeTransportStore, type BridgeTransportStore } from '../../store/transportStore';
 import { componentTokens, effectTokens } from '../../theme';
 import { OnboardingAction, OnboardingSpot, OnboardingStatus } from '../ui/OnboardingCard';
+import { Panel } from '../ui/Panel';
+import { LoadingCaption } from '../ui/Skeletons';
 
 const taskLabel = (task: FindingsTask['task']) => task === 'message_topics' ? 'Topics' : 'Mentions';
 const windowLabel = (window: { start?: string | null; end?: string | null }, empty = 'All available saved dates') =>
@@ -58,10 +60,12 @@ function TaskSection({ task, previous = false, onCategory, selected, navigation 
   const assigned = new Set(groups.flatMap((group) => group.member_ids));
   const ungrouped = task.rows.filter((row) => !assigned.has(row.category_id));
   return <ChartPanel title={`${taskLabel(task.task)}${previous ? ' · previous window' : ''}`} description={topics ? 'Categories supported by distinct saved messages and conversations.' : 'Exact mention occurrences, distinct messages, and conversations.'}>
-    <Stack spacing={2}>
-      <Typography>{task.availability === 'current' ? 'Current saved findings' : task.availability === 'partial' ? 'Partially assessed' : 'Assessment pending'}{!task.scan_complete && ' · Scan incomplete'}</Typography>
-      <Typography>Eligible: {formatCount(task.eligible_messages)} · Complete: {formatCount(task.complete_messages)} · Partial: {formatCount(task.partial_messages)} · Pending: {formatCount(task.pending_messages)}</Typography>
-      <Typography>Failed: {formatCount(task.failed_messages)} · Unsupported: {formatCount(task.unsupported_messages)} · Uncertain: {formatCount(task.uncertain_messages)}</Typography>
+    <Stack spacing={1.5}>
+      <Stack spacing={0.5} sx={{ bgcolor: 'surface.subtle', border: 1, borderColor: 'divider', borderRadius: 1.5, px: 2, py: 1.25 }}>
+        <Typography variant="subtitle2">{task.availability === 'current' ? 'Current saved findings' : task.availability === 'partial' ? 'Partially assessed' : 'Assessment pending'}{!task.scan_complete && ' · Scan incomplete'}</Typography>
+        <Typography variant="body2">Eligible: {formatCount(task.eligible_messages)} · Complete: {formatCount(task.complete_messages)} · Partial: {formatCount(task.partial_messages)} · Pending: {formatCount(task.pending_messages)}</Typography>
+        <Typography variant="body2">Failed: {formatCount(task.failed_messages)} · Unsupported: {formatCount(task.unsupported_messages)} · Uncertain: {formatCount(task.uncertain_messages)}</Typography>
+      </Stack>
       <Typography variant="body2">Unassessed or uncertain messages do not count as confirmed absence. {task.complete_messages > 0
         ? `Shares use only the ${formatCount(task.complete_messages)} completely assessed messages; partial support is shown separately.`
         : 'No fully checked messages in this saved result.'}</Typography>
@@ -70,7 +74,7 @@ function TaskSection({ task, previous = false, onCategory, selected, navigation 
           : <>
             {groups.map((group) => {
               const row = navigation.rows.find((item) => item.group_id === group.group_id)!;
-              return <Stack key={group.group_id} spacing={1}>
+              return <Stack key={group.group_id} spacing={1} sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
                   <Typography component="h3" variant="subtitle1">{group.display_label}</Typography>
                   <Typography>Union support: {formatCount(row.supporting_messages)} messages · {formatCount(row.supporting_conversations)} conversations · Complete / partial: {formatCount(row.complete_supporting_messages)} / {formatCount(row.partial_supporting_messages)}</Typography>
                   <Typography>Share of complete messages: {row.share_of_complete_messages === null ? 'Unavailable' : formatRatioPercent(row.share_of_complete_messages)}</Typography>
@@ -101,7 +105,8 @@ function FindingsCard({ title, first = false, busy = false, 'data-journey-state'
         <Skeleton animation={false} variant="rounded" width={40} height={40} sx={{ flexShrink: 0 }} />
         <Skeleton animation={false} variant="rounded" width="6rem" height="1em" />
       </Box>
-      <Stack spacing={1} aria-hidden="true">
+      <Stack spacing={1}>
+        <LoadingCaption variant="caption">Checking insights…</LoadingCaption>
         <Skeleton animation={false} variant="rounded" className="onboarding-surface-title" width="92%" height="1em" />
         <Skeleton animation={false} variant="rounded" width="58%" height="1em" />
       </Stack>
@@ -324,16 +329,20 @@ function FindingsSession({ baseline, controller, literalsController, presentatio
   }
   return <Stack component="section" spacing={2} aria-label="Profile text analysis" data-journey-state="findings.controls"
     sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-    <Box data-reserved-region="findings-intro"><Typography component="h2" variant="h6" data-region-content>Profile text analysis</Typography>
-      <Typography data-region-content>Available topic and mention findings from the selected analysis profile. These are separate from the baseline topics in Summary. Viewing results does not download files or run analysis.</Typography></Box>
-    <TextField select label="Message direction" value={direction} onChange={(event) => { store.actions.invalidate(); setDirection(event.target.value as FindingsDirection); }} sx={{ maxWidth: '20rem' }}>
+    <Panel>
+      <Box data-reserved-region="findings-intro"><Typography component="h2" variant="h6" data-region-content>Profile text analysis</Typography>
+        <Typography variant="body2" color="text.secondary" data-region-content>Available topic and mention findings from the selected analysis profile. These are separate from the baseline topics in Summary. Viewing results does not download files or run analysis.</Typography></Box>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} useFlexGap sx={{ flexWrap: 'wrap', alignItems: { sm: 'center' } }}>
+        <TextField select size="small" label="Message direction" value={direction} onChange={(event) => { store.actions.invalidate(); setDirection(event.target.value as FindingsDirection); }} sx={{ maxWidth: '20rem' }}>
       <MenuItem value="all">All messages</MenuItem><MenuItem value="inbound">Received messages</MenuItem><MenuItem value="outbound">Sent messages</MenuItem>
-    </TextField>
-    <Typography>Requested dates: {windowLabel(baseline?.requested_window ?? {})}</Typography>
+        </TextField>
+        {state.established && (baseline || refreshing) && <Button size="small" variant="outlined" disabled={refreshing || state.status === 'loading'} onClick={() => void refresh()}>Refresh saved findings</Button>}
+      </Stack>
+      <Typography variant="body2" color="text.secondary">Requested dates: {windowLabel(baseline?.requested_window ?? {})}</Typography>
+    </Panel>
     {category && <Alert severity="info"><Typography component="h3" ref={categoryHeading} tabIndex={-1}>Selected category: {taskLabel(category.filter.task)} · {category.label}</Typography>
       <Typography>The category narrows conversation and source lists. Summaries retain the selected dates, direction and conversation population. Choosing or clearing a category returns to all conversations.</Typography>
       <Button onClick={() => selectCategory(null)}>Clear category filter</Button></Alert>}
-    {state.established && (baseline || refreshing) && <Button disabled={refreshing || state.status === 'loading'} onClick={() => void refresh()}>Refresh saved findings</Button>}
     {!result && (state.status === 'loading'
       ? <FindingsCard title={insightTitle} busy />
       : <FindingsCard title={insightTitle} data-journey-state="findings.unavailable">
@@ -344,7 +353,8 @@ function FindingsSession({ baseline, controller, literalsController, presentatio
     {result && <Stack spacing={2} data-journey-state="findings.results">
       <FindingsSummary result={result} title={insightTitle} first={firstInsight} navigation={currentNavigation}
         onCategory={(filter, label) => { focusCategory.current = true; selectCategory(filter, label); }} selected={category?.filter} />
-      <TextField select label="Conversation" value={conversation ?? 'all'} onChange={(event) => { store.actions.invalidate(); setConversation(event.target.value === 'all' ? null : event.target.value); }} sx={{ maxWidth: '30rem' }}>
+      <Panel>
+      <TextField select size="small" label="Conversation" value={conversation ?? 'all'} onChange={(event) => { store.actions.invalidate(); setConversation(event.target.value === 'all' ? null : event.target.value); }} sx={{ maxWidth: '30rem' }}>
         <MenuItem value="all">All conversations</MenuItem>
         {conversation && !result.conversation_page.items.some((item) => item.conversation_ref === conversation) && <MenuItem value={conversation}>Selected conversation</MenuItem>}
         {result.conversation_page.items.map((item, index) => <MenuItem key={item.conversation_ref} value={item.conversation_ref}>Conversation {result.conversation_page.offset + index + 1} · {formatCount(item.eligible_messages)} eligible messages</MenuItem>)}
@@ -352,14 +362,15 @@ function FindingsSession({ baseline, controller, literalsController, presentatio
       <Typography variant="body2">Conversation numbers identify this saved list; source messages provide the conversation context. The list counts messages before the conversation filter.</Typography>
       <Typography>Conversations {formatCount(result.conversation_page.offset + (result.conversation_page.items.length ? 1 : 0))}–{formatCount(result.conversation_page.offset + result.conversation_page.items.length)} of {formatCount(result.conversation_page.total)}.</Typography>
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-        <Button disabled={unpinned || result.conversation_page.offset === 0} onClick={() => void store.actions.read(0, Math.max(0, result.conversation_page.offset - result.conversation_page.limit))}>Previous conversations</Button>
-        <Button disabled={unpinned || !result.conversation_page.has_more || result.conversation_page.offset + result.conversation_page.limit > 1_000_000} onClick={() => void store.actions.read(0, result.conversation_page.offset + result.conversation_page.limit)}>Next conversations</Button>
+        <Button size="small" variant="outlined" disabled={unpinned || result.conversation_page.offset === 0} onClick={() => void store.actions.read(0, Math.max(0, result.conversation_page.offset - result.conversation_page.limit))}>Previous conversations</Button>
+        <Button size="small" variant="outlined" disabled={unpinned || !result.conversation_page.has_more || result.conversation_page.offset + result.conversation_page.limit > 1_000_000} onClick={() => void store.actions.read(0, result.conversation_page.offset + result.conversation_page.limit)}>Next conversations</Button>
       </Stack>
       {navigation && <Typography variant="body2">{navigation.availability === 'available'
         ? 'Groups and categories can overlap. Group support counts each supporting message once; shares do not add to a distribution.'
         : 'Declared category groups are unavailable for this saved analysis. Categories remain listed below.'}</Typography>}
       {unpinned && <Box><Typography>Use a flat view to browse additional source or conversation pages.</Typography>
         <Button onClick={() => { store.actions.invalidate(); setView(null); }}>Use flat categories</Button></Box>}
+      </Panel>
       {findingsTaskAvailability(result).map((item) => item.availability === 'declared'
         ? <TaskSection key={item.task} task={result.tasks.find((task) => task.task === item.task)!} onCategory={selectCategory} selected={category?.filter}
             navigation={currentNavigation} />
@@ -381,7 +392,7 @@ function FindingsSession({ baseline, controller, literalsController, presentatio
           {result.evidence_page.items.length === 0 && <Typography>No supporting source references are available on this page.</Typography>}
           {result.evidence_page.items.map((item, index) => {
             const row = result.tasks.find((task) => task.task === item.task)?.rows.find((r) => r.category_id === item.category_id);
-            return <Button key={`${item.task}:${item.category_id}:${index}`} onClick={() => void store.actions.openSource(item.reference)}>
+            return <Button key={`${item.task}:${item.category_id}:${index}`} size="small" variant="outlined" onClick={() => void store.actions.openSource(item.reference)}>
               {taskLabel(item.task)} source {result.evidence_page.offset + index + 1}: {row?.display_label ?? item.category_id} ({item.assessment})
             </Button>;
           })}

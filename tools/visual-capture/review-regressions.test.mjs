@@ -348,7 +348,7 @@ for (const width of [390, 1440]) for (const fontScale of [1, 1.25]) test(`activa
     await push('connection', 'connected');
     for (const key of await push('pending')) await push('release', key, 'populated');
     const section = page.locator('[data-reserved-region="settings-activation"]');
-    const chip = section.locator('.onboarding-pill');
+    const chip = section.locator('[aria-live="polite"] .MuiChip-outlined');
     await chip.waitFor();
     await page.evaluate(() => document.fonts.ready);
     await settle(page);
@@ -376,6 +376,8 @@ for (const width of [390, 1440]) for (const fontScale of [1, 1.25]) test(`activa
         assert.equal(await chip.innerText(), label);
         const { x, y, width, height } = await chip.boundingBox();
         assert(x >= bounds.x && x + width <= bounds.x + bounds.width, 'The pill escapes the section');
+        assert(Math.abs(bounds.x + bounds.width - x - width - 24) < 1, 'The pill must align to the card inset');
+        assert(y < geometry.y + geometry.height && y + height > geometry.y, 'The pill must share the heading row');
         initialChip ??= { y, height };
         assert.deepEqual({ y, height }, initialChip, 'Status pills change vertical geometry');
       } else assert.equal(await chip.count(), 0);
@@ -657,11 +659,12 @@ for (const width of [320, 390, 600]) test(`essential activation content stays se
     const geometry = await section.evaluate((node) => {
       const bounds = node.getBoundingClientRect();
       const content = node.querySelector('[data-region-content]').getBoundingClientRect();
-      const next = document.querySelector('[data-reserved-region="settings-history"]').getBoundingClientRect();
+      const sections = [...document.querySelectorAll('[data-settings-section]')];
+      const next = sections[sections.indexOf(node.closest('[data-settings-section]')) + 1].getBoundingClientRect();
       const notice = node.querySelector('[role="status"]').getBoundingClientRect();
       const title = node.querySelector('h2');
-      const header = title.parentElement;
-      const status = header.querySelector('.onboarding-pill').getBoundingClientRect();
+      const header = title.closest('[data-settings-section-header]');
+      const status = header.querySelector('[data-settings-status]').getBoundingClientRect();
       const range = document.createRange(); range.selectNodeContents(header);
       const titleRange = document.createRange(); titleRange.selectNodeContents(title);
       return { minimum: parseFloat(getComputedStyle(node).minBlockSize), height: bounds.height, bottom: bounds.bottom,

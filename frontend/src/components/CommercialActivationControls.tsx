@@ -13,7 +13,7 @@ import {
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 
 import { ProviderSignInButtons, type SignInProvider } from './ProviderSignInButtons';
-import { Panel, useRevealHold } from './ui';
+import { Panel, SectionHeader, useRevealHold } from './ui';
 import type { FullPresentationIntent } from '../protocol';
 import {
   capabilityLicenseApi,
@@ -23,7 +23,7 @@ import {
 } from '../services/capabilityLicenseApi';
 import { desktopInteractionFailure, desktopOnboardingApi, selectAnalysisReadiness, selectBrowserFeedback, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import { componentTokens, typography } from '../theme';
-import { OnboardingAction, OnboardingPill, OnboardingSpot, OnboardingStatus } from './ui/OnboardingCard';
+import { OnboardingAction, OnboardingSpot, OnboardingStatus } from './ui/OnboardingCard';
 import { offerPriceColors } from '../theme/generated/tokens';
 
 const ACTIVATION_BODY = 'Conversation insights, like your most common topics, stored on this computer.';
@@ -435,16 +435,16 @@ export function CommercialActivationControls({
       {guided && <Box className="onboarding-surface-head"><OnboardingSpot icon="insights" />
         {title !== 'Full analytics' && <span>Full analytics</span>}
       </Box>}
-      <Stack direction="row" useFlexGap sx={{ gap: 1, flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <Typography ref={sectionHeading} id={sectionTitleId} component="h2" variant="h6" tabIndex={-1}
-          sx={guided ? { ...taskTitleSx, fontSize: { xs: '1.25rem', sm: '1.375rem' } } : undefined}>{title}</Typography>
-        {!dashboard && <Box aria-live="polite" sx={{
-          display: 'grid', justifyItems: 'start',
-          '&::before': { content: '"Needs attention" / ""', gridArea: '1 / 1', visibility: 'hidden',
-            fontSize: 'var(--dipsy-static-caption-size, .75rem)', lineHeight: 1.5, fontWeight: 500, py: '3px', px: '16px' },
-          '& > span': { gridArea: '1 / 1' },
-        }}>{status && <OnboardingPill tone={fullReady ? 'progress' : 'neutral'}>{status}</OnboardingPill>}</Box>}
-      </Stack>
+      <SectionHeader
+        title={title}
+        headingProps={{
+          id: sectionTitleId,
+          ref: sectionHeading,
+          tabIndex: -1,
+          sx: guided ? { ...taskTitleSx, fontSize: { xs: '1.25rem', sm: '1.375rem' } } : undefined,
+        }}
+        status={dashboard ? undefined : status && { label: status, tone: fullReady ? 'success' : 'default' }}
+      />
     </Box>}
     {showPrompt && <Typography color="text.secondary" sx={{ maxWidth: '60ch' }}>{ACTIVATION_BODY}</Typography>}
     <Stack data-journey-state="desktop.full_analytics_activation" spacing={1}

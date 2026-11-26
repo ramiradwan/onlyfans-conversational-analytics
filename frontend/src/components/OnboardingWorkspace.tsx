@@ -46,7 +46,7 @@ export function OnboardingWorkspace({ children, steps = [], creator, trust = fal
       overflowY: trust ? undefined : 'auto' }}>
       <Stack component="header" data-desktop-drag-region direction="row" sx={{ p: { xs: 2, sm: 3.5 }, alignItems: 'center', flexWrap: 'wrap', gap: 1.5, rowGap: 1,
         borderBottom: '1px solid', borderColor: 'divider',
-        '& > :first-child .MuiTypography-root': { display: 'block', whiteSpace: 'normal' } }}>
+        '& > :first-of-type .MuiTypography-root': { display: 'block', whiteSpace: 'normal' } }}>
         <BrandMark />
         {creator && <Typography sx={{ ml: 'auto !important', color: 'text.secondary', overflowWrap: 'anywhere' }}>{creator}</Typography>}
         <DesktopWindowControls />

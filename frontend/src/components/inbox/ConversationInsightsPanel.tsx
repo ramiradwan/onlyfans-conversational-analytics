@@ -4,7 +4,6 @@ import {
   Box,
   Chip,
   Paper,
-  Skeleton,
   Stack,
   Typography,
   styled,
@@ -23,6 +22,7 @@ import {
 } from '../../analytics';
 import { componentTokens } from '../../theme';
 import { AnalyticsWindowLabel } from '../analytics/AnalyticsWindowLabel';
+import { LoadingCaption } from '../ui/Skeletons';
 
 const Root = styled(Paper)(({ theme }) => ({
   backgroundColor: theme.vars.palette.background.paper,
@@ -107,11 +107,20 @@ export function ConversationInsightsPanel({
       </Box>
 
       {analyticsState.status === 'loading' && (
-        <Stack spacing={1.5} role="status" aria-label="Loading conversation insights">
-          <Skeleton variant="rounded" height={96} />
-          <Skeleton variant="rounded" height={112} />
-          <Skeleton variant="rounded" height={96} />
-        </Stack>
+        <Box
+          role="status"
+          aria-label="Loading conversation insights"
+          sx={{
+            bgcolor: 'surface.subtle',
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 1.5,
+            px: 2,
+            py: 1.75,
+          }}
+        >
+          <LoadingCaption>Loading conversation insights…</LoadingCaption>
+        </Box>
       )}
 
       {analyticsState.status === 'building' && (

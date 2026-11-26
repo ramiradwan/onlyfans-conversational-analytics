@@ -4,7 +4,6 @@ import {
   Button,
   LinearProgress,
   Paper,
-  Skeleton,
   Stack,
   Typography,
   styled,
@@ -14,6 +13,7 @@ import type { ReactNode } from 'react';
 import type { AnalyticsReadState } from '../../analytics';
 import { componentTokens } from '../../theme';
 import { ReservedNotice } from '../ui/ReservedRegion';
+import { AnalyticsSummarySkeleton } from '../ui/Skeletons';
 
 const StateCard = styled(Paper)(({ theme }) => ({
   alignContent: 'center',
@@ -51,17 +51,6 @@ const Content = styled(Box, {
   },
 }));
 
-const LoadingPanels = styled(Box)(({ theme }) => ({
-  display: 'grid',
-  gap: theme.spacing(2),
-  gridTemplateColumns: 'minmax(0, 1fr)',
-  [theme.breakpoints.up('md')]: {
-    gridTemplateColumns: 'minmax(0, 2fr) minmax(17rem, 1fr)',
-  },
-}));
-
-const primaryPanelHeight = componentTokens.analytics.chartHeight + 96;
-
 export interface AnalyticsStateFrameProps {
   state: AnalyticsReadState;
   children?: ReactNode;
@@ -70,31 +59,7 @@ export interface AnalyticsStateFrameProps {
 
 export function AnalyticsStateFrame({ state, children, onRetry }: AnalyticsStateFrameProps) {
   if (state.status === 'loading') {
-    return (
-      <Stack spacing={2} role="status" aria-live="polite">
-        <Typography sx={{ color: 'text.secondary' }}>{state.message}</Typography>
-        <LoadingPanels>
-          <Skeleton
-            data-visual="analytics-loading-primary"
-            animation={false}
-            height={primaryPanelHeight}
-            variant="rounded"
-          />
-          <Skeleton
-            data-visual="analytics-loading-replies"
-            animation={false}
-            height={primaryPanelHeight}
-            variant="rounded"
-          />
-        </LoadingPanels>
-        <Skeleton
-          data-visual="analytics-loading-topics"
-          animation={false}
-          height={220}
-          variant="rounded"
-        />
-      </Stack>
-    );
+    return <AnalyticsSummarySkeleton message={state.message} />;
   }
 
   if (state.status === 'building' && state.data === null) {
@@ -172,9 +137,18 @@ export function AnalyticsStateFrame({ state, children, onRetry }: AnalyticsState
           : null;
 
   return (
-    <Stack spacing={2} aria-busy={state.isRefreshing}>
-      <ReservedNotice id="analytics-notice" notice={notice ? { title: notice.title, body: notice.detail, severity: notice.severity } : null} />
-      <Box sx={{ height: 4, visibility: state.isRefreshing ? 'visible' : 'hidden' }}><LinearProgress aria-label="Refreshing analytics" /></Box>
+    <Stack spacing={2} aria-busy={state.isRefreshing} sx={{ position: 'relative' }}>
+      {notice && (
+        <ReservedNotice
+          id="analytics-notice"
+          notice={{ title: notice.title, body: notice.detail, severity: notice.severity }}
+        />
+      )}
+      {state.isRefreshing && (
+        <Box sx={{ position: 'absolute', insetInline: 0, top: '-4px', m: '0 !important' }}>
+          <LinearProgress aria-label="Refreshing analytics" />
+        </Box>
+      )}
       <Content $refreshing={state.isRefreshing}>{children}</Content>
     </Stack>
   );

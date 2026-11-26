@@ -6,6 +6,7 @@ import {
   List,
   ListItem,
   ListItemAvatar,
+  ListItemButton,
   Paper,
   Typography,
 } from '@mui/material';
@@ -43,36 +44,46 @@ export function RecentConversations({
 }: RecentConversationsProps) {
   const headingId = useId();
   const recent = sortConversations(conversations).slice(0, limit);
-  if (recent.length === 0) return <Box sx={{ p: 3 }}><Typography variant="subtitle1">No conversations yet</Typography><Typography variant="body2">Conversations appear here when new messages arrive in your creator tab.</Typography></Box>;
+  if (recent.length === 0) return <Box sx={{ p: 3 }}><Typography variant="subtitle1">No conversations yet</Typography><Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>Conversations appear here when new messages arrive in your creator tab.</Typography></Box>;
 
   return (
     <Paper
       component="section"
       aria-labelledby={headingId}
-      sx={(theme) => ({ maxWidth: 880, mx: 'auto', py: 1, width: '100%', ...theme.effects.cardBorder(theme), ...surfaceArrival(1, true) })}
+      sx={(theme) => ({ width: '100%', overflow: 'hidden', ...theme.effects.cardBorder(theme), ...surfaceArrival(1, true) })}
     >
       <Box
-        sx={{ alignItems: 'center', columnGap: 2, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', pb: 0.5, pl: 3, pr: 2, pt: 1.5 }}
+        sx={{
+          alignItems: 'center',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          columnGap: 2,
+          display: 'flex',
+          flexWrap: 'wrap',
+          justifyContent: 'space-between',
+          px: { xs: 2.5, md: 3 },
+          py: 1.75,
+        }}
       >
         <Typography component="h2" id={headingId} variant="h6">
           Recent conversations
         </Typography>
         {showInboxLink && (
-          <Button component={RouterLink} endIcon={<ArrowForwardIcon />} size="small" sx={{ whiteSpace: 'nowrap' }} to="/inbox">
+          <Button component={RouterLink} endIcon={<ArrowForwardIcon />} size="small" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }} to="/inbox">
             Open inbox
           </Button>
         )}
       </Box>
       <List disablePadding>
-        {recent.map((conversation) => {
+        {recent.map((conversation, index) => {
           const title = getConversationTitle(conversation);
           const latest = conversationLatestMessage(conversation);
           const lastActivity = conversation.last_message_at ?? latest?.sent_at ?? null;
           const stamp = lastActivity === null ? '' : formatTimestamp(lastActivity);
           // The date and the time wrap as whole parts.
           const split = stamp.lastIndexOf(', ');
-          return (
-            <ListItem key={conversation.conversation_id} sx={{ columnGap: 2, px: 3, py: 1.25 }}>
+          const rowContent = (
+            <>
               <ListItemAvatar sx={{ minWidth: 0 }}>
                 <Avatar
                   aria-hidden="true"
@@ -89,7 +100,7 @@ export function RecentConversations({
                   {title.slice(0, 1).toUpperCase()}
                 </Avatar>
               </ListItemAvatar>
-              <Box sx={{ containerType: 'inline-size', flex: 1, minWidth: 0, my: 0.75 }}>
+              <Box sx={{ containerType: 'inline-size', flex: 1, minWidth: 0, my: 0.25 }}>
                 <Box
                   sx={{
                     columnGap: 2,
@@ -104,14 +115,14 @@ export function RecentConversations({
                     },
                   }}
                 >
-                  <Typography component="span" sx={{ fontWeight: 500, gridArea: 'name', height: '1.5rem', minWidth: 0, whiteSpace: 'nowrap' }}>
+                  <Typography component="span" sx={{ fontWeight: conversation.unread_count > 0 ? 600 : 500, gridArea: 'name', minWidth: 0, whiteSpace: 'nowrap' }}>
                     <BoundedSummary text={title} maximum={32} />
                   </Typography>
                   <Typography
                     variant="body2"
-                    sx={{ color: 'text.secondary', gridArea: 'preview', height: '2.5rem', lineHeight: '1.25rem', minWidth: 0, overflowWrap: 'anywhere', [stacked]: { height: '1.25rem' } }}
+                    sx={{ color: 'text.secondary', gridArea: 'preview', lineHeight: 1.4, minWidth: 0, overflowWrap: 'anywhere', mt: 0.25 }}
                   >
-                    <BoundedSummary text={messagePreview(latest?.text ?? '') || 'No messages yet'} maximum={56} />
+                    <BoundedSummary text={messagePreview(latest?.text ?? '') || 'No messages yet'} maximum={84} />
                   </Typography>
                   <Box sx={{ alignItems: 'flex-end', display: 'flex', flexDirection: 'column', gap: 0.5, gridArea: 'meta', [stacked]: { display: 'contents' } }}>
                     {lastActivity !== null && (
@@ -153,6 +164,30 @@ export function RecentConversations({
                   </Box>
                 </Box>
               </Box>
+            </>
+          );
+
+          return (
+            <ListItem
+              key={conversation.conversation_id}
+              sx={{ borderTop: index > 0 ? '1px solid' : 'none', borderColor: 'divider', px: { xs: 2.5, md: 3 }, py: 0 }}
+            >
+              {showInboxLink ? (
+                <ListItemButton
+                  component={RouterLink}
+                  to={`/inbox?conversation=${encodeURIComponent(conversation.conversation_id)}`}
+                  sx={{
+                    columnGap: 2, px: 0, py: 1.5, borderRadius: 0, position: 'static',
+                    '&::before': { content: '""', position: 'absolute', inset: 0 },
+                  }}
+                >
+                  {rowContent}
+                </ListItemButton>
+              ) : (
+                <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', columnGap: 2, py: 1.5 }}>
+                  {rowContent}
+                </Box>
+              )}
             </ListItem>
           );
         })}

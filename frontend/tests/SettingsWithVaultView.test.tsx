@@ -1,5 +1,7 @@
 import { ThemeProvider } from '@mui/material/styles';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { HistorySettings } from '../src/protocol';
@@ -15,8 +17,12 @@ import { desktopFixture } from './desktopOnboardingFixture';
 
 type Section = 'pairing' | 'history' | 'activation' | 'vault';
 
+function renderSettings(children: ReactNode) {
+  return render(<ThemeProvider theme={theme} defaultMode="light"><MemoryRouter>{children}</MemoryRouter></ThemeProvider>);
+}
+
 it('keeps all five section frames present while one request is pending', () => {
-  const view = render(<ThemeProvider theme={theme}><SettingsWithVaultView {...apis('vault')} /></ThemeProvider>);
+  const view = renderSettings(<SettingsWithVaultView {...apis('vault')} />);
   expect(view.container.querySelectorAll('[data-settings-section]')).toHaveLength(5);
 });
 
@@ -118,7 +124,7 @@ describe('SettingsWithVaultView', () => {
     const { release, ...props } = apis('vault');
     const desktop = desktopFixture();
     desktop.readiness(readiness, 'creator-1');
-    const { container } = render(<ThemeProvider theme={theme}><SettingsWithVaultView {...props} onboardingApi={desktop.api} /></ThemeProvider>);
+    const { container } = renderSettings(<SettingsWithVaultView {...props} onboardingApi={desktop.api} />);
     await act(async () => release());
     const section = within(container.querySelector<HTMLElement>('#full-analytics')!);
     const code = section.getByRole('button', { name: 'Use an activation code' });
@@ -145,7 +151,7 @@ describe('SettingsWithVaultView', () => {
     let finish!: () => void;
     vi.mocked(desktop.api.begin).mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
     desktop.publish({ snapshot });
-    const { container } = render(<ThemeProvider theme={theme}><SettingsWithVaultView {...props} onboardingApi={desktop.api} /></ThemeProvider>);
+    const { container } = renderSettings(<SettingsWithVaultView {...props} onboardingApi={desktop.api} />);
     await act(async () => { release(); });
     const sections = [...container.querySelectorAll('[data-settings-section]')];
     const action = screen.getByRole('button', { name: 'Connect extension' });
@@ -163,11 +169,7 @@ describe('SettingsWithVaultView', () => {
     'settles the other sections while %s is pending',
     async (slow) => {
       const { release, ...props } = apis(slow);
-      render(
-        <ThemeProvider theme={theme} defaultMode="light">
-          <SettingsWithVaultView {...props} />
-        </ThemeProvider>,
-      );
+      renderSettings(<SettingsWithVaultView {...props} />);
       await act(async () => undefined);
 
       const headings = { pairing: 'Browser extension', history: 'Message history', activation: 'Full analytics', vault: 'Stored messages' };

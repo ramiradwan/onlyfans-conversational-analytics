@@ -235,9 +235,17 @@ describe('CreatorDashboardView', () => {
     expect(screen.getByRole('heading', { name: 'Opening Dipsy' })).toBeTruthy();
     expect(screen.getByText('Checking your connection.')).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Loading recent conversations…' })).toBeNull();
     act(() => store.bindAccount(ACCOUNT_ID));
-    expect(overview().getByRole('group', { name: 'Messages' }).querySelector('.MuiSkeleton-root')).toBeTruthy();
+    expect(overview().getByRole('group', { name: 'Messages' }).querySelector('[data-region-content]')?.textContent).toBe('—');
+    const loading = screen.getByRole('region', { name: 'Loading recent conversations…', busy: true });
+    expect(within(loading).getByRole('heading', { name: 'Recent conversations' })).toBeTruthy();
+    expect(within(loading).getByText('Loading…')).toBeTruthy();
+    expect(loading.querySelectorAll('[data-recent-placeholder-row]')).toHaveLength(3);
     expect(screen.queryByText('Checking setup…')).toBeNull();
+    act(() => { store.applySnapshot(snapshot()); });
+    expect(screen.queryByRole('region', { name: 'Loading recent conversations…' })).toBeNull();
+    expect(screen.getByRole('region', { name: 'Recent conversations' })).toBeTruthy();
   });
 
   it('shows the browser prerequisite instead of a zero-count claim', () => {
@@ -872,9 +880,9 @@ describe('CreatorDashboardView', () => {
     expectSplit('Sent', '8');
     expect(screen.queryByRole('progressbar')).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.getByText(SAVED_BASIS)).toBeTruthy();
-
+    const caption = screen.getByText(SAVED_BASIS);
     const details = screen.getByRole('button', { name: 'Details' });
+    expect(caption.nextElementSibling).toBe(details);
     expect(details.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByText('Messages counted', { exact: true })).toBeNull();
     fireEvent.click(details);

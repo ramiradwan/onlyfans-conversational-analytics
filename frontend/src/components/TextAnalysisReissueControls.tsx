@@ -1,7 +1,7 @@
 import { Button, Stack, Typography } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
-import { Panel, SectionHeader } from './ui';
+import { Panel, SectionHeader, type SectionStatus } from './ui';
 import { StatusLine } from './ui/ReservedRegion';
 import { textAnalysisReissueApi, type ReissueStatusView, type TextAnalysisReissueApi } from '../services/textAnalysisReissueApi';
 import { textAnalysisScopeKey, textAnalysisScopeReady } from '../store/textAnalysisExecutionStore';
@@ -71,20 +71,36 @@ function ReissueSession({ creatorAccountId, api = textAnalysisReissueApi, transp
         : current?.state === 'expired' ? 'The original request has expired. Check its recorded outcome before starting another request.'
           : current ? 'Continue the original request in your account, then check its outcome here.'
             : view ? 'Recover an existing text analysis licence for this computer.' : 'Checking saved recovery status…';
+  const headerStatus: SectionStatus = error
+    ? { label: 'Needs attention', tone: 'error' }
+    : busy
+      ? { label: 'Checking…', tone: 'default' }
+      : !ready
+        ? { label: 'Unavailable', tone: 'default' }
+        : current?.state === 'adopted'
+          ? { label: 'Saved', tone: 'success' }
+          : current?.state === 'expired'
+            ? { label: 'Expired', tone: 'warning' }
+            : current
+              ? { label: 'In progress', tone: 'info' }
+              : { label: 'Not recovered', tone: 'default' };
   return <Panel component="section" aria-label="Recover text analysis access">
-    <SectionHeader title="Recover text analysis access" />
-    <Stack spacing={2} data-journey-state="textanalysis.licence_recovery">
-      <Typography>Use your account to restore an existing licence on a replacement computer.</Typography>
+    <SectionHeader
+      title="Recover text analysis access"
+      summary="Use your account to restore an existing licence on a replacement computer."
+      status={headerStatus}
+    />
+    <Stack spacing={1.5} data-journey-state="textanalysis.licence_recovery">
       <StatusLine id="reissue-feedback" text={message} summary={error ? 'Needs attention' : busy ? 'Checking…' : 'Status'}
         tone={error ? 'error' : 'secondary'} />
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-        <Button disabled={!ready || busy} onClick={() => void action('status')}>Check saved recovery status</Button>
-        {view?.current === null && <Button disabled={!ready || busy || error} onClick={() => void action('begin')}>Recover existing licence</Button>}
-        {current?.state === 'expired' && expiredChecked && <Button disabled={busy || error} onClick={() => void action('begin')}>Start a new recovery request</Button>}
-        {current && current.state !== 'adopted' && <Button disabled={busy} onClick={() => void action('resume')}>Check original recovery request</Button>}
-        {current?.navigation_available && <Button disabled={busy} onClick={() => void action('browser')}>Continue recovery in browser</Button>}
+        <Button size="small" variant="outlined" disabled={!ready || busy} onClick={() => void action('status')}>Check saved recovery status</Button>
+        {view?.current === null && <Button size="small" variant="outlined" disabled={!ready || busy || error} onClick={() => void action('begin')}>Recover existing licence</Button>}
+        {current?.state === 'expired' && expiredChecked && <Button size="small" variant="outlined" disabled={busy || error} onClick={() => void action('begin')}>Start a new recovery request</Button>}
+        {current && current.state !== 'adopted' && <Button size="small" variant="outlined" disabled={busy} onClick={() => void action('resume')}>Check original recovery request</Button>}
+        {current?.navigation_available && <Button size="small" variant="outlined" disabled={busy} onClick={() => void action('browser')}>Continue recovery in browser</Button>}
       </Stack>
-      <Typography>Recovery does not install files or start message analysis.</Typography>
+      <Typography variant="caption" sx={{ color: 'text.secondary' }}>Recovery does not install files or start message analysis.</Typography>
     </Stack>
   </Panel>;
 }

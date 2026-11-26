@@ -1,30 +1,39 @@
-import { Box, Stack, Typography } from '@mui/material';
+import { Box, Button, Stack, Typography } from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
 
 import { Panel } from './ui';
 import type { BrowserSurfacePayload } from '../protocol';
 import { extensionLabel, type ExtensionConnection } from '../utils/statusCopy';
 import { OnboardingCard, OnboardingPill, OnboardingSpot } from './ui/OnboardingCard';
 
-/** An empty received snapshot has no distribution or activity chart to draw. */
-export function DashboardConnection({ browser, connection, desktopConnected }: {
+/** Connection summary for the dashboard. */
+export function DashboardConnection({ browser, connection, desktopConnected, canViewSettings }: {
   browser: BrowserSurfacePayload | null;
   connection: ExtensionConnection;
   desktopConnected: boolean;
+  canViewSettings: boolean;
 }) {
   const browserLabel = connection !== 'connected' ? extensionLabel(connection)
     : browser === null ? 'Not checked'
       : browser.legal_review_required || browser.site_access !== 'granted' ? 'Needs attention'
         : browser.capture === 'paused' ? 'Paused' : browser.capture === 'off' ? 'Off' : 'Connected';
-  return <Panel component="section" aria-labelledby="empty-connection-title">
-    <Typography component="h2" id="empty-connection-title" variant="h6">Connection</Typography>
-    {[
-      { label: 'Desktop app', status: desktopConnected ? 'Connected' : 'Not connected' },
-      { label: 'Browser extension', status: browserLabel },
-    ].map(({ label, status }) => <Stack key={label} direction="row" useFlexGap
-      sx={{ gap: 1, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-      <Typography variant="body2">{label}</Typography>
-      <OnboardingPill tone={status === 'Connected' ? 'progress' : 'neutral'}>{status}</OnboardingPill>
-    </Stack>)}
+  return <Panel component="section" aria-labelledby="empty-connection-title"
+    sx={{ flexDirection: { xs: 'column', md: 'row' }, alignItems: { md: 'center' },
+      justifyContent: 'space-between', gap: { xs: 1.5, md: 3 }, px: { xs: 2.5, md: 3 }, py: 2 }}>
+    <Typography component="h2" id="empty-connection-title" variant="subtitle1">Connection</Typography>
+    <Stack direction={{ xs: 'column', sm: 'row' }} useFlexGap
+      sx={{ gap: { xs: 1, sm: 3 }, flexWrap: 'wrap', alignItems: { sm: 'center' } }}>
+      {[
+        { label: 'Desktop app', status: desktopConnected ? 'Connected' : 'Not connected' },
+        { label: 'Browser extension', status: browserLabel },
+      ].map(({ label, status }) => <Stack key={label} direction="row" useFlexGap
+        sx={{ gap: 1, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>{label}</Typography>
+        <OnboardingPill tone={status === 'Connected' ? 'progress' : 'neutral'}>{status}</OnboardingPill>
+      </Stack>)}
+      {canViewSettings && <Button component={RouterLink} to="/settings#browser-extension" size="small"
+        aria-label="Manage browser extension" sx={{ alignSelf: 'flex-start' }}>Manage</Button>}
+    </Stack>
   </Panel>;
 }
 
