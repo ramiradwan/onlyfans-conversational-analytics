@@ -176,6 +176,65 @@ def test_pricing_gate_is_not_a_query_option(ready):
     ready.scheduler.request_recovery.assert_not_called()
 
 
+def test_activity_keeps_six_to_three_and_both_sources_after_final_creator_reply(ready):
+    from app.analytics.opaque_refs import conversation_ref
+    from tests.activity_question_fixture import seed_activity_inbox
+
+    account, chat = "fictional-last-reply", "orchard"
+    through = SOURCE_NOW - timedelta(days=1)
+    with ready.stored.database.transaction() as db:
+        seed_activity_inbox(db, account, through)
+        # Leave room for a later creator reply inside the same comparison window.
+        updated = db.execute("""UPDATE account_messages SET sent_at=?
+                                WHERE creator_account_id=? AND message_id='orchard-8'""",
+                             ((through - timedelta(hours=1)).isoformat(), account))
+        assert updated.rowcount == 1
+
+    ready.resources.source = HistoryAnalyticsSource(ready.stored.history)
+    ready.app.dependency_overrides[get_authenticated_account_session] = lambda: policy(account)
+    ready.client.headers["x-csrf-token"] = csrf_token(policy(account))
+    endpoint = "/api/v1/insights/questions"
+    target = conversation_ref(account, chat)
+    request = plan(question="participant_activity_decline.v1", start=(through - timedelta(days=14)).isoformat(),
+                   end=through.isoformat(), cutoff=through.isoformat())
+
+    def check_comparison(expected_revision):
+        ready.pipeline.project_account(account)
+        ready.resources.source.prepare_question_identity(account)
+        overview = ready.client.post(endpoint, json=request)
+        assert overview.status_code == 200, overview.text
+        all_chats = overview.json()["page"]
+        assert all_chats["total_matching_conversations"] == 2
+        assert {r["conversation_ref"] for r in all_chats["rows"]} == {target, conversation_ref(account, "harbor")}
+        response = ready.client.post(endpoint, json={**request, "filters": {"conversation_ref": target}})
+        assert response.status_code == 200, response.text
+        result = response.json()
+        assert result["question"]["snapshot"]["source_revision"] == expected_revision
+        page = result["page"]
+        assert page["total_matching_conversations"] == 1 and page["undetermined_conversation_count"] == 0
+        row, = page["rows"]
+        assert (row["earlier_messages"], row["recent_messages"]) == (6, 3)
+        for anchor, message_id in zip(row["evidence"], ("orchard-8", "orchard-5"), strict=True):
+            detail = ready.client.post(endpoint + "/evidence", json=anchor)
+            assert detail.status_code == 200, detail.text
+            source = detail.json()
+            assert source["location"] == {"conversation_id": chat, "message_id": message_id}
+            assert source["direction"] == "inbound"
+
+    check_comparison(1)
+    with ready.stored.database.transaction() as db:
+        inserted = db.execute("""INSERT INTO account_messages(
+            creator_account_id,message_id,chat_id,sender_platform_user_id,text,sent_at,direction,
+            content_hash,winning_stream_epoch,winning_source_seq,is_deleted,updated_at,event_kind_json)
+            SELECT creator_account_id,'orchard-reply',chat_id,creator_account_id,'See you then.',?,'outbound',
+                   'fixture-reply',winning_stream_epoch,winning_source_seq+1,0,updated_at,event_kind_json
+            FROM account_messages WHERE creator_account_id=? AND message_id='orchard-8'""",
+            ((through - timedelta(minutes=15)).isoformat(), account))
+        assert inserted.rowcount == 1
+        db.execute("UPDATE account_heads SET canonical_revision=canonical_revision+1 WHERE creator_account_id=?", (account,))
+    check_comparison(2)
+
+
 def test_activity_catalog_reader_and_sources_are_account_bound(ready):
     from tests.activity_question_fixture import seed_activity_inbox
 
