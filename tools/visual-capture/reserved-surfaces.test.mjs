@@ -96,6 +96,36 @@ test('desktop empty task actions occupy no more than one line', async () => {
   });
 });
 
+test('ordinary sign-in cancellation fits the setup card and collapses when unavailable', async () => {
+  const waiting = DESKTOP_ONBOARDING_STATES.account_sign_in_in_progress;
+  const unresolved = { ...waiting, snapshot: { ...waiting.snapshot,
+    pending_operations: waiting.snapshot.pending_operations.map(item =>
+      ({ ...item, state: 'outcome_unknown', reason: 'operation_unconfirmed' })),
+  } };
+  const unavailable = { ...unresolved, snapshot: { ...unresolved.snapshot, allowed_actions: [] } };
+  for (const mode of ['light', 'dark']) for (const [width, scale] of [[1440, 1], [640, 1], [390, 1], [390, 2], [320, 1], [320, 2]]) {
+    await withDesktop(width, scale, mode, 'account_sign_in_in_progress', async (page, render) => {
+      const cancel = page.getByRole('button', { name: 'Cancel sign-in' });
+      const actions = page.locator('.task-actions-slot [data-region-content] > .setup-actions');
+      assert.equal(await cancel.count(), 0);
+      assert.equal(await actions.boundingBox(), null);
+      await render(unresolved);
+      const caseName = mode + ', ' + width + ' px at ' + scale + 'x';
+      assert.equal(await cancel.count(), 1, 'Cancel sign-in is available at ' + caseName);
+      const rect = await cancel.boundingBox();
+      const card = await page.locator('.setup-task-card').boundingBox();
+      assert.ok(rect?.height >= 44, 'Cancel sign-in has a full-size target at ' + caseName);
+      assert.ok(rect.x >= card.x && rect.x + rect.width <= card.x + card.width, caseName);
+      assert.equal(await cancel.evaluate(button => button.matches('.secondary:not(:disabled)')), true, caseName);
+      assert.equal((await actions.boundingBox()).height, rect.height, caseName);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, caseName);
+      await render(unavailable);
+      assert.equal(await cancel.count(), 0);
+      assert.equal(await actions.boundingBox(), null);
+    });
+  }
+});
+
 for (const [width, scale, mode] of [[1440, 1, 'light'], [390, 1, 'dark'], [320, 2, 'light']]) {
   test(`desktop empty status occupies no space at ${width}px and ${scale}× text`, async () => {
     await withDesktop(width, scale, mode, 'loading', async (page, render) => {

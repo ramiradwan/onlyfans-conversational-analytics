@@ -6,7 +6,7 @@ export class DesktopEnrollment {
   constructor({ api = createWebAuthnApi(), receive, refresh }) {
     Object.assign(this, { api, receive, refresh });
     this.state = { checked: false, enrolled: null, authenticated: false, busy: false, checking: false,
-      recoveringStatus: false, error: null, access: null, attempt: null };
+      recoveringStatus: false, error: null, access: null, attempt: null, reason: null };
     this.controller = null;
     this.watcher = null;
     this.retryTimer = null;
@@ -38,7 +38,7 @@ export class DesktopEnrollment {
     clearTimeout(this.retryTimer);
     this.retryTimer = setTimeout(() => { void this.check(); }, delay);
   }
-  async check({ quiet = false } = {}) {
+  async check({ quiet = false, initial = null } = {}) {
     if (this.stopped || this.state.busy) return;
     clearTimeout(this.retryTimer);
     const rechecking = this.state.checked;
@@ -50,13 +50,17 @@ export class DesktopEnrollment {
     let refused = false;
     try {
       const value = await this.api.state(controller.signal);
+      const fromInitial = value.nativeRequired && value.enrolled && !value.authenticated
+        && !controller.signal.aborted && initial?.() && await this.api.initial?.(controller.signal);
       if (!controller.signal.aborted) {
         outcome = 'available';
         // Keep a ceremony's message when the read only confirms the shown state.
         // Retire the pre-authentication setup projection before publishing
         // restored access. A fresh authenticated snapshot owns the next action.
-        if (rechecking && value.authenticated && !wasAuthenticated) void this.refresh();
-        this.publish({ ...value, checked: true, access: null, recoveringStatus: false, ...(this.state.enrolled === null || value.authenticated ? { error: null, attempt: null } : {}) });
+        if (fromInitial || rechecking && value.authenticated && !wasAuthenticated) void this.refresh();
+        this.publish({ ...value, nativeRequired: value.nativeRequired === true, authenticated: value.authenticated || fromInitial === true, checked: true,
+          access: null, recoveringStatus: false,
+          ...(this.state.enrolled === null || value.authenticated || fromInitial ? { error: null, attempt: null, reason: null } : {}) });
         this.retryCount = 0;
       }
     } catch (error) {
@@ -87,14 +91,18 @@ export class DesktopEnrollment {
     }
   }
   async authenticate() {
-    if (this.stopped || this.state.busy || this.state.enrolled === null || this.state.authenticated || this.state.access) return;
+    if (this.stopped || this.state.busy || this.state.enrolled === null || this.state.authenticated || this.state.access
+      || this.state.nativeRequired && !this.state.enrolled) return;
     // The ceremony retires a quiet read. The follower compares again when it ends.
     const controller = this.start();
     let reconcile = false;
     const attempt = this.state.enrolled ? 'sign-in' : 'create';
-    this.publish({ busy: true, error: null, attempt });
+    this.publish({ busy: true, error: null, attempt, reason: null });
     try {
-      if (attempt === 'sign-in') await this.api.login(controller.signal);
+      if (attempt === 'sign-in') {
+        if (this.state.nativeRequired) await this.api.login(controller.signal, true);
+        else await this.api.login(controller.signal);
+      }
       else await this.api.enroll(controller.signal);
       if (!controller.signal.aborted) {
         // The reconnect owns a long-lived event stream; it is not a new command.
@@ -104,13 +112,14 @@ export class DesktopEnrollment {
       }
     } catch (cause) {
       if (controller.signal.aborted) return;
+      const reason = cause instanceof LoginOutcomeError ? cause.reason : null;
       reconcile = (cause instanceof EnrollmentOutcomeError && cause.enrolled === null)
         || (cause instanceof LoginOutcomeError && cause.outcomeUnknown);
       this.publish(reconcile
         ? { enrolled: null, recoveringStatus: true, error: 'passkey_status_unavailable' }
         : cause instanceof EnrollmentOutcomeError && cause.enrolled
           ? { enrolled: true, error: 'passkey_sign_in_required' }
-        : { error: cause instanceof LoginOutcomeError && cause.stage === 'begin' ? 'passkey_start_unavailable' : 'passkey_unconfirmed' });
+        : { reason, error: cause instanceof LoginOutcomeError && cause.stage === 'begin' ? 'passkey_start_unavailable' : 'passkey_unconfirmed' });
     } finally {
       if (this.controller === controller) {
         this.controller = null;

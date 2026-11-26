@@ -202,6 +202,29 @@ def test_revocation_fences_every_session_operation(admitted, scope):
             pytest.fail("revoked operation entered")
 
 
+def test_desktop_lock_pauses_companion_work_and_preserves_pairing(admitted):
+    local, authority, snapshot, handle = admitted
+    _hello(admitted)
+    with handle.operation() as policy:
+        assert policy.identity.creator_account_id == local.account
+
+    # The desktop route is tested with its ordinary sessions. Exercise the
+    # paired companion against the same persisted locked state here.
+    with local.store.database.transaction() as connection:
+        connection.execute("UPDATE desktop_access_lock SET generation=1, locked=1 WHERE singleton=1")
+    with pytest.raises(CompanionSessionError), handle.operation():
+        pytest.fail("capture was admitted while the desktop was locked")
+    with pytest.raises(CompanionSessionError):
+        authority.authorize(snapshot)
+
+    with local.store.database.transaction() as connection:
+        local.store.unlock_desktop_after_assertion(connection, 1)
+    current = authority.prepare(snapshot.pin.pairing_id)
+    assert current.pin == snapshot.pin
+    with authority.authorize(current).operation() as policy:
+        assert policy.identity.creator_account_id == local.account
+
+
 def test_grant_refresh_selects_new_bytes_only_for_next_session(admitted):
     local, authority, snapshot, handle = admitted
     prior = snapshot.installation_grant

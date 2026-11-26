@@ -407,6 +407,7 @@ class ScopedAdmissions:
     @staticmethod
     def _cleanup(connection, now):
         connection.execute("DELETE FROM desktop_authentication_closures WHERE expires_at<=?", (now,))
+        connection.execute("DELETE FROM desktop_account_passkey_attempts WHERE retire_at<=?", (now,))
         connection.execute("DELETE FROM desktop_admission_entries WHERE expires_at<=?", (now,))
         connection.execute("DELETE FROM desktop_admission_sessions WHERE expires_at<=?", (now,))
         connection.execute("UPDATE desktop_presentations SET state='retired' WHERE expires_at<=?", (now,))

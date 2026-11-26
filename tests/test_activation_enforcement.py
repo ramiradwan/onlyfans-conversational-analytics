@@ -40,6 +40,7 @@ REFUSAL = "The local runtime is not activated"
 # Only these archive operations may use the independent local installation
 # check when the ordinary signed grants have lapsed.
 LOCAL_ARCHIVE_SURFACES = {
+    "GET /api/v1/saved-data/session/events",
     "POST /api/v1/saved-data/available",
     "POST /api/v1/saved-data/login/begin",
     "POST /api/v1/saved-data/login/finish",
@@ -69,6 +70,10 @@ UNGATED_SURFACES: dict[str, str] = {
     "GET,HEAD /docs/oauth2-redirect": "FastAPI's own documentation shell",
     "GET,HEAD /redoc": "FastAPI's own documentation shell; serves no account-scoped state",
     "GET /": "SPA shell; the client that reports an unactivated runtime to the operator",
+    "GET /account/manage-passkeys": (
+        "fixed redirect from release configuration to hosted passkey management, "
+        "where the service verifies the account"
+    ),
     "GET /{frontend_path:path}": "SPA shell refresh of the same document as GET /",
     "WEBSOCKET /ws/agent": (
         "activation is enforced by the companion origin/admission gate before Noise"

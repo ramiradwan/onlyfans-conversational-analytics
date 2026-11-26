@@ -23,7 +23,7 @@ from app.api.security import (
 )
 from app.core.config import settings
 from app.onboarding.admission import AdmissionRefused
-from app.onboarding.admission_routes import authorize_desktop_passkey
+from app.onboarding.admission_routes import GENERATION, authorize_desktop_passkey
 from app.persistence.auth import AuthenticationStateError, SQLiteAuthenticationStore
 from app.security.account_passkey_windows import WindowsHelloRefused
 from app.security.signed_objects import SignedObjectRejected
@@ -330,10 +330,51 @@ def session_state(request: Request, response: Response,
             headers={"Cache-Control": "no-store"},
         )
     enrolled = decision.result is WebAuthnAuthorityResult.AUTHORIZED
+    native = getattr(request.app.state, "account_passkey_authority", None)
+    if native is not None:
+        enrolled = (enrolled and isinstance(decision.authority, SessionAuthority)
+                    and native.requires_native(decision.authority.credential_id))
     _no_store(response)
     authenticated = bool(enrolled and store.bridge_session_is_current(policy))
     return {"authenticated": authenticated, "enrolled": enrolled,
-            "csrf_token": csrf_token(policy) if authenticated else None}
+            "csrf_token": csrf_token(policy) if authenticated else None,
+            **({"native_required": True} if native is not None else {})}
+
+
+def _require_legacy_passkeys(request: Request) -> None:
+    if getattr(request.app.state, "account_passkey_authority", None) is not None:
+        raise HTTPException(403, "Open Dipsy to use your passkey", headers={"Cache-Control": "no-store"})
+
+
+@router.post("/lock")
+async def lock_desktop(
+    request: Request, response: Response,
+    policy: RuntimePolicy = Depends(get_runtime_policy),
+    csrf: str | None = Header(None, alias="X-CSRF-Token"),
+) -> dict[str, bool]:
+    from app.api.endpoints.saved_data import COOKIE, PREFIX, lock_saved_views
+    from app.api.endpoints.transport_ws import close_locked_desktop_views
+    from app.analytics.publication_events import publication_events
+    _prepare_request(request)
+    verify_csrf_token(policy, csrf)
+    native = getattr(request.app.state, "account_passkey_authority", None)
+    if native is None or policy.identity is None:
+        raise HTTPException(403, "An unlocked account passkey session is required")
+
+    def retire_access() -> None:
+        native.retire_initial()
+        lock_saved_views()
+
+    try:
+        await asyncio.to_thread(native.store.lock_desktop, policy, retire_access)
+    except AuthenticationStateError:
+        raise HTTPException(403, "The desktop session has ended") from None
+    publication_events.recheck_sessions()
+    await close_locked_desktop_views(native.store)
+    response.delete_cookie(settings.bridge_session_cookie_name, path="/", secure=True, httponly=True, samesite="strict")
+    response.delete_cookie(COOKIE, path=PREFIX, secure=True, httponly=True, samesite="strict")
+    _no_store(response)
+    return {"locked": True}
 
 
 @router.post("/registration/begin")
@@ -346,6 +387,7 @@ def begin_registration(
     service: WebAuthnService = Depends(webauthn_service),
 ) -> dict[str, object]:
     _prepare_request(request)
+    _require_legacy_passkeys(request)
     if policy.identity is not None:
         verify_csrf_token(policy, csrf)
     authority = _authority_or_refuse(
@@ -371,6 +413,7 @@ async def finish_registration(
     service: WebAuthnService = Depends(webauthn_service),
 ) -> dict[str, str]:
     _prepare_request(request)
+    _require_legacy_passkeys(request)
     if policy.identity is not None:
         verify_csrf_token(policy, csrf)
     body = await _validated_finish_body(request, RegistrationFinishRequest)
@@ -430,7 +473,9 @@ def begin_login(
         raise RuntimeError("Session authority port returned the wrong authority type")
     _no_store(response)
     native = getattr(request.app.state, "account_passkey_authority", None)
-    if native is not None and native.requires_native(authority.credential_id):
+    if native is not None:
+        if not native.requires_native(authority.credential_id):
+            raise HTTPException(403, "Open Dipsy to set up your passkey", headers={"Cache-Control": "no-store"})
         return {"windows_hello": True}
     return service.begin_authentication(authority)
 
@@ -445,6 +490,7 @@ async def finish_login(
     service: WebAuthnService = Depends(webauthn_service),
 ) -> dict[str, str]:
     _prepare_request(request)
+    _require_legacy_passkeys(request)
     if policy.identity is not None:
         verify_csrf_token(policy, csrf)
     body = await _validated_finish_body(request, LoginFinishRequest)
@@ -454,9 +500,6 @@ async def finish_login(
     )
     if not isinstance(authority, SessionAuthority):
         raise RuntimeError("Session authority port returned the wrong authority type")
-    native = getattr(request.app.state, "account_passkey_authority", None)
-    if native is not None and native.requires_native(authority.credential_id):
-        raise HTTPException(403, "Use Windows Hello from the desktop app")
     try:
         issued = service.complete_authentication(authority, body.assertion())
     except WebAuthnVerificationError as error:
@@ -476,6 +519,26 @@ def login_windows_hello(
     _no_store(response)
     if policy.identity is not None:
         verify_csrf_token(policy, csrf)
+    return _native_login(request, response, policy, authority_port, initial=False)
+
+
+@router.post("/login/initial")
+def login_initial(
+    request: Request,
+    response: Response,
+    policy: RuntimePolicy = Depends(get_runtime_policy),
+    csrf: str | None = Header(None, alias="X-CSRF-Token"),
+    authority_port: WebAuthnAuthorityPort = Depends(webauthn_authority_port),
+) -> dict[str, str]:
+    """Use the uninterrupted enrollment proof without opening a new dialog."""
+    _prepare_request(request)
+    _no_store(response)
+    if policy.identity is not None:
+        verify_csrf_token(policy, csrf)
+    return _native_login(request, response, policy, authority_port, initial=True)
+
+
+def _native_login(request, response, policy, authority_port, *, initial: bool):
     native = getattr(request.app.state, "account_passkey_authority", None)
     authority = _authority_or_refuse(authority_port.session_authority(policy), operation="login_begin")
     if (native is None or not isinstance(authority, SessionAuthority)
@@ -486,11 +549,14 @@ def login_windows_hello(
             authority, authorize=authorize_desktop_passkey(request),
             current_authority=lambda connection: authority_port.session_authority(policy, connection=connection).authority,
             lifetime=settings.bridge_session_ttl_seconds,
+            initial_generation=request.headers[GENERATION] if initial else None,
         )
     except WindowsHelloRefused as error:
         raise HTTPException(409, error.reason, headers={"Cache-Control": "no-store"}) from None
     except (AdmissionRefused, AuthenticationStateError, SignedObjectRejected, WebAuthnVerificationError):
         raise HTTPException(403, "Windows Hello could not verify this account") from None
+    if issued is None:
+        raise HTTPException(409, "initial_access_unavailable", headers={"Cache-Control": "no-store"})
     return _login_cookie(response, authority, issued)
 
 

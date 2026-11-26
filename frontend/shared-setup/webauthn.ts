@@ -36,10 +36,17 @@ function oneOf<T extends string>(values: readonly T[], value: unknown): value is
   return typeof value === 'string' && (values as readonly string[]).includes(value);
 }
 
+export interface LocalPasskeyState {
+  enrolled: boolean;
+  authenticated: boolean;
+  nativeRequired?: true;
+}
+
 export interface WebAuthnApi {
   enroll(signal?: AbortSignal): Promise<void>;
-  login(signal?: AbortSignal): Promise<void>;
-  state?(signal: AbortSignal): Promise<{ enrolled: boolean; authenticated: boolean }>;
+  login(signal?: AbortSignal, nativeOnly?: boolean): Promise<void>;
+  initial?(signal?: AbortSignal): Promise<boolean>;
+  state?(signal: AbortSignal): Promise<LocalPasskeyState>;
   /** Receives each pushed access change until the signal ends. Never rejects. */
   watch?(signal: AbortSignal, receive: (access: PushedAccess) => void): Promise<void>;
 }
@@ -129,15 +136,20 @@ export async function requestLocalAssertion(options: LoginOptions, signal?: Abor
   return loginCredential(selected);
 }
 
+const HELLO_REFUSALS = ['permission_required', 'foreground_required', 'cancelled', 'credential_unavailable'] as const;
+type HelloRefusal = typeof HELLO_REFUSALS[number];
+
 export class LoginOutcomeError extends Error {
-  constructor(readonly stage: 'begin' | 'credential' | 'finish', readonly outcomeUnknown = false) {
+  constructor(readonly stage: 'begin' | 'credential' | 'finish', readonly outcomeUnknown = false, readonly reason?: HelloRefusal) {
     super('Sign-in did not finish.');
     this.name = 'LoginOutcomeError';
   }
 }
 
 class RequestRefused extends Error {
-  constructor(readonly status: number) { super('Passkey request refused'); }
+  constructor(readonly status: number, readonly reason?: HelloRefusal) {
+    super('Passkey request refused');
+  }
 }
 
 export class WebAuthnStatusError extends Error {
@@ -331,13 +343,14 @@ export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi
     let value: unknown;
     try { value = parseOnboardingJson(await response.text()); }
     catch { throw new WebAuthnStatusError('invalid'); }
-    if (typeof value !== 'object' || value === null || Object.keys(value).length !== 3
+    if (typeof value !== 'object' || value === null || Object.keys(value).length !== ('native_required' in value ? 4 : 3)
+      || 'native_required' in value && value.native_required !== true
       || !('authenticated' in value) || !('enrolled' in value) || !('csrf_token' in value)
       || typeof value.authenticated !== 'boolean' || typeof value.enrolled !== 'boolean'
       || value.authenticated && !value.enrolled
       || (value.authenticated ? typeof value.csrf_token !== 'string' || !value.csrf_token : value.csrf_token !== null)) throw new WebAuthnStatusError('invalid');
     setCsrfToken(value.csrf_token as string | null);
-    return { enrolled: value.enrolled, authenticated: value.authenticated };
+    return { enrolled: value.enrolled, authenticated: value.authenticated, ...('native_required' in value ? { nativeRequired: true as const } : {}) };
     }, signal, deadline); }
     catch (error) {
       if (signal?.aborted || error instanceof WebAuthnStatusError) throw error;
@@ -347,28 +360,58 @@ export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi
 
   const post = <ResponseBody>(path: string, body?: object, signal?: AbortSignal, timeout = deadline): Promise<ResponseBody> => bounded(async (requestSignal) => {
     const csrf = getCsrfToken();
-    const native = path === '/login/windows-hello' ? await windowsHelloHeaders(requestSignal, request) : {};
+    const native = path === '/login/windows-hello' || path === '/login/initial';
     const response = await request(`/api/v1/webauthn${path}`, {
       signal: requestSignal, credentials: 'same-origin', cache: 'no-store', redirect: 'error',
       headers: {
         Accept: 'application/json',
-        ...native,
+        ...(native ? await windowsHelloHeaders(requestSignal, request) : {}),
         ...(body ? { 'Content-Type': 'application/json' } : {}),
         ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
       },
       method: 'POST',
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
-    if (!response.ok) throw new RequestRefused(response.status);
+    if (!response.ok) {
+      let reason: RequestRefused['reason'];
+      if (path === '/login/windows-hello' && response.status === 409) {
+        try {
+          const refusal = parseOnboardingJson(await response.text());
+          if (typeof refusal === 'object' && refusal !== null && 'detail' in refusal) {
+            if (oneOf(HELLO_REFUSALS, refusal.detail)) reason = refusal.detail;
+          }
+        } catch { /* The status is enough to show the ordinary fallback. */ }
+      }
+      throw new RequestRefused(response.status, reason);
+    }
     return parseOnboardingJson(await response.text()) as ResponseBody;
   }, signal, timeout);
 
-  const login = async (signal?: AbortSignal) => {
+  const acceptSession = (result: unknown) => {
+    if (typeof result !== 'object' || result === null || Object.keys(result).length !== 1
+      || !('csrf_token' in result) || typeof result.csrf_token !== 'string' || !result.csrf_token) {
+      throw new Error('Sign-in response unavailable');
+    }
+    setCsrfToken(result.csrf_token);
+  };
+
+  const initial = async (signal?: AbortSignal): Promise<boolean> => {
+    try {
+      acceptSession(await post('/login/initial', undefined, signal));
+      return true;
+    } catch (error) {
+      if (signal?.aborted || error instanceof RequestRefused && error.status < 500) return false;
+      // The reply may be lost after the one-use session was issued.
+      try { return (await state(signal)).authenticated; } catch { return false; }
+    }
+  };
+
+  const login = async (signal?: AbortSignal, nativeOnly = false) => {
     let loginOptions: LoginOptions | { windows_hello: true };
     try { loginOptions = await post<LoginOptions | { windows_hello: true }>('/login/begin', undefined, signal); }
     catch { throw new LoginOutcomeError('begin'); }
-    let result: unknown;
     const native = 'windows_hello' in loginOptions && loginOptions.windows_hello === true;
+    if (nativeOnly && !native) throw new LoginOutcomeError('begin');
     let assertion: ReturnType<typeof loginCredential> | undefined;
     if (!native) {
       try {
@@ -376,15 +419,13 @@ export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi
       } catch { throw new LoginOutcomeError('credential'); }
     }
     try {
-      result = native ? await post<unknown>('/login/windows-hello', undefined, signal, 125_000)
-        : await post<unknown>('/login/finish', assertion, signal);
-      if (typeof result !== 'object' || result === null || Object.keys(result).length !== 1
-        || !('csrf_token' in result) || typeof result.csrf_token !== 'string' || !result.csrf_token) {
-        throw new Error('Sign-in response unavailable');
-      }
-      setCsrfToken(result.csrf_token);
+      acceptSession(native ? await post('/login/windows-hello', undefined, signal, 125_000)
+        : await post('/login/finish', assertion, signal));
     } catch (error) {
-      if (signal?.aborted || error instanceof RequestRefused && error.status < 500) throw new LoginOutcomeError('finish');
+      if (signal?.aborted) throw new LoginOutcomeError('finish');
+      if (error instanceof RequestRefused && error.status < 500) {
+        throw new LoginOutcomeError('finish', false, error.reason);
+      }
       // Finish can commit before its reply is lost. Reconcile once by read,
       // never replay the assertion or start another browser ceremony.
       let outcomeUnknown = false;
@@ -411,6 +452,7 @@ export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi
   return {
     state,
     watch,
+    initial,
     async enroll(signal) {
       const registrationOptions = await post<RegistrationOptions>('/registration/begin', undefined, signal);
       const credential = await bounded((ceremonySignal) => navigator.credentials.create({

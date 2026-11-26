@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse, Response
@@ -178,6 +179,18 @@ def desktop_router(coordinator: DesktopOnboardingCoordinator, *, actor=lambda re
             return JSONResponse({"outcome": outcome}, headers=HEADERS)
         except AccountPasskeyRefused as refusal:
             return JSONResponse({"outcome": "unavailable", "support_ref": refusal.support_ref}, headers=HEADERS)
+        except (AdmissionRefused, CommandRefused, ValueError) as error:
+            return _refused(error)
+
+    @router.post("/passkey/{change}")
+    async def passkey_pause_or_resume(request: Request, change: Literal["pause", "resume"]):
+        session = admitted(request, mutation=True)
+        expected = await body(request)
+        try:
+            outcome = await asyncio.to_thread(
+                coordinator.set_passkey_paused, session, expected, paused=change == "pause", actor=actor(request, True),
+            )
+            return JSONResponse({"outcome": outcome}, headers=HEADERS)
         except (AdmissionRefused, CommandRefused, ValueError) as error:
             return _refused(error)
 

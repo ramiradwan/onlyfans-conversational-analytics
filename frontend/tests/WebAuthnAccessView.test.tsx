@@ -6,6 +6,7 @@ import { mockFeedbackOverflow } from './feedbackGeometry';
 import { LoginOutcomeError, EnrollmentOutcomeError, WebAuthnStatusError, type PushedAccess, type WebAuthnApi } from '../shared-setup/webauthn';
 import { theme } from '../src/theme';
 import { WebAuthnAccessView } from '../src/views/WebAuthnAccessView';
+import { SavedDataView } from '../src/views/SavedDataView';
 import type { DesktopSnapshot, DesktopState } from '../onboarding/client';
 import type { AuthorityRecoveryApi } from '../src/services/desktopOnboarding';
 
@@ -33,7 +34,114 @@ function renderView(api: WebAuthnApi, onAuthenticated = vi.fn()) {
   };
 }
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); sessionStorage.removeItem('desktop-presentation'); });
+
+const nativeGeneration = '11111111-1111-4111-8111-111111111111';
+
+function nativeOpen(initial = false) {
+  let armed = initial;
+  sessionStorage.setItem('desktop-presentation', nativeGeneration);
+  const invoke = vi.fn(async (command: string, { action }: { action: string }) => {
+    expect(command).toBe('desktop_window');
+    if (action === 'claim_passkey_unlock' || action === 'discard_passkey_unlock') {
+      const pending = armed;
+      armed = false;
+      return pending;
+    }
+    return action === 'open_passkey_settings';
+  });
+  vi.stubGlobal('__TAURI__', { core: { invoke } });
+  return { invoke, open() { armed = true; window.dispatchEvent(new Event('dipsy-passkey-open')); } };
+}
+
+it.each([false, true])('direct browser points to desktop instead of opening a passkey ceremony (enrolled=%s)', async enrolled => {
+  const api = { state: vi.fn(async () => ({ enrolled, authenticated: false, nativeRequired: true as const })),
+    enroll: vi.fn(), login: vi.fn() };
+  renderView(api);
+  expect(await screen.findByRole('heading', { name: 'Open Dipsy' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /Create passkey|Unlock|Sign in with passkey/ })).toBeNull();
+  expect(api.enroll).not.toHaveBeenCalled();
+  expect(api.login).not.toHaveBeenCalled();
+});
+
+it('prompts once for an explicit native Open and leaves Unlock after a refusal', async () => {
+  const handle = nativeOpen(true);
+  const login = vi.fn().mockRejectedValue(new LoginOutcomeError('finish', false, 'permission_required'));
+  const api = { state: vi.fn(async () => ({ enrolled: true, authenticated: false, nativeRequired: true as const })),
+    enroll: vi.fn(), login };
+  renderView(api);
+  const settings = await screen.findByRole('button', { name: 'Open Windows settings' });
+  expect(login).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal), true);
+  expect(screen.getByRole('alert').textContent).toContain('Passkey access');
+  fireEvent.click(settings);
+  expect(handle.invoke).toHaveBeenCalledWith('desktop_window', { action: 'open_passkey_settings' });
+  await act(async () => {
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('dipsy-passkey-open'));
+  });
+  expect(login).toHaveBeenCalledOnce();
+  await act(async () => { handle.open(); });
+  expect(login).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole('button', { name: 'Unlock' })).toBeTruthy();
+});
+
+it('discards the earlier Open if an admitted session is already live', async () => {
+  const handle = nativeOpen(true);
+  const login = vi.fn();
+  const view = renderView({ enroll: vi.fn(), login, state: vi.fn(async () =>
+    ({ enrolled: true, authenticated: true, nativeRequired: true as const })) });
+  await waitFor(() => expect(view.onAuthenticated).toHaveBeenCalledOnce());
+  expect(handle.invoke).toHaveBeenCalledExactlyOnceWith('desktop_window', { action: 'discard_passkey_unlock' });
+  expect(login).not.toHaveBeenCalled();
+});
+
+it.each(['Lock saved data', 'Lock Dipsy'])('claims one native Open for saved data and stays locked after returning to that view via %s', async action => {
+  const handle = nativeOpen(true);
+  const events = new EventTarget();
+  const close = vi.fn();
+  vi.stubGlobal('EventSource', class {
+    constructor(path: string) { expect(path).toBe('/api/v1/saved-data/session/events'); }
+    addEventListener = events.addEventListener.bind(events);
+    close = close;
+  });
+  const request = vi.fn(async (path: string) => {
+    const replies: Record<string, object> = {
+      '/api/v1/saved-data/available': { available: true, authorization_expired: true },
+      '/api/v1/desktop/session': { role: 'desktop', stage: 'runtime', generation: nativeGeneration, csrf_token: 'A'.repeat(43) },
+      '/api/v1/saved-data/login/begin': { windows_hello: true },
+      '/api/v1/saved-data/login/windows-hello': { csrf_token: 'saved-session', expires_in: 60 },
+      '/api/v1/saved-data/view': { messages: [{ id: 'fixture', text: 'A saved message', sent_at: '' }], next: null, deletion_pending: false },
+      '/api/v1/saved-data/lock': {},
+    };
+    if (!Object.hasOwn(replies, path)) throw Error('Unexpected request');
+    return new Response(JSON.stringify(replies[path]));
+  });
+  vi.stubGlobal('fetch', request);
+  render(<ThemeProvider theme={theme}>
+    <script id="fastapi-config" type="application/json">{JSON.stringify({ ACCOUNT_PASSKEY_ENABLED: true })}</script>
+    <SavedDataView />
+  </ThemeProvider>);
+  expect(await screen.findByText('A saved message')).toBeTruthy();
+  if (action === 'Lock saved data') {
+    fireEvent.click(screen.getByRole('button', { name: 'Lock saved data' }));
+  } else {
+    await act(async () => { events.dispatchEvent(new MessageEvent('access', { data: '{"access":"locked"}' })); });
+  }
+  expect(await screen.findByRole('button', { name: 'Unlock saved data' })).toBeTruthy();
+  expect(screen.queryByText('A saved message')).toBeNull();
+  expect(close).toHaveBeenCalled();
+  await act(async () => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('dipsy-passkey-open')); });
+  expect(request.mock.calls.filter(([path]) => path.endsWith('/login/windows-hello'))).toHaveLength(1);
+  cleanup();
+  const login = vi.fn();
+  renderView({ enroll: vi.fn(), login, state: vi.fn(async () => ({
+    enrolled: true, authenticated: false, nativeRequired: true as const,
+  })) });
+  expect(await screen.findByRole('button', { name: 'Unlock' })).toBeTruthy();
+  expect(login).not.toHaveBeenCalled();
+  await act(async () => { handle.open(); });
+  expect(login).toHaveBeenCalledOnce();
+});
 
 it('retries transient status reads within a bound without inventing enrollment', async () => {
   vi.useFakeTimers();

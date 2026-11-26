@@ -65,13 +65,11 @@ class SetupRuntimeTransition:
                 await lifecycle.aclose()
                 runtime = await self._load_runtime()
                 await lifecycle.enter_async_context(runtime.router.lifespan_context(runtime))
-                from app.api.endpoints.saved_data import stage_initial_access
-
                 await asyncio.to_thread(
                     self._setup.state.desktop_admissions.continue_in_runtime,
                     presentation.identifier, presentation.generation,
                 )
-                stage_initial_access(access)
+                runtime.state.account_passkey_authority.stage_initial(access)
             self._current = runtime
             self.configured = self._accepting = True
         except Exception as error:

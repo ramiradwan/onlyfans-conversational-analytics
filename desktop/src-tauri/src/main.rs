@@ -283,6 +283,8 @@ fn main() {
         };
         journey
     };
+    let direct_open = journey.is_none() && servicing_session.is_none();
+    let foreground_open = direct_open && windows::foreground_startup();
     let Ok(_application_mutex) = windows::application_mutex() else {
         return;
     };
@@ -325,7 +327,8 @@ fn main() {
     match _ownership.continue_startup(
         &names,
         &executable,
-        servicing_session.is_none().then_some(args.as_slice()),
+        (servicing_session.is_none() && (!direct_open || foreground_open))
+            .then_some(args.as_slice()),
     ) {
         Ok(true) => (),
         Ok(false) => return,
@@ -398,13 +401,15 @@ fn main() {
                     if activation.quitting.load(Ordering::SeqCst) {
                         return;
                     }
+                    let explicit_open = journey.is_none();
                     activation.activate(journey);
-                    frame::show_main(app);
+                    frame::show_main(app, explicit_open);
                 }
             },
         ))
         .manage(state.clone())
         .manage(appearance)
+        .manage(frame::PasskeyOpen::default())
         .invoke_handler(tauri::generate_handler![
             desktop_state,
             desktop_chrome_available,
@@ -417,6 +422,7 @@ fn main() {
             browser::desktop_browser_task,
             browser::desktop_setup_code,
             browser::desktop_text_analysis_reissue,
+            browser::desktop_account_passkeys,
             frame::desktop_window
         ])
         .setup(move |app| {
@@ -449,9 +455,15 @@ fn main() {
                     .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
                     .on_download(|_, _| false)
                     .build()?;
+            if foreground_open {
+                frame::record_interactive_open(&window);
+            }
             let close = window.clone();
             let close_state = setup.clone();
             window.on_window_event(move |event| {
+                if matches!(event, tauri::WindowEvent::Focused(false)) {
+                    tauri::Manager::state::<frame::PasskeyOpen>(&close).clear();
+                }
                 if matches!(event, tauri::WindowEvent::ThemeChanged(_)) {
                     let appearance = tauri::Manager::state::<appearance::Appearance>(&close);
                     if appearance.mode() == appearance::Mode::System {
@@ -479,7 +491,7 @@ fn main() {
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "open" => {
                         quit_state.activate(None);
-                        frame::show_main(app);
+                        frame::show_main(app, true);
                     }
                     "quit" => quit_state.quit(),
                     _ => {}

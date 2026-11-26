@@ -11,12 +11,14 @@ const OperatorInboxView = React.lazy(() => import('../views/OperatorInboxView'))
 const AnalyticsView = React.lazy(() => import('../views/AnalyticsView'));  
 const GraphExplorerView = React.lazy(() => import('../views/GraphExplorerView'));  
 const SettingsView = React.lazy(() => import('../views/SettingsWithVaultView'));
+const AccountView = React.lazy(() => import('../views/AccountView'));
   
 /**  
  * Role-based routing (Spec 11.2a)  
  */  
 export const useAppRoutes = (): RouteObject[] => {
   const {
+    canViewAccount,
     canViewAnalytics,
     canViewDashboard,
     canViewInbox,
@@ -55,6 +57,9 @@ export const useAppRoutes = (): RouteObject[] => {
       : []),  
     ...(canViewSettings
       ? [{ path: 'settings', element: <SettingsView /> }]
+      : []),
+    ...(canViewAccount
+      ? [{ path: 'account', element: <AccountView /> }]
       : []),
     {  
       path: '*',  

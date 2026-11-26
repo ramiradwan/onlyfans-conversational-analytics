@@ -526,6 +526,45 @@ pub(crate) fn process_image(process: HANDLE) -> Result<PathBuf> {
         .map_err(|_| "owner_inspection_failed")
 }
 
+/// Open the fixed Windows Privacy page from the passkey permission remedy.
+pub fn open_passkey_privacy_settings() -> Result<()> {
+    use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+
+    let uri: Vec<u16> = "ms-settings:privacy"
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            uri.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if result as isize <= 32 {
+        return Err("windows_settings_unavailable");
+    }
+    Ok(())
+}
+
+/// Respect the launching program's explicit hidden or nonactivating start.
+pub fn foreground_startup() -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SW_RESTORE, SW_SHOW, SW_SHOWMAXIMIZED, SW_SHOWNORMAL,
+    };
+    let mut info: STARTUPINFOW = unsafe { zeroed() };
+    info.cb = size_of::<STARTUPINFOW>() as u32;
+    unsafe { GetStartupInfoW(&mut info) };
+    info.dwFlags & STARTF_USESHOWWINDOW == 0
+        || matches!(
+            i32::from(info.wShowWindow),
+            SW_SHOWNORMAL | SW_SHOWMAXIMIZED | SW_SHOW | SW_RESTORE
+        )
+}
+
 /// Automatic browser return must not interrupt another foreground application.
 pub fn foreground_matches(executable: &Path) -> bool {
     let inspect = || -> Result<bool> {

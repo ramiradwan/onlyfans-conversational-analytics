@@ -5,7 +5,9 @@ import asyncio
 import secrets
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import timedelta
+from threading import Lock
 
 from app.persistence.account_passkey import AccountPasskeyBinding, AccountPasskeyBindings
 from app.persistence.auth import (
@@ -23,7 +25,16 @@ from app.security.account_passkey_windows import MAX_CEREMONY_SECONDS, WindowsHe
 from app.security.hosted_grants import HostedGrantUnavailable
 from app.security.signed_objects import SignedObjectRejected
 from app.security.webauthn import SessionAuthority
-from app.security.saved_data import InitialSavedDataAccess, SavedDataSessions
+from app.security.saved_data import SavedDataSessions
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class InitialLocalAccess:
+    """Verified enrollment authority scoped to the uninterrupted presentation."""
+
+    generation: str
+    owner: SavedDataOwner
+    record: VerifiedPasskeyRecord
 
 
 class AccountPasskeyAuthority:
@@ -42,6 +53,8 @@ class AccountPasskeyAuthority:
         self.broker = broker
         self._monotonic = monotonic
         self._stopping = False
+        self._initial_lock = Lock()
+        self._initial: InitialLocalAccess | None = None
         self._sync_task: asyncio.Task | None = None
         self._wake = asyncio.Event()
         self.bindings.accept_trust(environment=environment, sequence=verifier.sequence)
@@ -101,7 +114,7 @@ class AccountPasskeyAuthority:
 
     def prepare_initial_access(
         self, registration: RegisteredPasskey, owner: SavedDataOwner, *, generation: str, guard,
-    ) -> InitialSavedDataAccess:
+    ) -> InitialLocalAccess:
         """Request authority only for the fresh enrollment's installed binding."""
         with self.store.database.read() as connection:
             guard(connection=connection)
@@ -110,22 +123,50 @@ class AccountPasskeyAuthority:
                 raise AuthenticationStateError("Initial saved-data binding changed")
             _, binding = active
         proof = self.records.issue_initial_access(registration, binding, before_send=guard)
-        return InitialSavedDataAccess(generation, owner, proof)
+        return InitialLocalAccess(generation, owner, proof)
+
+    def stage_initial(self, access: InitialLocalAccess) -> None:
+        """Transfer the first-access proof from setup without extending its lifetime."""
+        with self._initial_lock:
+            if self._initial is not None or self._stopping:
+                raise AuthenticationStateError("Initial local access cannot be staged")
+            self._initial = access
+
+    def retire_initial(self) -> None:
+        """The local lock owner calls this while holding the AUTH write transaction."""
+        with self._initial_lock:
+            self._initial = None
+
+    def _use_initial(self, generation: str, *, authorize, issue):
+        with self._initial_lock:
+            if self._initial is None or self._initial.generation != generation:
+                return None
+        with self.store.database.transaction() as connection, self._initial_lock:
+            pending = self._initial
+            if pending is None or pending.generation != generation:
+                return None
+            authorize(connection)
+            active = self.active(connection)
+            # Clear before issuing so an uncertain transaction can never replay
+            # the proof. Both session kinds claim it under the same write lock.
+            self._initial = None
+            if self._stopping or active is None or self.store.desktop_lock_state(connection)[1]:
+                return None
+            retained, binding = active
+            if pending.owner != retained.owner or not self._initial_is_current(pending.record, binding, retained.owner):
+                return None
+            return issue(retained.owner, connection)
 
     def unlock(self, sessions: SavedDataSessions, *, authorize, lifetime: int,
                generation: str | None = None) -> tuple[str, str]:
-        if generation is not None and sessions.has_initial(generation):
-            with self.store.database.transaction() as connection:
-                authorize(connection)
-                active = self.active(connection)
-                if self._stopping or active is None:
-                    raise AuthenticationStateError("Saved data is locked")
-                retained, binding = active
-                first = sessions.issue_initial(generation, retained.owner, lifetime,
-                    verify=lambda access: self._initial_is_current(access, binding, retained.owner))
-                if first is not None:
-                    return first
-        return self._verify_local(lambda owner, connection: sessions.issue(owner, lifetime), authorize=authorize)
+        def issue(owner, _connection, _lock_generation=None):
+            return sessions.issue(owner, lifetime)
+
+        if generation is not None:
+            first = self._use_initial(generation, authorize=authorize, issue=issue)
+            if first is not None:
+                return first
+        return self._verify_local(issue, authorize=authorize)
 
     def _initial_is_current(
         self, access: VerifiedPasskeyRecord, binding: VerifiedPasskeyRecord, owner: SavedDataOwner,
@@ -152,13 +193,18 @@ class AccountPasskeyAuthority:
                 (credential_id,),
             ).fetchone() is not None
 
-    def sign_in(self, authority: SessionAuthority, *, authorize, current_authority, lifetime: int):
+    def sign_in(
+        self, authority: SessionAuthority, *, authorize, current_authority, lifetime: int,
+        initial_generation: str | None = None,
+    ):
         """Current grant policy is required in addition to the local proof."""
-        def issue(owner, connection):
+        def issue(owner, connection, lock_generation=None):
             if ((owner.credential_id, owner.principal_id, owner.creator_account_id)
                     != (authority.credential_id, authority.principal_id, authority.creator_account_id)
                     or current_authority(connection) != authority):
                 raise AuthenticationStateError("Account access changed during verification")
+            if lock_generation is not None:
+                self.store.unlock_desktop_after_assertion(connection, lock_generation)
             return self.store._issue_bridge_session(connection, BridgeSessionIssue(
                 credential_id=owner.credential_id, principal_id=owner.principal_id,
                 creator_account_id=owner.creator_account_id, role=authority.role,
@@ -166,6 +212,8 @@ class AccountPasskeyAuthority:
                 grant_reference_ids=authority.grant_reference_ids,
             ))
 
+        if initial_generation is not None:
+            return self._use_initial(initial_generation, authorize=authorize, issue=issue)
         return self._verify_local(issue, authorize=authorize)
 
     def _verify_local(self, issue, *, authorize):
@@ -173,10 +221,14 @@ class AccountPasskeyAuthority:
         with self.store.database.read() as connection:
             authorize(connection)
             active = self.active(connection)
+            lock_generation, _ = self.store.desktop_lock_state(connection)
         if active is None or self._stopping:
             raise AuthenticationStateError("Saved data is locked")
         retained, record = active
         owner = retained.owner
+        with self._initial_lock:
+            if self._initial is not None and self._initial.owner == owner:
+                self._initial = None
         challenge = secrets.token_bytes(32)
         deadline = self._monotonic() + MAX_CEREMONY_SECONDS
         assertion = self.broker.assert_local(
@@ -189,9 +241,10 @@ class AccountPasskeyAuthority:
         )
         with self.store.database.transaction() as connection:
             authorize(connection)
-            if self._stopping or self._monotonic() >= deadline or self.active(connection) != active:
+            if (self._stopping or self._monotonic() >= deadline or self.active(connection) != active
+                    or self.store.desktop_lock_state(connection)[0] != lock_generation):
                 raise AuthenticationStateError("Saved data authority changed during verification")
-            return issue(owner, connection)
+            return issue(owner, connection, lock_generation)
 
     def synchronize_withdrawals(self, sessions: SavedDataSessions) -> None:
         with self.store.database.read() as connection:
@@ -240,6 +293,9 @@ class AccountPasskeyAuthority:
         else:
             return
 
+        with self._initial_lock:
+            if self._initial is not None and self._initial.owner == owner:
+                self._initial = None
         sessions.invalidate(owner)
 
         def require_applied(confirmed: VerifiedPasskeyRecord) -> None:

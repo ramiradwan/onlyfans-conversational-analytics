@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-desktop-account-passkeys"
+description = "Open the installed release's account passkey manager in Chrome."
+commands.allow = ["desktop_account_passkeys"]

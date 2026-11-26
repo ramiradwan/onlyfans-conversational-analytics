@@ -16,6 +16,7 @@ export function getConfig(): FastAPIConfig {
       FASTAPI_WS_URL: 'ws://bridge.localhost:17871/ws/bridge',
       API_BASE_URL: 'http://bridge.localhost:17871',
       VERSION: 'dev',
+      ACCOUNT_PASSKEY_ENABLED: false,
       BRIDGE_ROLE: undefined,
       USER_ID: undefined,
       CREATOR_ID: undefined,
@@ -32,6 +33,7 @@ export function getConfig(): FastAPIConfig {
         injected.FASTAPI_WS_URL ?? 'ws://bridge.localhost:17871/ws/bridge',
       API_BASE_URL: injected.API_BASE_URL ?? 'http://bridge.localhost:17871',
       VERSION: injected.VERSION ?? 'dev',
+      ACCOUNT_PASSKEY_ENABLED: injected.ACCOUNT_PASSKEY_ENABLED === true,
       BRIDGE_ROLE:
         injected.BRIDGE_ROLE === 'creator' || injected.BRIDGE_ROLE === 'operator'
           ? injected.BRIDGE_ROLE

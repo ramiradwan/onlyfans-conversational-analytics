@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "description": "Customer-visible journey states with executable presentation anchors and evidence. Desktop setup uses the Brain coordinator; browser and hosted tasks retain their domain authorities. Full analytics activation is optional after local setup. Browser tasks return automatically to their native journey, while unknown authentication and operation outcomes remain subject to authoritative reconciliation. Permission return uses an explicit 90-second creator/presentation intent and the native foreground guard; it cannot grant authority.",
+  "description": "Customer-visible journey states with executable presentation anchors and test evidence. Brain coordinates desktop setup. Browser and hosted tasks retain their own authority. Browser tasks can return to the desktop automatically. An eligible foreground return from an explicit sign-in can start Windows Hello enrollment once. Finish later saves the pause. Continue setup rechecks the current step. Connect account requires its own approval. Full analytics activation is optional after local setup. The owning service checks unknown authentication and operation outcomes. Returning from a permission task uses the original 90-second creator and presentation intent and requires the native foreground guard. Authorization is governed by the existing authority checks.",
   "surfaces": {
     "desktop.prerequisite": {
       "implementation": [
@@ -15,6 +15,7 @@
     },
     "desktop.app": {
       "implementation": [
+        "frontend/src/views/AccountView.tsx",
         "frontend/src/views/WebAuthnAccessView.tsx",
         "frontend/src/components/OnboardingPasskeyTask.tsx",
         "frontend/src/components/AuthorityRecoveryTask.tsx",
@@ -1513,6 +1514,16 @@
         },
         {
           "to": "desktop.setup_prompt",
+          "by": "user",
+          "action": "open-dipsy"
+        },
+        {
+          "to": "desktop.setup_prompt",
+          "by": "user",
+          "action": "unlock"
+        },
+        {
+          "to": "desktop.setup_prompt",
           "by": "system"
         },
         {
@@ -1575,6 +1586,58 @@
           "kind": "unit",
           "file": "frontend/tests/WebAuthnAccessView.test.tsx",
           "name": "disables sign-in while a pushed access change is being verified"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "prompts once for an explicit native Open and leaves Unlock after a refusal"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "discards the earlier Open if an admitted session is already live"
+        },
+        {
+          "kind": "unit",
+          "file": "desktop/src-tauri/src/frame.rs",
+          "name": "passkey_open_is_one_use_and_bound_to_foreground"
+        }
+      ]
+    },
+    {
+      "id": "desktop.account",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/views/AccountView.tsx",
+        "text": "data-journey-state=\"desktop.account\""
+      },
+      "transitions": [
+        {
+          "to": "desktop.passkey_sign_in",
+          "by": "user",
+          "action": "lock-dipsy"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/AppShell.test.tsx",
+          "name": "shows creator route labels and uses real links for desktop and mobile navigation"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/AccountView.test.tsx",
+          "name": "opens the native management action only on request and offers a retry after a launch failure"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/AccountView.test.tsx",
+          "name": "retires an earlier Open before the lock request and reports a failed lock"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_account_lock.py",
+          "name": "test_lock_ends_open_sessions_and_tickets_and_preserves_the_installed_credential"
         }
       ]
     },
@@ -1599,6 +1662,11 @@
         {
           "to": "desktop.numbers_ready",
           "by": "system"
+        },
+        {
+          "to": "desktop.account",
+          "by": "user",
+          "action": "open-account"
         }
       ],
       "evidence": [
@@ -1995,6 +2063,11 @@
           "to": "desktop.message_history",
           "by": "user",
           "action": "review-message-history"
+        },
+        {
+          "to": "desktop.account",
+          "by": "user",
+          "action": "open-account"
         }
       ],
       "evidence": [
@@ -2449,6 +2522,10 @@
           "by": "system"
         },
         {
+          "to": "desktop.setup_passkey_paused",
+          "by": "system"
+        },
+        {
           "to": "desktop.setup_finish",
           "by": "system"
         },
@@ -2538,7 +2615,8 @@
         },
         {
           "to": "desktop.setup_finish",
-          "by": "system"
+          "by": "user",
+          "action": "account.confirm"
         },
         {
           "to": "desktop.setup_unavailable",
@@ -2739,6 +2817,11 @@
           "kind": "unit",
           "file": "tests/test_desktop_authentication.py",
           "name": "test_verified_choices_requires_exact_retained_ceremony_projection"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "native browser return ownership"
         }
       ]
     },
@@ -3865,9 +3948,14 @@
       },
       "transitions": [
         {
-          "to": "desktop.setup_account_connection",
+          "to": "desktop.setup_passkey_paused",
           "by": "user",
           "action": "account-passkey-later"
+        },
+        {
+          "to": "desktop.setup_account_connection",
+          "by": "user",
+          "action": "account-passkey-create"
         },
         {
           "to": "desktop.setup_account_connection",
@@ -3875,6 +3963,43 @@
         }
       ],
       "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "keeps account connection separate from the account passkey prompt"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "retains the original enrollment deadline while checking native foreground"
+        }
+      ]
+    },
+    {
+      "id": "desktop.setup_passkey_paused",
+      "surface": "desktop.setup",
+      "anchor": {
+        "file": "frontend/onboarding/index.html",
+        "text": "id=\"account-passkey-resume\""
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_account_passkey",
+          "by": "user",
+          "action": "account-passkey-resume"
+        },
+        {
+          "to": "desktop.setup_account_connection",
+          "by": "user",
+          "action": "account-passkey-resume"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "pauses and resumes setup through the durable scoped actions"
+        },
         {
           "kind": "unit",
           "file": "frontend/tests/desktop-setup.test.js",
@@ -3945,6 +4070,11 @@
           "kind": "unit",
           "file": "frontend/tests/desktop-enrollment.test.js",
           "name": "does not repeat a deterministic refusal on an unchanged pushed access value"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "tries initial local access only on the uninterrupted promotion before offering pairing"
         }
       ]
     },

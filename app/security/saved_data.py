@@ -8,22 +8,9 @@ import secrets
 import time
 from dataclasses import dataclass
 from threading import Lock
-from typing import TYPE_CHECKING, Callable
+from typing import Callable
 
 from app.persistence.auth import SavedDataOwner
-
-if TYPE_CHECKING:
-    from app.security.account_passkey_records import VerifiedPasskeyRecord
-
-
-@dataclass(frozen=True, slots=True, repr=False)
-class InitialSavedDataAccess:
-    """Verified enrollment authority held by the process that completed setup."""
-
-    generation: str
-    owner: SavedDataOwner
-    record: VerifiedPasskeyRecord
-
 
 @dataclass(frozen=True, slots=True)
 class _Session:
@@ -43,31 +30,6 @@ class SavedDataSessions:
         self._clock = clock
         self._lock = Lock()
         self._sessions: dict[bytes, _Session] = {}
-        self._initial: InitialSavedDataAccess | None = None
-
-    def stage_initial(self, access: InitialSavedDataAccess) -> None:
-        with self._lock:
-            if self._initial is not None:
-                raise RuntimeError("Initial saved-data access was already staged")
-            self._initial = access
-
-    def has_initial(self, generation: str) -> bool:
-        with self._lock:
-            return self._initial is not None and self._initial.generation == generation
-
-    def issue_initial(
-        self, generation: str, owner: SavedDataOwner, ttl_seconds: int,
-        *, verify: Callable[[VerifiedPasskeyRecord], bool],
-    ) -> tuple[str, str] | None:
-        """Retire the exact proof and issue its session under the same lock."""
-        with self._lock:
-            pending = self._initial
-            if pending is None or pending.generation != generation:
-                return None
-            self._initial = None
-            if pending.owner != owner or not verify(pending.record):
-                return None
-            return self._issue(owner, ttl_seconds)
 
     def issue(self, owner: SavedDataOwner, ttl_seconds: int) -> tuple[str, str]:
         with self._lock:
@@ -90,8 +52,15 @@ class SavedDataSessions:
         with self._lock:
             self._sessions.pop(_digest(token), None)
 
+    def lock_all(self) -> None:
+        with self._lock:
+            self._sessions.clear()
+
+    def is_open(self, token: str) -> bool:
+        with self._lock:
+            session = self._sessions.get(_digest(token))
+            return session is not None and self._clock() < session.deadline
+
     def invalidate(self, owner: SavedDataOwner) -> None:
         with self._lock:
-            if self._initial is not None and self._initial.owner == owner:
-                self._initial = None
             self._sessions = {token: session for token, session in self._sessions.items() if session.owner != owner}

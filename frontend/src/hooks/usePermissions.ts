@@ -32,6 +32,7 @@ export const usePermissions = () => {
 
     // Settings status is visible to both roles; only creators can change acquisition consent.
     canViewSettings: isCreator || isOperator,
+    canViewAccount: isCreator || isOperator,
     canManageHistorySync: isCreator,
   };  
 };

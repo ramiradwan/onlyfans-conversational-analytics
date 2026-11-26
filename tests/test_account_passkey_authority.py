@@ -21,13 +21,15 @@ from app.onboarding.admission import AdmissionRefused, ScopedAdmissions
 from app.onboarding.admission_routes import admission_router
 from app.persistence.auth import AuthenticationStateError, AuthorizedAccountBinding, SQLiteAuthenticationStore
 from app.security.account_passkey import ACCESS_PROFILE, BINDING_PROFILE, WITHDRAWAL_PROFILE, AccountPasskeyRefused
-from app.security.account_passkey_authority import AccountPasskeyAuthority
-from app.security.account_passkey_enrollment import EnrollmentAttempt, RegisteredPasskey
+from app.security.account_passkey_authority import AccountPasskeyAuthority, InitialLocalAccess
+from app.security.account_passkey_enrollment import (
+    AccountPasskeyEnrollment, EnrollmentAttempt, ObservedRegistration, RegisteredPasskey,
+)
 from app.security.account_passkey_local import AccountPasskeyLocalRecords
 from app.security.account_passkey_records import VerifiedPasskeyRecord, record_digest
 from app.security.account_passkey_webauthn import NativeAssertion, SAVED_DATA_ORIGIN
 from app.security.hosted_grants import HostedGrantUnavailable
-from app.security.saved_data import InitialSavedDataAccess, SavedDataSessions
+from app.security.saved_data import SavedDataSessions
 from app.security.signed_objects import SignedObjectRejected, encode
 from app.security.webauthn import WebAuthnAuthorityPort
 from test_continuation_selection import add_candidate, enroll
@@ -112,6 +114,41 @@ class VerifiedRecords:
             raise HostedGrantUnavailable("Test withheld the acknowledgment reply")
 
 
+@pytest.mark.parametrize("outcome", ["exact", "other-credential", "at-deadline"])
+def test_retained_receipt_rechecks_exact_identity_and_deadline(outcome):
+    client = Mock()
+    attempt = EnrollmentAttempt(
+        "original-enrollment", HANDLE, RP, INSTANT + timedelta(seconds=120),
+        INSTANT + timedelta(minutes=10), INSTALLATION_ID, INSTALLATION_KEY_JKT,
+        HANDLE, b"c" * 32, b"u" * 32, "Dipsy passkey 012345",
+    )
+    observed = ObservedRegistration(CREDENTIAL_ID, b"fixture-public-key")
+    now = INSTANT + timedelta(minutes=2)
+    client.exchange.return_value = {
+        "enrollment_id": attempt.enrollment_id, "attempt_id": attempt.attempt_id,
+        "credential_id": "other" if outcome == "other-credential" else CREDENTIAL_ID,
+        "registered_at": INSTANT.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "receipt_expires_at": (now if outcome == "at-deadline" else attempt.source_expires_at)
+        .isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+    }
+    enrollment = AccountPasskeyEnrollment(client, rp_id=RP, clock=lambda: now)
+    guard = Mock()
+    if outcome == "exact":
+        restored = enrollment.receipt(attempt, observed, before_send=guard)
+        assert restored == RegisteredPasskey(
+            attempt, CREDENTIAL_ID, observed.public_key, INSTANT, attempt.source_expires_at,
+        )
+        guard.assert_called_once()
+    else:
+        with pytest.raises(HostedGrantUnavailable):
+            enrollment.receipt(attempt, observed, before_send=guard)
+    kind, request = client.exchange.call_args.args
+    assert kind == "enrollment-receipt"
+    assert set(request) == {"profile", "enrollment_id", "attempt_id"}
+    assert request["enrollment_id"] == attempt.enrollment_id and request["attempt_id"] == HANDLE
+    assert client.exchange.call_args.kwargs["expected_key_jkt"] == INSTALLATION_KEY_JKT
+
+
 @pytest.mark.parametrize(("elapsed", "source_lifetime", "changed_claim", "requests"), [
     (20, 480, None, 1),
     (20, 480, "verified_at", 1),
@@ -155,17 +192,28 @@ def test_initial_access_must_use_the_original_enrollment_window(elapsed, source_
     assert exchange.call_count == requests
 
 
-@pytest.mark.parametrize("result", ["fresh", "receipt", "issue-uncertain", "verified-refusal", "stale-refusal", "generic-refusal"])
+@pytest.mark.parametrize("result", [
+    "fresh", "receipt", "issue-uncertain", "verified-refusal", "stale-refusal", "generic-refusal",
+    "restart-confirmed", "restart-uncertain", "restart-during-begin", "restart-during-hello",
+    "restart-cancel-pending", "restart-different-account",
+])
 def test_setup_requires_an_uninterrupted_enrollment_and_sends_initial_issue_once(tmp_path, result):
     store = _seeded_store(tmp_path / "auth.sqlite3", INSTANT)
     journey = str(uuid4())
     admissions = ScopedAdmissions(store, stage="setup")
     presentation = admissions.consume(admissions.prepare_desktop(journey), role="desktop")
-    binding = {"purpose": "connect-account", "intended_creator_id": ACCOUNT_ID}
-    row = {"binding_json": json.dumps(binding), "ceremony_id": "ceremony"}
+    with store.database.transaction() as connection:
+        connection.execute("INSERT INTO desktop_setup_journeys (journey_id,revision,created_at) VALUES (?,0,?)",
+                           (journey, INSTANT.timestamp()))
+    deadline = INSTANT + timedelta(seconds=600)
+    binding = {"purpose": "connect-account", "intended_creator_id": ACCOUNT_ID,
+               "source_expires_at": deadline.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+               "installation_id": INSTALLATION_ID, "installation_key_jkt": INSTALLATION_KEY_JKT}
+    row = {"binding_json": json.dumps(binding), "ceremony_id": "ceremony", "authentication_revision": 1}
     selection = {"operation_id": "parent", "projection": {
         "ceremony_id": "ceremony", "operation_id": "selected-operation",
-        "decision": {"expires_at": (INSTANT + timedelta(seconds=300)).isoformat(timespec="milliseconds").replace("+00:00", "Z")},
+        "decision": {"action": "connect-account",
+                     "expires_at": (INSTANT + timedelta(seconds=300)).isoformat(timespec="milliseconds").replace("+00:00", "Z")},
     }}
     ceremonies = Mock()
     ceremonies._journey.return_value = journey
@@ -174,14 +222,31 @@ def test_setup_requires_an_uninterrupted_enrollment_and_sends_initial_issue_once
     ceremonies.decisions._request.return_value = row, {
         "binding": binding, **{k: selection["projection"][k] for k in ("ceremony_id", "operation_id")},
     }
-    attempt = SimpleNamespace(expires_at=INSTANT + timedelta(seconds=120), installation_id=INSTALLATION_ID)
-    registered = SimpleNamespace(attempt=attempt)
     enrollment = Mock()
-    enrollment.begin.return_value = attempt
-    enrollment.finish.return_value = enrollment.receipt.return_value = registered
-    if result == "receipt":
+    observed = ObservedRegistration(CREDENTIAL_ID, b"public-key-fixture")
+
+    def begin(*, enrollment_id, initial_access_nonce, **_):
+        return EnrollmentAttempt(enrollment_id, HANDLE, RP, INSTANT + timedelta(seconds=120), deadline,
+                                 INSTALLATION_ID, INSTALLATION_KEY_JKT, initial_access_nonce, b"c" * 32,
+                                 b"u" * 32, "Dipsy passkey 012345")
+
+    def finish(attempt, _response, **_):
+        return RegisteredPasskey(attempt, observed.credential_id, observed.public_key, INSTANT, deadline)
+
+    enrollment.observe.return_value = observed
+    enrollment.begin.side_effect = begin
+    enrollment.finish.side_effect = enrollment.receipt.side_effect = finish
+    if result in {"receipt", "restart-uncertain", "restart-cancel-pending"}:
         enrollment.finish.side_effect = HostedGrantUnavailable("Test lost the enrollment response")
+    if result == "restart-uncertain":
+        enrollment.receipt.side_effect = HostedGrantUnavailable("Test receipt temporarily unavailable")
+    if result == "restart-during-begin":
+        enrollment.begin.side_effect = HostedGrantUnavailable("Test lost the begin reply")
+    if result == "restart-cancel-pending":
+        enrollment.receipt.side_effect = AccountPasskeyRefused("result_unavailable", None)
     authority = Mock(store=store)
+    if result == "restart-during-hello":
+        authority.broker.enroll.side_effect = HostedGrantUnavailable("Test stopped during native operation")
     authority.prepare_initial_access.side_effect = (
         HostedGrantUnavailable("Test lost the first-access response") if result == "issue-uncertain" else None
     )
@@ -205,19 +270,54 @@ def test_setup_requires_an_uninterrupted_enrollment_and_sends_initial_issue_once
         authority.adopt.assert_not_called()
         assert owner.take_initial_access() is None
         return
-    assert owner._create(journey, selection, session=presentation, authorize=Mock()) == "created"
+    first = owner._create(journey, selection, session=presentation, authorize=Mock())
+    if result.startswith("restart-"):
+        assert first == ("created" if result in {"restart-confirmed", "restart-different-account"} else "unavailable")
+        first_begin = enrollment.begin.call_args.kwargs
+        first_enroll_count = authority.broker.enroll.call_count
+        authority.store = SQLiteAuthenticationStore(tmp_path / "auth.sqlite3", clock=lambda: INSTANT)
+        admissions = ScopedAdmissions(authority.store, stage="setup")
+        presentation = admissions.consume(admissions.prepare_desktop(), role="desktop")
+        owner = DesktopAccountPasskeys(ceremonies, enrollment, authority, admissions)
+        enrollment.begin.reset_mock()
+        enrollment.begin.side_effect = begin
+        if result != "restart-cancel-pending":
+            enrollment.receipt.side_effect = finish
+        if result == "restart-different-account":
+            row["authentication_revision"] += 1
+        with authority.store.database.read() as connection:
+            assert owner.displayed(selection, journey_id=journey, connection=connection) == "recoverable"
+        recovered = owner._create(journey, selection, session=presentation, authorize=Mock())
+        assert authority.broker.enroll.call_count == first_enroll_count
+        if result == "restart-during-begin":
+            assert enrollment.begin.call_args.kwargs["enrollment_id"] == first_begin["enrollment_id"]
+            assert enrollment.begin.call_args.kwargs["initial_access_nonce"] == first_begin["initial_access_nonce"]
+        else:
+            enrollment.begin.assert_not_called()
+        if result not in {"restart-confirmed", "restart-uncertain"}:
+            assert recovered == ("unavailable" if result == "restart-different-account" else "cancelled")
+            assert enrollment.cancel.call_count == (0 if result == "restart-different-account" else 1)
+            assert owner.take_initial_access() is None
+            return
+        assert recovered == "created"
+        assert enrollment.receipt.call_args.args[0].enrollment_id == first_begin["enrollment_id"]
+    else:
+        assert first == "created"
     assert authority.prepare_initial_access.call_count == 0
     owner.adopt_after_connect(effect, scope, authorize=Mock())
     owner.adopt_after_connect(effect, scope, authorize=Mock())
     assert authority.adopt.call_count == 1
-    assert authority.prepare_initial_access.call_count == (0 if result == "receipt" else 1)
+    assert authority.prepare_initial_access.call_count == (0 if result in {
+        "receipt", "restart-uncertain", "restart-confirmed",
+    } else 1)
     first = owner.take_initial_access()
     assert first == ((presentation, authority.prepare_initial_access.return_value) if result == "fresh" else None)
     assert owner.take_initial_access() is None
 
 
 @pytest.mark.parametrize("first_access", ["fresh", "expired", "restart"])
-def test_installed_presentation_uses_only_one_initial_saved_data_session(tmp_path, monkeypatch, first_access):
+@pytest.mark.parametrize("first_route", ["saved-data", "ordinary"])
+def test_installed_presentation_uses_only_one_initial_local_session(tmp_path, monkeypatch, first_access, first_route):
     now = INSTANT
     path = tmp_path / "auth.sqlite3"
     store = _seeded_store(path, now)
@@ -237,13 +337,14 @@ def test_installed_presentation_uses_only_one_initial_saved_data_session(tmp_pat
     owner = authority.adopt(None, creator_account_id=ACCOUNT_ID, guard=lambda connection=None: None)
     setup = ScopedAdmissions(store, stage="setup")
     presentation = setup.consume(setup.prepare_desktop(None), role="desktop")
-    staged = SavedDataSessions()
-    staged.stage_initial(InitialSavedDataAccess(presentation.generation, owner, records.initial))
+    authority.stage_initial(InitialLocalAccess(presentation.generation, owner, records.initial))
 
     setup.continue_in_runtime(presentation.identifier, presentation.generation)
     with pytest.raises(AdmissionRefused):
         setup.require(presentation.identifier, role="desktop", generation=presentation.generation)
-    sessions = SavedDataSessions() if first_access == "restart" else staged
+    if first_access == "restart":
+        authority = AccountPasskeyAuthority(store, records, records, environment="qa", broker=hello)
+    sessions = SavedDataSessions()
     if first_access == "expired":
         now += timedelta(seconds=300)
     app = FastAPI()
@@ -251,7 +352,12 @@ def test_installed_presentation_uses_only_one_initial_saved_data_session(tmp_pat
     app.state.account_passkey_authority = authority
     app.include_router(admission_router(app.state.desktop_admissions, launcher_token="launcher-fixture".ljust(32, "a")))
     app.include_router(saved_data.router)
+    app.include_router(webauthn.router)
     app.dependency_overrides[saved_data.require_local_installation] = lambda: None
+    app.dependency_overrides[webauthn.require_activated_runtime] = lambda: None
+    app.dependency_overrides[webauthn.authentication_store] = lambda: store
+    app.dependency_overrides[webauthn.webauthn_authority_port] = lambda: WebAuthnAuthorityPort(store, clock=store._now)
+    app.dependency_overrides[get_runtime_policy] = store.build_runtime_policy
     monkeypatch.setattr(saved_data, "_sessions", sessions)
     with TestClient(app, base_url=ORIGIN.replace("http:", "https:"), headers={"Origin": ORIGIN}) as browser:
         headers = {"X-Desktop-Generation": presentation.generation}
@@ -261,13 +367,24 @@ def test_installed_presentation_uses_only_one_initial_saved_data_session(tmp_pat
         assert session.json()["expires_at"] == presentation.expires_at
         headers["X-Desktop-CSRF"] = session.json()["csrf_token"]
 
+        initial = "/api/v1/webauthn/login/initial"
+        if first_route == "ordinary":
+            assert browser.post(initial).status_code == 409
+            response = browser.post(initial, headers=headers)
+            assert response.status_code == (200 if first_access == "fresh" else 409)
+            assert (webauthn.settings.bridge_session_cookie_name in browser.cookies) == (first_access == "fresh")
+            assert saved_data.COOKIE not in browser.cookies
+            assert not hello.challenges
+            assert browser.post(initial, headers=headers).status_code == 409
+
         path = "/api/v1/saved-data/login/windows-hello"
         response = browser.post(path, headers=headers)
         assert response.status_code == 200
         assert sessions.accepts(owner, browser.cookies[saved_data.COOKIE], response.json()["csrf_token"])
-        assert webauthn.settings.bridge_session_cookie_name not in browser.cookies
-        challenges = 0 if first_access == "fresh" else 1
+        assert webauthn.settings.bridge_session_cookie_name not in response.cookies
+        challenges = 0 if first_route == "saved-data" and first_access == "fresh" else 1
         assert len(hello.challenges) == challenges
+        assert browser.post(initial, headers=headers).status_code == 409
 
         browser.post("/api/v1/saved-data/lock")
         assert browser.post(path, headers=headers).status_code == 200
@@ -347,7 +464,10 @@ def test_saved_data_binding_and_withdrawal_survive_restart(tmp_path, monkeypatch
         assert browser.post("/api/v1/webauthn/login/windows-hello").status_code == 403
         assert browser.post("/api/v1/saved-data/login/begin").json() == {"windows_hello": True}
         assert browser.post("/api/v1/saved-data/login/windows-hello").status_code == 401
-        signed_in = browser.post("/api/v1/saved-data/login/windows-hello", headers=admit(browser))
+        headers = admit(browser)
+        assert browser.post("/api/v1/webauthn/login/initial", headers=headers).status_code == 403
+        assert not local.broker.challenges
+        signed_in = browser.post("/api/v1/saved-data/login/windows-hello", headers=headers)
         assert signed_in.status_code == 200
         assert webauthn.settings.bridge_session_cookie_name not in browser.cookies
         previous_token = browser.cookies[saved_data.COOKIE]

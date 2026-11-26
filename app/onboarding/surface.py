@@ -68,6 +68,9 @@ def setup_shell(request: Request, *, browser=False, receiving_origin=None, acces
     script, style = first_paint_csp(document)
     if not browser and not receiving_origin:
         document = _with_release_presentation(document)
+        setup = getattr(request.app.state, "desktop_setup_core", None)
+        if getattr(setup, "account_passkeys", None) is not None:
+            document = document.replace('data-account-passkey="false"', 'data-account-passkey="true"', 1)
     if access_ticket is not None:
         document = document.replace("</body>", f'<template id="access-document-entry">{escape(access_ticket)}</template></body>', 1)
     return HTMLResponse(document, headers=HEADERS | {"Content-Security-Policy":

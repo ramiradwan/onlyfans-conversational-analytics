@@ -32,6 +32,7 @@ describe('FastAPI runtime config credential boundary', () => {
     const config = getConfig();
 
     expect(config).toEqual({
+      ACCOUNT_PASSKEY_ENABLED: false,
       EXTENSION_ID: 'abcdefghijklmnopabcdefghijklmnop',
       FASTAPI_WS_URL: 'wss://brain.example/ws/bridge',
       API_BASE_URL: 'https://brain.example',
@@ -50,6 +51,7 @@ describe('FastAPI runtime config credential boundary', () => {
     const config = getConfig();
 
     expect(config.BRIDGE_AUTH_TICKET).toBeUndefined();
+    expect(config.ACCOUNT_PASSKEY_ENABLED).toBe(false);
     expect(config).not.toHaveProperty('AGENT_AUTH_TICKET');
   });
 

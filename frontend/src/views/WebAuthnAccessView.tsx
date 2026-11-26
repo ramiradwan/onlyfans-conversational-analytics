@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import type { DesktopState } from '../../onboarding/client.js';
 import { authorityRecoveryView, type RecoveryAction } from '../../shared-setup/authority-recovery.js';
+import { nativePasskeyPresentation, passkeyPermissionMessage, passkeyWindow } from '../../shared-setup/passkey-window.js';
 import {
   AccessFollower, EnrollmentOutcomeError, lapsedAccess, LoginOutcomeError, PASSKEY_STATUS_RETRY_DELAYS, WebAuthnStatusError, webauthnApi,
   type AccessState, type PushedAccess, type WebAuthnApi,
@@ -9,6 +10,7 @@ import {
 import { AuthorityRecoveryTask } from '../components/AuthorityRecoveryTask';
 import { OnboardingPasskeyTask } from '../components/OnboardingPasskeyTask';
 import type { AuthorityRecoveryApi } from '../services/desktopOnboarding';
+import { usePasskeyOpen } from '../services/usePasskeyOpen';
 
 const noDesktop: DesktopState = { snapshot: null, pending: null, connected: false, error: null };
 const noSubscribe = () => () => {};
@@ -28,6 +30,7 @@ interface WebAuthnAccessViewProps {
   onAuthenticated?: () => void;
   recoveryApi?: AuthorityRecoveryApi;
   sessionNotice?: string;
+  savedDataAvailable?: boolean;
 }
 
 export function WebAuthnAccessView({
@@ -35,6 +38,7 @@ export function WebAuthnAccessView({
   onAuthenticated = () => window.location.reload(),
   recoveryApi,
   sessionNotice,
+  savedDataAvailable = false,
 }: WebAuthnAccessViewProps) {
   const desktop = useSyncExternalStore(recoveryApi?.subscribe ?? noSubscribe, recoveryApi?.getState ?? noState);
   const [recoveryActing, setRecoveryActing] = useState<RecoveryAction | null>(null);
@@ -46,6 +50,9 @@ export function WebAuthnAccessView({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [enrolled, setEnrolled] = useState<boolean | null>(null);
+  const [nativeRequired, setNativeRequired] = useState(false);
+  const [passkeyPermission, setPasskeyPermission] = useState(false);
+  const nativePresentation = nativePasskeyPresentation();
   const [access, setAccess] = useState<AccessState | null>(null);
   const [checking, setChecking] = useState(Boolean(api.state));
   const [checkAttempt, setCheckAttempt] = useState(0);
@@ -107,6 +114,8 @@ export function WebAuthnAccessView({
       const reconciledCeremony = recovery.current;
       const canRebootstrap = state.authenticated && (!sessionNotice || reconciledCeremony && !sessionWasAuthenticated.current);
       sessionWasAuthenticated.current = state.authenticated;
+      setNativeRequired(state.nativeRequired === true);
+      if (state.authenticated) void passkeyWindow('discard_passkey_unlock');
       if (reconciledCeremony) {
         setError(canRebootstrap ? null : failureMessage(recoveryWasEnrollment.current));
         recovery.current = false;
@@ -183,8 +192,9 @@ export function WebAuthnAccessView({
     finally { recoveryAction.current = null; setRecoveryActing(null); }
   };
 
-  const authenticate = async (enroll: boolean) => {
-    if (protectedView || busy || checking || reading.current || recovery.current || completed.current || access || ceremony.current || api.state && enrolled === null) return;
+  const authenticate = async (enroll: boolean, automatic = false) => {
+    if (protectedView || busy || checking || reading.current || recovery.current || completed.current || access || ceremony.current
+      || api.state && enrolled === null || nativeRequired && (enroll || !nativePresentation)) return;
     const controller = new AbortController();
     ceremony.current = controller;
     // A change pushed during the ceremony is read once it ends.
@@ -192,8 +202,12 @@ export function WebAuthnAccessView({
     let signedIn = false;
     setBusy(true);
     setError(null);
+    setPasskeyPermission(false);
     try {
+      if (nativePresentation && !automatic) await passkeyWindow('discard_passkey_unlock');
+      if (controller.signal.aborted || protectedRef.current) return;
       if (enroll) await api.enroll(controller.signal);
+      else if (nativeRequired) await api.login(controller.signal, true);
       else await api.login(controller.signal);
       if (!controller.signal.aborted && !protectedRef.current) { signedIn = true; completed.current = true; authenticated.current(); }
     } catch (cause) {
@@ -210,9 +224,13 @@ export function WebAuthnAccessView({
         setCheckAttempt(value => value + 1);
       } else {
         if (cause instanceof EnrollmentOutcomeError) setEnrolled(cause.enrolled);
-        setError(cause instanceof EnrollmentOutcomeError && cause.enrolled
-          ? 'Passkey created. Sign in to continue.'
-          : failureMessage(enroll));
+        const reason = cause instanceof LoginOutcomeError ? cause.reason : undefined;
+        setPasskeyPermission(reason === 'permission_required');
+        setError(reason === 'permission_required' ? passkeyPermissionMessage
+          : reason === 'foreground_required' ? 'Bring Dipsy to the front, then try again.'
+            : reason === 'cancelled' ? 'Windows Hello was cancelled.'
+              : cause instanceof EnrollmentOutcomeError && cause.enrolled ? 'Passkey created. Sign in to continue.'
+                : failureMessage(enroll));
       }
     } finally {
       if (ceremony.current === controller) ceremony.current = null;
@@ -223,12 +241,19 @@ export function WebAuthnAccessView({
     }
   };
 
-  if (protectedView) return <AuthorityRecoveryTask view={protectedView} act={action => void performRecovery(action)} />;
+  usePasskeyOpen(nativeRequired && nativePresentation && enrolled === true && !protectedView && !access
+    && !busy && !checking && !readingStatus && !recoveringStatus && !sessionWasAuthenticated.current,
+  () => { void authenticate(false, true); });
+
+  if (protectedView) return <AuthorityRecoveryTask view={protectedView} act={action => void performRecovery(action)}
+    savedDataAvailable={savedDataAvailable} />;
   // Do not flash a stale "expired" message after original restoration or
   // while the admitted native owner is still establishing whether it can help.
   const checkingStatus = checking || recoveringStatus || Boolean(hadProtected.current && desktop.connected && desktop.snapshot)
     || Boolean(recoveryApi && access === 'expired' && !desktop.connected && !desktop.error);
   return <OnboardingPasskeyTask statusUnavailable={Boolean(api.state) && enrolled === null && !checkingStatus && access === null}
     busy={busy} checking={checkingStatus} readingStatus={readingStatus} enrolled={enrolled}
-    error={error} access={access} sessionNotice={sessionNotice} authenticate={authenticate} />;
+    error={error} access={access} sessionNotice={sessionNotice} authenticate={authenticate}
+    nativeRequired={nativeRequired} nativePresentation={nativePresentation} passkeyPermission={passkeyPermission}
+    savedDataAvailable={savedDataAvailable} />;
 }

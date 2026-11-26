@@ -39,6 +39,14 @@ class RegisteredPasskey:
     receipt_expires_at: datetime
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class ObservedRegistration:
+    """Public credential evidence checked against the original native challenge."""
+
+    credential_id: str
+    public_key: bytes
+
+
 class AccountPasskeyEnrollment:
     """Accept only an owner's exact ceremony and a locally verified Hello result."""
 
@@ -135,9 +143,7 @@ class AccountPasskeyEnrollment:
         *,
         before_send: Callable[[], None],
     ) -> RegisteredPasskey:
-        public_key = verify_registration(
-            registration, rp_id=attempt.rp_id, challenge=attempt.challenge
-        )
+        observed = self.observe(attempt, registration)
 
         def guard() -> None:
             before_send()
@@ -145,22 +151,27 @@ class AccountPasskeyEnrollment:
                 raise HostedGrantUnavailable("Account passkey attempt expired")
 
         return self._result(
-            "enrollment-finish", attempt, registration, public_key, guard, before_send
+            "enrollment-finish", attempt, observed, guard, before_send, native=registration
+        )
+
+    @staticmethod
+    def observe(attempt: EnrollmentAttempt, registration: NativeRegistration) -> ObservedRegistration:
+        return ObservedRegistration(
+            registration.credential_id,
+            verify_registration(registration, rp_id=attempt.rp_id, challenge=attempt.challenge),
         )
 
     def receipt(
         self,
         attempt: EnrollmentAttempt,
-        registration: NativeRegistration,
+        registration: NativeRegistration | ObservedRegistration,
         *,
         before_send: Callable[[], None],
     ) -> RegisteredPasskey:
         """Reconcile an unknown completion with a fresh proof and the original result."""
-        public_key = verify_registration(
-            registration, rp_id=attempt.rp_id, challenge=attempt.challenge
-        )
+        observed = registration if isinstance(registration, ObservedRegistration) else self.observe(attempt, registration)
         return self._result(
-            "enrollment-receipt", attempt, registration, public_key, before_send, before_send
+            "enrollment-receipt", attempt, observed, before_send, before_send
         )
 
     def cancel(self, attempt: EnrollmentAttempt, *, before_send: Callable[[], None]) -> None:
@@ -170,14 +181,15 @@ class AccountPasskeyEnrollment:
         self,
         purpose: str,
         attempt: EnrollmentAttempt,
-        registration: NativeRegistration,
-        public_key: bytes,
+        registration: ObservedRegistration,
         before_send: Callable[[], None],
         require_current: Callable[[], None],
+        *,
+        native: NativeRegistration | None = None,
     ) -> RegisteredPasskey:
         request = self._request(attempt)
-        if purpose == "enrollment-finish":
-            request["registration"] = registration.wire()
+        if native is not None:
+            request["registration"] = native.wire()
         result = self._exchange(purpose, attempt, request, before_send)
         registered = timestamp(result["registered_at"])
         expires = timestamp(result["receipt_expires_at"])
@@ -193,7 +205,7 @@ class AccountPasskeyEnrollment:
             raise HostedGrantUnavailable("Account passkey receipt does not match")
         require_current()
         return RegisteredPasskey(
-            attempt, registration.credential_id, public_key, registered, expires
+            attempt, registration.credential_id, registration.public_key, registered, expires
         )
 
     def _exchange(

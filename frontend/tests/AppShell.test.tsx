@@ -110,6 +110,9 @@ describe('application shell routing and navigation', () => {
     expect(within(mobileNavigation).getByRole('link', { name: 'Dashboard' })).toBeTruthy();
     expect(within(mobileNavigation).getByRole('link', { name: 'Inbox' })).toBeTruthy();
     expect(within(mobileNavigation).getByRole('link', { name: 'Analytics' })).toBeTruthy();
+    for (const navigation of [desktopNavigation, mobileNavigation]) {
+      expect(within(navigation).getByRole('link', { name: 'Account', hidden: true }).getAttribute('href')).toBe('/account');
+    }
     expect(within(mobileNavigation).queryByRole('link', { name: 'Graph explorer' })).toBeNull();
 
     fireEvent.click(within(mobileNavigation).getByRole('link', { name: 'Inbox' }));

@@ -6,7 +6,9 @@ import { OnboardingAction, OnboardingStatus } from './ui/OnboardingCard';
 import type { RecoveryAction, RecoveryPresentation } from '../../shared-setup/authority-recovery.js';
 import { componentTokens } from '../theme';
 
-export function AuthorityRecoveryTask({ view, act }: { view: RecoveryPresentation; act(action: RecoveryAction): void }) {
+export function AuthorityRecoveryTask({ view, act, savedDataAvailable }: {
+  view: RecoveryPresentation; act(action: RecoveryAction): void; savedDataAvailable?: boolean;
+}) {
   const { title, description, status, tone, action, label, cancel, cancelPrimary, disabled } = view;
   const placeholder = !title;
   const progress = tone === 'progress';
@@ -17,7 +19,7 @@ export function AuthorityRecoveryTask({ view, act }: { view: RecoveryPresentatio
   const family = [title, description, (action || pending) && label, cancel, cancelPrimary].join('\n');
   return <OnboardingWorkspace trust>
     <TrustTask data-journey-state="desktop.authority_recovery" visual="authority-recovery-card"
-      spot="lock" family={family} busy={progress} placeholder={placeholder} arrive={!placeholder}
+      spot="lock" family={family} busy={progress} placeholder={placeholder} arrive={!placeholder} savedDataAvailable={savedDataAvailable}
       title={placeholder ? <><span style={visuallyHidden}>Checking access</span>
         <Skeleton aria-hidden="true" animation={false} width="min(100%, 20ch)" /></> : title}
       body={placeholder ? <Skeleton aria-hidden="true" animation={false} width="min(100%, 28ch)" /> : description}

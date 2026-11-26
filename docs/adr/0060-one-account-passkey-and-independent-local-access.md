@@ -1,6 +1,7 @@
 # ADR 0060: Enroll one account passkey and verify local access independently
 
 - Status: Accepted
+- Proposed amendment, 25 November 2026. Define the explicit local lock for a release using account passkeys.
 - Date: 2026-11-24
 - Decision authority: Rami Radwan, product and architecture owner, accepted reviewed revision 12d50d1cafbb0bd3723ad2f841da52e7b5b3e9b0 on 2026-11-24. Security, Identity and Legal recorded their design decisions on the same date.
 - Supersedes: for this journey replace the enrollment order in ADR 0008, “Local Bridge authentication,” and the first-session bootstrap only. Hosted registration may precede Connect. Brain still verifies the committed local binding and applicable grants, owns every local session, and enforces the saved-data and new-work boundaries in ADRs 0008 and 0014.
@@ -28,6 +29,12 @@ The same credential can answer independent browser and native challenges. The in
 - Qualify same-credential hosted and disconnected use, failure after source expiry, cancellation, retries, mismatched account or installation, known local withdrawal, first pairing, restart, and precise saved-data access after grant expiry. Public Product consumes approved generated artifacts by immutable digest.
 
 - Make support reachable outside sign-in. Present a minimized reference for Identity's human review of a refusal. Keep information about a specific account within its verified customer context. Guide customers with a valid local credential to saved-data access. Verify the support route after refusal and supply the verified behavior for Legal's final review of the sign-in and account surfaces.
+
+## Local app lock
+
+The configured desktop has an Account entry. Its passkey management action opens the selected release's account page in Chrome. The hosted service verifies the browser session and owns credential removal.
+
+Lock Dipsy ends ordinary local sessions and their dependent tickets, closes protected views and pauses new capture and analysis on this installation. It retains the pairing, credential, account grants and saved records. A fresh ordinary Windows Hello verification can resume work under the current grants. An independent saved-data verification opens the archive under its existing rules. The app records an explicit lock across restart. A verification already underway when the lock is applied cannot clear it.
 
 ## Related
 

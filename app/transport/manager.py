@@ -123,6 +123,8 @@ class BridgeBinding:
     bridge_session_id: UUID
     capabilities: tuple[str, ...] = ()
     view_revision: int | None = None
+    parent_session_id: str | None = None
+    ended: bool = False
 
 
 ADVERTISED_TASK_PURPOSES = frozenset({"browser.access", "browser.identity", "browser.history-permission"})
@@ -307,6 +309,7 @@ class InMemoryTransportManager:
         ttl_seconds: int,
         agent_installation_id: UUID | None = None,
         bridge_session_id: UUID | None = None,
+        parent_session_id: str | None = None,
         role: Literal["creator", "operator", "agent"] = "agent",
         now: datetime | None = None,
     ) -> str:
@@ -326,6 +329,8 @@ class InMemoryTransportManager:
             "role": role,
             "v": 2,
         }
+        if parent_session_id is not None:
+            document["local_session"] = parent_session_id
         payload = json.dumps(document, separators=(",", ":"), sort_keys=True).encode(
             "utf-8"
         )
@@ -342,6 +347,7 @@ class InMemoryTransportManager:
         creator_account_id: str,
         agent_installation_id: UUID | None = None,
         bridge_session_id: UUID | None = None,
+        parent_session_id: str | None = None,
         now: datetime | None = None,
     ) -> dict[str, Any]:
         try:
@@ -370,7 +376,7 @@ class InMemoryTransportManager:
         expected_bridge_session = (
             None if bridge_session_id is None else str(bridge_session_id)
         )
-        if document != {
+        expected = {
             "account": creator_account_id,
             "bridge_session": expected_bridge_session,
             "exp": expires_at,
@@ -381,7 +387,10 @@ class InMemoryTransportManager:
             "purpose": purpose,
             "role": document.get("role"),
             "v": 2,
-        }:
+        }
+        if parent_session_id is not None:
+            expected["local_session"] = parent_session_id
+        if document != expected:
             raise AuthenticationError("Runtime ticket binding is invalid")
         authenticated_at = int((now or utc_now()).timestamp())
         if issued_at > authenticated_at or expires_at <= authenticated_at:
@@ -413,6 +422,7 @@ class InMemoryTransportManager:
         creator_account_id: str,
         role: Literal["creator", "operator"],
         bridge_session_id: UUID | None = None,
+        parent_session_id: str | None = None,
         ttl_seconds: int | None = None,
         now: datetime | None = None,
     ) -> str:
@@ -421,6 +431,7 @@ class InMemoryTransportManager:
             principal_id=principal_id,
             creator_account_id=creator_account_id,
             bridge_session_id=bridge_session_id,
+            parent_session_id=parent_session_id,
             role=role,
             ttl_seconds=ttl_seconds or settings.bridge_ticket_ttl_seconds,
             now=now,
@@ -511,6 +522,7 @@ class InMemoryTransportManager:
         *,
         role: Literal["agent", "bridge"],
         bridge_session_id: UUID | None = None,
+        parent_session_id: str | None = None,
         now: datetime | None = None,
     ) -> tuple[str, str]:
         self._require_activated_runtime()
@@ -520,6 +532,7 @@ class InMemoryTransportManager:
         if (
             self._development_stub_allowed()
             and auth_ticket == expected_ticket
+            and parent_session_id is None
             and requested_account == DEV_ACCOUNT_ID
         ):
             return DEV_PRINCIPAL_ID, DEV_ACCOUNT_ID
@@ -530,6 +543,7 @@ class InMemoryTransportManager:
                     purpose="bridge-websocket",
                     creator_account_id=requested_account,
                     bridge_session_id=bridge_session_id,
+                    parent_session_id=parent_session_id,
                     now=now,
                 )
             except AuthenticationError:
@@ -541,6 +555,7 @@ class InMemoryTransportManager:
                     purpose="bridge-websocket",
                     creator_account_id=requested_account,
                     bridge_session_id=None,
+                    parent_session_id=parent_session_id,
                     now=now,
                 )
             return str(document["principal"]), requested_account
@@ -821,6 +836,7 @@ class InMemoryTransportManager:
         creator_account_id: str,
         bridge_session_id: UUID,
         capabilities: list[str] | tuple[str, ...] = (),
+        parent_session_id: str | None = None,
     ) -> BridgeBinding:
         binding = BridgeBinding(
             websocket=websocket,
@@ -829,6 +845,7 @@ class InMemoryTransportManager:
             connection_id=uuid4(),
             bridge_session_id=bridge_session_id,
             capabilities=tuple(capabilities),
+            parent_session_id=parent_session_id,
         )
         self.bridges[binding.connection_id] = binding
         return binding
@@ -847,6 +864,24 @@ class InMemoryTransportManager:
         if should_broadcast:
             await self.broadcast_agent_state(lease.creator_account_id)
             await self.broadcast_catchup(lease.creator_account_id)
+
+    async def end_desktop_session(self, binding: BridgeBinding) -> None:
+        if binding.ended:
+            return
+        binding.ended = True
+        try:
+            async with asyncio.timeout(2):
+                try:
+                    await self.send_bridge(binding.websocket, "protocol.error", {
+                        "code": "unauthorized", "related_message_id": None, "retryable": False,
+                        "fatal": True, "detail": "The desktop session has ended",
+                    })
+                finally:
+                    await binding.websocket.close(code=1008, reason="unauthorized")
+        except (TimeoutError, RuntimeError, OSError, WebSocketDisconnect):
+            pass
+        finally:
+            await self.disconnect_bridge(binding.connection_id)
 
     async def disconnect_bridge(self, connection_id: UUID) -> None:
         binding = self.bridges.pop(connection_id, None)
@@ -1376,6 +1411,9 @@ class InMemoryTransportManager:
         *,
         correlation_id: UUID | str | None = None,
     ) -> dict[str, Any]:
+        session_open = getattr(getattr(websocket, "state", None), "desktop_session_is_open", None)
+        if message_type != "protocol.error" and session_open is not None and not session_open():
+            raise AuthorizationError("The desktop session has ended")
         binding = next((b for b in self.bridges.values() if b.websocket is websocket), None)
         negotiated = binding is not None and "state.catchup_freshness" in binding.capabilities
         payload = dict(payload)
@@ -1798,6 +1836,8 @@ class InMemoryTransportManager:
                 continue
             try:
                 await self.send_bridge(binding.websocket, message_type, payload)
+            except AuthorizationError:
+                await self.end_desktop_session(binding)
             except Exception:
                 stale.append(connection_id)
         for connection_id in stale:

@@ -12,7 +12,7 @@ from functools import lru_cache
 from typing import Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.utils.logger import logger
@@ -45,6 +45,16 @@ def _presentation_release() -> CustomerReleaseConfig | None:
         return load_customer_release_config()
     except CustomerReleaseConfigurationError:
         return None
+
+
+@router.get("/account/manage-passkeys", include_in_schema=False)
+def open_account_passkeys() -> RedirectResponse:
+    """Open the public management page selected by the installed release."""
+    release = _presentation_release()
+    headers = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+    if release is None or release.account_passkey is None:
+        raise HTTPException(404, "Account passkey management is unavailable", headers=headers)
+    return RedirectResponse(f"{release.hosted_api_origin}/account/passkeys", status_code=303, headers=headers)
 
 
 @dataclass(frozen=True)
@@ -175,6 +185,7 @@ async def serve_frontend(
         "FASTAPI_WS_URL": ws_url,
         "API_BASE_URL": api_base_url,
         "VERSION": settings.version,
+        "ACCOUNT_PASSKEY_ENABLED": bool(release and release.account_passkey),
         "SETUP_TRANSFER_RECEIVER_URL": release.setup_transfer_receiver_url if release else "",
         "CREATOR_ID": None if identity is None else identity.creator_account_id,
         "BRIDGE_ROLE": None if identity is None else identity.role,
@@ -185,6 +196,7 @@ async def serve_frontend(
                 principal_id=identity.principal_id,
                 creator_account_id=identity.creator_account_id,
                 role=identity.role,
+                parent_session_id=identity.session_id if getattr(request.app.state, "account_passkey_authority", None) else None,
                 ttl_seconds=(
                     settings.bridge_ticket_ttl_seconds
                     if identity.session_expires_at is None

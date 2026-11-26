@@ -123,6 +123,17 @@ fn open_entry(
 }
 
 #[tauri::command]
+pub fn desktop_account_passkeys(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, std::sync::Arc<host::Host>>,
+) -> Result<(), &'static str> {
+    if window.url().map_err(|_| "window_unavailable")?.path() != "/account" {
+        return Err("desktop_admission_required");
+    }
+    open_entry(window, state, format!("{}/account/manage-passkeys", policy::ORIGIN))
+}
+
+#[tauri::command]
 pub fn desktop_text_analysis_reissue(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, std::sync::Arc<host::Host>>,

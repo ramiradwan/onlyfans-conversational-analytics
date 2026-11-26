@@ -54,7 +54,7 @@ pub fn local_document(url: &Url) -> bool {
         && url.password().is_none()
         && (matches!(
             url.path(),
-            "/" | "/inbox" | "/analytics" | "/graph-explorer" | "/settings"
+            "/" | "/inbox" | "/analytics" | "/graph-explorer" | "/settings" | "/account"
         ) || url.path() == "/onboarding"
             || url.path().starts_with("/onboarding/"))
 }
@@ -357,7 +357,7 @@ mod tests {
         // React BrowserRouter changes the owned document's path in place.
         // Keep these exact application routes usable without admitting local
         // helpers, API endpoints, or arbitrary same-origin documents.
-        for path in ["/", "/inbox", "/analytics", "/graph-explorer", "/settings"] {
+        for path in ["/", "/inbox", "/analytics", "/graph-explorer", "/settings", "/account"] {
             let url = Url::parse(&format!("{ORIGIN}{path}")).unwrap();
             assert!(local_document(&url));
             assert!(window_controls("main", &url, true, false));

@@ -5,9 +5,14 @@ const owners = vi.hoisted(() => ({ client: null, enrollment: null }));
 vi.mock('../onboarding/client.js', () => ({
   DesktopSetupClient: class {
     session = { stage: 'runtime' };
-    connect = vi.fn();
+    connect = vi.fn(() => { this.connected = false; this.launchEpoch++; });
     wake = vi.fn();
-    act = vi.fn();
+    act = vi.fn(async () => ({ state: 'accepted' }));
+    json = vi.fn();
+    notify = vi.fn();
+    takeReturnedPasskey = vi.fn(() => null);
+    discardReturnedPasskey = vi.fn();
+    launchEpoch = 0;
     launchBrowser = vi.fn();
     stop = vi.fn();
     constructor(options) { Object.assign(this, options); owners.client = this; }
@@ -30,6 +35,8 @@ let replace;
 let listeners;
 
 function publish(snapshot = ready(), other = {}) {
+  owners.client.value = snapshot;
+  owners.client.connected = other.connected ?? true;
   owners.client.receive({ snapshot, connected: true, pending: null, error: null, ...other });
 }
 function authenticate(other = {}) {
@@ -53,6 +60,204 @@ afterEach(() => {
   }
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  sessionStorage.removeItem('desktop-presentation');
+  document.documentElement.removeAttribute('data-account-passkey');
+});
+
+function passkeyOffer() {
+  const generation = owners.client.generation;
+  const operationId = '22222222-2222-4222-8222-222222222222';
+  return { ...ready(), generation, revision: 7, scope_digest: 'a'.repeat(64),
+    journey_id: '33333333-3333-4333-8333-333333333333', next_task: 'account-connection', local_ready: false,
+    account_passkey: 'available', allowed_actions: ['account.confirm'],
+    decision: { operation_id: operationId, action: 'connect-account', creator_id: 'test-creator',
+      computer_name: 'Test computer', expires_at: '2038-01-01T00:00:00Z' },
+    authentication: { operation_id: operationId, state: 'admitted', choices: {},
+      actions: { select: false, cancel: false, open_browser: false, switch_account: false },
+      authentication_attempt: { authentication_attempt_id: '0199b234-5678-7000-8000-000000000002', provider: 'google', mode: 'sign-in' } },
+  };
+}
+
+function pendingSignIn() {
+  const parent = '22222222-2222-4222-8222-222222222222';
+  const child = '44444444-4444-4444-8444-444444444444';
+  return { ...ready(), generation: owners.client.generation, revision: 7, scope_digest: 'a'.repeat(64),
+    expires_at: Math.floor(Date.now() / 1000) + 60, journey_id: '33333333-3333-4333-8333-333333333333',
+    next_task: 'account-connection', local_ready: false, allowed_actions: ['auth.cancel'],
+    pending_operations: [
+      { operation_id: parent, action: 'account.connect', state: 'waiting', reason: 'none' },
+      { operation_id: child, action: 'auth.select', state: 'outcome_unknown', reason: 'operation_unconfirmed' },
+    ],
+    authentication: { operation_id: parent, browser_operation_id: child, state: 'selected',
+      choices: { google: false, 'microsoft-personal': false, telegram: false, tiktok: false, default: true },
+      actions: { select: false, cancel: true, open_browser: true, switch_account: false },
+      authentication_attempt: { authentication_attempt_id: '0199b234-5678-7000-8000-000000000002', provider: 'default', mode: 'sign-in' } },
+  };
+}
+
+it('cancels the current ordinary sign-in once and waits for the owner to admit retry', async () => {
+  owners.client.session.stage = 'setup';
+  const selected = pendingSignIn();
+  const child = selected.authentication.browser_operation_id;
+  let complete;
+  owners.client.act.mockImplementation(() => new Promise(resolve => { complete = resolve; }));
+  publish(selected, { pending: child });
+
+  const cancel = document.getElementById('sign-in-cancel');
+  const options = document.getElementById('sign-in-options');
+  expect(cancel?.hidden).toBe(false);
+  expect(cancel.textContent).toBe('Cancel sign-in');
+  expect(cancel.disabled).toBe(false);
+  expect(document.getElementById('protected-cancel').hidden).toBe(true);
+  expect(options.hidden).toBe(true);
+  cancel.click();
+  expect(cancel.disabled).toBe(true);
+  cancel.click();
+  expect(owners.client.act).toHaveBeenCalledExactlyOnceWith('auth.cancel', {});
+  expect(owners.client.launchBrowser).not.toHaveBeenCalled();
+
+  const retired = { ...selected, revision: 8, allowed_actions: [],
+    pending_operations: [selected.pending_operations[0]],
+    authentication: { ...selected.authentication, state: 'retired',
+      actions: { select: true, cancel: false, open_browser: false, switch_account: false } } };
+  publish(retired);
+  complete({ state: 'completed' });
+  await Promise.resolve();
+  expect(cancel.hidden).toBe(true);
+  expect(options.hidden).toBe(true);
+
+  publish({ ...retired, revision: 9, allowed_actions: ['auth.select'] });
+  const retry = options.querySelector('[data-provider="default"]');
+  expect(options.hidden).toBe(false);
+  expect(retry.hidden).toBe(false);
+  expect(retry.disabled).toBe(false);
+  expect(retry.textContent).toBe('Other sign-in options');
+  expect(retry.dataset.action).toBe('auth.select');
+  expect(owners.client.act).toHaveBeenCalledTimes(1);
+});
+
+it('fences ordinary sign-in cancellation when the displayed action expires or becomes unavailable', () => {
+  owners.client.session.stage = 'setup';
+  const selected = pendingSignIn();
+  const { authentication } = selected;
+  const parent = authentication.operation_id;
+  const child = authentication.browser_operation_id;
+  for (const pending of [null, parent, child]) {
+    publish(selected, { pending });
+    expect(document.getElementById('sign-in-cancel')?.hidden).toBe(false);
+  }
+  const cancel = document.getElementById('sign-in-cancel');
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(selected.expires_at * 1000);
+  cancel.click();
+  expect(owners.client.act).not.toHaveBeenCalled();
+  publish(selected, { pending: child });
+  expect(cancel.hidden).toBe(true);
+  clock.mockRestore();
+  for (const [value, state] of [
+    [selected, { connected: false, pending: child }],
+    [selected, { pending: '55555555-5555-4555-8555-555555555555' }],
+    [{ ...selected, pending_operations: [
+      { ...selected.pending_operations[0], state: 'outcome_unknown' },
+      { ...selected.pending_operations[1], state: 'waiting', reason: 'none' },
+    ] }, { pending: child }],
+    [{ ...selected, allowed_actions: [] }, { pending: child }],
+    [{ ...selected, authentication: { ...authentication, actions: { ...authentication.actions, cancel: false } } }, { pending: child }],
+    [{ ...selected, authentication: { ...authentication, authentication_attempt: null } }, { pending: child }],
+    [{ ...selected, authority_recovery: 'sign-in-required' }, { pending: parent }],
+  ]) {
+    publish(value, state);
+    expect(cancel.hidden).toBe(true);
+    cancel.click();
+    expect(owners.client.act).not.toHaveBeenCalled();
+  }
+});
+
+it.each([true, false])('only dispatches enrollment from a foreground return and leaves Connect explicit (foreground=%s)', async foreground => {
+  owners.client.session.stage = 'setup';
+  const offered = passkeyOffer();
+  sessionStorage.setItem('desktop-presentation', offered.generation);
+  const invoke = vi.fn(async (_command, { action }) => action === 'passkey_foreground' && foreground);
+  vi.stubGlobal('__TAURI__', { core: { invoke } });
+  owners.client.takeReturnedPasskey.mockReturnValueOnce(Date.now() + 60_000);
+  owners.client.json.mockResolvedValue({ outcome: 'created' });
+  publish(offered);
+  await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('desktop_window', { action: 'passkey_foreground' }));
+  if (foreground) await vi.waitFor(() => expect(owners.client.json).toHaveBeenCalledOnce());
+  else expect(owners.client.json).not.toHaveBeenCalled();
+  if (foreground) expect(owners.client.json).toHaveBeenCalledWith('/api/v1/desktop/setup/passkey', {
+    generation: offered.generation, revision: offered.revision, scope_digest: offered.scope_digest,
+  });
+  publish({ ...offered, account_passkey: foreground ? 'created' : 'available' });
+  window.dispatchEvent(new Event('focus'));
+  expect(owners.client.json).toHaveBeenCalledTimes(foreground ? 1 : 0);
+  expect(owners.client.act).not.toHaveBeenCalled();
+  await vi.waitFor(() => expect(document.getElementById(foreground ? 'task-action' : 'account-passkey-create').hidden).toBe(false));
+});
+
+it('retains the original enrollment deadline while checking native foreground', async () => {
+  owners.client.session.stage = 'setup';
+  const offered = passkeyOffer();
+  sessionStorage.setItem('desktop-presentation', offered.generation);
+  let resolve;
+  const checked = new Promise(done => { resolve = done; });
+  vi.stubGlobal('__TAURI__', { core: { invoke: (_command, { action }) =>
+    action === 'passkey_foreground' ? checked : Promise.resolve(false) } });
+  const now = Date.now();
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+  owners.client.takeReturnedPasskey.mockReturnValueOnce(now + 1);
+  publish(offered);
+  clock.mockReturnValue(now + 1);
+  resolve(true); await checked; await Promise.resolve();
+  expect(owners.client.json).not.toHaveBeenCalled();
+  expect(document.getElementById('account-passkey-create').hidden).toBe(false);
+});
+
+it('pauses and resumes setup through the durable scoped actions', async () => {
+  owners.client.session.stage = 'setup';
+  const offered = passkeyOffer();
+  owners.client.json.mockResolvedValueOnce({ outcome: 'paused' }).mockResolvedValueOnce({ outcome: 'resumed' });
+  publish(offered);
+  document.getElementById('account-passkey-later').click();
+  expect(owners.client.json).toHaveBeenCalledExactlyOnceWith('/api/v1/desktop/setup/passkey/pause', {
+    generation: offered.generation, revision: offered.revision, scope_digest: offered.scope_digest,
+  });
+  await Promise.resolve();
+  publish({ ...offered, revision: 8, decision: undefined, allowed_actions: [], account_passkey: 'paused' });
+  const resume = document.getElementById('account-passkey-resume');
+  expect(resume.hidden).toBe(false);
+  expect(document.getElementById('task-action').hidden).toBe(true);
+  resume.click();
+  expect(owners.client.json).toHaveBeenLastCalledWith('/api/v1/desktop/setup/passkey/resume', {
+    generation: offered.generation, revision: 8, scope_digest: offered.scope_digest,
+  });
+  await Promise.resolve();
+  publish({ ...offered, revision: 9, account_passkey: 'recoverable', allowed_actions: [] });
+  expect(document.getElementById('account-passkey-create').textContent).toBe('Resume passkey setup');
+  expect(owners.client.json).toHaveBeenCalledTimes(2);
+  expect(owners.client.act).not.toHaveBeenCalled();
+});
+
+it('tries initial local access only on the uninterrupted promotion before offering pairing', () => {
+  const offered = passkeyOffer();
+  sessionStorage.setItem('desktop-presentation', offered.generation);
+  vi.stubGlobal('__TAURI__', { core: { invoke: vi.fn() } });
+  owners.client.session.stage = 'setup';
+  publish(offered);
+  expect(owners.enrollment.check).not.toHaveBeenCalled();
+  owners.client.session.stage = 'runtime';
+  const pairing = { ...ready(), generation: offered.generation, journey_id: offered.journey_id,
+    next_task: 'finish-setup', local_ready: false, allowed_actions: ['browser.pair'] };
+  publish(pairing);
+  const initial = owners.enrollment.check.mock.calls[0][0].initial;
+  expect(initial()).toBe(true);
+  expect(owners.enrollment.authenticate).not.toHaveBeenCalled();
+  expect(document.getElementById('task-action').hidden).toBe(true);
+  owners.enrollment.refresh();
+  expect(initial()).toBe(false);
+  authenticate();
+  publish(pairing);
+  expect(document.getElementById('task-action').textContent).toBe('Connect extension');
+  expect(owners.enrollment.check).toHaveBeenCalledOnce();
 });
 
 it('opens the dashboard once after verified setup and local authentication', () => {

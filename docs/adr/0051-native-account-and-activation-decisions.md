@@ -3,6 +3,7 @@
 - Status: Accepted.
 - Decision authority: Product owner's approval of native Connect and Full analytics decisions, direct identity-provider sign-in, popup-close cancellation, and an optional activation-code fallback.
 - Supersedes: ADR 0050's hosted presentation of Connect and commercial confirmation. Its native admission, browser-task, durable ownership and offline capability requirements remain authoritative.
+- Amended: 2026-11-26 (ordinary setup cancellation when the current sign-in outcome is unknown).
 
 ## Decision
 
@@ -32,6 +33,12 @@ constructs an authorization URL. The extension opens only the fixed Provider
 ceremony entry and keeps the exact Chromium callback, ceremony and attempt
 checks. The provider button starts the flow immediately. The normal waiting
 state has no additional Open Chrome or Cancel sign-in buttons.
+
+If the outcome of the current authentication child is unknown during ordinary
+setup, the desktop offers Cancel sign-in while Brain's current snapshot permits
+cancelling that selected attempt. The existing command keeps the parent
+ceremony and its original deadline. The desktop offers retry only when the
+owner permits it.
 
 Chrome's exact `WINDOW_CLOSED` rejection records a bounded local `closed`
 observation. It is not a Provider callback or proof of cancellation. As a narrow

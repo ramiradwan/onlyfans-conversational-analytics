@@ -22,6 +22,24 @@ def _frontend_client() -> TestClient:
     return TestClient(application, raise_server_exceptions=False)
 
 
+def test_account_management_uses_the_selected_release(monkeypatch) -> None:
+    client = _frontend_client()
+    release = SimpleNamespace(account_passkey=object(), hosted_api_origin="https://account.dipsy.fi")
+    monkeypatch.setattr(frontend, "_presentation_release", lambda: release)
+    result = client.get("/account/manage-passkeys", follow_redirects=False)
+    assert result.status_code == 303
+    assert result.headers["location"] == "https://account.dipsy.fi/account/passkeys"
+    assert result.headers["referrer-policy"] == "no-referrer"
+    assert result.headers["cache-control"] == "no-store"
+    assert "set-cookie" not in result.headers
+    assert result.content == b""
+
+    release.account_passkey = None
+    assert client.get("/account/manage-passkeys", follow_redirects=False).status_code == 404
+    monkeypatch.setattr(frontend, "_presentation_release", lambda: None)
+    assert client.get("/account/manage-passkeys", follow_redirects=False).status_code == 404
+
+
 def test_production_missing_manifest_never_serves_development_script(monkeypatch) -> None:
     monkeypatch.setattr(settings, "environment", "production")
     monkeypatch.setattr(

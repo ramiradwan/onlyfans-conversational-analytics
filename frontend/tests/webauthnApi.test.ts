@@ -12,9 +12,54 @@ function bytes(value: number[]): ArrayBuffer {
   return new Uint8Array(value).buffer;
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); sessionStorage.removeItem('desktop-presentation'); });
 
 describe('WebAuthn ceremony API', () => {
+  it.each(['issued', 'unavailable', 'lost-reply'])('uses only the admitted first-access request (%s)', async outcome => {
+    const generation = '11111111-1111-4111-8111-111111111111';
+    sessionStorage.setItem('desktop-presentation', generation);
+    const saved = vi.fn();
+    const request = vi.fn(async (path: string, _options?: RequestInit) => {
+      if (path.endsWith('/desktop/session')) return json({
+        role: 'desktop', stage: 'runtime', generation, csrf_token: 'A'.repeat(43),
+      });
+      if (path.endsWith('/login/initial')) {
+        if (outcome === 'lost-reply') throw new TypeError('reply lost');
+        if (outcome === 'unavailable') return new Response(JSON.stringify({ detail: 'initial_access_unavailable' }), { status: 409 });
+        return json({ csrf_token: 'first-session' });
+      }
+      if (path.endsWith('/session-state')) return json({
+        enrolled: true, authenticated: true, native_required: true, csrf_token: 'first-session',
+      });
+      throw Error('Unexpected ceremony');
+    });
+    const api = createWebAuthnApi({ fetch: request, setCsrfToken: saved });
+    await expect(api.initial!()).resolves.toBe(outcome !== 'unavailable');
+    expect(request.mock.calls.map(([path]) => path)).toEqual([
+      '/api/v1/desktop/session', '/api/v1/webauthn/login/initial',
+      ...(outcome === 'lost-reply' ? ['/api/v1/webauthn/session-state'] : []),
+    ]);
+    expect(request.mock.calls[1][1]).toMatchObject({
+      method: 'POST', credentials: 'same-origin', redirect: 'error',
+      headers: { 'X-Desktop-Generation': generation, 'X-Desktop-CSRF': 'A'.repeat(43) },
+    });
+    if (outcome !== 'unavailable') expect(saved).toHaveBeenCalledExactlyOnceWith('first-session');
+    else expect(saved).not.toHaveBeenCalled();
+  });
+
+  it('preserves the explicit native-only status and refuses a legacy assertion as fallback', async () => {
+    const credential = vi.fn();
+    vi.stubGlobal('navigator', { credentials: { create: credential, get: credential } });
+    const request = vi.fn(async (path: string) => path.endsWith('/session-state')
+      ? json({ enrolled: false, authenticated: false, native_required: true, csrf_token: null })
+      : json({ challenge: 'AQID', rpId: 'bridge.localhost', allowCredentials: [] }));
+    const api = createWebAuthnApi({ fetch: request });
+    const signal = new AbortController().signal;
+    await expect(api.state!(signal)).resolves.toEqual({ enrolled: false, authenticated: false, nativeRequired: true });
+    await expect(api.login(signal, true)).rejects.toMatchObject({ stage: 'begin' });
+    expect(request.mock.calls.map(([path]) => path)).toEqual(['/api/v1/webauthn/session-state', '/api/v1/webauthn/login/begin']);
+    expect(credential).not.toHaveBeenCalled();
+  });
   it('restores only the current authenticated session request context and clears it on sign-out', async () => {
     const setCsrfToken = vi.fn();
     const request = vi.fn().mockResolvedValueOnce(json({ enrolled: true, authenticated: true, csrf_token: 'current-session-context' }))

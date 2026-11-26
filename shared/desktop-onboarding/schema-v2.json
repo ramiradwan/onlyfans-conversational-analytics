@@ -264,7 +264,7 @@
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         },
-        "account_passkey": {"enum": ["available", "working", "created"]},
+        "account_passkey": {"enum": ["available", "working", "created", "paused", "recoverable"]},
         "authority_recovery": {
           "enum": ["available", "preparing", "sign-in-required", "checking", "restoring", "blocked"]
         },

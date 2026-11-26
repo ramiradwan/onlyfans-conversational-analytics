@@ -8,5 +8,6 @@ export interface FastAPIConfig {
   USER_ID?: string;  
   CREATOR_ID?: string;  
   BRIDGE_AUTH_TICKET?: string;
+  ACCOUNT_PASSKEY_ENABLED?: boolean;
   SETUP_TRANSFER_RECEIVER_URL?: string;
 }

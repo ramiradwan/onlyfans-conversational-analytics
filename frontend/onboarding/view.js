@@ -5,6 +5,7 @@ import { authorityRecoveryView } from '../shared-setup/authority-recovery.js';
 import { desktopRecovery, passkeyRecovery, recoveryClass } from '../shared-setup/recovery.js';
 import { expiredAccessDescription, expiredAccessTitle } from '../shared-setup/saved-data-entry.js';
 import { renderSupportHelp } from '../shared-setup/support-help.js';
+import { passkeyPermissionMessage } from '../shared-setup/passkey-window.js';
 
 const tasks = {
   'browser-access': ['Bring in your conversations', 'Set up browser access', 'setup_browser_access'],
@@ -71,10 +72,23 @@ const actionTasks = {
   'activation.review': 'complete', 'activation.confirm': 'complete',
 };
 
+const hasLiveSnapshot = ({ connected, snapshot }) => connected && snapshot?.expires_at * 1000 > Date.now();
+
+export function canCancelOrdinarySignIn(state) {
+  const value = state.snapshot;
+  const signIn = value?.authentication;
+  // Ordinary waiting needs no extra control. Offer cancellation for the exact unresolved child.
+  return hasLiveSnapshot(state) && value.next_task === 'account-connection' && value.authority_recovery === undefined
+    && value.allowed_actions.includes('auth.cancel') && signIn?.state === 'selected' && signIn.actions.cancel === true
+    && Boolean(signIn.operation_id && signIn.authentication_attempt?.authentication_attempt_id)
+    && value.pending_operations.some(item => item.operation_id === signIn.browser_operation_id && item.state === 'outcome_unknown')
+    && (!state.pending || state.pending === signIn.operation_id || state.pending === signIn.browser_operation_id);
+}
+
 export function renderSetup(document, state) {
   const get = id => document.getElementById(id);
   const value = state.snapshot;
-  const snapshotLive = state.connected && value?.expires_at * 1000 > Date.now();
+  const snapshotLive = hasLiveSnapshot(state);
   const recovery = authorityRecoveryView(state, state.acting);
   const main = document.querySelector('main');
   const card = main.querySelector('.setup-task-card');
@@ -117,7 +131,7 @@ export function renderSetup(document, state) {
     updateStatus(taskStatus, pending ? '' : recovery.status, recovery.tone);
     for (const id of ['header-account-avatar', 'header-account-name', 'header-account-handle', 'decision-provider']) get(id).textContent = '';
     for (const id of ['account-passkey-setup', 'local-access', 'local-authenticate', 'decision-details', 'decision-sign-in', 'decision-provider', 'header-account', 'sign-in-options',
-      'browser-reopen', 'sign-in-switch', 'sign-in-back', 'setup-code-open']) get(id).hidden = true;
+      'browser-reopen', 'sign-in-cancel', 'sign-in-switch', 'sign-in-back', 'setup-code-open']) get(id).hidden = true;
     const primary = get('task-action'), cancel = get('protected-cancel');
     primary.hidden = !recovery.action;
     primary.disabled = recovery.disabled;
@@ -152,16 +166,23 @@ export function renderSetup(document, state) {
   const passkeyKnown = needsAuthentication && typeof authentication.enrolled === 'boolean' && !lapsed
     && !checkingPasskey;
   const ceremonyPending = passkeyKnown && authentication.busy && !authentication.error && !unavailable;
-  const localDescription = lapsed && !securing ? `${lapsed[0]}. ${lapsed[1]}` : needsAuthentication && !securing && passkeyKnown
-    ? 'Your computer will ask you to confirm it’s you.' : '';
+  const needsNativeSetup = passkeyKnown && authentication?.nativeRequired && !authentication.enrolled;
+  const localDescription = lapsed && !securing ? `${lapsed[0]}. ${lapsed[1]}`
+    : needsAuthentication && !securing && passkeyKnown
+      ? needsNativeSetup ? 'Finish setting up your passkey in Dipsy.' : 'Your computer will ask you to confirm it’s you.'
+      : '';
   get('local-access').hidden = !needsAuthentication || reasonClass === 'invariant_failed' || passkeyPlaceholder
     || Boolean(securing && lapsed && !lapsed[2]);
   get('local-access').dataset.journeyState = 'desktop.setup_local_access';
   setStatus(get('local-access-description'), localDescription);
   get('local-access-description').hidden = !localDescription;
-  get('local-authenticate').hidden = !passkeyKnown || ceremonyPending || unavailable;
+  get('local-authenticate').hidden = !passkeyKnown || ceremonyPending || unavailable || needsNativeSetup;
   get('local-authenticate').disabled = !state.connected || authentication?.busy;
-  get('local-authenticate').textContent = authentication?.enrolled ? 'Sign in with passkey' : 'Create passkey';
+  get('local-authenticate').textContent = authentication?.nativeRequired ? 'Unlock'
+    : authentication?.enrolled ? 'Sign in with passkey' : 'Create passkey';
+  const localPermission = passkeyKnown && !unavailable && authentication.reason === 'permission_required';
+  get('local-auth-settings').hidden = !localPermission || !state.nativePasskey;
+  get('local-auth-settings').disabled = !state.connected || authentication?.busy;
   const ceremonyFailure = ['passkey_unconfirmed', 'passkey_start_unavailable'].includes(authentication?.error) && authentication?.attempt;
   const statusReadUnavailable = securing && !lapsed && !checkingPasskey && !passkeyKnown
     && (!authentication.error || ['passkey_status_unavailable', 'passkey_status_network'].includes(authentication.error));
@@ -171,6 +192,7 @@ export function renderSetup(document, state) {
     : statusReadUnavailable ? 'This page updates by itself.'
     : (authentication?.recoveringStatus ? 'Checking access automatically…' : null)
     || (authentication?.checking ? 'Checking access on this computer…' : null)
+    || (localPermission ? passkeyPermissionMessage : null)
     || (authentication?.error ? recoveryClass(passkeyRecovery, authentication.error) === 'invariant_failed'
       ? 'Access on this computer could not be checked.' : ceremonyFailure === 'create' ? 'Passkey setup didn’t finish.'
         : ceremonyFailure === 'sign-in' ? 'Sign-in didn’t finish.' : passkeyErrors[authentication.error] : null),
@@ -236,15 +258,18 @@ export function renderSetup(document, state) {
   const connecting = pairingPending && state.connected && localAccessReady;
   const confirmingUnknown = task === 'account-connection' && value.pending_operations.some(item =>
     item.action === 'account.confirm' && item.state === 'outcome_unknown');
+  const passkey = value?.account_passkey;
+  const paused = passkey === 'paused' && task === 'account-connection';
   let taskTitle = title;
   let taskDescription = '';
   if (terminal) {
     taskTitle = 'Setup couldn’t continue';
   } else if (securing) {
     if (passkeyKnown) {
-      taskTitle = authentication.enrolled ? 'Confirm it’s you' : 'Protect your analytics on this computer';
-      taskDescription = authentication.enrolled ? 'Your computer will ask you to confirm it’s you.'
-        : 'Create a passkey. Your computer will ask you to confirm it’s you, so only you can open your analytics here.';
+      taskTitle = needsNativeSetup ? 'Finish passkey setup' : authentication.enrolled ? 'Confirm it’s you' : 'Protect your analytics on this computer';
+      taskDescription = needsNativeSetup ? 'Finish setting up your passkey in Dipsy.'
+        : authentication.enrolled ? 'Your computer will ask you to confirm it’s you.'
+          : 'Create a passkey. Your computer will ask you to confirm it’s you, so only you can open your analytics here.';
     } else if (lapsed) [taskTitle, taskDescription] = lapsed;
     else if (checkingPasskey) taskTitle = 'Checking this computer…';
     else taskTitle = 'Can’t check your passkey right now';
@@ -259,6 +284,9 @@ export function renderSetup(document, state) {
     else if (!reason || reason === 'status_unavailable') {
       taskDescription = 'The browser opens next so the extension can read activity from your creator account. You’ll review what it collects first.';
     }
+  } else if (paused) {
+    taskTitle = 'Setup paused';
+    taskDescription = 'Your progress is saved. Continue setup when you’re ready.';
   } else if (showingProviders || ['selected', 'retired', 'expired'].includes(signIn?.state)) taskDescription = chooseSignIn;
   else if (canReplace) taskDescription = 'Sign in to connect your account.';
   else if (!accepted && !confirmingUnknown) {
@@ -266,10 +294,13 @@ export function renderSetup(document, state) {
     else if (task === 'account-connection') taskDescription = 'Sign in, then confirm the account connection here.';
     else if (task === 'finish-setup') taskDescription = 'Set up access to this computer and connect the browser.';
   }
+  if (state.explainsPasskey && !terminal && !unavailable && !paused && !choosingAccount && taskDescription) {
+    taskDescription += ' If needed, Windows Hello will ask you to create a passkey after sign-in.';
+  }
   get('task-title').textContent = taskTitle;
   get('task-description').textContent = taskDescription;
   get('task-description').hidden = !taskDescription;
-  get('decision-details').hidden = !accountDecision || choosingAccount || terminal;
+  get('decision-details').hidden = !accountDecision || choosingAccount || terminal || paused;
   const account = !terminal && !accountDecision && !(task === 'account-connection' && accepted) && reason !== 'account_mismatch'
     && (!value?.decision || value.decision.creator_id === value.creator_label?.creator_id) ? value?.creator_label : null;
   get('header-account').hidden = !accountName(account);
@@ -330,7 +361,7 @@ export function renderSetup(document, state) {
     : progress && (state.continuing || opening || state.acting || finalizing || accepted
       || signIn?.state === 'selected' || pending && !decision) ? 'progress'
       : signIn?.state === 'expired' || signIn?.state === 'unavailable' ? 'warning' : 'neutral';
-  get('sign-in-options').hidden = !showingProviders || unavailable;
+  get('sign-in-options').hidden = !showingProviders || unavailable || paused;
   for (const button of get('sign-in-options').querySelectorAll('[data-provider]')) {
     // Without a projection with choices, the opening choices keep the visibility they were clicked in.
     if (hasChoices || !opening) {
@@ -352,25 +383,29 @@ export function renderSetup(document, state) {
     : allowed.find(item => actions[item] && (item !== 'browser.access' || task === 'browser-access')
       && (item !== 'account.connect' || sourceContinuationFallback));
   const taskAction = get('task-action');
-  const passkey = value?.account_passkey;
-  const passkeySetup = Boolean(passkey && decision && !unavailable && !showingProviders && !accepted);
+  const passkeySetup = paused || Boolean(passkey && decision && !unavailable && !showingProviders && !accepted);
   const passkeyBusy = passkey === 'working' || state.acting === 'passkey.create';
-  const offerPasskey = passkeySetup && passkey !== 'created' && !state.passkeyDeferred;
-  const supportRef = passkeySetup && !passkeyBusy && passkey !== 'created' ? state.passkeySupportRef : null;
+  const offerPasskey = passkeySetup && ['available', 'working', 'recoverable'].includes(passkey);
+  const supportRef = offerPasskey && !passkeyBusy ? state.passkeySupportRef : null;
   const reviewAction = document.defaultView?.customElements.get('desktop-help') ? ' Choose Get help to request a review.' : '';
   const passkeyMessage = passkeyBusy ? 'Waiting for Windows Hello…' : passkey === 'created' ? 'Passkey created.'
     : supportRef ? `Dipsy couldn’t set up your passkey.${reviewAction} Your review reference is ${supportRef}` : state.passkeyMessage;
-  get('account-passkey-setup').hidden = !passkeySetup || (!offerPasskey && !passkeyMessage);
+  get('account-passkey-setup').hidden = !passkeySetup;
+  get('account-passkey-resume').hidden = !passkeySetup || !paused;
+  get('account-passkey-resume').disabled = controlsDisabled;
   get('account-passkey-description').hidden = !offerPasskey;
   get('account-passkey-create').hidden = !offerPasskey;
+  get('account-passkey-create').textContent = passkey === 'recoverable' ? 'Resume passkey setup' : 'Create passkey';
   get('account-passkey-create').disabled = controlsDisabled || passkeyBusy;
   get('account-passkey-later').hidden = !offerPasskey;
   get('account-passkey-later').disabled = controlsDisabled || passkeyBusy;
+  get('account-passkey-settings').hidden = !offerPasskey || !state.nativePasskey || !state.passkeyPermission || passkeyBusy;
+  get('account-passkey-settings').disabled = controlsDisabled;
   get('account-passkey-status').textContent = passkeySetup ? passkeyMessage || '' : '';
   get('account-passkey-status').hidden = !passkeySetup || !passkeyMessage;
   const submittingPair = state.acting === 'browser.pair' || state.pendingAction === 'browser.pair';
   taskAction.hidden = unavailable || reason === 'chrome_unavailable' || !action || showingProviders || accepted || !localAccessReady
-    || startingChrome || confirmingUnknown || action === 'account.confirm' && (offerPasskey || passkeyBusy)
+    || startingChrome || confirmingUnknown || paused || action === 'account.confirm' && (offerPasskey || passkeyBusy)
     || action === 'browser.pair' && (!pairingAvailable || pending && !submittingPair);
   taskAction.disabled = controlsDisabled || replacing || action === 'browser.pair' && submittingPair
     || (!canReplaceFallback && (decision ? Boolean(state.pending) : pending));
@@ -401,9 +436,12 @@ export function renderSetup(document, state) {
       : replacing ? progress : endedPrompt ? signInMessage : unfinished ? 'Sign-in did not finish.'
         : reasonMessage || (!pendingMessage && (connecting ? pairingProgress : progress));
   updateStatus(taskStatus, status, connecting && !reason ? 'progress' : taskTone);
-  get('sign-in-switch').hidden = !canSwitch || choosingAccount || unavailable;
+  get('sign-in-switch').hidden = !canSwitch || choosingAccount || unavailable || paused;
   get('sign-in-switch').disabled = controlsDisabled;
   get('decision-sign-in').hidden = !hasConfirmedProvider && get('sign-in-switch').hidden;
+  const cancelSignIn = get('sign-in-cancel');
+  cancelSignIn.hidden = unavailable || paused || accepted || !localAccessReady || !canCancelOrdinarySignIn(state);
+  cancelSignIn.disabled = controlsDisabled;
   get('sign-in-back').hidden = !choosingAccount || unavailable;
   get('sign-in-back').disabled = controlsDisabled;
   for (const group of document.querySelectorAll('.setup-actions')) {

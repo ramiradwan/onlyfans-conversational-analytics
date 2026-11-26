@@ -5,6 +5,7 @@ import asyncio
 import json
 import random
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Callable, Protocol
 from uuid import uuid4
@@ -178,7 +179,8 @@ class DesktopOnboardingCoordinator:
     def _snapshot(self, connection, session, *, actor=None, view=None):
         journey_id = self._selected(connection, session)
         state = None if journey_id is None else connection.execute(
-            "SELECT revision FROM desktop_setup_journeys WHERE journey_id=?", (journey_id,)).fetchone()
+            "SELECT revision,account_passkey_paused FROM desktop_setup_journeys WHERE journey_id=?",
+            (journey_id,)).fetchone()
         revision = 0 if state is None else state["revision"]
         if view is None:
             view = self.owner.read(journey_id, actor=actor, connection=connection)
@@ -285,10 +287,10 @@ class DesktopOnboardingCoordinator:
                     if authentication["actions"][permitted]:
                         actions.append(action)
         protected_recovery = view.scope.get("protected_recovery")
-        account_passkey = (self.account_passkeys.displayed(selected_decision)
+        account_passkey = (self.account_passkeys.displayed(selected_decision, journey_id=journey_id, connection=connection)
             if (self.account_passkeys is not None and decision is not None
                 and decision["action"] == "connect-account" and protected_recovery is None) else None)
-        if account_passkey == "working":
+        if account_passkey in {"working", "recoverable"}:
             actions = [action for action in actions if action not in {"account.confirm", "auth.switch"}]
         if protected_recovery is not None:
             # A recovery presentation has an independent owner. Neither
@@ -301,6 +303,10 @@ class DesktopOnboardingCoordinator:
             if authentication is not None:
                 actions.extend(action for action, key in (("auth.select","select"), ("auth.cancel","cancel"))
                     if authentication["actions"][key])
+        if (self.account_passkeys is not None and session.stage == "setup" and state is not None
+                and state["account_passkey_paused"] and not local_ready and protected_recovery is None):
+            account_passkey = "paused"
+            actions = []
         review_replacement = view.scope.get("activation_replacement")
         actions = [name for name in actions if all(item["action"] != name or (
             name == "activation.review" and review_replacement is not None
@@ -315,6 +321,7 @@ class DesktopOnboardingCoordinator:
             "scope_digest": digest({"journey_id": journey_id, "generation": session.generation,
                 "revision": revision, "stage": session.stage, "facts": facts, "scope": view.scope, "reason": reason,
                 **({"browser_recheck": recheck} if recheck is not None else {}),
+                **({"account_passkey": account_passkey} if account_passkey is not None else {}),
                 "permitted_actions": None if view.permitted_actions is None else sorted(view.permitted_actions)}),
             "next_task": task, "facts": facts, "local_ready": local_ready,
             "full_ready": local_ready and facts["activation"] == "verified" and facts["analysis"] == "verified",
@@ -328,12 +335,36 @@ class DesktopOnboardingCoordinator:
             **({"authority_recovery_browser": protected_recovery["browser_phase"]}
                 if protected_recovery is not None and "browser_phase" in protected_recovery else {})}, kind="snapshot")
 
+    def set_passkey_paused(self, session: AdmittedSession, expected: dict, *, paused: bool, actor=None) -> str:
+        if self._closed or self.account_passkeys is None or set(expected) != {"generation", "revision", "scope_digest"}:
+            raise CommandRefused("action_unavailable")
+        with self.store.database.transaction() as connection:
+            current = self._current(connection, session)
+            snapshot = self._snapshot(connection, current, actor=actor)
+            if any(expected[key] != snapshot[key] for key in expected):
+                raise CommandRefused("setup_changed")
+            states = {"available", "recoverable"} if paused else {"paused"}
+            if (current.stage != "setup" or snapshot.get("account_passkey") not in states
+                    or any(operation["action"] == "account.confirm" for operation in snapshot["pending_operations"])):
+                raise CommandRefused("action_unavailable")
+            updated = connection.execute(
+                "UPDATE desktop_setup_journeys SET account_passkey_paused=?,revision=revision+1 WHERE journey_id=?",
+                (int(paused), snapshot["journey_id"]),
+            )
+            if updated.rowcount != 1:
+                raise CommandRefused("setup_changed")
+            self._current(connection, session)
+        events.publish()
+        return "paused" if paused else "resumed"
+
     async def create_account_passkey(self, session, expected, *, actor=None):
         if self.account_passkeys is None or set(expected) != {"generation", "revision", "scope_digest"}:
             raise CommandRefused("action_unavailable")
 
-        def selected():
-            with self.store.database.shared_reads(), self.store.database.read() as connection:
+        def selected(connection=None):
+            with self.store.database.shared_reads(), (
+                self.store.database.read() if connection is None else nullcontext(connection)
+            ) as connection:
                 current = self._current(connection, session)
                 journey_id = self._selected(connection, current)
                 view = self.owner.read(journey_id, actor=actor, connection=connection)
@@ -341,14 +372,14 @@ class DesktopOnboardingCoordinator:
                 return journey_id, view.scope.get("desktop_decision"), snapshot
 
         journey_id, selection, snapshot = await asyncio.to_thread(selected)
-        if (journey_id is None or selection is None or snapshot.get("account_passkey") != "available"
+        if (journey_id is None or selection is None or snapshot.get("account_passkey") not in {"available", "recoverable"}
                 or any(expected[key] != snapshot[key] for key in expected)):
             raise CommandRefused("setup_changed")
 
-        def authorize():
-            current_journey, current_selection, current_view = selected()
+        def authorize(connection=None):
+            current_journey, current_selection, current_view = selected(connection)
             if (self._closed or current_journey != journey_id or current_selection != selection
-                    or current_view.get("account_passkey") not in {"available", "working"}
+                    or current_view.get("account_passkey") not in {"available", "working", "recoverable"}
                     or current_view["decision_status"] is None
                     or current_view["decision_status"]["state"] != "confirmation-required"):
                 from app.security.hosted_grants import HostedGrantUnavailable
@@ -835,6 +866,8 @@ class DesktopOnboardingCoordinator:
                     events.publish()
                     self._start(finalized, reconcile=False, actor=None)
                 facts = await asyncio.to_thread(self._pass_facts)
+                passkey_deadline = (None if self.account_passkeys is None else
+                                    await asyncio.to_thread(self.account_passkeys.expire_retained))
                 if self._closed:
                     break
                 pending_ids = {operation["operation_id"] for operation, *_ in facts}
@@ -911,6 +944,8 @@ class DesktopOnboardingCoordinator:
                     timing.observe("snapshot", "watch", "ok", elapsed)
                 now = self.admissions._now()
                 deadlines = [operation["expires_at"] - now for operation in remaining if operation["expires_at"] > now]
+                if passkey_deadline is not None:
+                    deadlines.append(max(0, passkey_deadline - now))
                 deadlines.extend(retry_delays)
                 if facts and recovery:
                     # Pairing and source owners can expire before the enclosing

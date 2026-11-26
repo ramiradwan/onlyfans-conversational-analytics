@@ -16,6 +16,7 @@
       "http://bridge.localhost:17871/analytics",
       "http://bridge.localhost:17871/graph-explorer",
       "http://bridge.localhost:17871/settings",
+      "http://bridge.localhost:17871/account",
       "http://bridge.localhost:17871/onboarding",
       "http://bridge.localhost:17871/onboarding/*"
     ]

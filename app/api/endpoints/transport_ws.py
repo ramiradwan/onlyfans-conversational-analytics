@@ -10,12 +10,14 @@ from uuid import UUID, uuid4
 
 from fastapi import (
     APIRouter,
+    HTTPException,
     WebSocket,
     WebSocketDisconnect,
 )
 from pydantic import ValidationError
 
 from app.bootstrap import transport_manager
+from app.api.security import connection_runtime_policy
 from app.core.config import settings
 from app.persistence import sqlite_api as sqlite3
 from app.protocol import (
@@ -573,19 +575,34 @@ async def _bridge_socket(websocket: WebSocket) -> None:
             )
             return
         try:
+            parent_session_id = None
+            native = getattr(websocket.app.state, "account_passkey_authority", None)
+            if native is not None:
+                identity = connection_runtime_policy(websocket).identity
+                store = native.store
+                if (
+                    identity is None
+                    or not identity.session_id
+                    or identity.creator_account_id != hello.payload.requested_creator_account_id
+                    or not store.desktop_session_is_open(identity.session_id)
+                ):
+                    raise AuthenticationError("The desktop session has ended")
+                parent_session_id = identity.session_id
+                websocket.state.desktop_session_is_open = lambda: store.desktop_session_is_open(parent_session_id)
             principal_id, account_id = transport_manager.authenticate(
                 hello.payload.auth_ticket,
                 hello.payload.requested_creator_account_id,
                 role="bridge",
                 bridge_session_id=hello.payload.bridge_session_id,
+                parent_session_id=parent_session_id,
             )
-        except AuthenticationError as error:
+        except (AuthenticationError, HTTPException):
             await _protocol_error(
                 websocket,
                 "bridge",
                 code="unauthorized",
                 related_message_id=hello.message_id,
-                detail=str(error),
+                detail="The desktop session could not be verified",
                 fatal=True,
             )
             return
@@ -595,6 +612,7 @@ async def _bridge_socket(websocket: WebSocket) -> None:
             creator_account_id=account_id,
             bridge_session_id=hello.payload.bridge_session_id,
             capabilities=hello.payload.capabilities,
+            parent_session_id=parent_session_id,
         )
         await transport_manager.send_bridge(
             websocket,
@@ -677,6 +695,9 @@ async def _bridge_socket(websocket: WebSocket) -> None:
                 transport_manager.state_snapshot_payload(binding.creator_account_id),
                 correlation_id=message.message_id,
             )
+    except AuthorizationError:
+        if binding is not None:
+            await transport_manager.end_desktop_session(binding)
     except WebSocketDisconnect:
         pass
     finally:
@@ -694,6 +715,14 @@ async def agent_websocket(websocket: WebSocket) -> None:
 @router.websocket("/ws/bridge", name="bridgeWebSocket")
 async def bridge_websocket(websocket: WebSocket) -> None:
     await _bridge_socket(websocket)
+
+
+async def close_locked_desktop_views(store) -> None:
+    bindings = [
+        binding for binding in tuple(transport_manager.bridges.values())
+        if binding.parent_session_id and not store.desktop_session_is_open(binding.parent_session_id)
+    ]
+    await asyncio.gather(*(transport_manager.end_desktop_session(binding) for binding in bindings))
 
 
 async def signal_config_available(account_id: str) -> bool:
