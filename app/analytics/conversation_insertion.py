@@ -11,6 +11,7 @@ from app.analytics.conversation_enrichment_units import (
 from app.analytics.conversation_pages import PAGE_RECORDS
 from app.analytics.metrics import ConversationMetricInput, build_conversation_metrics_from_values
 from app.analytics.opaque_refs import account_ref, conversation_ref, message_ref, participant_ref
+from app.analytics.query_facts import imported_history_kind
 from app.analytics.source_snapshot import conversation_digest
 from app.models.analytics import CanonicalConversation, GraphEdge
 
@@ -188,6 +189,8 @@ def try_insert(pipeline, account, revision, raw, input_digest, loader, reuse, co
         if matched is None:
             return None
     index, old_raw, output, values = matched
+    if imported_history_kind(raw['messages'][index].get('event_kind'), raw['conversation_id']) == 'system':
+        return None
     start = max(0, index-1)
     conversation = CanonicalConversation.model_validate(dict(raw, messages=raw['messages'][start:]))
     added = next(m for m in conversation.messages if m.source_ordinal == index)

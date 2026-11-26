@@ -21,6 +21,7 @@ from app.analytics.metrics import (
     build_conversation_metrics_from_values as build_conversation_metrics,
 )
 from app.analytics.opaque_refs import account_ref, conversation_ref, message_ref
+from app.analytics.query_facts import imported_history_kind
 from app.analytics.source_snapshot import conversation_digest
 from app.models.analytics import GraphEdge, GraphNodeKind
 
@@ -91,6 +92,8 @@ def try_append(pipeline, account, source_revision, conversation, raw, input_dige
         return None
     messages = raw['messages']
     if len(messages) != expected.message_count + 1:
+        return None
+    if imported_history_kind(messages[-1].get('event_kind'), chat_id) == 'system':
         return None
     prefix = dict(raw, messages=messages[:-1], last_message_at=messages[-2]['sent_at'])
     if conversation_digest(prefix) != expected.input_digest:

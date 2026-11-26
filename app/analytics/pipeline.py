@@ -58,6 +58,7 @@ from app.analytics.identity import (
 )
 from app.analytics.metrics import build_conversation_metrics, build_creator_metrics
 from app.analytics.provenance import stable_config_digest
+from app.analytics.query_facts import imported_history_kind
 from app.analytics.opaque_refs import account_ref
 from app.analytics.projection_store import (
     AnalyticsProjectionStore,
@@ -195,6 +196,7 @@ class AnalyticsPipeline:
         self.pipeline_revision = (
             f"analytics.pipeline.v3+{self.enrichment.revision}"
             "+graph.relationship.v1+enrichment.units.v1"
+            "+participant-message-kind.v1"
             f"+{GRAPH_SEGMENT_ROOT_PIPELINE_REVISION}"
         )
         self.pipeline_config_digest = stable_config_digest(
@@ -1025,7 +1027,9 @@ class AnalyticsPipeline:
             ]
             if sorted(source_ordinals) != list(range(len(normalized_messages))):
                 raise CanonicalStateInvalid()
-            normalized_messages.sort(
+            participant_messages = sorted(
+                (message for message in normalized_messages
+                 if imported_history_kind(message.event_kind, key) != 'system'),
                 key=lambda message: (message.sent_at, message.source_ordinal)
             )
             conversations.append(
@@ -1036,7 +1040,7 @@ class AnalyticsPipeline:
                             if conversation.last_message_at is not None
                             else None
                         ),
-                        "messages": normalized_messages,
+                        "messages": participant_messages,
                     }
                 )
             )

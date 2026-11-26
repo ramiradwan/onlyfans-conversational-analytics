@@ -28,6 +28,13 @@ preview messages and when checking saved evidence. Records of unknown kind
 remain eligible for text analysis. Source retrieval and surrounding stored
 entries in `analytics-evidence-context.v1` retain platform notices.
 
+The conversation graph omits supported system events before deriving message
+nodes, speaker relations, literal entities and message order. The same selection
+feeds conversation and account activity, reply metrics and topic counts.
+The inbox unread count comes from chat metadata. Records of unknown kind retain
+their previous treatment. The canonical archive retains all imported record
+kinds under its existing retention and erasure rules.
+
 The bounded reply selector excludes systems before choosing the latest message.
 Unknowns remain ordering contenders. Later and tied unknowns block a positive
 no-reply result. Tied known messages without authoritative order also block it.
