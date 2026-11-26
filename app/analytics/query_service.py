@@ -21,6 +21,8 @@ from app.analytics.historical_derivation import (
 )
 from app.analytics.opaque_refs import account_ref
 from app.analytics.query_contracts import (
+    ACTIVITY_WEEK,
+    ActivityQuestionRow,
     PagePosition,
     QuestionId,
     QuestionPage,
@@ -50,6 +52,7 @@ REASONS = MappingProxyType(
     {
         "no_later_creator_reply.v1": "no_later_creator_reply",
         "pricing_discussions.v1": "pricing_discussion",
+        "participant_activity_decline.v1": "participant_activity_decline",
     }
 )
 
@@ -77,7 +80,8 @@ class RegisteredQuestion:
                 "revision": self.revision,
                 "contract": "analytics-questions.v1",
                 "counting_unit": "conversations",
-                "selection": "half_open",
+                "selection": ("two_weeks_through_cutoff_inclusive"
+                              if self.question == "participant_activity_decline.v1" else "half_open"),
                 "followup": "through_cutoff_inclusive",
                 "sort": "evidence_time_desc_conversation_ref_asc",
             }
@@ -261,6 +265,7 @@ class AnalyticsQuestionService:
                 raise QuestionResultInvalid()
         previous, seen = after, set()
         evidence_count = 0
+        activity_messages = 0
         for row in page.rows:
             budget.check()
             if (
@@ -284,6 +289,13 @@ class AnalyticsQuestionService:
             evidence_count += len(row.evidence)
             if evidence_count > 512:
                 raise QuestionResultInvalid()
+            if isinstance(row, ActivityQuestionRow):
+                split = plan.end - ACTIVITY_WEEK
+                activity_messages += row.earlier_messages + row.recent_messages
+                if (activity_messages > snapshot.source_message_count or question.selection_clipped_by_retention
+                        or any(e.sent_at < plan.start for e in row.evidence)
+                        or sum(e.sent_at < split for e in row.evidence) != 1):
+                    raise QuestionResultInvalid()
             for evidence in row.evidence:
                 budget.check()
                 if (

@@ -9,7 +9,7 @@ import type { BridgeTransportState } from './transportStore';
 import { createMessageApi, type MessageApi } from '../services/messageApi';
 import { createQuestionApi, QuestionApiError, type QuestionApi } from '../services/questionApi';
 
-type Context = Pick<BridgeTransportState, 'creatorAccountId' | 'session' | 'viewRevision' | 'projection' | 'connection' | 'readModelState'>;
+type Context = Pick<BridgeTransportState, 'creatorAccountId' | 'session' | 'viewRevision' | 'projection' | 'coverage' | 'connection' | 'readModelState'>;
 export interface QuestionState {
   status: 'idle' | 'loading' | 'running' | 'ready' | 'building' | 'unavailable' | 'stale' | 'error';
   message: string | null;
@@ -66,7 +66,8 @@ export function createQuestionStore(api: QuestionApi = createQuestionApi(), mess
   function setContext(next: Context) {
     const key = JSON.stringify([next.creatorAccountId, next.session?.connection_id,
       next.viewRevision, next.projection.canonical_revision, next.projection.projected_at,
-      next.projection.status, next.connection, next.readModelState]);
+      next.projection.status, next.coverage.generation_id, next.coverage.as_of, next.coverage.status,
+      next.connection, next.readModelState]);
     if (key === contextKey) return;
     const sameSession = context?.creatorAccountId === next.creatorAccountId
       && context?.session?.connection_id === next.session?.connection_id;

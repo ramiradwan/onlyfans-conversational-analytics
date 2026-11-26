@@ -2,7 +2,7 @@
 
 # Analytics question contract
 
-This specification defines `no_later_creator_reply.v1` and `pricing_discussions.v1`. The [HTTP adapter](question-endpoints.md) exposes these plans with explicit activation and source-data limits. The synthetic cases in `tests/fixtures/analytics/questions/` contain manually chosen expected answers, not model-quality evidence.
+This specification defines `no_later_creator_reply.v1`, `participant_activity_decline.v1` and `pricing_discussions.v1`. The [HTTP adapter](question-endpoints.md) exposes these plans with explicit activation and source-data limits. The synthetic cases in `tests/fixtures/analytics/questions/` contain manually chosen expected answers, not model-quality evidence.
 
 ## Scope, time, and counting
 
@@ -10,7 +10,7 @@ The authenticated runtime supplies the account. A question, source reference, or
 
 Each question returns distinct conversations, not distinct people or matching-message counts. Identical source IDs in two accounts never share results.
 
-Store instants in UTC. Resolve calendar dates in the requested IANA timezone before execution, including daylight-saving transitions. Reject missing timezone information, reversed intervals, and `start == end`. Selection is half-open: `start <= sent_at < end`.
+Store instants in UTC. Resolve calendar dates in the requested IANA timezone before execution, including daylight-saving transitions. Reject missing timezone information, reversed intervals, and `start == end`. Reply and pricing selection is half-open: `start <= sent_at < end`.
 
 The service fixes an analysis cutoff and source revision for each result. Selection end cannot exceed the cutoff. Follow-up includes messages at the cutoff, but nothing later. Do not claim the cutoff is a complete-history watermark.
 
@@ -39,6 +39,14 @@ Return a conversation with at least one eligible, selected message whose current
 A negative classification, uncertainty, unsupported language, missing analysis, and analyzer failure are different states. If there is no positive match and some selected messages lack a usable classification, the conversation is undetermined, not a confident negative. A positive match remains valid with reduced classification coverage for other messages.
 
 Amounts, commercial keywords, and stated buying intent are not transaction records. Pricing quality is evaluated separately from query correctness using the [qualification policy](qualification.md). No supported language is inferred merely from a tokenizer accepting text.
+
+## Conversations going quiet
+
+`participant_activity_decline.v1` compares counts of incoming participant messages in two consecutive seven-day periods. The requested end and cutoff must be the same instant, exactly 14 elapsed days after the start. The earlier period includes the start and ends just before the midpoint. The recent period includes the midpoint and the cutoff. Count distinct UTC dates in the earlier period.
+
+A conversation matches when the earlier week has at least five participant messages across at least two dates, and the recent week has at least three fewer messages and at most half the earlier count. A covered recent week can have zero messages. Creator messages do not affect the counts. Known system events are excluded. Missing event kinds or sender roles, tied human message times, retention clipping and incomplete coverage leave the conversation undetermined. A known in-window deletion also prevents a complete comparison. If an erased message can no longer be attributed to a chat or time, withhold comparisons it could affect.
+
+The row shows both counts and links to the last participant message in each nonempty period. The reader uses the normal latest-evidence ordering, pagination, session account and source checks. Message wording and language play no part in the comparison.
 
 ## Result and evidence records
 

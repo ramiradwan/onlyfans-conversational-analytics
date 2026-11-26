@@ -8,6 +8,7 @@ import pytest
 from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.errors import CanonicalRevisionChanged, ProjectionUnavailable
 from app.analytics.identity import canonical_identity
+from app.analytics.opaque_refs import conversation_ref
 from app.analytics.query_canonical import CanonicalQuestionScope
 from app.analytics.query_contracts import QuestionPlan
 from app.analytics.query_execution import QuestionBudget, QuestionLimits, QuestionLimitExceeded
@@ -86,6 +87,32 @@ def test_generation_absence_and_missing_member_are_distinct(stored):
     assert sorted(item.coverage for item in facts(stored)) == ["complete", "partial"]
     assert source.analytics_snapshot(ACCOUNT).identity != before.identity
     assert source.verify_identity_proof(ACCOUNT, before.identity, before.identity_proof) is False
+
+
+def test_activity_withholds_only_conversations_an_erased_message_could_belong_to(covered):
+    requested = question()
+    requested.plan = QuestionPlan(question="participant_activity_decline.v1", timezone="UTC",
+        start=NOW - timedelta(days=14), end=NOW, cutoff=NOW)
+
+    def coverage():
+        return {row.conversation_ref: row.coverage for row in facts(covered, requested)}
+
+    a, b = (conversation_ref(ACCOUNT, chat) for chat in CHATS)
+    tombstone = """INSERT INTO entity_tombstones(creator_account_id,entity_kind,entity_id,chat_id,
+        stream_epoch,source_seq,deleted_at) VALUES (?,'message',?,?,1,1,?)"""
+    barrier = """INSERT INTO deletion_barriers(creator_account_id,scope_kind,scope_key,
+        deletion_revision,deleted_at,provenance) VALUES (?,'message',?,1,?,'synthetic')"""
+    with covered.database.transaction() as db:
+        db.execute(tombstone, (OTHER, "gone", CHATS[0], NOW.isoformat()))
+        db.execute(barrier, (ACCOUNT, "old", (requested.plan.start - timedelta(seconds=1)).isoformat()))
+    assert coverage() == {a: "complete", b: "complete"}
+    with covered.database.transaction() as db:
+        db.execute(tombstone, (ACCOUNT, "gone", CHATS[0], NOW.isoformat()))
+        db.execute(barrier, (ACCOUNT, "gone", NOW.isoformat()))
+    assert coverage() == {a: "partial", b: "complete"}
+    with covered.database.transaction() as db:
+        db.execute(barrier, (ACCOUNT, "no-retained-chat", NOW.isoformat()))
+    assert coverage() == {a: "partial", b: "partial"}
 
 
 def test_current_generation_never_borrows_an_old_member_or_stream_order(covered):

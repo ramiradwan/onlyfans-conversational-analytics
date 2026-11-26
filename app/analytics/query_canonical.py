@@ -39,6 +39,12 @@ class CanonicalQuestionScope:
             yield from reply_conversations(self, question, budget)
             return
         db, account = self.connection, self.account
+        activity = question.plan.question == "participant_activity_decline.v1"
+        start = question.retention_cutoff_exclusive
+        gaps = set()
+        if activity:
+            start = max(start, question.plan.start)
+            gaps = self._removed_activity(start, question.plan.end, budget)
         candidates = db.execute("""SELECT DISTINCT m.chat_id
             FROM account_messages AS m JOIN account_chats AS c
               ON c.creator_account_id=m.creator_account_id AND c.chat_id=m.chat_id
@@ -63,7 +69,7 @@ class CanonicalQuestionScope:
                   AND julianday(m.sent_at)>=julianday(?)-0.00002
                   AND julianday(m.sent_at)<=julianday(?)+0.00002
                 """ + LIVE_MESSAGE + " ORDER BY m.sent_at,m.message_id LIMIT ?",
-                (account, chat, question.retention_cutoff_exclusive.isoformat(),
+                (account, chat, start.isoformat(),
                  question.cutoff.isoformat(),
                  budget.limits.max_records - budget.records_examined + 1)).fetchall()
             budget.consume(len(records))
@@ -71,7 +77,7 @@ class CanonicalQuestionScope:
             for record in records:
                 budget.check()
                 at = utc_instant(record["sent_at"])
-                if not question.retention_cutoff_exclusive < at <= question.cutoff:
+                if not question.retention_cutoff_exclusive < at <= question.cutoff or at < start:
                     continue
                 ref = message_ref(account, chat, str(record["message_id"]))
                 self.locations[ref] = EvidenceLocation(conversation_id=chat,
@@ -81,8 +87,42 @@ class CanonicalQuestionScope:
                 messages.append(QuestionMessage(ref, at, role,
                     imported_history_kind(record['event_kind_json'], chat)))
             coverage = question_coverage(self.coverage.conversation(chat), question)
+            if coverage == "complete" and (chat in gaps or None in gaps):
+                coverage = "partial"
             yield QuestionConversation(cref, tuple(messages), coverage)
         self.check(budget)
+
+    def _removed_activity(self, start, end, budget):
+        """An erased message cannot supply evidence that activity fell."""
+        rows = self.connection.execute("""
+            WITH removed(chat_id, sent_at, removed_at) AS (
+              SELECT chat_id, sent_at, updated_at FROM account_messages
+                WHERE creator_account_id=:account AND is_deleted=1
+              UNION ALL
+              SELECT coalesce(m.chat_id,t.chat_id),m.sent_at,t.deleted_at FROM entity_tombstones t
+                LEFT JOIN account_messages m ON m.creator_account_id=t.creator_account_id AND m.message_id=t.entity_id
+                WHERE t.creator_account_id=:account AND t.entity_kind='message'
+              UNION ALL
+              SELECT coalesce(m.chat_id,t.chat_id),m.sent_at,b.deleted_at FROM deletion_barriers b
+                LEFT JOIN account_messages m ON m.creator_account_id=b.creator_account_id AND m.message_id=b.scope_key
+                LEFT JOIN entity_tombstones t ON t.creator_account_id=b.creator_account_id
+                  AND t.entity_kind='message' AND t.entity_id=b.scope_key
+                WHERE b.creator_account_id=:account AND b.scope_kind='message'
+            )
+            SELECT chat_id,sent_at,removed_at FROM removed
+              WHERE julianday(coalesce(sent_at,removed_at)) >= julianday(:start)-0.00002
+                AND (sent_at IS NULL OR julianday(sent_at) <= julianday(:end)+0.00002)
+              LIMIT :limit
+            """, {"account": self.account, "start": start.isoformat(), "end": end.isoformat(),
+                  "limit": budget.limits.max_records - budget.records_examined + 1})
+        gaps = set()
+        for chat, sent, removed in rows:
+            budget.consume()
+            # Without a send time, deletion after the start can affect either week.
+            affects_window = start <= utc_instant(sent) <= end if sent is not None else utc_instant(removed) >= start
+            if affects_window:
+                gaps.add(chat)
+        return gaps
 
 
 LIVE_MESSAGE = """

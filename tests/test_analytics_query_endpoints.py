@@ -176,6 +176,61 @@ def test_pricing_gate_is_not_a_query_option(ready):
     ready.scheduler.request_recovery.assert_not_called()
 
 
+def test_activity_catalog_reader_and_sources_are_account_bound(ready):
+    from tests.activity_question_fixture import seed_activity_inbox
+
+    account, other = "fictional-first", "fictional-second"
+    through = SOURCE_NOW - timedelta(days=1)
+    request = plan(question="participant_activity_decline.v1", start=(through-timedelta(days=14)).isoformat(),
+                   end=through.isoformat(), cutoff=through.isoformat(), page_size=1)
+    with ready.stored.database.transaction() as db:
+        seed_activity_inbox(db, account, through)
+        seed_activity_inbox(db, other, through, steady=True)
+    ready.resources.source = HistoryAnalyticsSource(ready.stored.history)
+    for owner in (account, other):
+        ready.pipeline.project_account(owner)
+        ready.resources.source.prepare_question_identity(owner)
+
+    def use(owner):
+        ready.app.dependency_overrides[get_authenticated_account_session] = lambda: policy(owner)
+        ready.client.headers["x-csrf-token"] = csrf_token(policy(owner))
+
+    endpoint = "/api/v1/insights/questions"
+    use(account)
+    assert any(q["question"] == request["question"] and q["enabled"]
+               for q in ready.client.get(endpoint).json()["questions"])
+    answer = ready.client.post(endpoint, json=request)
+    assert answer.status_code == 200, answer.text
+    first = answer.json()
+    page = first["page"]
+    assert page["total_matching_conversations"] == 2
+    assert page["evaluated_conversation_count"] == 4 and page["undetermined_conversation_count"] == 1
+    row = page["rows"][0]
+    assert (row["earlier_messages"], row["recent_messages"], row["coverage"]) == (6, 3, "complete")
+    assert "Fictional orchard" not in answer.text
+    for anchor, message in zip(row["evidence"], ("Fictional orchard note 8", "Fictional orchard note 5"), strict=True):
+        assert ready.client.post(endpoint + "/evidence", json=anchor).json()["text"] == message
+    continuation = {**request, "cursor": first["next_cursor"]}
+    second = ready.client.post(endpoint, json=continuation).json()
+    row2 = second["page"]["rows"][0]
+    assert (row2["earlier_messages"], row2["recent_messages"], len(row2["evidence"])) == (5, 0, 1)
+    assert second["next_cursor"] is None
+    use(other)
+    assert ready.client.post(endpoint, json=request).json()["page"]["rows"] == []
+    assert ready.client.post(endpoint + "/evidence", json=row["evidence"][0]).status_code == 404
+    assert ready.client.post(endpoint, json=continuation).status_code == 422
+    use(account)
+    with ready.stored.database.transaction() as db:
+        db.execute("UPDATE account_messages SET is_deleted=1 WHERE creator_account_id=? AND message_id='orchard-8'", (account,))
+        db.execute("UPDATE account_heads SET canonical_revision=2 WHERE creator_account_id=?", (account,))
+    assert ready.client.post(endpoint + "/evidence", json=row["evidence"][0]).status_code == 404
+    ready.pipeline.project_account(account)
+    ready.resources.source.prepare_question_identity(account)
+    updated = ready.client.post(endpoint, json=request).json()["page"]
+    assert updated["total_matching_conversations"] == 1 and updated["undetermined_conversation_count"] == 2
+    ready.scheduler.request_recovery.assert_not_awaited()
+
+
 @pytest.mark.parametrize("update", [
     {"creator_account_id": OTHER}, {"gremlin": "g.V()"}, {"page_size": 0},
     {"page_size": 201}, {"page_size": True}, {"timezone": "../UTC"},
@@ -327,7 +382,9 @@ def test_openapi_describes_closed_question_and_evidence_bodies(ready):
     operation = schema["paths"]["/api/v1/insights/questions"]["post"]
     body = operation["requestBody"]["content"]["application/json"]["schema"]
     assert body["additionalProperties"] is False
-    assert set(body["properties"]["question"]["enum"]) == {"no_later_creator_reply.v1", "pricing_discussions.v1"}
+    assert set(body["properties"]["question"]["enum"]) == {
+        "no_later_creator_reply.v1", "pricing_discussions.v1", "participant_activity_decline.v1",
+    }
 
 
 def test_retention_cleanup_notifies_only_accounts_with_expired_sources(tmp_path):
