@@ -515,7 +515,11 @@ def login_windows_hello(
     csrf: str | None = Header(None, alias="X-CSRF-Token"),
     authority_port: WebAuthnAuthorityPort = Depends(webauthn_authority_port),
 ) -> dict[str, str]:
-    return _native_login(request, response, policy, csrf, authority_port, initial=False)
+    _prepare_request(request)
+    _no_store(response)
+    if policy.identity is not None:
+        verify_csrf_token(policy, csrf)
+    return _native_login(request, response, policy, authority_port, initial=False)
 
 
 @router.post("/login/initial")
@@ -527,14 +531,14 @@ def login_initial(
     authority_port: WebAuthnAuthorityPort = Depends(webauthn_authority_port),
 ) -> dict[str, str]:
     """Use the uninterrupted enrollment proof without opening a new dialog."""
-    return _native_login(request, response, policy, csrf, authority_port, initial=True)
-
-
-def _native_login(request, response, policy, csrf, authority_port, *, initial: bool):
     _prepare_request(request)
     _no_store(response)
     if policy.identity is not None:
         verify_csrf_token(policy, csrf)
+    return _native_login(request, response, policy, authority_port, initial=True)
+
+
+def _native_login(request, response, policy, authority_port, *, initial: bool):
     native = getattr(request.app.state, "account_passkey_authority", None)
     authority = _authority_or_refuse(authority_port.session_authority(policy), operation="login_begin")
     if (native is None or not isinstance(authority, SessionAuthority)

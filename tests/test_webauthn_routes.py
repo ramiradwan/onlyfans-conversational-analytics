@@ -493,13 +493,13 @@ def test_identity_carrying_webauthn_request_rejects_wrong_csrf_value(
     )
 
     with TestClient(application, base_url=ORIGIN) as client:
-        response = client.post(
-            "/api/v1/webauthn/registration/begin",
-            headers={"Origin": ORIGIN, "X-CSRF-Token": "wrong"},
-        )
-
-    assert response.status_code == 403
-    assert response.json() == {"detail": "CSRF token is invalid"}
+        for path in ("registration/begin", "login/windows-hello", "login/initial"):
+            response = client.post(
+                f"/api/v1/webauthn/{path}",
+                headers={"Origin": ORIGIN, "X-CSRF-Token": "wrong"},
+            )
+            assert response.status_code == 403, path
+            assert response.json() == {"detail": "CSRF token is invalid"}, path
 
 
 def test_port_refusal_is_non_successful_and_issues_no_session(

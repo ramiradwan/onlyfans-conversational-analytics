@@ -31,6 +31,8 @@ def test_account_management_uses_the_selected_release(monkeypatch) -> None:
     assert result.headers["location"] == "https://account.dipsy.fi/account/passkeys"
     assert result.headers["referrer-policy"] == "no-referrer"
     assert result.headers["cache-control"] == "no-store"
+    assert "set-cookie" not in result.headers
+    assert result.content == b""
 
     release.account_passkey = None
     assert client.get("/account/manage-passkeys", follow_redirects=False).status_code == 404
