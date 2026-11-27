@@ -283,6 +283,7 @@ class HistoryAnalyticsSource:
 
     def read_evidence_message(
         self, account_id: str, location: EvidenceLocation, budget: QuestionBudget,
+        *, exclude_system: bool = False,
     ) -> EvidenceMessage | None:
         """Read one live, undeleted source by its indexed canonical identity."""
 
@@ -298,7 +299,7 @@ class HistoryAnalyticsSource:
             token = self._identity_cache.token(connection, account_id)
             if token is None:
                 raise EvidenceUnavailable()
-            row = _read_evidence_row(connection, account_id, location)
+            row = _read_evidence_row(connection, account_id, location, exclude_system=exclude_system)
             return row, f"{token.schema}:{token.value}:{token.revision}"
 
         scoped = getattr(self._question_scope_local, "connection", None)
@@ -600,11 +601,11 @@ class HistoryAnalyticsSource:
         return parsed.isoformat()
 
 
-def read_transaction_evidence(connection, account_id, location, budget):
+def read_transaction_evidence(connection, account_id, location, budget, *, exclude_system=False):
     """Resolve live evidence on the caller's existing canonical transaction."""
     location = EvidenceLocation.model_validate(location)
     budget.consume(2)
-    row = _read_evidence_row(connection, account_id, location)
+    row = _read_evidence_row(connection, account_id, location, exclude_system=exclude_system)
     budget.check()
     if row is None:
         return None
@@ -613,11 +614,12 @@ def read_transaction_evidence(connection, account_id, location, budget):
         upstream_updated_at=row[5], content_hash=row[6], stream_epoch=row[7], source_sequence=row[8])
 
 
-def _read_evidence_row(connection, account_id, location):
-    return connection.execute(
+def _read_evidence_row(connection, account_id, location, *, exclude_system):
+    kind_column = ",m.event_kind_json" if exclude_system else ""
+    row = connection.execute(
         f"""SELECT h.canonical_revision,m.text,m.sent_at,m.direction,
                   m.sender_platform_user_id,m.upstream_updated_at,
-                  m.content_hash,m.winning_stream_epoch,m.winning_source_seq
+                  m.content_hash,m.winning_stream_epoch,m.winning_source_seq{kind_column}
              FROM account_messages AS m
              JOIN account_heads AS h
                ON h.creator_account_id=m.creator_account_id
@@ -636,3 +638,8 @@ def _read_evidence_row(connection, account_id, location):
             MAX_EVIDENCE_TEXT_CHARS * 4,
         ),
     ).fetchone()
+    if exclude_system and row is not None:
+        from app.analytics.query_facts import imported_history_kind
+        if imported_history_kind(row['event_kind_json'], location.conversation_id) == 'system':
+            return None
+    return row

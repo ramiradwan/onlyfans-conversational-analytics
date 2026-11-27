@@ -21,6 +21,7 @@ from app.nlp.profiles import AnalysisProfile
 from app.security.local_sessions import build_runtime_policy
 from app.security.runtime_policy import AuthContext
 from tests.continuous_analytics_fixture import ACCOUNT, make_fixture, cleanup, advance
+from tests.test_history_kind_adoption import synthetic_kind
 from tests.test_nlp_processing_publication import ConformanceAdapter, FIXTURES
 
 pytestmark = pytest.mark.ci_tier("integration")
@@ -171,6 +172,45 @@ def ready(tmp_path, request):
         resources.close()
         assert resources.wait_closed()
         cleanup(fixture)
+
+
+def test_preexisting_system_finding_blocks_cached_counts_until_rescan(ready, monkeypatch):
+    from app.analytics import canonical_source
+    from app.analytics.nlp_findings_store import encoded
+    from app.analytics.query_execution import QuestionBudget, QuestionLimits
+
+    source = ready.fixture.source
+    with ready.fixture.repositories.database.transaction() as db:
+        db.execute('UPDATE account_messages SET event_kind_json=? WHERE creator_account_id=? AND message_id=?',
+                   (json.dumps(synthetic_kind('non_message_event')), ACCOUNT, 'm-0-0'))
+        advance(db)
+
+    # Recreate a published inventory built with the former admission rule.
+    read_row = canonical_source._read_evidence_row
+    with monkeypatch.context() as old:
+        old.setattr(canonical_source, '_read_evidence_row', lambda db, account, location, *, exclude_system:
+                    read_row(db, account, location, exclude_system=False))
+        assert ready.runner.reconcile(ACCOUNT)
+        published = ready.runner.publish_pending(ACCOUNT)
+    identity = source.read_identity(ACCOUNT)
+    with ready.fixture.stores.database.transaction() as db:
+        db.execute('UPDATE nlp_accounts SET scan_identity=? WHERE account_ref=?',
+                   (encoded([identity.revision, identity.content_digest]).decode(), account_ref(ACCOUNT)))
+    def request(run):
+        projection = run.artifact.projection
+        return FindingsRequest(expected_generation=projection.projection_generation,
+                               expected_projection_digest=projection.projection_digest, evidence_offset=100)
+
+    source.prepare_question_identity(ACCOUNT)
+    with pytest.raises(ProjectionUnavailable):
+        ready.resources.findings(ready.policy, request(published))
+    budget = QuestionBudget(QuestionLimits())
+    location = next(row for row in source.nlp_location_page(ACCOUNT) if row.message_id == 'm-0-0')
+    assert source.read_evidence_message(ACCOUNT, location, budget).text.endswith('case0')
+    assert ready.runner.reconcile(ACCOUNT)
+    corrected = ready.runner.publish_pending(ACCOUNT)
+    response = ready.resources.findings(ready.policy, request(corrected))
+    assert [task.eligible_messages for task in response.tasks] == [7, 7]
 
 
 def test_published_both_tasks_counts_coverage_labels_and_exact_repeated_spans(ready):

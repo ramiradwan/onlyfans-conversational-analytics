@@ -2,6 +2,7 @@
 from dataclasses import replace
 from datetime import timedelta
 import hashlib
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -22,6 +23,7 @@ from app.persistence.text_analysis_jobs import TextAnalysisJobStore
 from app.security.runtime_policy import AuthContext
 from app.security.text_analysis_policy import encode_run_context
 from tests.continuous_analytics_fixture import ACCOUNT, advance, cleanup, insert_message, make_fixture
+from tests.test_history_kind_adoption import synthetic_kind
 from tests.test_nlp_processing_publication import ConformanceAdapter
 from tests.test_text_analysis_execution_authority import basis as authority_basis
 
@@ -78,6 +80,32 @@ def execution(tmp_path,authority_basis):
 def rows(x,table):
     with x.repository.database.read() as db:
         return [dict(row) for row in db.execute(f'SELECT * FROM {table}')]
+
+
+def test_licensed_worker_and_saved_record_require_eligible_message(execution):
+    x = execution()
+    text = 'What does the video cost?'
+    with x.repository.database.transaction() as db:
+        db.execute('UPDATE account_messages SET text=?, event_kind_json=? WHERE creator_account_id=?',
+                   (text, json.dumps(synthetic_kind()), ACCOUNT))
+        insert_message(db, 'chat-0', 'notice', x.f.clock.now, text=text)
+        db.execute('UPDATE account_messages SET event_kind_json=? WHERE creator_account_id=? AND message_id=?',
+                   (json.dumps(synthetic_kind('non_message_event')), ACCOUNT, 'notice'))
+        advance(db)
+    assert x.runner.process_one(ACCOUNT)
+    assert not x.runner.process_one(ACCOUNT)
+    assert [r.items[0].text for r in x.adapter.requests] == [text]
+    assert [s['message_id'] for s in rows(x, 'knowledge_sources')] == ['m-0-0']
+    contribution = rows(x, 'knowledge_contributions')[0]['contribution_id']
+    assert x.repository.export_document(contribution, policy=x.policy)
+    with x.repository.database.transaction() as db:
+        db.execute('UPDATE account_messages SET event_kind_json=? WHERE creator_account_id=? AND message_id=?',
+                   (json.dumps(synthetic_kind('non_message_event')), ACCOUNT, 'm-0-0'))
+        advance(db)
+    with pytest.raises(ValueError, match='knowledge_source_changed'):
+        x.repository.export_document(contribution, policy=x.policy)
+    with pytest.raises(ValueError, match='knowledge_source_changed'):
+        replay_contribution(x.repository, x.runner.findings, contribution, policy=x.policy, limit=1)
 
 
 def test_canonical_literals_publish_exact_unicode_and_paused_reads_do_not_execute(execution):

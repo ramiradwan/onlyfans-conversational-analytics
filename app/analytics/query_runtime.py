@@ -8,7 +8,7 @@ from threading import RLock, BoundedSemaphore
 
 from app.analytics.errors import AnalyticsError, ProjectionUnavailable
 from app.analytics.evidence import EvidenceResolver
-from app.analytics.query_handlers import no_later_creator_reply
+from app.analytics.query_handlers import no_later_creator_reply, participant_activity_decline
 from app.analytics.query_reader import PublishedQuestionReader
 from app.analytics.query_service import AnalyticsQuestionService, RegisteredQuestion
 from app.security.runtime_policy import authorized_account
@@ -102,7 +102,8 @@ class QuestionResources:
                 and callable(getattr(self.pipeline.projections, 'question_connection_database', None))
                 and callable(getattr(self.pipeline.projections.activation, 'read_scope', None))) else None)
         service = AnalyticsQuestionService(reader,
-            [RegisteredQuestion("no_later_creator_reply.v1", "canonical.client-parity.v1", no_later_creator_reply)],
+            [RegisteredQuestion("no_later_creator_reply.v1", "canonical.client-parity.v1", no_later_creator_reply),
+             RegisteredQuestion("participant_activity_decline.v1", "two-weeks.utc.v1", participant_activity_decline)],
             cursor_secret=self.secret, clock=self.clock)
         return service.execute(policy, plan, cancellation_check=lambda: self._cancelled(account, cancellation_check))
 

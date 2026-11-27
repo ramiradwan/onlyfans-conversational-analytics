@@ -30,6 +30,7 @@ class QuestionConversation:
     conversation_ref: str
     messages: tuple[QuestionMessage, ...]
     coverage: Literal["complete", "partial", "unknown"] = "unknown"
+    has_removed_activity: bool = False
 
 
 class QuestionFactsSession(QuestionReadSession, Protocol):
