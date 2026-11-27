@@ -6,7 +6,7 @@ import time
 from contextlib import contextmanager
 
 from app.analytics.nlp_findings_store import (
-    FrozenFindings, checked_snapshot, check_deadline, encoded, VERIFICATION_SECONDS,
+    FrozenFindings, checked_snapshot, check_deadline, encoded, findings_scan_identity, VERIFICATION_SECONDS,
 )
 from app.analytics.validation_receipt import content_stamp
 from app.nlp import v2
@@ -37,8 +37,9 @@ def _current_input(value, state):
         value['snapshot']['completion_revision']==state['completion_revision'] and
         value['snapshot']['availability_revision']==state['availability_revision'] and
         value['snapshot']['source_validity_sha256']==state['inventory_digest'] and
-        (not state['scan_identity'] or state['scan_identity']==encoded([
-            value['snapshot']['canonical_revision'],value['canonical_content_digest']]).decode()))
+        (not state['scan_identity'] or state['scan_identity'] in (
+            findings_scan_identity(value['snapshot']['canonical_revision'], value['canonical_content_digest']),
+            encoded([value['snapshot']['canonical_revision'], value['canonical_content_digest']]).decode())))
 
 
 def _supported(db):

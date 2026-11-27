@@ -39,6 +39,10 @@ def digest(value):
     return hashlib.sha256(encoded(value)).hexdigest()
 
 
+def findings_scan_identity(revision, content_digest):
+    return encoded(['exclude-supported-system.v1', revision, content_digest]).decode()
+
+
 def source_binding(source):
     try:
         if type(source) is not EvidenceMessage:
@@ -411,7 +415,7 @@ class FindingsStore:
         if len(sources) > PAGE_SIZE:
             raise ValueError('nlp_page_limit')
         ref = account_ref(account_id)
-        identity = encoded([canonical.revision,canonical.content_digest]).decode()
+        identity = findings_scan_identity(canonical.revision, canonical.content_digest)
         with self.database.transaction() as db:
             require_erasure_idle(db, ref)
             state = db.execute('SELECT * FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
@@ -478,7 +482,7 @@ class FindingsStore:
         with self.database.transaction() as db:
             require_erasure_idle(db, ref)
             state = db.execute('SELECT * FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
-            identity = encoded([canonical.revision,canonical.content_digest]).decode()
+            identity = findings_scan_identity(canonical.revision, canonical.content_digest)
             if state['scan_epoch'] != epoch or state['scan_identity'] != identity or state['scan_cursor'] != expected_cursor:
                 raise ValueError('nlp_scan_stale')
             if check is not None:

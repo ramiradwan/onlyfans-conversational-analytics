@@ -23,7 +23,8 @@ class ContributionSourceGuard:
         return QuestionBudget(QuestionLimits(max_records=8, wall_clock_ms=1000))
 
     def source(self, db, spec, member, budget, now):
-        source = read_transaction_evidence(db, spec.creator_account_id, member.location.model_dump(), budget)
+        source = read_transaction_evidence(db, spec.creator_account_id, member.location.model_dump(), budget,
+                                           exclude_system=True)
         if (source is None or source_binding(source) != member.source
                 or hashlib.sha256(source.text.encode('utf8')).hexdigest() != member.text_sha256):
             raise ValueError('knowledge_source_changed')

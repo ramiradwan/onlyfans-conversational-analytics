@@ -557,6 +557,8 @@ class CanonicalMessage(AnalyticsModel):
     sent_at: AwareDatetime
     direction: MessageDirection
     sentiment: str | None = None
+    # The source identity includes this metadata. Only the question reader interprets it.
+    event_kind: dict[str, object] | None = Field(default=None, exclude=True)
 
 
 class CanonicalAcquisitionCoverage(AnalyticsModel):

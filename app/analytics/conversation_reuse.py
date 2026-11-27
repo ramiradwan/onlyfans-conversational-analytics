@@ -503,7 +503,7 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
         pipeline.graph_projector._conversation_edges(
             timeline, account_ref(account_id), metrics, cancellation_check
         )
-        if incremental:
+        if incremental and metrics:
             from app.analytics.conversation_graph_units import (
                 ConversationGraphReference, graph_unit_ids,
             )

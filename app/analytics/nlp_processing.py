@@ -14,7 +14,10 @@ from uuid import uuid4
 from app.analytics.evidence_contracts import EvidenceLocation
 from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
 from app.analytics.identity import source_identity
-from app.analytics.nlp_findings_store import FrozenFindings, FindingsStore, PAGE_SIZE, MAX_SOURCES, MAX_LOCATORS, source_binding, encoded
+from app.analytics.nlp_findings_store import (
+    FrozenFindings, FindingsStore, MAX_LOCATORS, MAX_SOURCES, PAGE_SIZE,
+    encoded, findings_scan_identity, source_binding,
+)
 from app.analytics.nlp_execution import require_findings_execution
 from app.analytics.opaque_refs import account_ref
 from app.analytics.pipeline import AnalyticsPipeline
@@ -143,7 +146,7 @@ class FindingsReadContext:
                               cancellation_check=self.cancellation_check)
 
     def _read(self, account_id, location, budget):
-        message = self.source.read_evidence_message(account_id,location,budget)
+        message = self.source.read_evidence_message(account_id, location, budget, exclude_system=True)
         if message is None or message.sent_at + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS) <= self.clock():
             return None
         return message
@@ -205,7 +208,7 @@ class FindingsReadContext:
                                               prepare_identity=True) as scope:
             canonical = scope.identity
             state = self.findings.state(account_id)
-            identity = encoded([canonical.revision,canonical.content_digest]).decode()
+            identity = findings_scan_identity(canonical.revision, canonical.content_digest)
             complete = state['scan_identity']==identity and bool(state['scan_complete'])
             cursor = json.loads(state['scan_cursor']) if state['scan_identity']==identity else None
             while not complete and count < maximum:

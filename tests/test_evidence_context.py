@@ -12,6 +12,7 @@ from app.analytics.errors import ProjectionUnavailable
 from app.analytics.query_contracts import SourceSpan
 from app.analytics.query_execution import QuestionBudget, QuestionCancelled, QuestionLimitExceeded, QuestionLimits
 from tests.test_analytics_evidence import (ACCOUNT, LOCATION, NOW, TEXT, policy, prepared, stored)  # noqa: F401
+from tests.test_history_kind_adoption import synthetic_kind
 from tests.test_nlp_read_projection import api, ready  # noqa: F401
 
 pytestmark = pytest.mark.ci_tier('integration')
@@ -78,10 +79,12 @@ def test_offset_precision_and_canonical_ties_have_one_instant_order(stored):
         insert(db, 'earlier', '2026-09-18T13:00:00.000100+02:00')
         insert(db, 'same-before', '2026-09-18T11:00:00.000200Z', sequence=0)
         insert(db, 'same-after', '2026-09-18T07:00:00.000200-04:00', epoch=2)
-        insert(db, 'later', '2026-09-18T11:00:00.0003000Z')
+        insert(db, 'later', '2026-09-18T11:00:00.0003000Z', 'Platform notice')
+        db.execute('UPDATE account_messages SET event_kind_json=? WHERE creator_account_id=? AND message_id=?',
+                   (json.dumps(synthetic_kind('non_message_event', LOCATION.conversation_id)), ACCOUNT, 'later'))
     resolver, ref, source = prepared(stored)
     response = resolve(stored, resolver, ref, source)
-    assert [item.text for item in response.items] == ['Nearby text', 'Nearby text', TEXT, 'Nearby text', 'Nearby text']
+    assert [item.text for item in response.items] == ['Nearby text', 'Nearby text', TEXT, 'Nearby text', 'Platform notice']
     assert response.anchor_index == 2
     assert [item.reference.sent_at for item in response.items] == sorted(item.reference.sent_at for item in response.items)
     assert not response.has_earlier_stored_items and not response.has_later_stored_items

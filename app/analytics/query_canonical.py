@@ -1,11 +1,13 @@
 """Bounded source selection within a gateway-owned canonical connection."""
 
 from functools import cached_property
+from itertools import islice
 
 from app.analytics.errors import CanonicalAccountNotFound, ProjectionUnavailable
 from app.analytics.evidence_contracts import EvidenceLocation
 from app.analytics.opaque_refs import conversation_ref, message_ref
 from app.analytics.query_contracts import utc_instant
+from app.analytics.query_execution import QuestionLimitExceeded
 from app.analytics.query_facts import QuestionConversation, QuestionMessage
 from app.analytics.source_coverage import AcquisitionCoverage, question_coverage
 from app.analytics.query_facts import imported_history_kind
@@ -32,6 +34,27 @@ class CanonicalQuestionScope:
         current = self.connection.execute("PRAGMA data_version").fetchone()[0]
         if current != self.token:
             raise ProjectionUnavailable(availability="building")
+
+    def require_non_system_sources(self, locations, budget):
+        """Check saved evidence membership without fetching message bodies."""
+        locations = iter(locations)
+        remaining = budget.limits.max_records
+        while page := tuple(islice(locations, 64)):
+            budget.check()
+            remaining -= len(page)
+            if remaining < 0:
+                raise QuestionLimitExceeded()
+            expected = {location.message_id: location.conversation_id for location in page}
+            slots = ','.join('?' for _ in expected)
+            rows = self.connection.execute(
+                f'SELECT message_id,chat_id,event_kind_json FROM account_messages '
+                f'WHERE creator_account_id=? AND message_id IN ({slots})',
+                (self.account, *expected))
+            for message, chat, kind in rows:
+                if expected.pop(message) != chat or imported_history_kind(kind, chat) == 'system':
+                    raise ProjectionUnavailable(availability='building')
+            if expected:
+                raise ProjectionUnavailable(availability='building')
 
     def conversations(self, question, budget):
         if question.plan.question == "no_later_creator_reply.v1":

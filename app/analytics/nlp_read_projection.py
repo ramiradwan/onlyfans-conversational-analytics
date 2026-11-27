@@ -727,6 +727,7 @@ def read(resources, policy, request, *, cancellation_check=None,
                 )
             ):
                 raise ProjectionUnavailable(availability="building")
+            scope.require_non_system_sources((row["location"] for row in source_rows), budget)
             if projector is None:
                 response, bindings = aggregate(
                     value, records, generation, snapshot, plan, budget, source_rows
