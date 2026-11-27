@@ -310,25 +310,30 @@ for (const attack of ['horizontal reading overflow', 'clipped reading text', 'un
   } finally { await page.close(); }
 });
 
-for (const layer of ['menu', 'plain']) test(`watcher ${layer === 'menu' ? 'treats a closed menu as an overlay' : 'flags a removed neighbor layer'}`, async () => {
+const menu = '<ul role="menu"><li role="menuitem">Disconnect</li></ul>';
+for (const [name, layer] of Object.entries({
+  'treats a closed menu layer as an overlay': { style: 'position:fixed;inset:0', html: menu, overlay: true },
+  'flags a removed neighbor layer': { style: 'position:fixed;inset:0', html: '<p>Layer</p>', overlay: false },
+  'flags a removed page wrapper that holds a menu': { style: '', html: `<p>Content</p>${menu}`, overlay: false },
+})) test(`watcher ${name}`, async () => {
   const page = await browser.newPage();
   try {
     await installWatcher(page, { requiredRegions: ['slot'] });
     await page.route('**/*', (route) => route.fulfill({ contentType: 'text/html', body: '<main><div data-reserved-region="slot" style="height:100px;width:200px"><span data-region-content>Short text</span></div></main>' }));
     await page.goto('http://watcher-fixture.localhost/');
     await settle(page);
-    await page.evaluate((layer) => {
+    await page.evaluate(({ style, html }) => {
       const node = document.createElement('div');
       node.id = 'layer';
-      node.style.cssText = 'position:fixed;inset:0';
-      node.innerHTML = layer === 'menu' ? '<ul role="menu"><li role="menuitem">Disconnect</li></ul>' : '<p>Layer</p>';
+      node.style.cssText = style;
+      node.innerHTML = html;
       document.body.append(node);
     }, layer);
     await settle(page);
     await page.evaluate(() => document.querySelector('#layer').remove());
     await settle(page);
     const { failures } = await readWatcher(page);
-    if (layer === 'menu') assert.deepEqual(failures, []);
+    if (layer.overlay) assert.deepEqual(failures, []);
     else assert(failures.some((failure) => failure.endsWith(': removed')), 'A removed neighbor must be flagged: ' + JSON.stringify(failures));
   } finally { await page.close(); }
 });

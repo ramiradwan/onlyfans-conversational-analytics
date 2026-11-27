@@ -1,7 +1,7 @@
 import { ThemeProvider } from '@mui/material/styles';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useNavigate, type NavigateFunction } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { HistorySettings } from '../src/protocol';
@@ -145,16 +145,18 @@ describe('SettingsWithVaultView', () => {
     expect(props.activationApi.redeem).not.toHaveBeenCalled();
   });
 
-  it('opens a text analysis link once this installation shows the section', async () => {
+  it('opens a text analysis link once the section shows, and again on a return visit', async () => {
     const { release, ...props } = apis('vault');
     let resolve!: (value: NlpDependencyStatus) => void;
     props.nlpApi.get.mockImplementationOnce(() => new Promise<NlpDependencyStatus>((done) => { resolve = done; }));
     const scrolled: string[] = [];
     const original = Element.prototype.scrollIntoView;
     Element.prototype.scrollIntoView = function scrollIntoView(this: Element) { scrolled.push(this.id); };
+    let navigate!: NavigateFunction;
+    function Navigator() { navigate = useNavigate(); return null; }
     try {
       const { container } = render(<ThemeProvider theme={theme} defaultMode="light">
-        <MemoryRouter initialEntries={['/settings#text-analysis']}><SettingsWithVaultView {...props} /></MemoryRouter>
+        <MemoryRouter initialEntries={['/settings#text-analysis']}><Navigator /><SettingsWithVaultView {...props} /></MemoryRouter>
       </ThemeProvider>);
       await act(async () => release());
       expect(scrolled).toEqual([]);
@@ -162,7 +164,34 @@ describe('SettingsWithVaultView', () => {
         failure: null, resume_granularity: 'verified_files_current_file_restarts' }));
       expect(scrolled).toEqual(['text-analysis']);
       expect(document.activeElement).toBe(container.querySelector('#text-analysis'));
+      act(() => (document.activeElement as HTMLElement | null)?.blur());
+      await act(async () => navigate('/settings'));
+      expect(scrolled).toEqual(['text-analysis']);
+      await act(async () => navigate(-1));
+      expect(scrolled).toEqual(['text-analysis', 'text-analysis']);
+      expect(document.activeElement).toBe(container.querySelector('#text-analysis'));
     } finally { Element.prototype.scrollIntoView = original; }
+  });
+
+  it('marks a section that needs the creator with a dot that keeps its place, and names the status with its link', async () => {
+    const { release, ...props } = apis('vault');
+    const browser = { capture: 'active' as const, site_access: 'granted' as const, history_permission: 'granted' as const,
+      legal_review_required: false, reported_at: '2026-07-19T12:00:00Z' };
+    const agent = { creator_account_id: 'creator-1', status: 'connected' as const, agent_installation_id: null, connection_id: null,
+      required_config_revision: 'r1', applied_config_revision: 'r1', required_history_settings_revision: 1,
+      applied_history_settings_revision: 1, last_heartbeat_at: null, degraded_reason: null, browser };
+    bridgeTransportStore.setConnection('connected');
+    bridgeTransportStore.setAgent(agent);
+    renderSettings(<SettingsWithVaultView {...props} />);
+    await act(async () => release());
+    const index = within(screen.getAllByRole('navigation', { name: 'Settings sections' })[1]);
+    const link = index.getByRole('link', { name: 'Browser extension' });
+    const dot = within(link).getByText('Browser extension').nextElementSibling!;
+    expect(getComputedStyle(dot).visibility).toBe('hidden');
+    await act(async () => bridgeTransportStore.setAgent({ ...agent, browser: { ...browser, site_access: 'needs_approval' } }));
+    expect(index.getByRole('link', { name: 'Browser extension, Needs attention' })).toBe(link);
+    expect(within(link).getByText('Browser extension').nextElementSibling).toBe(dot);
+    expect(getComputedStyle(dot).visibility).toBe('visible');
   });
 
   it('keeps the pending connection action and the surrounding Settings sections mounted', async () => {

@@ -192,23 +192,22 @@ describe('NlpDependencyControls', () => {
   it('keeps text analysis offered through a failed reconnect read and hides it only after a completed one', async () => {
     connect();
     const api = fixture(), report = vi.fn();
+    const failure = async () => within(await screen.findByRole('region', { name: 'Optional text analysis' })).findAllByText('Needs attention');
+    api.get.mockRejectedValueOnce(new Error('status unavailable'));
     render(<ThemeProvider theme={theme}><NlpDependencyControls api={api} creatorAccountId="account-one" onAvailabilityChange={report} /></ThemeProvider>);
+    // Control: a failed first read leaves text analysis hidden, as it was before any read.
+    await failure();
+    expect(report).not.toHaveBeenCalledWith(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Check status' }));
     await waitFor(() => expect(report).toHaveBeenLastCalledWith(true));
     api.get.mockRejectedValueOnce(new Error('status unavailable'));
     act(() => connect('2'));
-    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
-    await within(await screen.findByRole('region', { name: 'Optional text analysis' })).findAllByText('Needs attention');
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(3));
+    await failure();
     expect(report).toHaveBeenLastCalledWith(true);
     api.get.mockResolvedValueOnce(unavailable);
     fireEvent.click(screen.getByRole('button', { name: 'Check status' }));
     await waitFor(() => expect(report).toHaveBeenLastCalledWith(false));
-  });
-  it('leaves text analysis hidden when the first read fails', async () => {
-    const api = fixture(), report = vi.fn();
-    api.get.mockRejectedValueOnce(new Error('status unavailable'));
-    render(<ThemeProvider theme={theme}><NlpDependencyControls api={api} creatorAccountId="account-one" onAvailabilityChange={report} /></ThemeProvider>);
-    await within(await screen.findByRole('region', { name: 'Optional text analysis' })).findAllByText('Needs attention');
-    expect(report).not.toHaveBeenCalledWith(true);
   });
   it.each(['command', 'status'] as const)('resets pending %s state when the API client changes', async (request) => {
     const api = fixture(), command = deferred<NlpDependencyResult>(), read = deferred<NlpDependencyStatus>();

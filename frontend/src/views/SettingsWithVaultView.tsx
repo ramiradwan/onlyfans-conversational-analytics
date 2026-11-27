@@ -1,4 +1,5 @@
 import { Box, ButtonBase, Paper, Stack, Typography, styled } from '@mui/material';
+import { visuallyHidden } from '@mui/utils';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps } from 'react';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
@@ -96,9 +97,12 @@ const SETTINGS_GROUPS: readonly SettingsGroup[] = [
 const ALL_SECTIONS: readonly SettingsSection[] = SETTINGS_GROUPS.flatMap((group) => group.sections);
 const ALL_SECTION_IDS: readonly SettingsSectionId[] = ALL_SECTIONS.map((section) => section.id);
 const sectionAnchorSx = { scrollMarginBlockStart: '1rem' };
-// The index names a status only when a section needs the creator.
+// The index marks a section only when it needs the creator.
 const ATTENTION_LABELS: ReadonlySet<string> = new Set(['Needs attention', 'Not responding']);
 const attentionHint = (label: string | null) => label !== null && ATTENTION_LABELS.has(label) ? label : null;
+const ATTENTION_SECTIONS: ReadonlySet<SettingsSectionId> = new Set<SettingsSectionId>([
+  'browser-extension', 'message-history', 'full-analytics', 'text-analysis',
+]);
 
 export interface SettingsWithVaultViewProps {
   browserApi?: ComponentProps<typeof CompanionPairingControls>['browserApi'];
@@ -143,18 +147,19 @@ export default function SettingsWithVaultView({
   const groups = SETTINGS_GROUPS.map((group) => ({ ...group, sections: group.sections.filter(shown) }));
   const sections = ALL_SECTIONS.filter(shown);
 
-  // A link to a section applies once. Text analysis takes it when this installation shows the section.
-  const appliedAnchor = useRef<string | null>(null);
+  // A link to a section applies once per visit, and Back or Forward to it is a new visit. Text analysis takes it when
+  // this installation shows the section.
+  const anchorVisit = useRef<{ key: string; applied: boolean } | null>(null);
   useEffect(() => {
+    if (anchorVisit.current?.key !== location.key) anchorVisit.current = { key: location.key, applied: false };
+    const visit = anchorVisit.current;
     const hashId = location.hash.replace(/^#/, '') as SettingsSectionId;
-    if (!ALL_SECTION_IDS.includes(hashId)) return;
-    const anchor = `${location.key}#${hashId}`;
-    if (appliedAnchor.current === anchor) return;
+    if (visit.applied || !ALL_SECTION_IDS.includes(hashId)) return;
     setActiveSection(hashId);
     if (hashId === 'text-analysis' && !textAnalysisAvailable) return;
     const target = scrollContainerRef.current?.querySelector<HTMLElement>(`#${hashId}`);
     if (!target) return;
-    appliedAnchor.current = anchor;
+    visit.applied = true;
     target.scrollIntoView?.({ behavior: 'instant', block: 'start' });
     target.focus({ preventScroll: true });
   }, [location.hash, location.key, textAnalysisAvailable]);
@@ -354,18 +359,23 @@ export default function SettingsWithVaultView({
                           >
                             {section.label}
                           </Typography>
-                          {hint && (
-                            <Typography
+                          {/* A section that can need attention keeps a place for its dot, so the dot comes and goes
+                              without rewrapping the label. Its status reads with the link. */}
+                          {ATTENTION_SECTIONS.has(section.id) && (
+                            <Box
                               component="span"
-                              variant="caption"
-                              sx={{
-                                color: active ? 'inherit' : 'text.muted',
-                                textAlign: 'end',
-                              }}
-                            >
-                              {hint}
-                            </Typography>
+                              aria-hidden
+                              sx={(theme) => ({
+                                flexShrink: 0,
+                                inlineSize: componentTokens.StatusChip.dotSize,
+                                blockSize: componentTokens.StatusChip.dotSize,
+                                borderRadius: '50%',
+                                bgcolor: theme.vars.palette.warning.main,
+                                visibility: hint ? 'visible' : 'hidden',
+                              })}
+                            />
                           )}
+                          {hint && <span style={visuallyHidden}>, {hint}</span>}
                         </ButtonBase>
                       );
                     })}

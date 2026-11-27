@@ -24,11 +24,11 @@ export function StatusChip({ label, labels, sx, tone = 'default', settled = fals
       {...props}
       size={size}
       label={measured ? (
-        <Box component="span" data-status-measure sx={{ display: 'grid', textAlign: 'center' }}>
-          {/* The widest label sets the size while the visible label stays centered. The labels are CSS text, so
-              they stay out of the page text and the accessibility tree. */}
+        // The widest label sets the size, up to the room the chip has. A transform centers the shown label, so a new
+        // label moves no box. The labels are CSS text, so they stay out of the page text and the accessibility tree.
+        <Box component="span" sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, max-content)' }}>
           {labels!.map((text) => (
-            <Box aria-hidden component="span" data-status-reserve key={text} sx={{
+            <Box aria-hidden component="span" key={text} sx={{
               gridArea: '1 / 1',
               paddingInlineStart: `calc(${dotSize}px + 0.5em)`,
               visibility: 'hidden',
@@ -36,10 +36,14 @@ export function StatusChip({ label, labels, sx, tone = 'default', settled = fals
             }} />
           ))}
           <Box component="span" sx={{ gridArea: '1 / 1', position: 'relative' }}>
-            <Box component="span" data-status-label sx={{
+            <Box component="span" sx={{
               position: 'absolute',
               left: '50%',
               transform: 'translateX(-50%)',
+              maxWidth: '100%',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
               '&::before': {
                 content: '""',
                 display: 'inline-block',

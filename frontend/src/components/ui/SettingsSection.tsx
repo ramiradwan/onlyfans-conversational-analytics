@@ -167,9 +167,6 @@ export function SectionHeader({
         [stacked]: hasStatus ? {
           gridTemplateColumns: hasMenu ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)',
           gridTemplateAreas: hasMenu ? '"title menu" "status status" "summary summary"' : '"title" "status" "summary"',
-          // Stacked under the title, the chip fits its label because a new label moves nothing.
-          '& [data-status-reserve]': { display: 'none' },
-          '& [data-status-label]': { position: 'static', transform: 'none' },
         } : {},
       }), ...list(sx)]}>
         <Box sx={{
