@@ -21,7 +21,12 @@ import { bridgeTransportStore } from '../store/transportStore';
 interface Props { api?: NlpDependenciesApi; engineApi?: EngineAcquisitionApi; client?: TextAnalysisClient; reissueApi?: TextAnalysisReissueApi; creatorAccountId: string | null }
 const DEPENDENCY_STATUS_LABELS = ['Checking…', 'Needs attention', 'Unavailable', 'Ready', 'Installed', 'Not installed'] as const;
 const number = new Intl.NumberFormat();
-const formatBytes = (value: number) => `${number.format(value)} bytes`;
+const gibibyte = 1024 ** 3;
+const gibibytes = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+function formatBytes(value: number) {
+  const exact = `${number.format(value)} bytes`;
+  return value < gibibyte ? exact : `${gibibytes.format(value / gibibyte)} GiB (${exact})`;
+}
 const taskNames: Record<string, string> = { message_topics: 'Message topics', concept_mentions: 'Exact mentions' };
 function hasProfileMetadata(profile: NlpDependencyProfile) {
   const resources = profile.resources;
@@ -47,6 +52,7 @@ function matchesPlan(profile: NlpDependencyProfile, plan: NlpDependencyPlan) {
     && plan.incremental_data_download_bytes <= plan.data_download_bytes
     && plan.data_download_bytes <= plan.declared_full_artifact_download_bytes
     && plan.acquisition_temporary_bytes <= Number(resources.temporary_bytes)
+    && (plan.required_free_space_bytes === undefined || plan.required_free_space_bytes >= plan.acquisition_temporary_bytes)
     && (plan.incremental_data_download_bytes !== 0 || plan.acquisition_temporary_bytes === 0);
 }
 function ProfileSupport({ profile }: { profile: NlpDependencyProfile }) {
@@ -360,9 +366,10 @@ function DependencySession({ api, account, onStatus, onAvailability, onSettled, 
             {([
               ['Download now', review.plan.incremental_data_download_bytes], ['Complete data download', review.plan.data_download_bytes],
               ['Profile-declared complete download budget', review.plan.declared_full_artifact_download_bytes], ['Profile metadata already retrieved', review.plan.profile_metadata_bytes],
-              ['Installed size', review.plan.installed_bytes], ['Temporary disk space', review.plan.acquisition_temporary_bytes],
+              ['Installed size', review.plan.installed_bytes], ['Estimated temporary space for model files', review.plan.acquisition_temporary_bytes],
+              ['Minimum free space to start', review.plan.required_free_space_bytes],
               ['Rollback space', review.plan.rollback_bytes], ['Peak memory during transition', review.plan.transition_peak_memory_bytes],
-            ] as const).map(([label, value]) => <Typography key={label}>{label}: {formatBytes(value)}</Typography>)}
+            ] as const).map(([label, value]) => value !== undefined && <Typography key={label}>{label}: {formatBytes(value)}</Typography>)}
             <Typography>Processing threads: {number.format(review.plan.inference_threads)}</Typography>
             <Typography>After the download, prepare the files and choose this profile for your account.</Typography>
           </Stack>}

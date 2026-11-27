@@ -1,6 +1,7 @@
 """Independent preparation owner lifecycle without an execution owner."""
 from contextlib import contextmanager
 import asyncio
+import os
 import threading
 
 import pytest
@@ -89,8 +90,11 @@ def test_factory_has_no_side_effects_until_projection_binding(monkeypatch, tmp_p
     assert list(tmp_path.iterdir()) == []
 
 
-@pytest.mark.parametrize('existing_root', [False, True])
-def test_factory_acquires_into_private_nlp_root(monkeypatch, tmp_path, existing_root):
+@pytest.mark.parametrize(('existing_root', 'long_members'), [
+    (False, False), (True, False),
+    pytest.param(False, True, marks=pytest.mark.skipif(os.name != 'nt', reason='Windows path limit')),
+])
+def test_factory_acquires_into_private_nlp_root(monkeypatch, tmp_path, existing_root, long_members):
     from app.nlp import windows_host
     from app.nlp.preparation import PreparationAdmission
     from app.nlp.release_catalog import canonical
@@ -103,13 +107,17 @@ def test_factory_acquires_into_private_nlp_root(monkeypatch, tmp_path, existing_
 
     e = Environment(tmp_path)
     launcher = Launcher(e.profile)
-    root = tmp_path / 'nlp'
+    data_root = tmp_path
+    if long_members:
+        data_root = tmp_path / ('p' * max(1, 145 - len(str(tmp_path))))
+        data_root.mkdir()
+    root = data_root / 'nlp'
     if existing_root:
         root.mkdir()
         apply_private_directory_security(root)
     security_calls = []
     def secure_root(path, *, repair_permissions=True):
-        assert path == root
+        assert path.samefile(root)
         security_calls.append(repair_permissions)
         apply_private_directory_security(path, repair_permissions=repair_permissions)
     monkeypatch.setattr(nlp_setup, 'apply_private_directory_security', secure_root)
@@ -119,7 +127,7 @@ def test_factory_acquires_into_private_nlp_root(monkeypatch, tmp_path, existing_
     monkeypatch.setattr(nlp_setup, 'load_preparation_release', lambda: admission)
     monkeypatch.setattr(windows_host, 'NativeHostLauncher', lambda: launcher)
     monkeypatch.setattr(nlp_distribution, 'ProfileDistribution', lambda _: e.distribution)
-    configuration = nlp_setup.preparation_configuration(lambda: e.persistence.authentication, tmp_path)
+    configuration = nlp_setup.preparation_configuration(lambda: e.persistence.authentication, data_root)
     assert root.exists() is existing_root
     try:
         assert e.service.close()
@@ -134,6 +142,11 @@ def test_factory_acquires_into_private_nlp_root(monkeypatch, tmp_path, existing_
         assert observed['verified_files'] > 0 and not observed['in_flight']
         assert e.service.ready(e.profile)
         assert (root / 'artifacts').is_dir() and (root / 'spool').is_dir()
+        if long_members:
+            available = e.service.artifacts.reopen(e.profile)
+            member = available.artifacts[0].path
+            assert len(str(root / 'artifacts' / available.directory.name / member.name)) >= 260
+            assert member.is_file()
         assert launcher.owners and all('analyze' not in owner.operations for owner in launcher.owners)
         apply_private_directory_security(root, repair_permissions=False)
     finally:
@@ -154,7 +167,7 @@ def test_factory_refuses_unverified_existing_root_without_repair(monkeypatch, tm
     retained.write_bytes(b'existing material')
     monkeypatch.setattr(nlp_setup, 'load_preparation_release', lambda: SimpleNamespace())
     def refuse(path, *, repair_permissions=True):
-        assert path == root and not repair_permissions
+        assert path.samefile(root) and not repair_permissions
         raise PrivateFileSecurityError('private directory security failed')
     monkeypatch.setattr(nlp_setup, 'apply_private_directory_security', refuse)
     configuration = nlp_setup.preparation_configuration(lambda: pytest.fail('database opened'), tmp_path)

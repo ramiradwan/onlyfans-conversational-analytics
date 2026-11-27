@@ -16,7 +16,7 @@ vi.mock('../src/components/TextAnalysisExecutionControls', () => ({ TextAnalysis
 const profile = { profile_id: 'topics-and-mentions', revision: 'one', profile_sha256: 'a'.repeat(64), catalogued: true, installed: false, prepared: false, withdrawn: false, storage_state: 'absent', languages: ['en'], tasks: ['message_topics', 'concept_mentions'], resources: { download_bytes: 2048, installed_bytes: 4096, rollback_bytes: 2048, temporary_bytes: 4096, transition_peak_memory_bytes: 8192, inference_threads: 2 } };
 const status: NlpDependencyStatus = { configured: true, profiles: [profile], available_profiles: [], acquisitions: [], selected: null, failure: null, resume_granularity: 'verified_files_current_file_restarts' };
 const unavailable: NlpDependencyStatus = { ...status, configured: false, profiles: [], failure: 'nlp_unavailable' };
-const quote: NlpDependencyPlan = { operation_id: 'a'.repeat(32), profile_sha256: profile.profile_sha256, declared_full_artifact_download_bytes: 2048, data_download_bytes: 1024, incremental_data_download_bytes: 512, profile_metadata_bytes: 100, installed_bytes: 4096, rollback_bytes: 2048, acquisition_temporary_bytes: 1152, transition_peak_memory_bytes: 8192, inference_threads: 2 };
+const quote: NlpDependencyPlan = { operation_id: 'a'.repeat(32), profile_sha256: profile.profile_sha256, declared_full_artifact_download_bytes: 2048, data_download_bytes: 1024, incremental_data_download_bytes: 512, profile_metadata_bytes: 100, installed_bytes: 4096, rollback_bytes: 2048, acquisition_temporary_bytes: 1152, required_free_space_bytes: 6_667_734_902, transition_peak_memory_bytes: 8192, inference_threads: 2 };
 const observation: NlpDependencyObservation = { id: 'b'.repeat(32), kind: 'acquire', profile_sha256: profile.profile_sha256, profile_id: profile.profile_id, revision: profile.revision, state: 'running', in_flight: true, verified_files: 2, resume_granularity: status.resume_granularity };
 function fixture(initial = status) {
   let current = observation;
@@ -378,6 +378,7 @@ describe('NlpDependencyControls', () => {
     { ...quote, incremental_data_download_bytes: quote.data_download_bytes + 1 },
     { ...quote, data_download_bytes: quote.declared_full_artifact_download_bytes + 1 },
     { ...quote, acquisition_temporary_bytes: profile.resources.temporary_bytes + 1 },
+    { ...quote, required_free_space_bytes: quote.acquisition_temporary_bytes - 1 },
     { ...quote, profile_metadata_bytes: 0 },
   ])('refuses an incoherent returned plan %#', async (operation) => {
     const api = fixture(); api.command.mockResolvedValueOnce({ operation, status });
@@ -406,13 +407,25 @@ describe('NlpDependencyControls', () => {
   });
   it('requires exact cost review before acquiring files', async () => {
     const api = fixture(); render(view(api)); await review();
-    for (const [label, amount] of [['Download now', 512], ['Installed size', 4096], ['Temporary disk space', 1152], ['Rollback space', 2048], ['Peak memory during transition', 8192]] as const) expect(screen.getByText(`${label}: ${new Intl.NumberFormat().format(amount)} bytes`, { normalizer: (text) => text })).toBeTruthy();
+    for (const [label, amount] of [['Download now', 512], ['Installed size', 4096], ['Estimated temporary space for model files', 1152], ['Rollback space', 2048], ['Peak memory during transition', 8192]] as const) expect(screen.getByText(`${label}: ${new Intl.NumberFormat().format(amount)} bytes`, { normalizer: (text) => text })).toBeTruthy();
+    const number = new Intl.NumberFormat();
+    expect(screen.getByText(`Minimum free space to start: ${number.format(6.21)} GiB (${number.format(6_667_734_902)} bytes)`, { normalizer: (text) => text })).toBeTruthy();
     expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['plan']);
     fireEvent.click(screen.getByRole('button', { name: 'Download reviewed files' }));
     await waitFor(() => expect(api.command).toHaveBeenCalledWith({ action: 'acquire', profile_id: profile.profile_id, revision: profile.revision, operation_id: quote.operation_id }, expect.any(AbortSignal)));
     expect(await screen.findByText(/2 verified files retained/)).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(screen.getByRole('button', { name: 'Cancel download' })).toBeTruthy();
+  });
+  it('keeps an earlier plan usable when the starting space was not quoted', async () => {
+    const earlier = { ...quote };
+    delete earlier.required_free_space_bytes;
+    const api = fixture();
+    api.command.mockResolvedValueOnce({ operation: earlier, status });
+    render(view(api)); await review();
+    expect(screen.queryByText(/Minimum free space to start/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Download reviewed files' }));
+    await waitFor(() => expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['plan', 'acquire']));
   });
   it('keeps download pause resume and cancellation distinct from processing controls', async () => {
     const api = fixture({ ...status, selected: { profile_id: profile.profile_id, revision: profile.revision, profile_sha256: profile.profile_sha256, mode: 'enabled', selection_epoch: 1, admission_epoch: 1 } });
