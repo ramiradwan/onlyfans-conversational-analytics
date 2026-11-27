@@ -8,7 +8,9 @@ Analytics has Summary and Conversation questions tabs. Question dates apply only
 
 The question menu follows the server's availability response. Pricing stays disabled until its language-quality gate passes. The interface does not infer missing message types.
 
-Dates use the browser's local timezone. The end date includes that day up to the current time. Follow-up extends through the separately displayed analysis cutoff. Invalid, reversed, and future dates are rejected.
+For reply and pricing questions, the end date includes that day up to the current time. Follow-up extends through the displayed analysis cutoff.
+
+For **Conversations going quiet**, choose the time to compare through. It defaults to the minute of the account's latest recorded history coverage when available. The reader compares the preceding two seven-day periods. A match shows both participant message counts and links to the last participant message in each week that had one. It requires enough saved history to assess both periods. The date and time controls use the browser's local timezone.
 
 Previous and next controls fetch pages from the same snapshot. At most 50 page requests are retained for navigation. Only the current result page is stored. Conversation numbers identify rows on that page.
 

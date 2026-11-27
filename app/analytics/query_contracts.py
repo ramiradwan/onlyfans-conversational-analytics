@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -19,8 +20,13 @@ from app.models.question_evidence import (
     QuestionRecord, Sha256Digest, SourceSpan as SourceSpan, utc_instant as utc_instant,
 )
 
-QuestionId = Literal["no_later_creator_reply.v1", "pricing_discussions.v1"]
+QuestionId = Literal["no_later_creator_reply.v1", "pricing_discussions.v1", "participant_activity_decline.v1"]
 Coverage = Literal["complete", "partial", "unknown"]
+ACTIVITY_WEEK = timedelta(days=7)
+
+
+def activity_declined(earlier: int, recent: int) -> bool:
+    return earlier >= 5 and earlier - recent >= 3 and 2 * recent <= earlier
 
 
 class QuestionFilters(QuestionRecord):
@@ -55,18 +61,21 @@ class QuestionPlan(QuestionRecord):
         ):
             raise ValueError("question_window_invalid")
         if (
-            self.question == "no_later_creator_reply.v1"
+            self.question != "pricing_discussions.v1"
             and self.filters.language is not None
         ):
             raise ValueError("question_filter_unsupported")
+        if self.question == "participant_activity_decline.v1" and (
+            self.end - self.start != 2 * ACTIVITY_WEEK or self.cutoff != self.end
+        ):
+            raise ValueError("question_activity_window_invalid")
         return self
 
 
-class QuestionRow(QuestionRecord):
+class _EvidenceRow(QuestionRecord):
     account_ref: AccountRef
     conversation_ref: ConversationRef
     latest_evidence_at: Instant
-    reason: Literal["no_later_creator_reply", "pricing_discussion"]
     coverage: Coverage
     evidence: Annotated[
         tuple[QuestionEvidence, ...], Field(min_length=1, max_length=32)
@@ -74,7 +83,7 @@ class QuestionRow(QuestionRecord):
     evidence_truncated: StrictBool = False
 
     @model_validator(mode="after")
-    def consistent_evidence(self) -> QuestionRow:
+    def consistent_evidence(self) -> _EvidenceRow:
         if any(
             e.account_ref != self.account_ref
             or e.conversation_ref != self.conversation_ref
@@ -85,6 +94,24 @@ class QuestionRow(QuestionRecord):
             raise ValueError("question_evidence_duplicate")
         if self.latest_evidence_at != max(e.sent_at for e in self.evidence):
             raise ValueError("question_evidence_time_invalid")
+        return self
+
+
+class QuestionRow(_EvidenceRow):
+    reason: Literal["no_later_creator_reply", "pricing_discussion"]
+
+
+class ActivityQuestionRow(_EvidenceRow):
+    reason: Literal["participant_activity_decline"]
+    coverage: Literal["complete"]
+    earlier_messages: Count
+    recent_messages: Count
+
+    @model_validator(mode="after")
+    def consistent_comparison(self) -> ActivityQuestionRow:
+        if (not activity_declined(self.earlier_messages, self.recent_messages)
+                or self.evidence_truncated or len(self.evidence) != 1 + (self.recent_messages > 0)):
+            raise ValueError("question_activity_evidence_invalid")
         return self
 
 
@@ -147,7 +174,7 @@ class QuestionCoverage(QuestionRecord):
 
 
 class QuestionPage(QuestionRecord):
-    rows: Annotated[tuple[QuestionRow, ...], Field(max_length=200)]
+    rows: Annotated[tuple[ActivityQuestionRow | QuestionRow, ...], Field(max_length=200)]
     coverage: QuestionCoverage
     evaluated_conversation_count: Count
     undetermined_conversation_count: Count

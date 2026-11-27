@@ -38,7 +38,7 @@ def freeze_preview_scope(repository, source, account, cutoff, budget):
                 budget.consume()
                 after = (row.conversation_id, row.message_id)
                 evidence = read_transaction_evidence(db, account,
-                    row.model_dump(mode='python'), budget)
+                    row.model_dump(mode='python'), budget, exclude_system=True)
                 if evidence is None or not lower < evidence.sent_at <= cutoff:
                     continue
                 key = (evidence.sent_at, evidence.location.message_id)

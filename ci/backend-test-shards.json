@@ -471,6 +471,7 @@
     "tests/test_conversation_fragment_storage.py": 1,
     "tests/test_conversation_graph_receipts.py": 4,
     "tests/test_conversation_graph_references.py": 1,
+    "tests/test_conversation_graph_sources.py": 4,
     "tests/test_conversation_integrity_migration.py": 1,
     "tests/test_conversation_pages.py": 1,
     "tests/test_creator_vault_api.py": 2,

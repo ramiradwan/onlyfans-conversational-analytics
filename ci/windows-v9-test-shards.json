@@ -230,6 +230,7 @@
     "tests/test_conversation_frames_safety.py": 6,
     "tests/test_conversation_graph_receipts.py": 6,
     "tests/test_conversation_graph_references.py": 1,
+    "tests/test_conversation_graph_sources.py": 2,
     "tests/test_conversation_integrity_migration.py": 8,
     "tests/test_conversation_pages.py": 1,
     "tests/test_creator_approval_continuation.py": 1,
@@ -702,20 +703,20 @@
   },
   "maintenance": {
     "method": "preserve existing owners; allocate new files by selected node count",
-    "inventory_sha256": "9950d0747d7e2aed75023dd83cfe712afacc90d8ed82c07eb0262fa62b14b30a",
+    "inventory_sha256": "6d29342db1c2d4da2f7008e7ef9c055bde480c30a47d6230c6beaea07cf6192d",
     "changes": {
       "full": {
         "added": [
-          "tests/test_desktop_account_lock.py"
+          "tests/test_conversation_graph_sources.py"
         ],
         "removed": [],
         "modeled_load": {
           "1": 1332,
-          "2": 1118,
+          "2": 1122,
           "3": 2415,
           "4": 1120,
           "5": 2436,
-          "6": 1366,
+          "6": 1378,
           "7": 3387,
           "8": 2948
         }
@@ -725,18 +726,18 @@
         "removed": [],
         "modeled_load": {
           "1": 425,
-          "2": 437,
+          "2": 439,
           "3": 411,
-          "4": 482,
-          "5": 422
+          "4": 483,
+          "5": 423
         }
       },
       "analytics": {
         "added": [],
         "removed": [],
         "modeled_load": {
-          "1": 328,
-          "2": 307
+          "1": 332,
+          "2": 327
         }
       }
     },

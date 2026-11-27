@@ -1,6 +1,7 @@
 """Immutable preview scope, attempt fencing and noncreating outcome recovery."""
 from dataclasses import replace
 from datetime import timedelta, timezone
+import json
 from threading import Event, Thread
 from contextlib import contextmanager
 
@@ -13,6 +14,7 @@ from app.persistence.auth import RevocationKey, RevocationScopeType
 from app.persistence.retention import CreatorVaultRetention
 from app.security.runtime_policy import RuntimeAuthorizationDenied
 from tests.continuous_analytics_fixture import ACCOUNT, advance, insert_message
+from tests.test_history_kind_adoption import synthetic_kind
 from tests.text_analysis_preview_fixture import (
     make_preview_fixture, close_preview_fixture, request, prepare_preview, accumulated_output,
 )
@@ -59,6 +61,10 @@ def test_frozen_scope_uses_latest_eligible_utc_messages_and_budget_exhaustion_re
         insert_message(db, 'chat-0', 'future', x.f.clock.now+timedelta(seconds=1), 41)
         insert_message(db, 'chat-0', 'expired', x.f.clock.now-timedelta(days=90), 42)
         insert_message(db, 'chat-0', 'too-large', x.f.clock.now, 43, text='x'*65537)
+        for i in range(65):
+            insert_message(db, 'chat-0', f'notice-{i}', x.f.clock.now, i)
+        db.execute("UPDATE account_messages SET event_kind_json=? WHERE creator_account_id=? AND message_id LIKE 'notice-%'",
+                   (json.dumps(synthetic_kind('non_message_event')), ACCOUNT))
         advance(db)
     scope, identity, members = freeze_preview_scope(x.repository, x.source, ACCOUNT, x.f.clock.now,
         QuestionBudget(QuestionLimits(max_records=100000, wall_clock_ms=30000)))
@@ -69,6 +75,46 @@ def test_frozen_scope_uses_latest_eligible_utc_messages_and_budget_exhaustion_re
     with pytest.raises(QuestionLimitExceeded):
         freeze_preview_scope(x.repository, x.source, ACCOUNT, x.f.clock.now,
             QuestionBudget(QuestionLimits(max_records=1, wall_clock_ms=30000)))
+
+
+def test_evidence_for_identical_pricing_text_uses_adopted_history_kinds(preview):
+    x = preview
+    notice = synthetic_kind('non_message_event')
+    kinds = {'human': synthetic_kind(), 'notice': notice,
+             'unrecognized': {**notice, 'mapping_version': 'unrecognized'}}
+    with x.repository.database.transaction() as db:
+        for message, kind in kinds.items():
+            insert_message(db, 'chat-0', message, x.f.clock.now, text='Price for a video?')
+            db.execute('UPDATE account_messages SET event_kind_json=? WHERE creator_account_id=? AND message_id=?',
+                       (json.dumps(kind), ACCOUNT, message))
+        advance(db)
+    prepare_preview(x)
+    binding = x.service.bind_pending(x.service.pending_locators()[0])
+    members = {m.ordinal: m.location.message_id for m in binding.sources if m.location.message_id in kinds}
+    assert set(members.values()) == {'human', 'unrecognized'}
+    token = x.service.claim(binding)
+    frame = accumulated_output(x, binding, findings=tuple(members), mention_spans=((0, 5),))
+    receipt = x.service.commit(binding, token, frame, validation_wall_clock_ms=30000)
+    shown = x.service.read_shown(x.http_policy(), receipt.contribution_id)
+    assert {summary.kind: {members[e.ordinal] for e in summary.evidence} for summary in shown.summaries} == {
+        'topic_category': {'human', 'unrecognized'}, 'mention_category': {'human', 'unrecognized'}}
+
+
+def test_preview_commit_refuses_a_source_corrected_to_a_system_event(preview):
+    x = preview
+    prepare_preview(x)
+    binding = x.service.bind_pending(x.service.pending_locators()[0])
+    attempt = x.service.claim(binding)
+    frame = accumulated_output(x, binding)
+    with x.repository.database.transaction() as db:
+        db.execute('UPDATE account_messages SET event_kind_json=? WHERE creator_account_id=? AND message_id=?',
+                   (json.dumps(synthetic_kind('non_message_event')), ACCOUNT, binding.sources[0].location.message_id))
+        advance(db)
+    with pytest.raises(ValueError, match='knowledge_source_changed'):
+        x.service.commit(binding, attempt, frame, validation_wall_clock_ms=30000)
+    with x.repository.database.read() as db:
+        assert not db.execute('SELECT 1 FROM text_analysis_preview_outputs').fetchone()
+        assert db.execute('SELECT state FROM text_analysis_preview_admissions').fetchone()[0] == 'reserved'
 
 
 def test_prepared_cannot_claim_and_confirmation_does_not_reselect_sources(preview):

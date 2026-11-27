@@ -1,5 +1,6 @@
 """Shown-only saved reads retain source integrity without execution admission."""
 import hashlib
+import json
 from datetime import timedelta
 
 import pytest
@@ -13,6 +14,7 @@ from app.persistence.retention import CreatorVaultRetention
 from app.persistence.auth import BridgeSessionIssue, RevocationKey, RevocationScopeType, WebAuthnCredential
 from app.security.runtime_policy import RuntimeAuthorizationDenied
 from tests.continuous_analytics_fixture import ACCOUNT, advance, insert_message
+from tests.test_history_kind_adoption import synthetic_kind
 from tests.text_analysis_preview_fixture import (
     make_preview_fixture, close_preview_fixture, prepare_preview, accumulated_output,
     preview_http_client,
@@ -98,12 +100,19 @@ def test_baseline_read_survives_pair_invalidation_module_cache_and_projection_lo
         assert not db.execute('SELECT 1 FROM nlp_record_origins').fetchone()
 
 
-def test_unshown_member_erasure_removes_whole_preview_without_refund(shown):
+@pytest.mark.parametrize('change', ['unshown_erasure', 'shown_system'])
+def test_ineligible_member_removes_whole_preview_without_refund(shown, change):
     x = shown
     reference = decode_preview(x.frame).summaries[0].evidence[0].reference
-    hidden = x.binding.sources[1]
-    CreatorVaultRetention(x.repository.database, clock=lambda: x.f.clock.now).delete_message(
-        ACCOUNT, hidden.location.message_id)
+    if change == 'unshown_erasure':
+        hidden = x.binding.sources[1]
+        CreatorVaultRetention(x.repository.database, clock=lambda: x.f.clock.now).delete_message(
+            ACCOUNT, hidden.location.message_id)
+    else:
+        with x.repository.database.transaction() as db:
+            db.execute('UPDATE account_messages SET event_kind_json=? WHERE creator_account_id=? AND message_id=?',
+                       (json.dumps(synthetic_kind('non_message_event')), ACCOUNT, x.binding.sources[0].location.message_id))
+            advance(db)
     with pytest.raises(ValueError, match='output_unavailable'):
         x.service.read_saved_evidence(x.http_policy(), x.receipt.contribution_id, reference)
     result = x.service.read_outcome(x.http_policy(), x.body.external_key)
