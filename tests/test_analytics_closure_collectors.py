@@ -1,5 +1,6 @@
 """Small executable collector checks; these are not capacity measurements."""
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
 
@@ -16,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def configuration(tmp_path, mode, case="empty"):
     manifest = q.read_json(ROOT / "docs/analytics/acceptance-manifest.json")
     # Deliberately different, test-only inputs. The frozen manifest verifier rejects them.
+    # Keep the synthetic history inside retention when the collector checks live availability.
+    manifest["fixture"]["evaluation_clock"] = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
     for profile in manifest["profiles"].values():
         profile["numeric_latency_gates"] = False  # Unit tests are not reference-profile measurements.
     manifest["history"].update(batches=2, messages_per_batch=10)

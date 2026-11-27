@@ -1403,6 +1403,7 @@ async def test_projection_get_keeps_event_loop_responsive_during_canonical_read(
 
 @pytest.mark.serial
 @pytest.mark.windows_compat
+@pytest.mark.usefixtures("_collect_test_resource_cycles")
 @pytest.mark.asyncio
 async def test_scheduler_canonical_io_does_not_hold_state_lock_or_event_loop(
 ) -> None:
