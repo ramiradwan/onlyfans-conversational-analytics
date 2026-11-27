@@ -107,13 +107,16 @@ describe('owner-driven onboarding controls', () => {
       legal_review_required: false, reported_at: '2026-10-12T00:00:00Z' };
     const view = render(<ThemeProvider theme={theme}><BrowserExtensionControls api={api} browser={browser}
       canManage connection="connected" /></ThemeProvider>);
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
+    const collect = () => screen.getByRole<HTMLInputElement>('switch', { name: 'Collect new messages' });
+    await act(async () => fireEvent.click(collect()));
     expect(api.setCapture).toHaveBeenCalledExactlyOnceWith('pause', expect.any(AbortSignal));
-    expect(screen.getByRole('button', { name: 'Pausing…' })).toBeTruthy();
+    expect(screen.getByText('Pausing…')).toBeTruthy();
+    expect(collect()).toHaveProperty('disabled', true);
     view.rerender(<ThemeProvider theme={theme}><BrowserExtensionControls api={api} browser={{ ...browser, capture: 'paused' }}
       canManage connection="connected" /></ThemeProvider>);
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Resume collecting' })).toBeTruthy();
+    expect(collect().checked).toBe(false);
+    expect(collect()).toHaveProperty('disabled', false);
   });
 
   it('never starts pairing from extension or Brain presentation updates', async () => {

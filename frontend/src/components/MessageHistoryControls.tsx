@@ -1,3 +1,5 @@
+import HistoryOutlined from '@mui/icons-material/HistoryOutlined';
+import PlayCircleOutlined from '@mui/icons-material/PlayCircleOutlined';
 import {
   Alert,
   Box,
@@ -9,15 +11,16 @@ import {
   DialogContentText,
   DialogTitle,
   FormControlLabel,
-  Skeleton,
   Stack,
+  Switch,
   Typography,
   useMediaQuery,
 } from '@mui/material';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 
-import { Panel, SectionHeader, useRevealHold } from './ui';
+import { Panel, quietNoteSx, SectionHeader, SettingRow, useRevealHold } from './ui';
 import { StatusLine } from './ui/ReservedRegion';
+import { LoadingCaption } from './ui/Skeletons';
 import { historyRequestRecovery, recoveryClass } from '../../shared-setup/recovery.js';
 import { usePermissions } from '../hooks/usePermissions';
 import type { HistorySettings } from '../protocol';
@@ -38,10 +41,18 @@ const HISTORY_PURPOSE = 'Use older messages to see results sooner.';
 const PERMISSION_PURPOSE = 'Older messages start syncing after you allow access in your browser.';
 const STARTING_HISTORY = 'Starting message history…';
 const ADDING_HISTORY = 'Adding older messages. Message counts update as they arrive.';
-const SETTINGS_HISTORY_ACTIONS = ['Allow browser access', 'Pause', 'Resume'];
-const SETTINGS_HISTORY_STATUS = [ADDING_HISTORY, PERMISSION_PURPOSE,
+const WAITING_FOR_EXTENSION = 'Available once the browser extension is connected.';
+const ALLOW_BROWSER_ACCESS = 'Allow browser access';
+const HISTORY_ROW_ACTIONS = [ALLOW_BROWSER_ACCESS];
+// The Settings row reserves room for the longer descriptions an extension push can bring.
+const SETTINGS_HISTORY_STATUS = [ADDING_HISTORY, PERMISSION_PURPOSE, HISTORY_PURPOSE, WAITING_FOR_EXTENSION,
   'History collection is waiting for the browser extension to connect.',
   'Waiting for the extension to apply message history settings.'];
+const HISTORY_CONSENT_POINTS = [
+  'Read-only: it never sends messages or changes your account.',
+  'Synced message history stays on this computer.',
+  'Pause or turn it off at any time.',
+];
 
 // Optional promotion is presentation state, scoped to the current account,
 // journey and legal policy, not to a disposable desktop session generation.
@@ -61,6 +72,7 @@ export interface MessageHistoryControlsProps {
   reviewCreatorId?: string;
   continuation?: boolean;
   recoveryJournal?: HistoryRecoveryJournal;
+  onStatusLabelChange?: (label: string | null) => void;
 }
 
 interface PermissionReturn {
@@ -101,7 +113,8 @@ function settingsIdentity(value: HistoryBaseline | null): string | null {
 
 /** Shared history consent, permission, progress and management controls. */
 export function MessageHistoryControls({ api = defaultHistorySettingsApi, browserApi = browserControlApi,
-  desktopApi = desktopOnboardingApi, store = bridgeTransportStore, reviewCreatorId, continuation = false, recoveryJournal }: MessageHistoryControlsProps) {
+  desktopApi = desktopOnboardingApi, store = bridgeTransportStore, reviewCreatorId, continuation = false,
+  recoveryJournal, onStatusLabelChange }: MessageHistoryControlsProps) {
   const { canManageHistorySync } = usePermissions();
   const narrowDialog = useMediaQuery(theme => theme.breakpoints.down('sm'));
   const transport = useSyncExternalStore(
@@ -128,10 +141,11 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   const [openReview, setOpenReview] = useState<string | null>(null);
   const continuationHeading = useRef<HTMLHeadingElement>(null);
   const [dismissedReview, setDismissedReview] = useState<string | null>(null);
-  const [deferredConsent, setDeferredConsent] = useState<string | null>(null);
-  const settingsReviewAction = useRef<HTMLButtonElement>(null);
-  const settingsConsentHeading = useRef<HTMLHeadingElement>(null);
-  const restoreSettingsFocus = useRef(false);
+  // Settings asks for consent in a dialog opened from the switch. It stays with the account it was opened for,
+  // and a settings change underneath only resets its checkbox, which is scoped to the exact settings.
+  const [consentDialog, setConsentDialog] = useState<string | null>(null);
+  const dialogScope = settings?.creator_account_id ?? null;
+  const consentTitleId = useId();
   const desktop = useSyncExternalStore(desktopApi.subscribe, desktopApi.getState, desktopApi.getState);
   const journal = recoveryJournal ?? historyRecoveryJournal(api, defaultHistorySettingsApi);
   const savedChange = useSyncExternalStore(journal.subscribe, journal.getState, journal.getState);
@@ -496,6 +510,11 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   const agent = transport.connection === 'connected' ? transport.agent : null;
   const waitingForExtension = settings !== null && !hasConsent && extensionConnection(agent) === 'offline';
   const presentation = settings && !pendingChange ? presentHistory(settings, agent, transport.coverage) : null;
+  // The Settings index names a history status only when it needs the creator.
+  const statusLabel = loading || presentation?.tone !== 'warning' ? null : presentation.label;
+  useEffect(() => {
+    onStatusLabelChange?.(statusLabel);
+  }, [onStatusLabelChange, statusLabel]);
   const permissionNeeded = hasConsent && settings.desired_state === 'running'
     && agent?.creator_account_id === accountId && agent?.browser?.history_permission === 'missing';
   const reviewScope = continuation && settings && reviewJourney && accountId
@@ -505,24 +524,137 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
   const reviewNeeded = !hasConsent || paused || permissionNeeded;
   const dialogOpen = continuation && reviewScope !== null && openReview === reviewScope
     && reviewAvailable && (reviewNeeded || busy || pendingChange !== null);
-  const consentDeferred = !review && identity !== null && deferredConsent === identity;
   const canUseActions = canManageHistorySync && !waitingForExtension && reviewAvailable && !loading && settings !== null;
   useEffect(() => {
     if (openReview !== null && (!reviewAvailable || openReview !== reviewScope
       || !reviewNeeded && !busy && pendingChange === null)) setOpenReview(null);
   }, [openReview, reviewAvailable, reviewScope, reviewNeeded, busy, pendingChange]);
-  useEffect(() => {
-    if (!restoreSettingsFocus.current) return;
-    restoreSettingsFocus.current = false;
-    (consentDeferred ? settingsReviewAction.current : settingsConsentHeading.current)?.focus();
-  }, [consentDeferred]);
+  // Consent or another account ends the dialog, so a later turn-off or a return to this account never reopens it.
+  useEffect(() => { if (hasConsent) setConsentDialog(null); }, [hasConsent]);
+  useEffect(() => () => setConsentDialog(null), [accountId]);
 
-  const historyAction = consentDeferred ? (
-    <Button ref={settingsReviewAction} variant="outlined" disabled={controlsDisabled} onClick={() => {
-      restoreSettingsFocus.current = true;
-      setDeferredConsent(null);
-    }}>Review message history</Button>
-  ) : !hasConsent ? (
+  const consentPoints = (
+    <Box component="ul" sx={{ color: 'text.secondary', m: 0, pl: 2.5, typography: 'body2' }}>
+      {HISTORY_CONSENT_POINTS.map((point) => <li key={point}>{point}</li>)}
+    </Box>
+  );
+  const consentCheckbox = (
+    <FormControlLabel
+      control={(
+        <Checkbox
+          checked={consentAccepted}
+          disabled={controlsDisabled}
+          onChange={(event) => setConsentSelection(event.target.checked ? identity : null)}
+        />
+      )}
+      label="I allow read-only syncing of my older messages to this computer."
+    />
+  );
+  const loadingStatus = (
+    <Box role="status" aria-label="Loading message history settings">
+      <LoadingCaption>Checking message history settings…</LoadingCaption>
+    </Box>
+  );
+  const historyFeedback = error && (
+    <StatusLine id="history-feedback" essential size={{ xs: 20 }}
+      tone={error !== 'Message history settings changed.' ? 'error' : 'secondary'} text={error} />
+  );
+
+  if (!continuation) {
+    // The switch shows the confirmed setting and pauses or resumes. Turning off withdraws consent, so it sits in the menu.
+    const consentOpen = consentDialog !== null && consentDialog === dialogScope && !hasConsent;
+    const errorTone = error !== null && error !== 'Message history settings changed.';
+    // While the consent dialog is open it carries the feedback, so the row behind it doesn't repeat it.
+    const detailText = (consentOpen ? null : error) ?? (waitingForExtension ? WAITING_FOR_EXTENSION
+      : !hasConsent ? HISTORY_PURPOSE
+        : presentation?.label === 'Adding messages' ? ADDING_HISTORY
+          : permissionNeeded ? PERMISSION_PURPOSE : presentation?.detail ?? null);
+    const control = permissionNeeded && canUseActions ? (
+      <Button key="permission" disabled={controlsDisabled || openingPermission} onClick={() => void allowBrowserHistory()}
+        size="small" variant="outlined">
+        {ALLOW_BROWSER_ACCESS}
+      </Button>
+    ) : (
+      <Switch
+        key="history"
+        checked={hasConsent && !paused}
+        disabled={!canUseActions || controlsDisabled}
+        onChange={() => {
+          if (!canUseActions || controlsDisabled) return;
+          if (hasConsent) { void update(paused ? 'running' : 'paused'); return; }
+          setConsentSelection(null);
+          setConsentDialog(dialogScope);
+        }}
+        slotProps={{ input: { 'aria-label': 'Add older messages' } }}
+      />
+    );
+    return (
+      <Panel sx={{ gap: 1.5 }}>
+        <SectionHeader
+          icon={<HistoryOutlined />}
+          menu={hasConsent && canUseActions ? [{
+            label: 'Turn off message history',
+            destructive: true,
+            disabled: controlsDisabled,
+            onSelect: () => setRevokeSelection(identity),
+          }] : undefined}
+          title="Message history"
+        />
+        {!canManageHistorySync && (
+          <Alert severity="info" sx={quietNoteSx}>Only the account owner can change message history.</Alert>
+        )}
+        {loading ? loadingStatus : settings !== null ? (
+          <Box data-journey-state="desktop.message_history">
+            <SettingRow
+              action={control}
+              // Trading the switch for the permission button never rewraps the status.
+              reserveActions={HISTORY_ROW_ACTIONS}
+              detail={<StatusLine id="history-feedback" essential size={{ xs: 20 }} reserveTexts={SETTINGS_HISTORY_STATUS}
+                tone={errorTone && !consentOpen ? 'error' : 'secondary'} text={detailText} />}
+              title="Add older messages"
+            />
+          </Box>
+        ) : historyFeedback}
+
+        <Dialog aria-labelledby={consentTitleId} onClose={() => { if (!busy) setConsentDialog(null); }} open={consentOpen}>
+          <DialogTitle id={consentTitleId}>Turn on message history?</DialogTitle>
+          <DialogContent>
+            <Stack spacing={1.5}>
+              <DialogContentText variant="body2">{HISTORY_PURPOSE}</DialogContentText>
+              {consentPoints}
+              {consentCheckbox}
+              {error && <StatusLine id="history-consent-feedback" essential size={{ xs: 0 }} text={error}
+                tone={errorTone ? 'error' : 'secondary'} />}
+            </Stack>
+          </DialogContent>
+          <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5 }} disableSpacing>
+            <Button disabled={busy} onClick={() => setConsentDialog(null)}>Not now</Button>
+            <Button disabled={!consentAccepted || controlsDisabled} onClick={() => void update('running', true)} variant="contained">
+              Turn on message history
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog open={confirmRevoke} onClose={() => !busy && setRevokeSelection(null)}>
+          <DialogTitle>Turn off message history?</DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              Older messages stop syncing. Messages already synced stay on this computer.
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5 }} disableSpacing>
+            <Button disabled={controlsDisabled} onClick={() => setRevokeSelection(null)}>Keep message history on</Button>
+            <Button color="error" disabled={controlsDisabled} onClick={() => void revoke()} variant="contained">
+              Turn off
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </Panel>
+    );
+  }
+
+  // The dashboard continuation reviews history in a dialog with this primary action.
+  const historyAction = !hasConsent ? (
     <Button disabled={!consentAccepted || controlsDisabled} onClick={() => void update('running', true)} variant="contained">
       {review ? 'Allow message history' : 'Turn on message history'}
     </Button>
@@ -531,135 +663,37 @@ export function MessageHistoryControls({ api = defaultHistorySettingsApi, browse
       Allow browser access
     </Button>
   ) : paused ? (
-    <Button disabled={controlsDisabled} onClick={() => void update('running')} size="small" variant="outlined">Resume</Button>
-  ) : review ? null : (
-    <Button disabled={controlsDisabled} onClick={() => void update('paused')} size="small" variant="outlined">Pause</Button>
-  );
+    <Button disabled={controlsDisabled} onClick={() => void update('running')} size="small" startIcon={<PlayCircleOutlined />} variant="outlined">Resume</Button>
+  ) : null;
 
   const controls = (
-    <Panel emphasis={continuation ? 'quiet' : 'secondary'} sx={{ gap: 1.5, ...(continuation ? { p: 0 } : {}) }}>
-      {!continuation && <SectionHeader
-        sx={{ minHeight: '1.5rem', display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) 10rem' },
-          gap: { xs: 0.5, sm: 2 }, '& > [aria-live]': { display: 'flex', width: '100%', minHeight: '1.5rem', margin: '0 !important',
-            '& .MuiChip-root': { maxWidth: '100%', height: 'auto', minHeight: '1.5rem' },
-            '& .MuiChip-label': { whiteSpace: 'normal', overflowWrap: 'anywhere' } } }}
-        status={presentation}
-        title="Message history"
-      />}
-
+    <Panel emphasis="quiet" sx={{ gap: 1.5, p: 0 }}>
       {!reviewAvailable && <Alert severity="info">Message history is unavailable for this account right now.</Alert>}
 
-      {loading ? (
-        <Stack spacing={1} role="status" aria-label="Loading message history settings">
-          <Skeleton animation={false} width="60%" />
-          <Skeleton animation={false} width="80%" />
-          <Skeleton animation={false} height={40} width="min(12.5rem, 100%)" variant="rounded" />
-        </Stack>
-      ) : settings !== null ? (
+      {loading ? loadingStatus : settings !== null ? (
         <Stack data-journey-state="desktop.message_history" spacing={1.5}>
           {waitingForExtension ? (
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              Available once the browser extension is connected.
-            </Typography>
-          ) : !hasConsent && !consentDeferred ? (
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>{WAITING_FOR_EXTENSION}</Typography>
+          ) : !hasConsent ? (
             <>
-              {!review && <Typography ref={settingsConsentHeading} tabIndex={-1} component="h3" variant="subtitle1">
-                Turn on message history?
-              </Typography>}
+              {!review && <Typography component="h3" variant="subtitle1">Turn on message history?</Typography>}
               <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                 {review ? `${HISTORY_PURPOSE} Your browser may ask you to allow access next.` : HISTORY_PURPOSE}
               </Typography>
-              <Box component="ul" sx={{ color: 'text.secondary', m: 0, pl: 2.5, typography: 'body2' }}>
-                <li>Read-only: it never sends messages or changes your account.</li>
-                <li>Synced message history stays on this computer.</li>
-                <li>Pause or turn it off at any time.</li>
-              </Box>
+              {consentPoints}
             </>
-          ) : consentDeferred ? <Typography variant="body2" sx={{ color: 'text.secondary' }}>{HISTORY_PURPOSE}</Typography>
-            : review && permissionNeeded ? <Typography variant="body2" sx={{ color: 'text.secondary' }}>{PERMISSION_PURPOSE}</Typography> : null}
+          ) : review && permissionNeeded ? <Typography variant="body2" sx={{ color: 'text.secondary' }}>{PERMISSION_PURPOSE}</Typography> : null}
 
           {!canManageHistorySync && (
             <Alert severity="info">Only the account owner can change message history.</Alert>
           )}
 
-          {!hasConsent && !consentDeferred && !waitingForExtension && canManageHistorySync && reviewAvailable && <Box>
-            <FormControlLabel
-              control={(
-                <Checkbox
-                  checked={consentAccepted}
-                  disabled={controlsDisabled}
-                  onChange={(event) => setConsentSelection(event.target.checked ? identity : null)}
-                />
-              )}
-              label="I allow read-only syncing of my older messages to this computer."
-            />
-          </Box>}
-
-          {!continuation && canUseActions && (
-            <Stack
-              data-history-actions
-              direction="row"
-              useFlexGap
-              spacing={1}
-              sx={{ flexWrap: 'wrap', alignItems: 'flex-start',
-                '& > button': { minHeight: '2.5rem', maxWidth: '100%', lineHeight: '1.25rem', overflowWrap: 'anywhere' } }}
-            >
-              {hasConsent ? (
-                <Box sx={{ display: 'grid', minWidth: 0, maxWidth: '100%',
-                  '& > button': { gridArea: '1 / 1', justifySelf: 'start', minHeight: '2.5rem',
-                    maxWidth: '100%', lineHeight: '1.25rem', overflowWrap: 'anywhere' } }}>
-                  {SETTINGS_HISTORY_ACTIONS.map(label => <Button key={label} variant="outlined"
-                    aria-hidden="true" tabIndex={-1} sx={{ visibility: 'hidden' }}>{label}</Button>)}
-                  {historyAction}
-                </Box>
-              ) : historyAction}
-              {!review && !hasConsent && !consentDeferred && (
-                <Button disabled={controlsDisabled} onClick={() => {
-                  restoreSettingsFocus.current = true;
-                  setConsentSelection(null);
-                  setDeferredConsent(identity);
-                }}>Not now</Button>
-              )}
-              {hasConsent && !review && (
-                <Button
-                  disabled={controlsDisabled}
-                  onClick={() => setRevokeSelection(identity)}
-                  size="small"
-                  sx={{ color: 'text.secondary' }}
-                >
-                  Turn off
-                </Button>
-              )}
-            </Stack>
-          )}
+          {!hasConsent && !waitingForExtension && canManageHistorySync && reviewAvailable && <Box>{consentCheckbox}</Box>}
         </Stack>
       ) : null}
-      {(!continuation || error) && (
-        <StatusLine id="history-feedback" essential size={{ xs: 20 }}
-          reserveTexts={!continuation && hasConsent ? SETTINGS_HISTORY_STATUS : undefined}
-          tone={error && error !== 'Message history settings changed.' ? 'error' : 'secondary'}
-          text={error ?? (presentation?.label === 'Adding messages' ? ADDING_HISTORY
-            : permissionNeeded ? PERMISSION_PURPOSE : hasConsent ? presentation?.detail ?? null : null)} />
-      )}
-
-      <Dialog open={confirmRevoke} onClose={() => !busy && setRevokeSelection(null)}>
-        <DialogTitle>Turn off message history?</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Older messages stop syncing. Messages already synced stay on this computer.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5 }} disableSpacing>
-          <Button disabled={controlsDisabled} onClick={() => setRevokeSelection(null)}>Keep message history on</Button>
-          <Button color="error" disabled={controlsDisabled} onClick={() => void revoke()} variant="contained">
-            Turn off
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {historyFeedback}
     </Panel>
   );
-
-  if (!continuation) return controls;
   const ready = reviewAvailable && reviewScope !== null && settings !== null && !loading;
   const offer = ready && pendingChange === null && !pendingScopeCheck && (!hasConsent || paused) && !dismissed && settings.desired_state !== 'revoked';
   const quiet = ready && pendingChange === null && !pendingScopeCheck && (!hasConsent || paused) && !offer;

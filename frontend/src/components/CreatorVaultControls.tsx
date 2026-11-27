@@ -1,3 +1,4 @@
+import Inventory2Outlined from '@mui/icons-material/Inventory2Outlined';
 import {
   Alert,
   Box,
@@ -7,18 +8,18 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
-  Divider,
   FormControlLabel,
   Radio,
   RadioGroup,
-  Skeleton,
   Stack,
+  Switch,
   TextField,
 } from '@mui/material';
 import { useEffect, useId, useState } from 'react';
 
-import { Panel, SectionHeader, SettingRow, useRevealHold } from './ui';
+import { Panel, quietNoteSx, SectionHeader, SettingRow, useRevealHold } from './ui';
 import { StatusLine } from './ui/ReservedRegion';
+import { VaultRowsSkeleton } from './ui/Skeletons';
 import { usePermissions } from '../hooks/usePermissions';
 import {
   creatorVaultApi as defaultCreatorVaultApi,
@@ -48,12 +49,14 @@ function defaultDownload(document: CreatorVaultExportDocument): void {
   URL.revokeObjectURL(url);
 }
 
+const ARCHIVE_PURPOSE = 'Choose how long this computer keeps your messages.';
+
 function archiveLabel(policy: CreatorVaultStatus['policy']): string {
-  if (!policy.enabled) return 'Off';
+  if (!policy.enabled) return ARCHIVE_PURPOSE;
   if (policy.policy_type === 'finite' && policy.finite_horizon_days !== null) {
-    return `Keeping messages for ${policy.finite_horizon_days} days`;
+    return `Keeping messages for ${policy.finite_horizon_days} days.`;
   }
-  return policy.policy_type === 'indefinite_until_delete' ? 'Keeping messages until you delete them' : 'On';
+  return policy.policy_type === 'indefinite_until_delete' ? 'Keeping messages until you delete them.' : 'On';
 }
 
 /** Stored messages section of Settings: archive length, download, and deletion. */
@@ -173,8 +176,8 @@ export function CreatorVaultControls({
   if (!isCreator) {
     return (
       <Panel>
-        <SectionHeader title="Stored messages" />
-        <Alert severity="info">Only the account owner can manage stored messages.</Alert>
+        <SectionHeader icon={<Inventory2Outlined />} title="Stored messages" />
+        <Alert severity="info" sx={quietNoteSx}>Only the account owner can manage stored messages.</Alert>
       </Panel>
     );
   }
@@ -195,54 +198,36 @@ export function CreatorVaultControls({
   );
 
   return (
-    <Panel data-visual="stored-messages" sx={{ p: 0,
+    <Panel data-visual="stored-messages" sx={{
+      // Once loaded, the reserved feedback line ends the card and stands in for most of its bottom padding.
+      ...(loading ? {} : { pb: 1.5 }),
       '& .MuiButton-outlined:not(.Mui-disabled)': { color: 'action.selectedForeground' },
     }}>
-      <Stack data-journey-state="desktop.stored_messages" spacing={0}
-        sx={{ '& > .MuiAlert-root, & > [role="status"]': { m: 3 } }}>
-        <SectionHeader sx={{ px: 3, pt: 3, pb: 1.5 }} summary="Saved only on this computer." title="Stored messages" />
+      <Stack data-journey-state="desktop.stored_messages" spacing={0}>
+        <SectionHeader icon={<Inventory2Outlined />} sx={{ pb: 1.5 }} summary="Saved only on this computer." title="Stored messages" />
 
-        {loading && (
-          <Stack spacing={1} role="status" aria-label="Loading stored message settings">
-            <Skeleton width="50%" />
-            <Skeleton height={40} width={220} variant="rounded" />
-          </Stack>
-        )}
+        {loading && <VaultRowsSkeleton />}
 
         {!loading && status !== null && (
           <>
-            <Divider />
-
             <SettingRow
-              sx={{ px: 3, py: 2 }}
-              action={status.policy.enabled ? (
-                <Button
+              action={(
+                // Either change asks first, so the switch moves only once the dialog is confirmed.
+                <Switch
+                  checked={status.policy.enabled}
                   disabled={busy}
-                  onClick={() => { setPending({ kind: 'disable' }); setConfirmOpen(true); }}
-                  size="small"
-                  sx={{ color: 'text.secondary' }}
-                >
-                  Turn off archive
-                </Button>
-              ) : (
-                <Button
-                  aria-haspopup="dialog"
-                  disabled={busy}
-                  onClick={() => setEditingArchive(true)}
-                  size="small"
-                  variant="outlined"
-                >
-                  Turn on archive
-                </Button>
+                  onChange={() => {
+                    if (status.policy.enabled) { setPending({ kind: 'disable' }); setConfirmOpen(true); }
+                    else setEditingArchive(true);
+                  }}
+                  slotProps={{ input: { 'aria-label': 'Archive', 'aria-haspopup': 'dialog' } }}
+                />
               )}
               description={archiveLabel(status.policy)}
               title="Archive"
             />
 
-            <Divider />
-
             <SettingRow
-              sx={{ px: 3, py: 2 }}
               action={(
                 <Button
                   disabled={busy || !status.capabilities.export}
@@ -253,14 +238,11 @@ export function CreatorVaultControls({
                   Download messages
                 </Button>
               )}
-              description="Save your stored messages to a file. Deleting messages here doesn't delete the file."
+              description="Save your stored messages to a file."
               title="Download a copy"
             />
 
-            <Divider />
-
             <SettingRow
-              sx={{ px: 3, py: 2 }}
               action={(
                 <Button
                   aria-haspopup="dialog"
@@ -272,15 +254,27 @@ export function CreatorVaultControls({
                   Delete all messages
                 </Button>
               )}
-              description="Uninstalling the app doesn't delete them, so delete them here if you want them gone."
+              description="Messages stay on this computer until you delete them, even after you uninstall the app."
               title="Delete messages"
             />
           </>
         )}
-        <Box sx={{ display: 'flex', gap: 1, px: 3 }}>
-          <Box sx={{ flex: 1, minWidth: 0 }}><StatusLine id="vault-feedback" tone={error ? 'error' : 'secondary'} text={!editingArchive && error ? error : notice ?? (status?.deletion_operation ? "Deleting isn't finished. The messages are gone, but some of your numbers still include them." : null)} /></Box>
-          {api.retryDeletion && <Button sx={{ alignSelf: 'flex-start', visibility: status?.deletion_operation ? 'visible' : 'hidden' }} color="inherit" disabled={busy} onClick={() => void retryDeletion()} size="small">Finish deleting</Button>}
-        </Box>
+        {!loading && (
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <StatusLine
+                id="vault-feedback"
+                tone={error ? 'error' : 'secondary'}
+                text={!editingArchive && error ? error : notice ?? (status?.deletion_operation ? "Deleting isn't finished. The messages are gone, but some of your numbers still include them." : null)}
+              />
+            </Box>
+            {api.retryDeletion && status?.deletion_operation && (
+              <Button sx={{ alignSelf: 'flex-start' }} color="inherit" disabled={busy} onClick={() => void retryDeletion()} size="small" variant="outlined">
+                Finish deleting
+              </Button>
+            )}
+          </Box>
+        )}
       </Stack>
 
       <Dialog

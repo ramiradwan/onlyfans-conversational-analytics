@@ -201,7 +201,9 @@ describe('OperatorInboxView summary and REST-page integration', () => {
 
     renderInbox(store, apiFor({}));
 
-    expect(screen.getByText('Loading conversations…')).toBeTruthy();
+    expect(screen.getByRole('status', { name: 'Loading conversations' }).children).toHaveLength(4);
+    expect(screen.queryByRole('textbox', { name: 'Search conversations' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Filter conversations' })).toBeNull();
     expect(screen.getByText('Loading messages…')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
   });

@@ -1,5 +1,7 @@
 import { ThemeProvider } from '@mui/material/styles';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { MemoryRouter, useNavigate, type NavigateFunction } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { HistorySettings } from '../src/protocol';
@@ -7,6 +9,7 @@ import type { CapabilityLicenseApi, CapabilityLicenseReadiness } from '../src/se
 import type { CompanionPairingApi, CompanionPairingStatus } from '../src/services/companionPairingApi';
 import type { CreatorVaultApi, CreatorVaultStatus } from '../src/services/creatorVaultApi';
 import type { HistorySettingsApi } from '../src/services/historySettingsApi';
+import type { NlpDependencyStatus } from '../src/services/nlpDependenciesApi';
 import { bridgeTransportStore } from '../src/store/transportStore';
 import { useUserStore } from '../src/store/userStore';
 import { theme } from '../src/theme';
@@ -15,8 +18,12 @@ import { desktopFixture } from './desktopOnboardingFixture';
 
 type Section = 'pairing' | 'history' | 'activation' | 'vault';
 
+function renderSettings(children: ReactNode) {
+  return render(<ThemeProvider theme={theme} defaultMode="light"><MemoryRouter>{children}</MemoryRouter></ThemeProvider>);
+}
+
 it('keeps all five section frames present while one request is pending', () => {
-  const view = render(<ThemeProvider theme={theme}><SettingsWithVaultView {...apis('vault')} /></ThemeProvider>);
+  const view = renderSettings(<SettingsWithVaultView {...apis('vault')} />);
   expect(view.container.querySelectorAll('[data-settings-section]')).toHaveLength(5);
 });
 
@@ -96,7 +103,7 @@ function apis(slow: Section) {
     if (slow === 'activation') desktop.publish({ snapshot: initialDesktop });
   };
   const nlpApi = {
-    get: vi.fn(async () => ({ configured: false, profiles: [], acquisitions: [], available_profiles: [], selected: null, failure: 'nlp_unavailable', resume_granularity: 'verified_files_current_file_restarts' as const })),
+    get: vi.fn(async (): Promise<NlpDependencyStatus> => ({ configured: false, profiles: [], acquisitions: [], available_profiles: [], selected: null, failure: 'nlp_unavailable', resume_granularity: 'verified_files_current_file_restarts' })),
     observe: vi.fn(unused), command: vi.fn(unused),
   };
   return { activationApi, historyApi, pairingApi, release: releaseSection, vaultApi, onboardingApi: desktop.api, nlpApi };
@@ -118,7 +125,7 @@ describe('SettingsWithVaultView', () => {
     const { release, ...props } = apis('vault');
     const desktop = desktopFixture();
     desktop.readiness(readiness, 'creator-1');
-    const { container } = render(<ThemeProvider theme={theme}><SettingsWithVaultView {...props} onboardingApi={desktop.api} /></ThemeProvider>);
+    const { container } = renderSettings(<SettingsWithVaultView {...props} onboardingApi={desktop.api} />);
     await act(async () => release());
     const section = within(container.querySelector<HTMLElement>('#full-analytics')!);
     const code = section.getByRole('button', { name: 'Use an activation code' });
@@ -138,6 +145,58 @@ describe('SettingsWithVaultView', () => {
     expect(props.activationApi.redeem).not.toHaveBeenCalled();
   });
 
+  it('opens a text analysis link once the section shows, and again on a return visit', async () => {
+    const { release, ...props } = apis('vault');
+    let resolve!: (value: NlpDependencyStatus) => void;
+    props.nlpApi.get.mockImplementationOnce(() => new Promise<NlpDependencyStatus>((done) => { resolve = done; }));
+    const scrolled: string[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function scrollIntoView(this: Element) { scrolled.push(this.id); };
+    let navigate!: NavigateFunction;
+    function Navigator() { navigate = useNavigate(); return null; }
+    try {
+      const { container } = render(<ThemeProvider theme={theme} defaultMode="light">
+        <MemoryRouter initialEntries={['/settings#text-analysis']}><Navigator /><SettingsWithVaultView {...props} /></MemoryRouter>
+      </ThemeProvider>);
+      await act(async () => release());
+      expect(scrolled).toEqual([]);
+      await act(async () => resolve({ configured: true, profiles: [], acquisitions: [], available_profiles: [], selected: null,
+        failure: null, resume_granularity: 'verified_files_current_file_restarts' }));
+      expect(scrolled).toEqual(['text-analysis']);
+      expect(document.activeElement).toBe(container.querySelector('#text-analysis'));
+      act(() => (document.activeElement as HTMLElement | null)?.blur());
+      await act(async () => navigate('/settings'));
+      expect(scrolled).toEqual(['text-analysis']);
+      await act(async () => navigate(-1));
+      expect(scrolled).toEqual(['text-analysis', 'text-analysis']);
+      expect(document.activeElement).toBe(container.querySelector('#text-analysis'));
+    } finally { Element.prototype.scrollIntoView = original; }
+  });
+
+  it('marks a section that needs the creator with a dot that keeps its place, and names the status with its link', async () => {
+    const { release, ...props } = apis('vault');
+    const browser = { capture: 'active' as const, site_access: 'granted' as const, history_permission: 'granted' as const,
+      legal_review_required: false, reported_at: '2026-07-19T12:00:00Z' };
+    const agent = { creator_account_id: 'creator-1', status: 'connected' as const, agent_installation_id: null, connection_id: null,
+      required_config_revision: 'r1', applied_config_revision: 'r1', required_history_settings_revision: 1,
+      applied_history_settings_revision: 1, last_heartbeat_at: null, degraded_reason: null, browser };
+    bridgeTransportStore.setConnection('connected');
+    bridgeTransportStore.setAgent(agent);
+    renderSettings(<SettingsWithVaultView {...props} />);
+    await act(async () => release());
+    const index = within(screen.getAllByRole('navigation', { name: 'Settings sections' })[1]);
+    const link = index.getByRole('link', { name: 'Browser extension' });
+    expect(link.hasAttribute('aria-label')).toBe(false);
+    const dot = within(link).getByText('Browser extension').nextElementSibling!;
+    expect(getComputedStyle(dot).visibility).toBe('hidden');
+    await act(async () => bridgeTransportStore.setAgent({ ...agent, browser: { ...browser, site_access: 'needs_approval' } }));
+    // One string, so no browser joins the label and the status with a stray space.
+    expect(link.getAttribute('aria-label')).toBe('Browser extension, Needs attention');
+    expect(index.getByRole('link', { name: 'Browser extension, Needs attention' })).toBe(link);
+    expect(within(link).getByText('Browser extension').nextElementSibling).toBe(dot);
+    expect(getComputedStyle(dot).visibility).toBe('visible');
+  });
+
   it('keeps the pending connection action and the surrounding Settings sections mounted', async () => {
     const { release, onboardingApi, ...props } = apis('vault');
     const desktop = desktopFixture();
@@ -145,7 +204,7 @@ describe('SettingsWithVaultView', () => {
     let finish!: () => void;
     vi.mocked(desktop.api.begin).mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
     desktop.publish({ snapshot });
-    const { container } = render(<ThemeProvider theme={theme}><SettingsWithVaultView {...props} onboardingApi={desktop.api} /></ThemeProvider>);
+    const { container } = renderSettings(<SettingsWithVaultView {...props} onboardingApi={desktop.api} />);
     await act(async () => { release(); });
     const sections = [...container.querySelectorAll('[data-settings-section]')];
     const action = screen.getByRole('button', { name: 'Connect extension' });
@@ -163,11 +222,7 @@ describe('SettingsWithVaultView', () => {
     'settles the other sections while %s is pending',
     async (slow) => {
       const { release, ...props } = apis(slow);
-      render(
-        <ThemeProvider theme={theme} defaultMode="light">
-          <SettingsWithVaultView {...props} />
-        </ThemeProvider>,
-      );
+      renderSettings(<SettingsWithVaultView {...props} />);
       await act(async () => undefined);
 
       const headings = { pairing: 'Browser extension', history: 'Message history', activation: 'Full analytics', vault: 'Stored messages' };

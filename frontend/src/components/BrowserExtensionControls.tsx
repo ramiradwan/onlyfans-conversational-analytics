@@ -1,9 +1,7 @@
-import PauseCircleOutlinedIcon from '@mui/icons-material/PauseCircleOutlined';
-import PlayCircleOutlinedIcon from '@mui/icons-material/PlayCircleOutlined';
-import { Box, Button, Stack } from '@mui/material';
+import { Box, Button, Stack, Switch } from '@mui/material';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
-import { SettingRow } from './ui';
+import { ReservedText, SettingRow } from './ui';
 
 import { captureRecovery, recoveryClass } from '../../shared-setup/recovery.js';
 import type { BrowserSurfacePayload } from '../protocol';
@@ -19,6 +17,31 @@ import { OnboardingAction, OnboardingCard, OnboardingSpot } from './ui/Onboardin
 import { StatusLine } from './ui/ReservedRegion';
 
 type Notice = 'unreachable' | 'failed' | null;
+
+// Each row reserves room for every description it can show, so these lists are the only copy source.
+const captureCopy = {
+  active: 'New messages are saved as they arrive.',
+  pausing: 'Pausing…',
+  resuming: 'Resuming…',
+  review: 'Paused until you review the terms.',
+  paused: 'Paused.',
+  off: 'Turned off in the extension.',
+  waiting: 'Waiting for extension settings.',
+  disconnected: 'The browser extension is not connected.',
+} as const;
+const accessCopy = {
+  granted: 'Allowed for OnlyFans.',
+  reload: 'Site access needs attention.',
+  approval: 'Needs your approval.',
+  unchecked: "Site access hasn't been checked.",
+} as const;
+const captureDescriptions = Object.values(captureCopy);
+const accessDescriptions = Object.values(accessCopy);
+// End-aligned buttons keep the width of their longest label, so a pushed change never moves them.
+const accessLabel = { reload: 'Open extension', approval: 'Allow in extension' } as const;
+const accessLabels = Object.values(accessLabel);
+const reviewLabel = 'Review terms';
+const captureLabels = [reviewLabel];
 
 /**
  * Bridge owns day-to-day extension controls while an extension session is open
@@ -94,8 +117,11 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
       }
     }
   };
-  const openInExtension = (step: BrowserDestination, label: string) => (controlAvailable && canManage ? (
-    <Button onClick={() => void open(step)} size="small" variant="outlined">{label}</Button>
+  // Each control has its own key, so a different control replaces the previous one instead of reshaping it.
+  const openInExtension = (step: BrowserDestination, label: string, reserve?: readonly string[]) => (controlAvailable && canManage ? (
+    <Button key={step} onClick={() => void open(step)} size="small" variant="outlined">
+      {reserve ? <ReservedText reserve={reserve} text={label} /> : label}
+    </Button>
   ) : undefined);
 
   const captureFailure = recoveryClass(captureRecovery, pending?.status);
@@ -107,10 +133,10 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   useEffect(() => { onFeedback?.(feedbackText); }, [feedbackText, onFeedback]);
   useEffect(() => () => onFeedback?.(null), [onFeedback]);
   const feedback = onFeedback ? null : <StatusLine id="browser-feedback" tone="error" text={feedbackText} />;
-  // Keep room for two description lines and the action through pushed changes.
-  // The enclosing section owns one shared feedback region.
-  const row = { minHeight: { xs: '6.5rem', sm: '4rem' }, alignItems: { xs: 'flex-start', sm: 'flex-start' }, '& > .MuiBox-root:last-of-type:not(:first-of-type)': { width: { sm: 200 }, '& button': { minHeight: 40 } } };
-  const emptyAction = <Box aria-hidden sx={{ height: 40 }} />;
+  // Extension-pushed changes swap text and controls in place. Each row keeps the height of its
+  // tallest description and the width of its widest control. The enclosing section owns one shared feedback region.
+  // An empty control cell holds the row's shape until a real control arrives.
+  const emptyAction = <Box key="empty" aria-hidden component="span" />;
   if (continuation) {
     if (browser === null || !currentAuthority) return null;
     if (!reviewNeeded && !continuationPaused) return null;
@@ -140,48 +166,54 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
     </Box>;
   }
   if (browser === null) {
-    return <Stack spacing={1.5} useFlexGap sx={{ minWidth: 0 }} data-browser-controls="waiting">
-      <SettingRow sx={row} title="New messages" description={connection === 'connected'
-        ? 'Waiting for extension settings.' : 'The browser extension is not connected.'} action={emptyAction} />
-      <SettingRow sx={row} title="Site access" description="Site access hasn't been checked." action={emptyAction} />
+    return <Stack spacing={0} useFlexGap sx={{ minWidth: 0 }} data-browser-controls="waiting">
+      <SettingRow title="Collect new messages" reserveActions={captureLabels} reserveDescriptions={captureDescriptions}
+        description={connection === 'connected' ? captureCopy.waiting : captureCopy.disconnected} action={emptyAction} />
+      <SettingRow title="Site access" reserveActions={accessLabels} reserveDescriptions={accessDescriptions}
+        description={accessCopy.unchecked} action={emptyAction} />
       {feedback}
     </Stack>;
   }
 
+  const collecting = browser.capture === 'active';
   const paused = browser.capture === 'paused';
-  const captureAction: CaptureAction | null = browser.capture === 'active' ? 'pause' : paused ? 'resume' : null;
+  const captureAction: CaptureAction | null = collecting ? 'pause' : paused ? 'resume' : null;
   const resumeNeedsReview = paused && browser.legal_review_required;
+  const waitingFor = pending?.status === 'waiting' ? pending.action : null;
 
-  const captureButton = canManage && captureAction !== null && !resumeNeedsReview ? (
-    <Button
-      disabled={captureBlocked}
-      onClick={() => void setCapture(captureAction)}
-      size="small"
-      startIcon={captureAction === 'pause' ? <PauseCircleOutlinedIcon /> : <PlayCircleOutlinedIcon />}
-      variant="outlined"
-    >
-      {pending?.status === 'waiting' && pending.action === 'pause' ? 'Pausing…' : pending?.status === 'waiting' && pending.action === 'resume' ? 'Resuming…'
-        : captureAction === 'pause' ? 'Pause collecting' : 'Resume collecting'}
-    </Button>
-  ) : resumeNeedsReview ? openInExtension('setup', 'Review terms') : undefined;
+  // The switch shows only what the extension confirmed. A change waits for it, with the switch held.
+  const captureControl = resumeNeedsReview ? openInExtension('setup', reviewLabel) : (
+    <Switch
+      key="capture"
+      checked={collecting}
+      disabled={!canManage || captureAction === null || captureBlocked}
+      onChange={() => { if (captureAction !== null) void setCapture(captureAction); }}
+      slotProps={{ input: { 'aria-label': 'Collect new messages' } }}
+    />
+  );
 
   return (
-    <Stack data-browser-controls="available" data-journey-state="desktop.browser_controls" spacing={1.5} useFlexGap sx={{ minWidth: 0 }}>
+    <Stack data-browser-controls="available" data-journey-state="desktop.browser_controls" spacing={0} useFlexGap sx={{ minWidth: 0 }}>
       <SettingRow
-        sx={row}
-        title="New messages"
-        description={browser.capture === 'active' ? 'New message collection is enabled.'
-          : resumeNeedsReview ? 'Paused. Terms need review.'
-            : paused ? 'Paused. Nothing new is collected.' : 'Off in the browser.'}
-        action={captureButton ?? emptyAction}
+        title="Collect new messages"
+        reserveActions={captureLabels}
+        reserveDescriptions={captureDescriptions}
+        description={waitingFor === 'pause' ? captureCopy.pausing
+          : waitingFor === 'resume' ? captureCopy.resuming
+            : collecting ? captureCopy.active
+              : resumeNeedsReview ? captureCopy.review
+                : paused ? captureCopy.paused : captureCopy.off}
+        action={captureControl ?? emptyAction}
       />
       <SettingRow
-        sx={row}
         title="Site access"
-        description={browser.site_access === 'granted' ? 'Allowed for OnlyFans.'
-          : browser.site_access === 'reload_required' ? 'Site access needs attention.'
-            : 'Needs your approval.'}
-        action={(browser.site_access === 'granted' ? undefined : openInExtension('access', browser.site_access === 'reload_required' ? 'Open extension' : 'Allow in extension')) ?? emptyAction}
+        reserveActions={accessLabels}
+        reserveDescriptions={accessDescriptions}
+        description={browser.site_access === 'granted' ? accessCopy.granted
+          : browser.site_access === 'reload_required' ? accessCopy.reload
+            : accessCopy.approval}
+        action={(browser.site_access === 'granted' ? undefined : openInExtension('access',
+          browser.site_access === 'reload_required' ? accessLabel.reload : accessLabel.approval, accessLabels)) ?? emptyAction}
       />
       {feedback}
     </Stack>

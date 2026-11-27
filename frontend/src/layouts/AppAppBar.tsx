@@ -72,7 +72,7 @@ export function AppAppBar({ headerHeight = componentTokens.shell.headerHeight, o
     </AppBar>
     {/* The band sits under the open narrow drawer, and its text follows the page gutter. */}
     <Box data-reserved-region="issue-band" data-region-role="overlay" sx={(theme) => ({ position: 'fixed', top: { xs: headerHeight + componentTokens.FreshnessStatus.narrowRowHeight, [statusBreakpoint]: headerHeight },
-      left: { xs: 0, sm: componentTokens.shell.desktopRailWidth + componentTokens.shell.railInset }, right: 0, height: { xs: componentTokens.reserved.issueBand.narrow, sm: componentTokens.reserved.issueBand.wide },
+      left: { xs: 0, sm: componentTokens.shell.desktopRailWidth }, right: 0, height: { xs: componentTokens.reserved.issueBand.narrow, sm: componentTokens.reserved.issueBand.wide },
       zIndex: theme.zIndex.drawer - 1, py: 1.5, px: { xs: 2, sm: 3, lg: 4 }, backgroundColor: `color-mix(in oklch, ${theme.vars.palette.background.paper} 85%, transparent)`, backdropFilter: 'blur(16px)',
       visibility: phase === 'interrupted' ? 'visible' : 'hidden', opacity: phase === 'interrupted' ? 1 : 0, transform: phase === 'interrupted' ? 'translateY(0)' : 'translateY(-8px)',
       transition: 'transform 200ms ease-out, opacity 200ms ease-out', '@media (prefers-reduced-motion: reduce)': { transition: 'none' }, pointerEvents: phase === 'interrupted' ? 'auto' : 'none' })}>

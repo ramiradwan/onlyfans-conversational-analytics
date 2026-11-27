@@ -135,7 +135,9 @@ export async function driveWorkspaceDetails(page, view, step, unseen) {
     await page.clock.runFor(1);
     await page.waitForFunction(() => window.__workspaceFixture.pending().includes('history.get'));
     await push('resolve', 'history.get', { ...history, settings_revision, effective_state });
-    await page.locator('#message-history').getByText(effective_state === 'running' ? 'Adding messages' : 'Starting', { exact: true }).waitFor();
+    await page.locator('#message-history').getByText(effective_state === 'running'
+      ? 'Adding older messages. Message counts update as they arrive.'
+      : 'Waiting for the extension to apply message history settings.', { exact: true }).waitFor();
   });
   await step.fixture('fixture:after-history', async () => { await snapshot(); await settle(page); });
   // Admission changes use the current owner and API, not fixture replacement.
@@ -159,7 +161,7 @@ export async function driveWorkspaceDetails(page, view, step, unseen) {
     deletion_operation: deletion ? { operation_id: 'fixture-operation', status: deletion, deletion_revision: 1 } : null,
   }));
   await step.fixture('fixture:refresh:vault.get', () => refresh('vault.get', { ...vault, policy: { ...vault.policy, enabled: false, policy_type: 'disabled' } }));
-  await step('archive:open', () => page.getByRole('button', { name: 'Turn on archive', exact: true }).click());
+  await step('archive:open', () => page.getByRole('switch', { name: 'Archive', exact: true }).click());
   await step('archive:invalid', () => page.getByRole('spinbutton', { name: 'Days to keep' }).fill('0'));
   await step('archive:indefinite', () => page.getByLabel('Keep until I delete them').check());
   await step('archive:cancel', () => page.getByRole('button', { name: 'Cancel', exact: true }).click());

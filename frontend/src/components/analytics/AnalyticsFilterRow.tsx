@@ -85,10 +85,10 @@ export function AnalyticsFilterRow({ value, onApply, isRefreshing = false }: Ana
   ];
 
   return (
-    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
-      <Stack spacing={0.25} sx={{ flex: 1, minWidth: 0 }}>
-        <Typography variant="caption" sx={{ color: 'text.secondary' }}>Date range</Typography>
-        <Typography variant="body2" noWrap>{rangeLabel(value)}</Typography>
+    <Stack direction="row" spacing={1.5} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap', minWidth: 0 }}>
+      <Stack spacing={0.25} sx={{ flex: { xs: 1, md: '0 1 auto' }, minWidth: 0, textAlign: { xs: 'left', md: 'right' } }}>
+        <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.2 }}>Date range</Typography>
+        <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>{rangeLabel(value)}</Typography>
       </Stack>
       <Button
         aria-controls={open ? popoverId : undefined}

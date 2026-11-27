@@ -4,6 +4,7 @@ import {
   Popover,
   Stack,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 
@@ -16,6 +17,7 @@ import { MessageHistoryControls } from '../components/MessageHistoryControls';
 import { DashboardConnection, OnboardingEmptyActivity } from '../components/OnboardingEmptyActivity';
 import { SetupPrompt } from '../components/SetupPrompt';
 import { OnboardingAction, OnboardingCard, OnboardingSpot, OnboardingStatus } from '../components/ui/OnboardingCard';
+import { RecentConversationsSkeleton } from '../components/ui/Skeletons';
 import { usePermissions } from '../hooks/usePermissions';
 import type { AnalyticsMetric, HistoricalCoverage } from '../protocol';
 import { browserControlApi, type BrowserControlApi } from '../services/browserControlApi';
@@ -58,7 +60,8 @@ const LOCAL_TIME_FORMAT = new Intl.DateTimeFormat(undefined, { timeStyle: 'short
 const LOCAL_DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 const DETAILS_BUTTON_SX = {
   justifyContent: 'flex-start',
-  px: 0.5,
+  minWidth: 0,
+  px: 0,
   '&:focus-visible': { outlineOffset: '-' + effectTokens.focus.width },
 } as const;
 const ISSUE_TONE = { info: 'pending', warning: 'attention', error: 'error' } as const;
@@ -253,6 +256,7 @@ function NumbersBasis({
   const open = anchor !== null;
   const detailsId = useId();
   const titleId = useId();
+  const popoverEdge = useMediaQuery((theme) => theme.breakpoints.up('sm')) ? 'right' : 'left';
   const updated = updatesStopped ? formatLocal(sample?.asOf ?? null, LOCAL_TIME_FORMAT) : null;
   const start = formatLocal(evidence.observedStart, LOCAL_DATE_FORMAT);
   const end = formatLocal(evidence.observedEnd, LOCAL_DATE_FORMAT);
@@ -274,25 +278,29 @@ function NumbersBasis({
   return (
     <Box>
       <Stack
-        sx={{ alignItems: 'flex-start', rowGap: 0.5 }}
+        direction={{ xs: 'column', sm: 'row' }}
+        spacing={{ xs: 0.5, sm: 2 }}
+        useFlexGap
+        sx={{ alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between' }}
       >
+        {sample && sample.count > 0 && <Typography data-dashboard-saved-basis variant="body2" sx={{ color: 'text.secondary' }}>
+          {`Based on ${NUMBER_FORMAT.format(sample.count)} messages saved on this computer so far.${updated ? ` Last updated ${updated}.` : ''}`}
+        </Typography>}
         <Button
           aria-controls={open ? detailsId : undefined}
           aria-expanded={open}
           aria-haspopup="dialog"
           onClick={(event) => setAnchor(event.currentTarget)}
           size="small"
-          sx={DETAILS_BUTTON_SX}
+          // Details keeps the end of the row whether or not the basis caption shows.
+          sx={{ ...DETAILS_BUTTON_SX, whiteSpace: 'nowrap', flexShrink: 0, marginInlineStart: { sm: 'auto' } }}
         >
           Details
         </Button>
-        {sample && sample.count > 0 && <Typography data-dashboard-saved-basis variant="body2" sx={{ color: 'text.secondary' }}>
-          {`Based on ${NUMBER_FORMAT.format(sample.count)} messages saved on this computer so far.${updated ? ` Last updated ${updated}.` : ''}`}
-        </Typography>}
       </Stack>
       <Popover
         anchorEl={anchor}
-        anchorOrigin={{ horizontal: 'left', vertical: 'bottom' }}
+        anchorOrigin={{ horizontal: popoverEdge, vertical: 'bottom' }}
         id={detailsId}
         onClose={() => setAnchor(null)}
         open={open}
@@ -303,7 +311,7 @@ function NumbersBasis({
             sx: { maxWidth: 360, p: 2 },
           },
         }}
-        transformOrigin={{ horizontal: 'left', vertical: 'top' }}
+        transformOrigin={{ horizontal: popoverEdge, vertical: 'top' }}
       >
         <Typography component="h2" id={titleId} variant="subtitle2" sx={{ mb: 1 }}>
           How these numbers are counted
@@ -378,7 +386,7 @@ export default function CreatorDashboardView({
   historyStore = bridgeTransportStore,
 }: CreatorDashboardViewProps) {
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
-  const { canViewInbox, canManageHistorySync } = usePermissions();
+  const { canViewInbox, canViewSettings, canManageHistorySync } = usePermissions();
   const desktop = useSyncExternalStore(onboardingApi.subscribe, onboardingApi.getState, onboardingApi.getState);
   const analysis = selectAnalysisReadiness(desktop, state.creatorAccountId);
   const fullAnalyticsReady = analysis.checking ? undefined : analysis.value === null ? null
@@ -465,7 +473,7 @@ export default function CreatorDashboardView({
   const waitingForMessages = currentEmpty && setupIncomplete(state.coverage)
     && (allZero || state.projection.canonical_revision === 0);
   const connectionSummary = <DashboardConnection browser={browser} connection={connection}
-    desktopConnected={state.connection === 'connected'} />;
+    desktopConnected={state.connection === 'connected'} canViewSettings={canViewSettings} />;
   const hideEmptyOverview = completeEmpty || waitingForMessages || !hasActivity && (collectionReview !== null || Boolean(showSetup && !showCommercial));
   const overviewLoading = !hasSnapshot || allZero;
   const showActivation = showCommercial && (showSetup
@@ -482,6 +490,8 @@ export default function CreatorDashboardView({
   const showOverview = !opening && !hideEmptyOverview;
   const showBasis = !overviewLoading && !hideEmptyOverview && evidence !== null;
   const showRecent = hasSnapshot && state.conversations.length > 0;
+  const recentLoading = showOverview && !hasSnapshot && state.creatorAccountId !== null
+    && issue?.severity !== 'error' && !issue?.updatesStopped;
   const setupTask = [opening, showSetup, showActivation, Boolean(collectionReview),
     Boolean(historyPrompt), Boolean(continuation)].join(':');
 
@@ -515,10 +525,11 @@ export default function CreatorDashboardView({
             </OnboardingStatus>
           </Box>}
         </Box>
-        <Box data-reserved-region="dashboard-recent" data-dashboard-section={String(showRecent)}>
+        <Box data-reserved-region="dashboard-recent" data-dashboard-section={String(showRecent || recentLoading)}>
           {showRecent && <Box data-region-content style={{ paddingBlockStart: 20 }}>
             <RecentConversations conversations={state.conversations} showInboxLink={canViewInbox} />
           </Box>}
+          {recentLoading && <Box data-region-content style={{ paddingBlockStart: 20 }}><RecentConversationsSkeleton /></Box>}
         </Box>
         <Box data-reserved-region="dashboard-setup" data-dashboard-section={setupTask}
           sx={{ '& [data-surface-emphasis]': surfaceArrival(0, true) }}>

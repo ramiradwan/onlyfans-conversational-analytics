@@ -290,6 +290,8 @@ export function observeRegions({ requiredRegions = [], taskTransitions = false, 
         if (parent.parentElement.closest('[data-reserved-region], [role="dialog"], dialog')) continue;
         for (const neighbor of parent.parentElement.children) {
           if (neighbor === parent || neighbor.matches('script, style, link, dialog, [role="dialog"], [aria-hidden="true"]') || neighbor.querySelector('[data-reserved-region], [role="dialog"]') || neighbor.matches('[data-reserved-region]') || !visible(neighbor)) continue;
+          // An open menu sits in a fixed layer above the page, as a dialog does, so opening or closing it moves no content.
+          if (neighbor.querySelector('[role="menu"]') && getComputedStyle(neighbor).position === 'fixed') continue;
           if (!anchors.has(neighbor)) anchors.set(neighbor, `neighbor-${anchors.size}-${neighbor.tagName.toLowerCase()}`);
         }
       }

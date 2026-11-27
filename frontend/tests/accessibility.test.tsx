@@ -555,13 +555,15 @@ describe('critical accessibility gates', () => {
 
     render(
       <ThemeProvider theme={theme} defaultMode="light">
-        <SettingsWithVaultView
-          onboardingApi={desktop.api}
-          historyApi={historyApi}
-          pairingApi={pairingApi}
-          activationApi={activationApi}
-          vaultApi={vaultApi}
-        />
+        <MemoryRouter>
+          <SettingsWithVaultView
+            onboardingApi={desktop.api}
+            historyApi={historyApi}
+            pairingApi={pairingApi}
+            activationApi={activationApi}
+            vaultApi={vaultApi}
+          />
+        </MemoryRouter>
       </ThemeProvider>,
     );
 

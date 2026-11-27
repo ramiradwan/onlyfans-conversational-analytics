@@ -27,7 +27,7 @@ export const REQUIRED_STATES = {
   options: ['unknown:phase', 'unknown:pairing', 'unknown:commercial'],
   'production-boot': ['delayed-renderer-and-fonts', 'request-error:Sign in with passkey', 'request-error:Create passkey', 'session-status-unavailable'],
 };
-const TRANSITION_COUNTS = { home: { 390: 75, 1440: 73 }, analytics: 18, inbox: { 390: 56, 820: 56, 1440: 55 }, settings: 268, passkey: 17, graph: 9, popup: 22, setup: 68, options: 16, 'production-boot': 4 };
+const TRANSITION_COUNTS = { home: { 390: 75, 1440: 73 }, analytics: 18, inbox: { 390: 56, 820: 56, 1440: 55 }, settings: 269, passkey: 17, graph: 9, popup: 22, setup: 68, options: 16, 'production-boot': 4 };
 export function validateInventory(reports, expected = DYNAMIC_VIEWS) {
   for (const report of reports) {
     assert(DYNAMIC_VIEWS.includes(report.view), `Unknown captured view: ${report.view}`);
@@ -136,7 +136,7 @@ async function driveWorkspace(page, view, base, step, mode) {
       await step(`browser:${capture}:${site_access}:${history_permission}:${legal_review_required}`, () => push('browser', { capture, site_access, history_permission, legal_review_required }));
     }
     await step.fixture('fixture:before-browser-controls', () => push('browser', { capture: 'active' }));
-    await step('control:pending', () => page.getByRole('button', { name: 'Pause collecting', exact: true }).click());
+    await step('control:pending', () => page.getByRole('switch', { name: 'Collect new messages', exact: true }).click());
     await step('control:delivered', () => push('resolve', 'browser.setCapture', 'delivered'));
     await step('control:9999', () => page.clock.fastForward(9999));
     await step('control:10000', () => page.clock.runFor(1));
@@ -144,8 +144,9 @@ async function driveWorkspace(page, view, base, step, mode) {
     await step('control:bridge-lost', () => push('connection', 'reconnecting'));
     await step('control:bridge-lost-grace', () => page.clock.fastForward(3001));
     await step('control:bridge-return', () => push('connection', 'connected'));
-    const disconnect = page.getByRole('button', { name: 'Disconnect browser extension 1' });
-    await step('disconnect:open', () => disconnect.click());
+    // Disconnecting is rare, so it sits in the section menu.
+    await step('disconnect:menu', () => page.getByRole('button', { name: 'Browser extension options', exact: true }).click());
+    await step('disconnect:open', () => page.getByRole('menuitem', { name: 'Disconnect browser extension', exact: true }).click());
     await step('disconnect:cancel', () => page.getByRole('button', { name: 'Cancel', exact: true }).click());
   }
   await driveWorkspaceDetails(page, view, step, unseen);

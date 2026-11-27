@@ -1,3 +1,4 @@
+import InsightsOutlined from '@mui/icons-material/InsightsOutlined';
 import {
   Box,
   Button,
@@ -13,7 +14,7 @@ import {
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 
 import { ProviderSignInButtons, type SignInProvider } from './ProviderSignInButtons';
-import { Panel, useRevealHold } from './ui';
+import { Panel, SectionHeader, useRevealHold } from './ui';
 import type { FullPresentationIntent } from '../protocol';
 import {
   capabilityLicenseApi,
@@ -23,10 +24,12 @@ import {
 } from '../services/capabilityLicenseApi';
 import { desktopInteractionFailure, desktopOnboardingApi, selectAnalysisReadiness, selectBrowserFeedback, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import { componentTokens, typography } from '../theme';
-import { OnboardingAction, OnboardingPill, OnboardingSpot, OnboardingStatus } from './ui/OnboardingCard';
+import { OnboardingAction, OnboardingSpot, OnboardingStatus } from './ui/OnboardingCard';
 import { offerPriceColors } from '../theme/generated/tokens';
 
 const ACTIVATION_BODY = 'Conversation insights, like your most common topics, stored on this computer.';
+const ANALYTICS_BENEFIT = 'Tone, reply, and topic insights.';
+const ACTIVATION_STATUS_LABELS = ['On', 'Needs attention', 'Off'] as const;
 const ACTIVATION_PENDING = 'Checking your activation…';
 const SIGN_IN_SWITCH = 'Use a different sign-in for Full analytics';
 const CONTROL_HEIGHT = componentTokens.staticUi.controlHeight;
@@ -65,6 +68,7 @@ export function CommercialActivationControls({
   creatorAccountId,
   presentationIntent,
   dashboard = false,
+  onStatusChange,
 }: {
   api?: CapabilityLicenseApi;
   onboarding?: DesktopOnboardingApi;
@@ -72,6 +76,8 @@ export function CommercialActivationControls({
   creatorAccountId?: string | null;
   presentationIntent?: FullPresentationIntent;
   dashboard?: boolean;
+  /** Reports the section's status label, for the Settings index. */
+  onStatusChange?: (label: string | null) => void;
 }) {
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const sectionTitleId = useId();
@@ -410,10 +416,15 @@ export function CommercialActivationControls({
   const title = pending ? 'Activating Full analytics' : terminalUnknown ? 'Full analytics isn’t on'
     : classifiedMismatch ? 'Full analytics unavailable' : showPrompt ? 'Turn on Full analytics' : 'Full analytics';
   const guided = dashboard || pending || terminalUnknown || classifiedMismatch;
-  const status = fullReady ? 'On' : activeButBlocked ? 'Needs attention' : activationRequired && !pending && !terminalUnknown ? 'Off' : null;
+  const status: (typeof ACTIVATION_STATUS_LABELS)[number] | null = fullReady ? 'On' : activeButBlocked ? 'Needs attention'
+    : activationRequired && !pending && !terminalUnknown ? 'Off' : null;
+  useEffect(() => { onStatusChange?.(status); }, [onStatusChange, status]);
+  useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
   const unavailable = !decision && !authentication && !accepted && activationRequired && !allowed.includes('activation.review') && !pendingActivation && desktop.connected;
   const inlineFeedback = !dialogOpen && !pending ? feedback || (unavailable ? 'The activation request is unavailable.'
-    : fullReady && !embedded ? 'Tone, reply, and topic insights.' : null) : null;
+    : fullReady && !embedded ? ANALYTICS_BENEFIT : null) : null;
+  // In Settings the benefit reads as the section's description, so it carries no status icon.
+  const benefitOnly = inlineFeedback === ANALYTICS_BENEFIT && !dashboard;
   const codeFeedback = codeError || (canRedeem ? null : feedback);
   const offerFeedback = !desktop.connected ? feedback : noticeError || (opening ? feedback : null);
   const showSwitch = canSwitch && !choosingAccount;
@@ -421,7 +432,8 @@ export function CommercialActivationControls({
     && currentAuthority && !desktop.browserLaunchPending && (authentication?.state === 'admitted' || browserLaunchFailed);
   const hasActions = pending || canEnterCode || showReview || showBrowser || showSwitch || choosingAccount;
   const inlineStatus = inlineFeedback && <Box id={feedbackId} role={noticeError || terminalUnknown ? 'alert' : undefined}>
-    <OnboardingStatus tone={noticeError || terminalUnknown ? 'error' : classifiedMismatch ? 'attention' : 'neutral'} live={!noticeError && !terminalUnknown}>{inlineFeedback}</OnboardingStatus>
+    {benefitOnly ? <Typography role="status" variant="body2" sx={{ color: 'text.secondary' }}>{inlineFeedback}</Typography>
+      : <OnboardingStatus tone={noticeError || terminalUnknown ? 'error' : classifiedMismatch ? 'attention' : 'neutral'} live={!noticeError && !terminalUnknown}>{inlineFeedback}</OnboardingStatus>}
   </Box>;
 
   if (dashboard && promptDismissed && !dialogOpen && !pending && !inlineFeedback && !authentication && !pendingActivation) return null;
@@ -435,16 +447,19 @@ export function CommercialActivationControls({
       {guided && <Box className="onboarding-surface-head"><OnboardingSpot icon="insights" />
         {title !== 'Full analytics' && <span>Full analytics</span>}
       </Box>}
-      <Stack direction="row" useFlexGap sx={{ gap: 1, flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <Typography ref={sectionHeading} id={sectionTitleId} component="h2" variant="h6" tabIndex={-1}
-          sx={guided ? { ...taskTitleSx, fontSize: { xs: '1.25rem', sm: '1.375rem' } } : undefined}>{title}</Typography>
-        {!dashboard && <Box aria-live="polite" sx={{
-          display: 'grid', justifyItems: 'start',
-          '&::before': { content: '"Needs attention" / ""', gridArea: '1 / 1', visibility: 'hidden',
-            fontSize: 'var(--dipsy-static-caption-size, .75rem)', lineHeight: 1.5, fontWeight: 500, py: '3px', px: '16px' },
-          '& > span': { gridArea: '1 / 1' },
-        }}>{status && <OnboardingPill tone={fullReady ? 'progress' : 'neutral'}>{status}</OnboardingPill>}</Box>}
-      </Stack>
+      <SectionHeader
+        title={title}
+        headingProps={{
+          id: sectionTitleId,
+          ref: sectionHeading,
+          tabIndex: -1,
+          sx: guided ? { ...taskTitleSx, fontSize: { xs: '1.25rem', sm: '1.375rem' } } : undefined,
+        }}
+        icon={guided ? undefined : <InsightsOutlined />}
+        status={dashboard ? undefined : status && {
+          label: status, tone: fullReady ? 'success' : activeButBlocked ? 'warning' : 'default' }}
+        statusLabels={ACTIVATION_STATUS_LABELS}
+      />
     </Box>}
     {showPrompt && <Typography color="text.secondary" sx={{ maxWidth: '60ch' }}>{ACTIVATION_BODY}</Typography>}
     <Stack data-journey-state="desktop.full_analytics_activation" spacing={1}

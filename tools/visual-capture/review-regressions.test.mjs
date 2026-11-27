@@ -310,6 +310,34 @@ for (const attack of ['horizontal reading overflow', 'clipped reading text', 'un
   } finally { await page.close(); }
 });
 
+const menu = '<ul role="menu"><li role="menuitem">Disconnect</li></ul>';
+for (const [name, layer] of Object.entries({
+  'treats a closed menu layer as an overlay': { style: 'position:fixed;inset:0', html: menu, overlay: true },
+  'flags a removed neighbor layer': { style: 'position:fixed;inset:0', html: '<p>Layer</p>', overlay: false },
+  'flags a removed page wrapper that holds a menu': { style: '', html: `<p>Content</p>${menu}`, overlay: false },
+})) test(`watcher ${name}`, async () => {
+  const page = await browser.newPage();
+  try {
+    await installWatcher(page, { requiredRegions: ['slot'] });
+    await page.route('**/*', (route) => route.fulfill({ contentType: 'text/html', body: '<main><div data-reserved-region="slot" style="height:100px;width:200px"><span data-region-content>Short text</span></div></main>' }));
+    await page.goto('http://watcher-fixture.localhost/');
+    await settle(page);
+    await page.evaluate(({ style, html }) => {
+      const node = document.createElement('div');
+      node.id = 'layer';
+      node.style.cssText = style;
+      node.innerHTML = html;
+      document.body.append(node);
+    }, layer);
+    await settle(page);
+    await page.evaluate(() => document.querySelector('#layer').remove());
+    await settle(page);
+    const { failures } = await readWatcher(page);
+    if (layer.overlay) assert.deepEqual(failures, []);
+    else assert(failures.some((failure) => failure.endsWith(': removed')), 'A removed neighbor must be flagged: ' + JSON.stringify(failures));
+  } finally { await page.close(); }
+});
+
 test('reading audit follows the document scroll owner', async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 600 } });
   try {
@@ -348,7 +376,7 @@ for (const width of [390, 1440]) for (const fontScale of [1, 1.25]) test(`activa
     await push('connection', 'connected');
     for (const key of await push('pending')) await push('release', key, 'populated');
     const section = page.locator('[data-reserved-region="settings-activation"]');
-    const chip = section.locator('.onboarding-pill');
+    const chip = section.locator('[aria-live="polite"] .MuiChip-outlined');
     await chip.waitFor();
     await page.evaluate(() => document.fonts.ready);
     await settle(page);
@@ -376,6 +404,8 @@ for (const width of [390, 1440]) for (const fontScale of [1, 1.25]) test(`activa
         assert.equal(await chip.innerText(), label);
         const { x, y, width, height } = await chip.boundingBox();
         assert(x >= bounds.x && x + width <= bounds.x + bounds.width, 'The pill escapes the section');
+        assert(Math.abs(bounds.x + bounds.width - x - width - 24) < 1, 'The pill must align to the card inset');
+        assert(y < geometry.y + geometry.height && y + height > geometry.y, 'The pill must share the heading row');
         initialChip ??= { y, height };
         assert.deepEqual({ y, height }, initialChip, 'Status pills change vertical geometry');
       } else assert.equal(await chip.count(), 0);
@@ -581,7 +611,7 @@ for (const width of [320, 390]) test(`combined browser recovery follows its cont
     for (const key of await push('pending')) await push('release', key, 'populated');
     await push('browser', { capture: 'active', site_access: 'needs_approval', history_permission: 'missing' });
     await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
-    await page.getByRole('button', { name: 'Pause collecting', exact: true }).click();
+    await page.getByRole('switch', { name: 'Collect new messages', exact: true }).click();
     await push('resolve', 'browser.setCapture', 'unreachable');
     const feedback = page.locator('[data-reserved-region="browser-feedback"]');
     await feedback.locator('[data-region-content]').waitFor({ state: 'visible' });
@@ -589,8 +619,10 @@ for (const width of [320, 390]) test(`combined browser recovery follows its cont
     await settle(page);
     await feedback.scrollIntoViewIfNeeded();
     assert(await page.getByRole('button', { name: 'Allow in extension', exact: true }).first().isVisible());
-    const following = page.getByText('Extension linked to this app', { exact: true });
-    assert(await following.isVisible());
+    // The connection facts sit in the section header as its status, beside its options menu.
+    const header = page.locator('#browser-extension [data-settings-section-header] [data-settings-status]').first();
+    assert(await header.isVisible(), 'The connection status must stay visible');
+    assert((await header.innerText()).trim(), 'The connection status must name the connection');
     const geometry = await feedback.evaluate((node) => {
       const bounds = node.getBoundingClientRect();
       const section = node.closest('[data-journey-state="desktop.extension_pairing"]');
@@ -623,7 +655,7 @@ for (const width of [320, 390]) test(`combined browser recovery follows its cont
     assert(geometry.feedbackFits && !geometry.horizontalOverflow, 'All recovery text must remain visible without horizontal scrolling: ' + JSON.stringify(geometry));
     assert(geometry.guidanceBottom <= geometry.feedback.top, 'Browser-location guidance must finish before recovery');
     assert(geometry.feedback.bottom <= geometry.sectionBottom + 1, 'The combined browser section must contain recovery');
-    const previous = await following.boundingBox();
+    const previous = await header.boundingBox();
     assert(previous && previous.y + previous.height <= geometry.feedback.top, 'Connection facts must finish before shared feedback');
     const next = await page.locator('#full-analytics').boundingBox();
     assert(next && next.y >= geometry.feedback.bottom, 'The next section must follow recovery');
@@ -657,11 +689,13 @@ for (const width of [320, 390, 600]) test(`essential activation content stays se
     const geometry = await section.evaluate((node) => {
       const bounds = node.getBoundingClientRect();
       const content = node.querySelector('[data-region-content]').getBoundingClientRect();
-      const next = document.querySelector('[data-reserved-region="settings-history"]').getBoundingClientRect();
+      // Sections an installation doesn't offer stay mounted but unrendered, so the next one is the next rendered one.
+      const sections = [...document.querySelectorAll('[data-settings-section]')].filter((section) => section.getClientRects().length > 0);
+      const next = sections[sections.indexOf(node.closest('[data-settings-section]')) + 1].getBoundingClientRect();
       const notice = node.querySelector('[role="status"]').getBoundingClientRect();
       const title = node.querySelector('h2');
-      const header = title.parentElement;
-      const status = header.querySelector('.onboarding-pill').getBoundingClientRect();
+      const header = title.closest('[data-settings-section-header]');
+      const status = header.querySelector('[data-settings-status]').getBoundingClientRect();
       const range = document.createRange(); range.selectNodeContents(header);
       const titleRange = document.createRange(); titleRange.selectNodeContents(title);
       return { minimum: parseFloat(getComputedStyle(node).minBlockSize), height: bounds.height, bottom: bounds.bottom,

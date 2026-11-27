@@ -48,7 +48,7 @@ describe('shared-device Engine controls', () => {
     expect(dialog.getByText(`Declared temporary space budget: ${amount(2048)}`)).toBeTruthy();
     expect(dialog.getByText(`Declared rollback space budget: ${amount(0)}`)).toBeTruthy();
     expect(dialog.getByText(`Declared required free space: ${amount(6144)}`)).toBeTruthy();
-    expect(dialog.getByText(/Actual Windows transfer, cache reuse/)).toBeTruthy(); expect(api.start).not.toHaveBeenCalled();
+    expect(api.start).not.toHaveBeenCalled();
     fireEvent.click(dialog.getByRole('button', { name: 'Install reviewed Engine' }));
     await waitFor(() => expect(api.start).toHaveBeenCalledWith(quote.review_digest, expect.any(AbortSignal)));
     await reviewClosed();
@@ -60,14 +60,21 @@ describe('shared-device Engine controls', () => {
     expect((screen.getByRole('button', { name: 'Review Engine installation' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Cancel Engine installation' }));
     await waitFor(() => expect(api.cancel).toHaveBeenCalledWith(live.operation_id, expect.any(AbortSignal)));
-    expect(await screen.findByText(/Cancellation is requested; it is not proof/)).toBeTruthy();
+    expect(await screen.findByText('Cancellation requested. Waiting for Windows.')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Cancel Engine installation' }) as HTMLButtonElement).disabled).toBe(true);
     expect(api.start).not.toHaveBeenCalled(); expect(api.review).not.toHaveBeenCalled();
+  });
+  it('reads a requested cancellation as one while Windows still reports the transfer', async () => {
+    const api = fixture({ ...live, cancel_requested: true }); render(view(api));
+    expect(await screen.findByText('Cancellation requested. Waiting for Windows.')).toBeTruthy();
+    expect(screen.queryByText('Windows is installing the Engine.')).toBeNull();
+    expect((screen.getByRole('button', { name: 'Cancel Engine installation' }) as HTMLButtonElement).disabled).toBe(true);
   });
   it('an unavailable quote cannot confirm an installation', async () => {
     const api = fixture(); api.review.mockResolvedValue({ availability: 'unavailable', reason: 'optional_quote_unavailable' });
     render(view(api)); await screen.findByText('Engine installation has not been requested.');
     fireEvent.click(screen.getByRole('button', { name: 'Review Engine installation' }));
-    expect(await screen.findByText(/A verified Engine installation quote is unavailable/)).toBeTruthy();
+    expect(await screen.findByText('Engine installation isn’t available right now.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Install reviewed Engine' })).toBeNull(); expect(api.start).not.toHaveBeenCalled();
   });
   it('changing account or unmounting discards a late review without cancelling the device operation', async () => {
@@ -238,7 +245,7 @@ describe('shared-device Engine controls', () => {
   it('installed Engine does not enable model data or processing; unsupported browser stays passive', async () => {
     const api = fixture({ ...idle, state: 'installed', installed: true, operation_id: 'b'.repeat(32) });
     render(view(api)); expect(await screen.findByText('Engine installation verified.')).toBeTruthy();
-    expect(screen.getByText(/Only Engine installation is verified/)).toBeTruthy(); expect(api.review).not.toHaveBeenCalled(); cleanup();
+    expect(api.review).not.toHaveBeenCalled(); cleanup();
     const browser = fixture(); browser.supported.mockReturnValue(false); render(view(browser));
     expect(screen.getByText(/Windows desktop app/)).toBeTruthy(); expect(browser.status).not.toHaveBeenCalled(); expect(browser.start).not.toHaveBeenCalled();
   });

@@ -70,7 +70,9 @@ export function extensionIssue(connection: ExtensionConnection): StatusMessage |
   return connection === 'connected' ? null : EXTENSION_ISSUES[connection];
 }
 
-export function extensionLabel(connection: ExtensionConnection): string {
+export const EXTENSION_LABELS = ['Connected', 'Not connected', 'Not responding', 'Applying settings', 'Needs attention'] as const;
+
+export function extensionLabel(connection: ExtensionConnection): (typeof EXTENSION_LABELS)[number] {
   switch (connection) {
     case 'connected':
       return 'Connected';

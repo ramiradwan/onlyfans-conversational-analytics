@@ -78,6 +78,10 @@ function result(
   };
 }
 
+const ARCHIVE_OFF = 'Choose how long this computer keeps your messages.';
+// An open dialog hides the page behind it from assistive technology, so checks made then look past that.
+const archiveSwitch = (behindDialog = false) => screen.getByRole<HTMLInputElement>('switch', { name: 'Archive', hidden: behindDialog });
+
 beforeEach(() => {
   useUserStore.getState().actions.setUserRole('creator-ceo');
 });
@@ -105,9 +109,12 @@ describe('CreatorVaultControls', () => {
       </ThemeProvider>,
     );
 
-    expect(await screen.findByText('Off')).toBeTruthy();
+    expect(await screen.findByText(ARCHIVE_OFF)).toBeTruthy();
+    expect(archiveSwitch().checked).toBe(false);
     expect(screen.queryByLabelText('Days to keep')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on archive' }));
+    // The switch asks first and moves only once the change is confirmed.
+    fireEvent.click(archiveSwitch());
+    expect(archiveSwitch(true).checked).toBe(false);
     const archiveDialog = within(screen.getByRole('dialog'));
     expect(archiveDialog.queryByRole('radio')).toBeNull();
     expect(screen.queryByText(/removed automatically/)).toBeNull();
@@ -124,9 +131,9 @@ describe('CreatorVaultControls', () => {
       action: 'enable_finite',
       finite_horizon_days: 365,
     }));
-    expect(await screen.findByRole('button', { name: 'Turn off archive' })).toBeTruthy();
-    expect(screen.getByText('Keeping messages for 365 days')).toBeTruthy();
     await waitFor(() => expect(screen.queryByLabelText('Days to keep')).toBeNull());
+    expect(archiveSwitch().checked).toBe(true);
+    expect(screen.getByText('Keeping messages for 365 days.')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete all messages' }));
     expect(command).not.toHaveBeenCalledWith({ action: 'delete_all' });
@@ -140,11 +147,14 @@ describe('CreatorVaultControls', () => {
     expect(onDownload).toHaveBeenCalledWith(exportDocument);
     expect(await screen.findByText(/Some backup copies may stay on this computer/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Turn off archive' }));
+    fireEvent.click(archiveSwitch());
     expect(command).not.toHaveBeenCalledWith({ action: 'disable' });
+    expect(archiveSwitch(true).checked).toBe(true);
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Turn off' }));
     await waitFor(() => expect(command).toHaveBeenCalledWith({ action: 'disable' }));
-    expect(await screen.findByText('Off')).toBeTruthy();
+    expect(await screen.findByText(ARCHIVE_OFF)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(archiveSwitch().checked).toBe(false);
   });
 
   it('surfaces incomplete managed deletion and retries dependent cleanup', async () => {
@@ -178,7 +188,7 @@ describe('CreatorVaultControls', () => {
       </ThemeProvider>,
     );
 
-    expect(await screen.findByText('Keeping messages for 365 days')).toBeTruthy();
+    expect(await screen.findByText('Keeping messages for 365 days.')).toBeTruthy();
     const feedback = document.querySelector('[data-reserved-region="vault-feedback"]')!;
     const archive = screen.getByRole('heading', { name: 'Archive' });
     const deletion = screen.getByRole('heading', { name: 'Delete messages' });
@@ -223,7 +233,7 @@ describe('CreatorVaultControls', () => {
       </ThemeProvider>,
     );
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Turn on archive' }));
+    fireEvent.click(await screen.findByRole('switch', { name: 'Archive' }));
     const archiveDialog = within(screen.getByRole('dialog'));
     expect(archiveDialog.getByLabelText('Days to keep')).toBeTruthy();
     fireEvent.click(archiveDialog.getByRole('radio', { name: 'Keep until I delete them' }));
@@ -250,6 +260,7 @@ describe('CreatorVaultControls', () => {
 
     expect(screen.getByText('Only the account owner can manage stored messages.')).toBeTruthy();
     expect(api.get).not.toHaveBeenCalled();
+    expect(screen.queryByRole('switch', { name: 'Archive' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Turn on archive' })).toBeNull();
   });
 });

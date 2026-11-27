@@ -15,6 +15,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
+import { useInRouterContext, useSearchParams } from 'react-router-dom';
 
 import type {
   AnalyticsConversationInsight,
@@ -249,13 +250,35 @@ interface OperatorInboxViewProps {
   analyticsWindowSource?: AnalyticsWindowSource;
 }
 
-export default function OperatorInboxView({
+export default function OperatorInboxView(props: OperatorInboxViewProps) {
+  const routed = useInRouterContext();
+  return routed ? <RoutedInbox {...props} /> : <Inbox {...props} />;
+}
+
+function RoutedInbox(props: OperatorInboxViewProps) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedConversationId = searchParams.get('conversation');
+  return <Inbox {...props} requestedConversationId={requestedConversationId}
+    onSelectConversation={(conversationId) => {
+      if (requestedConversationId === conversationId) return;
+      const next = new URLSearchParams(searchParams);
+      next.set('conversation', conversationId);
+      setSearchParams(next, { replace: true });
+    }} />;
+}
+
+function Inbox({
   messageApi = defaultMessageApi,
   store = bridgeTransportStore,
   analyticsState,
   conversationInsight = null,
   analyticsWindowSource,
-}: OperatorInboxViewProps) {
+  requestedConversationId = null,
+  onSelectConversation,
+}: OperatorInboxViewProps & {
+  requestedConversationId?: string | null;
+  onSelectConversation?: (conversationId: string) => void;
+}) {
   const theme = useTheme();
   const isNarrow = useMediaQuery(theme.breakpoints.down('md'));
   const narrow = useNarrowMasterDetail(isNarrow);
@@ -265,12 +288,10 @@ export default function OperatorInboxView({
     () => sortConversations(state.conversations),
     [state.conversations],
   );
-  const selectedConversation =
-    conversations.find(
-      (conversation) => conversation.conversation_id === selectedConversationId,
-    ) ??
-    conversations[0] ??
-    null;
+  const explicitSelection = conversations.find(
+    (conversation) => conversation.conversation_id === (requestedConversationId ?? selectedConversationId),
+  );
+  const selectedConversation = explicitSelection ?? (requestedConversationId === null ? conversations[0] : null) ?? null;
   const activeConversationId = selectedConversation?.conversation_id ?? null;
   const messageState =
     activeConversationId === null ? null : state.messagePages[activeConversationId] ?? null;
@@ -415,9 +436,14 @@ export default function OperatorInboxView({
     }
   }, [isNarrow, narrow.detailOpen]);
 
+  useEffect(() => {
+    if (isNarrow && requestedConversationId && activeConversationId === requestedConversationId) narrow.openDetail();
+  }, [isNarrow, narrow.openDetail, requestedConversationId, activeConversationId]);
+
   const selectConversation = (conversationId: string) => {
     restoreListFocus.current = false;
-    setSelectedConversationId(conversationId);
+    if (onSelectConversation) onSelectConversation(conversationId);
+    else setSelectedConversationId(conversationId);
     narrow.openDetail();
   };
 
@@ -452,7 +478,13 @@ export default function OperatorInboxView({
         Inbox
       </Typography>
 
-      <Box sx={{ flexShrink: 0, mb: 2 }}><ReservedNotice id="inbox-notice" notice={issue ? { title: issue.title, body: issue.detail, severity: issue.severity } : null} /></Box>
+      {/* Always mounted at its reserved size, so a notice arriving moves nothing below it. */}
+      <Box sx={{ flexShrink: 0, mb: 2 }}>
+        <ReservedNotice
+          id="inbox-notice"
+          notice={issue ? { title: issue.title, body: issue.detail, severity: issue.severity } : null}
+        />
+      </Box>
 
       <Box data-reserved-region="inbox-content" data-region-role="scroll" sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable' }}>
       {showSetup ? (

@@ -1,5 +1,5 @@
 import { Box, Stack, Tab, Tabs, Typography, styled } from '@mui/material';
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 
 import { AnalyticsFilterRow } from './AnalyticsFilterRow';
 import { AnalyticsStateFrame } from './AnalyticsStateFrame';
@@ -23,7 +23,20 @@ const Root = styled(Box)(({ theme }) => ({
   flex: 1,
   minHeight: 0,
   overflowY: 'auto',
-  paddingBottom: theme.spacing(3),
+  paddingBottom: theme.spacing(4),
+}));
+
+const ControlBar = styled(Box)(({ theme }) => ({
+  alignItems: 'stretch',
+  borderBottom: `1px solid ${theme.vars.palette.divider}`,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: theme.spacing(1.5),
+  [theme.breakpoints.up('md')]: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
 }));
 
 const AnalyticsGrid = styled(Box)(({ theme }) => ({
@@ -75,6 +88,8 @@ export function AnalyticsPresentation({
   findings,
 }: AnalyticsPresentationProps) {
   const [tab, setTab] = useState<'summary' | 'questions' | 'findings'>('summary');
+  const tabsId = useId();
+  const activeTab = (tab === 'questions' && !questions) || (tab === 'findings' && !findings) ? 'summary' : tab;
   const model = state.data;
   const resolvedWindowSources = windowSources ?? model?.windowSources;
   const panelSources = resolvedWindowSources && {
@@ -84,8 +99,11 @@ export function AnalyticsPresentation({
   };
   const sharedSource = panelSources ? sharedWindowSource(Object.values(panelSources)) : null;
   const perPanel = sharedSource ? undefined : panelSources;
+  const hasTabs = Boolean(questions || findings);
+  const showDateFilter = activeTab !== 'questions';
+
   return (
-    <Root>
+    <Root data-scroll-container>
       <Stack
         data-visual="analytics-frame"
         spacing={2.5}
@@ -95,62 +113,92 @@ export function AnalyticsPresentation({
           <Typography component="h1" variant="h4">
             Analytics
           </Typography>
-          <Typography component="p" variant="body1" sx={{
-            color: 'text.secondary'
-          }}>
+          <Typography component="p" variant="body1" sx={{ color: 'text.secondary', mt: 0.5 }}>
             Message tone, your replies, and what conversations are about.
           </Typography>
         </Box>
-        {(questions || findings) && <Tabs value={tab} onChange={(_, value) => setTab(value)} aria-label="Analytics views">
-          <Tab value="summary" label="Summary" />
-          {questions && <Tab value="questions" label="Conversation questions" />}
-          {findings && <Tab value="findings" label="Text analysis" />}
-        </Tabs>}
-        {questions && tab === 'questions' ? questions : <>
-        <AnalyticsFilterRow
-          value={dateRange}
-          onApply={onDateRangeChange}
-          isRefreshing={state.isRefreshing}
-        />
-        {findings && tab === 'findings' ? findings : <>
-        {/* Holds the results. The panels stack in one column below md. */}
-        <Results><ReservedRegion id="analytics-content" regionRole="scroll" size={resultsSize(topicRegionSize.list)} sx={resultsWithTopicTable}><Box key={state.data ? 'results' : state.status} data-region-content>
-        <AnalyticsStateFrame state={state} onRetry={onRetry}>
-          {model && (
-            <Stack spacing={1.5}>
-              {sharedSource && <AnalyticsWindowLabel source={sharedSource} />}
-              <AnalyticsGrid>
-                <ChartPanel
-                  emphasis="dominant"
-                  title="Message tone over time"
-                  description="Average tone of messages each day, from −1 (negative) to +1 (positive)."
-                  windowSource={perPanel?.sentimentTrend}
-                >
-                  <SentimentEngagementTrend sentiment={model.sentimentTrend} />
-                </ChartPanel>
-                <ChartPanel
-                  title="Your replies"
-                  description="How often and how quickly you reply."
-                  windowSource={perPanel?.responseMetrics}
-                >
-                  <ResponseOverview metrics={model.response} />
-                </ChartPanel>
-                <FullWidth>
-                  <ChartPanel
-                    title="Topics"
-                    description="What conversations are about."
-                    windowSource={perPanel?.topics}
-                  >
-                    <TopicsTable topics={model.topics} />
-                  </ChartPanel>
-                </FullWidth>
-              </AnalyticsGrid>
-            </Stack>
+
+        <ControlBar>
+          {hasTabs ? (
+            <Tabs
+              value={activeTab}
+              onChange={(_, value) => setTab(value)}
+              aria-label="Analytics views"
+              variant="scrollable"
+              scrollButtons="auto"
+              sx={{
+                minHeight: 44,
+                mb: { md: '-1px' },
+                '& .MuiTab-root': { minHeight: 44, py: 1 },
+              }}
+            >
+              <Tab value="summary" label="Summary" id={`${tabsId}-summary`} aria-controls={tabsId} />
+              {questions && <Tab value="questions" label="Conversation questions" id={`${tabsId}-questions`} aria-controls={tabsId} />}
+              {findings && <Tab value="findings" label="Text analysis" id={`${tabsId}-findings`} aria-controls={tabsId} />}
+            </Tabs>
+          ) : (
+            <Box />
           )}
-        </AnalyticsStateFrame>
-        </Box></ReservedRegion></Results>
-        </>}
-        </>}
+
+          {showDateFilter && (
+            <Box sx={{ pb: { xs: 1.5, md: 1 }, flexShrink: 0 }}>
+              <AnalyticsFilterRow
+                value={dateRange}
+                onApply={onDateRangeChange}
+                isRefreshing={state.isRefreshing}
+              />
+            </Box>
+          )}
+        </ControlBar>
+
+        <Box id={hasTabs ? tabsId : undefined} role={hasTabs ? 'tabpanel' : undefined}
+          aria-labelledby={hasTabs ? `${tabsId}-${activeTab}` : undefined}>
+        {activeTab === 'questions' ? (
+          questions
+        ) : activeTab === 'findings' ? (
+          findings
+        ) : (
+          // Holds the results at one size, so loading, refreshing and new results swap inside it. The panels stack in one
+          // column below md.
+          <Results><ReservedRegion id="analytics-content" regionRole="scroll" size={resultsSize(topicRegionSize.list)} sx={resultsWithTopicTable}>
+          <Box key={state.data ? 'results' : state.status} data-region-content>
+            <AnalyticsStateFrame state={state} onRetry={onRetry}>
+              {model && (
+                <Stack spacing={1.5}>
+                  {sharedSource && <AnalyticsWindowLabel source={sharedSource} />}
+                  <AnalyticsGrid>
+                    <ChartPanel
+                      emphasis="dominant"
+                      title="Message tone over time"
+                      description="Average tone of messages each day, from −1 (negative) to +1 (positive)."
+                      windowSource={perPanel?.sentimentTrend}
+                    >
+                      <SentimentEngagementTrend sentiment={model.sentimentTrend} />
+                    </ChartPanel>
+                    <ChartPanel
+                      title="Your replies"
+                      description="How often and how quickly you reply."
+                      windowSource={perPanel?.responseMetrics}
+                    >
+                      <ResponseOverview metrics={model.response} />
+                    </ChartPanel>
+                    <FullWidth>
+                      <ChartPanel
+                        title="Topics"
+                        description="What conversations are about."
+                        windowSource={perPanel?.topics}
+                      >
+                        <TopicsTable topics={model.topics} />
+                      </ChartPanel>
+                    </FullWidth>
+                  </AnalyticsGrid>
+                </Stack>
+              )}
+            </AnalyticsStateFrame>
+          </Box>
+          </ReservedRegion></Results>
+        )}
+        </Box>
       </Stack>
     </Root>
   );

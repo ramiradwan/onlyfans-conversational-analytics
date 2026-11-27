@@ -42,6 +42,27 @@ afterEach(() => {
   bridgeTransportStore.reset();
 });
 
+const CONSENT_LABEL = 'I allow read-only syncing of my older messages to this computer.';
+const PERMISSION_PURPOSE = 'Older messages start syncing after you allow access in your browser.';
+
+// An open dialog hides the page behind it from assistive technology, so checks made then look past that.
+const historySwitch = (behindDialog = false) =>
+  screen.getByRole<HTMLInputElement>('switch', { name: 'Add older messages', hidden: behindDialog });
+const consentDialog = () => within(screen.getByRole('dialog', { name: 'Turn on message history?' }));
+
+/** Settings asks for consent in a dialog opened from the history switch. */
+async function openConsent() {
+  const toggle = await screen.findByRole<HTMLInputElement>('switch', { name: 'Add older messages' });
+  expect(toggle.checked).toBe(false);
+  fireEvent.click(toggle);
+  return consentDialog();
+}
+
+async function chooseTurnOff() {
+  fireEvent.click(await screen.findByRole('button', { name: 'Message history options' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Turn off message history' }));
+}
+
 function connectExtension() {
   bridgeTransportStore.bindAccount('creator-1');
   bridgeTransportStore.setConnection('connected');
@@ -77,13 +98,14 @@ describe('SettingsView history consent', () => {
     };
     connectExtension();
     render(<ThemeProvider theme={theme}><SettingsView api={api} /></ThemeProvider>);
-    await screen.findByRole('button', { name: 'Pause' });
+    expect((await screen.findByRole<HTMLInputElement>('switch', { name: 'Add older messages' })).checked).toBe(true);
     vi.useFakeTimers();
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Pause' })); });
+    await act(async () => { fireEvent.click(historySwitch()); });
     expect(screen.getByText('Waiting for the extension to confirm the pause.')).toBeTruthy();
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(screen.queryByText('Waiting for the extension to confirm the pause.')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Resume' })).toBeTruthy();
+    expect(historySwitch().checked).toBe(false);
+    expect(historySwitch()).toHaveProperty('disabled', false);
     expect(api.get).toHaveBeenCalledTimes(2);
     await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
     expect(api.get).toHaveBeenCalledTimes(2);
@@ -107,15 +129,15 @@ describe('SettingsView history consent', () => {
     };
     connectExtension();
     render(<ThemeProvider theme={theme}><SettingsView api={api} /></ThemeProvider>);
-    await screen.findByRole('button', { name: 'Pause' });
+    await screen.findByRole('switch', { name: 'Add older messages' });
     vi.useFakeTimers();
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Pause' })); });
+    await act(async () => { fireEvent.click(historySwitch()); });
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(api.get).toHaveBeenCalledTimes(2);
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Resume' })); });
+    expect(historySwitch().checked).toBe(false);
+    await act(async () => { fireEvent.click(historySwitch()); });
     await act(async () => { resolveOldRead({ ...pending, effective_state: 'paused' }); });
-    expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Resume' })).toBeNull();
+    expect(historySwitch().checked).toBe(true);
     expect(api.update).toHaveBeenLastCalledWith(3, expect.objectContaining({ desired_state: 'running' }), expect.any(AbortSignal));
   });
 
@@ -132,8 +154,10 @@ describe('SettingsView history consent', () => {
       </ThemeProvider>,
     );
     expect(await screen.findByText('Available once the browser extension is connected.')).toBeTruthy();
+    expect(historySwitch()).toHaveProperty('disabled', true);
+    fireEvent.click(historySwitch());
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.queryByRole('checkbox')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Turn on message history' })).toBeNull();
 
     view.unmount();
     connectExtension();
@@ -142,7 +166,8 @@ describe('SettingsView history consent', () => {
         <SettingsView api={api} />
       </ThemeProvider>,
     );
-    expect(await screen.findByRole('button', { name: 'Turn on message history' })).toBeTruthy();
+    const dialog = await openConsent();
+    expect(dialog.getByRole('checkbox', { name: CONSENT_LABEL })).toBeTruthy();
     expect(screen.queryByText('Available once the browser extension is connected.')).toBeNull();
   });
 
@@ -177,28 +202,29 @@ describe('SettingsView history consent', () => {
       </ThemeProvider>,
     );
 
-    const start = await screen.findByRole('button', { name: 'Turn on message history' });
+    let dialog = await openConsent();
+    const start = dialog.getByRole('button', { name: 'Turn on message history' });
     expect(start.hasAttribute('disabled')).toBe(true);
     const disclosure = [
       'Read-only: it never sends messages or changes your account.',
       'Synced message history stays on this computer.',
       'Pause or turn it off at any time.',
     ];
-    const list = screen.getByText(disclosure[0], { exact: true }).parentElement!;
+    const list = dialog.getByText(disclosure[0], { exact: true }).parentElement!;
     expect([...list.children].map(item => item.textContent)).toEqual(disclosure);
-    const consent = screen.getByRole('checkbox', {
-      name: 'I allow read-only syncing of my older messages to this computer.',
-    });
+    const consent = dialog.getByRole('checkbox', { name: CONSENT_LABEL });
     expect(list.compareDocumentPosition(consent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(consent.compareDocumentPosition(start) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     fireEvent.click(consent);
-    fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Not now' }));
     expect(api.update).not.toHaveBeenCalled();
-    expect(screen.queryByRole('checkbox')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Review message history' }));
-    expect(screen.getByRole('button', { name: 'Turn on message history' })).toHaveProperty('disabled', true);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'I allow read-only syncing of my older messages to this computer.' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on message history' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(historySwitch().checked).toBe(false);
+    // Asking again starts unticked, so an earlier tick never carries over.
+    dialog = await openConsent();
+    expect(dialog.getByRole('button', { name: 'Turn on message history' })).toHaveProperty('disabled', true);
+    fireEvent.click(dialog.getByRole('checkbox', { name: CONSENT_LABEL }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Turn on message history' }));
 
     await waitFor(() => expect(api.update).toHaveBeenCalledTimes(1));
     expect(api.update).toHaveBeenCalledWith(
@@ -210,19 +236,21 @@ describe('SettingsView history consent', () => {
       }),
       expect.any(AbortSignal),
     );
-    expect(await screen.findByRole('button', { name: 'Pause' })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(historySwitch().checked).toBe(true);
     expect(screen.queryByText('platform-creator-1')).toBeNull();
     expect(screen.queryByText('history-consent-v1')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Turn off' }));
+    // Turning off withdraws consent, so it sits in the section menu and asks first.
+    await chooseTurnOff();
     expect(api.revoke).not.toHaveBeenCalled();
     const decision = screen.getByRole('dialog', { name: 'Turn off message history?' });
     expect(within(decision).getByText('Older messages stop syncing. Messages already synced stay on this computer.')).toBeTruthy();
     fireEvent.click(within(decision).getByRole('button', { name: 'Keep message history on' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(api.revoke).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Turn off' }));
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Turn off' }));
+    await chooseTurnOff();
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Turn off message history?' })).getByRole('button', { name: 'Turn off' }));
     await waitFor(() => expect(api.revoke).toHaveBeenCalledWith(2, expect.any(AbortSignal)));
   });
 
@@ -252,15 +280,20 @@ describe('SettingsView history consent', () => {
     const api = { get: vi.fn(async () => initial), update: vi.fn(async () => running), revoke: vi.fn() };
     const browserApi = { open: vi.fn(async () => 'delivered' as const), setCapture: vi.fn() };
     render(<ThemeProvider theme={theme}><SettingsView api={api} browserApi={browserApi} /></ThemeProvider>);
-    fireEvent.click(await screen.findByRole('checkbox'));
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on message history' }));
+    const dialog = await openConsent();
+    fireEvent.click(dialog.getByRole('checkbox', { name: CONSENT_LABEL }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Turn on message history' }));
     await waitFor(() => expect(browserApi.open).toHaveBeenCalledExactlyOnceWith('history', expect.any(AbortSignal)));
-    expect(screen.getByText('Permission needed')).toBeTruthy();
-    expect(screen.queryByText('On', { exact: true })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // The row asks for the browser permission in place of the switch until the extension reports it.
+    expect(screen.getByText(PERMISSION_PURPOSE)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Allow browser access' })).toBeTruthy();
+    expect(screen.queryByRole('switch', { name: 'Add older messages', hidden: true })).toBeNull();
     await act(async () => bridgeTransportStore.setAgent({ ...agent, browser: { capture: 'active', site_access: 'granted',
       history_permission: 'granted', legal_review_required: false, reported_at: initial.updated_at } }));
-    expect(screen.queryByRole('button', { name: 'Allow browser access' })).toBeNull();
-    expect(screen.getByText('Waiting', { exact: true })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Allow browser access', hidden: true })).toBeNull();
+    expect(screen.getByText('Older message collection has not started.')).toBeTruthy();
+    expect(historySwitch().checked).toBe(true);
     expect(api.update).toHaveBeenCalledOnce();
   });
 
@@ -271,10 +304,12 @@ describe('SettingsView history consent', () => {
     const api = { get: vi.fn(async () => pending), update: vi.fn(), revoke: vi.fn() };
     render(<ThemeProvider theme={theme}><SettingsView api={api} /></ThemeProvider>);
     await act(async () => {});
-    expect(screen.getByText('Starting', { exact: true })).toBeTruthy();
+    const starting = 'Waiting for the extension to apply message history settings.';
+    expect(screen.getByText(starting)).toBeTruthy();
     for (let attempt = 0; attempt < 4; attempt++) await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
     expect(api.get).toHaveBeenCalledTimes(4);
-    expect(screen.queryByText('On', { exact: true })).toBeNull();
+    expect(screen.getByText(starting)).toBeTruthy();
+    expect(screen.queryByText(/^History saved/)).toBeNull();
   });
 
   it('reads a conflicting change automatically without replaying consent', async () => {
@@ -284,9 +319,14 @@ describe('SettingsView history consent', () => {
     const api = { get: vi.fn().mockResolvedValueOnce(initial).mockResolvedValue(changed),
       update: vi.fn().mockRejectedValue(new HistorySettingsApiError('Conflict', 409)), revoke: vi.fn() };
     render(<ThemeProvider theme={theme}><SettingsView api={api} /></ThemeProvider>);
-    fireEvent.click(await screen.findByRole('checkbox'));
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on message history' }));
-    expect(await screen.findByRole('button', { name: 'Resume' })).toBeTruthy();
+    const dialog = await openConsent();
+    fireEvent.click(dialog.getByRole('checkbox', { name: CONSENT_LABEL }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Turn on message history' }));
+    // The newer paused settings already hold consent, so the dialog closes on them without a second write.
+    expect(await screen.findByText('Message history settings changed.')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(historySwitch().checked).toBe(false);
+    expect(historySwitch()).toHaveProperty('disabled', false);
     expect(api.get).toHaveBeenCalledTimes(2);
     expect(api.update).toHaveBeenCalledOnce();
     expect(screen.queryByText(/Reload the page/)).toBeNull();
@@ -381,9 +421,11 @@ describe('history change reconciliation', () => {
       update: vi.fn().mockRejectedValue(new HistorySettingsApiError('Lost outcome', status)), revoke: vi.fn() };
     const browserApi = { open: vi.fn(), setCapture: vi.fn() };
     render(<ThemeProvider theme={theme}><SettingsView api={api} browserApi={browserApi} /></ThemeProvider>);
-    fireEvent.click(await screen.findByRole('checkbox'));
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Turn on message history' })));
-    expect(await screen.findByText('Permission needed')).toBeTruthy();
+    const dialog = await openConsent();
+    fireEvent.click(dialog.getByRole('checkbox', { name: CONSENT_LABEL }));
+    await act(async () => fireEvent.click(dialog.getByRole('button', { name: 'Turn on message history' })));
+    expect(await screen.findByText(PERMISSION_PURPOSE)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(screen.getByRole('button', { name: 'Allow browser access' })).toHaveProperty('disabled', false);
     expect(screen.queryByText("Your change hasn't been confirmed.")).toBeNull();
     expect(screen.queryByText('Message history settings changed.')).toBeNull();
@@ -400,13 +442,15 @@ describe('history change reconciliation', () => {
         .mockResolvedValue({ ...authorized, settings_revision: 4, consent_policy_version: 'history-consent-v2', page_size: 20 }),
       revoke: vi.fn() };
     render(<ThemeProvider theme={theme}><SettingsView api={api} /></ThemeProvider>);
-    fireEvent.click(await screen.findByRole('checkbox'));
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Turn on message history' })));
-    expect(screen.getByRole('checkbox')).toHaveProperty('checked', false);
-    expect(screen.getByRole('button', { name: 'Turn on message history' })).toHaveProperty('disabled', true);
+    const dialog = await openConsent();
+    fireEvent.click(dialog.getByRole('checkbox', { name: CONSENT_LABEL }));
+    await act(async () => fireEvent.click(dialog.getByRole('button', { name: 'Turn on message history' })));
+    // The dialog stays open on the newer policy, with the earlier tick cleared.
+    expect(consentDialog().getByRole('checkbox', { name: CONSENT_LABEL })).toHaveProperty('checked', false);
+    expect(consentDialog().getByRole('button', { name: 'Turn on message history' })).toHaveProperty('disabled', true);
     expect(api.update).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole('checkbox'));
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Turn on message history' })));
+    fireEvent.click(consentDialog().getByRole('checkbox', { name: CONSENT_LABEL }));
+    await act(async () => fireEvent.click(consentDialog().getByRole('button', { name: 'Turn on message history' })));
     expect(api.update).toHaveBeenNthCalledWith(2, 3, expect.objectContaining({
       consent_policy_version: 'history-consent-v2', page_size: 20, accept_consent: true
     }), expect.any(AbortSignal));
@@ -419,17 +463,21 @@ it('keeps an unconfirmed write disabled until a later authoritative revision is 
     authorized_platform_creator_id: 'platform-creator-1', desired_state: 'running', effective_state: 'running' };
   const api = { get: vi.fn().mockResolvedValue(initial), update: vi.fn().mockRejectedValue(new TypeError('lost response')), revoke: vi.fn() };
   render(<ThemeProvider theme={theme}><SettingsView api={api} /></ThemeProvider>);
-  fireEvent.click(await screen.findByRole('checkbox'));
+  const dialog = await openConsent();
+  fireEvent.click(dialog.getByRole('checkbox', { name: CONSENT_LABEL }));
   vi.useFakeTimers();
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Turn on message history' })));
-  expect(screen.getByText("Your change hasn't been confirmed.")).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Turn on message history' })).toHaveProperty('disabled', true);
+  await act(async () => fireEvent.click(dialog.getByRole('button', { name: 'Turn on message history' })));
+  expect(consentDialog().getByText("Your change hasn't been confirmed.")).toBeTruthy();
+  expect(consentDialog().getByRole('button', { name: 'Turn on message history' })).toHaveProperty('disabled', true);
   for (let i = 0; i < 4; i++) await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
   expect(api.get).toHaveBeenCalledTimes(5);
   expect(api.update).toHaveBeenCalledOnce();
   api.get.mockResolvedValue(saved);
   await act(async () => { window.dispatchEvent(new Event('focus')); await vi.advanceTimersByTimeAsync(1000); });
-  expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy();
+  // The authoritative read closes the dialog. Its exit transition runs on the same timers.
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(historySwitch().checked).toBe(true);
   expect(screen.queryByText("Your change hasn't been confirmed.")).toBeNull();
   expect(api.update).toHaveBeenCalledOnce();
 });
@@ -442,11 +490,14 @@ it('reconciles an already revoked receipt without issuing a second revocation', 
   const api = { get: vi.fn().mockResolvedValueOnce(running).mockResolvedValue(revoked),
     update: vi.fn(), revoke: vi.fn().mockRejectedValue(new HistorySettingsApiError('Lost response', 409)) };
   render(<ThemeProvider theme={theme}><SettingsView api={api} /></ThemeProvider>);
-  fireEvent.click(await screen.findByRole('button', { name: 'Turn off' }));
-  const confirm = within(screen.getByRole('dialog')).getByRole('button', { name: 'Turn off' });
+  await chooseTurnOff();
+  const confirm = within(screen.getByRole('dialog', { name: 'Turn off message history?' })).getByRole('button', { name: 'Turn off' });
   await act(async () => { fireEvent.click(confirm); fireEvent.click(confirm); });
   expect(api.revoke).toHaveBeenCalledExactlyOnceWith(2, expect.any(AbortSignal));
-  expect(await screen.findByRole('button', { name: 'Turn on message history' })).toHaveProperty('disabled', true);
+  await waitFor(() => expect(historySwitch().checked).toBe(false));
+  // Turning off never reopens the consent dialog.
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Message history options' })).toBeNull();
   expect(screen.queryByText("Your change hasn't been confirmed.")).toBeNull();
   expect(api.update).not.toHaveBeenCalled();
 });
@@ -458,13 +509,15 @@ it('discards an interrupted change when the creator account changes', async () =
   const api = { get: vi.fn().mockResolvedValueOnce(initial).mockResolvedValue(second),
     update: vi.fn(() => new Promise<HistorySettings>(resolve => { complete = resolve; })), revoke: vi.fn() };
   render(<ThemeProvider theme={theme}><SettingsView api={api} /></ThemeProvider>);
-  fireEvent.click(await screen.findByRole('checkbox'));
-  fireEvent.click(screen.getByRole('button', { name: 'Turn on message history' }));
+  const dialog = await openConsent();
+  fireEvent.click(dialog.getByRole('checkbox', { name: CONSENT_LABEL }));
+  fireEvent.click(dialog.getByRole('button', { name: 'Turn on message history' }));
   await act(async () => bridgeTransportStore.bindAccount('creator-2'));
   await act(async () => complete({ ...initial, settings_revision: 2, consent_revision: 'receipt',
     authorized_platform_creator_id: 'platform-creator-1', desired_state: 'running', effective_state: 'running' }));
   expect((api.update.mock.calls[0] as unknown as [number, unknown, AbortSignal])[2].aborted).toBe(true);
-  expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
+  expect(screen.queryByRole('switch', { name: 'Add older messages', checked: true, hidden: true })).toBeNull();
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   expect(screen.queryByText("Your change hasn't been confirmed.")).toBeNull();
   expect(api.update).toHaveBeenCalledOnce();
 });
@@ -486,12 +539,13 @@ it('does not lock a definitely refused history change as an unknown write', asyn
   const api = { get: vi.fn().mockResolvedValue(initial),
     update: vi.fn().mockRejectedValue(new HistorySettingsApiError('Refused', 403)), revoke: vi.fn() };
   render(<ThemeProvider theme={theme}><SettingsView api={api} /></ThemeProvider>);
-  fireEvent.click(await screen.findByRole('checkbox'));
+  const dialog = await openConsent();
+  fireEvent.click(dialog.getByRole('checkbox', { name: CONSENT_LABEL }));
   vi.useFakeTimers();
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Turn on message history' })));
-  expect(screen.getByText("Dipsy couldn't change message history settings.")).toBeTruthy();
+  await act(async () => fireEvent.click(dialog.getByRole('button', { name: 'Turn on message history' })));
+  expect(consentDialog().getByText("Dipsy couldn't change message history settings.")).toBeTruthy();
   expect(screen.queryByText("Your change hasn't been confirmed.")).toBeNull();
-  expect(screen.getByRole('button', { name: 'Turn on message history' })).toHaveProperty('disabled', true);
+  expect(consentDialog().getByRole('button', { name: 'Turn on message history' })).toHaveProperty('disabled', true);
   await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
   expect(api.get).toHaveBeenCalledTimes(2);
   expect(api.update).toHaveBeenCalledOnce();
@@ -532,8 +586,9 @@ describe('history recovery after renderer restart', () => {
     const first = createHistoryRecoveryJournal(() => storage);
     const view = render(<ThemeProvider theme={theme}><SettingsView api={api} browserApi={browserApi}
       desktopApi={owner.api} recoveryJournal={first} /></ThemeProvider>);
-    fireEvent.click(await screen.findByRole('checkbox'));
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on message history' }));
+    const dialog = await openConsent();
+    fireEvent.click(dialog.getByRole('checkbox', { name: CONSENT_LABEL }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Turn on message history' }));
     expect(first.getState()?.desired).toBe('running');
     expect(api.update).toHaveBeenCalledOnce();
     view.unmount();
@@ -544,12 +599,13 @@ describe('history recovery after renderer restart', () => {
     render(<ThemeProvider theme={theme}><SettingsView api={nextApi} browserApi={browserApi}
       desktopApi={owner.api} recoveryJournal={restarted} /></ThemeProvider>);
     expect(await screen.findByText("Your previous change wasn't confirmed. These are your current settings.")).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Turn on message history' })).toHaveProperty('disabled', true);
-    expect(screen.getByRole('checkbox')).toHaveProperty('checked', false);
-    expect(screen.getByRole('checkbox')).toHaveProperty('disabled', false);
+    // Nothing is replayed: history reads as off, and turning it on asks again.
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(historySwitch().checked).toBe(false);
+    expect(historySwitch()).toHaveProperty('disabled', false);
     expect(nextApi.update).not.toHaveBeenCalled();
     await act(async () => complete(authorized));
-    expect(screen.getByRole('checkbox')).toHaveProperty('checked', false);
+    expect(historySwitch().checked).toBe(false);
 
     nextApi.get.mockResolvedValue(authorized);
     await act(async () => bridgeTransportStore.setAgent({ ...bridgeTransportStore.getState().agent!,
@@ -574,8 +630,9 @@ describe('history recovery after renderer restart', () => {
     const restarted = createHistoryRecoveryJournal(() => storage);
     render(<ThemeProvider theme={theme}><SettingsView api={api} desktopApi={owner.api}
       browserApi={browserApi} recoveryJournal={restarted} /></ThemeProvider>);
-    expect(await screen.findByRole('button', { name: 'Pause' })).toBeTruthy();
+    expect((await screen.findByRole<HTMLInputElement>('switch', { name: 'Add older messages' })).checked).toBe(true);
     await waitFor(() => expect(restarted.getState()).toBeNull());
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.queryByRole('checkbox')).toBeNull();
     expect(api.update).not.toHaveBeenCalled();
     expect(browserApi.open).not.toHaveBeenCalled();
@@ -593,8 +650,9 @@ describe('history recovery after renderer restart', () => {
     const api = { get: vi.fn(async () => revoked), update: vi.fn(), revoke: vi.fn() };
     const restarted = createHistoryRecoveryJournal(() => storage);
     render(<ThemeProvider theme={theme}><SettingsView api={api} desktopApi={owner.api} recoveryJournal={restarted} /></ThemeProvider>);
-    expect(await screen.findByRole('button', { name: 'Turn on message history' })).toHaveProperty('disabled', true);
+    expect((await screen.findByRole<HTMLInputElement>('switch', { name: 'Add older messages' })).checked).toBe(false);
     await waitFor(() => expect(restarted.getState()).toBeNull());
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(api.get).toHaveBeenCalledOnce();
     expect(api.update).not.toHaveBeenCalled();
     expect(api.revoke).not.toHaveBeenCalled();
@@ -630,10 +688,14 @@ describe('history recovery after renderer restart', () => {
     const restarted = createHistoryRecoveryJournal(() => storage);
     render(<ThemeProvider theme={theme}><SettingsView api={api} desktopApi={owner.api} recoveryJournal={restarted} /></ThemeProvider>);
     await waitFor(() => expect(restarted.getState()).toBeNull());
-    const checkbox = await screen.findByRole('checkbox');
-    expect(checkbox).toHaveProperty('checked', false);
-    expect(checkbox).toHaveProperty('disabled', false);
-    expect(screen.getByRole('button', { name: 'Turn on message history' })).toHaveProperty('disabled', true);
+    // The stored consent is dropped, not replayed: history reads as off and asking again starts unticked.
+    const toggle = await screen.findByRole<HTMLInputElement>('switch', { name: 'Add older messages' });
+    expect(toggle.checked).toBe(false);
+    expect(toggle).toHaveProperty('disabled', false);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const dialog = await openConsent();
+    expect(dialog.getByRole('checkbox', { name: CONSENT_LABEL })).toHaveProperty('checked', false);
+    expect(dialog.getByRole('button', { name: 'Turn on message history' })).toHaveProperty('disabled', true);
     expect(api.update).not.toHaveBeenCalled();
     expect(api.revoke).not.toHaveBeenCalled();
   });
@@ -646,9 +708,10 @@ describe('history recovery after renderer restart', () => {
       setItem: () => { throw Error('unavailable'); } }));
     const api = { get: vi.fn(async () => initial), update: vi.fn(), revoke: vi.fn() };
     render(<ThemeProvider theme={theme}><SettingsView api={api} desktopApi={owner.api} recoveryJournal={journal} /></ThemeProvider>);
-    fireEvent.click(await screen.findByRole('checkbox'));
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Turn on message history' })));
-    expect(screen.getByText('Dipsy could not save the request. No change was sent.')).toBeTruthy();
+    const dialog = await openConsent();
+    fireEvent.click(dialog.getByRole('checkbox', { name: CONSENT_LABEL }));
+    await act(async () => fireEvent.click(dialog.getByRole('button', { name: 'Turn on message history' })));
+    expect(consentDialog().getByText('Dipsy could not save the request. No change was sent.')).toBeTruthy();
     expect(api.update).not.toHaveBeenCalled();
     expect(journal.getState()).toBeNull();
   });

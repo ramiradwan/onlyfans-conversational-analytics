@@ -1,6 +1,13 @@
 import type { ConversationRecord, MessageView } from '../../protocol';
 import { conversationLatestMessage } from '../../store/transportStore';
 
+export type ConversationFilter = 'all' | 'unread';
+
+export interface ConversationFilterCriteria {
+  query: string;
+  filter: ConversationFilter;
+}
+
 function timestampValue(value: string | null): number {
   if (value === null) return Number.NEGATIVE_INFINITY;
   const parsed = Date.parse(value);
@@ -42,12 +49,90 @@ export function sortConversations(
   });
 }
 
+function searchablePreviewText(rawText: string): string {
+  return rawText.replace(/<[^>]+>/gu, ' ').replace(/\s+/gu, ' ').trim().toLowerCase();
+}
+
+export function filterConversations(
+  conversations: readonly ConversationRecord[],
+  criteria: ConversationFilterCriteria,
+): ConversationRecord[] {
+  const normalizedQuery = criteria.query.trim().toLowerCase();
+  return conversations.filter((conversation) => {
+    if (criteria.filter === 'unread' && conversation.unread_count <= 0) {
+      return false;
+    }
+    if (normalizedQuery.length === 0) {
+      return true;
+    }
+    const title = getConversationTitle(conversation).toLowerCase();
+    const platformId = conversation.platform_user_id?.toLowerCase() ?? '';
+    const preview = searchablePreviewText(conversationLatestMessage(conversation)?.text ?? '');
+    return (
+      title.includes(normalizedQuery) ||
+      platformId.includes(normalizedQuery) ||
+      preview.includes(normalizedQuery)
+    );
+  });
+}
+
 export function sortMessages(messages: readonly MessageView[]): MessageView[] {
   return [...messages].sort((left, right) => {
     const timeDifference = timestampValue(left.sent_at) - timestampValue(right.sent_at);
     if (timeDifference !== 0) return timeDifference;
     return left.message_id < right.message_id ? -1 : 1;
   });
+}
+
+export function messageCalendarKey(
+  value: string | null,
+  timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
+): string | null {
+  if (value === null) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function previousCalendarKey(calendarKey: string): string {
+  const [year, month, day] = calendarKey.split('-').map(Number);
+  const utcDate = new Date(Date.UTC(year, month - 1, day - 1, 12, 0, 0));
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'UTC',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(utcDate);
+}
+
+export function formatMessageDateHeading(
+  value: string | null,
+  now: Date = new Date(),
+  timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
+): string {
+  const dayKey = messageCalendarKey(value, timeZone);
+  if (dayKey === null || value === null) return '';
+
+  const todayKey = messageCalendarKey(now.toISOString(), timeZone);
+  if (todayKey !== null) {
+    if (dayKey === todayKey) return 'Today';
+    if (dayKey === previousCalendarKey(todayKey)) return 'Yesterday';
+  }
+
+  const date = new Date(value);
+  const yearFormatter = new Intl.DateTimeFormat('en', { timeZone, year: 'numeric' });
+  const sameYear = yearFormatter.format(date) === yearFormatter.format(now);
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    timeZone,
+    ...(sameYear ? {} : { year: 'numeric' }),
+  }).format(date);
 }
 
 export function formatTimestamp(value: string | null, now: Date = new Date(), timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone): string {

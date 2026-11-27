@@ -27,6 +27,9 @@ import type { DesktopOnboardingApi } from '../services/desktopOnboarding';
 import type { HistorySettingsApi } from '../services/historySettingsApi';
 import type { MessageApi } from '../services/messageApi';
 import type { NlpDependenciesApi } from '../services/nlpDependenciesApi';
+import type { TextAnalysisApi } from '../services/textAnalysisApi';
+import { createTextAnalysisClient } from '../services/textAnalysisClient';
+import type { TextAnalysisReissueApi } from '../services/textAnalysisReissueApi';
 import { bridgeTransportStore } from '../store/transportStore';
 import { useUserStore } from '../store/userStore';
 import CreatorDashboardView from '../views/CreatorDashboardView';
@@ -595,15 +598,34 @@ const WORKSPACE_PATHS: Record<Exclude<StoryWorkspaceName, 'passkey'>, string> = 
   graph: '/graph-explorer',
 };
 
-function textAnalysisApi(journey: StoryJourneyName): NlpDependenciesApi {
+function textAnalysisApi(journey: StoryJourneyName, configured: boolean): NlpDependenciesApi {
   return {
     get: async () => journey === 'loading' ? new Promise(() => {}) : ({
-      configured: false, profiles: [], available_profiles: [], failure: null,
+      configured, profiles: [], available_profiles: [], failure: null,
       resume_granularity: 'verified_files_current_file_restarts', acquisitions: [], selected: null,
     }),
     observe: async () => { throw new Error('No text analysis operation is active.'); },
     command: async () => { throw new Error('Text analysis is unavailable.'); },
   };
+}
+
+// The story account hasn't turned on text processing and has no retained requests.
+function processingApi(): TextAnalysisApi {
+  const unavailable = async (): Promise<never> => { throw new Error('Text processing is unavailable in the story.'); };
+  return {
+    current: async () => ({ current: { installation_id: 'story-installation', creator_account_id: ACCOUNT, principal_id: 'story-principal',
+      mode_version: 0, enrollment_id: null, state: 'retired', capsule_available: false }, profile: null }),
+    retainedList: async () => ({ items: [], next_after: null }),
+    savedList: async () => ({ items: [], next_after: null }),
+    commandReceipt: async () => null, outcome: async () => null, retained: async () => null,
+    command: unavailable, prepare: unavailable, confirm: unavailable, saved: unavailable, retain: unavailable, evidence: unavailable,
+  };
+}
+
+// No licence recovery is under way on the story installation.
+function reissueApi(): TextAnalysisReissueApi {
+  const unavailable = async (): Promise<never> => { throw new Error('Licence recovery is unavailable in the story.'); };
+  return { status: async () => ({ current: null }), begin: unavailable, resume: unavailable, openBrowser: unavailable };
 }
 
 function createDriver(journey: StoryJourneyName, continuation?: DashboardContinuationState, workspace?: StoryWorkspaceName) {
@@ -666,10 +688,15 @@ function createDriver(journey: StoryJourneyName, continuation?: DashboardContinu
       });
     }])) as T;
   }
-  const nlp = wrap('nlp', () => textAnalysisApi(currentJourney));
+  // Text analysis appears only on installs that offer it, so a capture opts in with this flag.
+  const textAnalysis = new URLSearchParams(location.search).has('text-analysis');
+  const nlp = wrap('nlp', () => textAnalysisApi(currentJourney, textAnalysis));
   let nlpStatus: ReturnType<NlpDependenciesApi['get']> | undefined;
   const apis = {
     nlp: { ...nlp, get: (signal?: AbortSignal) => nlpStatus ??= nlp.get(signal) },
+    // An installation that offers text analysis also answers its processing and recovery reads.
+    processing: textAnalysis ? createTextAnalysisClient(processingApi()) : undefined,
+    reissue: textAnalysis ? reissueApi() : undefined,
     activation: wrap('activation', () => activationApi()),
     history: wrap('history', () => historyApi(currentJourney)),
     pairing: wrap('pairing', () => pairingApi(currentJourney)),
@@ -826,6 +853,8 @@ export function StoryWorkspace({
                 browserApi={driver.apis.browser}
                 onboardingApi={driver.onboarding}
                 nlpApi={driver.apis.nlp}
+                textAnalysisClient={driver.apis.processing}
+                textAnalysisReissueApi={driver.apis.reissue}
               />
             )}
           />

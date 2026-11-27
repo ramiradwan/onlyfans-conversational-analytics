@@ -67,7 +67,7 @@ describe('loading label timing', () => {
   it('reserves skeletons immediately and shows a label only at 400 ms', () => {
     vi.useFakeTimers();
     const view = render(<ThemeProvider theme={theme}><LoadingFrame label="Loading dashboard…" /></ThemeProvider>);
-    expect(view.container.querySelector('.MuiSkeleton-root')).toBeTruthy();
+    expect(view.container.querySelector('[data-visual="settings-loading"]')?.getAttribute('aria-busy')).toBe('true');
     expect(view.queryByText('Loading dashboard…')).toBeNull();
     act(() => vi.advanceTimersByTime(399));
     expect(view.queryByText('Loading dashboard…')).toBeNull();

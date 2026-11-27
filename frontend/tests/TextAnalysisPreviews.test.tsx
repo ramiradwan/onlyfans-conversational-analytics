@@ -120,7 +120,6 @@ describe('Text analysis preview controls', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Review Engine installation' });
     expect(dialog.querySelector('[data-journey-state="textanalysis.engine_review"]')).toBeTruthy();
     expect(within(dialog).getByText('Setup choice: Preview.')).toBeTruthy();
-    expect(within(dialog).getByText(/shared Engine code only/)).toBeTruthy();
     expect(engine.start).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Install reviewed Engine' }));
     await waitFor(() => expect(engine.start).toHaveBeenCalledExactlyOnceWith(engine.quote.review_digest, expect.any(AbortSignal)));

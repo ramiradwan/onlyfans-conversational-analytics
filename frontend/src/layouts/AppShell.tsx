@@ -9,7 +9,7 @@ import { AppAppBar } from './AppAppBar';
 import { AppDrawer } from './AppDrawer';
 import { hasDesktopWindowControls } from './DesktopWindowControls';
 
-const { desktopRailWidth, headerHeight, mobileDrawerWidth, railInset } = componentTokens.shell;
+const { desktopRailWidth, headerHeight, mobileDrawerWidth } = componentTokens.shell;
 
 export function AppShell() {
   const statusBreakpoint = hasDesktopWindowControls() ? 'md' : 'sm';
@@ -51,7 +51,7 @@ export function AppShell() {
           pt: 'var(--shell-header-height)',
           '--issue-band-height': phase === 'interrupted' ? { xs: '104px', sm: '64px' } : '0px',
           '& [data-scroll-container], & [data-reading-viewport]': { scrollPaddingTop: 'calc(var(--issue-band-height) + 16px)' },
-          width: { sm: `calc(100% - ${desktopRailWidth + railInset}px)` },
+          width: { sm: `calc(100% - ${desktopRailWidth}px)` },
         }}
       >
         <Box
@@ -63,7 +63,7 @@ export function AppShell() {
             minWidth: 0,
             overflow: 'hidden',
             pb: { xs: 2, sm: 1.5 },
-            pt: { xs: 1, sm: `${railInset}px` },
+            pt: { xs: 1, sm: 2.5 },
             px: { xs: 2, sm: 3, lg: 4 },
           }}
         >

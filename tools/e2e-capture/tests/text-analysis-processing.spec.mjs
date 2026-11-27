@@ -7,7 +7,7 @@ import { assertJournalOrder, check, dropNextReply, fixture, prepareProfile, proc
 test('first saved finding is visible after explicit processing enablement', async ({}, testInfo) => {
   await withTextAnalysis('joint', async (x) => {
     await prepareProfile(x);
-    await selectProfile(x.page, 'Approved processing profile', 'joint');
+    await selectProfile(x.page, 'Profile', 'joint');
     const before = await stats(x.page);
     check(before.canonical.committed_jobs === 0 && before.engine.analyze_count === 0, 'no_early_processing');
     const started = performance.now();
@@ -54,7 +54,7 @@ test('processing commands preserve durable enrollment and canonical findings', a
     const before = await stats(x.page);
     check(before.canonical.committed_jobs === 0 && before.canonical.client_intents === 0, 'passive_processing');
     await prepareProfile(x);
-    await selectProfile(x.page, 'Approved processing profile', 'joint');
+    await selectProfile(x.page, 'Profile', 'joint');
     const lostEnable = await dropNextReply(x.page, '/api/v1/nlp/execution');
     await processingCommand(x.page, 'enable', { unknown: true });
     const forwarded = await lostEnable.received; await lostEnable.close();

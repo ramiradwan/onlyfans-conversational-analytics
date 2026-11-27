@@ -1,3 +1,5 @@
+import AddOutlined from '@mui/icons-material/AddOutlined';
+import ExtensionOutlined from '@mui/icons-material/ExtensionOutlined';
 import {
   Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogContentText,
   DialogTitle, FormControlLabel, Stack, Typography, useMediaQuery,
@@ -5,7 +7,7 @@ import {
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { BrowserExtensionControls } from './BrowserExtensionControls';
-import { Panel, SectionHeader, SettingRow, useRevealHold, type SectionStatus } from './ui';
+import { Panel, quietNoteSx, SectionHeader, useRevealHold, type SectionMenuItem, type SectionStatus } from './ui';
 import { OnboardingStatus } from './ui/OnboardingCard';
 import { ReservedRegion } from './ui/ReservedRegion';
 import { usePermissions } from '../hooks/usePermissions';
@@ -18,12 +20,15 @@ import {
 } from '../services/companionPairingApi';
 import { desktopInteractionFailure, desktopOnboardingApi, selectBrowserFeedback, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import { bridgeTransportStore } from '../store/transportStore';
+import { componentTokens } from '../theme';
 import {
+  EXTENSION_LABELS,
   extensionConnection,
   extensionLabel,
   type ExtensionConnection,
 } from '../utils/statusCopy';
 
+const BROWSER_STATUS_LABELS = [...EXTENSION_LABELS, 'Connecting', 'Paused'] as const;
 const WINDOW_LIMIT_MS = 300_000;
 const PAIRING_EXPIRED = 'Time ran out before the connection finished.';
 const terminal = (status: CompanionPairingStatus) => (
@@ -64,6 +69,7 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
   const [entryError, setEntryError] = useState<string | null>(null);
   const [browserFeedback, setBrowserFeedback] = useState<string | null>(null);
   const [listFeedback, setListFeedback] = useState<PairingListFeedback | null>(null);
+  const [disconnectItems, setDisconnectItems] = useState<readonly SectionMenuItem[] | null>(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const lastKnownCount = useRef<number | null>(null);
   const updateCount = useCallback((count: number | null) => {
@@ -253,7 +259,7 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
   // The chip names the most important current fact: a link problem, then what
   // the extension itself reports, then a healthy link. A running attempt reads
   // as connecting rather than as not connected.
-  const sectionStatus: SectionStatus | null = starting
+  const sectionStatus: SectionStatus<(typeof BROWSER_STATUS_LABELS)[number]> | null = starting
     ? { label: 'Connecting', tone: 'info' }
     : connected
       ? connection !== 'connected'
@@ -264,7 +270,9 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
             ? { label: 'Paused', tone: 'default' }
             : { label: extensionLabel(connection), tone: 'success' }
       : connectedCount === null
-        ? null
+        ? !embedded && (lastKnownCount.current !== null || listFeedback?.failed)
+          ? { label: 'Needs attention', tone: 'warning' }
+          : null
         : { label: 'Not connected', tone: 'default' };
 
   const attemptFeedback = approved ? connection === 'connected' ? 'Extension connected.' : 'Connection approved. Waiting for the extension.'
@@ -285,7 +293,9 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
     setFailed(false);
     setManualRecovery(true);
   };
-  const optionsAction = <Button aria-label="Connection options" onClick={openOptions}>Options</Button>;
+  const optionsAction = (leading = false) => <Button aria-label="Connection options" onClick={openOptions}
+    // Leading the row, the label rather than the button padding lines up with the text column.
+    sx={leading ? { marginInlineStart: `-${componentTokens.MuiButton.textInset.medium}px` } : undefined}>Options</Button>;
   useEffect(() => {
     if (!feedback) setShowFeedback(false);
   }, [feedback]);
@@ -303,11 +313,10 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
       spacing={1.5}
     >
       {!embedded && <SectionHeader
-        sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) 8rem' }, gap: { xs: 0, sm: 2 },
-          '& > [aria-live]': { display: 'flex', width: '100%', minHeight: '1.5rem', margin: '0 !important',
-            '& .MuiChip-root': { maxWidth: '100%', height: 'auto', minHeight: '1.5rem' },
-            '& .MuiChip-label': { whiteSpace: 'normal', overflowWrap: 'anywhere' } } }}
+        icon={<ExtensionOutlined />}
+        menu={disconnectItems ?? undefined}
         status={sectionStatus}
+        statusLabels={BROWSER_STATUS_LABELS}
         title="Browser extension"
         summary={!connected && lastKnownCount.current === 0 ? 'Connect the extension to this app' : undefined}
       />}
@@ -320,6 +329,7 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
         onCount={updateCount}
         onBrowserFeedback={setBrowserFeedback}
         onFeedback={setListFeedback}
+        onMenu={setDisconnectItems}
         refresh={`${status?.version ?? -1}:${notice?.revision ?? -1}:${notice?.changed_at ?? ''}`}
       />
       <Box data-browser-feedback sx={{ minWidth: 0, mt: '0 !important' }}>
@@ -327,11 +337,14 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
           <Stack data-pairing-actions direction="row" spacing={1} useFlexGap
             sx={{ flexWrap: 'wrap', alignItems: 'flex-start', pt: 1,
               '& > button': { maxWidth: '100%', overflowWrap: 'anywhere' } }}>
-            {canStart && <Button disabled={opening || manualRecovery} onClick={() => void connect()}
-              variant={connected && !entryError ? 'outlined' : 'contained'}>
+            {canStart && <Button size="small" disabled={opening || manualRecovery} onClick={() => void connect()}
+              variant={connected && !entryError ? 'text' : 'contained'}
+              startIcon={connected && !entryError ? <AddOutlined /> : undefined}
+              // The icon, not the button padding, lines up with the text column.
+              sx={connected && !entryError ? { marginInlineStart: '-3px' } : undefined}>
               {pendingPairing ? 'Continue connecting' : connected && !entryError ? 'Connect another extension' : 'Connect extension'}
             </Button>}
-            {showOptionsInline && optionsAction}
+            {showOptionsInline && optionsAction(!canStart)}
           </Stack>
         )}
         <Stack data-reserved-region="browser-feedback" direction="row" spacing={1} useFlexGap aria-live="polite"
@@ -346,7 +359,7 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
         <DialogTitle id="browser-alert-title">Browser alert</DialogTitle>
         <DialogContent><DialogContentText role="alert">{feedback}</DialogContentText></DialogContent>
         <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5 }} disableSpacing>
-          {canCompare && !showOptionsInline && optionsAction}
+          {canCompare && !showOptionsInline && optionsAction()}
           {listFeedback?.failed && <Button aria-label="Retry checking connected extensions" disabled={listFeedback.busy}
             onClick={listFeedback.retry}>Check list</Button>}
           <Button onClick={() => setShowFeedback(false)}>Close</Button>
@@ -422,7 +435,7 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
   );
 }
 
-function AdmittedPairings({ api, browserApi, connection, creatorAccountId, onCount, onBrowserFeedback, onFeedback, refresh }: {
+function AdmittedPairings({ api, browserApi, connection, creatorAccountId, onCount, onBrowserFeedback, onFeedback, onMenu, refresh }: {
   api: CompanionPairingApi;
   browserApi: BrowserControlApi;
   connection: ExtensionConnection;
@@ -430,6 +443,8 @@ function AdmittedPairings({ api, browserApi, connection, creatorAccountId, onCou
   onCount: (count: number | null) => void;
   onBrowserFeedback: (text: string | null) => void;
   onFeedback: (feedback: PairingListFeedback | null) => void;
+  /** Disconnecting is rare, so each linked extension's disconnect sits in the section menu. */
+  onMenu: (items: readonly SectionMenuItem[] | null) => void;
   refresh: string;
 }) {
   const [pins, setPins] = useState<CompanionPairingStatus[]>([]);
@@ -488,35 +503,27 @@ function AdmittedPairings({ api, browserApi, connection, creatorAccountId, onCou
     } catch { if (!controller.signal.aborted) setFailed(true); }
     finally { if (!controller.signal.aborted) setBusy(false); }
   };
+  useEffect(() => {
+    onMenu(pins.length === 0 ? null : pins.map((pin, index) => ({
+      label: pins.length === 1 ? 'Disconnect browser extension' : `Disconnect linked extension ${index + 1}`,
+      destructive: true,
+      disabled: busy,
+      onSelect: () => setConfirming(pin),
+    })));
+  }, [busy, onMenu, pins]);
+  useEffect(() => () => onMenu(null), [onMenu]);
   return (
     <>
-      {pins.length > 0 && <Stack spacing={0.75}>
-          <ReservedRegion grow id="browser-facts" size={{ xs: 0, sm: 0 }}><BrowserExtensionControls
-            api={browserApi}
-            creatorAccountId={creatorAccountId}
-            browser={browser}
-            canManage={isCreator}
-            connection={connection}
-            onFeedback={onBrowserFeedback}
-          /></ReservedRegion>
-          <Box data-reading-viewport data-region-role="scroll" sx={{ maxHeight: '8rem', overflowY: 'auto', scrollbarGutter: 'stable' }}>{pins.map((pin, index) => (
-            <SettingRow
-              key={pin.pairing_id}
-              title={pins.length === 1 ? 'Extension linked to this app' : `Linked extension ${index + 1}`}
-              action={(
-                <Button
-                  aria-label={`Disconnect browser extension ${index + 1}`}
-                  disabled={busy}
-                  onClick={() => setConfirming(pin)}
-                  size="small"
-                  sx={{ color: 'text.secondary' }}
-                >
-                  Disconnect
-                </Button>
-              )}
-            />
-          ))}</Box>
-      </Stack>}
+      {pins.length > 0 && (
+        <ReservedRegion grow id="browser-facts" size={{ xs: 0, sm: 0 }}><BrowserExtensionControls
+          api={browserApi}
+          creatorAccountId={creatorAccountId}
+          browser={browser}
+          canManage={isCreator}
+          connection={connection}
+          onFeedback={onBrowserFeedback}
+        /></ReservedRegion>
+      )}
       <Dialog open={confirming !== null} onClose={() => setConfirming(null)}>
         <DialogTitle>Disconnect the browser extension?</DialogTitle>
         <DialogContent>
@@ -557,7 +564,8 @@ export function CompanionPairingControls({ api = companionPairingApi, browserApi
       p: 0,
       '& [data-reserved-region]': { minBlockSize: 0, minHeight: 0 },
       '& [data-reading-viewport]': { height: 'auto' },
-    } : undefined}>
+      // The reserved feedback line ends the card and stands in for most of its bottom padding.
+    } : canViewSettings && creatorAccountId ? { pb: 1.5 } : undefined}>
       {canViewSettings && creatorAccountId ? (
         <PairingAttemptControls
           key={creatorAccountId}
@@ -570,8 +578,8 @@ export function CompanionPairingControls({ api = companionPairingApi, browserApi
         />
       ) : (
         <>
-          <SectionHeader title="Browser extension" />
-          <Alert severity="info">Finish setting up the desktop app before connecting the browser extension.</Alert>
+          <SectionHeader icon={<ExtensionOutlined />} title="Browser extension" />
+          <Alert severity="info" sx={quietNoteSx}>Finish setting up the desktop app before connecting the browser extension.</Alert>
         </>
       )}
     </Panel>

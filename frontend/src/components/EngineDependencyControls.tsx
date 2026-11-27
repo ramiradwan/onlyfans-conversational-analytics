@@ -1,23 +1,26 @@
+import MemoryOutlined from '@mui/icons-material/MemoryOutlined';
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { Panel, SectionHeader } from './ui';
+import { Panel, SectionHeader, quietNoteSx, useReportedStatus, type SectionStatus } from './ui';
 
 import { engineAcquisitionApi, EngineAcquisitionError, type EngineAcquisitionApi, type EngineReview, type EngineSelection, type EngineStatus } from '../api/engineAcquisition';
 
+const ENGINE_STATUS_LABELS = ['Unavailable', 'Needs attention', 'Installed', 'Updating…', 'Not installed'] as const;
 const number = new Intl.NumberFormat();
 const bytes = (value: number) => `${number.format(value)} bytes`;
 const states: Record<EngineStatus['state'], string> = {
   not_requested: 'Engine installation has not been requested.', checking: 'Checking Engine installation.',
-  acquiring: 'Windows is installing the Engine.', cancelling: 'Cancellation requested; waiting for Windows.',
+  acquiring: 'Windows is installing the Engine.', cancelling: 'Cancellation requested. Waiting for Windows.',
   installed: 'Engine installation verified.', failed: 'Engine installation did not complete.',
   recovery_pending: 'Engine installation needs attention. Another installation cannot start.',
 };
 type ControlContext = { account: string | null; api: EngineAcquisitionApi; selection: EngineSelection };
 type Fence = { kind: 'ownership'; recovery: { context: ControlContext; operationId: string } | null }
   | { kind: 'uncertain' } | null;
-export function EngineDependencyControls({ account, api = engineAcquisitionApi, selection = 'module' }: {
+export function EngineDependencyControls({ account, api = engineAcquisitionApi, selection = 'module', onStatus }: {
   account: string | null; api?: EngineAcquisitionApi; selection?: EngineSelection;
+  onStatus?: (status: SectionStatus | null) => void;
 }) {
   const context = useMemo(() => ({ account, api, selection }), [account, api, selection]);
   const [status, setStatus] = useState<EngineStatus | null>(null);
@@ -124,42 +127,56 @@ export function EngineDependencyControls({ account, api = engineAcquisitionApi, 
     catch { if (current(signal)) { setError(true); setFence({ kind: 'ownership', recovery: null }); } }
     finally { if (current(signal)) setBusy(false); }
   };
+  const headerStatus: SectionStatus<(typeof ENGINE_STATUS_LABELS)[number]> = !matches
+    ? { label: 'Unavailable', tone: 'error' }
+    : !supported || !account
+      ? { label: 'Unavailable', tone: 'default' }
+      : error
+        ? { label: 'Needs attention', tone: 'warning' }
+        : status?.state === 'installed'
+          ? { label: 'Installed', tone: 'success' }
+          : status?.state === 'acquiring' || status?.state === 'cancelling' || busy
+            ? { label: 'Updating…', tone: 'info' }
+            : status?.state === 'failed' || status?.state === 'recovery_pending' || fence !== null
+              ? { label: 'Needs attention', tone: 'warning' }
+              : { label: 'Not installed', tone: 'default' };
+  useReportedStatus(onStatus, headerStatus);
   return <Panel component="section" aria-label="Text analysis Engine" data-journey-state="textanalysis.engine_controls">
-    <SectionHeader title="Text analysis Engine" />
-    <Typography>The Engine is shared on this device. Installing it does not download a model profile or enable processing. Other analytics remain available.</Typography>
-    <Typography>Supported languages and tasks are listed with each model profile. Review the profile before downloading its files.</Typography>
-    {!matches ? <Alert severity="error">Engine setup selection could not be verified. No installation was requested.</Alert> : !supported ? <Alert severity="info">Engine installation is available in the Windows desktop app.</Alert> : !account ? <Alert severity="info">Choose an account to review Engine installation.</Alert> : <Stack spacing={1}>
-      {busy && <Typography role="status">Updating Engine setup status...</Typography>}
+    <SectionHeader
+      icon={<MemoryOutlined />}
+      title="Text analysis Engine"
+      summary="Runs text analysis on this computer."
+      status={headerStatus}
+      statusLabels={ENGINE_STATUS_LABELS}
+    />
+    {!matches ? <Alert severity="error">Engine setup selection could not be verified. No installation was requested.</Alert> : !supported ? <Alert severity="info" sx={quietNoteSx}>Engine installation is available in the Windows desktop app.</Alert> : !account ? <Alert severity="info" sx={quietNoteSx}>Choose an account to review Engine installation.</Alert> : <Stack spacing={1.5}>
+      {busy && <Typography role="status" variant="body2" sx={{ color: 'text.secondary' }}>Updating Engine setup status...</Typography>}
       {error && <Alert severity="error">Engine setup could not be verified. Check status before another request.</Alert>}
-      {fence !== null && <Alert severity="warning">Another installation request is unavailable while ownership or servicing remains unresolved. Other analytics and Quit remain available.</Alert>}
-      {status && <Stack role="status" spacing={1}>
-        <Typography>{states[status.state]}</Typography>
-        {status.in_flight && <Typography>Windows owns this operation. Closing this view does not cancel it. Transfer bytes and percentage are not reported.</Typography>}
-        {status.cancel_requested && <Typography>Cancellation is requested; it is not proof that Windows has finished.</Typography>}
-        {status.deadline_reached && <Typography>The time budget was reached. Windows settlement may take longer.</Typography>}
-        {status.installed && status.state === 'installed' && <Typography>Only Engine installation is verified. Profile preparation and processing remain separate.</Typography>}
+      {fence !== null && <Alert severity="warning">Another installation request is unavailable while ownership or servicing remains unresolved.</Alert>}
+      {status && <Stack role="status" spacing={0.5}>
+        {/* A requested cancellation reads as one even while Windows still reports the transfer. */}
+        <Typography variant="body2">{states[status.cancel_requested && status.in_flight ? 'cancelling' : status.state]}</Typography>
+        {status.deadline_reached && <Typography variant="body2" sx={{ color: 'text.secondary' }}>The time budget was reached. Windows settlement may take longer.</Typography>}
       </Stack>}
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-        <Button disabled={busy} onClick={() => { void check(); }}>Check Engine status</Button>
-        <Button disabled={busy || !status || Boolean(blocked) || status.state === 'installed'} onClick={() => { void review(); }}>Review Engine installation</Button>
-        {status?.in_flight && <Button disabled={busy || status.cancel_requested || !status.operation_id} onClick={() => { void cancel(); }}>Cancel Engine installation</Button>}
+        <Button size="small" variant="outlined" disabled={busy} onClick={() => { void check(); }}>Check Engine status</Button>
+        <Button size="small" variant="outlined" disabled={busy || !status || Boolean(blocked) || status.state === 'installed'} onClick={() => { void review(); }}>Review Engine installation</Button>
+        {status?.in_flight && <Button size="small" color="error" disabled={busy || status.cancel_requested || !status.operation_id} onClick={() => { void cancel(); }}>Cancel Engine installation</Button>}
       </Stack>
-      {quote?.availability === 'unavailable' && <Alert severity="info">A verified Engine installation quote is unavailable. No installation was started.</Alert>}
+      {quote?.availability === 'unavailable' && <Alert severity="info" sx={quietNoteSx}>Engine installation isn’t available right now.</Alert>}
     </Stack>}
     <Dialog open={matches && quote?.availability === 'available' && quote.explicit_selection === selection} onClose={() => setQuote(null)} aria-labelledby="engine-install-review-title">
       <DialogTitle id="engine-install-review-title">Review Engine installation</DialogTitle>
       <DialogContent data-journey-state="textanalysis.engine_review">{quote?.availability === 'available' && <Stack spacing={1}>
-        <Typography>Setup choice: {selection === 'preview' ? 'Preview' : 'Module'}.</Typography>
-        <Typography>Engine version: {quote.engine_package_version}</Typography>
-        <Typography>Expected complete signed package: {bytes(quote.expected_complete_package_bytes)}</Typography>
-        <Typography>Declared installed space budget: {bytes(quote.declared_disk.installed_space_budget_bytes)}</Typography>
-        <Typography>Declared temporary space budget: {bytes(quote.declared_disk.temporary_space_budget_bytes)}</Typography>
-        <Typography>Declared rollback space budget: {bytes(quote.declared_disk.rollback_space_budget_bytes)}</Typography>
-        <Typography>Declared required free space: {bytes(quote.declared_disk.required_free_space_bytes)}</Typography>
-        <Typography>These are publisher-expected package bytes and declared disk budgets. Actual Windows transfer, cache reuse and temporary disk use are not reported.</Typography>
-        <Typography>This installs shared Engine code only. Review model data, language and task support separately before downloading a profile. Processing remains unavailable until its separate requirements are met.</Typography>
+        <Typography variant="body2">Setup choice: {selection === 'preview' ? 'Preview' : 'Module'}.</Typography>
+        <Typography variant="body2">Engine version: {quote.engine_package_version}</Typography>
+        <Typography variant="body2">Expected complete signed package: {bytes(quote.expected_complete_package_bytes)}</Typography>
+        <Typography variant="body2">Declared installed space budget: {bytes(quote.declared_disk.installed_space_budget_bytes)}</Typography>
+        <Typography variant="body2">Declared temporary space budget: {bytes(quote.declared_disk.temporary_space_budget_bytes)}</Typography>
+        <Typography variant="body2">Declared rollback space budget: {bytes(quote.declared_disk.rollback_space_budget_bytes)}</Typography>
+        <Typography variant="body2">Declared required free space: {bytes(quote.declared_disk.required_free_space_bytes)}</Typography>
       </Stack>}</DialogContent>
-      <DialogActions><Button onClick={() => setQuote(null)}>Back</Button><Button disabled={busy || Boolean(blocked) || quote?.availability !== 'available'} onClick={() => { void start(); }}>Install reviewed Engine</Button></DialogActions>
+      <DialogActions><Button size="small" onClick={() => setQuote(null)}>Back</Button><Button size="small" variant="contained" disabled={busy || Boolean(blocked) || quote?.availability !== 'available'} onClick={() => { void start(); }}>Install reviewed Engine</Button></DialogActions>
     </Dialog>
   </Panel>;
 }

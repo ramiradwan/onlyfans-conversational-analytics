@@ -58,7 +58,7 @@ export function dynamicSequence(view, width) {
     for (const key of keys) add(`fixture-api:response-error:${key}`);
     for (const capture of ['active', 'paused', 'off']) for (const access of ['granted', 'needs_approval', 'reload_required']) for (const permission of ['granted', 'missing']) for (const review of [false, true]) add(`browser:${capture}:${access}:${permission}:${review}`);
     for (const state of ['pending', 'delivered', '9999', '10000', 'authoritative', 'bridge-lost', 'bridge-lost-grace', 'bridge-return']) add(`control:${state}`);
-    add('disconnect:open', 'disconnect:cancel');
+    add('disconnect:menu', 'disconnect:open', 'disconnect:cancel');
   }
   if (view === 'home' || view === 'inbox') {
     for (const field of ['display_name', 'latest_message.text', 'coverage.reason_code']) add(`long:conversation:${field}`);

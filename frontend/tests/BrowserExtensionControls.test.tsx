@@ -12,6 +12,8 @@ const active: BrowserSurfacePayload = {
   capture: 'active', site_access: 'granted', history_permission: 'granted',
   legal_review_required: false, reported_at: '2026-09-29T10:00:00Z',
 };
+const COLLECTING = 'New messages are saved as they arrive.';
+const PAUSED = 'Paused.';
 
 function makeApi(result: 'delivered' | 'unreachable' = 'delivered'): BrowserControlApi {
   return { setCapture: vi.fn(async () => result), open: vi.fn(async () => result) };
@@ -26,42 +28,50 @@ function mount(props: Partial<Parameters<typeof BrowserExtensionControls>[0]> = 
   return { ...all, rerender };
 }
 
+const collect = () => screen.getByRole<HTMLInputElement>('switch', { name: 'Collect new messages' });
+
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('browser extension controls', () => {
   it('shows only pushed state and settles a pause when the extension reports it', async () => {
     const { api, rerender } = mount();
-    expect(screen.getByText('New message collection is enabled.')).toBeTruthy();
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
+    expect(screen.getByText(COLLECTING)).toBeTruthy();
+    expect(collect().checked).toBe(true);
+    await act(async () => fireEvent.click(collect()));
     expect(api.setCapture).toHaveBeenCalledWith('pause', expect.any(AbortSignal));
-    expect(screen.getByRole('button', { name: 'Pausing…' })).toHaveProperty('disabled', true);
-    expect(screen.getByText('New message collection is enabled.')).toBeTruthy();
+    // The switch keeps the confirmed state and is held while the extension applies the change.
+    expect(collect().checked).toBe(true);
+    expect(collect()).toHaveProperty('disabled', true);
+    expect(screen.getByText('Pausing…')).toBeTruthy();
     rerender({ browser: { ...active, capture: 'paused' } });
-    expect(screen.getByText('Paused. Nothing new is collected.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Resume collecting' })).toHaveProperty('disabled', false);
+    expect(screen.getByText(PAUSED)).toBeTruthy();
+    expect(collect().checked).toBe(false);
+    expect(collect()).toHaveProperty('disabled', false);
     await act(async () => vi.advanceTimersByTimeAsync(10_000));
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('reports an extension that never confirms the change', async () => {
     mount();
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
+    await act(async () => fireEvent.click(collect()));
     await act(async () => vi.advanceTimersByTimeAsync(10_000));
     expect(screen.getByRole('alert').textContent).toContain("hasn't been confirmed");
-    expect(screen.getByRole('button', { name: 'Pause collecting' })).toHaveProperty('disabled', true);
+    expect(collect()).toHaveProperty('disabled', true);
+    expect(collect().checked).toBe(true);
   });
 
   it('reports an unreachable extension without changing the shown state', async () => {
     mount({ api: makeApi('unreachable') });
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
+    await act(async () => fireEvent.click(collect()));
     expect(screen.getByRole('alert').textContent).toContain('not connected right now');
-    expect(screen.getByText('New message collection is enabled.')).toBeTruthy();
+    expect(screen.getByText(COLLECTING)).toBeTruthy();
+    expect(collect().checked).toBe(true);
   });
 
   it('sends resume to the extension review instead when the terms changed', () => {
     const { api, onboarding } = mount({ browser: { ...active, capture: 'paused', legal_review_required: true }, connection: 'offline' });
-    expect(screen.queryByRole('button', { name: 'Resume collecting' })).toBeNull();
+    expect(screen.queryByRole('switch', { name: 'Collect new messages' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Review terms' }));
     expect(onboarding.begin).toHaveBeenCalledWith('browser.access');
     expect(api.setCapture).not.toHaveBeenCalled();
@@ -79,44 +89,52 @@ describe('browser extension controls', () => {
   it('offers browser permission controls independently of the ingestion link', () => {
     mount({ browser: { ...active, site_access: 'needs_approval' }, connection: 'offline' });
     expect(screen.getByRole('button', { name: 'Allow in extension' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Pause collecting' })).toHaveProperty('disabled', false);
+    expect(collect()).toHaveProperty('disabled', false);
   });
 
   it('resumes a reporting paused browser once while ingestion is offline', async () => {
     const { api, rerender } = mount({ browser: { ...active, capture: 'paused' }, connection: 'offline' });
-    const resume = screen.getByRole('button', { name: 'Resume collecting' });
-    expect(resume).toHaveProperty('disabled', false);
-    await act(async () => fireEvent.click(resume));
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Resuming…' })));
+    expect(collect()).toHaveProperty('disabled', false);
+    expect(collect().checked).toBe(false);
+    await act(async () => fireEvent.click(collect()));
+    await act(async () => fireEvent.click(collect()));
     expect(api.setCapture).toHaveBeenCalledTimes(1);
     expect(api.setCapture).toHaveBeenCalledWith('resume', expect.any(AbortSignal));
-    expect(screen.getByText('Paused. Nothing new is collected.')).toBeTruthy();
+    expect(screen.getByText('Resuming…')).toBeTruthy();
+    expect(collect().checked).toBe(false);
     rerender({ browser: { ...active } });
-    expect(screen.getByText('New message collection is enabled.')).toBeTruthy();
+    expect(screen.getByText(COLLECTING)).toBeTruthy();
+    expect(collect().checked).toBe(true);
   });
 
   it('keeps paused browser state when resume delivery is unreachable', async () => {
     const { api } = mount({ api: makeApi('unreachable'), browser: { ...active, capture: 'paused' }, connection: 'offline' });
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Resume collecting' })));
+    await act(async () => fireEvent.click(collect()));
     expect(api.setCapture).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('alert').textContent).toContain('not connected right now');
-    expect(screen.getByText('Paused. Nothing new is collected.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Resume collecting' })).toHaveProperty('disabled', true);
+    expect(screen.getByText(PAUSED)).toBeTruthy();
+    expect(collect().checked).toBe(false);
+    expect(collect()).toHaveProperty('disabled', true);
   });
 
   it('removes browser actions when a reporting session disappears', () => {
     const { api, rerender } = mount({ browser: { ...active, capture: 'paused', site_access: 'needs_approval' }, connection: 'offline' });
-    expect(screen.getByRole('button', { name: 'Resume collecting' })).toBeTruthy();
+    expect(collect()).toBeTruthy();
     rerender({ browser: null, connection: 'connected' });
     expect(screen.queryAllByRole('button')).toHaveLength(0);
+    expect(screen.queryAllByRole('switch')).toHaveLength(0);
     expect(api.setCapture).not.toHaveBeenCalled();
     expect(api.open).not.toHaveBeenCalled();
   });
 
-  it('shows status without controls to operators', () => {
-    mount({ canManage: false, browser: { ...active, site_access: 'needs_approval' } });
+  it('shows status without controls to operators', async () => {
+    const { api } = mount({ canManage: false, browser: { ...active, site_access: 'needs_approval' } });
     expect(screen.queryAllByRole('button')).toHaveLength(0);
-    expect(screen.getByText('New message collection is enabled.')).toBeTruthy();
+    expect(screen.getByText(COLLECTING)).toBeTruthy();
+    expect(collect().checked).toBe(true);
+    expect(collect()).toHaveProperty('disabled', true);
+    await act(async () => fireEvent.click(collect()));
+    expect(api.setCapture).not.toHaveBeenCalled();
   });
 
   it('waits for a connected extension to report its settings', () => {
@@ -125,6 +143,7 @@ describe('browser extension controls', () => {
     expect(screen.getByText("Site access hasn't been checked.")).toBeTruthy();
     expect(screen.queryByText('Waiting for browser permissions.')).toBeNull();
     expect(screen.queryAllByRole('button')).toHaveLength(0);
+    expect(screen.queryAllByRole('switch')).toHaveLength(0);
   });
 
   it('retains the compact facts rows while the connection is missing without offering stale controls', () => {
@@ -133,27 +152,37 @@ describe('browser extension controls', () => {
         <BrowserExtensionControls api={makeApi()} browser={null} canManage connection="offline" />
       </ThemeProvider>,
     );
-    expect(screen.getAllByRole('heading', { level: 3 }).map(node => node.textContent)).toEqual(['New messages', 'Site access']);
+    expect(screen.getAllByRole('heading', { level: 3 }).map(node => node.textContent)).toEqual(['Collect new messages', 'Site access']);
     expect(screen.getByText('The browser extension is not connected.')).toBeTruthy();
     expect(screen.queryAllByRole('button')).toHaveLength(0);
+    expect(screen.queryAllByRole('switch')).toHaveLength(0);
   });
 
   it('keeps the review in the paused row and gives controls distinct names from history sync', () => {
     mount({ browser: { ...active, capture: 'paused', legal_review_required: true } });
-    expect(screen.getByText('Paused. Terms need review.')).toBeTruthy();
+    expect(screen.getByText('Paused until you review the terms.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Pause$|^Resume$/ })).toBeNull();
+    expect(screen.queryByRole('switch', { name: 'Add older messages' })).toBeNull();
     expect(screen.getAllByRole('heading', { level: 3 }).map((node) => node.textContent))
-      .toEqual(['New messages', 'Site access']);
+      .toEqual(['Collect new messages', 'Site access']);
   });
 
   it('reports feedback to the shared browser section without a second empty reservation', async () => {
     const onFeedback = vi.fn();
     const { rerender } = mount({ api: makeApi('unreachable'), onFeedback });
     expect(document.querySelector('[data-reserved-region="browser-feedback"]')).toBeNull();
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
+    await act(async () => fireEvent.click(collect()));
     expect(onFeedback).toHaveBeenLastCalledWith('The browser extension is not connected right now.');
     rerender({ browser: null });
     expect(onFeedback).toHaveBeenLastCalledWith(null);
+  });
+
+  it('keeps one control column width whether the row shows a switch or a review button', () => {
+    const { rerender } = mount();
+    const reserve = () => [...document.querySelectorAll('[data-setting-action] button[aria-hidden="true"]')].map((node) => node.textContent);
+    expect(reserve()).toEqual(['Review terms', 'Open extension', 'Allow in extension']);
+    rerender({ browser: { ...active, capture: 'paused', legal_review_required: true } });
+    expect(reserve()).toEqual(['Review terms', 'Open extension', 'Allow in extension']);
   });
 });
 
@@ -201,16 +230,17 @@ it('retains the feedback reservation while pushed browser facts disappear', () =
 it('retains a lost capture response across views until a pushed effect settles it', async () => {
   const api = makeApi();
   const first = mount({ api, creatorAccountId: 'creator-1' });
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
+  await act(async () => fireEvent.click(collect()));
   await act(async () => vi.advanceTimersByTimeAsync(10_000));
-  expect(screen.getByRole('button', { name: 'Pause collecting' })).toHaveProperty('disabled', true);
+  expect(collect()).toHaveProperty('disabled', true);
   cleanup();
   const second = mount({ api, creatorAccountId: 'creator-1' });
-  expect(screen.getByRole('button', { name: 'Pause collecting' })).toHaveProperty('disabled', true);
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
+  expect(collect()).toHaveProperty('disabled', true);
+  await act(async () => fireEvent.click(collect()));
   expect(api.setCapture).toHaveBeenCalledOnce();
   second.rerender({ browser: { ...active, capture: 'paused' } });
-  expect(screen.getByRole('button', { name: 'Resume collecting' })).toHaveProperty('disabled', false);
+  expect(collect()).toHaveProperty('disabled', false);
+  expect(collect().checked).toBe(false);
   expect(screen.queryByRole('alert')).toBeNull();
   expect(first.api).toBe(api);
 });
@@ -218,19 +248,19 @@ it('retains a lost capture response across views until a pushed effect settles i
 it('does not carry an uncertain capture request into another creator account', async () => {
   const api = makeApi();
   const h = mount({ api, creatorAccountId: 'creator-1' });
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
+  await act(async () => fireEvent.click(collect()));
   await act(async () => vi.advanceTimersByTimeAsync(10_000));
   h.rerender({ creatorAccountId: 'creator-2' });
-  expect(screen.getByRole('button', { name: 'Pause collecting' })).toHaveProperty('disabled', false);
+  expect(collect()).toHaveProperty('disabled', false);
   expect(api.setCapture).toHaveBeenCalledOnce();
 });
 
 it('allows a new explicit capture action only after a fresh browser report following unreachable delivery', async () => {
   const h = mount({ api: makeApi('unreachable') });
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
-  expect(screen.getByRole('button', { name: 'Pause collecting' })).toHaveProperty('disabled', true);
+  await act(async () => fireEvent.click(collect()));
+  expect(collect()).toHaveProperty('disabled', true);
   h.rerender({ browser: { ...active, reported_at: '2026-09-29T10:01:00Z' } });
-  expect(screen.getByRole('button', { name: 'Pause collecting' })).toHaveProperty('disabled', false);
+  expect(collect()).toHaveProperty('disabled', false);
   expect(h.api.setCapture).toHaveBeenCalledOnce();
 });
 
@@ -239,17 +269,19 @@ it('binds capture to the reported owner revision and confirms only its matching 
   const after = '00000000-0000-4000-8000-000000000002';
   const scope = { capture: 'active' as const, owner_scope: 'a'.repeat(64), consent_epoch: before, policy_revision: '1', receipt: null };
   const h = mount({ browser: { ...active, capture_control: scope } });
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
+  await act(async () => fireEvent.click(collect()));
   const request = vi.mocked(h.api.setCapture).mock.calls[0][2];
   expect(request).toMatchObject({ owner_scope: 'a'.repeat(64), consent_epoch: before, policy_revision: '1', operation_id: expect.any(String) });
   h.rerender({ browser: { ...active, capture: 'paused' } });
-  expect(screen.getByRole('button', { name: 'Pausing…' })).toHaveProperty('disabled', true);
+  expect(collect()).toHaveProperty('disabled', true);
+  expect(screen.getByText('Pausing…')).toBeTruthy();
   h.rerender({ browser: { ...active, capture: 'paused', capture_control: {
     ...scope, consent_epoch: after, capture: 'paused', receipt: {
       operation_id: request!.operation_id, action: 'pause', previous_consent_epoch: before, outcome: 'applied',
     },
   } } });
-  expect(screen.getByRole('button', { name: 'Resume collecting' })).toHaveProperty('disabled', false);
+  expect(collect()).toHaveProperty('disabled', false);
+  expect(collect().checked).toBe(false);
   expect(h.api.setCapture).toHaveBeenCalledOnce();
 });
 
@@ -258,20 +290,20 @@ it('reports the exact scoped refusal without claiming that resume happened', asy
   const scope = { capture: 'paused' as const, owner_scope: 'a'.repeat(64), consent_epoch: epoch, policy_revision: '1', receipt: null };
   const browser = { ...active, capture: 'paused' as const, capture_control: scope };
   const h = mount({ browser });
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Resume collecting' })));
+  await act(async () => fireEvent.click(collect()));
   const request = vi.mocked(h.api.setCapture).mock.calls[0][2]!;
   h.rerender({ browser: { ...browser, capture_control: { ...scope, receipt: {
     operation_id: request.operation_id, action: 'resume', previous_consent_epoch: epoch, outcome: 'refused',
   } } } });
   expect(screen.getByRole('alert').textContent).toContain("couldn't change");
-  expect(screen.getByText('Paused. Nothing new is collected.')).toBeTruthy();
+  expect(screen.getByText(PAUSED)).toBeTruthy();
+  expect(collect().checked).toBe(false);
   expect(h.api.setCapture).toHaveBeenCalledOnce();
 });
 
 it('does not dispatch an unscoped action when a modern browser cannot report its current consent scope', async () => {
   const { api } = mount({ browser: { ...active, capture_control_supported: true, capture_control: null } });
-  const button = screen.getByRole('button', { name: 'Pause collecting' });
-  expect(button).toHaveProperty('disabled', true);
-  await act(async () => fireEvent.click(button));
+  expect(collect()).toHaveProperty('disabled', true);
+  await act(async () => fireEvent.click(collect()));
   expect(api.setCapture).not.toHaveBeenCalled();
 });
