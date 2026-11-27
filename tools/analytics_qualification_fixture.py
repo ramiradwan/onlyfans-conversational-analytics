@@ -102,11 +102,6 @@ class Workload:
                     yield scope
             self.f.source.open_question_scope = known
 
-    def question_resources(self):
-        from app.analytics.query_runtime import QuestionResources
-
-        return QuestionResources(self.f.source, self.f.pipeline, clock=lambda: self.clock)
-
     def capture_current_reference(self):
         """Record the validated active handle before testing rejection after restart."""
         from app.analytics.generation_reference import GenerationReference

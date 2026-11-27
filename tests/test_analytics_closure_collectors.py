@@ -1,5 +1,6 @@
 """Small executable collector checks; these are not capacity measurements."""
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
 
@@ -16,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def configuration(tmp_path, mode, case="empty"):
     manifest = q.read_json(ROOT / "docs/analytics/acceptance-manifest.json")
     # Deliberately different, test-only inputs. The frozen manifest verifier rejects them.
+    # Keep the synthetic history inside retention when the collector checks live availability.
+    manifest["fixture"]["evaluation_clock"] = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
     for profile in manifest["profiles"].values():
         profile["numeric_latency_gates"] = False  # Unit tests are not reference-profile measurements.
     manifest["history"].update(batches=2, messages_per_batch=10)
@@ -48,8 +51,6 @@ def raw_result(tmp_path, config, report):
 def test_question_collector_records_fresh_answers_and_failures(tmp_path, monkeypatch, case):
     monkeypatch.setenv("OFCA_QUALIFICATION_PROCESS", "test-owner")
     config = configuration(tmp_path, "questions", case)
-    # The fresh worker must evaluate the fixture at its declared time even years later.
-    config["manifest"]["fixture"]["evaluation_clock"] = "2020-09-27T08:03:21Z"
     report = collect(config)
     assert report["complete"], report
     assert report["collector_process"]["pid"] == os.getpid()

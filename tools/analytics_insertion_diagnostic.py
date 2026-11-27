@@ -408,9 +408,10 @@ async def run_update(args, q, light, outer, status, manifest, result, workdir):
     from tools.analytics_qualification_fixture import Workload, Journal
     from tools.analytics_qualification_workloads import direct, scheduled
     from tools.light_first_update_benchmark import summarize_probe
+    from app.analytics.query_runtime import QuestionResources
     from app.analytics.scheduling import InProcessProjectionScheduler
     work = Workload(workdir, manifest, args.messages, reopen=False, known_kinds=False)
-    resources = work.question_resources()
+    resources = QuestionResources(work.f.source, work.f.pipeline)
     scheduler = InProcessProjectionScheduler(work.f.pipeline, worker_count=1,
                                             queue_capacity=64, reconciliation_interval=30)
     journal = Journal(args.output/"events", str(__import__("os").getpid()))
