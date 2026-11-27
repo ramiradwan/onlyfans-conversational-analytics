@@ -1,6 +1,6 @@
 """Compare real question handlers with hand-authored expected answers."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 from collections import defaultdict
 
@@ -10,7 +10,7 @@ from app.analytics.opaque_refs import account_ref, conversation_ref, message_ref
 from app.analytics.query_contracts import QuestionEvidence, QuestionPlan, QuestionSnapshot, ResolvedQuestion
 from app.analytics.query_execution import QuestionBudget, QuestionLimits
 from app.analytics.query_facts import QuestionConversation, QuestionMessage
-from app.analytics.query_handlers import no_later_creator_reply, pricing_discussions
+from app.analytics.query_handlers import no_later_creator_reply, participant_activity_decline, pricing_discussions
 from tests.state_models.analytics_question_cases import instant, load_cases
 
 pytestmark = [pytest.mark.ci_tier('fast')]
@@ -80,3 +80,56 @@ def test_authoritative_order_takes_precedence_over_message_clock():
     # Source sequence places the creator response after the participant message.
     assert case["messages"][1]["order"] > case["messages"][0]["order"]
     test_handlers_match_literal_cases(case)
+
+
+@pytest.mark.parametrize(("earlier", "recent", "expected"), [
+    ([14, 13, 12, 11, 8], [7, 0], True),        # Both outside edges and the shared boundary.
+    ([13, 12, 11, 10], [], False),               # Fewer than five in the first week.
+    ([13, 12, 11, 10, 8], [7, 4, 0], False),    # Only two fewer.
+    ([14, 13, 12, 11, 10, 9, 8], [7, 5, 3, 0], False),  # Three fewer, less than half.
+    ([14, 13, 12, 11, 10, 8], [7, 4, 0], True),         # Exactly half.
+    ([9, 9.01, 9.02, 9.03, 9.04], [], False),  # One UTC date.
+    ([13, 12, 11, 10, 8], [], True),             # Complete recent week with no participant messages.
+])
+def test_activity_compares_participant_counts_only(earlier, recent, expected):
+    from types import SimpleNamespace
+
+    through = datetime(2026, 10, 28, 10, tzinfo=timezone.utc)
+    start = through - timedelta(days=14)
+    account, chat = "fictional", "book-club"
+    aref, cref = account_ref(account), conversation_ref(account, chat)
+    messages = []
+    for age, role, kind in [
+        *((age, "participant", "message") for age in earlier + recent),
+        (14.01, "participant", "message"), (-0.01, "participant", "message"),
+        (4.5, "creator", "message"), (5.5, "system", "system"),
+    ]:
+        messages.append(QuestionMessage(message_ref(account, chat, str(len(messages))),
+            through - timedelta(days=age), role, kind))
+    plan = QuestionPlan(question="participant_activity_decline.v1", start=start, end=through, cutoff=through,
+                        timezone="Europe/Helsinki")
+    resolved = SimpleNamespace(plan=plan, account_ref=aref, cutoff=through,
+                               retention_cutoff_exclusive=start-timedelta(days=1), selection_clipped_by_retention=False)
+
+    def answer(values, coverage="complete"):
+        session = SimpleNamespace(conversations=lambda q,b: [QuestionConversation(cref, tuple(values), coverage)],
+            evidence=lambda m,b: (QuestionEvidence(account_ref=aref, conversation_ref=cref, message_ref=m.message_ref,
+                source_revision=1, source_version_digest=sha("source"), sent_at=m.sent_at), None))
+        return participant_activity_decline(session, resolved, None, QuestionBudget(QuestionLimits()))
+
+    page = answer(messages)
+    assert page.total_matching_conversations == int(expected) and page.undetermined_conversation_count == 0
+    if expected:
+        row = page.rows[0]
+        assert (row.earlier_messages, row.recent_messages) == (len(earlier), len(recent))
+        assert len(row.evidence) == (2 if recent else 1)
+    for coverage in ("partial", "unknown"):
+        page = answer(messages, coverage)
+        assert not page.rows and page.undetermined_conversation_count == 1
+    for role, kind, age in (("participant", "unknown", 6), ("unknown", "message", 6),
+                            ("participant", "message", earlier[0])):
+        page = answer([*messages, QuestionMessage(message_ref(account, chat, "ambiguous"),
+                      through-timedelta(days=age), role, kind)])
+        assert not page.rows and page.undetermined_conversation_count == 1
+    resolved.selection_clipped_by_retention = True
+    assert answer(messages).undetermined_conversation_count == 1

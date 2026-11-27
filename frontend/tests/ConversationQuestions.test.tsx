@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ConversationQuestions } from '../src/components/analytics/ConversationQuestions';
+import { activityWeekMs, parseQuestionResult } from '../src/analytics/questionContract';
 import type { QuestionApi } from '../src/services/questionApi';
 import { QuestionApiError } from '../src/services/questionApi';
 import { createQuestionStore, type QuestionStore } from '../src/store/questionStore';
@@ -32,6 +33,36 @@ async function run() {
   await screen.findByText(/Checked /);
 }
 describe('Conversation questions', () => {
+  it('compares two fixed weeks, opens the saved source and clears it on an account switch', async () => {
+    const { update } = setup({ answer: async (p) => {
+      expect(p.question).toBe('participant_activity_decline.v1');
+      expect(p.cutoff).toBe(p.end);
+      expect(Date.parse(p.end) - Date.parse(p.start)).toBe(2 * activityWeekMs);
+      const value = answer(p);
+      value.question.snapshot.source_message_count = 9;
+      const first = value.page.rows[0];
+      value.page.rows = [{ ...first, reason: 'participant_activity_decline', coverage: 'complete',
+        earlier_messages: 6, recent_messages: 3, evidence_truncated: false,
+        evidence: [...first.evidence, { ...first.evidence[0], message_ref: `m1:${'3'.repeat(64)}`, sent_at: p.start }] }];
+      return parseQuestionResult(value, p);
+    } });
+    await screen.findByText('Pricing discussions are not available yet.');
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Question' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Conversations going quiet' }));
+    expect(screen.getByLabelText('Compare through')).toBeTruthy();
+    expect(screen.queryByLabelText('Start date')).toBeNull();
+    await run();
+    const table = screen.getByRole('table', { name: 'Conversation question results' });
+    for (const count of ['6', '3']) expect(within(table).getByRole('cell', { name: count })).toBeTruthy();
+    fireEvent.click(within(table).getByRole('button', { name: 'Recent week message' }));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText(evidence().text);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open conversation' }));
+    await within(dialog).findByText('Synthetic saved conversation');
+    act(() => update({ ...context(), creatorAccountId: 'another-fictional-account' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByRole('table')).toBeNull();
+  });
   it('shows presets, dates and disabled pricing without bypassing availability', async () => {
     setup();
     expect(screen.getByLabelText('Start date')).toBeTruthy();

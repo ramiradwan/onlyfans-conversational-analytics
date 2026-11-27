@@ -505,7 +505,9 @@ def get_questions(response: Response, policy: RuntimePolicy = Depends(get_authen
         {"question": "no_later_creator_reply.v1", "enabled": True,
          "limitations": ["Message types and history coverage may be unknown."]},
         {"question": "pricing_discussions.v1", "enabled": False,
-         "reason": "analytics_pricing_not_qualified"}]}
+         "reason": "analytics_pricing_not_qualified"},
+        {"question": "participant_activity_decline.v1", "enabled": True,
+         "limitations": ["Both weeks need complete saved history and identifiable message senders and types."]}]}
 
 
 @router.post("/questions", response_model=QuestionResult, operation_id="answerAnalyticsQuestion",

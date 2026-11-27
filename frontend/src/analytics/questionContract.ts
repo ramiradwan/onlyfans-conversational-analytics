@@ -7,7 +7,8 @@ const ref = (prefix: string) => z.string().regex(new RegExp(`^${prefix}:[0-9a-f]
 const digest = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 const coverage = z.enum(['complete', 'partial', 'unknown']);
 const span = z.object({ start: count, end: count }).strict().refine((s) => s.end > s.start);
-export const questionId = z.enum(['no_later_creator_reply.v1', 'pricing_discussions.v1']);
+export const questionId = z.enum(['no_later_creator_reply.v1', 'pricing_discussions.v1', 'participant_activity_decline.v1']);
+export const activityWeekMs = 7 * 24 * 60 * 60 * 1000;
 export type QuestionId = z.infer<typeof questionId>;
 export const questionPlan = z.object({
   question: questionId, start: instant, end: instant, timezone: z.string().min(1).max(64),
@@ -16,7 +17,10 @@ export const questionPlan = z.object({
   cutoff: instant.nullable().optional(), sort: z.literal('evidence_time_desc').optional(),
   page_size: count.min(1).max(200).default(50), cursor: z.string().min(1).max(4096).nullable().optional(),
 }).strict().refine((p) => Date.parse(p.start) < Date.parse(p.end)
-  && (!p.cutoff || Date.parse(p.end) <= Date.parse(p.cutoff)));
+  && (!p.cutoff || Date.parse(p.end) <= Date.parse(p.cutoff))
+  && (p.question !== 'participant_activity_decline.v1' || (p.cutoff != null
+    && Date.parse(p.cutoff) === Date.parse(p.end) && Date.parse(p.end) - Date.parse(p.start) === 2 * activityWeekMs
+    && p.filters?.language == null)));
 export type QuestionPlan = z.infer<typeof questionPlan>;
 export const questionEvidence = z.object({
   account_ref: ref('a1'), conversation_ref: ref('c1'), message_ref: ref('m1'),
@@ -24,11 +28,16 @@ export const questionEvidence = z.object({
   span: span.nullable().optional(),
 }).strict();
 export type QuestionEvidence = z.infer<typeof questionEvidence>;
-const row = z.object({
+const evidenceRow = z.object({
   account_ref: ref('a1'), conversation_ref: ref('c1'), latest_evidence_at: instant,
-  reason: z.enum(['no_later_creator_reply', 'pricing_discussion']), coverage,
+  coverage,
   evidence: z.array(questionEvidence).min(1).max(32), evidence_truncated: z.boolean(),
 }).strict();
+const row = z.discriminatedUnion('reason', [
+  evidenceRow.extend({ reason: z.enum(['no_later_creator_reply', 'pricing_discussion']) }),
+  evidenceRow.extend({ reason: z.literal('participant_activity_decline'), coverage: z.literal('complete'),
+    earlier_messages: count.min(5), recent_messages: count, evidence_truncated: z.literal(false) }),
+]);
 const snapshot = z.object({
   account_ref: ref('a1'), source_revision: count, projection_generation: count.min(1),
   generation_id: z.string().min(1).max(128), canonical_content_digest: digest,
@@ -59,6 +68,11 @@ const resultSchema = z.object({
 }).strict();
 export type QuestionResult = z.infer<typeof resultSchema>;
 export type QuestionRow = QuestionResult['page']['rows'][number];
+const reasons: Record<QuestionId, QuestionRow['reason']> = {
+  'no_later_creator_reply.v1': 'no_later_creator_reply',
+  'pricing_discussions.v1': 'pricing_discussion',
+  'participant_activity_decline.v1': 'participant_activity_decline',
+};
 export const evidenceResponse = z.object({
   reference: questionEvidence,
   location: z.object({ conversation_id: z.string().min(1).max(512),
@@ -70,7 +84,7 @@ export type SourceEvidence = z.infer<typeof evidenceResponse>;
 export const questionCatalog = z.object({ questions: z.array(z.object({
   question: questionId, enabled: z.boolean(), limitations: z.array(z.string().max(512)).max(8).optional(),
   reason: z.string().max(128).optional(),
-}).strict()).max(2) }).strict().refine((value) =>
+}).strict()).max(questionId.options.length) }).strict().refine((value) =>
   new Set(value.questions.map((q) => q.question)).size === value.questions.length);
 export type QuestionCatalog = z.infer<typeof questionCatalog>;
 export class QuestionContractError extends Error {
@@ -105,12 +119,21 @@ export function parseQuestionResult(value: unknown, request: QuestionPlan): Ques
     || new Set(page.rows.map((r) => r.conversation_ref)).size !== page.rows.length
     || page.rows.reduce((n, r) => n + r.evidence.length, 0) > 512) throw new QuestionContractError();
   let previous: QuestionRow | undefined;
+  let activityMessages = 0;
   for (const r of page.rows) {
     if (r.account_ref !== q.account_ref
-      || r.reason !== (request.question === 'pricing_discussions.v1' ? 'pricing_discussion' : 'no_later_creator_reply')
+      || r.reason !== reasons[request.question]
       || (request.filters?.conversation_ref && r.conversation_ref !== request.filters.conversation_ref)
       || new Set(r.evidence.map((e) => e.message_ref)).size !== r.evidence.length
       || !r.evidence.some((e) => sameInstant(e.sent_at, r.latest_evidence_at))) throw new QuestionContractError();
+    if (r.reason === 'participant_activity_decline') {
+      const split = Date.parse(request.end) - activityWeekMs;
+      activityMessages += r.earlier_messages + r.recent_messages;
+      if (activityMessages > q.snapshot.source_message_count || q.selection_clipped_by_retention || r.earlier_messages - r.recent_messages < 3
+        || 2 * r.recent_messages > r.earlier_messages || r.evidence.length !== (r.recent_messages ? 2 : 1)
+        || r.evidence.some((e) => Date.parse(e.sent_at) < Date.parse(request.start))
+        || r.evidence.filter((e) => Date.parse(e.sent_at) < split).length !== 1) throw new QuestionContractError();
+    }
     if (previous && (Date.parse(previous.latest_evidence_at) < Date.parse(r.latest_evidence_at)
       || (previous.latest_evidence_at === r.latest_evidence_at
         && previous.conversation_ref >= r.conversation_ref))) throw new QuestionContractError();

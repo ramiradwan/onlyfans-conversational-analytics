@@ -26,6 +26,8 @@ Rebuild accepts an empty JSON object and no query parameters. It revalidates cur
 
 `no_later_creator_reply.v1` is executable. It inspects follow-up through the cutoff, including replies outside the selected interval. Ambiguous latest messages are undetermined, not matches. A match does not mean a reply is required.
 
+`participant_activity_decline.v1` is available in **Analytics → Conversation questions → Conversations going quiet**. Choose a comparison time and run the question to see the earlier and recent participant-message counts. Each nonempty week has a source link where the creator can open the saved conversation. This starter question uses local message metadata and the existing question reader.
+
 The production canonical gateway translates supported per-record client parity metadata and retains inferred ordering. Missing or unsupported kind metadata remains unknown. A later or tied unknown keeps a conversation undetermined. See the [adoption and separate question-version proposal](history-kind-adoption.md) for the bounded evidence standard and activation decision.
 
 Coverage comes from the active acquisition generation at the question's fixed cutoff. Without an active generation it is unknown. Complete coverage requires a completed, closed generation with frozen inventory, a conversation history marker and a reconciled head through the generation's cutoff. A later question cutoff, incomplete evidence or retention clipping yields partial coverage. A last completed generation and an account freshness indicator cannot substitute for this evidence.

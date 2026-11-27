@@ -9,9 +9,10 @@ const digest = `sha256:${'1'.repeat(64)}`;
 export const catalog: QuestionCatalog = { questions: [
   { question: 'no_later_creator_reply.v1', enabled: true, limitations: ['synthetic'] },
   { question: 'pricing_discussions.v1', enabled: false, reason: 'analytics_pricing_not_qualified' },
+  { question: 'participant_activity_decline.v1', enabled: true },
 ] };
-export const plan: QuestionPlan = { question: 'no_later_creator_reply.v1',
-  start: '2026-09-18T00:00:00Z', end: NOW.toISOString(), cutoff: NOW.toISOString(), timezone: 'UTC', page_size: 50 };
+export const plan = { question: 'no_later_creator_reply.v1',
+  start: '2026-09-18T00:00:00Z', end: NOW.toISOString(), cutoff: NOW.toISOString(), timezone: 'UTC', page_size: 50 } satisfies QuestionPlan;
 export function answer(request: QuestionPlan = plan, index = 1): QuestionResult {
   const conversation = `c1:${String(index).repeat(64)}`;
   const reference = { account_ref: ACCOUNT_REF, conversation_ref: conversation,

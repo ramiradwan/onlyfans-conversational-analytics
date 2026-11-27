@@ -43,6 +43,22 @@ def test_resolved_calendar_windows_preserve_dst_duration(start, end, hours):
     assert plan.end.tzinfo == timezone.utc
 
 
+@pytest.mark.parametrize("update", [
+    {"start": "2026-10-12T12:00:00+03:00"},  # Two calendar weeks spanning a clock change.
+    {"cutoff": None},
+    {"cutoff": "2026-10-26T12:01:00+02:00"},
+    {"filters": {"language": "en"}},
+])
+def test_activity_requires_two_elapsed_weeks_at_one_cutoff(update):
+    fields = request(question="participant_activity_decline.v1",
+        start="2026-10-12T13:00:00+03:00", end="2026-10-26T12:00:00+02:00",
+        cutoff="2026-10-26T12:00:00+02:00", timezone="Europe/Helsinki")
+    valid = QuestionPlan.model_validate(fields)
+    assert valid.end - valid.start == timedelta(days=14)
+    with pytest.raises(ValidationError):
+        QuestionPlan.model_validate({**fields, **update})
+
+
 @pytest.mark.parametrize(
     "field,value",
     [

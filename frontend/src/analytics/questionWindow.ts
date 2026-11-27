@@ -1,4 +1,4 @@
-import type { QuestionId, QuestionPlan } from './questionContract';
+import { activityWeekMs, type QuestionId, type QuestionPlan } from './questionContract';
 
 export function localDate(value: Date): string {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
@@ -15,7 +15,20 @@ export function initialQuestionDates(now = new Date()) {
   first.setDate(first.getDate() - 6);
   return { start: localDate(first), end: localDate(now) };
 }
-export function makeQuestionPlan(question: QuestionId, startDate: string, endDate: string, now = new Date()): QuestionPlan {
+export function localMinute(value: Date): string {
+  return `${localDate(value)}T${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
+}
+
+export function makeActivityPlan(through: string, now = new Date()): QuestionPlan {
+  const end = new Date(through);
+  if (!Number.isFinite(end.getTime()) || localMinute(end) !== through || end > now) {
+    throw new Error('Choose a valid comparison time up to now.');
+  }
+  return { question: 'participant_activity_decline.v1', start: new Date(end.getTime() - 2 * activityWeekMs).toISOString(),
+    end: end.toISOString(), cutoff: end.toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, page_size: 50 };
+}
+
+export function makeQuestionPlan(question: Exclude<QuestionId, 'participant_activity_decline.v1'>, startDate: string, endDate: string, now = new Date()): QuestionPlan {
   const start = midnight(startDate);
   const last = midnight(endDate);
   if (last < start || last > now) throw new Error('Choose an end date on or after the start date, no later than today.');
