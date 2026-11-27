@@ -14,7 +14,7 @@ import pytest
 from app.analytics.nlp_findings_store import FindingsStore
 from app.nlp import adapter
 from app.nlp.artifact_store import ArtifactStore, StoreLimits
-from app.nlp.profiles import ResourcePolicy, canonical_bytes
+from app.nlp.profiles import MAX_SAFE_INTEGER, ResourcePolicy, canonical_bytes
 from app.nlp.release_catalog import canonical, verify_catalog, CATALOG_TYPE, DependencyRejected
 from app.persistence.auth import SQLiteAuthenticationStore
 from app.persistence.nlp_dependencies import DependencyPersistence
@@ -607,16 +607,43 @@ def test_default_public_surface_is_unavailable_and_side_effect_free():
 
 def test_cost_plan_precedes_data_and_reports_actual_closure_reuse(env):
     e = env
+    e.artifacts.limits = replace(e.artifacts.limits, minimum_free_bytes=32_768)
     first = e.service.plan(e.profile.profile_id, e.profile.revision)
     assert not any(p.startswith('data/') for p in e.requests)
     assert e.engine.prepares == 0
     assert first['incremental_data_download_bytes'] == first['data_download_bytes'] > 0
+    assert first['required_free_space_bytes'] == first['acquisition_temporary_bytes'] + 32_768
     assert first['profile_metadata_bytes'] > 0
     e.acquire()
     later = e.service.plan(e.profile.profile_id, e.profile.revision)
     assert later['incremental_data_download_bytes'] == 0
     assert later['acquisition_temporary_bytes'] == 0
+    assert later['required_free_space_bytes'] == 32_768
     assert later['data_download_bytes'] == first['data_download_bytes']
+
+
+def test_cost_plan_refuses_a_free_space_total_the_client_cannot_represent(env, monkeypatch):
+    env.artifacts.limits = replace(env.artifacts.limits, minimum_free_bytes=MAX_SAFE_INTEGER)
+    monkeypatch.setattr('shutil.disk_usage', lambda path: SimpleNamespace(free=MAX_SAFE_INTEGER))
+    with pytest.raises(DependencyRejected, match='nlp_temporary_limit'):
+        env.service.plan(env.profile.profile_id, env.profile.revision)
+    assert not any(p.startswith('data/') for p in env.requests)
+
+
+def test_cost_plan_and_acquisition_use_the_same_free_space_reserve(env):
+    quote = env.service.plan(env.profile.profile_id, env.profile.revision)
+    env.artifacts.limits = replace(env.artifacts.limits, minimum_free_bytes=32_768)
+    with pytest.raises(DependencyRejected, match='nlp_plan_stale'):
+        env.service.acquire(env.profile.profile_id, env.profile.revision, plan_id=quote['operation_id'])
+    assert not any(p.startswith('data/') for p in env.requests)
+
+    # Plans saved by an earlier release did not state a free-space threshold.
+    legacy = env.service._operation(quote['operation_id'])
+    del legacy['costs']['required_free_space_bytes']
+    env.persistence.operation(legacy)
+    op = env.service.acquire(env.profile.profile_id, env.profile.revision, plan_id=quote['operation_id'])
+    env.service.thread.join(10)
+    assert env.service.observation(op)['state'] == 'complete'
 
 
 def test_verified_cache_reuse_does_not_charge_missing_data_space(env, monkeypatch):
@@ -860,7 +887,7 @@ async def test_optional_undrained_worker_does_not_skip_core_shutdown(env, monkey
     assert 'private diagnostic' not in caplog.text
 
 
-def test_pause_retains_only_verified_files_and_restarts_interrupted_file(env):
+def test_pause_retains_only_verified_files_and_restarts_interrupted_file(env, monkeypatch):
     e = env
     seen = []
 
@@ -877,6 +904,10 @@ def test_pause_retains_only_verified_files_and_restarts_interrupted_file(env):
     assert paused['state'] == 'paused' and paused['verified_files'] == 1
     assert not e.service.ready(e.profile)
     e.hook = None
+    quote = e.service._operation(op_id)['plan_costs']
+    retained = sum(path.stat().st_size for path in (e.service.spool / op_id).glob('*.part'))
+    assert retained > 0
+    monkeypatch.setattr('shutil.disk_usage', lambda path: SimpleNamespace(free=quote['required_free_space_bytes'] - retained))
     e.service.resume(op_id)
     e.service.thread.join(10)
     assert e.service.observation(op_id)['state'] == 'complete'

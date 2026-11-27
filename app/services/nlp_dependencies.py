@@ -17,7 +17,7 @@ from app.analytics.nlp_execution import require_findings_execution
 from app.nlp import adapter
 from app.nlp.artifact_store import DATA_ROLES, ArtifactStoreError
 from app.nlp.profile_authentication import authenticate_profile, MAX_ENVELOPE_BYTES
-from app.nlp.profiles import ResourcePolicy, canonical_bytes, validate_resource_policy, read_profile
+from app.nlp.profiles import MAX_SAFE_INTEGER, ResourcePolicy, canonical_bytes, validate_resource_policy, read_profile
 from app.nlp.release_catalog import (verify_catalog, canonical, require, DependencyRejected,
                                     CATALOG_ENVELOPE_BYTES, MAX_WITHDRAWALS)
 from app.persistence.private_files import (reject_path_aliases, apply_private_directory_security,
@@ -466,6 +466,9 @@ class DependencyService:
             incremental = 0
         except FileNotFoundError:
             incremental = total
+        temporary_bytes = 2 * incremental + receipt if incremental else 0
+        required_free_bytes = self._download_space_needed(temporary_bytes)
+        require(required_free_bytes <= MAX_SAFE_INTEGER, 'nlp_temporary_limit')
         with self.gate:
             require(self._entry(profile_id, revision) == entry, 'nlp_operation_stale')
             self._not_removing(closure)
@@ -477,7 +480,7 @@ class DependencyService:
                     'data_download_bytes': total, 'incremental_data_download_bytes': incremental,
                     'profile_metadata_bytes': len(raw), 'installed_bytes': profile.resources.installed_bytes,
                     'rollback_bytes': profile.resources.rollback_bytes,
-                    'acquisition_temporary_bytes': 2 * incremental + receipt if incremental else 0,
+                    'acquisition_temporary_bytes': temporary_bytes, 'required_free_space_bytes': required_free_bytes,
                     'transition_peak_memory_bytes': profile.resources.transition_peak_memory_bytes,
                     'inference_threads': profile.resources.inference_threads}}
             self.persistence.operation(op)
@@ -490,13 +493,17 @@ class DependencyService:
             quote = self._operation(plan_id)
             require(quote['kind'] == 'plan' and quote['entry'] == entry.model_dump(mode='json')
                     and quote['policy_sha256'] == hashlib.sha256(canonical(self.policy)).hexdigest(), 'nlp_plan_stale')
+            costs = quote['costs']
+            if 'required_free_space_bytes' in costs:
+                require(costs['required_free_space_bytes'] == self._download_space_needed(costs['acquisition_temporary_bytes']),
+                        'nlp_plan_stale')
             require(self.approvals is not None and self.engine is not None and self.distribution is not None,
                     'nlp_unavailable')
             require(self.thread is None or not self.thread.is_alive(), 'nlp_acquisition_busy')
             op = {'id': uuid4().hex, 'kind': 'acquire', 'state': 'running', 'owner': self.owner,
                   'entry': entry.model_dump(mode='json'), 'profile': entry.profile_sha256,
                   'verified': {}, 'files': {}, 'storage': None, 'in_flight': True, 'plan_id': plan_id,
-                  'plan_costs': copy.deepcopy(quote['costs'])}
+                  'plan_costs': copy.deepcopy(costs)}
             self.persistence.operation(op)
             self._launch(op)
             return op['id']
@@ -596,7 +603,6 @@ class DependencyService:
                 op['closure'] = artifact_closure_digest(tuple(members))
                 self._not_removing(op['closure'])
                 save()
-            # Full spool + staging is reserved honestly; no speculative cross-ID deduplication.
             spool_bytes = sum(a.size_bytes for a in members)
             receipt_bytes = len(canonical([a.model_dump(mode='json') for a in sorted(members, key=lambda a:a.artifact_id)]))
             try:
@@ -604,19 +610,26 @@ class DependencyService:
             except FileNotFoundError:
                 available = None
             if available is None:
-                require(2 * spool_bytes + receipt_bytes <= profile.resources.temporary_bytes, 'nlp_temporary_limit')
-                require(shutil.disk_usage(self.spool).free >= self.artifacts.limits.minimum_free_bytes + 2 * spool_bytes + receipt_bytes,
-                        'nlp_disk_reserve')
+                staging_bytes = spool_bytes + receipt_bytes
+                require(spool_bytes + staging_bytes <= profile.resources.temporary_bytes, 'nlp_temporary_limit')
                 require(op['plan_costs']['incremental_data_download_bytes'] == spool_bytes, 'nlp_plan_stale')
+                if not op['files']:
+                    self._require_download_space(spool_bytes + staging_bytes)
+                pending = []
                 for asset in members:
-                    check()
                     name = hashlib.sha256(asset.artifact_id.encode()).hexdigest() + '.part'
                     path = directory / name
                     if asset.artifact_id in op['verified']:
+                        check()
                         require(self._verified(path, asset, op['files'][name]), 'nlp_spool_changed')
-                        continue
-                    self._download_artifact(path, asset, op, check, deadline, save, spool_bytes, receipt_bytes)
-                    op['verified'][asset.artifact_id] = name
+                    else:
+                        pending.append((asset, path))
+                remaining_bytes = sum(asset.size_bytes for asset, _ in pending)
+                for asset, path in pending:
+                    check()
+                    self._download_artifact(path, asset, op, check, deadline, save, staging_bytes, remaining_bytes)
+                    remaining_bytes -= asset.size_bytes
+                    op['verified'][asset.artifact_id] = path.name
                     op['partials'].pop(asset.artifact_id, None)
                     save()
 
@@ -674,7 +687,13 @@ class DependencyService:
                 yield 0, blocks
         check()
 
-    def _download_artifact(self, path, asset, op, check, deadline, save, spool_bytes, receipt_bytes):
+    def _download_space_needed(self, additional_bytes):
+        return self.artifacts.limits.minimum_free_bytes + additional_bytes
+
+    def _require_download_space(self, additional_bytes):
+        require(shutil.disk_usage(self.spool).free >= self._download_space_needed(additional_bytes), 'nlp_disk_reserve')
+
+    def _download_artifact(self, path, asset, op, check, deadline, save, staging_bytes, remaining_bytes):
         partials = op.setdefault('partials', {})
         partial = partials.get(asset.artifact_id)
         name = path.name
@@ -721,6 +740,8 @@ class DependencyService:
             unchanged()
             # A process may have written beyond the last durable journal checkpoint.
             output.truncate(committed)
+            # Reuse only the prefix just read back. The complete store copy still needs space.
+            self._require_download_space(staging_bytes + remaining_bytes - committed)
 
             def checkpoint():
                 nonlocal committed
@@ -740,14 +761,14 @@ class DependencyService:
                             checkpoint()
                             output.seek(0)
                             output.truncate(0)
+                            self._require_download_space(staging_bytes + remaining_bytes)
                         for block in blocks:
                             operations = check()
                             require(type(block) is bytes and 0 < len(block) <= BLOCK_BYTES, 'nlp_distribution_block')
                             require(count + len(block) <= asset.size_bytes, 'nlp_artifact_size')
-                            require(self._spool_used(operations) + len(block) + spool_bytes + receipt_bytes <= self.policy.temporary_bytes,
+                            require(self._spool_used(operations) + len(block) + staging_bytes <= self.policy.temporary_bytes,
                                     'nlp_temporary_limit')
-                            require(shutil.disk_usage(self.spool).free >= self.artifacts.limits.minimum_free_bytes + len(block),
-                                    'nlp_disk_reserve')
+                            self._require_download_space(len(block))
                             require(output.write(block) == len(block), 'nlp_spool_write')
                             count += len(block)
                             sha.update(block)

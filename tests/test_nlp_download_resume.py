@@ -1,5 +1,6 @@
 """Durable partial data remains a cache beneath signed artifact verification."""
 from contextlib import contextmanager
+from dataclasses import replace
 import hashlib
 from types import SimpleNamespace
 
@@ -98,6 +99,33 @@ def test_reopen_rehashes_prefix_and_handles_range_or_full_restart(interrupted, m
     available = env.artifacts.reopen(env.profile)
     assert any(a.path.read_bytes() == raw for a in available.artifacts)
     assert not path.exists()
+
+
+@pytest.mark.parametrize(("mode", "short_by"), [("range", 0), ("ignore", 0), ("range", 1)])
+def test_resume_uses_remaining_space_in_reviewed_download(interrupted, monkeypatch, mode, short_by):
+    env, state, operation_id, _, raw = interrupted
+    state.mode = mode
+    budget = env.service._operation(operation_id)["plan_costs"]["acquisition_temporary_bytes"]
+    reserve = 32768
+    env.artifacts.limits = replace(env.artifacts.limits, minimum_free_bytes=reserve)
+
+    def usage(path):
+        roots = (env.service.spool, env.artifacts.root)
+        assert path in roots
+        used = sum(file.stat().st_size for root in roots for file in root.rglob("*") if file.is_file())
+        return SimpleNamespace(free=reserve + budget - short_by - used)
+
+    monkeypatch.setattr("shutil.disk_usage", usage)
+    operation = resume(env, operation_id)
+    if short_by:
+        assert operation["state"] == "interrupted"
+        assert state.requests == [None]
+        assert not env.service.ready(env.profile)
+    else:
+        assert operation["state"] == "complete"
+        assert state.requests == [None, f"bytes={BLOCK_BYTES}-"]
+        available = env.artifacts.reopen(env.profile)
+        assert any(asset.path.read_bytes() == raw for asset in available.artifacts)
 
 
 @pytest.mark.parametrize('mutation', ['prefix', 'binding', 'length'])

@@ -29,6 +29,7 @@ const plan = z.object({
   declared_full_artifact_download_bytes: bytes, data_download_bytes: bytes,
   incremental_data_download_bytes: bytes, profile_metadata_bytes: bytes,
   installed_bytes: bytes, rollback_bytes: bytes, acquisition_temporary_bytes: bytes,
+  required_free_space_bytes: bytes.optional(),
   transition_peak_memory_bytes: bytes, inference_threads: z.number().int().positive(),
 });
 export type NlpDependencyStatus = z.infer<typeof status>;
