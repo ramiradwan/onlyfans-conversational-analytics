@@ -6,10 +6,12 @@ import { Link as RouterLink } from 'react-router-dom';
 import { Panel } from './ui';
 import type { BrowserSurfacePayload } from '../protocol';
 import { componentTokens } from '../theme';
-import { extensionLabel, type ExtensionConnection } from '../utils/statusCopy';
+import { EXTENSION_LABELS, extensionLabel, type ExtensionConnection } from '../utils/statusCopy';
 import { OnboardingCard, OnboardingPill, OnboardingSpot } from './ui/OnboardingCard';
 
 const textInset = componentTokens.MuiButton.textInset.small;
+// Both rows reserve every label either can show, so their statuses share one width.
+const CONNECTION_LABELS = [...EXTENSION_LABELS, 'Not checked', 'Paused', 'Off'] as const;
 
 /** Connection summary for the dashboard. */
 export function DashboardConnection({ browser, connection, desktopConnected, canViewSettings }: {
@@ -18,7 +20,7 @@ export function DashboardConnection({ browser, connection, desktopConnected, can
   desktopConnected: boolean;
   canViewSettings: boolean;
 }) {
-  const browserLabel = connection !== 'connected' ? extensionLabel(connection)
+  const browserLabel: (typeof CONNECTION_LABELS)[number] = connection !== 'connected' ? extensionLabel(connection)
     : browser === null ? 'Not checked'
       : browser.legal_review_required || browser.site_access !== 'granted' ? 'Needs attention'
         : browser.capture === 'paused' ? 'Paused' : browser.capture === 'off' ? 'Off' : 'Connected';
@@ -37,7 +39,7 @@ export function DashboardConnection({ browser, connection, desktopConnected, can
           <Icon aria-hidden focusable="false" sx={{ fontSize: '1.125rem' }} />
           <Typography variant="body2" sx={{ color: 'inherit' }}>{label}</Typography>
         </Stack>
-        <OnboardingPill tone={status === 'Connected' ? 'progress' : 'neutral'}>{status}</OnboardingPill>
+        <OnboardingPill labels={CONNECTION_LABELS} tone={status === 'Connected' ? 'progress' : 'neutral'}>{status}</OnboardingPill>
       </Stack>)}
       {/* The label rather than the button padding lines up with the text, at the start or the end of the row. */}
       {canViewSettings && <Button component={RouterLink} to="/settings#browser-extension" size="small"

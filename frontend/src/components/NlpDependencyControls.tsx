@@ -19,6 +19,7 @@ import type { TextAnalysisReissueApi } from '../services/textAnalysisReissueApi'
 import { bridgeTransportStore } from '../store/transportStore';
 
 interface Props { api?: NlpDependenciesApi; engineApi?: EngineAcquisitionApi; client?: TextAnalysisClient; reissueApi?: TextAnalysisReissueApi; creatorAccountId: string | null }
+const DEPENDENCY_STATUS_LABELS = ['Checking…', 'Needs attention', 'Unavailable', 'Ready', 'Installed', 'Not installed'] as const;
 const number = new Intl.NumberFormat();
 const formatBytes = (value: number) => `${number.format(value)} bytes`;
 const taskNames: Record<string, string> = { message_topics: 'Message topics', concept_mentions: 'Exact mentions' };
@@ -231,12 +232,14 @@ function DependencySession({ api, account, onStatus, onAvailability, onSettled, 
   const unavailable = !account || !status?.configured || readFailure !== null;
   const loading = Boolean(account && !status && !error);
   const configured = Boolean(account && status?.configured);
-  // A reload keeps the last answer until it completes, so a reconnect doesn't hide and show the section.
+  // Only a completed read decides availability. A reload or a failed read keeps the last answer, so a reconnect
+  // neither hides and shows the section nor hides its failure and any recovery under way.
+  const decided = !account || (status !== null && readFailure === null);
   useEffect(() => {
     if (loading) return;
-    onAvailability?.(configured);
+    if (decided) onAvailability?.(configured);
     onSettled?.();
-  }, [configured, loading, onAvailability, onSettled]);
+  }, [configured, decided, loading, onAvailability, onSettled]);
   const feedback = [
     busy ? 'Updating text analysis settings…' : null,
     error ? 'Text analysis settings could not be updated. Your existing selection may still be active. Check status before trying again.' : null,
@@ -256,7 +259,7 @@ function DependencySession({ api, account, onStatus, onAvailability, onSettled, 
     && profile.resources?.temporary_bytes === review.profile.resources?.temporary_bytes).length === 1);
   const operationState = operation?.state === 'complete' ? 'Download complete' : operation?.state === 'paused' ? 'Download paused'
     : operation?.state === 'cancelled' ? 'Download cancelled' : operation?.state === 'running' ? 'Downloading' : 'Download needs attention';
-  const headerStatus: SectionStatus = loading || busy
+  const headerStatus: SectionStatus<(typeof DEPENDENCY_STATUS_LABELS)[number]> = loading || busy
     ? { label: 'Checking…', tone: 'default' }
     : error || readFailure !== null
       ? { label: 'Needs attention', tone: 'warning' }
@@ -278,6 +281,7 @@ function DependencySession({ api, account, onStatus, onAvailability, onSettled, 
         title="Optional text analysis"
         summary="Find topics and mentions in your messages."
         status={headerStatus}
+        statusLabels={DEPENDENCY_STATUS_LABELS}
         menu={menu ?? undefined}
       />
       {(account || readFailure === 'authentication') && (

@@ -22,11 +22,13 @@ import { desktopInteractionFailure, desktopOnboardingApi, selectBrowserFeedback,
 import { bridgeTransportStore } from '../store/transportStore';
 import { componentTokens } from '../theme';
 import {
+  EXTENSION_LABELS,
   extensionConnection,
   extensionLabel,
   type ExtensionConnection,
 } from '../utils/statusCopy';
 
+const BROWSER_STATUS_LABELS = [...EXTENSION_LABELS, 'Connecting', 'Paused'] as const;
 const WINDOW_LIMIT_MS = 300_000;
 const PAIRING_EXPIRED = 'Time ran out before the connection finished.';
 const terminal = (status: CompanionPairingStatus) => (
@@ -257,7 +259,7 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
   // The chip names the most important current fact: a link problem, then what
   // the extension itself reports, then a healthy link. A running attempt reads
   // as connecting rather than as not connected.
-  const sectionStatus: SectionStatus | null = starting
+  const sectionStatus: SectionStatus<(typeof BROWSER_STATUS_LABELS)[number]> | null = starting
     ? { label: 'Connecting', tone: 'info' }
     : connected
       ? connection !== 'connected'
@@ -314,7 +316,7 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
         icon={<ExtensionOutlined />}
         menu={disconnectItems ?? undefined}
         status={sectionStatus}
-        statusMeasure="Applying settings"
+        statusLabels={BROWSER_STATUS_LABELS}
         title="Browser extension"
         summary={!connected && lastKnownCount.current === 0 ? 'Connect the extension to this app' : undefined}
       />}

@@ -95,7 +95,7 @@ const SETTINGS_GROUPS: readonly SettingsGroup[] = [
 
 const ALL_SECTIONS: readonly SettingsSection[] = SETTINGS_GROUPS.flatMap((group) => group.sections);
 const ALL_SECTION_IDS: readonly SettingsSectionId[] = ALL_SECTIONS.map((section) => section.id);
-const sectionAnchorSx = { scrollMarginBlockStart: { xs: '3rem', md: '1rem' } };
+const sectionAnchorSx = { scrollMarginBlockStart: '1rem' };
 // The index names a status only when a section needs the creator.
 const ATTENTION_LABELS: ReadonlySet<string> = new Set(['Needs attention', 'Not responding']);
 const attentionHint = (label: string | null) => label !== null && ATTENTION_LABELS.has(label) ? label : null;
@@ -143,15 +143,21 @@ export default function SettingsWithVaultView({
   const groups = SETTINGS_GROUPS.map((group) => ({ ...group, sections: group.sections.filter(shown) }));
   const sections = ALL_SECTIONS.filter(shown);
 
+  // A link to a section applies once. Text analysis takes it when this installation shows the section.
+  const appliedAnchor = useRef<string | null>(null);
   useEffect(() => {
     const hashId = location.hash.replace(/^#/, '') as SettingsSectionId;
     if (!ALL_SECTION_IDS.includes(hashId)) return;
+    const anchor = `${location.key}#${hashId}`;
+    if (appliedAnchor.current === anchor) return;
     setActiveSection(hashId);
+    if (hashId === 'text-analysis' && !textAnalysisAvailable) return;
     const target = scrollContainerRef.current?.querySelector<HTMLElement>(`#${hashId}`);
     if (!target) return;
+    appliedAnchor.current = anchor;
     target.scrollIntoView?.({ behavior: 'instant', block: 'start' });
     target.focus({ preventScroll: true });
-  }, [location.hash, location.key]);
+  }, [location.hash, location.key, textAnalysisAvailable]);
 
   // Keep the index aligned with manual scrolling.
   useEffect(() => {
@@ -223,7 +229,8 @@ export default function SettingsWithVaultView({
           </Typography>
         </Box>
 
-        {/* Compact sticky horizontal jump strip on narrow viewports (< md). */}
+        {/* A horizontal jump strip on narrow viewports (< md). It scrolls with the page, so nothing above the
+            sections moves while they change. */}
         <Box
           component="nav"
           aria-label="Settings sections"
@@ -233,10 +240,6 @@ export default function SettingsWithVaultView({
             overflowX: 'auto',
             pb: 1,
             pt: 0.5,
-            position: 'sticky',
-            top: 0,
-            zIndex: 2,
-            bgcolor: 'background.default',
             borderBottom: '1px solid',
             borderColor: 'divider',
           }}
@@ -256,7 +259,8 @@ export default function SettingsWithVaultView({
                   whiteSpace: 'nowrap',
                   flexShrink: 0,
                   typography: 'body2',
-                  fontWeight: active ? 600 : 400,
+                  // One weight for every pill, so marking the current section never resizes the strip.
+                  fontWeight: 500,
                   bgcolor: active ? theme.vars.palette.action.selected : 'transparent',
                   color: active ? theme.vars.palette.action.selectedForeground : theme.vars.palette.text.secondary,
                   '&:hover': { bgcolor: theme.vars.palette.action.hover },
@@ -269,7 +273,7 @@ export default function SettingsWithVaultView({
           })}
         </Box>
 
-        {/* Desktop 2-column sticky-index layout; single column below md. */}
+        {/* Two columns on desktop, an index beside the settings. One column below md. */}
         <Box
           sx={{
             display: 'grid',
@@ -281,11 +285,7 @@ export default function SettingsWithVaultView({
           <Box
             component="nav"
             aria-label="Settings sections"
-            sx={{
-              display: { xs: 'none', md: 'block' },
-              position: 'sticky',
-              top: 8,
-            }}
+            sx={{ display: { xs: 'none', md: 'block' } }}
           >
             <Stack spacing={2.5}>
               {groups.map((group) => (
@@ -375,7 +375,7 @@ export default function SettingsWithVaultView({
             </Stack>
           </Box>
 
-          <Stack spacing={3.5} sx={{ minWidth: 0, maxWidth: 840, width: '100%' }}>
+          <Stack data-visual="settings-content" spacing={3.5} sx={{ minWidth: 0, maxWidth: 840, width: '100%' }}>
             <Stack spacing={1.25}>
               <Typography component="h2" variant="subtitle2" sx={{ color: 'text.secondary', px: 0.5 }}>
                 Collection

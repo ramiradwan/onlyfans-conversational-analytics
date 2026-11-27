@@ -310,6 +310,29 @@ for (const attack of ['horizontal reading overflow', 'clipped reading text', 'un
   } finally { await page.close(); }
 });
 
+for (const layer of ['menu', 'plain']) test(`watcher ${layer === 'menu' ? 'treats a closed menu as an overlay' : 'flags a removed neighbor layer'}`, async () => {
+  const page = await browser.newPage();
+  try {
+    await installWatcher(page, { requiredRegions: ['slot'] });
+    await page.route('**/*', (route) => route.fulfill({ contentType: 'text/html', body: '<main><div data-reserved-region="slot" style="height:100px;width:200px"><span data-region-content>Short text</span></div></main>' }));
+    await page.goto('http://watcher-fixture.localhost/');
+    await settle(page);
+    await page.evaluate((layer) => {
+      const node = document.createElement('div');
+      node.id = 'layer';
+      node.style.cssText = 'position:fixed;inset:0';
+      node.innerHTML = layer === 'menu' ? '<ul role="menu"><li role="menuitem">Disconnect</li></ul>' : '<p>Layer</p>';
+      document.body.append(node);
+    }, layer);
+    await settle(page);
+    await page.evaluate(() => document.querySelector('#layer').remove());
+    await settle(page);
+    const { failures } = await readWatcher(page);
+    if (layer === 'menu') assert.deepEqual(failures, []);
+    else assert(failures.some((failure) => failure.endsWith(': removed')), 'A removed neighbor must be flagged: ' + JSON.stringify(failures));
+  } finally { await page.close(); }
+});
+
 test('reading audit follows the document scroll owner', async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 600 } });
   try {
@@ -591,9 +614,10 @@ for (const width of [320, 390]) test(`combined browser recovery follows its cont
     await settle(page);
     await feedback.scrollIntoViewIfNeeded();
     assert(await page.getByRole('button', { name: 'Allow in extension', exact: true }).first().isVisible());
-    // The connection facts sit in the section header, beside its options menu.
-    const header = page.getByRole('button', { name: 'Browser extension options', exact: true });
-    assert(await header.isVisible());
+    // The connection facts sit in the section header as its status, beside its options menu.
+    const header = page.locator('#browser-extension [data-settings-section-header] [data-settings-status]').first();
+    assert(await header.isVisible(), 'The connection status must stay visible');
+    assert((await header.innerText()).trim(), 'The connection status must name the connection');
     const geometry = await feedback.evaluate((node) => {
       const bounds = node.getBoundingClientRect();
       const section = node.closest('[data-journey-state="desktop.extension_pairing"]');

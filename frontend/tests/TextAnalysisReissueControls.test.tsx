@@ -183,14 +183,27 @@ describe('Licence recovery controls', () => {
     expect(x.api.begin).not.toHaveBeenCalled();
   });
 
-  it('forgets a shown recovery when the account changes', async () => {
+  it.each(['account', 'role'] as const)('forgets a shown recovery when the %s changes, also on the way back', async change => {
     const x = fixture(); x.api.status.mockResolvedValueOnce(awaiting).mockResolvedValue({ current: null });
     const mounted = render(x.view());
     await screen.findByRole('button', { name: 'Continue recovery in browser' });
-    act(() => connect(x.transport, 'account-2', '2'));
-    mounted.rerender(x.view('account-2'));
+    if (change === 'account') {
+      act(() => connect(x.transport, 'account-2', '2'));
+      mounted.rerender(x.view('account-2'));
+      const item = await openRecoveryItem();
+      await waitFor(() => expect(enabled(item())).toBe(true));
+      fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    } else act(() => useUserStore.getState().actions.setUserRole('operator'));
+    expect(recoveryShown()).toBe(false);
+    // Returning starts from that account's own status, which has no recovery under way.
+    if (change === 'account') {
+      act(() => connect(x.transport, 'account-1', '3'));
+      mounted.rerender(x.view('account-1'));
+    } else act(() => useUserStore.getState().actions.setUserRole('creator-ceo'));
     const item = await openRecoveryItem();
     await waitFor(() => expect(enabled(item())).toBe(true));
     expect(recoveryShown()).toBe(false);
+    expect(x.api.begin).not.toHaveBeenCalled();
   });
 });

@@ -10,6 +10,7 @@ import { bridgeTransportStore, type BridgeTransportStore } from '../store/transp
 import { useUserRole, useUserStore } from '../store/userStore';
 
 export const RECOVER_LICENCE = 'Recover existing licence';
+const RECOVERY_STATUS_LABELS = ['Needs attention', 'Checking…', 'Unavailable', 'Saved', 'Expired', 'In progress', 'Not recovered'] as const;
 
 interface Props {
   creatorAccountId: string | null; api?: TextAnalysisReissueApi;
@@ -23,13 +24,16 @@ export function TextAnalysisReissueControls(props: Props) {
   const transport = props.transport ?? bridgeTransportStore;
   const context = useSyncExternalStore(transport.subscribe, transport.getState, transport.getState);
   const role = useUserRole();
-  // Recovery shows once one is under way or needs attention. That lasts for the account, because a reconnect
-  // starts a new session below and must not hide and show the section again.
+  // Recovery shows once one is under way or needs attention. That lasts through reconnects of the same account,
+  // because each starts a new session below and must not hide and show the section again. Another account or role
+  // starts hidden, including on the way back.
+  const identity = JSON.stringify([creatorAccountId, context.creatorAccountId, role]);
   const [shownFor, setShownFor] = useState<string | null>(null);
-  const reveal = useCallback(() => setShownFor(creatorAccountId), [creatorAccountId]);
+  if (shownFor !== null && shownFor !== identity) setShownFor(null);
+  const reveal = useCallback(() => setShownFor(identity), [identity]);
   useEffect(() => () => onMenu?.(null), [onMenu]);
   return <ReissueSession key={textAnalysisScopeKey(context, role, creatorAccountId)} {...props} transport={transport}
-    shown={shownFor !== null && shownFor === creatorAccountId} onUnderWay={reveal} />;
+    shown={shownFor === identity} onUnderWay={reveal} />;
 }
 function ReissueSession({ creatorAccountId, api = textAnalysisReissueApi, transport = bridgeTransportStore, onStatus, onMenu, shown, onUnderWay }: Props & {
   shown: boolean; onUnderWay: () => void;
@@ -104,7 +108,7 @@ function ReissueSession({ creatorAccountId, api = textAnalysisReissueApi, transp
         : current?.state === 'expired' ? 'The original request has expired. Check its recorded outcome before starting another request.'
           : current ? 'Continue the original request in your account, then check its outcome here.'
             : view ? 'No recovery is under way.' : 'Checking saved recovery status…';
-  const headerStatus: SectionStatus | null = !visible ? null
+  const headerStatus: SectionStatus<(typeof RECOVERY_STATUS_LABELS)[number]> | null = !visible ? null
     : failed ? { label: 'Needs attention', tone: 'warning' }
       : busy ? { label: 'Checking…', tone: 'default' }
         : !ready ? { label: 'Unavailable', tone: 'default' }
@@ -122,6 +126,7 @@ function ReissueSession({ creatorAccountId, api = textAnalysisReissueApi, transp
         title="Recover text analysis access"
         summary="Use your account to restore an existing licence on a replacement computer."
         status={headerStatus}
+        statusLabels={RECOVERY_STATUS_LABELS}
       />
       <Stack spacing={1.5} data-journey-state="textanalysis.licence_recovery">
         <StatusLine id="reissue-feedback" text={message} summary={failed ? 'Needs attention' : 'Status'}

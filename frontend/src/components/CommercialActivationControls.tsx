@@ -29,6 +29,7 @@ import { offerPriceColors } from '../theme/generated/tokens';
 
 const ACTIVATION_BODY = 'Conversation insights, like your most common topics, stored on this computer.';
 const ANALYTICS_BENEFIT = 'Tone, reply, and topic insights.';
+const ACTIVATION_STATUS_LABELS = ['On', 'Needs attention', 'Off'] as const;
 const ACTIVATION_PENDING = 'Checking your activation…';
 const SIGN_IN_SWITCH = 'Use a different sign-in for Full analytics';
 const CONTROL_HEIGHT = componentTokens.staticUi.controlHeight;
@@ -415,7 +416,8 @@ export function CommercialActivationControls({
   const title = pending ? 'Activating Full analytics' : terminalUnknown ? 'Full analytics isn’t on'
     : classifiedMismatch ? 'Full analytics unavailable' : showPrompt ? 'Turn on Full analytics' : 'Full analytics';
   const guided = dashboard || pending || terminalUnknown || classifiedMismatch;
-  const status = fullReady ? 'On' : activeButBlocked ? 'Needs attention' : activationRequired && !pending && !terminalUnknown ? 'Off' : null;
+  const status: (typeof ACTIVATION_STATUS_LABELS)[number] | null = fullReady ? 'On' : activeButBlocked ? 'Needs attention'
+    : activationRequired && !pending && !terminalUnknown ? 'Off' : null;
   useEffect(() => { onStatusChange?.(status); }, [onStatusChange, status]);
   useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
   const unavailable = !decision && !authentication && !accepted && activationRequired && !allowed.includes('activation.review') && !pendingActivation && desktop.connected;
@@ -456,6 +458,7 @@ export function CommercialActivationControls({
         icon={guided ? undefined : <InsightsOutlined />}
         status={dashboard ? undefined : status && {
           label: status, tone: fullReady ? 'success' : activeButBlocked ? 'warning' : 'default' }}
+        statusLabels={ACTIVATION_STATUS_LABELS}
       />
     </Box>}
     {showPrompt && <Typography color="text.secondary" sx={{ maxWidth: '60ch' }}>{ACTIVATION_BODY}</Typography>}

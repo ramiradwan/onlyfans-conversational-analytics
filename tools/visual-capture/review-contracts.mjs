@@ -550,7 +550,12 @@ export async function captureReviewChecks(browser, base, outDir, recorder = null
         await open('home');
         const rail = page.getByLabel('Desktop navigation', { exact: true });
         const paper = await appearance(rail), canvas = { fill: paper.canvas };
-        const { desktopRailWidth } = JSON.parse(await readFile(new URL('../../frontend/src/theme/tokens.json', import.meta.url), 'utf8')).tier3.shell;
+        const tokens = JSON.parse(await readFile(new URL('../../frontend/src/theme/tokens.json', import.meta.url), 'utf8'));
+        // Tier 3 names the tier 1 value it uses, as {tier1.path}.
+        const token = (value) => typeof value === 'string' && /^\{[^}]+\}$/u.test(value)
+          ? token(value.slice(1, -1).split('.').reduce((node, key) => node?.[key], tokens)) : value;
+        const desktopRailWidth = token(tokens.tier3.shell.desktopRailWidth);
+        assert.equal(typeof desktopRailWidth, 'number', 'rail width token');
         const itemWidth = 44;
         const borderWidth = 1;
         const sideInset = (desktopRailWidth - borderWidth - itemWidth) / 2;

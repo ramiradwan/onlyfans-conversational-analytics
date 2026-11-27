@@ -27,7 +27,7 @@ export const REQUIRED_STATES = {
   options: ['unknown:phase', 'unknown:pairing', 'unknown:commercial'],
   'production-boot': ['delayed-renderer-and-fonts', 'request-error:Sign in with passkey', 'request-error:Create passkey', 'session-status-unavailable'],
 };
-const TRANSITION_COUNTS = { home: { 390: 75, 1440: 73 }, analytics: 18, inbox: { 390: 56, 820: 56, 1440: 55 }, settings: 268, passkey: 17, graph: 9, popup: 22, setup: 68, options: 16, 'production-boot': 4 };
+const TRANSITION_COUNTS = { home: { 390: 75, 1440: 73 }, analytics: 18, inbox: { 390: 56, 820: 56, 1440: 55 }, settings: 269, passkey: 17, graph: 9, popup: 22, setup: 68, options: 16, 'production-boot': 4 };
 export function validateInventory(reports, expected = DYNAMIC_VIEWS) {
   for (const report of reports) {
     assert(DYNAMIC_VIEWS.includes(report.view), `Unknown captured view: ${report.view}`);

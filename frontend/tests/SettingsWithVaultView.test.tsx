@@ -9,6 +9,7 @@ import type { CapabilityLicenseApi, CapabilityLicenseReadiness } from '../src/se
 import type { CompanionPairingApi, CompanionPairingStatus } from '../src/services/companionPairingApi';
 import type { CreatorVaultApi, CreatorVaultStatus } from '../src/services/creatorVaultApi';
 import type { HistorySettingsApi } from '../src/services/historySettingsApi';
+import type { NlpDependencyStatus } from '../src/services/nlpDependenciesApi';
 import { bridgeTransportStore } from '../src/store/transportStore';
 import { useUserStore } from '../src/store/userStore';
 import { theme } from '../src/theme';
@@ -102,7 +103,7 @@ function apis(slow: Section) {
     if (slow === 'activation') desktop.publish({ snapshot: initialDesktop });
   };
   const nlpApi = {
-    get: vi.fn(async () => ({ configured: false, profiles: [], acquisitions: [], available_profiles: [], selected: null, failure: 'nlp_unavailable', resume_granularity: 'verified_files_current_file_restarts' as const })),
+    get: vi.fn(async (): Promise<NlpDependencyStatus> => ({ configured: false, profiles: [], acquisitions: [], available_profiles: [], selected: null, failure: 'nlp_unavailable', resume_granularity: 'verified_files_current_file_restarts' })),
     observe: vi.fn(unused), command: vi.fn(unused),
   };
   return { activationApi, historyApi, pairingApi, release: releaseSection, vaultApi, onboardingApi: desktop.api, nlpApi };
@@ -142,6 +143,26 @@ describe('SettingsWithVaultView', () => {
     expect(offer.getByRole('button', { name: 'Use an activation code' })).toBeTruthy();
     expect(desktop.api.begin).not.toHaveBeenCalled();
     expect(props.activationApi.redeem).not.toHaveBeenCalled();
+  });
+
+  it('opens a text analysis link once this installation shows the section', async () => {
+    const { release, ...props } = apis('vault');
+    let resolve!: (value: NlpDependencyStatus) => void;
+    props.nlpApi.get.mockImplementationOnce(() => new Promise<NlpDependencyStatus>((done) => { resolve = done; }));
+    const scrolled: string[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function scrollIntoView(this: Element) { scrolled.push(this.id); };
+    try {
+      const { container } = render(<ThemeProvider theme={theme} defaultMode="light">
+        <MemoryRouter initialEntries={['/settings#text-analysis']}><SettingsWithVaultView {...props} /></MemoryRouter>
+      </ThemeProvider>);
+      await act(async () => release());
+      expect(scrolled).toEqual([]);
+      await act(async () => resolve({ configured: true, profiles: [], acquisitions: [], available_profiles: [], selected: null,
+        failure: null, resume_granularity: 'verified_files_current_file_restarts' }));
+      expect(scrolled).toEqual(['text-analysis']);
+      expect(document.activeElement).toBe(container.querySelector('#text-analysis'));
+    } finally { Element.prototype.scrollIntoView = original; }
   });
 
   it('keeps the pending connection action and the surrounding Settings sections mounted', async () => {

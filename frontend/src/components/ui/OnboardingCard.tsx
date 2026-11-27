@@ -17,11 +17,16 @@ import StorageOutlined from '@mui/icons-material/StorageOutlined';
 import SyncOutlined from '@mui/icons-material/SyncOutlined';
 import SystemUpdateAltOutlined from '@mui/icons-material/SystemUpdateAltOutlined';
 import WebAssetOutlined from '@mui/icons-material/WebAssetOutlined';
+import Box from '@mui/material/Box';
 import SvgIcon from '@mui/material/SvgIcon';
 import Typography from '@mui/material/Typography';
 import { useId, type ReactNode } from 'react';
 
 import '../../theme/onboarding.css';
+
+/** The pill's dot and the gap after it, as onboarding.css draws them. */
+const PILL_DOT = 6;
+const PILL_GAP = 6;
 
 const spotIcons = {
   account: PersonOutlineOutlined,
@@ -48,11 +53,27 @@ export function OnboardingSpot({ icon }: { icon: keyof typeof spotIcons }) {
 }
 
 export function OnboardingPill({
-  children, tone = 'neutral',
-}: { children: ReactNode; tone?: 'neutral' | 'progress' | 'error' }) {
-  return <span className="onboarding-pill" data-tone={tone}>
+  children, tone = 'neutral', labels,
+}: {
+  children: ReactNode;
+  tone?: 'neutral' | 'progress' | 'error';
+  /** Every label the pill can show. It keeps the width of the widest, so a new label never rewraps its row. */
+  labels?: readonly string[];
+}) {
+  if (!labels?.length) return <span className="onboarding-pill" data-tone={tone}>
     <span className="onboarding-tone-dot" aria-hidden="true" />
     <span>{children}</span>
+  </span>;
+  // The widest label sets the width and the outer columns share the rest, so the dot and the label stay centered,
+  // as in a section status. The labels are CSS text, so they stay out of the page text and the accessibility tree.
+  return <span className="onboarding-pill" data-tone={tone}
+    style={{ display: 'inline-grid', gridTemplateColumns: '1fr auto auto 1fr', columnGap: 0 }}>
+    {labels.map((text) => <Box aria-hidden component="span" key={text} sx={{
+      gridArea: '1 / 1 / 2 / -1', visibility: 'hidden', paddingInlineStart: `${PILL_DOT + PILL_GAP}px`,
+      '&::before': { content: `${JSON.stringify(text)} / ""` },
+    }} />)}
+    <span className="onboarding-tone-dot" aria-hidden="true" style={{ gridArea: '1 / 2' }} />
+    <span style={{ gridArea: '1 / 3', marginInlineStart: PILL_GAP }}>{children}</span>
   </span>;
 }
 

@@ -5,8 +5,9 @@ import { useEffect, useId, useState, type ReactNode } from 'react';
 import { StatusChip, type StatusTone } from './StatusChip';
 import { componentTokens } from '../../theme/generated/tokens';
 
-export interface SectionStatus {
-  label: string;
+/** A section's status. A section types its labels with the list it gives its header, so the chip measures each. */
+export interface SectionStatus<Label extends string = string> {
+  label: Label;
   tone: StatusTone;
 }
 
@@ -113,7 +114,7 @@ export function SectionHeader({
   icon,
   menu,
   status,
-  statusMeasure,
+  statusLabels,
   sx,
   summary,
   title,
@@ -122,7 +123,8 @@ export function SectionHeader({
   icon?: ReactNode;
   menu?: readonly SectionMenuItem[];
   status?: SectionStatus | null;
-  statusMeasure?: string;
+  /** Every label the status can show, so the chip keeps one width. */
+  statusLabels?: readonly string[];
   sx?: SxProps<Theme>;
   summary?: ReactNode;
   title: string;
@@ -131,9 +133,9 @@ export function SectionHeader({
   const hasMenu = Boolean(menu?.length);
   const hasStatus = status !== undefined;
   const stacked = `@container (max-width: ${rem(tokens.stackHeaderBelow)})`;
-  // The menu ends the title line in its own column. Beside it, a chip that measures its longest label keeps one width.
+  // The menu ends the title line in its own column. Beside it, a chip that measures its labels keeps one width.
   const endColumns = [
-    ...(hasStatus ? [hasMenu && statusMeasure ? 'auto' : `min(50%, ${SETTINGS_STATUS_COLUMN})`] : []),
+    ...(hasStatus ? [hasMenu && statusLabels?.length ? 'auto' : `min(50%, ${SETTINGS_STATUS_COLUMN})`] : []),
     ...(hasMenu ? ['auto'] : []),
   ];
   const firstRow = ['title', ...(hasStatus ? ['status'] : []), ...(hasMenu ? ['menu'] : [])];
@@ -166,7 +168,7 @@ export function SectionHeader({
           gridTemplateColumns: hasMenu ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)',
           gridTemplateAreas: hasMenu ? '"title menu" "status status" "summary summary"' : '"title" "status" "summary"',
           // Stacked under the title, the chip fits its label because a new label moves nothing.
-          '& [data-status-measure]::before': { display: 'none' },
+          '& [data-status-reserve]': { display: 'none' },
           '& [data-status-label]': { position: 'static', transform: 'none' },
         } : {},
       }), ...list(sx)]}>
@@ -215,7 +217,7 @@ export function SectionHeader({
             {status && <StatusChip
               data-settings-status
               label={status.label}
-              longestLabel={statusMeasure}
+              labels={statusLabels}
               size="small"
               tone={status.tone}
               sx={{ height: '1.5rem', flexShrink: 0 }} />}
@@ -338,7 +340,9 @@ export function SettingRow({
                   <Button aria-hidden disabled key={label} size="small" tabIndex={-1} variant="outlined"
                     sx={{ gridArea: '1 / 1', visibility: 'hidden' }}>{label}</Button>
                 ))}
-                <Box sx={{ gridArea: '1 / 1', display: 'flex', alignItems: 'center' }}>{action}</Box>
+                {/* Fills the reserved cell, so trading a switch for a button moves nothing around it. */}
+                <Box sx={{ gridArea: '1 / 1', alignSelf: 'stretch', justifySelf: 'stretch', display: 'flex', alignItems: 'center',
+                  [titleLine]: { justifyContent: 'flex-end' }, [inline]: { justifyContent: 'flex-end' } }}>{action}</Box>
               </Box>
             ) : action}
           </Box>

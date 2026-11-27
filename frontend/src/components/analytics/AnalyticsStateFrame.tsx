@@ -137,18 +137,10 @@ export function AnalyticsStateFrame({ state, children, onRetry }: AnalyticsState
           : null;
 
   return (
-    <Stack spacing={2} aria-busy={state.isRefreshing} sx={{ position: 'relative' }}>
-      {notice && (
-        <ReservedNotice
-          id="analytics-notice"
-          notice={{ title: notice.title, body: notice.detail, severity: notice.severity }}
-        />
-      )}
-      {state.isRefreshing && (
-        <Box sx={{ position: 'absolute', insetInline: 0, top: '-4px', m: '0 !important' }}>
-          <LinearProgress aria-label="Refreshing analytics" />
-        </Box>
-      )}
+    <Stack spacing={2} aria-busy={state.isRefreshing}>
+      {/* The notice and the progress bar keep their space, so a refresh or a notice moves no results. */}
+      <ReservedNotice id="analytics-notice" notice={notice ? { title: notice.title, body: notice.detail, severity: notice.severity } : null} />
+      <Box sx={{ height: 4, visibility: state.isRefreshing ? 'visible' : 'hidden' }}><LinearProgress aria-label="Refreshing analytics" /></Box>
       <Content $refreshing={state.isRefreshing}>{children}</Content>
     </Stack>
   );

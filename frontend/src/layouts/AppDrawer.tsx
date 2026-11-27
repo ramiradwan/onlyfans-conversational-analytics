@@ -86,9 +86,10 @@ function DrawerNavItem({
         px: labelled ? 1.5 : 0,
         width: labelled ? 'auto' : RAIL_ITEM_SIZE,
         transition: `background-color ${effectTokens.motion.duration.fast} ${effectTokens.motion.easing.standard}`,
+        // Hover sits between rest and selected, so the current page stays the strongest item.
         '&:hover, &.Mui-focusVisible': {
           bgcolor: theme.vars.palette.action.hover,
-          color: theme.vars.palette.text.primary,
+          color: theme.vars.palette.text.secondary,
         },
         '&.active, &.active:hover, &.active.Mui-focusVisible': {
           bgcolor: theme.vars.palette.action.selected,

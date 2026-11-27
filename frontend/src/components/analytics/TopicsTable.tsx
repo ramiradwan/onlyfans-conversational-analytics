@@ -8,6 +8,7 @@ import {
 } from '../../analytics';
 import { componentTokens, layoutTokens } from '../../theme';
 import { barArrival } from '../../theme/presentationMotion';
+import { ReservedRegion } from '../ui/ReservedRegion';
 
 // The table shows once its panel holds topicTableMinWidth, and the list shows below that.
 const tableFits = `@container topics (min-width: ${componentTokens.analytics.topicTableMinWidth})`;
@@ -113,11 +114,11 @@ export function TopicsTable({ topics }: TopicsTableProps) {
     return <Typography sx={{ color: 'text.secondary' }}>No topics found for these dates.</Typography>;
   }
 
+  // A scrolling list shows part of its next row. The list keeps one size whatever the topic count, so new dates
+  // move nothing below it.
   return (
     <Box sx={{ containerName: 'topics', containerType: 'inline-size' }}>
-    <Box data-reserved-region="topics-list" data-region-role="scroll" role="region" aria-label="Topic results" tabIndex={0}
-      sx={{ maxBlockSize: topicRegionSize.list, [tableFits]: { maxBlockSize: topicRegionSize.table },
-        overflowY: 'auto', scrollbarGutter: 'stable', overscrollBehavior: 'contain' }}>
+    <ReservedRegion id="topics-list" regionRole="scroll" size={{ xs: topicRegionSize.list }} sx={{ [tableFits]: { blockSize: topicRegionSize.table } }}>
       <NarrowTopics data-region-content aria-label="Topics and trend" style={columnStyle}>
         {topics.map((topic) => (
           <NarrowTopic key={topic.id}>
@@ -169,7 +170,7 @@ export function TopicsTable({ topics }: TopicsTableProps) {
           </tbody>
         </table>
       </WideTopics>
-    </Box>
+    </ReservedRegion>
     </Box>
   );
 }

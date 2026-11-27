@@ -5,34 +5,36 @@ import { statusSettled } from '../../theme/presentationMotion';
 
 export type StatusTone = 'default' | 'error' | 'info' | 'success' | 'warning';
 export type StatusChipProps = Omit<ChipProps, 'color' | 'icon' | 'variant'> & {
-  longestLabel?: string;
+  /** Every label the chip can show. It keeps the width of the widest, so a new label moves nothing. */
+  labels?: readonly string[];
   tone?: StatusTone;
   settled?: boolean;
 };
 
 /** Neutral field with a labeled feedback dot; live announcements belong to the parent. */
-export function StatusChip({ label, longestLabel, sx, tone = 'default', settled = false, ...props }: StatusChipProps) {
+export function StatusChip({ label, labels, sx, tone = 'default', settled = false, ...props }: StatusChipProps) {
   const size = props.size ?? 'small';
   const healthy = settled && tone === 'success';
   const dotSize = healthy ? componentTokens.StatusChip.settledDotSize : componentTokens.StatusChip.dotSize;
   const dotColor = (theme: Theme) =>
     tone === 'default' ? theme.vars.palette.text.disabled : theme.vars.palette[tone].main;
+  const measured = Boolean(labels?.length);
   return (
     <Chip
       {...props}
       size={size}
-      label={longestLabel ? (
-        <Box component="span" data-status-measure sx={{
-          display: 'grid',
-          textAlign: 'center',
-          // The widest label sets the size while the visible label stays centered.
-          '&::before': {
-            content: `${JSON.stringify(longestLabel)} / ""`,
-            gridArea: '1 / 1',
-            paddingInlineStart: `calc(${dotSize}px + 0.5em)`,
-            visibility: 'hidden',
-          },
-        }}>
+      label={measured ? (
+        <Box component="span" data-status-measure sx={{ display: 'grid', textAlign: 'center' }}>
+          {/* The widest label sets the size while the visible label stays centered. The labels are CSS text, so
+              they stay out of the page text and the accessibility tree. */}
+          {labels!.map((text) => (
+            <Box aria-hidden component="span" data-status-reserve key={text} sx={{
+              gridArea: '1 / 1',
+              paddingInlineStart: `calc(${dotSize}px + 0.5em)`,
+              visibility: 'hidden',
+              '&::before': { content: `${JSON.stringify(text)} / ""` },
+            }} />
+          ))}
           <Box component="span" sx={{ gridArea: '1 / 1', position: 'relative' }}>
             <Box component="span" data-status-label sx={{
               position: 'absolute',
@@ -52,7 +54,7 @@ export function StatusChip({ label, longestLabel, sx, tone = 'default', settled 
           </Box>
         </Box>
       ) : label}
-      icon={longestLabel ? undefined : (
+      icon={measured ? undefined : (
         <Box
           component="span"
           key={healthy ? 'settled' : 'status'}

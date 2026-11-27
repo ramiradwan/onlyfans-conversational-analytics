@@ -311,11 +311,12 @@ return [
   ...['loading', 'fresh', 'syncing', 'populated'].map((state) => ({
     workspace: 'settings',
     state,
-    ready: (page) => state === 'loading' ? page.getByText('Loading settings…', { exact: true }).first() : page.getByRole('heading', { name: 'Stored messages' }),
+    ready: (page) => state === 'loading' ? page.getByText('Loading…', { exact: true }).first() : page.getByRole('heading', { name: 'Stored messages' }),
     assert: async (page, viewport) => {
       if (viewport.name !== 'desktop') return;
+      // The settings keep a readable width. The section index sits beside them on desktop.
       const frame = page.locator('[data-visual="settings-frame"]');
-      await assertMaxWidth(frame, 880);
+      await assertMaxWidth(page.locator('[data-visual="settings-content"]'), 880);
       await assertCentered(frame, page.getByRole('main'));
     },
   })),
@@ -402,12 +403,14 @@ return [
       await page.getByRole('heading', { name: 'Confirm the connection', exact: true }).waitFor({ state: 'visible' });
       await page.getByRole('checkbox', { name: 'The codes match' }).check();
       await page.getByRole('button', { name: 'Confirm connection' }).click();
+      // Settings asks for consent in a dialog opened from the history switch.
+      await page.locator('#message-history').getByRole('switch', { name: 'Add older messages', exact: true }).click();
     },
-    ready: (page) => page.getByRole('checkbox', { name: /I allow read-only syncing/ }),
+    ready: (page) => page.getByRole('dialog').getByRole('checkbox', { name: /I allow read-only syncing/ }),
   },
   {
     workspace: 'settings', state: 'fresh', variant: 'archive-dialog', viewports: ['narrow'], modes: ['light'],
-    act: (page) => page.getByRole('button', { name: 'Turn on archive' }).click(),
+    act: (page) => page.getByRole('switch', { name: 'Archive', exact: true }).click(),
     ready: (page) => page.getByRole('dialog', { name: 'Turn on archive' }).getByRole('spinbutton', { name: 'Days to keep' }),
   },
   {

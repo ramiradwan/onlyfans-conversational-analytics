@@ -6,6 +6,7 @@ import { Panel, SectionHeader, quietNoteSx, useReportedStatus, type SectionStatu
 
 import { engineAcquisitionApi, EngineAcquisitionError, type EngineAcquisitionApi, type EngineReview, type EngineSelection, type EngineStatus } from '../api/engineAcquisition';
 
+const ENGINE_STATUS_LABELS = ['Unavailable', 'Needs attention', 'Installed', 'Updating…', 'Not installed'] as const;
 const number = new Intl.NumberFormat();
 const bytes = (value: number) => `${number.format(value)} bytes`;
 const states: Record<EngineStatus['state'], string> = {
@@ -126,7 +127,7 @@ export function EngineDependencyControls({ account, api = engineAcquisitionApi, 
     catch { if (current(signal)) { setError(true); setFence({ kind: 'ownership', recovery: null }); } }
     finally { if (current(signal)) setBusy(false); }
   };
-  const headerStatus: SectionStatus = !matches
+  const headerStatus: SectionStatus<(typeof ENGINE_STATUS_LABELS)[number]> = !matches
     ? { label: 'Unavailable', tone: 'error' }
     : !supported || !account
       ? { label: 'Unavailable', tone: 'default' }
@@ -146,6 +147,7 @@ export function EngineDependencyControls({ account, api = engineAcquisitionApi, 
       title="Text analysis Engine"
       summary="Runs text analysis on this computer."
       status={headerStatus}
+      statusLabels={ENGINE_STATUS_LABELS}
     />
     {!matches ? <Alert severity="error">Engine setup selection could not be verified. No installation was requested.</Alert> : !supported ? <Alert severity="info" sx={quietNoteSx}>Engine installation is available in the Windows desktop app.</Alert> : !account ? <Alert severity="info" sx={quietNoteSx}>Choose an account to review Engine installation.</Alert> : <Stack spacing={1.5}>
       {busy && <Typography role="status" variant="body2" sx={{ color: 'text.secondary' }}>Updating Engine setup status...</Typography>}

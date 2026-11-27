@@ -19,7 +19,8 @@ export interface TextAnalysisControlProps {
   transport?: Pick<BridgeTransportStore, 'getState' | 'subscribe'>;
   onStatus?: (status: SectionStatus | null) => void;
 }
-export const approvedTextAnalysisProfile = (profile: NlpDependencyProfile) => profile.catalogued && !profile.withdrawn
+const PROCESSING_STATUS_LABELS = ['Needs attention', 'Checking…', 'Not enrolled', 'Enabled', 'Paused', 'Retired'] as const;
+export const approvedTextAnalysisProfile =(profile: NlpDependencyProfile) => profile.catalogued && !profile.withdrawn
   && profile.languages?.includes('en') && profile.tasks !== null && profile.tasks.length > 0
   && profile.tasks.every((task) => ['message_topics', 'concept_mentions'].includes(task));
 
@@ -71,7 +72,7 @@ function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDepen
     state.recoveryOverflow ? 'Retained request recovery reached its limit. New processing changes are unavailable.' : null,
     state.recoveryConflict ? 'The original request meaning could not be verified. New processing changes are unavailable.' : null,
   ].filter(Boolean).join(' ');
-  const headerStatus: SectionStatus | null = state.status === 'error' || state.recoveryOverflow || state.recoveryConflict
+  const headerStatus: SectionStatus<(typeof PROCESSING_STATUS_LABELS)[number]> | null = state.status === 'error' || state.recoveryOverflow || state.recoveryConflict
     ? { label: 'Needs attention', tone: 'warning' }
     : state.busy
       ? { label: 'Checking…', tone: 'default' }
@@ -92,6 +93,7 @@ function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDepen
       title="Account text processing"
       summary="Analyze this account's new messages automatically."
       status={headerStatus}
+      statusLabels={PROCESSING_STATUS_LABELS}
     />
     <Stack spacing={1.75} data-journey-state="textanalysis.processing_controls">
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>

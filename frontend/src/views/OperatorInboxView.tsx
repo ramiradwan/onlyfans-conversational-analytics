@@ -478,14 +478,13 @@ function Inbox({
         Inbox
       </Typography>
 
-      {issue !== null && (
-        <Box sx={{ flexShrink: 0, mb: 2 }}>
-          <ReservedNotice
-            id="inbox-notice"
-            notice={{ title: issue.title, body: issue.detail, severity: issue.severity }}
-          />
-        </Box>
-      )}
+      {/* Always mounted at its reserved size, so a notice arriving moves nothing below it. */}
+      <Box sx={{ flexShrink: 0, mb: 2 }}>
+        <ReservedNotice
+          id="inbox-notice"
+          notice={issue ? { title: issue.title, body: issue.detail, severity: issue.severity } : null}
+        />
+      </Box>
 
       <Box data-reserved-region="inbox-content" data-region-role="scroll" sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable' }}>
       {showSetup ? (

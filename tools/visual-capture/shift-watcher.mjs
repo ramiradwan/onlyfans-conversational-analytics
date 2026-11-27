@@ -289,7 +289,8 @@ export function observeRegions({ requiredRegions = [], taskTransitions = false, 
       for (let parent = node; parent?.parentElement && parent !== document.body; parent = parent.parentElement) {
         if (parent.parentElement.closest('[data-reserved-region], [role="dialog"], dialog')) continue;
         for (const neighbor of parent.parentElement.children) {
-          if (neighbor === parent || neighbor.matches('script, style, link, dialog, [role="dialog"], [aria-hidden="true"]') || neighbor.querySelector('[data-reserved-region], [role="dialog"]') || neighbor.matches('[data-reserved-region]') || !visible(neighbor)) continue;
+          // Dialogs and menus are overlays, so opening or closing one moves no content.
+          if (neighbor === parent || neighbor.matches('script, style, link, dialog, [role="dialog"], [role="menu"], [aria-hidden="true"]') || neighbor.querySelector('[data-reserved-region], [role="dialog"], [role="menu"]') || neighbor.matches('[data-reserved-region]') || !visible(neighbor)) continue;
           if (!anchors.has(neighbor)) anchors.set(neighbor, `neighbor-${anchors.size}-${neighbor.tagName.toLowerCase()}`);
         }
       }
