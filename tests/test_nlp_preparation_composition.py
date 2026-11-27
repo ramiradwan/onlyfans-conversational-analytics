@@ -1,7 +1,6 @@
 """Independent preparation owner lifecycle without an execution owner."""
 from contextlib import contextmanager
 import asyncio
-import os
 import threading
 
 import pytest
@@ -91,8 +90,7 @@ def test_factory_has_no_side_effects_until_projection_binding(monkeypatch, tmp_p
 
 
 @pytest.mark.parametrize(('existing_root', 'long_members'), [
-    (False, False), (True, False),
-    pytest.param(False, True, marks=pytest.mark.skipif(os.name != 'nt', reason='Windows path limit')),
+    (False, False), (True, False), (False, True),
 ])
 def test_factory_acquires_into_private_nlp_root(monkeypatch, tmp_path, existing_root, long_members):
     from app.nlp import windows_host
