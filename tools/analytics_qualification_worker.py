@@ -61,10 +61,9 @@ def stop_after_verified_probe(work, journal, config, report, cases, probe):
 
 
 async def visibility(work, journal, config, instance, *, restarted=False):
-    from app.analytics.query_runtime import QuestionResources
     from app.analytics.scheduling import InProcessProjectionScheduler
     from app.models.analytics import AvailabilityStatus
-    resources = QuestionResources(work.f.source, work.f.pipeline)
+    resources = work.question_resources()
     scheduler = InProcessProjectionScheduler(work.f.pipeline, worker_count=1, queue_capacity=64,
                                             reconciliation_interval=30)
     report = {"initial_messages": work.size, "probes": [], "complete": False,

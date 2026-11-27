@@ -181,9 +181,8 @@ async def historical(work, journal, resources, scheduler):
 
 
 async def matrix(work, journal):
-    from app.analytics.query_runtime import QuestionResources
     from app.analytics.scheduling import InProcessProjectionScheduler
-    resources = QuestionResources(work.f.source, work.f.pipeline)
+    resources = work.question_resources()
     scheduler = InProcessProjectionScheduler(work.f.pipeline, worker_count=1, queue_capacity=64)
     report = {"phases": [], "complete": False}
     try:

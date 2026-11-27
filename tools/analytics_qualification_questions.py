@@ -34,10 +34,10 @@ def answer_rows(result):
 async def questions(work, journal, process, case, state, configured_at):
     from app.analytics import query_service
     from app.analytics.errors import AnalyticsError
-    from app.analytics.query_runtime import QuestionResources, PricingNotQualified
+    from app.analytics.query_runtime import PricingNotQualified
     from app.analytics.scheduling import InProcessProjectionScheduler
     from app.models.analytics import AvailabilityStatus
-    resources = QuestionResources(work.f.source, work.f.pipeline)
+    resources = work.question_resources()
     scheduler = InProcessProjectionScheduler(work.f.pipeline, reconciliation_interval=30)
     plan = question_plan(work.manifest, case)
     expected = expected_rows(work, case)

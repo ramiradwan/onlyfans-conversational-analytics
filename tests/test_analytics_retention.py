@@ -198,6 +198,7 @@ def test_mixed_age_generation_rebuild_keeps_recent_source_after_oldest_expires(
     )
 
     initial = pipeline.project_account(ACCOUNT)
+    assert database.active_generation(ACCOUNT).started_at == clock.value
     assert [item.sent_at for item in initial.artifact.projection.message_enrichments] == [
         old_source_at,
         recent_source_at,
@@ -209,6 +210,7 @@ def test_mixed_age_generation_rebuild_keeps_recent_source_after_oldest_expires(
 
     rebuilt = pipeline.rebuild_account(ACCOUNT)
     projection = rebuilt.artifact.projection
+    assert database.active_generation(ACCOUNT).started_at == clock.value
     assert [item.sent_at for item in projection.message_enrichments] == [recent_source_at]
     assert projection.creator_metrics.message_count == 1
     assert projection.graph.node_counts_by_kind.get("message") == 1

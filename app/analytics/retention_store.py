@@ -66,6 +66,7 @@ class RetentionBoundSQLiteAnalyticsProjectionStore(SQLiteAnalyticsProjectionStor
             database,
             activation=activation,
             canonical_identity_reader=canonical_identity_reader,
+            derivation_clock=clock,
             **kwargs,
         )
         try:

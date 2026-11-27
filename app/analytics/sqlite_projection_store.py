@@ -126,6 +126,7 @@ class SQLiteAnalyticsProjectionStore:
         gc_batch_size: int = 8,
         busy_timeout_ms: int = 5_000,
         contributions=None,
+        derivation_clock: Callable[[], datetime] | None = None,
     ) -> None:
         if lease_seconds <= 0:
             raise ValueError("lease_seconds must be positive")
@@ -164,6 +165,7 @@ class SQLiteAnalyticsProjectionStore:
         self._direct_publication_secret = secrets.token_hex(32)
         self._locally_fenced_epochs: set[str] = set()
         self.lease_seconds = lease_seconds
+        self._derivation_clock = derivation_clock
         self.rollback_retention = rollback_retention
         self.gc_batch_size = gc_batch_size
         from app.analytics.validation_receipt import ValidationReceipts
@@ -1102,6 +1104,8 @@ class SQLiteAnalyticsProjectionStore:
         generation_id = str(uuid4())
         now = _now()
         lease_expires = now + timedelta(seconds=self.lease_seconds)
+        # Queries compare the derivation time with the analytics clock. Leases use wall time.
+        derived_at = self._derivation_clock() if self._derivation_clock is not None else now
         from app.persistence.json_header import json_validation_scope
 
         with self.database.transaction() as connection, json_validation_scope(
@@ -1240,7 +1244,7 @@ class SQLiteAnalyticsProjectionStore:
                     self.build_owner.instance_nonce,
                     self.build_owner.capability_digest,
                     _timestamp(lease_expires),
-                    _timestamp(now),
+                    _timestamp(derived_at),
                 ),
             )
             if nlp_findings is not None:

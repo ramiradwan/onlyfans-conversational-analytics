@@ -48,6 +48,8 @@ def raw_result(tmp_path, config, report):
 def test_question_collector_records_fresh_answers_and_failures(tmp_path, monkeypatch, case):
     monkeypatch.setenv("OFCA_QUALIFICATION_PROCESS", "test-owner")
     config = configuration(tmp_path, "questions", case)
+    # The fresh worker must evaluate the fixture at its declared time even years later.
+    config["manifest"]["fixture"]["evaluation_clock"] = "2020-09-27T08:03:21Z"
     report = collect(config)
     assert report["complete"], report
     assert report["collector_process"]["pid"] == os.getpid()
