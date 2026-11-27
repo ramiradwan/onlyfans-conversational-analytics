@@ -186,9 +186,12 @@ describe('SettingsWithVaultView', () => {
     await act(async () => release());
     const index = within(screen.getAllByRole('navigation', { name: 'Settings sections' })[1]);
     const link = index.getByRole('link', { name: 'Browser extension' });
+    expect(link.hasAttribute('aria-label')).toBe(false);
     const dot = within(link).getByText('Browser extension').nextElementSibling!;
     expect(getComputedStyle(dot).visibility).toBe('hidden');
     await act(async () => bridgeTransportStore.setAgent({ ...agent, browser: { ...browser, site_access: 'needs_approval' } }));
+    // One string, so no browser joins the label and the status with a stray space.
+    expect(link.getAttribute('aria-label')).toBe('Browser extension, Needs attention');
     expect(index.getByRole('link', { name: 'Browser extension, Needs attention' })).toBe(link);
     expect(within(link).getByText('Browser extension').nextElementSibling).toBe(dot);
     expect(getComputedStyle(dot).visibility).toBe('visible');

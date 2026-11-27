@@ -1,5 +1,4 @@
 import { Box, ButtonBase, Paper, Stack, Typography, styled } from '@mui/material';
-import { visuallyHidden } from '@mui/utils';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps } from 'react';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
@@ -318,6 +317,7 @@ export default function SettingsWithVaultView({
                           component={RouterLink}
                           to={{ search: location.search, hash: `#${section.id}` }}
                           aria-current={active ? 'location' : undefined}
+                          aria-label={hint ? `${section.label}, ${hint}` : undefined}
                           sx={(theme) => ({
                             width: '100%',
                             minWidth: 0,
@@ -360,7 +360,7 @@ export default function SettingsWithVaultView({
                             {section.label}
                           </Typography>
                           {/* A section that can need attention keeps a place for its dot, so the dot comes and goes
-                              without rewrapping the label. Its status reads with the link. */}
+                              without rewrapping the label. The link's name carries the status. */}
                           {ATTENTION_SECTIONS.has(section.id) && (
                             <Box
                               component="span"
@@ -375,7 +375,6 @@ export default function SettingsWithVaultView({
                               })}
                             />
                           )}
-                          {hint && <span style={visuallyHidden}>, {hint}</span>}
                         </ButtonBase>
                       );
                     })}
