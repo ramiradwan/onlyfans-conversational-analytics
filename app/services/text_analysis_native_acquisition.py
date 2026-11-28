@@ -58,8 +58,8 @@ def _authority(kind):
 class TextAnalysisNativeAcquisition:
     """Compose only with the explicitly selected TEST release and issuer policies."""
 
-    def __init__(self, authentication, client, authorities, *, select, select_retained, eligible, payment_mode,
-                 clock=None):
+    def __init__(self, authentication, client, authorities, *, select, eligible, payment_mode,
+                 select_retained=None, clock=None):
         _need(payment_mode == "test", "acquisition_test_only")
         self.authentication = authentication
         self.identity = TextAnalysisIdentityOwner(authentication)
@@ -67,7 +67,8 @@ class TextAnalysisNativeAcquisition:
         self.client = client
         self.authorities = authorities
         self.select = select
-        self.select_retained = select_retained
+        self.select_retained = select_retained or (
+            lambda policy, kind, binding, _release: select(policy, kind, binding, refresh=False))
         self.eligible = eligible
         self.origin = client.transport.origin
         self.clock = clock or (lambda: datetime.now(timezone.utc))
