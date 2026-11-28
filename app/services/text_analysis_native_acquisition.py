@@ -57,7 +57,8 @@ def _authority(kind):
 class TextAnalysisNativeAcquisition:
     """Compose only with the explicitly selected TEST release and issuer policies."""
 
-    def __init__(self, authentication, client, authorities, *, select, eligible, payment_mode, clock=None):
+    def __init__(self, authentication, client, authorities, *, select, select_retained, eligible, payment_mode,
+                 clock=None):
         _need(payment_mode == "test", "acquisition_test_only")
         self.authentication = authentication
         self.identity = TextAnalysisIdentityOwner(authentication)
@@ -65,6 +66,7 @@ class TextAnalysisNativeAcquisition:
         self.client = client
         self.authorities = authorities
         self.select = select
+        self.select_retained = select_retained
         self.eligible = eligible
         self.origin = client.transport.origin
         self.clock = clock or (lambda: datetime.now(timezone.utc))
@@ -82,8 +84,7 @@ class TextAnalysisNativeAcquisition:
         _need(self.eligible(policy, kind, binding.copy()))
         return scope, binding, key
 
-    def _selection(self, policy, kind, binding, *, refresh=False):
-        selection = self.select(policy, kind, binding.copy(), refresh=refresh)
+    def _validated_selection(self, kind, selection):
         _need(type(selection) is AcquisitionSelection)
         release = parse_json(selection.release_identity, maximum=1024, require_canonical=True)
         _need(release.get("platform") == "windows")
@@ -93,14 +94,16 @@ class TextAnalysisNativeAcquisition:
 
     def _owned(self, policy, kind, record, current=None, *, reopen=False):
         scope, binding, key = current or self._identity(policy, kind)
-        selection = self._selection(policy, kind, binding)
         _need(record is not None and record.kind == kind and record.scope == scope)
-        _need(record.data["prepare"]["binding"] == binding
-              and record.data["prepare"]["release_identity"] == parse_json(selection.release_identity, maximum=1024)
-              and tuple(record.data["prepare"]["supported_profiles"]["profiles"]) == selection.supported_profiles
-              and canonical(record.data["expected_scope"]) == selection.expected_scope
+        prepare = record.data["prepare"]
+        _need(prepare["binding"] == binding
               and record.data["key"] == [key.provider_name, key.provider_key_name, key.public_key_jwk])
         _need(self.store.get(record.flow_id) == record, "acquisition_changed")
+        release = canonical(prepare["release_identity"])
+        selection = self._validated_selection(kind, self.select_retained(policy, kind, binding.copy(), release))
+        _need(selection.release_identity == release
+              and tuple(prepare["supported_profiles"]["profiles"]) == selection.supported_profiles
+              and canonical(record.data["expected_scope"]) == selection.expected_scope)
         if reopen:
             _need(self.client.key_authority.reopen_existing() == key, "acquisition_key_changed")
         return binding, key
@@ -162,31 +165,39 @@ class TextAnalysisNativeAcquisition:
                 return {"eligible": False, "reason": "disabled", "current": None}
             try:
                 current = self._identity(policy, kind)
+                if self.authorities.read_current(policy, kind=_authority(kind)) is not None:
+                    return {"eligible": False, "reason": "already_acquired", "current": None}
                 record = self.store.latest(current[0], kind)
                 if record is not None:
                     self._owned(policy, kind, record, current)
-                acquired = bool(record and record.data.get("adopted"))
-                if not acquired:
-                    acquired = self.authorities.read_current(policy, kind=_authority(kind)) is not None
+                    _need(not record.data.get("adopted"), "acquisition_authority_missing")
+                return {"eligible": True, "reason": None,
+                        "current": None if record is None else self._project(record)}
             except ValueError:
                 return {"eligible": False, "reason": "account_unavailable", "current": None}
-            return {"eligible": not acquired, "reason": "already_acquired" if acquired else None,
-                    "current": None if record is None else self._project(record)}
 
-    def _explicit_selection(self, policy, kind, flow_id=None):
-        _need(self.client.schemas.has_schema(_schema(kind, "prepare-response")), "acquisition_disabled")
+    def _begin(self, policy, kind, identity, previous):
+        scope, binding, key = identity
+        # Only a new operation can fetch the package's current release. Keep
+        # that fetch outside the account/DB fence and recheck before writing.
+        selection = self._validated_selection(kind, self.select(policy, kind, binding.copy(), refresh=True))
         with self.fence:
-            scope, binding, key = self._identity(policy, kind)
-            if flow_id is not None:
-                record = self.store.get(flow_id)
-                _need(record is not None and record.kind == kind and record.scope == scope)
-        # Fetch only on explicit action and outside the account/DB fence. Recheck
-        # the live binding and exact verified release before any native mutation.
-        selection = self._selection(policy, kind, binding, refresh=True)
-        with self.fence:
-            _need(self._identity(policy, kind) == (scope, binding, key))
-            _need(self._selection(policy, kind, binding) == selection)
-        return scope, binding, selection, key
+            _need(self._identity(policy, kind) == identity)
+            _need(self.authorities.read_current(policy, kind=_authority(kind)) is None, "acquisition_already_owned")
+            _need(self.select(policy, kind, binding.copy(), refresh=False) == selection)
+            operation_id = _new_uuid7(self.clock())
+            prepare = {"profile": PREFIX + kind + "-acquisition:v1", "operation_id": operation_id,
+                       "binding": binding, "authority_profile": PREFIX + _authority(kind) + ":v1",
+                       "supported_profiles": {"profile": PREFIX + "supported-profiles:v1",
+                                              "profiles": list(selection.supported_profiles)},
+                       "release_identity": parse_json(selection.release_identity, maximum=1024)}
+            if kind == "paid":
+                prepare["offer_id"] = PAID_TERMS["offer_id"]
+            data = {"key": [key.provider_name, key.provider_key_name, key.public_key_jwk], "prepare": prepare,
+                    "expected_scope": parse_json(selection.expected_scope, maximum=4096)}
+            new = AcquisitionRecord(str(uuid4()), scope, kind, operation_id, 1, _time(self.clock()), data)
+            build_prepare_request(self._context(new), schemas=self.client.schemas)
+            return self.store.begin(new, previous=previous)
 
     def _exchange(self, policy, record, operation, body):
         def allowed():
@@ -226,44 +237,35 @@ class TextAnalysisNativeAcquisition:
 
     def prepare(self, policy, kind):
         with self.actions:
-            scope, binding, selection, key = self._explicit_selection(policy, kind)
+            _need(self.client.schemas.has_schema(_schema(kind, "prepare-response")), "acquisition_disabled")
             with self.fence:
-                _need(self._identity(policy, kind) == (scope, binding, key))
+                identity = self._identity(policy, kind)
                 _need(self.authorities.read_current(policy, kind=_authority(kind)) is None, "acquisition_already_owned")
-                record = self.store.latest(scope, kind)
+                record = self.store.latest(identity[0], kind)
                 replace_record = record is None
                 if record is not None:
-                    self._owned(policy, kind, record)
+                    self._owned(policy, kind, record, identity)
+                    _need(not record.data.get("adopted"), "acquisition_authority_missing")
                     current = self._project(record)
                     replace_record = current["state"] in ("expired", "cancelled") and "submit" not in record.data
                     if not replace_record and (current["navigation_available"]
                             or current["state"] not in ("prepared", "awaiting_browser")):
                         return current
-                if replace_record:
-                    operation_id = _new_uuid7(self.clock())
-                    prepare = {"profile": PREFIX + kind + "-acquisition:v1", "operation_id": operation_id,
-                               "binding": binding, "authority_profile": PREFIX + _authority(kind) + ":v1",
-                               "supported_profiles": {"profile": PREFIX + "supported-profiles:v1",
-                                                       "profiles": list(selection.supported_profiles)},
-                               "release_identity": parse_json(selection.release_identity, maximum=1024)}
-                    if kind == "paid":
-                        prepare["offer_id"] = PAID_TERMS["offer_id"]
-                    data = {"key": [key.provider_name, key.provider_key_name, key.public_key_jwk], "prepare": prepare,
-                            "expected_scope": parse_json(selection.expected_scope, maximum=4096)}
-                    new = AcquisitionRecord(str(uuid4()), scope, kind, operation_id, 1, _time(self.clock()), data)
-                    build_prepare_request(self._context(new), schemas=self.client.schemas)
-                    record = self.store.begin(new, previous=record)
+            if replace_record:
+                record = self._begin(policy, kind, identity, record)
             body = build_prepare_request(self._context(record), schemas=self.client.schemas)
             raw = self._exchange(policy, record, kind + "-prepare", body)
             return self._project(self._observe(policy, record, "prepare", raw))
 
     def read(self, policy, kind, flow_id):
         with self.actions:
-            self._explicit_selection(policy, kind, flow_id)
+            _need(self.client.schemas.has_schema(_schema(kind, "prepare-response")), "acquisition_disabled")
             with self.fence:
                 record = self.store.get(flow_id)
                 self._owned(policy, kind, record)
                 if record.data.get("adopted"):
+                    _need(self.authorities.read_current(policy, kind=_authority(kind)) is not None,
+                          "acquisition_authority_missing")
                     return self._project(record)
                 local_authorized = record.data.get("authorized") is not None
             if not local_authorized:
@@ -347,8 +349,7 @@ def compose_installed_text_analysis_acquisition(authentication, key_authority, a
     client = NativeAcquisitionClient(NativeAcquisitionTransport(origin), key_authority,
                                      TextAnalysisSchemas(), clock=selected_clock)
 
-    def select(policy, kind, _binding, *, refresh):
-        release, seat = authorities.acquisition_basis(policy, refresh=refresh)
+    def selection(kind, release, seat):
         scope = {"seat_id": seat, "seat_scope": "organization-installation-seat",
                  "capability": "text-analysis", "compatible_artifact_family": "text-analysis-artifact",
                  "licensed_major_version": 1, "update_rights": True, "fallback_major_versions": []}
@@ -356,10 +357,16 @@ def compose_installed_text_analysis_acquisition(authentication, key_authority, a
             scope.update(execution_limit=1, output_policy=OUTPUT_POLICY)
         return AcquisitionSelection(release, canonical(scope), profiles[kind])
 
+    def select(policy, kind, _binding, *, refresh):
+        return selection(kind, *authorities.acquisition_basis(policy, refresh=refresh))
+
+    def select_retained(policy, kind, _binding, release):
+        return selection(kind, *authorities.retained_acquisition_basis(policy, release))
+
     def allowed(policy, kind, binding):
         return kind in profiles and eligible(policy, kind, binding) is True
 
-    return TextAnalysisNativeAcquisition(authentication, client, authorities, select=select,
+    return TextAnalysisNativeAcquisition(authentication, client, authorities, select=select, select_retained=select_retained,
         eligible=allowed, payment_mode=payment_mode, clock=selected_clock)
 
 

@@ -3,6 +3,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import json
 from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -27,7 +28,7 @@ class NoTransport:
 
 
 def make_identity_fixture(path, *, scope=None, creator_account_id='account', principal_id='person',
-                          role='creator', authentication=None, now=NOW):
+                          role='creator', authentication=None, now=NOW, grant_id_offset=0):
     clock = SimpleNamespace(now=now)
     auth = authentication or SQLiteAuthenticationStore(path, clock=lambda:clock.now)
     bundle = signed_bundle(iat=int(now.timestamp()) - 60)
@@ -41,6 +42,8 @@ def make_identity_fixture(path, *, scope=None, creator_account_id='account', pri
     original = dict(bundle.tokens, creator_account_binding=next(iter(bundle.creator_bindings.values())))
     for kind in ACCOUNT_AUTHORITY_GRANT_TYPES:
         payload = dict(_payload(original[kind]), **scope)
+        if grant_id_offset:
+            payload['jti'] = str(UUID(int=UUID(payload['jti']).int + grant_id_offset))
         if kind == 'installation_grant':
             payload['sub'] = 'installation:' + scope['installation_id']
         elif kind == 'creator_account_binding':

@@ -83,7 +83,9 @@ def make_acquisition_fixture(http, monkeypatch, *, kind="preview", schemas=None)
     selected = AcquisitionSelection(release, canonical(scope), profiles)
     state = SimpleNamespace(paid_ready=False, consented=False, lose_prepare=False, lose_submit=False,
                             lose_issue=False, issuance=None, adopted=None, calls=[], challenges={},
-                            basis_ready=False, basis_calls=[], refuse_basis=False)
+                            basis_ready=False, basis_calls=[], refuse_basis=False, retained_calls=[],
+                            current_release=release, retained_releases={release}, retained_scope=selected.expected_scope,
+                            retained_profiles=profiles, prepares={})
     fixed_delivery = b'{"test_delivery":"opaque fixture"}'
 
     def stamp(seconds=0):
@@ -126,6 +128,8 @@ def make_acquisition_fixture(http, monkeypatch, *, kind="preview", schemas=None)
         outer = dict(profile=inner["profile"], operation_id=inner["operation_id"], binding=binding)
         if kind == "paid":
             outer["terms"] = PAID_TERMS
+        if name.endswith("-prepare"):
+            assert state.prepares.setdefault(inner["operation_id"], inner) == inner
         if name.endswith("-prepare") or not state.paid_ready:
             outer.update(state="awaiting-authentication" if kind == "preview" else "awaiting-payment",
                          expires_at=stamp(1800))
@@ -135,11 +139,11 @@ def make_acquisition_fixture(http, monkeypatch, *, kind="preview", schemas=None)
                     raise httpx.ReadError("fixture disconnect after prepare")
             return reply(outer)
         expiry = stamp(300)
+        original = state.prepares[inner["operation_id"]]
         confirmation = dict(operation_id=inner["operation_id"],
             issuance_authorization_id="019a1957-0000-7000-8000-000000000042",
             binding=binding, authority_profile=PREFIX + authority + ":v1", scope=scope,
-            supported_profiles={"profile": PREFIX + "supported-profiles:v1", "profiles": list(profiles)},
-            release_identity=json.loads(release))
+            supported_profiles=original["supported_profiles"], release_identity=original["release_identity"])
         outer.update(expires_at=expiry, confirmation=confirmation, confirmation_digest=sha256(canonical(confirmation)).hexdigest())
         action = "acquire-text-analysis-preview" if kind == "preview" else "activate-paid-text-analysis"
         terms = PAID_TERMS if kind == "paid" else {k: v for k, v in scope.items() if k not in ("seat_id", "seat_scope")}
@@ -157,7 +161,9 @@ def make_acquisition_fixture(http, monkeypatch, *, kind="preview", schemas=None)
 
     class AuthorityOwner:
         def read_current(self, policy, *, kind):
-            return state.adopted if kind == authority else None
+            if kind == authority and policy.identity.creator_account_id == "account":
+                return state.adopted
+            return None
 
         def adopt(self, policy, *, issued_from, original_issuance_request, delivery):
             assert policy.identity.creator_account_id == "account"
@@ -175,11 +181,20 @@ def make_acquisition_fixture(http, monkeypatch, *, kind="preview", schemas=None)
             if state.refuse_basis:
                 raise OSError("fictional descriptor unavailable")
             state.basis_ready = True
+            state.retained_releases.add(state.current_release)
         assert state.basis_ready
-        return selected if kind == selected_kind else None
+        return AcquisitionSelection(state.current_release, selected.expected_scope, profiles) if kind == selected_kind else None
+
+    def select_retained(policy, selected_kind, registered, original):
+        assert registered == binding
+        state.retained_calls.append(original)
+        if selected_kind != kind or original not in state.retained_releases:
+            raise ValueError("fictional retained descriptor unavailable")
+        return AcquisitionSelection(original, state.retained_scope, state.retained_profiles)
 
     def reopen():
-        return TextAnalysisNativeAcquisition(source.auth, wire, AuthorityOwner(), select=select, eligible=(
+        return TextAnalysisNativeAcquisition(source.auth, wire, AuthorityOwner(), select=select,
+                select_retained=select_retained, eligible=(
                 lambda _policy, selected_kind, registered: selected_kind == kind and registered == binding),
                                              payment_mode="test", clock=lambda: source.clock[0])
 
@@ -187,8 +202,110 @@ def make_acquisition_fixture(http, monkeypatch, *, kind="preview", schemas=None)
     return source, client, state
 
 
+@pytest.fixture(params=("preview", "paid"))
+def native_acquisition_case(request, http):
+    from app.security.text_analysis_acquisition import _schema
+
+    kind = request.param
+    schemas = http[0].client.schemas
+    if not schemas.has_schema(_schema(kind, "prepare-response")):
+        pytest.skip("requires the pinned paid acquisition schema family")
+    return kind, schemas
+
+
+def test_native_acquisition_recovers_issued_delivery_across_compatible_update(http, monkeypatch, native_acquisition_case):
+    from datetime import timedelta
+    from hashlib import sha256
+
+    from app.security.text_analysis_contract import canonical
+
+    kind, schemas = native_acquisition_case
+    source, client, provider = make_acquisition_fixture(http, monkeypatch, kind=kind, schemas=schemas)
+    route = f"/api/v1/nlp/text-analysis-acquisition/{kind}"
+    original = provider.current_release
+    prepared = client.post(route + "/prepare", json={}).json()["current"]
+    request = route + "/" + prepared["flow_id"]
+    provider.paid_ready = True
+    review = client.post(request + "/read", json={}).json()["current"]["review"]
+    assert review["terms"] == ({"execution_limit": 1} if kind == "preview" else {
+        "payment_mode": "test", "amount_minor": 999, "currency": "EUR", "licensed_major_version": 1,
+        "update_rights": True,
+    })
+    provider.lose_issue = True
+    assert client.post(request + "/submit", json={"review_id": review["review_id"]}).status_code == 503
+    assert client.get(route).json()["current"]["state"] == "authorized"
+    assert provider.adopted is None
+    assert canonical(json.loads(provider.issuance)["release_identity"]) == original
+    assert json.loads(provider.issuance)["supported_profiles"] == provider.calls[0][1]["supported_profiles"]
+    source.clock[0] += timedelta(minutes=6)
+    provider.current_release = canonical(json.loads(original) | {"artifact_sha256": "e" * 64})
+    provider.basis_calls.clear()
+    provider.refuse_basis = True
+
+    recovery = client.post(request + "/read", json={})
+    assert recovery.status_code == 200 and recovery.json()["current"]["state"] == "adopted"
+    assert provider.calls[-1][1]["issuance_request_digest"] == sha256(provider.issuance).hexdigest()
+    assert [name for name, _ in provider.calls] == [
+        kind + "-prepare", kind + "-read", kind + "-submit",
+        ("license" if kind == "paid" else "preview") + "-issue", "authority-recover",
+    ]
+    assert provider.adopted.context.release_identity == original
+    assert provider.basis_calls == [] and set(provider.retained_calls) == {original}
+
+    # Verified ownership takes priority even if the old acquisition journal
+    # can no longer be used for a new exchange.
+    provider.retained_releases.clear()
+    provider.retained_calls.clear()
+    assert client.get(route).json() == {"eligible": False, "reason": "already_acquired", "current": None}
+    assert client.post(route + "/prepare", json={}).status_code == 409
+    assert provider.basis_calls == provider.retained_calls == []
+    provider.retained_releases.add(original)
+    provider.adopted = None
+    assert client.get(route).json() == {"eligible": False, "reason": "account_unavailable", "current": None}
+    assert client.post(request + "/read", json={}).status_code == 409
+
+
+def test_native_acquisition_refuses_unrelated_release_seat_profiles_and_account(http, monkeypatch, native_acquisition_case):
+    from app.security.text_analysis_contract import SUPPORTED, canonical
+    from tests.test_text_analysis_identity import make_identity_fixture
+
+    kind, schemas = native_acquisition_case
+    source, client, provider = make_acquisition_fixture(http, monkeypatch, kind=kind, schemas=schemas)
+    route = f"/api/v1/nlp/text-analysis-acquisition/{kind}"
+    original = provider.current_release
+    provider.current_release = canonical(json.loads(original) | {"artifact_sha256": "e" * 64})
+    prepared = client.post(route + "/prepare", json={}).json()["current"]
+    assert canonical(provider.calls[0][1]["release_identity"]) == provider.current_release
+    request = route + "/" + prepared["flow_id"]
+
+    provider.retained_releases.remove(provider.current_release)
+    assert client.post(request + "/read", json={}).status_code == 409
+    provider.retained_releases.add(provider.current_release)
+    expected_scope = provider.retained_scope
+    provider.retained_scope = canonical(json.loads(expected_scope) | {"seat_id": "unrelated-seat"})
+    assert client.post(request + "/read", json={}).status_code == 409
+    provider.retained_scope = expected_scope
+    expected_profiles = provider.retained_profiles
+    provider.retained_profiles = SUPPORTED
+    assert client.post(request + "/read", json={}).status_code == 409
+    provider.retained_profiles = expected_profiles
+
+    source.auth.revoke(RevocationKey(RevocationScopeType.WEBAUTHN_CREDENTIAL, "identity-credential-person"))
+    other = make_identity_fixture(source.auth.database.path, authentication=source.auth, scope=source.context.binding,
+                                  principal_id="other-person", creator_account_id="other-account", now=source.clock[0],
+                                  grant_id_offset=10)
+    client.cookies.set(settings.bridge_session_cookie_name,
+                       webauthn_session_token(other.policy.identity, other.session.session_value))
+    client.headers["X-CSRF-Token"] = other.session.csrf_value
+    assert client.get(route).json() == {"eligible": True, "reason": None, "current": None}
+    assert client.post(request + "/read", json={}).status_code == 409
+    assert len(provider.calls) == 1 and provider.adopted is None
+
+
 def test_native_preview_reconciles_lost_prepare_submit_and_issue_without_new_consent(http, monkeypatch):
     from hashlib import sha256
+
+    from app.security.text_analysis_contract import canonical
 
     source, client, provider = make_acquisition_fixture(http, monkeypatch)
     route = "/api/v1/nlp/text-analysis-acquisition/preview"
@@ -201,10 +318,13 @@ def test_native_preview_reconciles_lost_prepare_submit_and_issue_without_new_con
     assert pending["state"] == "prepared"
     same = route + "/" + pending["flow_id"]
     assert client.post(same + "/read", json={}).json()["current"]["state"] == "awaiting_browser"
+    provider.current_release = canonical(json.loads(provider.current_release) | {"artifact_sha256": "e" * 64})
+    provider.basis_calls.clear()
     provider.lose_prepare = False
     prepared = client.post(route + "/prepare", json={}).json()["current"]
     assert prepared["flow_id"] == pending["flow_id"] and prepared["navigation_available"]
     assert provider.calls[0][1] == provider.calls[2][1]
+    assert provider.basis_calls == []
     code = client.post(same + "/browser-entry", json={}).json()["entry_code"]
     with TestClient(client.app, base_url=ORIGIN) as browser:
         assert browser.get("/text-analysis-acquisition/preview/entry").status_code == 200
