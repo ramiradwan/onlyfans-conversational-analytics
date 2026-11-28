@@ -1314,7 +1314,7 @@ def _assert_python313_loop_counterpart(workflow: dict[str, Any]) -> None:
     assert indexes == sorted(indexes)
     setup, install, execute = (steps[index] for index in indexes)
     assert setup["with"]["python-version"] == "3.13" and setup["id"] == "loop-python"
-    assert setup["uses"] == "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97"
+    assert setup["uses"] == "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
     assert "-m venv $root" in install["run"] and "pytest==9.1.1" in install["run"]
     assert "requirements" not in install["run"] and "SQLCIPHER" not in install["run"]
     assert "steps.loop-python.outputs.python-path" in install["run"]
