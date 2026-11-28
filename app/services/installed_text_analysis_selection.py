@@ -7,39 +7,12 @@ from app.core.optional_execution import installed_execution_release, require_opt
 from app.nlp.execution_parameters import execution_parameters
 from app.nlp.preview_parameters import preview_parameters
 from app.persistence.text_analysis_authority import TextAnalysisCurrentEvidence, trust_digest
+from app.persistence.text_analysis_installed import InstalledTextAnalysisRecords
 from app.persistence.text_analysis_enrollment import TextAnalysisEnrollmentStore
 from app.persistence.text_analysis_preview import TextAnalysisPreviewStore
-from app.security.text_analysis_identity import TextAnalysisIdentityOwner, _scope
+from app.security.text_analysis_identity import TextAnalysisIdentityOwner
 from app.security.text_analysis_policy import TextAnalysisRunContext, encode_run_context
 from app.services.installed_text_analysis import InstalledTextAnalysisAuthorities, _need
-
-
-@dataclass(frozen=True, slots=True)
-class InstalledTextAnalysisLifecycle:
-    installed_authorities: InstalledTextAnalysisAuthorities
-    fixture_only: ClassVar[bool] = False
-
-    @property
-    def pair_owner(self):
-        return self.installed_authorities.pair_owner
-
-    @property
-    def canonical_database(self):
-        return self.pair_owner.canonical_database
-
-    @property
-    def auth_database(self):
-        return self.pair_owner.auth_database
-
-    def validate(self, db, policy, context, kind):
-        owner = self.installed_authorities
-        _need(type(owner) is InstalledTextAnalysisAuthorities and owner.release == installed_execution_release()
-              and context.algorithm_profile_sha256 == owner.release.profile_sha256)
-        identity = _scope(policy)
-        _need(context.installation_id == self.pair_owner.installation_id)
-        ref = owner.current_in(db, identity, kind, for_execution=True)
-        _need(ref is not None and ref.reference_id == context.reference_id
-              and ref.compact_jws_sha256 == context.compact_jws_sha256 and context.seat_id == ref.claims['seat_id'])
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +33,9 @@ class _Selection:
 
     @property
     def lifecycle(self):
-        return InstalledTextAnalysisLifecycle(self.installed_authorities)
+        owner = self.installed_authorities
+        _need(type(owner) is InstalledTextAnalysisAuthorities)
+        return InstalledTextAnalysisRecords(owner.release, owner.authority, owner.pair_owner, owner.schemas)
 
     def evidence(self, policy, context):
         from app.persistence.nlp_dependencies import DependencyPersistence

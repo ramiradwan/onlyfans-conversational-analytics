@@ -1,14 +1,19 @@
 """Package-owned admission for local preparation and optional execution selection."""
 from __future__ import annotations
 
+from contextlib import ExitStack
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 import hashlib
 import json
+import os
 import re
+import stat
+import sys
 from urllib.parse import urlsplit
 
-from app.core.desktop_release import DesktopRelease, RelatedBundle, parse_desktop_release
+from app.core.desktop_release import DesktopRelease, RelatedBundle, current_desktop_release, parse_desktop_release
 from app.nlp.contracts import NlpBoundaryError
 from app.nlp.profile_authentication import _keys
 from app.nlp.profiles import EngineIdentity, ResourcePolicy, validate_resource_policy
@@ -20,6 +25,40 @@ if TYPE_CHECKING:
 def _require(value):
     if not value:
         raise NlpBoundaryError('nlp_preparation_release_invalid')
+
+
+def load_preparation_release():
+    if os.name != 'nt' or not getattr(sys, 'frozen', False) or Path(sys.executable).name.lower() != 'brain.exe':
+        return None
+    from app.persistence.private_files import reject_path_aliases
+    root = reject_path_aliases(Path(sys.executable).parent)
+    path = root / 'nlp-preparation-release.json'
+    if not path.exists():
+        return None
+    from app.nlp.retained_artifacts import _windows_handle
+    # Package identity and retained file handles exclude mutable runtime inputs.
+    with ExitStack() as stack:
+        for ancestor in reversed((root, *root.parents)):
+            stack.enter_context(_windows_handle(ancestor, directory=True))
+        for leaf in (path, root / 'desktop-release.json'):
+            reject_path_aliases(leaf)
+            stack.enter_context(_windows_handle(leaf, directory=False))
+            before = leaf.lstat()
+            if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > 65536:
+                raise NlpBoundaryError('nlp_preparation_release_invalid')
+        release = current_desktop_release()
+        def read(leaf):
+            before = leaf.lstat()
+            with leaf.open('rb') as stream:
+                opened = os.fstat(stream.fileno())
+                raw = stream.read(65537)
+                after = os.fstat(stream.fileno())
+            identity = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_nlink)
+            if (identity(before) != identity(opened) or identity(opened) != identity(after)
+                    or identity(after) != identity(leaf.lstat()) or len(raw) != before.st_size):
+                raise NlpBoundaryError('nlp_preparation_release_invalid')
+            return raw
+        return parse_preparation_release(read(path), read(root / 'desktop-release.json'), release)
 
 
 @dataclass(frozen=True, slots=True)

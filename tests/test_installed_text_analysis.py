@@ -165,8 +165,9 @@ def test_fresh_account_adopts_exact_delivery_and_refuses_unmatched_restore(tmp_p
             assert c.execute('SELECT * FROM authoritative_pair').fetchone() is None
         signature, body = envelope(owner.release, signers['release'])
         from types import SimpleNamespace
-        from app.services import nlp_distribution, nlp_setup
-        monkeypatch.setattr(nlp_setup, 'load_preparation_release', lambda: SimpleNamespace(
+        from app.nlp import preparation
+        from app.services import nlp_distribution
+        monkeypatch.setattr(preparation, 'load_preparation_release', lambda: SimpleNamespace(
             execution=owner.release, distribution_base_url='https://example.test/'))
         calls = []
         def fetch(transport, path, *_a, **_kw):

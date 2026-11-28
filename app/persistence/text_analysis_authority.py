@@ -307,15 +307,15 @@ class TextAnalysisAuthorityStore:
                          phase: str, evidence: TextAnalysisCurrentEvidence | None = None,
                          lifecycle: FixtureTextAnalysisLifecycle | None = None, fixture_only: bool = False):
         from app.core.optional_execution import installed_execution_release, require_optional_execution
-        from app.services.installed_text_analysis_selection import InstalledTextAnalysisLifecycle
+        from app.persistence.text_analysis_installed import InstalledTextAnalysisRecords
         installed = installed_execution_release()
-        if installed is None or type(lifecycle) is not InstalledTextAnalysisLifecycle:
+        if installed is None or type(lifecycle) is not InstalledTextAnalysisRecords:
             require_optional_execution()
         if type(evidence) is not TextAnalysisCurrentEvidence or lifecycle is None:
             raise RuntimeAuthorizationDenied('text_analysis_current_evidence_missing')
-        if type(lifecycle) is InstalledTextAnalysisLifecycle:
-            admitted = (installed is not None and lifecycle.installed_authorities.release == installed
-                        and lifecycle.installed_authorities.authority is self and evidence.trust == installed.trust)
+        if type(lifecycle) is InstalledTextAnalysisRecords:
+            admitted = (installed is not None and lifecycle.release == installed
+                        and lifecycle.authority is self and evidence.trust == installed.trust)
         else:
             admitted = type(lifecycle) is FixtureTextAnalysisLifecycle and lifecycle.fixture_only is True
         if (not admitted or fixture_only is not lifecycle.fixture_only

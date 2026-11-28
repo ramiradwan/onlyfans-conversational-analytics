@@ -70,8 +70,8 @@ def retained_release_identity(db, release, schemas, expected):
 def audit_installed_deliveries(db, installation_id, schemas):
     """Use installed public trust and retained delivery basis, never token context."""
     from app.nlp.execution_release import ExecutionRelease
-    from app.services.nlp_setup import load_preparation_release
-    from app.services.installed_text_analysis import InstalledTextAnalysisAuthorities
+    from app.nlp.preparation import load_preparation_release
+    from app.persistence.text_analysis_installed import InstalledTextAnalysisRecords
     admitted = load_preparation_release()
     release = getattr(admitted, 'execution', None)
     _need(type(release) is ExecutionRelease and release.trust.fixture_only is False)
@@ -87,7 +87,7 @@ def audit_installed_deliveries(db, installation_id, schemas):
             retained_release_identity_in=lambda _db, expected: retained_release_identity(
                 _db, release, schemas, json.loads(expected)))
         identity = _identity(db, delivery, installation_id, expected_binding=original['binding'])
-        ref, _ = InstalledTextAnalysisAuthorities._delivery(validator, db, identity,
+        ref, _ = InstalledTextAnalysisRecords._delivery(validator, db, identity,
             kind=delivery['kind'], confirmation=delivery['confirmation'],
             issuance=delivery['issuance_request'], response=delivery['response'], retained=True)
         _need(ref.reference_id == delivery['reference_id'] and original['operation_id'] == delivery['operation_id']
@@ -109,7 +109,7 @@ def audit_installed_deliveries(db, installation_id, schemas):
 
 def _audit_replacements(db, installation_id, release, schemas, references):
     from app.persistence.text_analysis_authority import TextAnalysisAuthorityStore
-    from app.services.installed_text_analysis_reissue import replacement_current_in
+    from app.persistence.text_analysis_installed_reissue import replacement_current_in
     from app.security.text_analysis_authority import verify_authority
     from app.security.text_analysis_references import reference_from_verified
     key_row = db.execute('SELECT * FROM installation_key_reference WHERE singleton=1').fetchone()

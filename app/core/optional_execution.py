@@ -14,11 +14,17 @@ def require_optional_execution() -> None:
 
 @lru_cache(maxsize=1)
 def _packaged_release():
-    from app.services.nlp_setup import load_execution_release
-    return load_execution_release()
+    from app.nlp.preparation import load_preparation_release
+    admission = load_preparation_release()
+    return admission.execution if admission is not None else None
 
 
 def installed_execution_release():
     if getattr(sys, "frozen", False):
         return _packaged_release()
     return None
+
+
+def require_findings_execution() -> None:
+    if installed_execution_release() is None:
+        require_optional_execution()

@@ -8,7 +8,7 @@ from app.security.text_analysis_reissue import (
     ReissueContext, validate_confirmation, validate_context, validate_reissue_result,
     validate_reissue_projection, build_read_request, build_recover_request,
 )
-from app.services.installed_text_analysis import _need
+from app.persistence.text_analysis_installed import _need
 
 
 def replacement_current_in(owner, db, identity, *, checked_references=None, for_execution=False):

@@ -3,8 +3,7 @@ import hashlib
 from typing import Literal
 
 from app.models.text_analysis_jobs import ExecutionParameters
-from app.nlp.execution_parameters import ComponentRecipe
-from app.nlp.profiles import Descriptor, PolicyIdentity, artifact_closure_digest
+from app.nlp.profiles import ComponentRecipe, Descriptor, PolicyIdentity, artifact_closure_digest
 
 
 SELECTION_POLICY = PolicyIdentity(policy_id="text-analysis-preview-selection.v1", revision="1",

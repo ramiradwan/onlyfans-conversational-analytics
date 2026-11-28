@@ -51,12 +51,12 @@ def test_stale_backup_cannot_restore_removed_installed_licence_evidence(tmp_path
     from types import SimpleNamespace
 
     from app.security.text_analysis_contract import TextAnalysisSchemas
-    from app.services import nlp_setup
+    from app.nlp import preparation
     from tests.test_installed_text_analysis import delivery, envelope, registered
 
     with registered(tmp_path / 'live', TextAnalysisSchemas()) as (owner, identity, signers):
         pair = owner.pair_owner
-        monkeypatch.setattr(nlp_setup, 'load_preparation_release', lambda: SimpleNamespace(execution=owner.release))
+        monkeypatch.setattr(preparation, 'load_preparation_release', lambda: SimpleNamespace(execution=owner.release))
         signed_release, payload = envelope(owner.release, signers['release'])
         with pair.auth_database.transaction() as connection:
             connection.execute('INSERT INTO text_analysis_release_identities VALUES (?, ?)',

@@ -5,7 +5,7 @@ from app.analytics.evidence_contracts import MAX_EVIDENCE_TEXT_CHARS
 from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS, RETENTION_BASIS
 from app.models.text_analysis_jobs import ExecutionParameters
 from app.nlp.contracts import Digest
-from app.nlp.profiles import Descriptor, TaskBinding, artifact_closure_digest
+from app.nlp.profiles import ComponentRecipe, Descriptor, artifact_closure_digest
 
 
 class SourcePolicy(Descriptor):
@@ -16,12 +16,6 @@ class SourcePolicy(Descriptor):
     max_text_chars: int = MAX_EVIDENCE_TEXT_CHARS
     retention_days: int = PARTICIPANT_ANALYTICS_MAX_DAYS
     retention_basis: Literal['canonical_message_sent_at'] = RETENTION_BASIS
-
-
-class ComponentRecipe(Descriptor):
-    schema_version: Literal['text-analysis-component-recipe.v1'] = 'text-analysis-component-recipe.v1'
-    components: tuple[Digest, ...]
-    bindings: tuple[TaskBinding, ...]
 
 
 class ExecutionRecipe(Descriptor):

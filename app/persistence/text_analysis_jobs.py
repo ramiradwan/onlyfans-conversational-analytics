@@ -41,7 +41,7 @@ class TextAnalysisJobStore:
             fence.validate_canonical_connection(self.repository.database, db)
 
     def _control_guard(self, db):
-        from app.analytics.nlp_execution import require_findings_execution
+        from app.core.optional_execution import require_findings_execution
         self.repository._transaction(db)
         require_findings_execution()
 

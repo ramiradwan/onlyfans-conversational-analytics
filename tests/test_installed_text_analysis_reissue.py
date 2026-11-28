@@ -61,9 +61,9 @@ def test_adopted_reissue_is_read_without_write_and_retains_seat(tmp_path,schemas
         ref=owner.read_current(policy(),kind='license')
         assert ref.reference_id==r.metadata['reference_id']
         from app.persistence.authoritative_pair import audit_crosslinks
-        from app.services import nlp_setup
+        from app.nlp import preparation
         from types import SimpleNamespace
-        monkeypatch.setattr(nlp_setup,'load_preparation_release',lambda:SimpleNamespace(execution=owner.release))
+        monkeypatch.setattr(preparation,'load_preparation_release',lambda:SimpleNamespace(execution=owner.release))
         with identity.auth.database.read() as db, owner.pair_owner.canonical_database.read() as c:
             audit_crosslinks(db,c,identity.scope['installation_id'])
         with owner._session(policy()) as (db,_,ident):

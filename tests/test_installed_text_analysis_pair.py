@@ -8,7 +8,7 @@ import pytest
 from app.persistence.authoritative_pair import audit_crosslinks
 from app.security.runtime_policy import RuntimeAuthorizationDenied
 from app.security.text_analysis_contract import TextAnalysisSchemas, canonical
-from app.services import nlp_setup
+from app.nlp import preparation
 from tests.test_installed_text_analysis import registered, envelope, delivery
 
 pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
@@ -24,7 +24,7 @@ def audit(owner):
 @pytest.mark.parametrize('kind', ['license', 'preview'])
 def test_real_delivery_survives_repeated_matched_audit(tmp_path, monkeypatch, kind):
     with registered(tmp_path, TextAnalysisSchemas()) as (owner, identity, signers):
-        monkeypatch.setattr(nlp_setup, 'load_preparation_release', lambda: SimpleNamespace(execution=owner.release))
+        monkeypatch.setattr(preparation, 'load_preparation_release', lambda: SimpleNamespace(execution=owner.release))
         signature, body = envelope(owner.release, signers['release'])
         with owner.authority.database.transaction() as db:
             db.execute('INSERT INTO text_analysis_release_identities VALUES(?,?)', (owner.release.desktop_sha256, signature))
@@ -47,7 +47,7 @@ def test_real_delivery_audit_accepts_authenticated_prior_compatible_core(tmp_pat
         package.update(version='.'.join(parts), desktop_sha256='d'*64)
         pins = dict(json.loads(owner.release.release_pins), release_version=package['version'])
         later = replace(owner.release, desktop_sha256='d'*64, package_binding=canonical(package), release_pins=canonical(pins))
-        monkeypatch.setattr(nlp_setup, 'load_preparation_release', lambda: SimpleNamespace(execution=later))
+        monkeypatch.setattr(preparation, 'load_preparation_release', lambda: SimpleNamespace(execution=later))
         audit(owner)
 
 
@@ -55,7 +55,7 @@ def test_real_delivery_matched_backup_restore_is_repeatable(tmp_path, monkeypatc
     from app.persistence.authoritative_backup import (create_authoritative_backup, verify_authoritative_backup,
         restore_authoritative_backup, OfflineAuthoritativeRestoreOwner)
     with registered(tmp_path/'live', TextAnalysisSchemas()) as (owner, identity, signers):
-        monkeypatch.setattr(nlp_setup, 'load_preparation_release', lambda: SimpleNamespace(execution=owner.release))
+        monkeypatch.setattr(preparation, 'load_preparation_release', lambda: SimpleNamespace(execution=owner.release))
         signature, body = envelope(owner.release, signers['release'])
         with owner.authority.database.transaction() as db:
             db.execute('INSERT INTO text_analysis_release_identities VALUES(?,?)', (owner.release.desktop_sha256, signature))
@@ -81,13 +81,13 @@ def test_real_delivery_matched_backup_restore_is_repeatable(tmp_path, monkeypatc
 @pytest.mark.parametrize('mutation', ['trust', 'envelope', 'delivery', 'principal', 'account', 'grants', 'key', 'orphan'])
 def test_real_delivery_audit_refuses_unmatched_evidence(tmp_path, monkeypatch, mutation):
     with registered(tmp_path, TextAnalysisSchemas()) as (owner, identity, signers):
-        monkeypatch.setattr(nlp_setup, 'load_preparation_release', lambda: SimpleNamespace(execution=owner.release))
+        monkeypatch.setattr(preparation, 'load_preparation_release', lambda: SimpleNamespace(execution=owner.release))
         signature, body = envelope(owner.release, signers['release'])
         with owner.authority.database.transaction() as db:
             db.execute('INSERT INTO text_analysis_release_identities VALUES(?,?)', (owner.release.desktop_sha256, signature))
         owner.adopt(identity.auth.read_bridge_session(identity.session.session_value).policy, **delivery('license', owner, identity, signers, body['release_identity']))
         if mutation == 'trust':
-            monkeypatch.setattr(nlp_setup, 'load_preparation_release', lambda: None)
+            monkeypatch.setattr(preparation, 'load_preparation_release', lambda: None)
         else:
             with owner.authority.database.transaction() as db:
                 if mutation == 'envelope':

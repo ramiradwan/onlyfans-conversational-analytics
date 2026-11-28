@@ -13,6 +13,7 @@ from app.models.text_analysis_jobs import JobPlan
 from app.nlp.profiles import canonical_bytes
 from app.persistence.contributions import ContributionRepository
 from app.persistence.text_analysis_authority import FixtureTextAnalysisLifecycle, TextAnalysisAuthorityStore
+from app.persistence.text_analysis_installed import InstalledTextAnalysisRecords
 from app.persistence.text_analysis_jobs import TextAnalysisJobStore
 from app.security.text_analysis_policy import decode_run_context
 
@@ -53,8 +54,7 @@ class CanonicalFindingsExecution:
             _, enrollment = self.jobs.read_enrollment_in(db, enrollment_id, policy=identity_policy)
         self.context = decode_run_context(enrollment.run_context)
         self.parameters = enrollment.parameters
-        from app.services.installed_text_analysis_selection import InstalledTextAnalysisLifecycle
-        if lifecycle is not None and (type(lifecycle) not in (FixtureTextAnalysisLifecycle, InstalledTextAnalysisLifecycle)
+        if lifecycle is not None and (type(lifecycle) not in (FixtureTextAnalysisLifecycle, InstalledTextAnalysisRecords)
                 or lifecycle.canonical_database is not repository.database):
             raise ValueError('nlp_canonical_owner_invalid')
 

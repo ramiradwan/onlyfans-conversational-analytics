@@ -241,7 +241,6 @@ def test_first_installed_preview_activates_the_held_permit_and_passes_its_attemp
     from types import SimpleNamespace
     from uuid import uuid4
 
-    from app.analytics import nlp_execution
     from app.analytics.canonical_source import HistoryAnalyticsSource
     from app.analytics.nlp_contribution_sources import ContributionSourceGuard
     from app.core import optional_execution
@@ -252,7 +251,8 @@ def test_first_installed_preview_activates_the_held_permit_and_passes_its_attemp
     from app.persistence.nlp_dependencies import DependencyPersistence
     from app.persistence.text_analysis_preview import TextAnalysisPreviewStore
     from app.security.text_analysis_contract import TextAnalysisSchemas, canonical
-    from app.services import installed_text_analysis_selection as selections, nlp_setup
+    from app.nlp import preparation
+    from app.services import installed_text_analysis_selection as selections
     from app.services.text_analysis_preview import TextAnalysisPreviewService
     from tests.test_installed_text_analysis import delivery, envelope, registered
     from tests.test_nlp_processing_publication import ConformanceAdapter
@@ -262,9 +262,9 @@ def test_first_installed_preview_activates_the_held_permit_and_passes_its_attemp
     profile_id = profile.identity_digest()
     closure = artifact_closure_digest(tuple(a for a in profile.artifacts if a.role in ('weights', 'configuration', 'tokenizer')))
     with registered(tmp_path, TextAnalysisSchemas(), profile_digest=profile_id) as (owner, identity, signers):
-        for module in (optional_execution, selections, nlp_execution):
+        for module in (optional_execution, selections):
             monkeypatch.setattr(module, 'installed_execution_release', lambda: owner.release)
-        monkeypatch.setattr(nlp_setup, 'load_preparation_release', lambda: SimpleNamespace(execution=owner.release))
+        monkeypatch.setattr(preparation, 'load_preparation_release', lambda: SimpleNamespace(execution=owner.release))
         release_signature, manifest = envelope(owner.release, signers['release'])
         state = canonical(dict(schema='nlp-dependency-authority.v1', epoch=2, trust_sha256='d'*64,
                                catalog_sha256='e'*64, withdrawals=[]))
