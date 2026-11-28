@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/paid-text-analysis-acquisition/v1/proof-error.schema.json",
+  "title": "text-analysis-paid-acquisition proof-error v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "reason"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:text-analysis-paid-acquisition-proof:v1"
+    },
+    "reason": {
+      "enum": [
+        "invalid",
+        "temporarily_unavailable",
+        "rate_limited",
+        "proof_invalid",
+        "request_conflict",
+        "authentication_required",
+        "authorization_denied",
+        "expired",
+        "decision_conflict",
+        "unsupported_profile",
+        "unsupported_release",
+        "authority_unavailable",
+        "payment_unavailable"
+      ]
+    }
+  }
+}

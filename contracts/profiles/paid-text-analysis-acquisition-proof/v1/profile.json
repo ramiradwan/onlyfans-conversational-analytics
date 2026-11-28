@@ -1,0 +1,25 @@
+{
+  "profile": "urn:bridge-clean:text-analysis-paid-acquisition-proof:v1",
+  "governing_adr": "docs/adr/0063-test-paid-text-analysis-acquisition.md",
+  "messages": {
+    "proof-challenge-request": "schemas/paid-text-analysis-acquisition/v1/proof-challenge-request.schema.json",
+    "proof-challenge-response": "schemas/paid-text-analysis-acquisition/v1/proof-challenge-response.schema.json",
+    "proof-error": "schemas/paid-text-analysis-acquisition/v1/proof-error.schema.json"
+  },
+  "private_test_only": true,
+  "request_max_bytes": 12288,
+  "response_max_bytes": 4096,
+  "unknown_json_members": "reject",
+  "duplicate_json_members": "reject",
+  "request_response_logging": false,
+  "response_cache_control": "no-store",
+  "domain": "BRIDGE-CLEAN-TEXT-ANALYSIS-PAID-ACQUISITION-PROOF-V1\u0000",
+  "audience": "urn:bridge-clean:commercial-control-plane:text-analysis-paid-acquisition",
+  "purposes": [
+    "text-analysis-paid-acquisition-prepare",
+    "text-analysis-paid-acquisition-read",
+    "text-analysis-paid-acquisition-submit"
+  ],
+  "challenge_ttl_seconds": 60,
+  "transcript": "ADR0041 ten length-prefixed fields, exact method/path/body/purpose/original installation"
+}
