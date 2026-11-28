@@ -11,7 +11,8 @@ from app.persistence.text_analysis_native_acquisition import (
 )
 from app.security.runtime_policy import require_role
 from app.security.text_analysis_acquisition import (
-    AcquisitionContext, NativeConsent, PAID_TERMS, _schema, acquisition_confirmation, build_issuance_request,
+    ACQUISITION_REVIEW_WINDOW, AcquisitionContext, NativeConsent, PAID_TERMS, _schema,
+    acquisition_confirmation, build_issuance_request,
     build_prepare_request, build_read_request, build_recovery_request, build_submit_request,
     validate_acquisition_response, validate_acquisition_selection,
 )
@@ -113,8 +114,12 @@ class TextAnalysisNativeAcquisition:
         if deadline is None:
             upper = observed_at or self.clock()
             deadline = _time(upper + timedelta(seconds=1800))
+        review_ceiling = None
+        review = record.data.get("decision")
+        if record.kind == "paid" and review is not None:
+            review_ceiling = _time(min(_parse(deadline), _parse(review["at"]) + ACQUISITION_REVIEW_WINDOW))
         return AcquisitionContext(canonical(record.data["prepare"]), canonical(record.data["expected_scope"]),
-                                  deadline, kind=record.kind)
+                                  deadline, confirmation_not_after=review_ceiling, kind=record.kind)
 
     def _restore(self, record, name, previous=None):
         observed = record.data.get(name)

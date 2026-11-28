@@ -85,7 +85,7 @@ def make_acquisition_fixture(http, monkeypatch, *, kind="preview", schemas=None)
                             lose_issue=False, issuance=None, adopted=None, calls=[], challenges={},
                             basis_ready=False, basis_calls=[], refuse_basis=False, retained_calls=[],
                             current_release=release, retained_releases={release}, retained_scope=selected.expected_scope,
-                            retained_profiles=profiles, prepares={})
+                            retained_profiles=profiles, prepares={}, review_seconds=300)
     fixed_delivery = b'{"test_delivery":"opaque fixture"}'
 
     def stamp(seconds=0):
@@ -138,7 +138,7 @@ def make_acquisition_fixture(http, monkeypatch, *, kind="preview", schemas=None)
                 if state.lose_prepare:
                     raise httpx.ReadError("fixture disconnect after prepare")
             return reply(outer)
-        expiry = stamp(300)
+        expiry = stamp(state.review_seconds)
         original = state.prepares[inner["operation_id"]]
         confirmation = dict(operation_id=inner["operation_id"],
             issuance_authorization_id="019a1957-0000-7000-8000-000000000042",
@@ -300,6 +300,37 @@ def test_native_acquisition_refuses_unrelated_release_seat_profiles_and_account(
     assert client.get(route).json() == {"eligible": True, "reason": None, "current": None}
     assert client.post(request + "/read", json={}).status_code == 409
     assert len(provider.calls) == 1 and provider.adopted is None
+
+
+def test_native_acquisition_rejects_extended_review_before_and_after_update(http, monkeypatch, native_acquisition_case):
+    from datetime import timedelta
+
+    from app.security.text_analysis_contract import canonical
+
+    kind, schemas = native_acquisition_case
+    source, client, provider = make_acquisition_fixture(http, monkeypatch, kind=kind, schemas=schemas)
+    route = f"/api/v1/nlp/text-analysis-acquisition/{kind}"
+    prepared = client.post(route + "/prepare", json={}).json()["current"]
+    request = route + "/" + prepared["flow_id"]
+    provider.paid_ready = True
+    provider.review_seconds = 301
+    assert client.post(request + "/read", json={}).status_code == 409
+    assert client.get(route).json()["current"]["review"] is None
+
+    provider.review_seconds = 300
+    read = client.post(request + "/read", json={})
+    assert read.status_code == 200
+    review = read.json()["current"]["review"]
+    original = provider.current_release
+    provider.current_release = canonical(json.loads(original) | {"artifact_sha256": "e" * 64})
+    provider.basis_calls.clear()
+    source.clock[0] += timedelta(seconds=1)
+
+    # The response is still consistent and within the new rolling five minutes.
+    # It cannot extend the five minutes first admitted for this operation.
+    assert client.post(request + "/read", json={}).status_code == 409
+    assert client.get(route).json()["current"]["review"] == review
+    assert provider.issuance is None and provider.basis_calls == []
 
 
 def test_native_preview_reconciles_lost_prepare_submit_and_issue_without_new_consent(http, monkeypatch):

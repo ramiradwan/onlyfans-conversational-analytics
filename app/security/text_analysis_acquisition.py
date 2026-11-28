@@ -14,6 +14,7 @@ from app.security.text_analysis_contract import (
 
 _I = PREFIX + "authority-issuance:v1"
 _ACTION = "acquire-text-analysis-preview"
+ACQUISITION_REVIEW_WINDOW = timedelta(minutes=5)
 PAID_TERMS = {
     "offer_id": "text-analysis-major1-test-eur999-v1", "payment_mode": "test",
     "amount_minor": 999, "currency": "EUR", "capability": "text-analysis",
@@ -296,8 +297,7 @@ def validate_acquisition_response(raw: bytes, *, operation: str, context: Acquis
         _reference(value["entry_reference"])
     if state in ("confirmation-required", "authorized"):
         bound = _timestamp(context.confirmation_not_after or context.operation_expires_at)
-        if kind == "preview":
-            bound = min(bound, now + timedelta(seconds=300))
+        bound = min(bound, now + ACQUISITION_REVIEW_WINDOW)
         _need(_timestamp(expiry) <= bound, "confirmation_deadline_extended")
         checked = _confirmation(value["confirmation"], context, original, scope, expiry, schemas)
         confirmation, confirmation_digest = checked.confirmation_bytes, checked.confirmation_digest
