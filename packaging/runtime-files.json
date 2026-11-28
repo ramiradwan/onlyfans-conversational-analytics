@@ -36,6 +36,8 @@
     "_internal/app/onboarding/entry.js",
     "_internal/app/onboarding/reissue_entry.html",
     "_internal/app/onboarding/reissue_entry.js",
+    "_internal/app/onboarding/text_analysis_acquisition_entry.html",
+    "_internal/app/onboarding/text_analysis_acquisition_entry.js",
     "_internal/shared/desktop-onboarding/schema-v2.json",
     "_internal/shared/desktop-onboarding/wire-limits.json",
     "_internal/shared/browser-tasks/schema.json",
@@ -157,7 +159,8 @@
         "0055_companion_setup_configuration.sql": "9e11ad438b2c860d54e1cdae1338ebbc274eed157f28d5f3367c92daad24a967",
         "0056_account_passkey_authority.sql": "bc21a5101187cf31804d4bbecf62eac20ac5338cb28e7a0cf043a8e92f294405",
         "0057_desktop_account_passkey_continuity.sql": "5333e547c413f3afab130a08cad4997a242744046895995f7bfbc0f7442eb241",
-        "0058_desktop_access_lock.sql": "f4f2e948f0823119675210e12e090e668bb65283a23cd37a59e65a0cc73f688f"
+        "0058_desktop_access_lock.sql": "f4f2e948f0823119675210e12e090e668bb65283a23cd37a59e65a0cc73f688f",
+        "0059_text_analysis_native_acquisition.sql": "8ce29cdde1e959c01fc4cb4891631c81391a46a8cd1e4d424d373ef5017d652f"
       }
     },
     {

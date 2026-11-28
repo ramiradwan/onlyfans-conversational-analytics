@@ -38,6 +38,10 @@ class _Operation:
     reissue_v2: bool = False
 
     @property
+    def acquisition(self):
+        return self.family in ("preview-acquisition", "paid-acquisition")
+
+    @property
     def profile(self):
         if self.reissue_v2:
             return PREFIX + "license-reissue-proof:v2"
@@ -74,12 +78,14 @@ class _Operation:
     def schema_root(self):
         if self.reissue_v2:
             return "schemas/license-reissue-text-analysis-proof/v2/"
-        family = self.family if self.family == "preview-acquisition" else self.family + "-proof"
+        if self.family == "paid-acquisition":
+            return "schemas/paid-text-analysis-acquisition/v1/"
+        family = self.family if self.acquisition else self.family + "-proof"
         return "schemas/text-analysis-" + family + "/v1/"
 
     @property
     def challenge_schema(self):
-        prefix = "proof-" if self.family == "preview-acquisition" else ""
+        prefix = "proof-" if self.acquisition else ""
         return self.schema_root + prefix + "challenge-response.schema.json"
 
 
@@ -91,6 +97,9 @@ _OPERATIONS = {
     "preview-prepare": _Operation("preview-acquisition", "prepare", "preview"),
     "preview-read": _Operation("preview-acquisition", "read", "preview"),
     "preview-submit": _Operation("preview-acquisition", "submit", "preview"),
+    "paid-prepare": _Operation("paid-acquisition", "prepare", "license"),
+    "paid-read": _Operation("paid-acquisition", "read", "license"),
+    "paid-submit": _Operation("paid-acquisition", "submit", "license"),
     "reissue-v2-prepare": _Operation("license-reissue", "prepare", "license", reissue_v2=True),
     "reissue-v2-read": _Operation("license-reissue", "read", "license", reissue_v2=True),
     "reissue-v2-finalize": _Operation("license-reissue", "finalize", "license", reissue_v2=True),
@@ -154,7 +163,7 @@ def _key(context):
 def _validate_request(value, context, operation, schemas):
     if operation.reissue_v2:
         reissue_object(canonical(value), maximum=operation.request_limit)
-    prefix = "proof-" if operation.family == "preview-acquisition" else ""
+    prefix = "proof-" if operation.acquisition else ""
     envelope = {"profile": operation.profile, "purpose": operation.purpose, "request": value}
     schemas.require(operation.schema_root + prefix + "challenge-request.schema.json", envelope)
     binding = {name: getattr(context, name) for name in
@@ -233,7 +242,7 @@ def validate_challenge(raw: bytes, *, prepared: PreparedProofRequest, schemas: T
         raise TextAnalysisProofError("invalid_challenge") from None
     issued, expires = _timestamp(value["issued_at"]), _timestamp(value["expires_at"])
     lifetime = expires - issued
-    _need((timedelta(0) < lifetime <= timedelta(seconds=60)) if operation.reissue_v2
+    _need((timedelta(0) < lifetime <= timedelta(seconds=60)) if operation.reissue_v2 or operation.family == "paid-acquisition"
           else lifetime == timedelta(seconds=60), "challenge_lifetime")
     _need(issued <= _now(now) < expires, "challenge_expired")
     return value

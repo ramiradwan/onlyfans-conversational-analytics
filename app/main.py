@@ -24,6 +24,7 @@ from app.api.endpoints import (
     text_analysis_preview,
     text_analysis_client,
     text_analysis_reissue,
+    text_analysis_native_acquisition,
     transport_ws,
     webauthn,
 )
@@ -240,6 +241,7 @@ app.include_router(text_analysis_execution.router)
 app.include_router(text_analysis_preview.router)
 app.include_router(text_analysis_client.router)
 app.include_router(text_analysis_reissue.router)
+app.include_router(text_analysis_native_acquisition.router)
 app.include_router(webauthn.router)
 app.include_router(creator_vault.router)
 app.include_router(saved_data.router)

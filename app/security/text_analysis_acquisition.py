@@ -12,11 +12,16 @@ from app.security.text_analysis_contract import (
     canonical, parse_json, release_identity, supported_profiles,
 )
 
-_X = PREFIX + "preview-acquisition:v1"
 _I = PREFIX + "authority-issuance:v1"
 _ACTION = "acquire-text-analysis-preview"
-_X_DEFINITIONS = "schemas/text-analysis-preview-acquisition/v1/definitions.schema.json"
+PAID_TERMS = {
+    "offer_id": "text-analysis-major1-test-eur999-v1", "payment_mode": "test",
+    "amount_minor": 999, "currency": "EUR", "capability": "text-analysis",
+    "compatible_artifact_family": "text-analysis-artifact", "licensed_major_version": 1,
+    "update_rights": True,
+}
 _I_DEFINITIONS = "schemas/text-analysis-authority-issuance/v1/definitions.schema.json"
+_D_DEFINITIONS = "schemas/text-analysis-authority-delivery/v1/definitions.schema.json"
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._~-]{0,127}\Z")
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z")
 
@@ -31,6 +36,29 @@ class AcquisitionContext:
     expected_scope: bytes = field(repr=False)
     operation_expires_at: str
     confirmation_not_after: str | None = None
+    kind: str = "preview"
+
+
+def _family(kind):
+    _need(kind in ("paid", "preview"), "unsupported_acquisition")
+    return "text-analysis-" + kind + "-acquisition"
+
+
+def _profile(kind):
+    return "urn:bridge-clean:" + _family(kind) + ":v1"
+
+
+def _schema(kind, name):
+    root = "paid-text-analysis-acquisition" if kind == "paid" else _family(kind)
+    return f"schemas/{root}/v1/{name}.schema.json"
+
+
+def _authority_kind(kind):
+    return "preview" if kind == "preview" else "license"
+
+
+def _action(kind):
+    return _ACTION if kind == "preview" else "activate-paid-text-analysis"
 
 
 @dataclass(frozen=True)
@@ -156,17 +184,29 @@ def _scope(value, kind):
 def _base(context, schemas):
     _need(type(context) is AcquisitionContext, "invalid_context")
     original = _object(context.original_prepare, 8192)
-    schemas.require_definition(_X_DEFINITIONS, "prepareRequest", original)
+    kind = context.kind
+    schemas.require_definition(_schema(kind, "definitions"), "prepareRequest", original)
     _binding(original["binding"])
     profiles = original["supported_profiles"]
-    supported_profiles(canonical(profiles), schemas=schemas, authority="preview", expected_profiles=tuple(profiles["profiles"]))
-    release_identity(canonical(original["release_identity"]), schemas=schemas, expected=original["release_identity"])
-    scope = _object(context.expected_scope, 4096)
-    _scope(scope, "preview")
+    scope = validate_acquisition_selection(kind, context.expected_scope, canonical(original["release_identity"]),
+                                           tuple(profiles["profiles"]), schemas=schemas)
     _timestamp(context.operation_expires_at)
     if context.confirmation_not_after is not None:
         _need(_timestamp(context.confirmation_not_after) <= _timestamp(context.operation_expires_at), "invalid_deadline_context")
     return original, scope
+
+
+def validate_acquisition_selection(kind, expected_scope, release, profiles, *, schemas):
+    _family(kind)
+    support = {"profile": PREFIX + "supported-profiles:v1", "profiles": list(profiles)}
+    supported_profiles(canonical(support), schemas=schemas, authority=_authority_kind(kind), expected_profiles=profiles)
+    release_identity(release, schemas=schemas, expected=_object(release, 1024))
+    scope = _object(expected_scope, 4096)
+    _scope(scope, _authority_kind(kind))
+    if kind == "paid":
+        _need(scope["licensed_major_version"] == 1 and scope["update_rights"]
+              and not scope["fallback_major_versions"], "paid_scope_mismatch")
+    return scope
 
 
 def validate_authorized_confirmation(raw: bytes, *, context: IssuanceContext,
@@ -198,8 +238,9 @@ def validate_authorized_confirmation(raw: bytes, *, context: IssuanceContext,
 
 def _confirmation(value, context, original, scope, expires, schemas):
     _need(type(value) is dict, "invalid_confirmation")
-    _scope(value.get("scope"), "preview")
-    basis = IssuanceContext("preview", original["operation_id"], value.get("issuance_authorization_id"),
+    authority = _authority_kind(context.kind)
+    _scope(value.get("scope"), authority)
+    basis = IssuanceContext(authority, original["operation_id"], value.get("issuance_authorization_id"),
         canonical(original["binding"]), canonical(scope), tuple(original["supported_profiles"]["profiles"]),
         canonical(original["release_identity"]), expires)
     return validate_authorized_confirmation(canonical(value), context=basis, schemas=schemas)
@@ -241,10 +282,13 @@ def validate_acquisition_response(raw: bytes, *, operation: str, context: Acquis
     now = _clock(server_now)
     original, scope = _base(context, schemas)
     value = _object(raw, 16384)
-    schemas.require("schemas/text-analysis-preview-acquisition/v1/" + operation + "-response.schema.json", value)
+    kind = context.kind
+    schemas.require(_schema(kind, operation + "-response"), value)
     _need(value["operation_id"] == original["operation_id"] and value["binding"] == original["binding"], "response_context_mismatch")
     _binding(value["binding"])
     state, expiry = value["state"], value.get("expires_at")
+    if kind == "paid":
+        _need(canonical(value["terms"]) == canonical(PAID_TERMS), "paid_terms_mismatch")
     confirmation = decision = confirmation_digest = decision_digest = decision_reference = None
     if expiry is not None:
         _need(_timestamp(expiry) <= _timestamp(context.operation_expires_at), "operation_deadline_extended")
@@ -252,17 +296,22 @@ def validate_acquisition_response(raw: bytes, *, operation: str, context: Acquis
         _reference(value["entry_reference"])
     if state in ("confirmation-required", "authorized"):
         bound = _timestamp(context.confirmation_not_after or context.operation_expires_at)
-        _need(_timestamp(expiry) <= min(bound, now + timedelta(seconds=300)), "confirmation_deadline_extended")
+        if kind == "preview":
+            bound = min(bound, now + timedelta(seconds=300))
+        _need(_timestamp(expiry) <= bound, "confirmation_deadline_extended")
         checked = _confirmation(value["confirmation"], context, original, scope, expiry, schemas)
         confirmation, confirmation_digest = checked.confirmation_bytes, checked.confirmation_digest
         _need(value["confirmation_digest"] == confirmation_digest, "confirmation_digest_mismatch")
         if state == "confirmation-required":
-            _scope({**value["decision"]["terms"], "seat_id": scope["seat_id"],
-                    "seat_scope": scope["seat_scope"]}, "preview")
             decision = canonical(value["decision"])
             _need(len(decision) <= 4096, "decision_size")
-            terms = {key: child for key, child in scope.items() if key not in ("seat_id", "seat_scope")}
-            _need(value["decision"] == {"action": _ACTION, "expires_at": expiry, "terms": terms}, "decision_projection_mismatch")
+            terms = PAID_TERMS
+            if kind == "preview":
+                _scope({**value["decision"]["terms"], "seat_id": scope["seat_id"],
+                        "seat_scope": scope["seat_scope"]}, "preview")
+                terms = {key: child for key, child in scope.items() if key not in ("seat_id", "seat_scope")}
+            expected = {"action": _action(kind), "expires_at": expiry, "terms": terms}
+            _need(decision == canonical(expected), "decision_projection_mismatch")
             _need(_timestamp(expiry) > now, "decision_expired")
             decision_digest = hashlib.sha256(decision).hexdigest()
             _need(value["decision_digest"] == decision_digest, "decision_digest_mismatch")
@@ -286,7 +335,7 @@ def build_prepare_request(context: AcquisitionContext, *, schemas: TextAnalysisS
 
 def build_read_request(context: AcquisitionContext, *, schemas: TextAnalysisSchemas) -> bytes:
     original, _ = _base(context, schemas)
-    return canonical({"profile": _X, "operation_id": original["operation_id"], "binding": original["binding"]})
+    return canonical({"profile": _profile(context.kind), "operation_id": original["operation_id"], "binding": original["binding"]})
 
 
 def _refresh(result, schemas):
@@ -301,16 +350,26 @@ def build_submit_request(result: ValidatedAcquisition, *, native_consent: Native
     checked = _refresh(result, schemas)
     _need(checked.state == "confirmation-required" and _timestamp(checked.expires_at) > _clock(server_now), "consent_unavailable")
     original, _ = _base(checked.context, schemas)
+    kind = checked.context.kind
+    action = _action(kind)
     expected = NativeConsent(original["operation_id"], checked.confirmation_digest, checked.decision_digest,
-                             checked.decision_reference, _ACTION)
+                             checked.decision_reference, action)
     _need(type(native_consent) is NativeConsent and native_consent == expected, "native_consent_mismatch")
-    value = {"profile": _X, "operation_id": original["operation_id"], "binding": original["binding"],
+    value = {"profile": _profile(kind), "operation_id": original["operation_id"], "binding": original["binding"],
              "confirmation_digest": checked.confirmation_digest, "decision_digest": checked.decision_digest,
-             "decision_reference": checked.decision_reference, "consent": _ACTION}
-    schemas.require_definition(_X_DEFINITIONS, "submitRequest", value)
+             "decision_reference": checked.decision_reference, "consent": action}
+    schemas.require_definition(_schema(kind, "definitions"), "submitRequest", value)
     encoded = canonical(value)
     _need(len(encoded) <= 8192, "request_size")
     return encoded
+
+
+def acquisition_confirmation(result: ValidatedAcquisition, *, schemas: TextAnalysisSchemas) -> AuthorizedConfirmation:
+    checked = _refresh(result, schemas)
+    _need(checked.state == "authorized", "issuance_unavailable")
+    original, scope = _base(checked.context, schemas)
+    value = _object(checked.confirmation, 4096)
+    return _confirmation(value, checked.context, original, scope, checked.expires_at, schemas)
 
 
 def build_issuance_request(authorized: ValidatedAcquisition | AuthorizedConfirmation, *, authority_kind: str,
@@ -318,11 +377,7 @@ def build_issuance_request(authorized: ValidatedAcquisition | AuthorizedConfirma
     _need(authority_kind in ("license", "preview"), "unsupported_authority")
     now = _clock(server_now)
     if type(authorized) is ValidatedAcquisition:
-        checked = _refresh(authorized, schemas)
-        _need(checked.state == "authorized" and authority_kind == "preview", "issuance_unavailable")
-        original, scope = _base(checked.context, schemas)
-        value = _object(checked.confirmation, 4096)
-        checked_confirmation = _confirmation(value, checked.context, original, scope, checked.expires_at, schemas)
+        checked_confirmation = acquisition_confirmation(authorized, schemas=schemas)
     else:
         _need(type(authorized) is AuthorizedConfirmation, "issuance_unavailable")
         checked_confirmation = validate_authorized_confirmation(authorized.confirmation_bytes, context=authorized.context, schemas=schemas)
@@ -336,3 +391,16 @@ def build_issuance_request(authorized: ValidatedAcquisition | AuthorizedConfirma
     encoded = canonical(value)
     _need(len(encoded) <= 8192, "request_size")
     return encoded
+
+
+def build_recovery_request(issuance: bytes, *, schemas: TextAnalysisSchemas) -> bytes:
+    value = _object(issuance, 8192)
+    profile = value.get("authority_profile")
+    _need(type(profile) is str, "invalid_issuance")
+    kind = {PREFIX + "license:v1": "license", PREFIX + "preview:v1": "preview"}.get(profile)
+    _need(kind is not None and canonical(value) == issuance, "invalid_issuance")
+    schemas.require_definition(_I_DEFINITIONS, kind + "Request", value)
+    request = {key: value[key] for key in ("operation_id", "issuance_authorization_id", "authority_profile", "binding")}
+    request.update(profile=PREFIX + "authority-delivery:v1", issuance_request_digest=hashlib.sha256(issuance).hexdigest())
+    schemas.require_definition(_D_DEFINITIONS, "request", request)
+    return canonical(request)

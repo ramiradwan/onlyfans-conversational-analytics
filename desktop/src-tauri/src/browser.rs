@@ -30,6 +30,17 @@ fn reissue_url(code: &str) -> Result<String, &'static str> {
     Ok(format!("{}/text-analysis-reissue/entry#code={code}", policy::ORIGIN))
 }
 
+fn acquisition_url(kind: &str, code: &str) -> Result<String, &'static str> {
+    require_entry_code(code)?;
+    if !matches!(kind, "paid" | "preview") {
+        return Err("browser_entry_invalid");
+    }
+    Ok(format!(
+        "{}/text-analysis-acquisition/{kind}/entry#code={code}",
+        policy::ORIGIN
+    ))
+}
+
 /// Only the installed Chrome executable; renderer inputs never select a profile,
 /// executable, command line, or destination. Chrome owns profile selection.
 pub(crate) fn chrome_path() -> Result<PathBuf, &'static str> {
@@ -142,6 +153,16 @@ pub fn desktop_text_analysis_reissue(
     open_entry(window, state, reissue_url(&entry_code)?)
 }
 
+#[tauri::command]
+pub fn desktop_text_analysis_acquisition(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, std::sync::Arc<host::Host>>,
+    kind: String,
+    entry_code: String,
+) -> Result<(), &'static str> {
+    open_entry(window, state, acquisition_url(&kind, &entry_code)?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,7 +198,17 @@ mod tests {
             assert!(task_url(value).is_err());
             assert!(entry_url(value, true).is_err());
             assert!(reissue_url(value).is_err());
+            assert!(acquisition_url("paid", value).is_err());
         }
+        assert!(acquisition_url("https://example.com", &"A".repeat(43)).is_err());
+        assert_eq!(
+            acquisition_url("preview", &"A".repeat(43)).unwrap(),
+            format!(
+                "{}/text-analysis-acquisition/preview/entry#code={}",
+                policy::ORIGIN,
+                "A".repeat(43)
+            )
+        );
         assert!(task_url(&"A".repeat(44)).is_err());
         assert!(reissue_url(&"A".repeat(44)).is_err());
     }

@@ -408,6 +408,7 @@
         "app/persistence/text_analysis_enrollment.py",
         "app/persistence/text_analysis_preview.py",
         "app/persistence/text_analysis_reissue.py",
+        "app/persistence/text_analysis_native_acquisition.py",
         "app/persistence/text_analysis_client.py",
         "app/persistence/authoritative_pair.py"
       ],

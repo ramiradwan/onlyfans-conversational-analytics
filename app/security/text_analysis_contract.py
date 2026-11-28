@@ -107,13 +107,17 @@ class TextAnalysisSchemas:
         self._validators = {
             name: Draft202012Validator(document, registry=registry)
             for name, document in documents.items()
-            if name.startswith(("schemas/text-analysis-", *_REISSUE_SCHEMA_ROOTS))
+            if name.startswith(("schemas/text-analysis-", "schemas/paid-text-analysis-acquisition/v1/",
+                                *_REISSUE_SCHEMA_ROOTS))
         }
 
     def valid(self, schema: str, value: object) -> bool:
         if schema not in self._validators:
             raise TextAnalysisContractError("unsupported_schema")
         return self._validators[schema].is_valid(value)
+
+    def has_schema(self, schema: str) -> bool:
+        return schema in self._validators
 
     def require(self, schema: str, value: object) -> None:
         if not self.valid(schema, value):
