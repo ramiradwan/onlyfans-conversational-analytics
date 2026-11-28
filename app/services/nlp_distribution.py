@@ -39,7 +39,7 @@ class ProfileDistribution:
 
     @contextmanager
     def _stream(self, relative, *, check, deadline, offset=0, size=None):
-        require(relative == 'catalog.jws' or re.fullmatch(r'(?:profiles|data)/[a-f0-9]{64}', relative),
+        require(relative == 'catalog.jws' or re.fullmatch(r'(?:profiles|data|releases)/[a-f0-9]{64}', relative),
                 'nlp_distribution_path')
 
         def poll():

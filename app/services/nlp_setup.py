@@ -46,6 +46,11 @@ def load_preparation_release():
         return parse_preparation_release(read(path), read(root / 'desktop-release.json'), release)
 
 
+def load_execution_release():
+    admission = load_preparation_release()
+    return admission.execution if admission is not None else None
+
+
 def preparation_configuration(authentication_factory, data_root):
     admission = load_preparation_release()
     if admission is None:
@@ -76,7 +81,7 @@ def preparation_configuration(authentication_factory, data_root):
         policy = admission.resource_policy
         persistence = DependencyPersistence(authentication_factory())
         artifacts = ArtifactStore(storage_root / 'artifacts', StoreLimits(policy.installed_bytes, policy.installed_bytes, admission.minimum_free_bytes))
-        provider = ProcessEngineProvider(NativeHostLauncher(), resource_policy=policy, preparation_only=True)
+        provider = ProcessEngineProvider(NativeHostLauncher(), resource_policy=policy, preparation_only=admission.execution is None)
         return DependencyService(persistence, artifacts, findings, source,
             ProfileDistribution(admission.distribution_base_url), keys=admission.trusted_keys,
             approvals=admission.approves, engine_provider=provider, resource_policy=policy,

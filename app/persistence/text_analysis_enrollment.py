@@ -161,7 +161,7 @@ class TextAnalysisEnrollmentStore:
         return EnrollmentCommandResult(receipt=receipt, current=self.read_current_in(db, policy=policy))
 
     def apply_command_in(self, db, command, *, policy, intent=None, identity=None, profile_bytes=None):
-        self.jobs._guard(db)
+        self.jobs._control_guard(db)
         command = _typed(EnrollmentCommand, command)
         installation, account, principal = self._scope(policy)
         raw = canonical_bytes(command)
@@ -172,6 +172,8 @@ class TextAnalysisEnrollmentStore:
             if bytes(retained[0]) != raw:
                 raise ValueError('text_analysis_command_conflict')
             return old
+        if command.action not in ('pause', 'retire'):
+            self.jobs._guard(db, policy)
         current = self.read_current_in(db, policy=policy)
         if (current.mode_version, current.enrollment_id) != (command.expected_mode_version, command.expected_enrollment_id):
             raise ValueError('text_analysis_command_stale')

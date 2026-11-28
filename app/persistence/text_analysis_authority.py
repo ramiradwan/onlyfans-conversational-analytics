@@ -95,12 +95,14 @@ class TextAnalysisTransitionFence:
         self._phase = phase
         self._policy = None
         self._active = True
-        self.fixture_only = True
+        self.fixture_only = lifecycle.fixture_only
 
     def is_current(self, policy: RuntimePolicy, context_sha256: str, *, phase: str) -> bool:
         if not self._active or context_sha256 != self._context_sha256:
             return False
         try:
+            if not self.fixture_only:
+                self._lifecycle.validate(self._connection, policy, self._context, policy.text_analysis_authority.kind)
             self._store._check_current_in(self._connection, policy, self._context, self._evidence, phase=phase)
             return (self._connection.in_transaction
                 and policy.authorization_epoch == self._epoch
@@ -304,14 +306,20 @@ class TextAnalysisAuthorityStore:
     def transition_fence(self, identity_policy: RuntimePolicy, context: TextAnalysisRunContext, *, kind: str,
                          phase: str, evidence: TextAnalysisCurrentEvidence | None = None,
                          lifecycle: FixtureTextAnalysisLifecycle | None = None, fixture_only: bool = False):
-        from app.core.optional_execution import require_optional_execution
-        require_optional_execution()
+        from app.core.optional_execution import installed_execution_release, require_optional_execution
+        from app.services.installed_text_analysis_selection import InstalledTextAnalysisLifecycle
+        installed = installed_execution_release()
+        if installed is None or type(lifecycle) is not InstalledTextAnalysisLifecycle:
+            require_optional_execution()
         if type(evidence) is not TextAnalysisCurrentEvidence or lifecycle is None:
             raise RuntimeAuthorizationDenied('text_analysis_current_evidence_missing')
-        # Real seat/trust/activation and process-safe replacement providers are not installed.
-        if (fixture_only is not True or evidence.fixture_only is not True
-            or type(lifecycle) is not FixtureTextAnalysisLifecycle or lifecycle.fixture_only is not True
-            or lifecycle.auth_database is not self.database):
+        if type(lifecycle) is InstalledTextAnalysisLifecycle:
+            admitted = (installed is not None and lifecycle.installed_authorities.release == installed
+                        and lifecycle.installed_authorities.authority is self and evidence.trust == installed.trust)
+        else:
+            admitted = type(lifecycle) is FixtureTextAnalysisLifecycle and lifecycle.fixture_only is True
+        if (not admitted or fixture_only is not lifecycle.fixture_only
+                or evidence.fixture_only is not fixture_only or lifecycle.auth_database is not self.database):
             raise RuntimeAuthorizationDenied('text_analysis_production_provider_unavailable')
         with self.database.dependency_authority_gate:
             if self._schemas is None:
@@ -327,6 +335,8 @@ class TextAnalysisAuthorityStore:
                     pair.validate_auth_in(db)
                 policy = self.compose_policy_in(db, identity_policy, context.reference_id, context,
                     trust=evidence.trust, schemas=self._schemas, kind=kind, now=self.authentication._clock())
+                if not fixture_only:
+                    lifecycle.validate(db, policy, context, kind)
                 self._check_current_in(db, policy, context, evidence, phase=phase)
                 fence = TextAnalysisTransitionFence(_SEAL, self, db, context, evidence, policy.authorization_epoch, lifecycle, phase)
                 policy = replace(policy, text_analysis_fence=fence)
@@ -334,6 +344,8 @@ class TextAnalysisAuthorityStore:
                 try:
                     require_text_analysis(policy, context, kind=kind, phase=phase)
                     yield policy
+                    if not fixture_only:
+                        lifecycle.validate(db, fence._policy, context, kind)
                     self._check_current_in(db, fence._policy, context, fence._evidence, phase=phase)
                 finally:
                     fence._active = False

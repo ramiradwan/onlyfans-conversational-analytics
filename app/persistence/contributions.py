@@ -67,17 +67,18 @@ def finding_ids(contribution_id, raw):
     return result
 
 
-def _require_dormant_write():
-    from app.core.optional_execution import require_optional_execution
-    require_optional_execution()
+def _require_dormant_write(policy=None):
+    from app.persistence.text_analysis_authority import TextAnalysisTransitionFence
+    from app.core.optional_execution import installed_execution_release, require_optional_execution
+    fence = getattr(policy, 'text_analysis_fence', None)
+    if type(fence) is not TextAnalysisTransitionFence or fence.fixture_only or installed_execution_release() is None:
+        require_optional_execution()
+    elif not fence.is_current(policy, fence._context_sha256, phase=fence._phase):
+        raise ValueError('text_analysis_transition_fence_missing')
 
 
 class ContributionRepository:
-    """Write methods retain the closed optional-execution environment guard.
-
-    No production execution authorization or public write route is supplied.
-    Recovery reads require identity and current sources, never an Engine.
-    """
+    """Persist scoped findings and resolve retained evidence against current sources."""
 
     def __init__(self, database, *, source_guard=None, clock=time.time, max_storage_bytes=256 * 1024 * 1024):
         if type(max_storage_bytes) is not int or not 1 <= max_storage_bytes <= 256 * 1024 * 1024:
@@ -222,6 +223,8 @@ class ContributionRepository:
     def _write_scope(self, db, spec, policy, phase):
         intent = self._module_intent(db, spec.job_id)
         if intent is None:
+            from app.core.optional_execution import require_optional_execution
+            require_optional_execution()
             if spec.capability.capability_id == 'text-analysis':
                 raise ValueError('knowledge_module_intent_required')
             return
@@ -262,7 +265,7 @@ class ContributionRepository:
         self._transaction(db)
         if initial_state not in ('prepared', 'pending'):
             raise ValueError('knowledge_initial_state_invalid')
-        _require_dormant_write()
+        _require_dormant_write(policy)
         spec = _typed(JobSpec, spec)
         self._scope(policy, spec)
         profile = read_profile(profile_bytes)
@@ -322,7 +325,7 @@ class ContributionRepository:
 
     def claim_attempt_in(self, db, job_id, *, expected_fence, lease_seconds, policy):
         self._transaction(db)
-        _require_dormant_write()
+        _require_dormant_write(policy)
         if (type(expected_fence) is not int or expected_fence < 0 or type(lease_seconds) is not int
                 or not 1 <= lease_seconds <= 120):
             raise ValueError('knowledge_lease_invalid')
@@ -364,7 +367,7 @@ class ContributionRepository:
 
     def stage_member_in(self, db, token, ordinal, frame, *, policy):
         self._transaction(db)
-        _require_dormant_write()
+        _require_dormant_write(policy)
         token = _typed(AttemptToken, token)
         if type(ordinal) is not int or not 0 <= ordinal < MAX_MEMBERS:
             raise ValueError('knowledge_member_invalid')
@@ -435,7 +438,7 @@ class ContributionRepository:
     def commit_in(self, db, token, *, policy):
         """Seal complete members; no projection write occurs in this transaction."""
         self._transaction(db)
-        _require_dormant_write()
+        _require_dormant_write(policy)
         token = _typed(AttemptToken, token)
         row, spec, profile = self._job(db, token.job_id, policy)
         self._write_scope(db, spec, policy, 'commit')

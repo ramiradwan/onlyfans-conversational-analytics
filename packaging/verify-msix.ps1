@@ -76,9 +76,11 @@ function Assert-NlpPreparation {
     param([byte[]] $Bytes, [byte[]] $DesktopBytes, $Profile)
     $value = Convert-CheckedJson $Bytes 65536
     $desktop = Convert-CheckedJson $DesktopBytes 65536
-    Assert-ClosedObject $value @('schema', 'desktop_release_sha256', 'engine', 'profiles',
+    $fields = @('schema', 'desktop_release_sha256', 'engine', 'profiles',
         'distribution_base_url', 'trusted_keys', 'resource_policy', 'minimum_free_bytes')
-    if ($value.schema -isnot [string] -or $value.schema -cne 'nlp-preparation-release.v1' -or
+    if ($value.schema -ceq 'nlp-preparation-release.v2') { $fields += 'execution' }
+    Assert-ClosedObject $value $fields
+    if ($value.schema -isnot [string] -or $value.schema -cnotin @('nlp-preparation-release.v1','nlp-preparation-release.v2') -or
         $value.desktop_release_sha256 -isnot [string] -or
         $Profile.schema -cne 'ofca-msix-package-profile/v2' -or $Profile.purpose -cne 'qualification' -or
         $Profile.distribution -cne 'direct-appinstaller' -or
@@ -121,7 +123,44 @@ function Assert-NlpPreparation {
         $value.minimum_free_bytes -gt 9007199254740991) { throw 'Invalid NLP free-space reserve' }
     if ($value.trusted_keys -isnot [array] -or $value.trusted_keys.Count -lt 1 -or $value.trusted_keys.Count -gt 8) { throw 'Invalid NLP trust set' }
     $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    foreach ($key in $value.trusted_keys) {
+    $allKeys = @($value.trusted_keys)
+    if ($value.schema -ceq 'nlp-preparation-release.v2') {
+        $selection = $value.execution
+        Assert-ClosedObject $selection @('profile_sha256','contract_manifest_sha256','vector_manifest_sha256',
+            'trust_set_sha256','authority_projection','authority_projection_sha256','release_manifest_key')
+        foreach ($name in @('profile_sha256','contract_manifest_sha256','vector_manifest_sha256','trust_set_sha256','authority_projection_sha256')) {
+            if ($selection[$name] -isnot [string] -or $selection[$name] -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid execution release digest' }
+        }
+        if ($value.profiles.Count -ne 1 -or $value.profiles[0] -cne $selection.profile_sha256 -or
+            $selection.authority_projection -isnot [string]) { throw 'Invalid execution profile' }
+        $bytes = [Text.Encoding]::UTF8.GetBytes($selection.authority_projection)
+        if ((Get-ByteDigest $bytes) -cne $selection.authority_projection_sha256 -or
+            $selection.trust_set_sha256 -cne $selection.authority_projection_sha256) { throw 'Invalid execution key digest' }
+        $trust = Convert-CheckedJson $bytes 8192
+        Assert-ClosedObject $trust @('keys','environment','production_usable')
+        if ($trust.environment -cne 'private-qa' -or $trust.production_usable -isnot [bool] -or $trust.production_usable -or
+            $trust.keys -isnot [array] -or $trust.keys.Count -ne 2) { throw 'Invalid execution trust' }
+        $purposes = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        $points = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($record in $allKeys) { $null = $points.Add("$($record.jwk.x).$($record.jwk.y)") }
+        foreach ($entry in $trust.keys) {
+            Assert-ClosedObject $entry @('purpose','jwk','thumbprint')
+            Assert-ClosedObject $entry.jwk @('kty','crv','kid','x','y')
+            if ($entry.purpose -cnotin @('text-analysis-license','text-analysis-preview') -or -not $purposes.Add($entry.purpose) -or
+                -not $points.Add("$($entry.jwk.x).$($entry.jwk.y)")) { throw 'Invalid execution key purpose' }
+            $material = [ordered]@{crv=$entry.jwk.crv; kty=$entry.jwk.kty; x=$entry.jwk.x; y=$entry.jwk.y}
+            $hash = [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($material | ConvertTo-Json -Compress)))
+            $thumb = [Convert]::ToBase64String($hash).TrimEnd('=').Replace('+','-').Replace('/','_')
+            $short = [Convert]::ToBase64String($hash,0,16).TrimEnd('=').Replace('+','-').Replace('/','_')
+            $tag = if ($entry.purpose -ceq 'text-analysis-license') { 'tl' } else { 'tp' }
+            if ($thumb -cne $entry.thumbprint -or $entry.jwk.kid -cne "bc1.$tag.$short") { throw 'Invalid execution key identity' }
+            $allKeys += @{kid=$entry.jwk.kid; jwk=$material}
+        }
+        $manifestKey = $selection.release_manifest_key
+        if (-not $points.Add("$($manifestKey.jwk.x).$($manifestKey.jwk.y)")) { throw 'Release manifest key must be separate' }
+        $allKeys += $manifestKey
+    }
+    foreach ($key in $allKeys) {
         Assert-ClosedObject $key @('kid', 'jwk')
         Assert-ClosedObject $key.jwk @('kty', 'crv', 'x', 'y')
         if ($key.kid -isnot [string] -or $key.kid -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$' -or -not $seen.Add($key.kid) -or

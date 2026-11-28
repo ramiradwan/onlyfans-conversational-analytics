@@ -35,7 +35,7 @@ class _RetainedOrigin:
 
 
 class CanonicalFindingsExecution:
-    """One exact licensed enrollment; production providers remain unavailable."""
+    """One exact licensed enrollment and its canonical write authority."""
 
     def __init__(self, repository, authority_store, *, enrollment_id, identity_policy,
                  current_evidence=None, lifecycle=None, fixture_only=False):
@@ -53,7 +53,8 @@ class CanonicalFindingsExecution:
             _, enrollment = self.jobs.read_enrollment_in(db, enrollment_id, policy=identity_policy)
         self.context = decode_run_context(enrollment.run_context)
         self.parameters = enrollment.parameters
-        if lifecycle is not None and (type(lifecycle) is not FixtureTextAnalysisLifecycle
+        from app.services.installed_text_analysis_selection import InstalledTextAnalysisLifecycle
+        if lifecycle is not None and (type(lifecycle) not in (FixtureTextAnalysisLifecycle, InstalledTextAnalysisLifecycle)
                 or lifecycle.canonical_database is not repository.database):
             raise ValueError('nlp_canonical_owner_invalid')
 

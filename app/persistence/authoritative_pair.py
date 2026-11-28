@@ -128,10 +128,29 @@ def audit_crosslinks(auth_db, canonical_db, installation_id):
         from app.core.optional_execution import require_optional_execution
         require_optional_execution()
     trust = fixture_trust(environment='test') if rows and all(r['fixture_only'] == 1 for r in rows) else None
-    for row in rows:
-        if trust is None:
-            _deny()  # No released production module-trust provider is installed.
+    installed = {}
+    has_deliveries = auth_db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='text_analysis_deliveries'").fetchone() and auth_db.execute('SELECT 1 FROM text_analysis_deliveries LIMIT 1').fetchone()
+    if any(r['fixture_only'] == 0 for r in rows) or has_deliveries:
+        from app.persistence.text_analysis_delivery_audit import audit_installed_deliveries
         try:
+            installed = audit_installed_deliveries(auth_db, installation_id, schemas or TextAnalysisSchemas())
+            if set(installed) != {r['reference_id'] for r in rows if r['fixture_only'] == 0}:
+                _deny()
+        except (ValueError, KeyError, IndexError, TypeError, UnicodeError):
+            _deny()
+    for row in rows:
+        try:
+            if row['fixture_only'] == 0:
+                reference = installed.get(row['reference_id'])
+                if reference is None:
+                    _deny()
+                fields = ('reference_id','kind','object_id','issuance_id','compact_jws','compact_jws_sha256','payload_sha256','signer_kid','fixture_only')
+                if any(getattr(reference, name) != row[name] for name in fields):
+                    _deny()
+                verified[row['reference_id']] = row
+                continue
+            if trust is None:
+                _deny()
             token = row['compact_jws']
             payload = parse_json(decode(token.split('.')[1], 16384), maximum=16384, require_canonical=True)
             context = { 'expected_subject': payload['sub'], 'expected_capability':'text-analysis',

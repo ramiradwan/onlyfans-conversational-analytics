@@ -125,11 +125,12 @@ def capability_binding(reference: TextAnalysisReference, context: TextAnalysisRu
 
 def require_text_analysis_fence(policy: RuntimePolicy, context: TextAnalysisRunContext, *, kind: str, phase: str,
                                 canonical_database=None, canonical_connection=None) -> TextAnalysisReference:
-    from app.core.optional_execution import require_optional_execution
-    require_optional_execution()
-    reference = require_text_analysis(policy, context, kind=kind, phase=phase)
+    from app.core.optional_execution import installed_execution_release, require_optional_execution
     from app.persistence.text_analysis_authority import TextAnalysisTransitionFence
-    fence = policy.text_analysis_fence
+    fence = getattr(policy, 'text_analysis_fence', None)
+    if type(fence) is not TextAnalysisTransitionFence or fence.fixture_only or installed_execution_release() is None:
+        require_optional_execution()
+    reference = require_text_analysis(policy, context, kind=kind, phase=phase)
     if type(fence) is not TextAnalysisTransitionFence or not fence.is_current(policy, hashlib.sha256(encode_run_context(context)).hexdigest(), phase=phase):
         _deny('text_analysis_transition_fence_missing')
     if canonical_database is not None and not fence.owns_canonical_database(canonical_database):

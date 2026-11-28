@@ -141,6 +141,11 @@ class FindingsReadContext:
     def _dependency_admission(self, account_id):
         self.authorize(account_id)
 
+    def _retain_enrollment(self, profile):
+        if getattr(self.dependencies, 'preparation_admission', None) is not None:
+            return self.dependencies.retain(profile, binding=self.execution_binding)
+        return self.dependencies.retain(profile)
+
     def _budget(self):
         return QuestionBudget(QuestionLimits(max_records=100_000,wall_clock_ms=30_000),
                               cancellation_check=self.cancellation_check)
@@ -469,7 +474,7 @@ class FindingsRunner(FindingsReadContext):
             if pending.work is not None and self.dependencies is not None:
                 if not self.dependencies.ready(profile):
                     return False
-                with self.dependencies.retain(profile) as retained_adapter:
+                with self._retain_enrollment(profile) as retained_adapter:
                     results = self._infer_components(profile,pending.original,claim,cancelled,
                         self.adapter if self.adapter is not None else retained_adapter,pending.cancellation,work=pending.work)
             else:
@@ -533,7 +538,7 @@ class FindingsRunner(FindingsReadContext):
                         if not self.execution_ready(profile) or not self.dependencies.ready(profile):
                             return completed
                         if execute is None:
-                            retained = residence.enter_context(self.dependencies.retain(profile))
+                            retained = residence.enter_context(self._retain_enrollment(profile))
                             execute = self.adapter if self.adapter is not None else retained
                         # Preserve an already prepared component across the source boundary.
                         components = sorted(profile.components,

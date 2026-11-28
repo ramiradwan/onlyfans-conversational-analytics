@@ -83,7 +83,8 @@ class DependencyService:
             from app.nlp.preparation import PreparationAdmission
             from app.nlp.engine_provider import ProcessEngineProvider
             require(type(preparation_admission) is PreparationAdmission
-                    and type(engine_provider) is ProcessEngineProvider and engine_provider.preparation_only,
+                    and type(engine_provider) is ProcessEngineProvider
+                    and engine_provider.preparation_only is (preparation_admission.execution is None),
                     'nlp_preparation_only')
         self.preparation_admission = preparation_admission
         self.policy = ResourcePolicy.model_validate_json(resource_policy.model_dump_json())
@@ -275,19 +276,47 @@ class DependencyService:
         return load_resolver(profile, lambda artifact_id: self.artifacts.read_configuration(
             profile, artifact_id, cancellation_check=self._running))
 
+    def _require_execution_owner(self, profile):
+        if self.preparation_admission is not None:
+            from app.services.installed_text_analysis_selection import InstalledLicenseSelection
+            selected = self.preparation_admission.execution
+            require(selected is not None and type(getattr(self.execution_owner,'selection',None)) is InstalledLicenseSelection
+                    and self.execution_owner.selection.installed_authorities.release == selected
+                    and profile.identity_digest() == selected.profile_sha256, 'nlp_preparation_only')
+
     @contextmanager
     def publication(self, profile):
         # Short authority gate spans the actual analytics commit. No model job holds it.
-        require(self.preparation_admission is None, 'nlp_preparation_only')
+        require(self.preparation_admission is None, 'nlp_authenticated_command_required')
         with self.gate:
             require(self.ready(profile), 'nlp_dependency_unavailable')
             yield
 
     @contextmanager
-    def retain(self, profile):
+    def retain(self, profile, *, binding=None, attempt=None):
         """Keep one lazy worker and at most one prepared component in this scope."""
-        require(self.preparation_admission is None, 'nlp_preparation_only')
+        self._require_execution_owner(profile)
         require_findings_execution()
+        def authorize():
+            if self.preparation_admission is None:
+                return
+            from app.models.text_analysis_preview_execution import PreviewFindingsBinding
+            from app.services.text_analysis_execution import LicensedFindingsBinding
+            if type(binding) is LicensedFindingsBinding:
+                require(binding.profile == profile and attempt is None, 'nlp_execution_scope_invalid')
+                self.execution_owner.authorize_binding(binding, binding.locator.creator_account_id)
+                with binding.execution._fence('resume'):
+                    pass
+            elif type(binding) is PreviewFindingsBinding:
+                from app.services.text_analysis_preview import preview_service
+                service = preview_service()
+                require(service is not None and service.dependencies is self and binding.profile == profile
+                        and attempt is not None, 'nlp_execution_scope_invalid')
+                service.check(binding, attempt)
+            else:
+                raise DependencyRejected('nlp_authenticated_command_required')
+
+        authorize()
         with self._retention(profile, ready=True):
             stack = ExitStack()
             session = prepared = scope_deadline = dispatch_deadline = current_cancelled = None
@@ -306,6 +335,7 @@ class DependencyService:
                 require_findings_execution()
                 require(dispatch.acquire(blocking=False), 'nlp_channel_busy')
                 try:
+                    authorize()
                     require(not closed, 'nlp_execution_scope_closed')
                     require(not broken, 'nlp_execution_scope_broken')
                     from app.nlp import v2

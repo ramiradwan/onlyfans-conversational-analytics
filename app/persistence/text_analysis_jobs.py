@@ -33,9 +33,17 @@ class TextAnalysisJobStore:
     def __init__(self, repository):
         self.repository = repository
 
-    def _guard(self, db):
+    def _guard(self, db, policy=None):
         self.repository._transaction(db)
-        _require_dormant_write()
+        _require_dormant_write(policy)
+        fence = getattr(policy, 'text_analysis_fence', None)
+        if fence is not None and not fence.fixture_only:
+            fence.validate_canonical_connection(self.repository.database, db)
+
+    def _control_guard(self, db):
+        from app.analytics.nlp_execution import require_findings_execution
+        self.repository._transaction(db)
+        require_findings_execution()
 
     @staticmethod
     def _receipt(row):
@@ -152,7 +160,7 @@ class TextAnalysisJobStore:
         return result
 
     def prepare_in(self, db, intent, plan, sources, *, profile_bytes, policy):
-        self._guard(db)
+        self._guard(db, policy)
         intent, plan = _typed(ExecutionIntent, intent), _typed(JobPlan, plan)
         context = decode_run_context(intent.run_context)
         self._plan_context(plan, context)
@@ -199,7 +207,7 @@ class TextAnalysisJobStore:
         return self.read_in(db, job_id, policy=policy)
 
     def activate_in(self, db, job_id, *, confirmation=None, policy):
-        self._guard(db)
+        self._guard(db, policy)
         row, spec, _ = self.repository._job(db, job_id, policy)
         intent = self.repository._module_intent(db, job_id)
         if intent is None:
@@ -249,7 +257,7 @@ class TextAnalysisJobStore:
         return row
 
     def import_preview_in(self, db, run_context, *, policy):
-        self._guard(db)
+        self._guard(db, policy)
         context = decode_run_context(run_context)
         reference = require_text_analysis_fence(policy, context, kind='preview', phase='import',
                                                canonical_database=self.repository.database, canonical_connection=db)
@@ -266,7 +274,7 @@ class TextAnalysisJobStore:
         return 'available'
 
     def enroll_in(self, db, intent, *, policy):
-        self._guard(db)
+        self._guard(db, policy)
         intent = _typed(EnrollmentIntent, intent)
         context = decode_run_context(intent.run_context)
         self._plan_context(intent.parameters, context)
@@ -288,7 +296,10 @@ class TextAnalysisJobStore:
         return EnrollmentReceipt(enrollment_id=enrollment_id, state='enabled')
 
     def set_enrollment_mode_in(self, db, enrollment_id, mode, *, policy):
-        self._guard(db)
+        if mode in ('paused', 'retired'):
+            self._control_guard(db)
+        else:
+            self._guard(db, policy)
         if mode not in ('enabled', 'paused', 'retired'):
             raise ValueError('text_analysis_enrollment_mode_invalid')
         row = db.execute('SELECT * FROM text_analysis_enrollments WHERE enrollment_id=?', (enrollment_id,)).fetchone()
@@ -310,7 +321,7 @@ class TextAnalysisJobStore:
         return EnrollmentReceipt(enrollment_id=enrollment_id, state=mode)
 
     def prepare_child_in(self, db, enrollment_id, plan, sources, *, profile_bytes, policy):
-        self._guard(db)
+        self._guard(db, policy)
         row = db.execute('SELECT * FROM text_analysis_enrollments WHERE enrollment_id=?', (enrollment_id,)).fetchone()
         if row is None or row['state'] != 'enabled':
             raise ValueError('text_analysis_enrollment_unavailable')
@@ -334,7 +345,7 @@ class TextAnalysisJobStore:
                              enrollment_id=enrollment_id, slot_sha256=slot)
 
     def _preview_attempt(self, db, token, policy):
-        self._guard(db)
+        self._guard(db, policy)
         token = _typed(AttemptToken, token)
         row, spec, profile = self.repository._job(db, token.job_id, policy)
         intent = self.repository._module_intent(db, token.job_id)
@@ -405,7 +416,7 @@ class TextAnalysisJobStore:
 
     def finish_licensed_without_output_in(self, db, token, *, reason, policy):
         """Retain an unencodable licensed outcome without staging a result."""
-        self._guard(db)
+        self._guard(db, policy)
         if type(reason) is not str or reason not in ('unsupported_input', 'record_limit'):
             raise ValueError('text_analysis_terminal_reason_invalid')
         token = _typed(AttemptToken, token)

@@ -269,6 +269,16 @@ def test_powershell_preparation_verifier_is_closed_and_release_bound(tmp_path):
     descriptor = tmp_path / 'desktop-descriptor.json'
     descriptor.write_bytes(desktop)
     cases = [('valid', value, True)]
+    from tests.test_installed_text_analysis import release_inputs
+    authority, _, _, _ = release_inputs(value['profiles'][0])
+    installed = dict(value, schema='nlp-preparation-release.v2', execution=authority['execution'])
+    cases.append(('execution', installed, True))
+    for name, change in [
+        ('unbound_profile', {'profile_sha256': '0' * 64}),
+        ('unbound_authority', {'trust_set_sha256': '0' * 64}),
+        ('reused_release_key', {'release_manifest_key': value['trusted_keys'][0]}),
+    ]:
+        cases.append((name, dict(installed, execution=dict(installed['execution'], **change)), False))
     mutations = [
         ('unknown', lambda v: v.update(execution_enabled=True)),
         ('desktop', lambda v: v.update(desktop_release_sha256='0' * 64)),
@@ -347,4 +357,4 @@ Write-Output ('Verified ' + $cases.Count + ' cases')
         str(msix.ROOT / 'packaging/verify-msix.ps1'), str(descriptor), str(case_path)],
         capture_output=True, text=True, timeout=40)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert 'Verified 27 cases' in result.stdout
+    assert f'Verified {len(manifest)} cases' in result.stdout

@@ -118,6 +118,13 @@ try:
     if _dependency_configuration is not None and settings.canonical_persistence_backend != "sqlite":
         _dependency_configuration = None
         logger.warning("nlp_dependency_event reason_code=projection_configuration_unavailable")
+    if _dependency_configuration is not None:
+        from app.core.optional_execution import installed_execution_release
+        release = installed_execution_release()
+        if release is not None:
+            from app.services.installed_findings_configuration import installed_findings_configuration
+            _findings_configuration = installed_findings_configuration(_capability_license_store(), _dependency_configuration, release)
+            _dependency_configuration = None
 except Exception:
     logger.warning("nlp_dependency_event reason_code=release_configuration_unavailable")
 

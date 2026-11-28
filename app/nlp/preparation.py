@@ -1,7 +1,8 @@
-"""Closed release admission for installed preparation without analysis authority."""
+"""Package-owned admission for local preparation and optional execution selection."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 import hashlib
 import json
 import re
@@ -11,6 +12,9 @@ from app.core.desktop_release import DesktopRelease, RelatedBundle, parse_deskto
 from app.nlp.contracts import NlpBoundaryError
 from app.nlp.profile_authentication import _keys
 from app.nlp.profiles import EngineIdentity, ResourcePolicy, validate_resource_policy
+
+if TYPE_CHECKING:
+    from app.nlp.execution_release import ExecutionRelease
 
 
 def _require(value):
@@ -26,6 +30,7 @@ class PreparationAdmission:
     minimum_free_bytes: int
     _keys_json: bytes
     _policy_json: bytes
+    execution: ExecutionRelease | None = None
 
     @property
     def trusted_keys(self):
@@ -39,6 +44,9 @@ class PreparationAdmission:
         _require(type(policy) is ResourcePolicy and policy == self.resource_policy)
         _require(profile.identity_digest() in self.profiles
                  and all(c.engine == self.engine for c in profile.components))
+        if self.execution is not None:
+            _require(profile.schema_version == 'nlp-profile.v3'
+                     and [binding.task for binding in profile.bindings] == ['concept_mentions'])
         validate_resource_policy(profile, policy)
 
     def approves(self, profile):
@@ -65,10 +73,12 @@ def parse_preparation_release(raw: bytes, desktop_raw: bytes, release: DesktopRe
         _require(parse_desktop_release(desktop_raw, release.identity) == release)
         value = json.loads(raw, object_pairs_hook=unique,
                            parse_constant=lambda _: _require(False))
-        _require(type(value) is dict and set(value) == {'schema', 'desktop_release_sha256',
-            'engine', 'profiles', 'distribution_base_url', 'trusted_keys', 'resource_policy', 'minimum_free_bytes'})
-        _require(value['schema'] == 'nlp-preparation-release.v1'
-                 and value['desktop_release_sha256'] == hashlib.sha256(desktop_raw).hexdigest())
+        fields = {'schema', 'desktop_release_sha256', 'engine', 'profiles', 'distribution_base_url',
+                  'trusted_keys', 'resource_policy', 'minimum_free_bytes'}
+        _require(type(value) is dict and value.get('schema') in ('nlp-preparation-release.v1','nlp-preparation-release.v2'))
+        with_execution = value['schema'] == 'nlp-preparation-release.v2'
+        _require(set(value) == fields | ({'execution'} if with_execution else set()))
+        _require(value['desktop_release_sha256'] == hashlib.sha256(desktop_raw).hexdigest())
         _require(type(value['engine']) is dict and set(value['engine']) == set(EngineIdentity.model_fields))
         engine = EngineIdentity.model_validate_json(json.dumps(value['engine']))
         related = release.servicing.installed_artifact
@@ -95,7 +105,11 @@ def parse_preparation_release(raw: bytes, desktop_raw: bytes, release: DesktopRe
         policy = ResourcePolicy.model_validate_json(json.dumps(value['resource_policy']))
         reserve = value['minimum_free_bytes']
         _require(type(reserve) is int and 1 <= reserve <= 2**53 - 1)
+        execution = None
+        if with_execution:
+            from app.nlp.execution_release import parse_execution_release
+            execution = parse_execution_release(value['execution'], profiles, keys, value['desktop_release_sha256'], release)
         return PreparationAdmission(engine, tuple(profiles), base, reserve,
-            json.dumps(keys, sort_keys=True).encode(), policy.model_dump_json().encode())
+            json.dumps(keys, sort_keys=True).encode(), policy.model_dump_json().encode(), execution)
     except (ValueError, TypeError, AttributeError, KeyError, RecursionError, OverflowError):
         raise NlpBoundaryError('nlp_preparation_release_invalid') from None

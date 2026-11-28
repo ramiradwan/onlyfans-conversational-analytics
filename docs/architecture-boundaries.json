@@ -404,6 +404,7 @@
         "app/persistence/nlp_dependencies.py",
         "app/persistence/contributions.py",
         "app/persistence/text_analysis_authority.py",
+        "app/persistence/text_analysis_delivery_audit.py",
         "app/persistence/text_analysis_jobs.py",
         "app/persistence/text_analysis_enrollment.py",
         "app/persistence/text_analysis_preview.py",
