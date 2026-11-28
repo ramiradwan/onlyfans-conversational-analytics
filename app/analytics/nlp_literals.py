@@ -7,7 +7,6 @@ import hashlib
 import json
 from app.persistence import sqlite_api as sqlite3
 import time
-import unicodedata
 from uuid import uuid4
 
 from app.analytics.errors import AnalyticsError, ProjectionUnavailable
@@ -196,7 +195,7 @@ def capture_record(db, profile, source, record, record_digest, *, check=lambda: 
         items = []
         for finding in payload.findings:
             check()
-            key = unicodedata.normalize('NFC', source.text[finding.span.start:finding.span.end].strip())
+            key = n.normalize_literal_key(source.text[finding.span.start:finding.span.end])
             entry = {'category_id': finding.concept_id, 'span': finding.span.model_dump(mode='json'),
                      'type_id': n.literal_type_id(task.task_contract, task.taxonomy, finding.concept_id)}
             if not key or len(key) > 256:

@@ -177,6 +177,12 @@ class TaskBinding(Contract):
     component_id: Identifier
 
 
+class ComponentRecipe(Descriptor):
+    schema_version: Literal['text-analysis-component-recipe.v1'] = 'text-analysis-component-recipe.v1'
+    components: tuple[Digest, ...]
+    bindings: tuple[TaskBinding, ...]
+
+
 class ResourceAccounting(Contract):
     """Declared complete-closure costs; qualification measures actual costs."""
     download_bytes: PositiveInteger

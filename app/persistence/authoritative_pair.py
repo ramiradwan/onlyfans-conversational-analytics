@@ -128,10 +128,29 @@ def audit_crosslinks(auth_db, canonical_db, installation_id):
         from app.core.optional_execution import require_optional_execution
         require_optional_execution()
     trust = fixture_trust(environment='test') if rows and all(r['fixture_only'] == 1 for r in rows) else None
-    for row in rows:
-        if trust is None:
-            _deny()  # No released production module-trust provider is installed.
+    installed = {}
+    has_deliveries = auth_db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='text_analysis_deliveries'").fetchone() and auth_db.execute('SELECT 1 FROM text_analysis_deliveries LIMIT 1').fetchone()
+    if any(r['fixture_only'] == 0 for r in rows) or has_deliveries:
+        from app.persistence.text_analysis_delivery_audit import audit_installed_deliveries
         try:
+            installed = audit_installed_deliveries(auth_db, installation_id, schemas or TextAnalysisSchemas())
+            if set(installed) != {r['reference_id'] for r in rows if r['fixture_only'] == 0}:
+                _deny()
+        except (ValueError, KeyError, IndexError, TypeError, UnicodeError):
+            _deny()
+    for row in rows:
+        try:
+            if row['fixture_only'] == 0:
+                reference = installed.get(row['reference_id'])
+                if reference is None:
+                    _deny()
+                fields = ('reference_id','kind','object_id','issuance_id','compact_jws','compact_jws_sha256','payload_sha256','signer_kid','fixture_only')
+                if any(getattr(reference, name) != row[name] for name in fields):
+                    _deny()
+                verified[row['reference_id']] = row
+                continue
+            if trust is None:
+                _deny()
             token = row['compact_jws']
             payload = parse_json(decode(token.split('.')[1], 16384), maximum=16384, require_canonical=True)
             context = { 'expected_subject': payload['sub'], 'expected_capability':'text-analysis',
@@ -194,10 +213,13 @@ def audit_crosslinks(auth_db, canonical_db, installation_id):
         intent = canonical_db.execute('SELECT * FROM text_analysis_intents WHERE job_id=?',(output['job_id'],)).fetchone()
         job = canonical_db.execute('SELECT * FROM knowledge_jobs WHERE job_id=?',(output['job_id'],)).fetchone()
         admission = canonical_db.execute("SELECT * FROM text_analysis_preview_admissions WHERE state='spent' AND contribution_id=?",(output['contribution_id'],)).fetchone()
-        from app.models.text_analysis_preview import PreviewContribution
+        from app.models.text_analysis_preview import MAX_PREVIEW_BYTES, SHOWN_PREVIEW_ADAPTER
         from app.nlp.profiles import canonical_bytes
-        preview = PreviewContribution.model_validate_json(output['document'])
-        if canonical_bytes(preview) != bytes(output['document']):
+        frame = bytes(output['document'])
+        if not 0 < len(frame) <= MAX_PREVIEW_BYTES:
+            _deny()
+        preview = SHOWN_PREVIEW_ADAPTER.validate_json(frame)
+        if canonical_bytes(preview) != frame:
             _deny()
         document = preview.model_dump(mode='json')
         if (intent is None or job is None or admission is None or intent['authority_kind'] != 'preview'
@@ -246,6 +268,21 @@ class AuthoritativePairOwner:
 
     def validate_in(self, auth_db, canonical_db):
         return self.validate_read_in(auth_db, canonical_db)
+
+    def validate_text_analysis_access_in(self, auth_db, canonical_db, *, require_established: bool) -> None:
+        """Permit a passive read before the first protected delivery establishes the pair."""
+        self.validate_auth_in(auth_db)
+        if not self.canonical_database.owns_connection(canonical_db) or not canonical_db.in_transaction:
+            _deny()
+        if (auth_db.execute('SELECT 1 FROM authoritative_pair').fetchone()
+                or canonical_db.execute('SELECT 1 FROM authoritative_pair').fetchone()):
+            pair_identity_in(auth_db, canonical_db, self.installation_id)
+            return
+        if (require_established
+                or auth_db.execute('SELECT 1 FROM text_analysis_authority_references LIMIT 1').fetchone()
+                or auth_db.execute('SELECT 1 FROM text_analysis_deliveries LIMIT 1').fetchone()
+                or canonical_db.execute('SELECT 1 FROM text_analysis_preview_admissions LIMIT 1').fetchone()):
+            raise RuntimeAuthorizationDenied('text_analysis_delivery_unavailable')
 
     def establish(self):
         self.root_lease.assert_current(self.root)

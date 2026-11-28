@@ -46,6 +46,38 @@ def test_matched_snapshot_is_encrypted_closed_and_restores_new_incarnation(tmp_p
     assert not (owner.root/RESTORE_JOURNAL_FILENAME).exists()
 
 
+@pytest.mark.parametrize('removed', ['release', 'delivery'])
+def test_stale_backup_cannot_restore_removed_installed_licence_evidence(tmp_path, monkeypatch, removed):
+    from types import SimpleNamespace
+
+    from app.security.text_analysis_contract import TextAnalysisSchemas
+    from app.nlp import preparation
+    from tests.test_installed_text_analysis import delivery, envelope, registered
+
+    with registered(tmp_path / 'live', TextAnalysisSchemas()) as (owner, identity, signers):
+        pair = owner.pair_owner
+        monkeypatch.setattr(preparation, 'load_preparation_release', lambda: SimpleNamespace(execution=owner.release))
+        signed_release, payload = envelope(owner.release, signers['release'])
+        with pair.auth_database.transaction() as connection:
+            connection.execute('INSERT INTO text_analysis_release_identities VALUES (?, ?)',
+                               (owner.release.desktop_sha256, signed_release))
+        policy = identity.auth.read_bridge_session(identity.session.session_value).policy
+        owner.adopt(policy, **delivery('license', owner, identity, signers, payload['release_identity']))
+        directory = tmp_path / 'set'
+        snapshot = create_authoritative_backup(pair, directory)
+
+        with pair.auth_database.transaction() as connection:
+            if removed == 'release':
+                changed = connection.execute('DELETE FROM text_analysis_release_identities')
+            else:
+                changed = connection.execute('DELETE FROM text_analysis_deliveries')
+            assert changed.rowcount == 1
+            assert security_projection(connection) != snapshot.security
+        with pytest.raises(SQLiteBackupError, match='security_incompatible'):
+            restore_authoritative_backup(offline(pair), directory)
+        assert not (pair.root / RESTORE_JOURNAL_FILENAME).exists()
+
+
 def test_pinned_snapshots_survive_later_auth_and_canonical_commits(tmp_path,monkeypatch):
     owner=make_pair(tmp_path/'live')
     original=module.create_online_backup

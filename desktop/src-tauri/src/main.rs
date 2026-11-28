@@ -422,6 +422,7 @@ fn main() {
             browser::desktop_browser_task,
             browser::desktop_setup_code,
             browser::desktop_text_analysis_reissue,
+            browser::desktop_text_analysis_acquisition,
             browser::desktop_account_passkeys,
             frame::desktop_window
         ])

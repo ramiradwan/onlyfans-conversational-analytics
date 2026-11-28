@@ -64,8 +64,8 @@ function ProfileSupport({ profile }: { profile: NlpDependencyProfile }) {
     <Typography variant="body2" sx={{ color: 'text.secondary' }}>Supported tasks: {profile.tasks!.map((task) => taskNames[task]).join(', ')}.</Typography>
   </>;
 }
-function pendingAcquisition(status: NlpDependencyStatus) {
-  const acquisitions = status.acquisitions.filter((item) => item.kind === 'acquire');
+function pendingAcquisition(status: NlpDependencyStatus, preferredProfile?: string) {
+  const acquisitions = status.acquisitions.filter((item) => item.kind === 'acquire' && (!preferredProfile || item.profile_sha256 === preferredProfile));
   return acquisitions.find((item) => item.in_flight || item.state === 'running')
     ?? acquisitions.find((item) => ['paused', 'interrupted'].includes(item.state));
 }
@@ -115,7 +115,7 @@ export function NlpDependencyControls({ api = nlpDependenciesApi, engineApi, cli
     <Stack spacing={0} divider={<Divider />}>
       <EngineDependencyControls key={`engine:${binding}`} account={account} api={engineApi} onStatus={reporters.engine} />
       <SessionHold scope={dependencyKey} identity={`${creatorAccountId}:${isCreator}`} settled={settledDependencies === dependencyKey}>
-        <DependencySession key={dependencyKey} api={api} account={account} onStatus={reporters.dependencies}
+        <ModelDownloadControls key={dependencyKey} api={api} account={account} onStatus={reporters.dependencies}
           onAvailability={setAvailable} onSettled={settle} menu={recoveryMenu} />
       </SessionHold>
       <TextAnalysisExecutionControls creatorAccountId={account} client={client} dependenciesApi={api} onStatus={reporters.processing} />
@@ -124,8 +124,10 @@ export function NlpDependencyControls({ api = nlpDependenciesApi, engineApi, cli
   </Stack>;
 }
 
-function DependencySession({ api, account, onStatus, onAvailability, onSettled, menu }: {
-  api: NlpDependenciesApi; account: string | null; onStatus?: (status: SectionStatus | null) => void;
+export function ModelDownloadControls({ api = nlpDependenciesApi, account, onStatus, onAvailability, onSettled, menu,
+  preferredProfile, onReadinessChange }: {
+  api?: NlpDependenciesApi; account: string | null; onStatus?: (status: SectionStatus | null) => void;
+  preferredProfile?: string; onReadinessChange?: (prepared: boolean) => void;
   /** True once a read shows that this installation has text analysis configured. */
   onAvailability?: (available: boolean) => void;
   /** Called once this session's first read has settled. */
@@ -160,12 +162,12 @@ function DependencySession({ api, account, onStatus, onAvailability, onSettled, 
     if (account) void api.get(controller.signal).then((value) => {
       if (active(controller.signal, version)) {
         setStatus(value);
-        const pending = pendingAcquisition(value);
+        const pending = pendingAcquisition(value, preferredProfile);
         if (pending) { setOperation(pending); setOperationId(pending.id); }
       }
     }).catch((cause: unknown) => { if (active(controller.signal, version)) failRead(cause); });
     return () => controller.abort();
-  }, [account, api]);
+  }, [account, api, preferredProfile]);
 
   useEffect(() => {
     if (!operationId || !account || busy || readFailure !== null) return;
@@ -176,6 +178,7 @@ function DependencySession({ api, account, onStatus, onAvailability, onSettled, 
       try {
         const value = await api.observe(operationId, controller.signal);
         if (!active(controller.signal, version)) return;
+        if (preferredProfile && value.profile_sha256 !== preferredProfile) throw new Error('The selected download changed');
         setOperation(value);
         if (value.in_flight || value.state === 'running') timer = setTimeout(() => { void poll(); }, 1000);
         else {
@@ -186,7 +189,7 @@ function DependencySession({ api, account, onStatus, onAvailability, onSettled, 
     };
     void poll();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [account, api, operationId, pollRevision, busy, readFailure]);
+  }, [account, api, operationId, pollRevision, busy, readFailure, preferredProfile]);
 
   const checkStatus = async () => {
     const signal = lifetime.current?.signal;
@@ -198,7 +201,7 @@ function DependencySession({ api, account, onStatus, onAvailability, onSettled, 
       if (active(signal, version)) {
         setStatus(value);
         setReadFailure(null);
-        const pending = pendingAcquisition(value);
+        const pending = pendingAcquisition(value, preferredProfile);
         if (pending) { setOperation(pending); setOperationId(pending.id); setPollRevision((current) => current + 1); }
         else { setOperation(null); setOperationId(null); }
       }
@@ -238,6 +241,9 @@ function DependencySession({ api, account, onStatus, onAvailability, onSettled, 
   const unavailable = !account || !status?.configured || readFailure !== null;
   const loading = Boolean(account && !status && !error);
   const configured = Boolean(account && status?.configured);
+  const profiles = status?.profiles.filter((profile) => !preferredProfile || profile.profile_sha256 === preferredProfile) ?? [];
+  const ready = profiles.some((profile) => profile.prepared && profile.installed && !profile.withdrawn);
+  useEffect(() => { if (!loading) onReadinessChange?.(ready && !unavailable); }, [loading, onReadinessChange, ready, unavailable]);
   // Only a completed read decides availability. A reload or a failed read keeps the last answer, so a reconnect
   // neither hides and shows the section nor hides its failure and any recovery under way.
   const decided = !account || (status !== null && readFailure === null);
@@ -271,9 +277,9 @@ function DependencySession({ api, account, onStatus, onAvailability, onSettled, 
       ? { label: 'Needs attention', tone: 'warning' }
       : unavailable
         ? { label: 'Unavailable', tone: 'default' }
-        : status?.profiles.some((item) => item.installed && item.prepared)
+        : profiles.some((item) => item.installed && item.prepared)
           ? { label: 'Ready', tone: 'success' }
-          : status?.profiles.some((item) => item.installed)
+          : profiles.some((item) => item.installed)
             ? { label: 'Installed', tone: 'info' }
             : { label: 'Not installed', tone: 'default' };
   useReportedStatus(onStatus, headerStatus);
@@ -281,11 +287,11 @@ function DependencySession({ api, account, onStatus, onAvailability, onSettled, 
     summary={error ? 'Needs attention' : loading || busy ? 'Checking…' : unavailable ? 'Unavailable' : 'Status'}
     detailsOnly quietSummary tone={error ? 'error' : 'secondary'} />;
   return (
-    <Panel component="section" aria-label="Optional text analysis">
+    <Panel component="section" aria-label={preferredProfile ? 'Optional recurring mentions model' : 'Optional text analysis'}>
       <SectionHeader
         icon={<ManageSearchOutlined />}
-        title="Optional text analysis"
-        summary="Find topics and mentions in your messages."
+        title={preferredProfile ? 'Optional recurring mentions model' : 'Optional text analysis'}
+        summary={preferredProfile ? 'Review the download size before adding the model to this computer.' : 'Find topics and mentions in your messages.'}
         status={headerStatus}
         statusLabels={DEPENDENCY_STATUS_LABELS}
         menu={menu ?? undefined}
@@ -305,10 +311,10 @@ function DependencySession({ api, account, onStatus, onAvailability, onSettled, 
         : <Box>{feedbackLine}</Box>}
       {!loading && !unavailable && status && (
         <Stack spacing={1.5} data-journey-state="textanalysis.controls">
-          {status.profiles.length === 0 && (
+          {profiles.length === 0 && (
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>No qualified profiles are currently listed.</Typography>
           )}
-          {status.profiles.map((profile) => (
+          {profiles.map((profile) => (
             <Stack
               spacing={1}
               key={profile.profile_sha256}
@@ -326,8 +332,8 @@ function DependencySession({ api, account, onStatus, onAvailability, onSettled, 
               </Typography>
               <ProfileSupport profile={profile} />
               <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', pt: 0.5 }}>
-                <Button size="small" variant="outlined" disabled={busy || profile.withdrawn || !profile.catalogued} onClick={() => { void run({ action: 'plan', profile_id: profile.profile_id, revision: profile.revision }, profile); }}>Review download for {profile.profile_id}</Button>
-                {profile.installed && <Button size="small" variant="outlined" disabled={busy || profile.prepared || profile.withdrawn} onClick={() => { void run({ action: 'prepare', profile_sha256: profile.profile_sha256 }); }}>Prepare {profile.profile_id}</Button>}
+                <Button size="small" variant="outlined" disabled={busy || profile.withdrawn || !profile.catalogued} onClick={() => { void run({ action: 'plan', profile_id: profile.profile_id, revision: profile.revision }, profile); }}>{preferredProfile ? 'Review model download' : `Review download for ${profile.profile_id}`}</Button>
+                {profile.installed && <Button size="small" variant="outlined" disabled={busy || profile.prepared || profile.withdrawn} onClick={() => { void run({ action: 'prepare', profile_sha256: profile.profile_sha256 }); }}>{preferredProfile ? 'Prepare model' : `Prepare ${profile.profile_id}`}</Button>}
                 {profile.installed && <Button size="small" color="error" disabled={busy} onClick={() => setRemoval(profile)}>Remove {profile.profile_id}</Button>}
               </Stack>
             </Stack>

@@ -154,13 +154,15 @@ class QuestionResources:
     def literal_findings(self, policy, request, *, cancellation_check=None):
         """Read saved literal values under the same work and connection limits."""
         from app.analytics.errors import ProjectionBackpressure
-        from app.analytics.nlp_literal_read import read
+        from app.analytics import nlp_literal_read, recurring_mentions
+        from app.models.recurring_mentions import RecurringMentionsRequest
+        reader = recurring_mentions if isinstance(request, RecurringMentionsRequest) else nlp_literal_read
 
         if not self._slots.acquire(blocking=False):
             raise ProjectionBackpressure()
         try:
             with self._work.foreground():
-                return read(self, policy, request, cancellation_check=cancellation_check)
+                return reader.read(self, policy, request, cancellation_check=cancellation_check)
         finally:
             self._slots.release()
 

@@ -82,22 +82,24 @@ def documents_application():
         EnrollmentProfileDisclosure, EnrollmentView,
     )
     from app.models.text_analysis_jobs import PreviewConfirmation
-    from app.models.text_analysis_preview import PreviewContribution
+    from app.models.text_analysis_preview import PreviewContribution, RecurringMentionPreview
     from app.models.text_analysis_preview_execution import (
         PreviewPrepareRequest, PreviewScope, PreviewDisclosure, PreviewReceipt, PreviewOutcome,
         SavedPreviewDisclosure, PreviewSavedEnvelope, PreviewSavedId, PreviewSavedPage,
+        RecurringMentionScope, RecurringMentionSavedEnvelope,
     )
     models = (ClientIntentPut, ClientIntentRecord, ClientIntentCursor, ClientIntentPage, PreviewConfirmIntent,
         EnrollmentCommand, CurrentEnrollment, EnrollmentCommandReceipt, EnrollmentCommandResult,
         EnrollmentProfileDisclosure, EnrollmentView, PreviewConfirmation, PreviewContribution,
         PreviewPrepareRequest, PreviewScope, PreviewDisclosure, PreviewReceipt, PreviewOutcome,
-        SavedPreviewDisclosure, PreviewSavedEnvelope, PreviewSavedId, PreviewSavedPage)
+        SavedPreviewDisclosure, PreviewSavedEnvelope, PreviewSavedId, PreviewSavedPage,
+        RecurringMentionScope, RecurringMentionPreview, RecurringMentionSavedEnvelope)
     return {model.__name__ + '.schema.json': model.model_json_schema() for model in models}
 
 
 def fixtures_application():
     from tools.nlp_application_fixtures import application_fixtures
-    return application_fixtures(fixtures_v2()['joint-profile.json'])
+    return application_fixtures(fixtures_v2()['joint-profile.json'], fixtures_v3()['mentions-profile.json'])
 
 
 def fixtures_v2():

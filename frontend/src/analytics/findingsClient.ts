@@ -28,14 +28,14 @@ export function buildFindingsUrl(request: FindingsRequest): string {
   if (request.baseline.requested_window.end) params.set('end_date', request.baseline.requested_window.end);
   return `${FINDINGS}?${params}`;
 }
-async function boundedJson(response: Response): Promise<unknown> {
+export async function readBoundedFindingsJson(response: Response, limitBytes = 1_048_576): Promise<unknown> {
   if (!response.body) throw new FindingsContractError();
   const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let size = 0;
   try {
     while (true) {
       const next = await reader.read(); if (next.done) break;
       size += next.value.byteLength;
-      if (size > 1_048_576) { await reader.cancel(); throw new FindingsContractError(); }
+      if (size > limitBytes) { await reader.cancel(); throw new FindingsContractError(); }
       chunks.push(next.value);
     }
     const data = new Uint8Array(size); let offset = 0;
@@ -56,7 +56,7 @@ export function createFindingsClient(options: { fetcher?: typeof fetch; csrf?: (
       try {
         const result = await fetcher(buildFindingsUrl(request), { method: 'GET', credentials: 'same-origin',
           cache: 'no-store', redirect: 'error', headers: { Accept: 'application/json' }, signal: controller.signal });
-        const value = await boundedJson(result);
+        const value = await readBoundedFindingsJson(result);
         if (!result.ok) {
           const code = value && typeof value === 'object' && 'detail' in value && value.detail
             && typeof value.detail === 'object' && 'code' in value.detail ? value.detail.code : null;

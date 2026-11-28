@@ -2,7 +2,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { NlpDependencyControls } from '../src/components/NlpDependencyControls';
+import { ModelDownloadControls, NlpDependencyControls } from '../src/components/NlpDependencyControls';
 import { TextAnalysisExecutionControls } from '../src/components/TextAnalysisExecutionControls';
 import type { EngineAcquisitionApi } from '../src/api/engineAcquisition';
 import type { NlpDependenciesApi, NlpDependencyCommand, NlpDependencyObservation, NlpDependencyPlan, NlpDependencyResult, NlpDependencyStatus } from '../src/services/nlpDependenciesApi';
@@ -60,6 +60,20 @@ function connect(suffix = '1') {
     negotiated_protocol_version: '2', server_version: 'example' });
 }
 describe('NlpDependencyControls', () => {
+  it('reviews only the release-selected model on the recurring mentions page and leaves other downloads alone', async () => {
+    const other = { ...profile, profile_id: 'other-profile', profile_sha256: 'c'.repeat(64) };
+    const api = fixture({ ...status, profiles: [other, profile], acquisitions: [{ ...observation, profile_sha256: other.profile_sha256 }] });
+    render(<ThemeProvider theme={theme}><ModelDownloadControls account="account-one" api={api} preferredProfile={profile.profile_sha256} /></ThemeProvider>);
+    const reviewButton = await screen.findByRole('button', { name: 'Review model download' });
+    expect(screen.queryByText('other-profile · one')).toBeNull();
+    expect(api.observe).not.toHaveBeenCalled(); expect(api.command).not.toHaveBeenCalled();
+    fireEvent.click(reviewButton);
+    const modal = await screen.findByRole('dialog', { name: 'Review download costs' });
+    expect(api.command.mock.calls.map(([cmd]) => cmd)).toEqual([{ action: 'plan', profile_id: profile.profile_id, revision: profile.revision }]);
+    expect(within(modal).getByRole('button', { name: 'Download reviewed files' })).toBeTruthy();
+    fireEvent.click(within(modal).getByRole('button', { name: 'Back' }));
+    expect(api.command).toHaveBeenCalledOnce();
+  });
   it.each([
     [new NlpDependenciesHttpError(401), /Your sign-in could not be verified/],
     [new NlpDependenciesHttpError(403), /Access to text analysis settings was denied/],

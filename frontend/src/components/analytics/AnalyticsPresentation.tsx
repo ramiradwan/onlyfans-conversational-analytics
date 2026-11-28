@@ -77,6 +77,7 @@ export interface AnalyticsPresentationProps {
   windowSources?: AnalyticsWindowSources;
   questions?: ReactNode;
   findings?: ReactNode;
+  recurringMentions?: ReactNode;
 }
 export function AnalyticsPresentation({
   state,
@@ -86,10 +87,12 @@ export function AnalyticsPresentation({
   windowSources,
   questions,
   findings,
+  recurringMentions,
 }: AnalyticsPresentationProps) {
-  const [tab, setTab] = useState<'summary' | 'questions' | 'findings'>('summary');
+  const [tab, setTab] = useState<'summary' | 'questions' | 'findings' | 'recurring'>('summary');
   const tabsId = useId();
-  const activeTab = (tab === 'questions' && !questions) || (tab === 'findings' && !findings) ? 'summary' : tab;
+  const activeTab = (tab === 'questions' && !questions) || (tab === 'findings' && !findings)
+    || (tab === 'recurring' && !recurringMentions) ? 'summary' : tab;
   const model = state.data;
   const resolvedWindowSources = windowSources ?? model?.windowSources;
   const panelSources = resolvedWindowSources && {
@@ -99,8 +102,8 @@ export function AnalyticsPresentation({
   };
   const sharedSource = panelSources ? sharedWindowSource(Object.values(panelSources)) : null;
   const perPanel = sharedSource ? undefined : panelSources;
-  const hasTabs = Boolean(questions || findings);
-  const showDateFilter = activeTab !== 'questions';
+  const hasTabs = Boolean(questions || findings || recurringMentions);
+  const showDateFilter = activeTab === 'summary' || activeTab === 'findings';
 
   return (
     <Root data-scroll-container>
@@ -135,6 +138,7 @@ export function AnalyticsPresentation({
               <Tab value="summary" label="Summary" id={`${tabsId}-summary`} aria-controls={tabsId} />
               {questions && <Tab value="questions" label="Conversation questions" id={`${tabsId}-questions`} aria-controls={tabsId} />}
               {findings && <Tab value="findings" label="Text analysis" id={`${tabsId}-findings`} aria-controls={tabsId} />}
+              {recurringMentions && <Tab value="recurring" label="Recurring mentions" id={`${tabsId}-recurring`} aria-controls={tabsId} />}
             </Tabs>
           ) : (
             <Box />
@@ -157,6 +161,8 @@ export function AnalyticsPresentation({
           questions
         ) : activeTab === 'findings' ? (
           findings
+        ) : activeTab === 'recurring' ? (
+          recurringMentions
         ) : (
           // Holds the results at one size, so loading, refreshing and new results swap inside it. The panels stack in one
           // column below md.

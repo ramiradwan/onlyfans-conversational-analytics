@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/paid-text-analysis-acquisition/v1/submit-response.schema.json",
+  "title": "text-analysis-paid-acquisition submit-response v1",
+  "$ref": "https://contracts.bridge-clean.invalid/schemas/paid-text-analysis-acquisition/v1/definitions.schema.json#/$defs/status"
+}

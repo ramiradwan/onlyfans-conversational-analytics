@@ -1892,3 +1892,44 @@ contracts:
     openapi_operations:
     - ackAccountPasskeyLocalWithdrawalV1
     governing_adr: docs/adr/0061-account-passkey-enrollment-and-independent-local-binding.md
+  - id: text-analysis-paid-acquisition-v1
+    owner: commercial-ledger
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Acquire an independently funded private TEST module licence for the original installation.
+    profile: urn:bridge-clean:text-analysis-paid-acquisition:v1
+    classification: commercial-confidential
+    retention_class: commercial-authority-durable
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/paid-text-analysis-acquisition/v1/definitions.schema.json
+    - schemas/paid-text-analysis-acquisition/v1/error.schema.json
+    - schemas/paid-text-analysis-acquisition/v1/prepare-request.schema.json
+    - schemas/paid-text-analysis-acquisition/v1/prepare-response.schema.json
+    - schemas/paid-text-analysis-acquisition/v1/read-request.schema.json
+    - schemas/paid-text-analysis-acquisition/v1/read-response.schema.json
+    - schemas/paid-text-analysis-acquisition/v1/submit-request.schema.json
+    - schemas/paid-text-analysis-acquisition/v1/submit-response.schema.json
+    openapi_operations:
+    - prepareTextAnalysisPaidAcquisitionV1
+    - readTextAnalysisPaidAcquisitionV1
+    - submitTextAnalysisPaidAcquisitionV1
+    governing_adr: docs/adr/0063-test-paid-text-analysis-acquisition.md
+  - id: text-analysis-paid-acquisition-proof-v1
+    owner: provisioning
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Prove the registered key for a test purchase operation.
+    profile: urn:bridge-clean:text-analysis-paid-acquisition-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 12288
+    max_response_bytes: 4096
+    schema_paths:
+    - schemas/paid-text-analysis-acquisition/v1/proof-challenge-request.schema.json
+    - schemas/paid-text-analysis-acquisition/v1/proof-challenge-response.schema.json
+    - schemas/paid-text-analysis-acquisition/v1/proof-error.schema.json
+    openapi_operations:
+    - issueTextAnalysisPaidAcquisitionProofChallengeV1
+    governing_adr: docs/adr/0063-test-paid-text-analysis-acquisition.md

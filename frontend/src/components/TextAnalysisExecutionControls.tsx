@@ -18,6 +18,8 @@ export interface TextAnalysisControlProps {
   dependenciesApi?: NlpDependenciesApi;
   transport?: Pick<BridgeTransportStore, 'getState' | 'subscribe'>;
   onStatus?: (status: SectionStatus | null) => void;
+  preferredProfile?: string;
+  modelPrepared?: boolean;
 }
 const PROCESSING_STATUS_LABELS = ['Needs attention', 'Checking…', 'Not enrolled', 'Enabled', 'Paused', 'Retired'] as const;
 export const approvedTextAnalysisProfile =(profile: NlpDependencyProfile) => profile.catalogued && !profile.withdrawn
@@ -38,7 +40,7 @@ export function TextAnalysisExecutionControls(props: TextAnalysisControlProps) {
     <ExecutionSession key={binding} {...props} transport={transport} onSettled={settle} />
   </SessionHold>;
 }
-function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDependenciesApi, transport = bridgeTransportStore, onStatus, onSettled }:
+function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDependenciesApi, transport = bridgeTransportStore, onStatus, onSettled, preferredProfile, modelPrepared }:
   TextAnalysisControlProps & { onSettled?: () => void }) {
   const store = useMemo(() => createTextAnalysisExecutionStore(client), [client]);
   const state = useStore(store);
@@ -61,9 +63,10 @@ function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDepen
       if (active()) setProfiles(value.configured ? value.profiles.filter(approvedTextAnalysisProfile) : []);
     }).catch(() => { if (active()) setProfiles([]); });
     return () => controller.abort();
-  }, [creatorAccountId, dependenciesApi, transport]);
+  }, [creatorAccountId, dependenciesApi, transport, modelPrepared]);
   const current = state.view?.current;
-  const selected = profiles.find((entry) => entry.profile_sha256 === profile);
+  const selected = profiles.find((entry) => entry.profile_sha256 === (preferredProfile ?? profile)
+    && (!preferredProfile || entry.installed && entry.prepared && entry.tasks?.length === 1 && entry.tasks[0] === 'concept_mentions'));
   const blocked = state.busy || !current || Boolean(state.message) || state.nextAfter !== null || state.recoveryOverflow || state.recoveryConflict
     || state.observations.some((item) => item.state !== 'resolved');
   const feedback = [
@@ -90,8 +93,8 @@ function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDepen
   return <Panel component="section" aria-label="Account text processing">
     <SectionHeader
       icon={<AutoModeOutlined />}
-      title="Account text processing"
-      summary="Analyze this account's new messages automatically."
+      title={preferredProfile ? 'Full report processing' : 'Account text processing'}
+      summary={preferredProfile ? 'Run the model on this computer and keep the report current as new messages arrive.' : "Analyze this account's new messages automatically."}
       status={headerStatus}
       statusLabels={PROCESSING_STATUS_LABELS}
     />
@@ -135,7 +138,7 @@ function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDepen
             </Typography>
           </Box>
         </Box>
-        <TextField
+        {!preferredProfile && <TextField
           select
           size="small"
           label="Profile"
@@ -145,8 +148,9 @@ function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDepen
         >
           <MenuItem value="">Choose a profile</MenuItem>
           {profiles.map((entry) => <MenuItem key={entry.profile_sha256} value={entry.profile_sha256}>{entry.profile_id} · {entry.revision}</MenuItem>)}
-        </TextField>
-        {profiles.length === 0 && (
+        </TextField>}
+        {preferredProfile && !selected && <Typography variant="body2" color="text.secondary">Prepare the recurring mentions model to enable processing.</Typography>}
+        {!preferredProfile && profiles.length === 0 && (
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
             No approved profiles are available.
           </Typography>

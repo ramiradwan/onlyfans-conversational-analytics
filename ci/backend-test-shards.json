@@ -526,6 +526,9 @@
     "tests/test_insights_snapshot_retention.py": 1,
     "tests/test_installation_authority_recovery_owner.py": 4,
     "tests/test_installation_continuation_owner.py": 4,
+    "tests/test_installed_text_analysis.py": 2,
+    "tests/test_installed_text_analysis_pair.py": 1,
+    "tests/test_installed_text_analysis_reissue.py": 1,
     "tests/test_integrity_cost_contract.py": 4,
     "tests/test_integrity_fallback_modes.py": 1,
     "tests/test_integrity_ready_handoff.py": 3,
@@ -602,6 +605,8 @@
     "tests/test_question_route_guards.py": 3,
     "tests/test_readiness_identity.py": 1,
     "tests/test_recovered_update_reuse.py": 2,
+    "tests/test_recurring_mentions.py": 2,
+    "tests/test_recurring_mentions_preview.py": 4,
     "tests/test_redemption_journal_workspace.py": 3,
     "tests/test_reference_sql_component.py": 4,
     "tests/test_registered_continuation_context.py": 2,
@@ -962,6 +967,18 @@
       {
         "selector": "tests/test_text_analysis_execution_service.py",
         "reason": "Encrypted SQLite preserves authenticated enrollment commands, pinned execution parameters and current canonical selection on Windows."
+      },
+      {
+        "selector": "tests/test_installed_text_analysis.py",
+        "reason": "The installed Windows release must verify the signed delivery and current account before adopting a preview or licence."
+      },
+      {
+        "selector": "tests/test_installed_text_analysis_pair.py",
+        "reason": "Encrypted Windows stores must preserve the original licence and release across restore, update and interrupted adoption."
+      },
+      {
+        "selector": "tests/test_installed_text_analysis_reissue.py",
+        "reason": "A replacement licence must retain its seat and installation binding in the encrypted Windows journal."
       },
       {
         "selector": "tests/test_text_analysis_enrollment_runtime.py",
@@ -1422,6 +1439,9 @@
     "tests/test_hosted_origin_resolution.py": 3,
     "tests/test_installation_authority_recovery_owner.py": 2,
     "tests/test_installation_key.py": 1,
+    "tests/test_installed_text_analysis.py": 2,
+    "tests/test_installed_text_analysis_pair.py": 1,
+    "tests/test_installed_text_analysis_reissue.py": 3,
     "tests/test_knowledge_contributions.py": 2,
     "tests/test_local_database_encryption.py": 3,
     "tests/test_lost_enrollment_evidence.py": 1,

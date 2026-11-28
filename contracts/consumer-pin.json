@@ -1,5 +1,5 @@
 {
-  "aggregate_bundle_sha256": "92594e80beb1297267b5c9f6afc32f30b7ba3c104f03b1781c90217ca2021db2",
+  "aggregate_bundle_sha256": "ac1650e17a239a472216276c7a82c7b7d7ef446b73dd7ec7673ee9c71a7724c8",
   "conformance_manifests": [
     {
       "export": "installation-setup-continuation-v1",
@@ -149,7 +149,7 @@
   ],
   "consumer_pin_version": 4,
   "contract_manifest_path": "manifest.json",
-  "contract_manifest_sha256": "f10ad61c8f94bcd5830a9307ab5845de3c0f137e46a6eb0ce0e74888caeaf265",
+  "contract_manifest_sha256": "2bec6ab790fb310951850232cbd01d1e6f386971ca5ca0450895ffccd4449dc8",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -236,11 +236,11 @@
       "sha256": "58d266fcee4f987091b67ee3adf6e517531606a226d35b75c5870b748908e504"
     }
   ],
-  "source_commit": "40976d7134be4f2e37430078365aca03bac8a89b",
+  "source_commit": "44e0b486a01057034eb7e9f8788c1a4659757469",
   "source_contract_manifest_path": "source-contract-manifest/contract-manifest.json",
-  "source_contract_manifest_sha256": "257b470e66a8ee922aac2dbd86bcb6f01a3f90e77a88aed533e6199d5de20263",
+  "source_contract_manifest_sha256": "750d74c4d2d8cf3887e49de0da29640607f812c67dbc784dcf4f07a44267c5f6",
   "source_repository": "ramiradwan/creator-platform-contracts",
-  "source_tree": "1278fb4224aca5bec4f9f586c1dceace73a72002",
+  "source_tree": "9a1cb133e231334706ffad8b2d08c03ae9c98542",
   "supported_profiles": [
     "urn:bridge-clean:account-passkey-action-evidence:v1",
     "urn:bridge-clean:account-passkey-enrollment:v1",
@@ -336,6 +336,8 @@
     "urn:bridge-clean:text-analysis-license-reissue:v1",
     "urn:bridge-clean:text-analysis-license-reissue:v2",
     "urn:bridge-clean:text-analysis-license:v1",
+    "urn:bridge-clean:text-analysis-paid-acquisition-proof:v1",
+    "urn:bridge-clean:text-analysis-paid-acquisition:v1",
     "urn:bridge-clean:text-analysis-preview-acquisition-proof:v1",
     "urn:bridge-clean:text-analysis-preview-acquisition:v1",
     "urn:bridge-clean:text-analysis-preview-issuance-proof:v1",

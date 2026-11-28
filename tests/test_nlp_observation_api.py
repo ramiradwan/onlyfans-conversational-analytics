@@ -79,17 +79,22 @@ def test_observation_query_rejects_unknown_duplicate_and_ambiguous_focus(closed_
 
 def test_observation_validation_wrapper_preserves_typed_openapi_and_other_routes(closed_api):
     client, _ = closed_api
-    routes = [route for route in insights.router.routes if isinstance(route, insights._ObservationReadRoute)]
-    assert len(routes) == 1 and routes[0].path == PATH
-    operation = client.app.openapi()['paths'][PATH]['get']
+    paths = [route.path for route in insights.router.routes if isinstance(route, insights._ProtectedFindingsReadRoute)]
+    recurring_path = '/api/v1/insights/findings/recurring-mentions'
+    assert sorted(paths) == sorted([PATH, recurring_path])
+    published = client.app.openapi()['paths']
+    recurring = published[recurring_path]['get']
+    assert recurring['operationId'] == 'fetchRecurringMentions'
+    operation = published[PATH]['get']
     assert operation['operationId'] == 'fetchObservationLinks'
     parameters = {item['name']: item for item in operation['parameters']}
     assert parameters['expected_generation']['required']
     assert parameters['expected_projection_digest']['required']
     assert parameters['evidence_limit']['schema']['type'] == 'integer'
     assert parameters['evidence_limit']['schema']['maximum'] == 100
-    assert operation['responses']['422']['content']['application/json']['schema'] == {
-        '$ref': '#/components/schemas/AnalyticsErrorResponse'}
+    for endpoint in (operation, recurring):
+        assert endpoint['responses']['422']['content']['application/json']['schema'] == {
+            '$ref': '#/components/schemas/AnalyticsErrorResponse'}
 
 
 @pytest.mark.asyncio

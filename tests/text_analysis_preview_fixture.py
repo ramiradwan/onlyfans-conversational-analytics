@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from app.analytics.nlp_preview import SELECTION_POLICY
 from app.models.text_analysis_preview_execution import PreviewPrepareRequest
-from app.nlp.preview_parameters import preview_parameters
+from app.nlp.preview_parameters import RECURRENCE_SOURCE_DIGEST, preview_parameters
 from app.persistence.text_analysis_preview import TextAnalysisPreviewStore
 from app.security.text_analysis_policy import encode_run_context
 from app.services.text_analysis_preview import preview_service, configure_preview_service
@@ -21,14 +21,14 @@ from tests.text_analysis_execution_fixture import (
 )
 
 
-def make_preview_fixture(path, kind='joint', *, findings=False, profile_factory=None):
+def make_preview_fixture(path, kind='joint', *, findings=False, profile_factory=None, selection_policy=SELECTION_POLICY):
     x = make_execution_fixture(path, kind, profile_factory=profile_factory)
     try:
         x.license_service, x.execution_configuration = x.service, x.configuration
         case = next(c for c in CASES if c['case_id'] == 'preview-accepted')
         x.reference = x.authority.import_verified_reference(case['token'], kind='preview', context=case['context'],
             trust=x.selection.trust, schemas=x.selection.schemas)
-        params = preview_parameters(x.profile, x.context.algorithm_artifacts_sha256, SELECTION_POLICY)
+        params = preview_parameters(x.profile, x.context.algorithm_artifacts_sha256, selection_policy)
         x.context = replace(x.context, reference_id=x.reference.reference_id,
             compact_jws_sha256=x.reference.compact_jws_sha256, policy_identity_sha256=params.policy_identity_sha256)
         x.parameters = params
@@ -55,8 +55,9 @@ def make_preview_fixture(path, kind='joint', *, findings=False, profile_factory=
 
 
 def request(x, external_key=None):
-    return PreviewPrepareRequest(external_key=external_key or str(uuid4()),
-                                 expected_profile_sha256=x.profile.identity_digest())
+    recurring = x.context.policy_identity_sha256 == RECURRENCE_SOURCE_DIGEST
+    return PreviewPrepareRequest(schema_version='text-analysis-preview-prepare.v2' if recurring else 'text-analysis-preview-prepare.v1',
+                                 external_key=external_key or str(uuid4()), expected_profile_sha256=x.profile.identity_digest())
 
 
 def prepare_preview(x, *, confirm=True):
@@ -115,7 +116,8 @@ def accumulated_output(x, binding, *, findings=True, mention_spans=((0, 6),)):
                     result=dict(component_id=component.component_id, component_sha256=component.identity_digest(),
                         text_sha256=hashlib.sha256(source.text.encode()).hexdigest(), payload=task))
                 tasks.append(v2.StoredTask.model_validate_json(json.dumps(value)))
-            record = v2.EnrichmentRecord(source=source_binding(source), profile=binding.profile,
+            record_type = v2.SubsetEnrichmentRecord if binding.profile.schema_version == 'nlp-profile.v3' else v2.EnrichmentRecord
+            record = record_type(source=source_binding(source), profile=binding.profile,
                 analyzed_at=x.f.clock.now.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), tasks=tuple(tasks))
             accumulator.add(member.ordinal, source, record.model_dump_json().encode())
     output = accumulator.finish()

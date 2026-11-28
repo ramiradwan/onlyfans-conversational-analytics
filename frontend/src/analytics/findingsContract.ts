@@ -89,7 +89,7 @@ export interface FindingsRequest {
 export class FindingsContractError extends Error {
   constructor() { super('These text analysis results could not be verified. Refresh the analytics view.'); }
 }
-function instantMicros(value: string): bigint {
+export function instantMicros(value: string): bigint {
   const fraction = value.match(/\.(\d+)(?:Z|[+-]\d{2}:\d{2})$/)?.[1] ?? '';
   if (fraction.slice(6).replace(/0/g, '') || !Number.isFinite(Date.parse(value))) throw new FindingsContractError();
   return BigInt(Date.parse(value)) * 1000n + BigInt(fraction.padEnd(6, '0').slice(3, 6));

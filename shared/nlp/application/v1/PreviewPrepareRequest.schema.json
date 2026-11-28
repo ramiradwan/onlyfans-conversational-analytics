@@ -2,8 +2,11 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "text-analysis-preview-prepare.v1",
       "default": "text-analysis-preview-prepare.v1",
+      "enum": [
+        "text-analysis-preview-prepare.v1",
+        "text-analysis-preview-prepare.v2"
+      ],
       "title": "Schema Version",
       "type": "string"
     },

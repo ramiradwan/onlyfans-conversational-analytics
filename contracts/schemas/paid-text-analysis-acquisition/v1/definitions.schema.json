@@ -1,0 +1,379 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/paid-text-analysis-acquisition/v1/definitions.schema.json",
+  "title": "text-analysis-paid-acquisition definitions v1",
+  "$defs": {
+    "terms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "offer_id",
+        "payment_mode",
+        "amount_minor",
+        "currency",
+        "capability",
+        "compatible_artifact_family",
+        "licensed_major_version",
+        "update_rights"
+      ],
+      "properties": {
+        "offer_id": {
+          "const": "text-analysis-major1-test-eur999-v1"
+        },
+        "payment_mode": {
+          "const": "test"
+        },
+        "amount_minor": {
+          "const": 999
+        },
+        "currency": {
+          "const": "EUR"
+        },
+        "capability": {
+          "const": "text-analysis"
+        },
+        "compatible_artifact_family": {
+          "const": "text-analysis-artifact"
+        },
+        "licensed_major_version": {
+          "const": 1
+        },
+        "update_rights": {
+          "const": true
+        }
+      }
+    },
+    "prepareRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding",
+        "authority_profile",
+        "supported_profiles",
+        "release_identity",
+        "offer_id"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-paid-acquisition:v1"
+        },
+        "operation_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-issuance/v1/definitions.schema.json#/$defs/binding"
+        },
+        "authority_profile": {
+          "const": "urn:bridge-clean:text-analysis-license:v1"
+        },
+        "supported_profiles": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-supported-profiles/v1/supported-profiles.schema.json"
+        },
+        "release_identity": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-release-identity/v1/release-identity.schema.json"
+        },
+        "offer_id": {
+          "const": "text-analysis-major1-test-eur999-v1"
+        }
+      }
+    },
+    "readRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-paid-acquisition:v1"
+        },
+        "operation_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-issuance/v1/definitions.schema.json#/$defs/binding"
+        }
+      }
+    },
+    "submitRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding",
+        "confirmation_digest",
+        "decision_reference",
+        "decision_digest",
+        "consent"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-paid-acquisition:v1"
+        },
+        "operation_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-issuance/v1/definitions.schema.json#/$defs/binding"
+        },
+        "confirmation_digest": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "decision_reference": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "decision_digest": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "consent": {
+          "const": "activate-paid-text-analysis"
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "terms",
+        "expires_at"
+      ],
+      "properties": {
+        "action": {
+          "const": "activate-paid-text-analysis"
+        },
+        "terms": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/paid-text-analysis-acquisition/v1/definitions.schema.json#/$defs/terms"
+        },
+        "expires_at": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/timestamp"
+        }
+      }
+    },
+    "status": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "profile",
+            "operation_id",
+            "binding",
+            "state",
+            "terms",
+            "expires_at"
+          ],
+          "properties": {
+            "profile": {
+              "const": "urn:bridge-clean:text-analysis-paid-acquisition:v1"
+            },
+            "operation_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+            },
+            "binding": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-issuance/v1/definitions.schema.json#/$defs/binding"
+            },
+            "state": {
+              "const": "awaiting-payment"
+            },
+            "terms": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/paid-text-analysis-acquisition/v1/definitions.schema.json#/$defs/terms"
+            },
+            "expires_at": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/timestamp"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "profile",
+            "operation_id",
+            "binding",
+            "state",
+            "terms",
+            "expires_at",
+            "confirmation",
+            "confirmation_digest",
+            "decision",
+            "decision_digest",
+            "decision_reference"
+          ],
+          "properties": {
+            "profile": {
+              "const": "urn:bridge-clean:text-analysis-paid-acquisition:v1"
+            },
+            "operation_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+            },
+            "binding": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-issuance/v1/definitions.schema.json#/$defs/binding"
+            },
+            "state": {
+              "const": "confirmation-required"
+            },
+            "terms": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/paid-text-analysis-acquisition/v1/definitions.schema.json#/$defs/terms"
+            },
+            "expires_at": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/timestamp"
+            },
+            "confirmation": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-issuance/v1/definitions.schema.json#/$defs/licenseConfirmation"
+            },
+            "confirmation_digest": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+            },
+            "decision": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/paid-text-analysis-acquisition/v1/definitions.schema.json#/$defs/decision"
+            },
+            "decision_digest": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+            },
+            "decision_reference": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "profile",
+            "operation_id",
+            "binding",
+            "state",
+            "terms",
+            "expires_at",
+            "confirmation",
+            "confirmation_digest"
+          ],
+          "properties": {
+            "profile": {
+              "const": "urn:bridge-clean:text-analysis-paid-acquisition:v1"
+            },
+            "operation_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+            },
+            "binding": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-issuance/v1/definitions.schema.json#/$defs/binding"
+            },
+            "state": {
+              "const": "authorized"
+            },
+            "terms": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/paid-text-analysis-acquisition/v1/definitions.schema.json#/$defs/terms"
+            },
+            "expires_at": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/timestamp"
+            },
+            "confirmation": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-issuance/v1/definitions.schema.json#/$defs/licenseConfirmation"
+            },
+            "confirmation_digest": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "profile",
+            "operation_id",
+            "binding",
+            "state",
+            "terms",
+            "expires_at"
+          ],
+          "properties": {
+            "profile": {
+              "const": "urn:bridge-clean:text-analysis-paid-acquisition:v1"
+            },
+            "operation_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+            },
+            "binding": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-issuance/v1/definitions.schema.json#/$defs/binding"
+            },
+            "state": {
+              "const": "expired"
+            },
+            "terms": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/paid-text-analysis-acquisition/v1/definitions.schema.json#/$defs/terms"
+            },
+            "expires_at": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/timestamp"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "profile",
+            "operation_id",
+            "binding",
+            "state",
+            "terms",
+            "expires_at"
+          ],
+          "properties": {
+            "profile": {
+              "const": "urn:bridge-clean:text-analysis-paid-acquisition:v1"
+            },
+            "operation_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+            },
+            "binding": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-issuance/v1/definitions.schema.json#/$defs/binding"
+            },
+            "state": {
+              "const": "cancelled"
+            },
+            "terms": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/paid-text-analysis-acquisition/v1/definitions.schema.json#/$defs/terms"
+            },
+            "expires_at": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/timestamp"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "profile",
+            "operation_id",
+            "binding",
+            "state",
+            "terms"
+          ],
+          "properties": {
+            "profile": {
+              "const": "urn:bridge-clean:text-analysis-paid-acquisition:v1"
+            },
+            "operation_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+            },
+            "binding": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-issuance/v1/definitions.schema.json#/$defs/binding"
+            },
+            "state": {
+              "const": "unavailable"
+            },
+            "terms": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/paid-text-analysis-acquisition/v1/definitions.schema.json#/$defs/terms"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

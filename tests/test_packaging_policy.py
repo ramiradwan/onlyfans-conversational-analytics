@@ -102,7 +102,8 @@ def _stage_runtime_tree(tmp_path: Path) -> Path:
     shutil.copy2(ROOT / "app/provisioning/creator-platform-data-risk-disclosure.html", provisioning / "creator-platform-data-risk-disclosure.html")
     onboarding = internal / "app" / "onboarding"
     onboarding.mkdir()
-    for name in ("entry.html", "entry.css", "entry.js", "reissue_entry.html", "reissue_entry.js"):
+    for name in ("entry.html", "entry.css", "entry.js", "reissue_entry.html", "reissue_entry.js",
+                 "text_analysis_acquisition_entry.html", "text_analysis_acquisition_entry.js"):
         shutil.copy2(ROOT / "app" / "onboarding" / name, onboarding / name)
     shared = stage / "_internal" / "shared" / "onboarding"
     shared.mkdir(parents=True)

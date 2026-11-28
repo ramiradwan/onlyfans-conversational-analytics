@@ -82,9 +82,10 @@ def test_duplicate_nonfinite_oversize_and_nonqualification_rejected():
 
 
 def test_source_loader_has_no_release_enablement(monkeypatch):
+    from app.nlp import preparation
     from app.services import nlp_setup
-    monkeypatch.setattr(nlp_setup.sys, 'frozen', False, raising=False)
-    monkeypatch.setattr(nlp_setup, 'current_desktop_release', lambda: pytest.fail('identity read'))
+    monkeypatch.setattr(preparation.sys, 'frozen', False, raising=False)
+    monkeypatch.setattr(preparation, 'current_desktop_release', lambda: pytest.fail('identity read'))
     assert nlp_setup.preparation_configuration(lambda: pytest.fail('database opened'), Path('unused')) is None
 
 
@@ -92,6 +93,7 @@ def test_source_loader_has_no_release_enablement(monkeypatch):
 @pytest.mark.parametrize('case', ['valid', 'absent', 'descriptor_changed', 'production', 'symlink'])
 def test_fixed_sibling_loader_held_read_path(tmp_path, monkeypatch, case):
     import os
+    from app.nlp import preparation
     from app.services import nlp_setup
     if os.name != 'nt':
         pytest.skip('Windows file handles')
@@ -114,9 +116,9 @@ def test_fixed_sibling_loader_held_read_path(tmp_path, monkeypatch, case):
             path.symlink_to(target)
         except OSError:
             pytest.skip('symlink creation unavailable')
-    monkeypatch.setattr(nlp_setup.sys, 'frozen', True, raising=False)
-    monkeypatch.setattr(nlp_setup.sys, 'executable', str(image))
-    monkeypatch.setattr(nlp_setup, 'current_desktop_release', lambda: release)
+    monkeypatch.setattr(preparation.sys, 'frozen', True, raising=False)
+    monkeypatch.setattr(preparation.sys, 'executable', str(image))
+    monkeypatch.setattr(preparation, 'current_desktop_release', lambda: release)
     if case == 'absent':
         assert nlp_setup.load_preparation_release() is None
     elif case == 'valid':

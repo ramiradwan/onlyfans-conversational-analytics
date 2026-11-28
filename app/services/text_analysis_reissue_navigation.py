@@ -9,8 +9,10 @@ from urllib.parse import urlsplit
 
 
 class ReissueNavigationEntries:
-    def __init__(self, *, clock=time.monotonic):
+    def __init__(self, *, clock=time.monotonic,
+                 path_pattern=r'/v2/onboarding/text-analysis-license-reissues/[A-Za-z0-9_-]{43}'):
         self._clock = clock
+        self._path = re.compile(path_pattern)
         self._entries = {}
         self._lock = threading.Lock()
 
@@ -18,7 +20,7 @@ class ReissueNavigationEntries:
         parsed = urlsplit(url)
         if (parsed.scheme != 'https' or not parsed.hostname or parsed.username is not None
                 or parsed.password is not None or parsed.query or parsed.fragment
-                or re.fullmatch(r'/v2/onboarding/text-analysis-license-reissues/[A-Za-z0-9_-]{43}', parsed.path) is None
+                or self._path.fullmatch(parsed.path) is None
                 or len(url.encode('utf-8')) > 2048):
             raise ValueError('Reissue navigation is unavailable')
         with self._lock:

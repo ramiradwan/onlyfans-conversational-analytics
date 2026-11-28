@@ -7,9 +7,10 @@ from pydantic import Field, field_validator, model_validator
 from app.analytics.query_contracts import Instant
 from app.models.knowledge_contributions import JobSpec, Name, SourceMemberSpec, UUIDRecord
 from app.models.text_analysis_enrollment import EnrollmentIdentity
-from app.models.text_analysis_preview import PreviewContribution
+from app.models.text_analysis_preview import PreviewContribution, PreviewSummary, RecurringMentionPreview
 from app.models.text_analysis_jobs import ExecutionIntent, ExecutionParameters, ExecutionReceipt, PreviewConfirmation
 from app.nlp.contracts import Contract, Digest
+from app.nlp.preview_parameters import RECURRENCE_SELECTION_POLICY, SELECTION_POLICY
 from app.nlp.profiles import AnalysisProfile, SubsetAnalysisProfile, PolicyIdentity, TaskDescriptor
 from app.security.runtime_policy import RuntimePolicy
 from app.security.text_analysis_policy import TextAnalysisRunContext
@@ -20,11 +21,15 @@ PREVIEW_MESSAGE_CAP = 32
 
 
 class PreviewPrepareRequest(Contract):
-    schema_version: Literal['text-analysis-preview-prepare.v1'] = 'text-analysis-preview-prepare.v1'
+    schema_version: Literal['text-analysis-preview-prepare.v1', 'text-analysis-preview-prepare.v2'] = 'text-analysis-preview-prepare.v1'
     external_key: str
     expected_profile_sha256: Digest
 
     _uuid = field_validator('external_key')(ExecutionIntent.uuid4.__func__)
+
+    @property
+    def selection_policy(self):
+        return RECURRENCE_SELECTION_POLICY if self.schema_version == 'text-analysis-preview-prepare.v2' else SELECTION_POLICY
 
 
 class PreviewScope(Contract):
@@ -52,19 +57,37 @@ class PreviewScope(Contract):
         return self
 
 
+class RecurringMentionScope(PreviewScope):
+    schema_version: Literal['text-analysis-preview-scope.v2'] = 'text-analysis-preview-scope.v2'
+    directions: Literal['inbound'] = 'inbound'
+    message_cap: Literal[100] = 100
+    source_count: Annotated[int, Field(ge=0, le=100)]
+
+
+DisclosedScope = Annotated[PreviewScope | RecurringMentionScope, Field(discriminator='schema_version')]
+
+
 class PreviewExecutionCapsule(UUIDRecord):
     schema_version: Literal['text-analysis-preview-capsule.v1'] = 'text-analysis-preview-capsule.v1'
     job_id: str
     contribution_id: str
     request: PreviewPrepareRequest
     identity: EnrollmentIdentity
-    scope: PreviewScope
+    scope: DisclosedScope
     parameters: ExecutionParameters
     selection_policy: PolicyIdentity
     spec_sha256: Digest
     profile_bytes_sha256: Digest
     context_sha256: Digest
     confirmation_sha256: Digest
+
+    @model_validator(mode='after')
+    def original_policy(self):
+        if self.request.selection_policy != self.selection_policy or (
+            self.selection_policy == RECURRENCE_SELECTION_POLICY
+        ) != isinstance(self.scope, RecurringMentionScope):
+            raise ValueError('preview_capsule_policy_invalid')
+        return self
 
 
 class PreviewLocator(UUIDRecord):
@@ -91,6 +114,8 @@ class PreviewDisclosure(Contract):
         names = tuple(task.task for task in self.tasks)
         if names != tuple(task for task in order if task in names):
             raise ValueError('preview_disclosure_tasks_invalid')
+        if self.selection_policy == RECURRENCE_SELECTION_POLICY and names != ('concept_mentions',):
+            raise ValueError('preview_disclosure_tasks_invalid')
         return self
 
 
@@ -104,7 +129,7 @@ class PreviewReceipt(UUIDRecord):
 class PreviewOutcome(Contract):
     request: PreviewPrepareRequest
     receipt: PreviewReceipt
-    scope: PreviewScope | None
+    scope: DisclosedScope | None
     confirmation: PreviewConfirmation | None
     detailed_scope_available: bool
     disclosure: PreviewDisclosure | None
@@ -126,6 +151,12 @@ class PreviewOutcome(Contract):
             and self.disclosure.profile_sha256 != self.request.expected_profile_sha256
         ):
             raise ValueError('preview_outcome_profile_invalid')
+        if self.disclosure is not None:
+            recurring = self.request.selection_policy == RECURRENCE_SELECTION_POLICY
+            if isinstance(self.scope, RecurringMentionScope) != recurring or (
+                self.disclosure.selection_policy == RECURRENCE_SELECTION_POLICY
+            ) != recurring:
+                raise ValueError('preview_outcome_policy_invalid')
         if self.confirmation is not None:
             import hashlib
             from app.nlp.profiles import canonical_bytes
@@ -187,6 +218,8 @@ class PreviewSavedEnvelope(Contract):
             raise ValueError('preview_saved_tasks_invalid')
         descriptors = {task.task: task for task in self.disclosure.tasks}
         for summary in self.output.summaries:
+            if not isinstance(summary, PreviewSummary):
+                continue
             descriptor = descriptors[summary.task]
             if (
                 summary.label.presentation != self.disclosure.presentation
@@ -196,6 +229,15 @@ class PreviewSavedEnvelope(Contract):
             ):
                 raise ValueError('preview_saved_label_invalid')
         return self
+
+
+class RecurringMentionSavedEnvelope(PreviewSavedEnvelope):
+    schema_version: Literal['text-analysis-preview-saved.v2'] = 'text-analysis-preview-saved.v2'
+    scope: RecurringMentionScope
+    output: RecurringMentionPreview
+
+
+SavedPreview = Annotated[PreviewSavedEnvelope | RecurringMentionSavedEnvelope, Field(discriminator='schema_version')]
 
 
 class PreviewSavedId(UUIDRecord):

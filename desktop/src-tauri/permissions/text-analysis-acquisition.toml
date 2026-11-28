@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-desktop-text-analysis-acquisition"
+description = "Open the fixed text analysis acquisition entry from the admitted application window."
+commands.allow = ["desktop_text_analysis_acquisition"]

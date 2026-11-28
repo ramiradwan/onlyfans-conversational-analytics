@@ -1,9 +1,8 @@
 """Explicit fixture-only selection for one-shot preview execution."""
 from dataclasses import dataclass
 
-from app.analytics.nlp_preview import SELECTION_POLICY
 from app.core.optional_execution import require_optional_execution
-from app.nlp.preview_parameters import preview_parameters
+from app.nlp.preview_parameters import SELECTION_POLICY, preview_parameters
 from app.persistence.authoritative_pair import AuthoritativePairOwner
 from app.persistence.auth import SQLiteAuthenticationStore
 from app.persistence.text_analysis_authority import (
@@ -52,7 +51,7 @@ class FixtureTextAnalysisPreviewSelectionOwner:
     def lifecycle(self):
         return FixtureTextAnalysisLifecycle(self.authority.database, self.store.repository.database, pair_owner=self.pair_owner)
 
-    def choose(self, digest, identity, dependencies):
+    def choose(self, digest, identity, dependencies, *, selection_policy=SELECTION_POLICY):
         require_optional_execution()
         selected = [s for s in self.selections if s.profile_sha256 == digest
             and (s.context.principal_id, s.context.creator_account_id) == (identity.principal_id, identity.creator_account_id)]
@@ -61,7 +60,7 @@ class FixtureTextAnalysisPreviewSelectionOwner:
         if len(selected) != 1 or len(profiles) != 1:
             raise ValueError('text_analysis_preview_selection_unavailable')
         profile, closure = profiles[0]
-        params, context = preview_parameters(profile, closure, SELECTION_POLICY), selected[0].context
+        params, context = preview_parameters(profile, closure, selection_policy), selected[0].context
         if (context.algorithm_artifacts_sha256 != closure or context.policy_identity_sha256 != params.policy_identity_sha256
                 or any(getattr(context, key) != getattr(identity, key) for key in
                     ('organization_id', 'installation_id', 'installation_key_id', 'installation_key_jkt'))):

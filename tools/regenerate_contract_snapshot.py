@@ -14,9 +14,9 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS_ROOT = REPOSITORY_ROOT / "contracts"
 APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-APPROVED_SOURCE_COMMIT = "40976d7134be4f2e37430078365aca03bac8a89b"
-APPROVED_SOURCE_TREE = "1278fb4224aca5bec4f9f586c1dceace73a72002"
-APPROVED_SOURCE_MANIFEST_SHA256 = "257b470e66a8ee922aac2dbd86bcb6f01a3f90e77a88aed533e6199d5de20263"
+APPROVED_SOURCE_COMMIT = "44e0b486a01057034eb7e9f8788c1a4659757469"
+APPROVED_SOURCE_TREE = "9a1cb133e231334706ffad8b2d08c03ae9c98542"
+APPROVED_SOURCE_MANIFEST_SHA256 = "750d74c4d2d8cf3887e49de0da29640607f812c67dbc784dcf4f07a44267c5f6"
 SOURCE_MANIFEST = "contract-manifest.json"
 SOURCE_MANIFEST_EXPORT = "source-contract-manifest"
 SOURCE_MANIFEST_TARGET = f"{SOURCE_MANIFEST_EXPORT}/contract-manifest.json"
@@ -25,8 +25,8 @@ PUBLISHED_ROOTS = ("catalog", "openapi", "profiles", "schemas")
 # Only these additive inventories may replace reviewed previous bytes during
 # this pin migration. All released schemas, profiles and fixtures remain immutable.
 APPROVED_PREVIOUS_INVENTORIES = {
-    "catalog/contracts.yaml": "888d5f6f4ebd14587d621e62ddc14c2dd2a4357608a4475efd9022a61ec4df8f",
-    "contract-manifest.json": "605c147e2e1cd2b7aa866261aaad135008b1b16ae6bd1bb9cbfca17fb8df2b76"
+    "catalog/contracts.yaml": "32457ab5d541f21fe140da0fc4715c159e186c831a8a740a9f18458131477ede",
+    "contract-manifest.json": "257b470e66a8ee922aac2dbd86bcb6f01a3f90e77a88aed533e6199d5de20263"
 }
 
 EXPORT_SET = [
@@ -179,8 +179,8 @@ EXPECTED_PAIRING_VECTOR_FILES = frozenset(
         "vector.json",
     }
 )
-EXPECTED_FILE_COUNT = 1380
-EXPECTED_PUBLISHED_FILE_COUNT = 533
+EXPECTED_FILE_COUNT = 1394
+EXPECTED_PUBLISHED_FILE_COUNT = 547
 EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:account-passkey-action-evidence:v1",
     "urn:bridge-clean:account-passkey-enrollment:v1",
@@ -276,6 +276,8 @@ EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:text-analysis-license-reissue:v1",
     "urn:bridge-clean:text-analysis-license-reissue:v2",
     "urn:bridge-clean:text-analysis-license:v1",
+    "urn:bridge-clean:text-analysis-paid-acquisition-proof:v1",
+    "urn:bridge-clean:text-analysis-paid-acquisition:v1",
     "urn:bridge-clean:text-analysis-preview-acquisition-proof:v1",
     "urn:bridge-clean:text-analysis-preview-acquisition:v1",
     "urn:bridge-clean:text-analysis-preview-issuance-proof:v1",

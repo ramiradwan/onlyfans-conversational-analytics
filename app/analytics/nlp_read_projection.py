@@ -737,7 +737,7 @@ def read(resources, policy, request, *, cancellation_check=None,
                 with bounded_sql(analytics_lease, budget):
                     response, bindings = projector(
                         value, records, generation, snapshot, plan, budget, source_rows,
-                        connection=analytics_lease,
+                        connection=analytics_lease, canonical_scope=scope,
                     )
             for reference, location in bindings:
                 budget.check()

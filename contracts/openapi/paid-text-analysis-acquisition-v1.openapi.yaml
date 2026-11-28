@@ -1,0 +1,269 @@
+openapi: 3.1.0
+info:
+  title: Private TEST text-analysis acquisition
+  version: 1.0.0
+paths:
+  /v1/text-analysis-paid-acquisitions:prepare:
+    post:
+      operationId: prepareTextAnalysisPaidAcquisitionV1
+      summary: prepareTextAnalysisPaidAcquisitionV1
+      x-query-forbidden: true
+      x-cache-control: no-store
+      x-browser-cors: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/paid-text-analysis-acquisition/v1/prepare-request.schema.json
+      responses:
+        '200':
+          description: Current private TEST result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/prepare-response.schema.json
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '401':
+          description: Missing authority
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '403':
+          description: Refused
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '409':
+          description: Conflicting or expired operation
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '413':
+          description: Size limit
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '429':
+          description: Rate limit
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+  /v1/text-analysis-paid-acquisitions:read:
+    post:
+      operationId: readTextAnalysisPaidAcquisitionV1
+      summary: readTextAnalysisPaidAcquisitionV1
+      x-query-forbidden: true
+      x-cache-control: no-store
+      x-browser-cors: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/paid-text-analysis-acquisition/v1/read-request.schema.json
+      responses:
+        '200':
+          description: Current private TEST result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/read-response.schema.json
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '401':
+          description: Missing authority
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '403':
+          description: Refused
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '409':
+          description: Conflicting or expired operation
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '413':
+          description: Size limit
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '429':
+          description: Rate limit
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+  /v1/text-analysis-paid-acquisitions:submit:
+    post:
+      operationId: submitTextAnalysisPaidAcquisitionV1
+      summary: submitTextAnalysisPaidAcquisitionV1
+      x-query-forbidden: true
+      x-cache-control: no-store
+      x-browser-cors: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/paid-text-analysis-acquisition/v1/submit-request.schema.json
+      responses:
+        '200':
+          description: Current private TEST result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/submit-response.schema.json
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '401':
+          description: Missing authority
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '403':
+          description: Refused
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '409':
+          description: Conflicting or expired operation
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '413':
+          description: Size limit
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '429':
+          description: Rate limit
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/error.schema.json
+  /v1/text-analysis-paid-acquisition-proof-challenges:
+    post:
+      operationId: issueTextAnalysisPaidAcquisitionProofChallengeV1
+      summary: issueTextAnalysisPaidAcquisitionProofChallengeV1
+      x-query-forbidden: true
+      x-cache-control: no-store
+      x-browser-cors: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/paid-text-analysis-acquisition/v1/proof-challenge-request.schema.json
+      responses:
+        '200':
+          description: Current private TEST result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/proof-challenge-response.schema.json
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/proof-error.schema.json
+        '401':
+          description: Missing authority
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/proof-error.schema.json
+        '403':
+          description: Refused
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/proof-error.schema.json
+        '409':
+          description: Conflicting or expired operation
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/proof-error.schema.json
+        '413':
+          description: Size limit
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/proof-error.schema.json
+        '429':
+          description: Rate limit
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/proof-error.schema.json
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/paid-text-analysis-acquisition/v1/proof-error.schema.json

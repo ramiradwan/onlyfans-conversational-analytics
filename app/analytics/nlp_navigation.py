@@ -100,7 +100,7 @@ def read_grouped(resources, policy, request, *, cancellation_check=None):
     if not isinstance(registry, NavigationRegistry):
         raise ValueError('navigation registry required')
 
-    def project(value, records, generation, snapshot, plan, budget, source_rows, *, connection):
+    def project(value, records, generation, snapshot, plan, budget, source_rows, *, connection, canonical_scope):
         budget.check()
         profile = read_profile(encoded(value['snapshot']['profile']))
         descriptor = registry.resolve(profile, plan.expected_navigation_sha256)

@@ -1,6 +1,7 @@
 import { createStore } from 'zustand';
 
 import { textAnalysisScopeKey, textAnalysisScopeReady, type TextAnalysisContext, type TextAnalysisRole } from './textAnalysisExecutionStore';
+import { literalKey } from '../analytics/literalsContract';
 import { expectedAccountRef, evidenceKey, parseSourceEvidence, type QuestionEvidence, type SourceEvidence } from '../analytics/questionContract';
 import { parsePreviewOutcome, textAnalysisCanonicalJson, type ClientIntentCursor, type PreviewOutcome, type SavedPreview } from '../analytics/textAnalysisContract';
 import { textAnalysisApi } from '../services/textAnalysisApi';
@@ -118,14 +119,14 @@ export function createTextAnalysisPreviewStore(client: TextAnalysisClient = crea
       if (lifetime.active()) store.setState({ saved: null, outcome: null, message: 'This preview could not be verified. Recover its original status before continuing.' });
     } finally { if (lifetime.active()) store.setState({ busy: false }); }
   }
-  function prepare(profile: string) {
+  function prepare(profile: string, version: 'text-analysis-preview-prepare.v1' | 'text-analysis-preview-prepare.v2' = 'text-analysis-preview-prepare.v1') {
     const state = store.getState();
     const inProgress = state.outcome && ['prepared', 'pending', 'running'].includes(state.outcome.receipt.state)
       || state.observations.some((item) => item.state === 'resolved' && item.intent.kind !== 'enrollment_command'
         && 'receipt' in item.result && ['prepared', 'pending', 'running'].includes(item.result.receipt.state));
     if (!enabled || state.busy || state.message || state.nextIntent || state.recoveryOverflow || state.recoveryConflict || inProgress
       || state.observations.some((item) => item.state !== 'resolved')) return Promise.resolve();
-    const body = { schema_version: 'text-analysis-preview-prepare.v1' as const, external_key: crypto.randomUUID(), expected_profile_sha256: profile };
+    const body = { schema_version: version, external_key: crypto.randomUUID(), expected_profile_sha256: profile };
     return observe((lifetime) => client.prepare(body, lifetime));
   }
   function confirm() {
@@ -159,6 +160,12 @@ export function createTextAnalysisPreviewStore(client: TextAnalysisClient = crea
     const lifetime = begin(); store.setState({ source: null, sourceLoading: true, sourceError: null });
     try {
       const source = parseSourceEvidence(await client.api.evidence(output.output.contribution_id, reference, lifetime.signal), reference);
+      if (output.schema_version === 'text-analysis-preview-saved.v2') {
+        const span = source.browser_span;
+        if (source.direction !== 'inbound' || !span || literalKey(source.text.slice(span.start, span.end)) !== output.output.summaries[0].literal_key) {
+          throw new Error('The saved occurrence changed.');
+        }
+      }
       if (lifetime.active()) store.setState({ source, sourceLoading: false });
     } catch { if (lifetime.active()) store.setState({ saved: null, source: null, sourceLoading: false, sourceError: 'This source is no longer available or could not be verified.' }); }
   }

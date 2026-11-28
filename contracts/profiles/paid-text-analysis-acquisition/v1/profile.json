@@ -1,0 +1,36 @@
+{
+  "profile": "urn:bridge-clean:text-analysis-paid-acquisition:v1",
+  "governing_adr": "docs/adr/0063-test-paid-text-analysis-acquisition.md",
+  "messages": {
+    "definitions": "schemas/paid-text-analysis-acquisition/v1/definitions.schema.json",
+    "error": "schemas/paid-text-analysis-acquisition/v1/error.schema.json",
+    "prepare-request": "schemas/paid-text-analysis-acquisition/v1/prepare-request.schema.json",
+    "prepare-response": "schemas/paid-text-analysis-acquisition/v1/prepare-response.schema.json",
+    "read-request": "schemas/paid-text-analysis-acquisition/v1/read-request.schema.json",
+    "read-response": "schemas/paid-text-analysis-acquisition/v1/read-response.schema.json",
+    "submit-request": "schemas/paid-text-analysis-acquisition/v1/submit-request.schema.json",
+    "submit-response": "schemas/paid-text-analysis-acquisition/v1/submit-response.schema.json"
+  },
+  "private_test_only": true,
+  "request_max_bytes": 8192,
+  "response_max_bytes": 16384,
+  "unknown_json_members": "reject",
+  "duplicate_json_members": "reject",
+  "request_response_logging": false,
+  "response_cache_control": "no-store",
+  "fixed_offer": "text-analysis-major1-test-eur999-v1",
+  "seat_expectation": {
+    "source": "original-authenticated-organization-and-installation",
+    "ordered_utf8_fields": ["capability-license-seat", "organization_id", "installation_id", "text-analysis"],
+    "separator_hex": "1f",
+    "encoding": "id- followed by unpadded base64url of the first 16 SHA-256 digest bytes",
+    "authority": "current-hosted-protected-confirmation"
+  },
+  "protected_confirmation": "urn:bridge-clean:text-analysis-license:v1",
+  "proof_profile": "urn:bridge-clean:text-analysis-paid-acquisition-proof:v1",
+  "operation_ttl_seconds": 1800,
+  "confirmation_max_seconds": 300,
+  "customer_entry": "/onboarding/text-analysis-paid-acquisitions/{entry_reference}",
+  "read": "noncreating",
+  "previous_purchase": "resume-before-creating-new-charge"
+}

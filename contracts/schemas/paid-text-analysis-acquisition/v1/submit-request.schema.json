@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/paid-text-analysis-acquisition/v1/submit-request.schema.json",
+  "title": "text-analysis-paid-acquisition submit-request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request",
+    "proof"
+  ],
+  "properties": {
+    "request": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/paid-text-analysis-acquisition/v1/definitions.schema.json#/$defs/submitRequest"
+    },
+    "proof": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-issuance/v1/definitions.schema.json#/$defs/proof"
+    }
+  }
+}

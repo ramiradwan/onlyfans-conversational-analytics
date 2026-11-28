@@ -5,7 +5,7 @@ import hashlib
 import weakref
 
 from app.analytics.nlp_canonical_execution import CanonicalFindingsExecution
-from app.core.optional_execution import require_optional_execution
+from app.services.installed_text_analysis_selection import InstalledLicenseSelection, require_execution_selection
 from app.models.text_analysis_enrollment import (
     EnrollmentCapsule, EnrollmentCommand, EnrollmentLocator, CurrentEnrollment, EnrollmentBindingSuperseded,
 )
@@ -32,9 +32,9 @@ class LicensedFindingsBinding:
 
 class TextAnalysisExecutionService:
     def __init__(self, authentication, selection, source, dependencies):
-        require_optional_execution()
+        require_execution_selection(selection)
         if (type(authentication) is not SQLiteAuthenticationStore
-                or type(selection) is not FixtureTextAnalysisSelectionOwner
+                or type(selection) not in (FixtureTextAnalysisSelectionOwner, InstalledLicenseSelection)
                 or type(selection.pair_owner) is not AuthoritativePairOwner
                 or selection.authority.authentication is not authentication
                 or dependencies.persistence.authentication is not authentication
@@ -69,7 +69,7 @@ class TextAnalysisExecutionService:
             raise RuntimeAuthorizationDenied('text_analysis_session_unavailable') from None
 
     def command(self, http_policy, command):
-        require_optional_execution()
+        require_execution_selection(self.selection)
         command = EnrollmentCommand.model_validate_json(canonical_bytes(command))
         with self.dependencies.gate:
             identity, baseline = self._http_identity(http_policy)
@@ -84,7 +84,11 @@ class TextAnalysisExecutionService:
             else:
                 payload = {}
                 if command.action in ('enable', 'replace'):
-                    profile, parameters, context = self.selection.choose(command.expected_profile_sha256, identity, self.dependencies)
+                    if type(self.selection) is InstalledLicenseSelection:
+                        profile, parameters, context, http_policy, baseline = self.selection.choose_for_session(
+                            command.expected_profile_sha256, identity, self.dependencies, http_policy)
+                    else:
+                        profile, parameters, context = self.selection.choose(command.expected_profile_sha256, identity, self.dependencies)
                     payload = dict(identity=identity, profile_bytes=canonical_bytes(profile),
                         intent=EnrollmentIntent(external_key=command.command_key,
                             run_context=encode_run_context(context), parameters=parameters))
@@ -97,7 +101,7 @@ class TextAnalysisExecutionService:
                     context = decode_run_context(capsule.intent.run_context)
                 evidence = self.selection.evidence(baseline, context)
                 with self.selection.authority.transition_fence(baseline, context, kind='license', phase='start',
-                        evidence=evidence, lifecycle=self.selection.lifecycle, fixture_only=True) as held:
+                        evidence=evidence, lifecycle=self.selection.lifecycle, fixture_only=self.selection.lifecycle.fixture_only) as held:
                     with self.repository.database.transaction() as db:
                         with self.authentication.database.read() as auth_db:
                             self._session_in(auth_db, http_policy)
@@ -152,7 +156,7 @@ class TextAnalysisExecutionService:
             return current
 
     def bind_current(self, locator):
-        require_optional_execution()
+        require_execution_selection(self.selection)
         with self.dependencies.gate:
             if type(locator) is not EnrollmentLocator or locator.installation_id != self.selection.installation_id:
                 raise ValueError('text_analysis_locator_invalid')
@@ -173,7 +177,7 @@ class TextAnalysisExecutionService:
                 evidence = None
             execution = CanonicalFindingsExecution(self.repository, self.selection.authority,
                 enrollment_id=locator.enrollment_id, identity_policy=baseline, current_evidence=evidence,
-                lifecycle=self.selection.lifecycle, fixture_only=True)
+                lifecycle=self.selection.lifecycle, fixture_only=self.selection.lifecycle.fixture_only)
             self.reconcile_current(baseline)
             binding = LicensedFindingsBinding(locator, current, capsule, profile, baseline, execution)
             self._register_binding(binding, store_id)

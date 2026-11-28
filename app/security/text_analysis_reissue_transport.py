@@ -69,16 +69,17 @@ class TextAnalysisReissueHTTPTransport:
         self._transport = transport if transport is not None else httpx.HTTPTransport(
             retries=0, trust_env=False)
 
-    def request(self, path: str, raw: bytes, *, maximum: int, before_send=None) -> ReissueHTTPResponse:
+    def _bounds(self, path: str) -> tuple[int, int]:
         if type(path) is not str:
             raise TextAnalysisReissueError("invalid_path")
         if path == CHALLENGE_PATH:
-            request_limit, response_limit = 12288, 4096
-        elif path in {PATH_PREFIX + action for action in ("prepare", "read", "finalize", "recover")}:
-            request_limit = 8192
-            response_limit = 4096 if path.endswith(":prepare") else 24576
-        else:
-            raise TextAnalysisReissueError("invalid_path")
+            return 12288, 4096
+        if path in {PATH_PREFIX + action for action in ("prepare", "read", "finalize", "recover")}:
+            return 8192, 4096 if path.endswith(":prepare") else 24576
+        raise TextAnalysisReissueError("invalid_path")
+
+    def request(self, path: str, raw: bytes, *, maximum: int, before_send=None) -> ReissueHTTPResponse:
+        request_limit, response_limit = self._bounds(path)
         if (type(raw) is not bytes or not 0 < len(raw) <= request_limit
                 or type(maximum) is not int or maximum != response_limit):
             raise TextAnalysisReissueError("transport_bounds")

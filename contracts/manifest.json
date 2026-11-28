@@ -1,5 +1,5 @@
 {
-  "content_digest": "92594e80beb1297267b5c9f6afc32f30b7ba3c104f03b1781c90217ca2021db2",
+  "content_digest": "ac1650e17a239a472216276c7a82c7b7d7ef446b73dd7ec7673ee9c71a7724c8",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -1243,8 +1243,8 @@
     },
     {
       "path": "catalog/contracts.yaml",
-      "sha256": "32457ab5d541f21fe140da0fc4715c159e186c831a8a740a9f18458131477ede",
-      "size": 94191
+      "sha256": "ecc769cbe65fc28c8c44d813807a62fe08cfdb4eb87da7cff367ddb0e563ef85",
+      "size": 96310
     },
     {
       "path": "catalog/deferred-setup-preparation-policy-v1.json",
@@ -4262,6 +4262,11 @@
       "size": 11380
     },
     {
+      "path": "openapi/paid-text-analysis-acquisition-v1.openapi.yaml",
+      "sha256": "a94a446b2de4fa934fd725f43fc9388597e8a6ed4ff32ab7b038d172a5ed4228",
+      "size": 9283
+    },
+    {
       "path": "openapi/provisioning-v1.openapi.yaml",
       "sha256": "5a0454010e1ac28323819d94b2f5f155eb7ccdb2753514d48491d2ed0fa5b569",
       "size": 8614
@@ -4725,6 +4730,16 @@
       "path": "profiles/onboarding-transfer/v1/profile.json",
       "sha256": "a498b87d85e18a734f45f2f7fdac7a2b2bdca3e35a15d4daddfd1728286add50",
       "size": 2472
+    },
+    {
+      "path": "profiles/paid-text-analysis-acquisition-proof/v1/profile.json",
+      "sha256": "00d74469462aed7842d1357c6f112b842563bd2aed9520e0cfda75e2f3846e34",
+      "size": 1182
+    },
+    {
+      "path": "profiles/paid-text-analysis-acquisition/v1/profile.json",
+      "sha256": "93dd41c008da0f7aa27c6375a13db2086fd198d55b7f9456ec339c1eb4842ce1",
+      "size": 1966
     },
     {
       "path": "profiles/registered-continuation-replacement-proof/v1/profile.json",
@@ -6492,6 +6507,61 @@
       "size": 866
     },
     {
+      "path": "schemas/paid-text-analysis-acquisition/v1/definitions.schema.json",
+      "sha256": "eb270e98d01ef64f7e5914223d09a3eaec8ac7d97e4a990d72fdf6c74d4d0195",
+      "size": 13522
+    },
+    {
+      "path": "schemas/paid-text-analysis-acquisition/v1/error.schema.json",
+      "sha256": "26a1150b7707920b9167800a5ff6f648e78bfe54d0d6f1b190aa086537994a6f",
+      "size": 863
+    },
+    {
+      "path": "schemas/paid-text-analysis-acquisition/v1/prepare-request.schema.json",
+      "sha256": "ff29b26c8507572bdeca9b4f8a537184931c275b3d02b4e56ba1b710539e7783",
+      "size": 697
+    },
+    {
+      "path": "schemas/paid-text-analysis-acquisition/v1/prepare-response.schema.json",
+      "sha256": "acdf41218d3a0c433a0c1aaadccf3af03a2837409d3c57a5d9d1cb97b58bf5e8",
+      "size": 1671
+    },
+    {
+      "path": "schemas/paid-text-analysis-acquisition/v1/proof-challenge-request.schema.json",
+      "sha256": "8df928a73f27a99f40ca2f84d887a0c7b84f5adec99f2ed9eb0e577b6b7c8f47",
+      "size": 1981
+    },
+    {
+      "path": "schemas/paid-text-analysis-acquisition/v1/proof-challenge-response.schema.json",
+      "sha256": "05aa868863d396ca65de91c223cf743fec912059896f112815f96a27b354a89d",
+      "size": 1616
+    },
+    {
+      "path": "schemas/paid-text-analysis-acquisition/v1/proof-error.schema.json",
+      "sha256": "2f45694484bcf3539ddc4f3b6d20dfa2e0c946ac8b50697d86bb54a1b20fa46b",
+      "size": 881
+    },
+    {
+      "path": "schemas/paid-text-analysis-acquisition/v1/read-request.schema.json",
+      "sha256": "e2ec14b6914d29cee46dda8a63a4dc9013e0bb7bacf6725ad6198e5fe0389e97",
+      "size": 688
+    },
+    {
+      "path": "schemas/paid-text-analysis-acquisition/v1/read-response.schema.json",
+      "sha256": "4190c87490756b3e20b3478ed4a2098bb620831a3ba61feb86f10446e93797fe",
+      "size": 377
+    },
+    {
+      "path": "schemas/paid-text-analysis-acquisition/v1/submit-request.schema.json",
+      "sha256": "b02c3a5463ce7dfbfe2fcaea4bac27972277bcffe2547958339531f4eadce3e7",
+      "size": 694
+    },
+    {
+      "path": "schemas/paid-text-analysis-acquisition/v1/submit-response.schema.json",
+      "sha256": "81e24097e82eed229f8993e1b192bc102f5ed9f5ff7e53fd3c38745281600bbe",
+      "size": 381
+    },
+    {
       "path": "schemas/provisioning/v1/bootstrap-recovery-request.schema.json",
       "sha256": "ad244df9a9684b11b00363c5c96a3dbf18792305205385a9418db10ee3caccb2",
       "size": 1727
@@ -6818,8 +6888,8 @@
     },
     {
       "path": "source-contract-manifest/contract-manifest.json",
-      "sha256": "257b470e66a8ee922aac2dbd86bcb6f01a3f90e77a88aed533e6199d5de20263",
-      "size": 110715
+      "sha256": "750d74c4d2d8cf3887e49de0da29640607f812c67dbc784dcf4f07a44267c5f6",
+      "size": 113630
     },
     {
       "path": "text-analysis-authority-v1/admission-cases.json",
@@ -7043,6 +7113,8 @@
     "urn:bridge-clean:text-analysis-license-reissue:v1",
     "urn:bridge-clean:text-analysis-license-reissue:v2",
     "urn:bridge-clean:text-analysis-license:v1",
+    "urn:bridge-clean:text-analysis-paid-acquisition-proof:v1",
+    "urn:bridge-clean:text-analysis-paid-acquisition:v1",
     "urn:bridge-clean:text-analysis-preview-acquisition-proof:v1",
     "urn:bridge-clean:text-analysis-preview-acquisition:v1",
     "urn:bridge-clean:text-analysis-preview-issuance-proof:v1",

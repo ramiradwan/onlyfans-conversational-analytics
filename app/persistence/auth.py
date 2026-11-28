@@ -991,6 +991,20 @@ class SQLiteAuthenticationStore:
             ).fetchone()
         return None if row is None else _installation_key_reference(row)
 
+    def installation_id_for_active_key(self) -> str | None:
+        """Locate the single recorded installation when binding its two local stores."""
+        with self.database.read() as db:
+            rows = db.execute(
+                """SELECT DISTINCT g.installation_id
+                   FROM verified_grant_references AS g
+                   JOIN installation_key_reference AS k
+                     ON k.installation_key_id = g.installation_key_id AND k.installation_key_jkt = g.installation_key_jkt
+                   WHERE k.singleton = 1 AND k.activated_at IS NOT NULL AND g.grant_type = 'installation_grant'
+                     AND g.revoked_at IS NULL AND g.compact_jws IS NOT NULL
+                   LIMIT 2"""
+            ).fetchall()
+        return rows[0][0] if len(rows) == 1 else None
+
     @capture_authority_change
     def register_webauthn_credential(self, credential: WebAuthnCredential) -> None:
         with self.database.transaction() as connection:

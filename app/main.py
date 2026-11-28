@@ -19,11 +19,13 @@ from app.api.endpoints import (
     history,
     insights,
     nlp_dependencies,
+    paid_insights,
     saved_data,
     text_analysis_execution,
     text_analysis_preview,
     text_analysis_client,
     text_analysis_reissue,
+    text_analysis_native_acquisition,
     transport_ws,
     webauthn,
 )
@@ -117,6 +119,13 @@ try:
     if _dependency_configuration is not None and settings.canonical_persistence_backend != "sqlite":
         _dependency_configuration = None
         logger.warning("nlp_dependency_event reason_code=projection_configuration_unavailable")
+    if _dependency_configuration is not None:
+        from app.core.optional_execution import installed_execution_release
+        release = installed_execution_release()
+        if release is not None:
+            from app.services.installed_findings_configuration import installed_findings_configuration
+            _findings_configuration = installed_findings_configuration(_capability_license_store(), _dependency_configuration, release)
+            _dependency_configuration = None
 except Exception:
     logger.warning("nlp_dependency_event reason_code=release_configuration_unavailable")
 
@@ -238,8 +247,10 @@ app.include_router(insights.router)
 app.include_router(nlp_dependencies.router)
 app.include_router(text_analysis_execution.router)
 app.include_router(text_analysis_preview.router)
+app.include_router(paid_insights.router)
 app.include_router(text_analysis_client.router)
 app.include_router(text_analysis_reissue.router)
+app.include_router(text_analysis_native_acquisition.router)
 app.include_router(webauthn.router)
 app.include_router(creator_vault.router)
 app.include_router(saved_data.router)

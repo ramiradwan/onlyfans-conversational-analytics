@@ -3,9 +3,7 @@ from contextlib import contextmanager
 import weakref
 
 from app.analytics.evidence_contracts import ResolvedEvidence
-from app.analytics.nlp_preview import SELECTION_POLICY
 from app.analytics.nlp_preview_scope import freeze_preview_scope
-from app.core.optional_execution import require_optional_execution
 from app.models.knowledge_contributions import AttemptToken, record_digest
 from app.models.question_evidence import QuestionEvidence, SourceSpan
 from app.models.text_analysis_jobs import ExecutionIntent, JobPlan, PreviewConfirmation
@@ -20,14 +18,15 @@ from app.persistence.text_analysis_preview import PreviewSourceUnavailable
 from app.security.runtime_policy import RuntimeAuthorizationDenied, authorized_account
 from app.security.text_analysis_identity import TextAnalysisIdentityOwner
 from app.security.text_analysis_policy import decode_run_context, encode_run_context, require_text_analysis_fence
+from app.services.installed_text_analysis_selection import InstalledPreviewSelection, require_execution_selection
 from app.services.text_analysis_preview_selection import FixtureTextAnalysisPreviewSelectionOwner
 
 
 class TextAnalysisPreviewService:
     def __init__(self, authentication, selection, source, dependencies):
-        require_optional_execution()
+        require_execution_selection(selection)
         if (type(authentication) is not SQLiteAuthenticationStore
-                or type(selection) is not FixtureTextAnalysisPreviewSelectionOwner
+                or type(selection) not in (FixtureTextAnalysisPreviewSelectionOwner, InstalledPreviewSelection)
                 or selection.authority.authentication is not authentication
                 or dependencies.persistence.authentication is not authentication
                 or source.history.database is not selection.store.repository.database
@@ -97,7 +96,7 @@ class TextAnalysisPreviewService:
                 return self.store.read_key_in(db, external_key, policy=baseline)
 
     def prepare(self, http_policy, request):
-        require_optional_execution()
+        require_execution_selection(self.selection)
         request = PreviewPrepareRequest.model_validate_json(canonical_bytes(request))
         with self.dependencies.gate:
             identity, baseline = self._http(http_policy)
@@ -107,16 +106,24 @@ class TextAnalysisPreviewService:
                     if old.request != request:
                         raise ValueError('preview_request_conflict')
                     return old
-            profile, parameters, context = self.selection.choose(request.expected_profile_sha256, identity, self.dependencies)
+            if type(self.selection) is InstalledPreviewSelection:
+                profile, parameters, context, http_policy, baseline = self.selection.choose_for_session(
+                    request.expected_profile_sha256, identity, self.dependencies, http_policy,
+                    selection_policy=request.selection_policy)
+            else:
+                profile, parameters, context = self.selection.choose(request.expected_profile_sha256, identity,
+                    self.dependencies, selection_policy=request.selection_policy)
             scope, input_identity, sources = freeze_preview_scope(self.repository, self.source,
-                identity.creator_account_id, self.authentication._clock(), self.repository._budget())
+                identity.creator_account_id, self.authentication._clock(), self.repository._budget(),
+                selection_policy=request.selection_policy)
             plan = JobPlan(**parameters.model_dump(mode='python'), input=input_identity)
             intent = ExecutionIntent(external_key=request.external_key, authority_kind='preview',
                 run_context=encode_run_context(context), scope_sha256=record_digest(scope),
-                preview_selection_policy=SELECTION_POLICY)
+                preview_selection_policy=request.selection_policy)
             evidence = self.selection.evidence(baseline, context)
             with self.selection.authority.transition_fence(baseline, context, kind='preview', phase='prepare',
-                    evidence=evidence, lifecycle=self.selection.lifecycle, fixture_only=True) as held:
+                    evidence=evidence, lifecycle=self.selection.lifecycle,
+                    fixture_only=self.selection.lifecycle.fixture_only) as held:
                 auth_db = held.text_analysis_fence._connection
                 with self.repository.database.transaction() as db:
                     self._session_in(auth_db, http_policy)
@@ -129,7 +136,7 @@ class TextAnalysisPreviewService:
                 return result
 
     def confirm(self, http_policy, external_key, confirmation):
-        require_optional_execution()
+        require_execution_selection(self.selection)
         ExecutionIntent.uuid4(external_key)
         confirmation = PreviewConfirmation.model_validate_json(canonical_bytes(confirmation))
         with self.dependencies.gate:
@@ -166,14 +173,15 @@ class TextAnalysisPreviewService:
 
     def _fence(self, policy, context, phase):
         return self.selection.authority.transition_fence(policy, context, kind='preview', phase=phase,
-            evidence=self.selection.evidence(policy, context), lifecycle=self.selection.lifecycle, fixture_only=True)
+            evidence=self.selection.evidence(policy, context), lifecycle=self.selection.lifecycle,
+            fixture_only=self.selection.lifecycle.fixture_only)
 
     def pending_locators(self, *, after_job='', limit=64):
         with self.dependencies.gate, self.repository.database.read() as db:
             return self.store.pending_in(db, self.selection.installation_id, after_job=after_job, limit=limit)
 
     def bind_pending(self, locator):
-        require_optional_execution()
+        require_execution_selection(self.selection)
         if type(locator) is not PreviewLocator or locator.installation_id != self.selection.installation_id:
             raise ValueError('preview_locator_invalid')
         with self.dependencies.gate:
@@ -214,7 +222,7 @@ class TextAnalysisPreviewService:
             raise ValueError('preview_binding_stale')
 
     def claim(self, binding, *, lease_seconds=120):
-        require_optional_execution()
+        require_execution_selection(self.selection)
         with self.dependencies.gate, self._fence(binding.policy, binding.context, 'resume') as held:
             auth_db = held.text_analysis_fence._connection
             with self.repository.database.transaction() as db:
@@ -229,7 +237,7 @@ class TextAnalysisPreviewService:
                 return token
 
     def check(self, binding, token):
-        require_optional_execution()
+        require_execution_selection(self.selection)
         with self.dependencies.gate, self._fence(binding.policy, binding.context, 'resume') as held:
             auth_db = held.text_analysis_fence._connection
             with self.repository.database.transaction() as db:
@@ -242,7 +250,7 @@ class TextAnalysisPreviewService:
                 self.repository._write_scope(db, binding.spec, held, 'resume')
 
     def commit(self, binding, token, outcome, *, validation_wall_clock_ms):
-        require_optional_execution()
+        require_execution_selection(self.selection)
         if type(validation_wall_clock_ms) is not int or not 1 <= validation_wall_clock_ms <= 30000:
             raise ValueError('preview_validation_budget_invalid')
         if type(outcome) not in (bytes, NoPreviewOutput):

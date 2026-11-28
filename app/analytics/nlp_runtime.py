@@ -45,17 +45,23 @@ class FindingsConfiguration:
     preview: FixtureTextAnalysisPreviewConfiguration | None = None
 
     def __post_init__(self):
+        from app.core.optional_execution import installed_execution_release
+        from app.services.installed_findings_configuration import InstalledExecutionConfiguration, InstalledPreviewConfiguration
+        released = installed_execution_release()
+        if released is not None and (type(self.execution) is not InstalledExecutionConfiguration
+                or type(self.preview) is not InstalledPreviewConfiguration or self.execution.release != released):
+            raise ValueError('findings_execution_configuration_invalid')
         if not all(callable(value) for value in (self.dependencies, self.authorize, self.clock)):
             raise ValueError('findings_configuration_invalid')
         if type(self.interval) not in (int, float) or not .01 <= self.interval <= 60:
             raise ValueError('findings_interval_invalid')
         if self.execution is not None:
             from app.services.text_analysis_selection import FixtureTextAnalysisExecutionConfiguration
-            if type(self.execution) is not FixtureTextAnalysisExecutionConfiguration:
+            if type(self.execution) not in (FixtureTextAnalysisExecutionConfiguration, InstalledExecutionConfiguration):
                 raise ValueError('findings_execution_configuration_invalid')
         if self.preview is not None:
             from app.services.text_analysis_preview_selection import FixtureTextAnalysisPreviewConfiguration
-            if type(self.preview) is not FixtureTextAnalysisPreviewConfiguration:
+            if type(self.preview) not in (FixtureTextAnalysisPreviewConfiguration, InstalledPreviewConfiguration):
                 raise ValueError('findings_preview_configuration_invalid')
         if self.preview is not None and self.execution is not None:
             if self.preview.authentication is not self.execution.authentication:
@@ -149,6 +155,7 @@ class FindingsRuntime:
         self._locator_page = deque()
         self._after_account = ''
         self._preview_service = None
+        self._native_acquisition = None
         self._preview_owner = None
         self._preview_page = deque()
         self._after_preview = ''
@@ -191,6 +198,13 @@ class FindingsRuntime:
         return self._dependencies.close(0, before_clear=self._clear_binding)
 
     def _clear_binding(self):
+        if self._native_acquisition is not None:
+            from app.services.text_analysis_native_acquisition import (
+                configure_native_text_analysis_acquisition, native_text_analysis_acquisition,
+            )
+            if native_text_analysis_acquisition() is self._native_acquisition:
+                configure_native_text_analysis_acquisition(None)
+            self._native_acquisition = None
         from app.services.text_analysis_execution import execution_service, configure_execution_service
         if self._execution_service is not None:
             if execution_service() is self._execution_service:
@@ -215,10 +229,20 @@ class FindingsRuntime:
         self._after_account = ''
 
     def _bind(self):
-        with self.pipeline.projections.lifecycle_store() as store:
-            if store is None:
+        from app.services.installed_findings_configuration import InstalledExecutionConfiguration
+        if self._store is None and type(self.configuration.execution) is InstalledExecutionConfiguration:
+            if self.configuration.execution.installation_id() is None:
                 return False
-        if store is self._store:
+        try:
+            with self.pipeline.projections.lifecycle_store() as store:
+                current_store = store
+        except ProjectionStorageUnavailable:
+            current_store = None
+        if current_store is None:
+            if self._store is not None:
+                self._retire()
+            return False
+        if current_store is self._store:
             return not self._failed
         if not self._retire() or self._stop.is_set():
             return False
@@ -239,6 +263,9 @@ class FindingsRuntime:
         if self._preview_service is not None:
             from app.services.text_analysis_preview import configure_preview_service
             configure_preview_service(self._preview_service)
+        if self._native_acquisition is not None:
+            from app.services.text_analysis_native_acquisition import configure_native_text_analysis_acquisition
+            configure_native_text_analysis_acquisition(self._native_acquisition)
         self._failed = False
         self.failure = None
         return True
@@ -258,6 +285,13 @@ class FindingsRuntime:
             self._preview_service = self.configuration.preview.bind(self.source, service)
             self._preview_owner = PreviewComputeOwner(self._preview_service, service, self.source,
                 clock=self.configuration.clock, cancellation_check=self._stop.is_set)
+        from app.services.installed_findings_configuration import InstalledExecutionConfiguration
+        if type(self.configuration.execution) is InstalledExecutionConfiguration:
+            from app.services.text_analysis_native_acquisition import native_text_analysis_acquisition
+            if native_text_analysis_acquisition() is not None:
+                raise ValueError('findings_acquisition_owner_conflict')
+            self._native_acquisition = self.configuration.execution.acquisition(
+                self._preview_service.selection.installed_authorities)
 
     def generation_pipeline(self, account):
         gate=self._gate or (self._service.gate if self._service is not None else nullcontext())

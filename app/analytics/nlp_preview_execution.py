@@ -21,6 +21,7 @@ from app.analytics.nlp_read_projection import frozen_labels
 from app.analytics.query_execution import QuestionBudget, QuestionLimits, QuestionCancelled
 from app.models.text_analysis_preview import NoPreviewOutput, PreviewLabel
 from app.nlp import v2
+from app.nlp.preview_parameters import RECURRENCE_SOURCE_DIGEST
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,8 +91,12 @@ class PreviewComputeOwner:
                     return None
                 budget = QuestionBudget(QuestionLimits(max_records=100_000,
                     wall_clock_ms=min(30_000, milliseconds)), cancellation_check=source_cancelled)
-                value = self.source.read_evidence_message(binding.spec.creator_account_id,
-                    EvidenceLocation(**member.location.model_dump()), budget, exclude_system=True)
+                if binding.spec.policy_identity_sha256 == RECURRENCE_SOURCE_DIGEST:
+                    value = self.source.read_evidence_message(binding.spec.creator_account_id,
+                        EvidenceLocation(**member.location.model_dump()), budget, incoming_participant=True)
+                else:
+                    value = self.source.read_evidence_message(binding.spec.creator_account_id,
+                        EvidenceLocation(**member.location.model_dump()), budget, exclude_system=True)
                 if (value is None or source_binding(value) != member.source
                         or hashlib.sha256(value.text.encode('utf8')).hexdigest() != member.text_sha256):
                     raise ValueError('knowledge_source_changed')
@@ -107,13 +112,18 @@ class PreviewComputeOwner:
                     self.dependencies.prepare_installed(binding.profile.identity_digest(), cancellation_check=check)
                 if binding.sources and self.monotonic() < compute_end:
                     check()
-                    resolver = self.dependencies.presentation_resolver(binding.profile)
-                    labels = tuple(PreviewLabel.model_validate({**row,
-                        'label_identity_sha256': row['label_identity_sha256'].removeprefix('sha256:')})
-                        for row in frozen_labels(binding.profile, resolver))
-                    accumulator = PreviewAccumulator(binding.spec, binding.profile, binding.sources, labels=labels)
+                    if binding.spec.policy_identity_sha256 != RECURRENCE_SOURCE_DIGEST:
+                        resolver = self.dependencies.presentation_resolver(binding.profile)
+                        labels = tuple(PreviewLabel.model_validate({**row,
+                            'label_identity_sha256': row['label_identity_sha256'].removeprefix('sha256:')})
+                            for row in frozen_labels(binding.profile, resolver))
+                        accumulator = PreviewAccumulator(binding.spec, binding.profile, binding.sources, labels=labels)
                     check()
-                    with self.dependencies.retain(binding.profile) as execute:
+                    if getattr(self.dependencies, 'preparation_admission', None) is not None:
+                        retained = self.dependencies.retain(binding.profile, binding=binding, attempt=token)
+                    else:
+                        retained = self.dependencies.retain(binding.profile)
+                    with retained as execute:
                         for member in binding.sources:
                             if check() or remaining_compute() < 1:
                                 break
