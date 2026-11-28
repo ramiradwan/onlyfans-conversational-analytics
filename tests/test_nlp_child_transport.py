@@ -265,6 +265,66 @@ def test_delayed_close_is_graceful_and_concurrent_close_is_budgeted():
     owner.stdout.close()
 
 
+@pytest.mark.parametrize('flush_in_time', [True, False], ids=['flushed', 'deadline'])
+def test_close_waits_for_the_final_write_within_its_deadline(monkeypatch, flush_in_time):
+    profile, _ = example()
+    owner = ChannelOwner(profile)
+    client = ChildClient(profile, owner, NONCE)
+    stream = owner.stdin
+    finish_flush = threading.Event()
+    flushed_while_open = []
+
+    class FinalWrite:
+        write = stream.write
+
+        def close(self):
+            stream.close()
+            finish_flush.set()
+
+        def flush(self):
+            assert finish_flush.wait(6)
+            flushed_while_open.append(not stream.closed)
+            stream.flush()
+
+    owner.stdin = FinalWrite()
+    join = client._writer.join
+
+    def finish_write_and_join(timeout):
+        finish_flush.set()
+        return join(timeout)
+
+    if flush_in_time:
+        monkeypatch.setattr(client._writer, 'join', finish_write_and_join)
+    try:
+        drained = client.close(2)
+        if flush_in_time:
+            assert drained
+        else:
+            assert not owner.graceful  # The physical owner was asked to abort.
+            join(3)
+            assert client.close(3)
+        assert flushed_while_open == [flush_in_time]
+        assert client.graceful is flush_in_time
+    finally:
+        finish_flush.set()
+        owner.stdout.close()
+
+
+def test_retry_reaps_the_owner_without_sending_a_second_close(monkeypatch):
+    profile, _ = example()
+    owner = ChannelOwner(profile)
+    client = ChildClient(profile, owner, NONCE)
+    owner.allow_drain = False
+    try:
+        assert not client.close(2)
+        owner.allow_drain = True
+        monkeypatch.setattr(client, '_submit', lambda *a, **k: pytest.fail('second close frame'))
+        assert client.close(2)
+        assert not client.graceful
+    finally:
+        owner.stdout.close()
+
+
 def test_cancel_ack_does_not_publish_completed_analysis():
     profile, _ = example()
     owner = ChannelOwner(profile, cancellable=True)

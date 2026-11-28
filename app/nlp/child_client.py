@@ -197,6 +197,17 @@ class ChildClient:
         return self._rpc('unload', request, lambda b: adapter.validate_lifecycle(request, b),
             deadline if deadline is not None else self.monotonic() + 5)
 
+    def _stop_writer(self, deadline):
+        if not self._writer.is_alive():
+            return True
+        try:
+            self._writes.put_nowait(None)
+        except queue.Full:
+            self._fail()
+        if self._writer is not threading.current_thread():
+            self._writer.join(max(0, deadline - self.monotonic()))
+        return not self._writer.is_alive()
+
     def close(self, timeout=5):
         deadline = self.monotonic() + max(0, timeout)
         if not self._close_lock.acquire(timeout=max(0, deadline - self.monotonic())):
@@ -206,11 +217,12 @@ class ChildClient:
                 return True
             self._stopping.set()
             with self._condition:
+                first_close = not self._closing
                 self._closing = True
                 while self._pending and not self._failed and self.monotonic() < deadline:
                     self._condition.wait(min(.02, max(0, deadline - self.monotonic())))
             graceful = False
-            if not self._failed and not self._pending and self.monotonic() < deadline:
+            if first_close and not self._failed and not self._pending and self.monotonic() < deadline:
                 request = CloseRequest(request_id=uuid4().hex)
                 try:
                     body = self._rpc('close', request,
@@ -219,15 +231,15 @@ class ChildClient:
                     graceful = result.request_id == request.request_id and result.outcome == 'drained'
                 except ValueError:
                     self._fail()
+            if graceful:
+                # The worker can acknowledge the frame before our final flush returns.
+                graceful = self._stop_writer(deadline)
             remaining = max(0, deadline - self.monotonic())
             physical = self.owner.close(remaining) if graceful else self.owner.abort(remaining)
-            try:
-                self._writes.put_nowait(None)
-            except queue.Full:
-                self._fail()
-            for thread in (self._reader, self._writer):
-                if thread is not threading.current_thread():
-                    thread.join(max(0, deadline - self.monotonic()))
+            if not graceful:
+                self._stop_writer(deadline)
+            if self._reader is not threading.current_thread():
+                self._reader.join(max(0, deadline - self.monotonic()))
             self.graceful = graceful and physical and self.owner.graceful and not self._failed
             self._drained = physical and not self._reader.is_alive() and not self._writer.is_alive()
             return self._drained
