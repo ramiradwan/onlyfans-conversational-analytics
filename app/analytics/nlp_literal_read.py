@@ -30,6 +30,26 @@ def _matches(record, category):
         for finding in payload.findings)
 
 
+def index_literal_publication(publication, records, budget):
+    """Verify the node and extraction indices against the retained snapshot."""
+    nodes = {}
+    for node in publication.nodes:
+        budget.check()
+        if node.node_id in nodes:
+            raise ValueError('nlp_literal_node_duplicate')
+        nodes[node.node_id] = node
+    states = {}
+    for state in publication.records:
+        budget.check()
+        key = state.record_sha256
+        if key in states or key not in records or records[key].source != state.source:
+            raise ValueError('nlp_literal_source_invalid')
+        states[key] = state
+    if states.keys() != records.keys():
+        raise ValueError('nlp_literal_records_invalid')
+    return nodes, states
+
+
 def aggregate(value, records, generation, snapshot, request, budget, source_rows, *, connection):
     from app.analytics.nlp_literals import LiteralUnavailable, checked_publication
 
@@ -76,24 +96,10 @@ def aggregate(value, records, generation, snapshot, request, budget, source_rows
     publication_id = 'sha256:' + data.publication_id
     if request.expected_normalization_sha256 not in (None, publication_id):
         raise ProjectionUnavailable(availability='building')
-    nodes = {}
-    for node in data.nodes:
-        budget.check()
-        if node.node_id in nodes:
-            raise ValueError('nlp_literal_node_duplicate')
-        nodes[node.node_id] = node
+    nodes, record_states = index_literal_publication(data, records, budget)
     if request.node_id is not None and request.node_id.removeprefix('sha256:') not in nodes:
         raise InvalidAnalyticsRequest('analytics_findings_request_invalid',
                                       'The selected literal value is unavailable for this saved analysis.')
-    record_states = {}
-    for state in data.records:
-        budget.check()
-        key = state.record_sha256
-        if key in record_states or key not in records or records[key].source != state.source:
-            raise ValueError('nlp_literal_source_invalid')
-        record_states[key] = state
-    if record_states.keys() != records.keys():
-        raise ValueError('nlp_literal_records_invalid')
     population = {}
     matching = set()
     for item, reference, location in selected:
@@ -183,7 +189,7 @@ def read(resources, policy, request, *, cancellation_check=None):
     from app.analytics.nlp_read_projection import read as read_saved
     stamp = None
 
-    def project(*args, connection):
+    def project(*args, connection, canonical_scope):
         nonlocal stamp
         stamp = content_stamp(connection)
         if stamp is None:

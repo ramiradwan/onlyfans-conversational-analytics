@@ -13,6 +13,7 @@ import pytest
 
 from app.analytics.nlp_findings_store import FindingsStore
 from app.nlp import adapter
+from app.nlp.profile_authentication import PROFILE_JWS_TYPE, SUBSET_PROFILE_JWS_TYPE
 from app.nlp.artifact_store import ArtifactStore, StoreLimits
 from app.nlp.profiles import MAX_SAFE_INTEGER, ResourcePolicy, canonical_bytes
 from app.nlp.release_catalog import canonical, verify_catalog, CATALOG_TYPE, DependencyRejected
@@ -111,7 +112,8 @@ class Environment:
         self.engine, self.owners = Engine(), Owners()
         self.clock = SimpleNamespace(now=1000)
         self.requests, self.hook = [], None
-        self.objects = {'profiles/' + self.profile.identity_digest(): sign(canonical_bytes(self.profile))}
+        profile_type = SUBSET_PROFILE_JWS_TYPE if self.profile.schema_version == 'nlp-profile.v3' else PROFILE_JWS_TYPE
+        self.objects = {'profiles/' + self.profile.identity_digest(): sign(canonical_bytes(self.profile), typ=profile_type)}
         self.objects.update({'data/' + hashlib.sha256(raw).hexdigest(): raw for raw in payloads.values()})
         self.persistence = DependencyPersistence(SQLiteAuthenticationStore(tmp_path / 'auth.sqlite3'))
         self.artifacts = ArtifactStore(tmp_path / 'artifacts', StoreLimits(1024 * 1024, 4 * 1024 * 1024, 0))

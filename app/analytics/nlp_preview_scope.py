@@ -3,20 +3,29 @@ from datetime import timedelta, timezone
 import hashlib
 import heapq
 
-from app.analytics.canonical_source import HistoryAnalyticsSource, read_transaction_evidence
+from app.analytics.canonical_source import (
+    HistoryAnalyticsSource, read_incoming_participant_evidence, read_transaction_evidence,
+)
 from app.analytics.nlp_findings_store import source_binding
 from app.analytics.source_snapshot import scan_identity
 from app.analytics.query_sql import bounded_sql
 from app.models.knowledge_contributions import InputIdentity, SourceMemberSpec, inventory_digest
-from app.models.text_analysis_preview_execution import PreviewScope, PREVIEW_MESSAGE_CAP
+from app.models.text_analysis_preview_execution import PreviewScope, RecurringMentionScope
+from app.nlp.preview_parameters import (
+    PREVIEW_SOURCE_POLICY, RECURRENCE_SELECTION_POLICY, RECURRENCE_SOURCE_POLICY, SELECTION_POLICY,
+)
 
 
-def freeze_preview_scope(repository, source, account, cutoff, budget):
+def freeze_preview_scope(repository, source, account, cutoff, budget, *, selection_policy=SELECTION_POLICY):
     """Freeze metadata only; a failed complete scan never returns a smaller sample."""
     if not isinstance(source, HistoryAnalyticsSource) or source.history.database is not repository.database:
         raise ValueError('preview_source_owner_invalid')
     if cutoff.tzinfo is None or cutoff.utcoffset() is None:
         raise ValueError('preview_cutoff_invalid')
+    if selection_policy not in (SELECTION_POLICY, RECURRENCE_SELECTION_POLICY):
+        raise ValueError('preview_selection_unavailable')
+    recurring = selection_policy == RECURRENCE_SELECTION_POLICY
+    cap = (RECURRENCE_SOURCE_POLICY if recurring else PREVIEW_SOURCE_POLICY).max_messages
     cutoff = cutoff.astimezone(timezone.utc)
     lower = cutoff - timedelta(days=90)
     heap = []
@@ -34,18 +43,19 @@ def freeze_preview_scope(repository, source, account, cutoff, budget):
             rows = scoped.nlp_location_page(account, after, limit=64)
             if not rows:
                 break
+            incoming = read_incoming_participant_evidence(db, account, rows, budget) if recurring else None
             for row in rows:
                 budget.consume()
                 after = (row.conversation_id, row.message_id)
-                evidence = read_transaction_evidence(db, account,
-                    row.model_dump(mode='python'), budget, exclude_system=True)
+                evidence = incoming.get(after) if recurring else read_transaction_evidence(
+                    db, account, row.model_dump(mode='python'), budget, exclude_system=True)
                 if evidence is None or not lower < evidence.sent_at <= cutoff:
                     continue
                 key = (evidence.sent_at, evidence.location.message_id)
                 member = SourceMemberSpec(ordinal=0, location=evidence.location.model_dump(),
                     source=source_binding(evidence), source_revision=revision,
                     text_sha256=hashlib.sha256(evidence.text.encode('utf-8')).hexdigest())
-                if len(heap) < PREVIEW_MESSAGE_CAP:
+                if len(heap) < cap:
                     heapq.heappush(heap, (key, member))
                 elif key > heap[0][0]:
                     heapq.heapreplace(heap, (key, member))
@@ -53,7 +63,8 @@ def freeze_preview_scope(repository, source, account, cutoff, budget):
     ordered = sorted(heap, key=lambda entry: entry[0])
     members = tuple(member.model_copy(update={'ordinal': ordinal}) for ordinal, (_, member) in enumerate(ordered))
     digest = inventory_digest(members)
-    scope = PreviewScope(cutoff=cutoff, lower_exclusive=lower, source_count=len(members),
+    scope_type = RecurringMentionScope if recurring else PreviewScope
+    scope = scope_type(cutoff=cutoff, lower_exclusive=lower, source_count=len(members),
         earliest=ordered[0][0][0] if ordered else None, latest=ordered[-1][0][0] if ordered else None,
         inventory_sha256=digest)
     return scope, InputIdentity(canonical_revision=revision,

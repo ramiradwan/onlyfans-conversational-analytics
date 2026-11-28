@@ -5,17 +5,20 @@ import hashlib
 import json
 
 from app.analytics.evidence_contracts import EvidenceLocation, EvidenceMessage
-from app.analytics.opaque_refs import participant_ref
+from app.analytics.nlp_findings_store import source_binding
+from app.models.knowledge_contributions import SourceMemberSpec, inventory_digest
 from app.models.text_analysis_client import ClientIntentPut, ClientIntentRecord, ClientIntentPage
 from app.models.text_analysis_enrollment import EnrollmentCommand, EnrollmentCommandResult, EnrollmentView
 from app.models.text_analysis_jobs import PreviewConfirmation
 from app.models.text_analysis_preview_execution import (
     PreviewOutcome, PreviewPrepareRequest, PreviewSavedEnvelope, PreviewSavedPage, PreviewScope,
+    RecurringMentionSavedEnvelope, RecurringMentionScope,
 )
+from app.nlp.preview_parameters import RECURRENCE_SELECTION_POLICY
 from app.nlp.profiles import canonical_bytes, read_profile
 
 
-def application_fixtures(profile_document):
+def application_fixtures(profile_document, mentions_document):
     """No captures, authority bytes or runtime inference enter these examples."""
     profile = read_profile(json.dumps(profile_document))
     tasks = [task.model_dump(mode='json') for component in profile.components for task in component.tasks]
@@ -25,9 +28,7 @@ def application_fixtures(profile_document):
         text='😀 echo echo', sent_at=now, direction='inbound', sender_id='example-speaker',
         content_hash='example-content', stream_epoch=1, source_sequence=1)
     reference = source.reference().model_dump(mode='json')
-    binding = dict(account_scope=reference['account_ref'], source_ref=reference['message_ref'],
-        source_version=reference['source_version_digest'][7:],
-        speaker_ref=participant_ref(source.account_id, source.sender_id))
+    binding = source_binding(source).model_dump(mode='json')
     key = '00000000-0000-4000-8000-000000000001'
     job = '00000000-0000-4000-8000-000000000002'
     contribution = '00000000-0000-4000-8000-000000000003'
@@ -109,6 +110,7 @@ def application_fixtures(profile_document):
         'enrollment-command': command, 'enrollment-view': view, 'enrollment-result': result,
         'preview-prepare': prepare, 'preview-outcome': outcome, 'preview-confirmation': confirmation,
         'preview-saved': saved, 'preview-saved-partial': partial,
+        'preview-saved-recurring': recurring_example(read_profile(json.dumps(mentions_document)), source, saved),
         'client-enrollment-intent': retained, 'client-enrollment-record': record,
         'client-prepare-intent': intent('preview_prepare', prepare.model_dump(mode='json')),
         'client-confirm-intent': intent('preview_confirm', dict(external_key=key,
@@ -118,3 +120,38 @@ def application_fixtures(profile_document):
             dict(items=[dict(contribution_id=contribution)], next_after=None))),
     }
     return {name + '.json': record.model_dump(mode='json') for name, record in records.items()}
+
+
+def recurring_example(profile, first, legacy):
+    second = first.model_copy(update={'sender_id': 'second-example-speaker',
+        'location': EvidenceLocation(conversation_id='other-example-chat', message_id='second-example-message')})
+    members, evidence = [], []
+    for ordinal, message in enumerate((first, second)):
+        binding = source_binding(message)
+        members.append(SourceMemberSpec(ordinal=ordinal, source=binding, location=message.location.model_dump(),
+            source_revision=message.source_revision, text_sha256=hashlib.sha256(message.text.encode()).hexdigest()))
+        for start, end in ((2, 6), (7, 11)):
+            reference = message.reference().model_dump(mode='json')
+            reference['span'] = dict(start=start, end=end)
+            evidence.append(dict(ordinal=ordinal, source=binding.model_dump(mode='json'), reference=reference,
+                                 assessment='complete'))
+    evidence.sort(key=lambda entry: (entry['source']['source_ref'], entry['reference']['span']['start']))
+    policy = RECURRENCE_SELECTION_POLICY.model_dump(mode='json')
+    scope = RecurringMentionScope(cutoff=first.sent_at, lower_exclusive=first.sent_at - timedelta(days=90),
+        earliest=first.sent_at, latest=second.sent_at, source_count=2, inventory_sha256=inventory_digest(tuple(members)))
+    coverage = legacy.output.examination[-1].coverage.model_dump(mode='json')
+    disclosure = dict(profile_sha256=profile.identity_digest(), selection_policy=policy, languages=['en'],
+        tasks=[task.model_dump(mode='json') for component in profile.components for task in component.tasks],
+        presentation=profile.presentation.model_dump(mode='json'))
+    output = dict(job_id=legacy.output.job_id, contribution_id=legacy.output.contribution_id,
+        spec_sha256='8' * 64, input_inventory_sha256=scope.inventory_sha256, profile_sha256=profile.identity_digest(),
+        selection_policy=policy, source_count=2,
+        examination=[dict(ordinal=i, task='concept_mentions', assessment='assessed', reason='none',
+                          coverage=coverage) for i in range(2)],
+        tasks=[dict(task='concept_mentions', eligible=2, assessed=2, partial=0, uncertain=0,
+                    unsupported=0, failed=0, unprocessed=0)],
+        summaries=[dict(literal_key='echo', supporting_senders=2, supporting_messages=2, occurrences=4,
+                        complete_supporting_messages=2, partial_supporting_messages=0, ranking_scope='frozen_scope',
+                        additional_phrases=0, evidence=evidence)])
+    return RecurringMentionSavedEnvelope.model_validate_json(json.dumps(dict(scope=scope.model_dump(mode='json'),
+                                                                             disclosure=disclosure, output=output)))

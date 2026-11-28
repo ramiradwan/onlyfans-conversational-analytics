@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, TypeAdapter, model_validator
 
 from app.models.question_evidence import QuestionEvidence
 from app.models.knowledge_contributions import UUIDRecord
 from app.nlp.contracts import Contract, Coverage, Digest, Identifier, SourceBinding
+from app.nlp.normalization import normalize_literal_key
+from app.nlp.preview_parameters import RECURRENCE_SELECTION_POLICY
 from app.nlp.profiles import PolicyIdentity, TaskName
 
 MAX_PREVIEW_SOURCES = 4096
@@ -100,6 +102,25 @@ class PreviewEvidence(Contract):
         return self
 
 
+def _evidence_support(evidence_rows, *, require_span):
+    messages, conversations, senders, complete, partial, occurrences = set(), set(), set(), set(), set(), set()
+    for evidence in evidence_rows:
+        span = evidence.reference.span
+        if (span is not None) != require_span:
+            raise ValueError("preview_evidence_span")
+        key = (evidence.ordinal, None if span is None else (span.start, span.end))
+        if key in occurrences:
+            raise ValueError("preview_evidence_duplicate")
+        occurrences.add(key)
+        messages.add(evidence.ordinal)
+        conversations.add(evidence.reference.conversation_ref)
+        senders.add(evidence.source.speaker_ref)
+        (complete if evidence.assessment == "complete" else partial).add(evidence.ordinal)
+    if complete & partial:
+        raise ValueError("preview_support_invalid")
+    return len(messages), len(conversations), len(senders), len(occurrences), len(complete), len(partial)
+
+
 class PreviewSummary(Contract):
     kind: Literal["topic_category", "mention_category"]
     label: PreviewLabel
@@ -121,23 +142,41 @@ class PreviewSummary(Contract):
     def support(self):
         if self.label.task_contract != self.task + ".v1":
             raise ValueError("preview_summary_task")
-        messages, conversations, complete, partial, occurrences = set(), set(), set(), set(), set()
-        for evidence in self.evidence:
-            span = evidence.reference.span
-            if (span is None) != (self.kind == "topic_category"):
-                raise ValueError("preview_evidence_span")
-            key = (evidence.ordinal, None if span is None else (span.start, span.end))
-            if key in occurrences:
-                raise ValueError("preview_evidence_duplicate")
-            occurrences.add(key)
-            messages.add(evidence.ordinal)
-            conversations.add(evidence.reference.conversation_ref)
-            (complete if evidence.assessment == "complete" else partial).add(evidence.ordinal)
-        if complete & partial or (
-                self.supporting_messages, self.supporting_conversations, self.occurrences,
+        messages, conversations, _, occurrences, complete, partial = _evidence_support(
+            self.evidence, require_span=self.kind == "mention_category")
+        if (self.supporting_messages, self.supporting_conversations, self.occurrences,
                 self.complete_supporting_messages, self.partial_supporting_messages) != (
-                    len(messages), len(conversations), len(occurrences), len(complete), len(partial)):
+                    messages, conversations, occurrences, complete, partial):
             raise ValueError("preview_support_invalid")
+        return self
+
+
+class RecurringMentionSummary(Contract):
+    kind: Literal['recurring_mention'] = 'recurring_mention'
+    literal_key: Annotated[str, Field(min_length=1, max_length=256)]
+    supporting_senders: Annotated[int, Field(ge=2, le=100)]
+    supporting_messages: Count
+    occurrences: Count
+    complete_supporting_messages: Count
+    partial_supporting_messages: Count
+    ranking_scope: Literal['frozen_scope', 'assessed_portion']
+    additional_phrases: Count | None
+    evidence: Annotated[tuple[PreviewEvidence, ...], Field(min_length=2, max_length=MAX_PREVIEW_CANDIDATES)]
+
+    @property
+    def task(self):
+        return 'concept_mentions'
+
+    @model_validator(mode='after')
+    def support(self):
+        self.literal_key.encode('utf-8', errors='strict')
+        if self.literal_key != normalize_literal_key(self.literal_key):
+            raise ValueError('preview_literal_invalid')
+        messages, _, senders, occurrences, complete, partial = _evidence_support(self.evidence, require_span=True)
+        if (self.supporting_messages, self.supporting_senders, self.occurrences,
+                self.complete_supporting_messages, self.partial_supporting_messages) != (
+                    messages, senders, occurrences, complete, partial):
+            raise ValueError('preview_support_invalid')
         return self
 
 
@@ -150,17 +189,18 @@ class PreviewIdentity(UUIDRecord):
     selection_policy: PolicyIdentity
 
 
-class PreviewContribution(PreviewIdentity):
-    schema_version: Literal["text-analysis-preview.v1"] = "text-analysis-preview.v1"
+class _PreviewResult(PreviewIdentity):
+    task_order: ClassVar[tuple[str, ...]] = TASKS
+    kind_order: ClassVar[tuple[str, ...]] = KINDS
+    schema_version: str
     source_count: Annotated[int, Field(ge=0, le=MAX_PREVIEW_SOURCES)]
     examination: Annotated[tuple[PreviewExamination, ...], Field(max_length=2 * MAX_PREVIEW_SOURCES)]
     tasks: Annotated[tuple[PreviewTaskCoverage, ...], Field(min_length=1, max_length=2)]
-    summaries: Annotated[tuple[PreviewSummary, ...], Field(min_length=1, max_length=2)]
 
     @model_validator(mode="after")
     def completeness(self):
         tasks = [entry.task for entry in self.tasks]
-        if tasks != [task for task in TASKS if task in tasks]:
+        if tasks != [task for task in self.task_order if task in tasks]:
             raise ValueError("preview_task_set")
         coordinates = [(entry.ordinal, entry.task) for entry in self.examination]
         if coordinates != [(ordinal, task) for ordinal in range(self.source_count) for task in tasks]:
@@ -172,7 +212,7 @@ class PreviewContribution(PreviewIdentity):
                     ("assessed", "partial", "uncertain", "unsupported", "failed", "unprocessed")):
                 raise ValueError("preview_coverage_invalid")
         kinds = [summary.kind for summary in self.summaries]
-        if kinds != [kind for kind in KINDS if kind in kinds]:
+        if kinds != [kind for kind in self.kind_order if kind in kinds]:
             raise ValueError("preview_summary_set")
         exams = {(entry.ordinal, entry.task): entry for entry in self.examination}
         for summary in self.summaries:
@@ -180,11 +220,14 @@ class PreviewContribution(PreviewIdentity):
             if coverage is None or summary.ranking_scope != (
                     "frozen_scope" if coverage.resolved else "assessed_portion"):
                 raise ValueError("preview_ranking_scope")
-            if (summary.additional_categories is not None) != coverage.resolved:
-                raise ValueError("preview_additional_categories")
-            share = summary.complete_supporting_messages / coverage.assessed if coverage.assessed else None
-            if summary.share_of_complete_messages != share:
-                raise ValueError("preview_denominator")
+            if isinstance(summary, PreviewSummary):
+                if (summary.additional_categories is not None) != coverage.resolved:
+                    raise ValueError("preview_additional_categories")
+                share = summary.complete_supporting_messages / coverage.assessed if coverage.assessed else None
+                if summary.share_of_complete_messages != share:
+                    raise ValueError("preview_denominator")
+            elif (summary.additional_phrases is not None) != coverage.resolved:
+                raise ValueError("preview_additional_phrases")
             for evidence in summary.evidence:
                 exam = exams.get((evidence.ordinal, summary.task))
                 expected = "complete" if exam is not None and exam.assessment == "assessed" else "partial"
@@ -195,6 +238,29 @@ class PreviewContribution(PreviewIdentity):
                         interval.start <= span.start < span.end <= interval.end for interval in exam.coverage.examined):
                     raise ValueError("preview_evidence_coverage")
         return self
+
+
+class PreviewContribution(_PreviewResult):
+    schema_version: Literal["text-analysis-preview.v1"] = "text-analysis-preview.v1"
+    summaries: Annotated[tuple[PreviewSummary, ...], Field(min_length=1, max_length=2)]
+
+
+class RecurringMentionPreview(_PreviewResult):
+    task_order = ('concept_mentions',)
+    kind_order = ('recurring_mention',)
+    schema_version: Literal['text-analysis-preview.v2'] = 'text-analysis-preview.v2'
+    source_count: Annotated[int, Field(ge=2, le=100)]
+    summaries: tuple[RecurringMentionSummary]
+
+    @model_validator(mode='after')
+    def mention_policy(self):
+        if self.selection_policy != RECURRENCE_SELECTION_POLICY:
+            raise ValueError('preview_selection_mismatch')
+        return self
+
+
+ShownPreview = Annotated[PreviewContribution | RecurringMentionPreview, Field(discriminator='schema_version')]
+SHOWN_PREVIEW_ADAPTER = TypeAdapter(ShownPreview)
 
 
 class NoPreviewOutput(PreviewIdentity):

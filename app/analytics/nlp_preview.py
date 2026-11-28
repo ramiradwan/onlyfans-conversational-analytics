@@ -11,18 +11,14 @@ from app.analytics.opaque_refs import account_ref, conversation_ref, participant
 from app.analytics.query_contracts import SourceSpan
 from app.models.knowledge_contributions import JobSpec, SourceMemberSpec, inventory_digest, record_digest
 from app.models.text_analysis_preview import (
-    KINDS, TASKS, MAX_PREVIEW_BYTES, MAX_PREVIEW_CANDIDATES, MAX_PREVIEW_SOURCES,
+    KINDS, TASKS, MAX_PREVIEW_BYTES, MAX_PREVIEW_CANDIDATES, MAX_PREVIEW_SOURCES, SHOWN_PREVIEW_ADAPTER,
     NoPreviewOutput, PreviewContribution, PreviewEvidence, PreviewExamination,
-    PreviewLabel, PreviewSummary, PreviewTaskCoverage,
+    PreviewLabel, PreviewSummary, PreviewTaskCoverage, RecurringMentionPreview, RecurringMentionSummary, ShownPreview,
 )
 from app.nlp.contracts import SourceBinding
-from app.nlp.profiles import AnalysisProfile, SubsetAnalysisProfile, PolicyIdentity, canonical_bytes, read_profile
-
-
-SELECTION_POLICY = PolicyIdentity(policy_id="text-analysis-preview-selection.v1", revision="1",
-    sha256=hashlib.sha256(b"text-analysis-preview-selection.v1\0category-summary;conversations-desc;"
-        b"messages-desc;mention-occurrences-desc;category-id-asc;complete-observed-evidence;"
-        b"resolved-complete-additional-categories;shown-only").hexdigest())
+from app.nlp.normalization import normalize_literal_key
+from app.nlp.preview_parameters import RECURRENCE_SELECTION_POLICY, RECURRENCE_SOURCE_DIGEST, SELECTION_POLICY
+from app.nlp.profiles import AnalysisProfile, SubsetAnalysisProfile, canonical_bytes, read_profile
 
 
 class PreviewError(ValueError):
@@ -49,6 +45,9 @@ def _context(spec, profile, sources):
           and len({member.source.source_ref for member in sources}) == len(sources)
           and inventory_digest(sources) == spec.input.inventory_sha256, "preview_inventory_mismatch")
     _need(spec.algorithm_profile_sha256 == profile.identity_digest(), "preview_profile_mismatch")
+    if spec.policy_identity_sha256 == RECURRENCE_SOURCE_DIGEST:
+        _need(len(sources) <= 100 and [b.task for b in profile.bindings] == ['concept_mentions'],
+              'preview_recurring_scope')
     _need(all(member.source.account_scope == account_ref(spec.creator_account_id) for member in sources),
           "preview_account_mismatch")
     return spec, profile, sources
@@ -63,7 +62,8 @@ def _profile(profile):
 def _identity(spec, profile):
     return dict(job_id=spec.job_id, contribution_id=spec.contribution_id, spec_sha256=record_digest(spec),
         input_inventory_sha256=spec.input.inventory_sha256, profile_sha256=profile.identity_digest(),
-        selection_policy=SELECTION_POLICY)
+        selection_policy=RECURRENCE_SELECTION_POLICY if spec.policy_identity_sha256 == RECURRENCE_SOURCE_DIGEST
+        else SELECTION_POLICY)
 
 
 def _descriptors(profile):
@@ -122,43 +122,52 @@ def _unique(pairs):
     return result
 
 
-def encode_preview(output: PreviewContribution) -> bytes:
-    output = _typed(PreviewContribution, output)
+def _shown(output):
+    _need(type(output) in (PreviewContribution, RecurringMentionPreview), "preview_invalid_type")
+    return _typed(type(output), output)
+
+
+def encode_preview(output: ShownPreview) -> bytes:
+    output = _shown(output)
     frame = canonical_bytes(output)
     _need(len(frame) <= MAX_PREVIEW_BYTES, "preview_output_limit")
     return frame
 
 
-def decode_preview(frame: bytes) -> PreviewContribution:
+def decode_preview(frame: bytes) -> ShownPreview:
     _need(type(frame) is bytes and 0 < len(frame) <= MAX_PREVIEW_BYTES, "preview_output_limit")
     try:
         json.loads(frame, object_pairs_hook=_unique,
                    parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
-        output = PreviewContribution.model_validate_json(frame)
+        output = SHOWN_PREVIEW_ADAPTER.validate_json(frame)
         _need(canonical_bytes(output) == frame, "preview_noncanonical")
         return output
     except (ValueError, RecursionError, OverflowError):
         raise PreviewError("preview_invalid_output") from None
 
 
-def validate_preview_output(spec, profile, sources, frame: bytes) -> PreviewContribution:
+def validate_preview_output(spec, profile, sources, frame: bytes) -> ShownPreview:
     """Validate output against stored intent; performs no live source lookup."""
     spec, profile, sources = _context(spec, profile, sources)
     output = decode_preview(frame)
     _need(all(getattr(output, key) == value for key, value in _identity(spec, profile).items())
           and output.source_count == len(sources), "preview_intent_mismatch")
     descriptors = _descriptors(profile)
-    _need([entry.task for entry in output.tasks] == [task for task in TASKS if task in descriptors],
+    recurring = isinstance(output, RecurringMentionPreview)
+    _need(recurring == (spec.policy_identity_sha256 == RECURRENCE_SOURCE_DIGEST), 'preview_selection_mismatch')
+    tasks = ('concept_mentions',) if recurring else TASKS
+    _need([entry.task for entry in output.tasks] == [task for task in tasks if task in descriptors],
           "preview_task_set")
     for summary in output.summaries:
-        descriptor = descriptors.get(summary.task)
-        label = summary.label
-        _need(descriptor is not None and label.category_id in descriptor.enabled_ids
-              and label.taxonomy == descriptor.taxonomy and label.presentation == profile.presentation
-              and label.task_contract == descriptor.task_contract
-              and label.label_identity_sha256 == _label_digest(_label_body(label)), "preview_labels_invalid")
-        if summary.additional_categories is not None:
-            _need(summary.additional_categories < len(descriptor.enabled_ids), "preview_additional_categories")
+        if isinstance(summary, PreviewSummary):
+            descriptor = descriptors.get(summary.task)
+            label = summary.label
+            _need(descriptor is not None and label.category_id in descriptor.enabled_ids
+                  and label.taxonomy == descriptor.taxonomy and label.presentation == profile.presentation
+                  and label.task_contract == descriptor.task_contract
+                  and label.label_identity_sha256 == _label_digest(_label_body(label)), "preview_labels_invalid")
+            if summary.additional_categories is not None:
+                _need(summary.additional_categories < len(descriptor.enabled_ids), "preview_additional_categories")
         _need(list(summary.evidence) == sorted(summary.evidence, key=_evidence_key), "preview_evidence_order")
         for evidence in summary.evidence:
             _need(evidence.ordinal < len(sources), "preview_evidence_source")
@@ -189,14 +198,16 @@ def _source(member, source):
     return source
 
 
-def validate_preview_source(output: PreviewContribution, profile, member: SourceMemberSpec,
+def validate_preview_source(output: ShownPreview, profile, member: SourceMemberSpec,
                             source: EvidenceMessage) -> None:
     """Check one actual guarded source without retaining its body or rerunning NLP."""
-    output = _typed(PreviewContribution, output)
+    output = _shown(output)
     profile = _profile(profile)
     _need(output.profile_sha256 == profile.identity_digest() and member.ordinal < output.source_count,
           "preview_source_mismatch")
     source = _source(member, source)
+    if isinstance(output, RecurringMentionPreview):
+        _need(source.direction == 'inbound', 'preview_evidence_sender')
     expected = source.reference().model_copy(update={"source_revision": member.source_revision})
     for exam in output.examination:
         if exam.ordinal == member.ordinal and exam.coverage is not None:
@@ -209,6 +220,9 @@ def validate_preview_source(output: PreviewContribution, profile, member: Source
             reference = expected.model_copy(update={"span": span})
             _need(evidence.source == member.source and evidence.reference == reference
                   and (span is None or span.end <= len(source.text)), "preview_evidence_source")
+            if isinstance(summary, RecurringMentionSummary):
+                _need(normalize_literal_key(source.text[span.start:span.end]) == summary.literal_key,
+                      'preview_literal_mismatch')
 
 
 def validate_preview_no_output(spec, profile, sources, outcome: NoPreviewOutput) -> NoPreviewOutput:
@@ -225,8 +239,10 @@ class PreviewAccumulator:
     def __init__(self, spec, profile, sources, *, labels=None):
         self.spec, self.profile, self.sources = _context(spec, profile, sources)
         self._descriptors = _descriptors(self.profile)
+        self._recurring = self.spec.policy_identity_sha256 == RECURRENCE_SOURCE_DIGEST
         self._tasks = tuple(task for task in TASKS if task in self._descriptors)
-        self._labels = _labels(self.profile, labels)
+        self._labels = {} if self._recurring else _labels(self.profile, labels)
+        self._unrepresentable = False
         self._exams = {}
         self._candidates = {}
         self._seen = set()
@@ -264,6 +280,8 @@ class PreviewAccumulator:
     def add(self, ordinal, source: EvidenceMessage, frame: bytes):
         member = self._member(ordinal)
         source = _source(member, source)
+        if self._recurring:
+            _need(source.direction == 'inbound', 'preview_evidence_sender')
         record = validate_source_bound_record(self.profile, source, frame)
         _need(record.source == member.source, "preview_source_mismatch")
         for stored in record.tasks:
@@ -271,6 +289,7 @@ class PreviewAccumulator:
             assessment = "assessed" if payload.outcome.startswith("assessed_") else payload.outcome
             self._examine(PreviewExamination(ordinal=ordinal, task=payload.task, assessment=assessment,
                                             reason=payload.reason, coverage=payload.coverage))
+            seen_spans = set()
             for finding in payload.findings:
                 self._candidate_count += 1
                 if self._candidate_count > MAX_PREVIEW_CANDIDATES:
@@ -279,6 +298,15 @@ class PreviewAccumulator:
                 category = finding.topic_id if payload.task == "message_topics" else finding.concept_id
                 span = None if payload.task == "message_topics" else SourceSpan(
                     start=finding.span.start, end=finding.span.end)
+                if self._recurring:
+                    coordinates = span.start, span.end
+                    if coordinates in seen_spans:
+                        continue
+                    seen_spans.add(coordinates)
+                    category = normalize_literal_key(source.text[span.start:span.end])
+                    if not 1 <= len(category) <= 256:
+                        self._unrepresentable = True
+                        continue
                 reference = source.reference(span).model_copy(update={"source_revision": member.source_revision})
                 evidence = PreviewEvidence(ordinal=ordinal, source=member.source, reference=reference,
                     assessment="complete" if assessment == "assessed" else "partial")
@@ -293,7 +321,25 @@ class PreviewAccumulator:
         self._candidates.clear()
         self._exams.clear()
 
-    def finish(self) -> PreviewContribution | NoPreviewOutput:
+    def _recurring_winner(self, candidates, coverage):
+        ranked = []
+        for phrase, evidence in candidates:
+            senders = {entry.source.speaker_ref for entry in evidence}
+            if len(senders) >= 2:
+                messages = {entry.ordinal for entry in evidence}
+                ranked.append((len(senders), len(messages), phrase, evidence))
+        if not ranked:
+            return None
+        sender_count, message_count, phrase, evidence = min(ranked, key=lambda row: (-row[0], -row[1], row[2]))
+        complete = {entry.ordinal for entry in evidence if entry.assessment == 'complete'}
+        return RecurringMentionSummary(literal_key=phrase, supporting_senders=sender_count,
+            supporting_messages=message_count, occurrences=len(evidence), complete_supporting_messages=len(complete),
+            partial_supporting_messages=message_count - len(complete),
+            ranking_scope='frozen_scope' if coverage.resolved else 'assessed_portion',
+            additional_phrases=len(ranked) - 1 if coverage.resolved else None,
+            evidence=tuple(sorted(evidence, key=_evidence_key)))
+
+    def finish(self) -> ShownPreview | NoPreviewOutput:
         _need(not self._finished, "preview_accumulator_closed")
         if self._overflow:
             self._finished = True
@@ -301,6 +347,8 @@ class PreviewAccumulator:
         _need(len(self._seen) == len(self.sources), "preview_members_missing")
         self._finished = True
         try:
+            if self._unrepresentable:
+                return NoPreviewOutput(**_identity(self.spec, self.profile), disposition="incomplete")
             tasks = []
             for task in self._tasks:
                 counts = Counter(entry.assessment for entry in self._exams.values() if entry.task == task)
@@ -312,6 +360,11 @@ class PreviewAccumulator:
                 candidates = [(category, evidence) for (task, category), evidence in self._candidates.items()
                               if task == coverage.task]
                 if not candidates:
+                    continue
+                if self._recurring:
+                    summary = self._recurring_winner(candidates, coverage)
+                    if summary is not None:
+                        summaries.append(summary)
                     continue
                 def rank(candidate):
                     category, evidence = candidate
@@ -332,7 +385,8 @@ class PreviewAccumulator:
             if not summaries:
                 return NoPreviewOutput(**_identity(self.spec, self.profile),
                     disposition="empty" if all(t.resolved for t in tasks) else "incomplete")
-            output = PreviewContribution(**_identity(self.spec, self.profile), source_count=len(self.sources),
+            result_type = RecurringMentionPreview if self._recurring else PreviewContribution
+            output = result_type(**_identity(self.spec, self.profile), source_count=len(self.sources),
                 examination=tuple(self._exams[(ordinal, task)] for ordinal in range(len(self.sources)) for task in self._tasks),
                 tasks=tuple(tasks), summaries=tuple(summaries))
             try:

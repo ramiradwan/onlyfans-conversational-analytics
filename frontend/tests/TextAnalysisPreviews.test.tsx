@@ -9,6 +9,7 @@ import outcomeExample from '../../shared/nlp/application/v1/fixtures/preview-out
 import prepareIntentExample from '../../shared/nlp/application/v1/fixtures/client-prepare-intent.json';
 import savedExample from '../../shared/nlp/application/v1/fixtures/preview-saved.json';
 import partialExample from '../../shared/nlp/application/v1/fixtures/preview-saved-partial.json';
+import recurringExample from '../../shared/nlp/application/v1/fixtures/preview-saved-recurring.json';
 import {
   clientIntent, parseSavedPreview, textAnalysisDigest, verifyPreviewOutcome,
   type ClientIntent, type ClientIntentRecord, type PreviewOutcome,
@@ -90,8 +91,8 @@ function fixture(partial = false, engineApi?: EngineAcquisitionApi) {
     command: vi.fn<NlpDependenciesApi['command']>(), observe: vi.fn<NlpDependenciesApi['observe']>() } satisfies NlpDependenciesApi;
   const transport = createBridgeTransportStore(); connect(transport);
   const client = createTextAnalysisClient(api);
-  const view = (account = ACCOUNT) => <ThemeProvider theme={theme}><TextAnalysisPreviews creatorAccountId={account}
-    transport={transport} client={client} dependenciesApi={dependencies} engineApi={engineApi} /></ThemeProvider>;
+  const view = (account = ACCOUNT, pilot: { recurringProfile?: string; canPrepare?: boolean } = {}) => <ThemeProvider theme={theme}><TextAnalysisPreviews creatorAccountId={account}
+    transport={transport} client={client} dependenciesApi={dependencies} engineApi={engineApi} {...pilot} /></ThemeProvider>;
   return { api, dependencies, transport, view, journal, setOutcome: (value: PreviewOutcome | null) => { original = value; } };
 }
 async function selectProfile() {
@@ -286,6 +287,49 @@ describe('Text analysis preview controls', () => {
     expect(x.api.evidence.mock.calls[1][0]).toBe(savedExample.output.contribution_id);
     expect(x.api.evidence.mock.calls[1][1].span).toEqual({ start: 7, end: 11 });
     expect(x.api.evidence.mock.calls[0][1].message_ref).toBe(x.api.evidence.mock.calls[1][1].message_ref);
+  });
+
+  it('opens the shared recurring preview and precisely highlights its sources without execution or an available permit', async () => {
+    const x = fixture();
+    x.api.saved.mockImplementation(async (id) => parseSavedPreview(recurringExample, id));
+    render(x.view(ACCOUNT, { recurringProfile: recurringExample.disclosure.profile_sha256, canPrepare: false }));
+    const result = within(await openSaved());
+    const summary = within(result.getByRole('region', { name: 'Recurring mention preview' }));
+    expect(summary.getByRole('heading', { name: 'echo' })).toBeTruthy();
+    expect(summary.getByText('2 senders · 2 messages')).toBeTruthy();
+    expect(summary.queryByText(/more recurring/)).toBeNull();
+    expect(summary.getAllByRole('button', { name: /Open quote/ })).toHaveLength(4);
+    expect((screen.getByRole('button', { name: 'Review preview sample' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('combobox', { name: 'Approved preview profile' })).toBeNull();
+    fireEvent.click(summary.getByRole('button', { name: /^Open quote 2/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Finding source' });
+    await waitFor(() => expect(dialog.querySelector('mark')?.previousSibling?.textContent).toBe('😀 echo '));
+    expect(x.api.evidence.mock.calls[0][1]).toEqual(recurringExample.output.summaries[0].evidence[1].reference);
+    expect(x.api.prepare).not.toHaveBeenCalled(); expect(x.api.confirm).not.toHaveBeenCalled();
+    expect(x.dependencies.command).not.toHaveBeenCalled();
+  });
+
+  it('prepares only the admitted mention model and discloses its frozen inbound scope before a separate confirmation', async () => {
+    const x = fixture(), chosen = recurringExample.disclosure.profile_sha256;
+    const current = await x.dependencies.get();
+    x.dependencies.get.mockResolvedValue({ ...current, profiles: [
+      { ...current.profiles[0], profile_sha256: 'f'.repeat(64) },
+      { ...current.profiles[0], profile_sha256: chosen, tasks: ['concept_mentions'] },
+    ] });
+    x.api.prepare.mockImplementation(async (request) => {
+      const { scope, disclosure } = recurringExample;
+      return verifyPreviewOutcome({ ...outcomeExample, request, scope, disclosure, confirmation: {
+        ...outcomeExample.confirmation, input_inventory_sha256: scope.inventory_sha256, scope_sha256: await textAnalysisDigest(scope),
+        preview_selection_policy: disclosure.selection_policy,
+      } }, KEY, request);
+    });
+    render(x.view(ACCOUNT, { recurringProfile: chosen, canPrepare: true }));
+    const button = screen.getByRole('button', { name: 'Review preview sample' }) as HTMLButtonElement;
+    await waitFor(() => expect(button.disabled).toBe(false)); fireEvent.click(button);
+    await screen.findByText('This preview covers 2 received messages. It can examine up to 100.');
+    expect(x.api.prepare.mock.calls[0][0]).toEqual({ external_key: KEY, schema_version: 'text-analysis-preview-prepare.v2', expected_profile_sha256: chosen });
+    expect(x.api.confirm).not.toHaveBeenCalled();
+    expect(x.journal.has('preview_prepare:' + KEY)).toBe(true);
   });
 
   it.each(['account', 'same_account_session', 'role'] as const)('clears saved output and evidence when %s changes', async (change) => {

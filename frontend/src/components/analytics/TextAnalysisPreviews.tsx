@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 
 import { MentionEvidenceDialog } from './MentionEvidenceDialog';
-import type { PreviewSummary, SavedPreview } from '../../analytics/textAnalysisContract';
+import type { PreviewSummary, RecurringPreviewSummary, SavedPreview } from '../../analytics/textAnalysisContract';
 import { previewEngineAcquisitionApi, type EngineAcquisitionApi } from '../../api/engineAcquisition';
 import { nlpDependenciesApi, type NlpDependencyProfile } from '../../services/nlpDependenciesApi';
 import { textAnalysisScopeKey, textAnalysisScopeReady } from '../../store/textAnalysisExecutionStore';
@@ -17,7 +17,9 @@ import { Panel, SectionHeader } from '../ui';
 const number = new Intl.NumberFormat();
 const taskLabel = (task: string) => task === 'message_topics' ? 'Topics' : 'Exact mentions';
 const date = (value: string) => new Date(value).toLocaleString();
-type PreviewProps = TextAnalysisControlProps & { engineApi?: EngineAcquisitionApi };
+type PreviewProps = TextAnalysisControlProps & {
+  engineApi?: EngineAcquisitionApi; recurringProfile?: string; canPrepare?: boolean; onPreviewShown?: () => void;
+};
 function Scope({ scope, disclosure }: Pick<SavedPreview, 'scope' | 'disclosure'>) {
   return <Stack
     spacing={0.5}
@@ -30,10 +32,33 @@ function Scope({ scope, disclosure }: Pick<SavedPreview, 'scope' | 'disclosure'>
       p: 2,
     }}
   >
-    <Typography variant="body2">Frozen sample: {scope.source_count} messages, up to {scope.message_cap}, received and sent.</Typography>
+    {scope.directions === 'inbound'
+      ? <Typography variant="body2">This preview covers {number.format(scope.source_count)} received messages. It can examine up to {scope.message_cap}.</Typography>
+      : <Typography variant="body2">Frozen sample: {scope.source_count} messages, up to {scope.message_cap}, received and sent.</Typography>}
     <Typography variant="body2" sx={{ color: 'text.secondary' }}>Retention window: after {date(scope.lower_exclusive)} through {date(scope.cutoff)}. The latest eligible messages were selected at this cutoff.</Typography>
     <Typography variant="body2" sx={{ color: 'text.secondary' }}>Selected message dates: {scope.earliest === null ? 'No eligible messages' : `${date(scope.earliest)} – ${date(scope.latest!)}`}.</Typography>
     <Typography variant="caption" sx={{ color: 'text.secondary' }}>Supported language: {disclosure.languages.map((language) => language === 'en' ? 'English' : language).join(', ')}. Tasks: {disclosure.tasks.map((task) => taskLabel(task.task)).join(', ')}.</Typography>
+  </Stack>;
+}
+function RecurringSummary({ item, offset, onPage, onSource }: { item: RecurringPreviewSummary; offset: number; onPage: (offset: number) => void;
+  onSource: (reference: RecurringPreviewSummary['evidence'][number]['reference']) => void }) {
+  const end = Math.min(item.evidence.length, offset + 50);
+  return <Stack component="section" spacing={1} aria-label="Recurring mention preview">
+    <Typography component="h3" variant="h6" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{item.literal_key}</Typography>
+    <Typography>{number.format(item.supporting_senders)} senders · {number.format(item.supporting_messages)} messages</Typography>
+    {item.ranking_scope === 'assessed_portion' && <Typography variant="body2">Some messages could only be partly assessed. The counts cover the evidence found.</Typography>}
+    {item.additional_phrases !== null && item.additional_phrases > 0 &&
+      <Typography variant="body2">+{number.format(item.additional_phrases)} more recurring {item.additional_phrases === 1 ? 'phrase' : 'phrases'} in this sample.</Typography>}
+    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+      {item.evidence.slice(offset, end).map((entry, index) => <Button key={`${entry.ordinal}:${entry.reference.span?.start}:${entry.reference.span?.end}`}
+        size="small" variant="outlined" onClick={() => onSource(entry.reference)}>
+        Open quote {offset + index + 1} · {date(entry.reference.sent_at)}
+      </Button>)}
+    </Stack>
+    {item.evidence.length > 50 && <Stack direction="row" spacing={1}>
+      <Button size="small" disabled={offset === 0} onClick={() => onPage(Math.max(0, offset - 50))}>Previous quotes</Button>
+      <Button size="small" disabled={end === item.evidence.length} onClick={() => onPage(end)}>Next quotes</Button>
+    </Stack>}
   </Stack>;
 }
 function Summary({ item, offset, onPage, onSource }: { item: PreviewSummary; offset: number; onPage: (offset: number) => void;
@@ -76,7 +101,7 @@ export function TextAnalysisPreviews(props: PreviewProps) {
   return <PreviewSession key={textAnalysisScopeKey(context, role, props.creatorAccountId)} {...props} transport={transport} />;
 }
 function PreviewSession({ creatorAccountId, client, dependenciesApi = nlpDependenciesApi, transport = bridgeTransportStore,
-  engineApi = previewEngineAcquisitionApi }: PreviewProps) {
+  engineApi = previewEngineAcquisitionApi, recurringProfile, canPrepare = true, modelPrepared, onPreviewShown }: PreviewProps) {
   const store = useMemo(() => createTextAnalysisPreviewStore(client), [client]); const state = useStore(store);
   const [profiles, setProfiles] = useState<NlpDependencyProfile[]>([]), [selected, setSelected] = useState('');
   const [offsets, setOffsets] = useState<Record<string, number>>({});
@@ -92,21 +117,25 @@ function PreviewSession({ creatorAccountId, client, dependenciesApi = nlpDepende
     if (active()) void dependenciesApi.get(controller.signal).then((value) => { if (active()) setProfiles(value.configured ? value.profiles.filter(approvedTextAnalysisProfile) : []); })
       .catch(() => { if (active()) setProfiles([]); });
     return () => controller.abort();
-  }, [creatorAccountId, dependenciesApi, transport]);
+  }, [creatorAccountId, dependenciesApi, transport, modelPrepared]);
   useEffect(() => { setOffsets({}); }, [state.saved?.output.contribution_id]);
-  const profile = profiles.find((entry) => entry.profile_sha256 === selected);
+  const profile = profiles.find((entry) => entry.profile_sha256 === (recurringProfile ?? selected)
+    && (!recurringProfile || (entry.tasks?.length === 1 && entry.tasks[0] === 'concept_mentions')));
   const unresolved = state.observations.some((item) => item.state !== 'resolved');
   const outcome = state.outcome;
+  const shown = state.saved?.schema_version === 'text-analysis-preview-saved.v2' && outcome?.receipt.state === 'committed'
+    && outcome.receipt.contribution_id === state.saved.output.contribution_id ? state.saved.output.contribution_id : null;
+  useEffect(() => { if (shown) onPreviewShown?.(); }, [shown, onPreviewShown]);
   const inProgress = outcome && ['prepared', 'pending', 'running'].includes(outcome.receipt.state)
     || state.observations.some((item) => item.state === 'resolved' && item.intent.kind !== 'enrollment_command'
       && 'receipt' in item.result && ['prepared', 'pending', 'running'].includes(item.result.receipt.state));
   const engineAccount = textAnalysisScopeReady(transport.getState(), useUserStore.getState().role, creatorAccountId) ? creatorAccountId : null;
   return <Stack spacing={2}>
-    <EngineDependencyControls account={engineAccount} api={engineApi} selection="preview" />
+    <EngineDependencyControls account={engineAccount} api={engineApi} selection={recurringProfile ? engineApi.selection : 'preview'} />
     <Panel component="section" aria-label="Text analysis previews">
       <SectionHeader
-        title="Text analysis previews"
-        summary="Review a frozen message sample before confirming one preview. Saved preview reads do not run analysis or acquire files."
+        title={recurringProfile ? 'Preview recurring mentions' : 'Text analysis previews'}
+        summary={recurringProfile ? 'See one exact phrase used by at least two senders. Review the message sample before starting.' : 'Review a frozen message sample before confirming one preview. Saved preview reads do not run analysis or acquire files.'}
       />
       <Stack spacing={1.75} data-journey-state="textanalysis.preview_controls">
         <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
@@ -117,12 +146,14 @@ function PreviewSession({ creatorAccountId, client, dependenciesApi = nlpDepende
         {state.recoveryOverflow && <Alert severity="warning">Retained request recovery reached its limit. New previews are unavailable.</Alert>}
         {state.recoveryConflict && <Alert severity="warning">The original request meaning could not be verified. New previews are unavailable.</Alert>}
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ alignItems: { sm: 'center' }, flexWrap: 'wrap' }} useFlexGap>
-          <TextField select size="small" label="Approved preview profile" value={selected} onChange={(event) => setSelected(event.target.value)} sx={{ minWidth: 260, maxWidth: 360 }}>
+          {!recurringProfile && <TextField select size="small" label="Approved preview profile" value={selected} onChange={(event) => setSelected(event.target.value)} sx={{ minWidth: 260, maxWidth: 360 }}>
             <MenuItem value="">Choose a profile</MenuItem>
             {profiles.map((entry) => <MenuItem key={entry.profile_sha256} value={entry.profile_sha256}>{entry.profile_id} · {entry.revision}</MenuItem>)}
-          </TextField>
-          <Button size="small" variant="outlined" disabled={state.busy || unresolved || Boolean(state.message) || Boolean(inProgress) || state.nextIntent !== null || state.recoveryOverflow || state.recoveryConflict || !profile?.installed || !profile.prepared}
-            onClick={() => { if (profile) void store.actions.prepare(profile.profile_sha256); }}>Prepare preview scope</Button>
+          </TextField>}
+          <Button size="small" variant="outlined" disabled={!canPrepare || state.busy || unresolved || Boolean(state.message) || Boolean(inProgress) || state.nextIntent !== null || state.recoveryOverflow || state.recoveryConflict || !profile?.installed || !profile.prepared}
+            onClick={() => { if (profile) void store.actions.prepare(profile.profile_sha256, recurringProfile ? 'text-analysis-preview-prepare.v2' : 'text-analysis-preview-prepare.v1'); }}>
+            {recurringProfile ? 'Review preview sample' : 'Prepare preview scope'}
+          </Button>
         </Stack>
         {(!profile?.installed || !profile.prepared) && <Typography variant="caption" sx={{ color: 'text.secondary' }}>A prepared approved profile and compatible Engine are required for a new preview. File setup is separate; saved reads remain available.</Typography>}
         {outcome && <Stack spacing={1} aria-label="Original preview request" sx={{ bgcolor: 'surface.subtle', border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 2 }}>
@@ -167,12 +198,15 @@ function PreviewSession({ creatorAccountId, client, dependenciesApi = nlpDepende
             <Typography component="h3" variant="subtitle2">{taskLabel(task.task)} examination</Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>Eligible: {task.eligible} · Completely assessed: {task.assessed} · Partial: {task.partial} · Uncertain: {task.uncertain} · Unsupported: {task.unsupported} · Failed: {task.failed} · Unprocessed: {task.unprocessed}.</Typography>
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>Uncertain, unsupported and unprocessed messages do not establish absence.</Typography>
-            {!state.saved!.output.summaries.some((item) => item.label.task_contract === `${task.task}.v1`) && <Typography variant="body2" sx={{ color: 'text.secondary' }}>No showable category is retained for this task. Check its examination coverage.</Typography>}
+            {!state.saved!.output.summaries.some((item) => item.kind === 'recurring_mention' ? task.task === 'concept_mentions' : item.label.task_contract === `${task.task}.v1`) && <Typography variant="body2" sx={{ color: 'text.secondary' }}>No showable category is retained for this task. Check its examination coverage.</Typography>}
           </Stack>)}
-          {state.saved.output.summaries.map((item) => <Summary key={item.kind} item={item} offset={offsets[item.kind] ?? 0}
-            onPage={(offset) => { store.actions.closeSource(); setOffsets((value) => ({ ...value, [item.kind]: offset })); }}
-            onSource={(reference) => void store.actions.openSource(reference)} />)}
-          <Typography variant="caption" sx={{ color: 'text.secondary' }}>Topics and literal mentions do not establish requests, preferences, intent or performed acts.</Typography>
+          {state.saved.output.summaries.map((item) => {
+            const page = { offset: offsets[item.kind] ?? 0, onPage: (offset: number) => {
+              store.actions.closeSource(); setOffsets((value) => ({ ...value, [item.kind]: offset }));
+            }, onSource: (reference: PreviewSummary['evidence'][number]['reference']) => void store.actions.openSource(reference) };
+            return item.kind === 'recurring_mention' ? <RecurringSummary key={item.kind} item={item} {...page} /> : <Summary key={item.kind} item={item} {...page} />;
+          })}
+          {state.saved.schema_version === 'text-analysis-preview-saved.v1' && <Typography variant="caption" sx={{ color: 'text.secondary' }}>Topics and literal mentions do not establish requests, preferences, intent or performed acts.</Typography>}
         </Stack>}
       </Stack>
       <MentionEvidenceDialog state={state} actions={store.actions} />

@@ -48,6 +48,7 @@ SECURITY_TABLES = (
     'capability_license_references','capability_license_pending_deliveries',
     'capability_license_redemption_journal','capability_license_activation_deliveries',
     'text_analysis_authority_references','text_analysis_reissue_operations','text_analysis_native_acquisitions',
+    'text_analysis_deliveries','text_analysis_release_identities',
     'nlp_dependency_authority','signing_publication_authority',
     'desktop_authentication_commands','desktop_authentication_closures','desktop_browser_ceremonies',
     'desktop_browser_ceremony_replacements','desktop_browser_ceremony_successors',

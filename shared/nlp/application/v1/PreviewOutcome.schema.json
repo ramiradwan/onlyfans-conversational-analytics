@@ -168,8 +168,11 @@
       "additionalProperties": false,
       "properties": {
         "schema_version": {
-          "const": "text-analysis-preview-prepare.v1",
           "default": "text-analysis-preview-prepare.v1",
+          "enum": [
+            "text-analysis-preview-prepare.v1",
+            "text-analysis-preview-prepare.v2"
+          ],
           "title": "Schema Version",
           "type": "string"
         },
@@ -318,6 +321,84 @@
       "title": "PreviewScope",
       "type": "object"
     },
+    "RecurringMentionScope": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "text-analysis-preview-scope.v2",
+          "default": "text-analysis-preview-scope.v2",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "cutoff": {
+          "format": "date-time",
+          "title": "Cutoff",
+          "type": "string"
+        },
+        "lower_exclusive": {
+          "format": "date-time",
+          "title": "Lower Exclusive",
+          "type": "string"
+        },
+        "directions": {
+          "const": "inbound",
+          "default": "inbound",
+          "title": "Directions",
+          "type": "string"
+        },
+        "message_cap": {
+          "const": 100,
+          "default": 100,
+          "title": "Message Cap",
+          "type": "integer"
+        },
+        "source_count": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Source Count",
+          "type": "integer"
+        },
+        "earliest": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Earliest"
+        },
+        "latest": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Latest"
+        },
+        "inventory_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Inventory Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cutoff",
+        "lower_exclusive",
+        "source_count",
+        "earliest",
+        "latest",
+        "inventory_sha256"
+      ],
+      "title": "RecurringMentionScope",
+      "type": "object"
+    },
     "ScorePolicy": {
       "additionalProperties": false,
       "properties": {
@@ -427,12 +508,27 @@
     "scope": {
       "anyOf": [
         {
-          "$ref": "#/$defs/PreviewScope"
+          "discriminator": {
+            "mapping": {
+              "text-analysis-preview-scope.v1": "#/$defs/PreviewScope",
+              "text-analysis-preview-scope.v2": "#/$defs/RecurringMentionScope"
+            },
+            "propertyName": "schema_version"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/PreviewScope"
+            },
+            {
+              "$ref": "#/$defs/RecurringMentionScope"
+            }
+          ]
         },
         {
           "type": "null"
         }
-      ]
+      ],
+      "title": "Scope"
     },
     "confirmation": {
       "anyOf": [

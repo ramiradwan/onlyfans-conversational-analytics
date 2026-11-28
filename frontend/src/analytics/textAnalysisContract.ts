@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-import { navigationCanonicalJson } from './findingsContract';
+import { instantMicros, navigationCanonicalJson } from './findingsContract';
+import { literalKey } from './literalsContract';
 import { questionEvidence } from './questionContract';
 
 export const textAnalysisUuid = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
@@ -41,7 +42,7 @@ const enrollmentView = z.object({ current: currentEnrollment, profile: enrollmen
 export type EnrollmentView = z.infer<typeof enrollmentView>;
 export type EnrollmentCommandResult = z.infer<typeof commandResult>;
 
-export const previewPrepare = z.object({ schema_version: z.literal('text-analysis-preview-prepare.v1').default('text-analysis-preview-prepare.v1'),
+export const previewPrepare = z.object({ schema_version: z.enum(['text-analysis-preview-prepare.v1', 'text-analysis-preview-prepare.v2']).default('text-analysis-preview-prepare.v1'),
   external_key: textAnalysisUuid, expected_profile_sha256: digest }).strict();
 export type PreviewPrepareRequest = z.infer<typeof previewPrepare>;
 export const previewConfirmation = z.object({ schema_version: z.literal('text-analysis-confirmation.v1'), external_key: textAnalysisUuid,
@@ -49,13 +50,17 @@ export const previewConfirmation = z.object({ schema_version: z.literal('text-an
   parameter_sha256: digest, input_inventory_sha256: digest, reference_id: name, compact_jws_sha256: digest,
   preview_selection_policy: textAnalysisPolicy }).strict();
 export type PreviewConfirmation = z.infer<typeof previewConfirmation>;
-const previewScope = z.object({ schema_version: z.literal('text-analysis-preview-scope.v1'), cutoff: instant,
-  lower_exclusive: instant, directions: z.literal('both'), message_cap: z.literal(32), source_count: count.max(32),
-  earliest: instant.nullable(), latest: instant.nullable(), inventory_sha256: digest }).strict().refine((value) =>
-  Date.parse(value.cutoff) - Date.parse(value.lower_exclusive) === 90 * 86400_000
+const scopeFields = { cutoff: instant, lower_exclusive: instant,
+  earliest: instant.nullable(), latest: instant.nullable(), inventory_sha256: digest };
+const categoryScope = z.object({ ...scopeFields, schema_version: z.literal('text-analysis-preview-scope.v1'),
+  directions: z.literal('both'), message_cap: z.literal(32), source_count: count.max(32) }).strict();
+const mentionsScope = z.object({ ...scopeFields, schema_version: z.literal('text-analysis-preview-scope.v2'),
+  directions: z.literal('inbound'), message_cap: z.literal(100), source_count: count.max(100) }).strict();
+const previewScope = z.discriminatedUnion('schema_version', [categoryScope, mentionsScope]).refine((value) =>
+  instantMicros(value.cutoff) - instantMicros(value.lower_exclusive) === 90n * 86400_000_000n
   && (value.source_count === 0 ? value.earliest === null && value.latest === null
-    : value.earliest !== null && value.latest !== null && Date.parse(value.lower_exclusive) < Date.parse(value.earliest)
-      && Date.parse(value.earliest) <= Date.parse(value.latest) && Date.parse(value.latest) <= Date.parse(value.cutoff)));
+    : value.earliest !== null && value.latest !== null && instantMicros(value.lower_exclusive) < instantMicros(value.earliest)
+      && instantMicros(value.earliest) <= instantMicros(value.latest) && instantMicros(value.latest) <= instantMicros(value.cutoff)));
 const disclosureFields = { profile_sha256: digest, tasks: descriptors, languages, presentation: textAnalysisPolicy,
   selection_policy: textAnalysisPolicy, output_profile: z.literal('urn:bridge-clean:text-analysis-preview-output-policy:v1'), output_version: z.literal(1) };
 const previewDisclosure = z.object(disclosureFields).strict();
@@ -106,10 +111,23 @@ const contribution = z.object({ schema_version: z.literal('text-analysis-preview
   spec_sha256: digest, input_inventory_sha256: digest, profile_sha256: digest, selection_policy: textAnalysisPolicy,
   source_count: count.max(4096), examination: z.array(examination).max(8192), tasks: z.array(taskCoverage).min(1).max(2),
   summaries: z.array(summary).min(1).max(2) }).strict();
-const savedPreview = z.object({ schema_version: z.literal('text-analysis-preview-saved.v1'), scope: previewScope,
-  disclosure: savedDisclosure, output: contribution }).strict();
+const recurringSummary = z.object({
+  kind: z.literal('recurring_mention'),
+  literal_key: z.string().refine((value) => value.isWellFormed() && value.length > 0 && Array.from(value).length <= 256 && literalKey(value) === value),
+  supporting_senders: count.min(2).max(100), supporting_messages: count.min(2).max(100),
+  occurrences: count.min(2).max(65536), complete_supporting_messages: count.max(100), partial_supporting_messages: count.max(100),
+  ranking_scope: z.enum(['frozen_scope', 'assessed_portion']), additional_phrases: count.max(65536).nullable(),
+  evidence: z.array(evidence).min(2).max(65536),
+}).strict();
+const recurringOutput = contribution.extend({ schema_version: z.literal('text-analysis-preview.v2'), source_count: count.max(100),
+  examination: z.array(examination).max(100), tasks: z.tuple([taskCoverage]), summaries: z.tuple([recurringSummary]) });
+const savedPreview = z.discriminatedUnion('schema_version', [
+  z.object({ schema_version: z.literal('text-analysis-preview-saved.v1'), scope: previewScope, disclosure: savedDisclosure, output: contribution }).strict(),
+  z.object({ schema_version: z.literal('text-analysis-preview-saved.v2'), scope: previewScope, disclosure: savedDisclosure, output: recurringOutput }).strict(),
+]);
 export type SavedPreview = z.infer<typeof savedPreview>;
-export type PreviewSummary = SavedPreview['output']['summaries'][number];
+export type PreviewSummary = z.infer<typeof summary>;
+export type RecurringPreviewSummary = z.infer<typeof recurringSummary>;
 const savedPage = z.object({ items: z.array(z.object({ contribution_id: textAnalysisUuid }).strict()).max(64), next_after: textAnalysisUuid.nullable() }).strict();
 export type SavedPreviewPage = z.infer<typeof savedPage>;
 
@@ -160,7 +178,12 @@ export function parsePreviewOutcome(value: unknown, key: string, request?: Previ
   need(result.request.external_key === key && (!request || textAnalysisCanonicalJson(request) === textAnalysisCanonicalJson(result.request)));
   need(result.detailed_scope_available === (result.scope !== null && result.disclosure !== null));
   need(result.receipt.state !== 'result_deleted' || result.scope === null && result.disclosure === null && result.confirmation === null);
-  if (result.disclosure) need(result.disclosure.profile_sha256 === result.request.expected_profile_sha256);
+  if (result.disclosure) {
+    need(result.disclosure.profile_sha256 === result.request.expected_profile_sha256);
+    const recurring = result.request.schema_version === 'text-analysis-preview-prepare.v2';
+    need((result.scope?.schema_version === 'text-analysis-preview-scope.v2') === recurring);
+    need(matchesPreviewPolicy(result.disclosure, recurring));
+  }
   if (result.confirmation) {
     const item = result.confirmation;
     need(item.external_key === key && item.job_id === result.receipt.job_id && item.contribution_id === result.receipt.contribution_id
@@ -194,8 +217,16 @@ export function parseSavedPreviewPage(value: unknown, after?: string) {
   need(result.next_after === null || result.items.length > 0 && result.next_after === previous);
   return result;
 }
+function matchesPreviewPolicy(disclosure: z.infer<typeof savedDisclosure>, recurring: boolean) {
+  const policy = disclosure.selection_policy;
+  if (!recurring) return policy.policy_id !== 'text-analysis-recurring-mentions-preview-selection.v1';
+  return policy.policy_id === 'text-analysis-recurring-mentions-preview-selection.v1' && policy.revision === '1'
+    && disclosure.tasks.length === 1 && disclosure.tasks[0].task === 'concept_mentions';
+}
 export async function parseSavedPreview(value: unknown, id: string) {
   const result = checked(savedPreview, value); const { output, scope, disclosure } = result;
+  const recurring = result.schema_version === 'text-analysis-preview-saved.v2';
+  need((scope.schema_version === 'text-analysis-preview-scope.v2') === recurring && matchesPreviewPolicy(disclosure, recurring));
   need(new TextEncoder().encode(textAnalysisCanonicalJson(output)).length <= 1_048_576);
   need(output.contribution_id === id && output.source_count === scope.source_count && output.input_inventory_sha256 === scope.inventory_sha256
     && output.profile_sha256 === disclosure.profile_sha256 && textAnalysisCanonicalJson(output.selection_policy) === textAnalysisCanonicalJson(disclosure.selection_policy));
@@ -216,30 +247,40 @@ export async function parseSavedPreview(value: unknown, id: string) {
   let previousKind = -1;
   const sources = new Map<number, string>(), ordinals = new Map<string, number>();
   for (const item of output.summaries) {
-    const kind = ['topic_category', 'mention_category'].indexOf(item.kind); need(kind > previousKind); previousKind = kind;
+    const kind = item.kind === 'topic_category' ? 0 : 1;
+    need(kind > previousKind); previousKind = kind;
     const task = kind === 0 ? 'message_topics' : 'concept_mentions';
     const descriptor = disclosure.tasks.find((entry) => entry.task === task);
     const totals = output.tasks.find((entry) => entry.task === task); need(descriptor && totals);
-    need(item.label.task_contract === `${task}.v1` && descriptor.enabled_ids.includes(item.label.category_id)
-      && textAnalysisCanonicalJson(item.label.taxonomy) === textAnalysisCanonicalJson(descriptor.taxonomy)
-      && textAnalysisCanonicalJson(item.label.presentation) === textAnalysisCanonicalJson(disclosure.presentation));
-    const { label_identity_sha256: labelDigest, ...labelBody } = item.label; need(labelDigest === await textAnalysisDigest(labelBody));
     const resolved = totals.assessed === totals.eligible;
-    need(item.ranking_scope === (resolved ? 'frozen_scope' : 'assessed_portion') && (item.additional_categories !== null) === resolved
-      && (item.additional_categories === null || item.additional_categories < descriptor.enabled_ids.length));
-    need(item.share_of_complete_messages === (totals.assessed ? item.complete_supporting_messages / totals.assessed : null));
+    need(item.ranking_scope === (resolved ? 'frozen_scope' : 'assessed_portion'));
+    if (item.kind === 'recurring_mention') {
+      need((item.additional_phrases !== null) === resolved);
+    } else {
+      need(item.label.task_contract === `${task}.v1` && descriptor.enabled_ids.includes(item.label.category_id)
+        && textAnalysisCanonicalJson(item.label.taxonomy) === textAnalysisCanonicalJson(descriptor.taxonomy)
+        && textAnalysisCanonicalJson(item.label.presentation) === textAnalysisCanonicalJson(disclosure.presentation));
+      const { label_identity_sha256: labelDigest, ...labelBody } = item.label; need(labelDigest === await textAnalysisDigest(labelBody));
+      need((item.additional_categories !== null) === resolved && (item.additional_categories === null || item.additional_categories < descriptor.enabled_ids.length));
+      need(item.share_of_complete_messages === (totals.assessed ? item.complete_supporting_messages / totals.assessed : null));
+    }
     const messages = new Set<number>(), conversations = new Set<string>(), complete = new Set<number>(), partial = new Set<number>(), occurrences = new Set<string>();
+    const senders = new Set<string>();
     let previousEvidence: [string, string, number, number] | null = null;
     for (const entry of item.evidence) {
       const ref = entry.reference, interval = ref.span, exam = exams.get(`${entry.ordinal}:${task}`);
       need(exam && ['assessed', 'partial'].includes(exam.assessment) && entry.assessment === (exam.assessment === 'assessed' ? 'complete' : 'partial'));
       need(ref.account_ref === entry.source.account_scope && ref.message_ref === entry.source.source_ref && ref.source_version_digest === `sha256:${entry.source.source_version}`
-        && Date.parse(ref.sent_at) > Date.parse(scope.lower_exclusive) && Date.parse(ref.sent_at) <= Date.parse(scope.cutoff)
-        && scope.earliest !== null && scope.latest !== null && Date.parse(ref.sent_at) >= Date.parse(scope.earliest) && Date.parse(ref.sent_at) <= Date.parse(scope.latest));
+        && instantMicros(ref.sent_at) > instantMicros(scope.lower_exclusive) && instantMicros(ref.sent_at) <= instantMicros(scope.cutoff)
+        && scope.earliest !== null && scope.latest !== null && instantMicros(ref.sent_at) >= instantMicros(scope.earliest) && instantMicros(ref.sent_at) <= instantMicros(scope.latest));
       const identity = textAnalysisCanonicalJson({ source: entry.source, reference: { ...ref, span: null } });
       need(!sources.has(entry.ordinal) || sources.get(entry.ordinal) === identity);
       need(!ordinals.has(ref.message_ref) || ordinals.get(ref.message_ref) === entry.ordinal);
       sources.set(entry.ordinal, identity); ordinals.set(ref.message_ref, entry.ordinal);
+      if (item.kind === 'recurring_mention') {
+        need(/^p1:[0-9a-f]{64}$/.test(entry.source.speaker_ref));
+        senders.add(entry.source.speaker_ref);
+      }
       need((interval == null) === (kind === 0));
       if (interval) need(exam.coverage?.examined.some((part) => part.start <= interval.start && interval.end <= part.end));
       const order: [string, string, number, number] = [entry.source.source_ref, entry.source.source_version, interval?.start ?? -1, interval?.end ?? -1];
@@ -250,7 +291,8 @@ export async function parseSavedPreview(value: unknown, id: string) {
       messages.add(entry.ordinal); conversations.add(ref.conversation_ref);
       (entry.assessment === 'complete' ? complete : partial).add(entry.ordinal);
     }
-    need([...complete].every((ordinal) => !partial.has(ordinal)) && messages.size === item.supporting_messages && conversations.size === item.supporting_conversations
+    need(item.kind === 'recurring_mention' ? senders.size === item.supporting_senders : conversations.size === item.supporting_conversations);
+    need([...complete].every((ordinal) => !partial.has(ordinal)) && messages.size === item.supporting_messages
       && occurrences.size === item.occurrences && complete.size === item.complete_supporting_messages && partial.size === item.partial_supporting_messages);
   }
   return result;

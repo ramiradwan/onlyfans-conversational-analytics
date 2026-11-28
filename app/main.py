@@ -19,6 +19,7 @@ from app.api.endpoints import (
     history,
     insights,
     nlp_dependencies,
+    paid_insights,
     saved_data,
     text_analysis_execution,
     text_analysis_preview,
@@ -246,6 +247,7 @@ app.include_router(insights.router)
 app.include_router(nlp_dependencies.router)
 app.include_router(text_analysis_execution.router)
 app.include_router(text_analysis_preview.router)
+app.include_router(paid_insights.router)
 app.include_router(text_analysis_client.router)
 app.include_router(text_analysis_reissue.router)
 app.include_router(text_analysis_native_acquisition.router)

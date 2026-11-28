@@ -70,6 +70,18 @@ function withEffectiveWindow(
 afterEach(() => cleanup());
 
 describe('analytics presentation states', () => {
+  it('requires the optional recurring mentions entry and leaves the other free analytics tabs available', () => {
+    const view = (pilot = false) => <ThemeProvider theme={theme}><AnalyticsPresentation state={storyAvailableState} dateRange={storyDateRange}
+      onDateRangeChange={() => {}} findings={<div>Saved findings</div>} recurringMentions={pilot ? <div>Recurring report contents</div> : null} /></ThemeProvider>;
+    const mounted = render(view());
+    expect(screen.queryByRole('tab', { name: 'Recurring mentions' })).toBeNull();
+    mounted.rerender(view(true)); fireEvent.click(screen.getByRole('tab', { name: 'Recurring mentions' }));
+    expect(screen.getByRole('tabpanel').textContent).toBe('Recurring report contents');
+    fireEvent.click(screen.getByRole('tab', { name: 'Text analysis' }));
+    expect(screen.getByRole('tabpanel').textContent).toBe('Saved findings');
+    fireEvent.click(screen.getByRole('tab', { name: 'Recurring mentions' }));
+    mounted.rerender(view()); expect(screen.getByRole('tab', { name: 'Summary' }).getAttribute('aria-selected')).toBe('true');
+  });
   it('renders loading', () => {
     analytics({
       status: 'loading',

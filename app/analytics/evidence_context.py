@@ -8,7 +8,7 @@ from app.analytics.query_execution import QuestionBudget, QuestionLimits
 def read_context(resources, policy, request, *, cancellation_check=None):
     context_budget, anchor_lease = None, None
 
-    def project(value, records, generation, snapshot, plan, budget, source_rows, *, connection):
+    def project(value, records, generation, snapshot, plan, budget, source_rows, *, connection, canonical_scope):
         nonlocal context_budget, anchor_lease
         reference = plan.reference.model_copy(update={'span': None})
         present = False

@@ -15,6 +15,11 @@ KEY_SCHEMA = "nlp-literal-key.v1"
 References = Annotated[tuple[Digest, ...], Field(max_length=16)]
 
 
+def normalize_literal_key(surface: str) -> str:
+    """Preserve spelling and case, trimming outside whitespace before Unicode NFC."""
+    return unicodedata.normalize("NFC", surface.strip())
+
+
 def _digest(domain: str, *parts: str) -> str:
     encoded = bytearray()
     for part in (domain, *parts):
@@ -43,7 +48,7 @@ class LiteralNode(BoundedDescriptor):
 
     @model_validator(mode="after")
     def identity(self):
-        if self.literal_key != unicodedata.normalize("NFC", self.literal_key.strip()):
+        if self.literal_key != normalize_literal_key(self.literal_key):
             raise ValueError("noncanonical literal key")
         expected = _digest("nlp-literal-node.v1", self.account_namespace,
                            self.key_schema, self.type_id, self.literal_key)
@@ -54,7 +59,7 @@ class LiteralNode(BoundedDescriptor):
 
 def provisional_literal_node(account_namespace: str, type_id: str, surface: str) -> LiteralNode:
     """Namespace is caller-retained account state, never derived from the text."""
-    key = unicodedata.normalize("NFC", surface.strip())
+    key = normalize_literal_key(surface)
     return LiteralNode(account_namespace=account_namespace, type_id=type_id, literal_key=key,
                        node_id=_digest("nlp-literal-node.v1", account_namespace, KEY_SCHEMA, type_id, key))
 

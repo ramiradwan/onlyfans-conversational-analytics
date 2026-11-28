@@ -11,6 +11,7 @@ from app.analytics.nlp_preview import (
 )
 from app.analytics.query_execution import QuestionBudget, QuestionLimits
 from app.analytics.source_snapshot import scan_identity
+from app.nlp.preview_parameters import RECURRENCE_SOURCE_DIGEST
 
 
 class ContributionSourceGuard:
@@ -23,8 +24,9 @@ class ContributionSourceGuard:
         return QuestionBudget(QuestionLimits(max_records=8, wall_clock_ms=1000))
 
     def source(self, db, spec, member, budget, now):
-        source = read_transaction_evidence(db, spec.creator_account_id, member.location.model_dump(), budget,
-                                           exclude_system=True)
+        source = read_transaction_evidence(
+            db, spec.creator_account_id, member.location.model_dump(), budget, exclude_system=True,
+            incoming_participant=spec.policy_identity_sha256 == RECURRENCE_SOURCE_DIGEST)
         if (source is None or source_binding(source) != member.source
                 or hashlib.sha256(source.text.encode('utf8')).hexdigest() != member.text_sha256):
             raise ValueError('knowledge_source_changed')

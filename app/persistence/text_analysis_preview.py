@@ -20,6 +20,14 @@ def _sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
+def _disclosure(model, profile, policy):
+    descriptors = {task.task: task for component in profile.components for task in component.tasks}
+    return model(profile_sha256=profile.identity_digest(),
+        languages=tuple(sorted({component.language for component in profile.components})),
+        tasks=tuple(descriptors[name] for name in ('message_topics', 'concept_mentions') if name in descriptors),
+        presentation=profile.presentation, selection_policy=policy)
+
+
 class PreviewSourceUnavailable(ValueError):
     """A live source guard refused a previously committed preview member."""
 
@@ -78,26 +86,7 @@ class TextAnalysisPreviewStore:
             scope=capsule.scope,
             confirmation=confirmation,
             detailed_scope_available=True,
-            disclosure=PreviewDisclosure(
-                profile_sha256=profile.identity_digest(),
-                languages=tuple(
-                    sorted({component.language for component in profile.components})
-                ),
-                tasks=tuple(
-                    sorted(
-                        (
-                            descriptor
-                            for component in profile.components
-                            for descriptor in component.tasks
-                        ),
-                        key=lambda task: ('message_topics', 'concept_mentions').index(
-                            task.task
-                        ),
-                    )
-                ),
-                presentation=profile.presentation,
-                selection_policy=capsule.selection_policy,
-            ),
+            disclosure=_disclosure(PreviewDisclosure, profile, capsule.selection_policy),
         )
 
     def _capsule_in(self, db, job_id):
@@ -291,35 +280,19 @@ class TextAnalysisPreviewStore:
     def saved_view_in(self, db, output, *, policy):
         from app.models.text_analysis_preview_execution import (
             PreviewSavedEnvelope,
+            RecurringMentionSavedEnvelope,
+            RecurringMentionScope,
             SavedPreviewDisclosure,
         )
 
         capsule, _, profile, _ = self._bound_capsule_in(
             db, output.job_id, policy=policy
         )
-        return PreviewSavedEnvelope(
+        model = RecurringMentionSavedEnvelope if isinstance(capsule.scope, RecurringMentionScope) else PreviewSavedEnvelope
+        return model(
             scope=capsule.scope,
             output=output,
-            disclosure=SavedPreviewDisclosure(
-                profile_sha256=profile.identity_digest(),
-                languages=tuple(
-                    sorted({component.language for component in profile.components})
-                ),
-                tasks=tuple(
-                    sorted(
-                        (
-                            task
-                            for component in profile.components
-                            for task in component.tasks
-                        ),
-                        key=lambda task: ('message_topics', 'concept_mentions').index(
-                            task.task
-                        ),
-                    )
-                ),
-                presentation=profile.presentation,
-                selection_policy=capsule.selection_policy,
-            ),
+            disclosure=_disclosure(SavedPreviewDisclosure, profile, capsule.selection_policy),
         )
 
     def saved_list_in(self, db, *, policy, after_contribution='', limit=64):

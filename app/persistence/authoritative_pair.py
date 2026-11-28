@@ -213,10 +213,13 @@ def audit_crosslinks(auth_db, canonical_db, installation_id):
         intent = canonical_db.execute('SELECT * FROM text_analysis_intents WHERE job_id=?',(output['job_id'],)).fetchone()
         job = canonical_db.execute('SELECT * FROM knowledge_jobs WHERE job_id=?',(output['job_id'],)).fetchone()
         admission = canonical_db.execute("SELECT * FROM text_analysis_preview_admissions WHERE state='spent' AND contribution_id=?",(output['contribution_id'],)).fetchone()
-        from app.models.text_analysis_preview import PreviewContribution
+        from app.models.text_analysis_preview import MAX_PREVIEW_BYTES, SHOWN_PREVIEW_ADAPTER
         from app.nlp.profiles import canonical_bytes
-        preview = PreviewContribution.model_validate_json(output['document'])
-        if canonical_bytes(preview) != bytes(output['document']):
+        frame = bytes(output['document'])
+        if not 0 < len(frame) <= MAX_PREVIEW_BYTES:
+            _deny()
+        preview = SHOWN_PREVIEW_ADAPTER.validate_json(frame)
+        if canonical_bytes(preview) != frame:
             _deny()
         document = preview.model_dump(mode='json')
         if (intent is None or job is None or admission is None or intent['authority_kind'] != 'preview'

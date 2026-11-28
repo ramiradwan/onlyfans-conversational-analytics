@@ -85,7 +85,8 @@ def frame(data, ordinal, topics=("topic.a",), mentions=(("concept.a", 2, 6), ("c
             result=dict(component_id=component.component_id, component_sha256=component.identity_digest(),
                 text_sha256=member.text_sha256, payload=dict(task=binding.task, findings=findings,
                     outcome=outcome, coverage=coverage, reason=reason))))
-    document = dict(schema_version="nlp-result.v2", source=member.source.model_dump(mode="json"),
+    result_version = "nlp-result.v3" if profile.schema_version == "nlp-profile.v3" else "nlp-result.v2"
+    document = dict(schema_version=result_version, source=member.source.model_dump(mode="json"),
                     profile=profile.model_dump(mode="json"), analyzed_at="2026-10-25T00:00:00Z", tasks=tasks)
     return json.dumps(document, separators=(",", ":")).encode()
 

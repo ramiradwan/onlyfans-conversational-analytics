@@ -43,6 +43,7 @@ from app.models.insights import (
 )
 from app.services import insights_service
 from app.models.nlp_literals import LiteralFindingsRequest, LiteralFindingsResponse
+from app.models.recurring_mentions import RecurringMentionsReport, RecurringMentionsRequest
 from app.models.nlp_observations import ObservationLinksRequest, ObservationLinksResponse
 
 
@@ -365,6 +366,35 @@ async def get_literal_findings(request: Request, response: Response,
             headers={'Cache-Control': 'no-store'}) from None
 
 
+async def recurring_mentions(request: Request, response: Response,
+        expected_generation: int = Query(..., ge=1),
+        expected_projection_digest: str = Query(..., pattern=r'^sha256:[0-9a-f]{64}$'),
+        phrase_id: str | None = Query(None, pattern=r'^sha256:[0-9a-f]{64}$'),
+        expected_normalization_sha256: str | None = Query(None, pattern=r'^sha256:[0-9a-f]{64}$'),
+        row_offset: int = Query(0, ge=0, le=100_000), row_limit: int = Query(50, ge=1, le=100),
+        evidence_offset: int = Query(0, ge=0, le=1_000_000), evidence_limit: int = Query(50, ge=1, le=100),
+        policy: RuntimePolicy = Depends(get_authenticated_account_session)):
+    account_bound_to_session(policy, None)
+    headers = {'Cache-Control': 'no-store'}
+    response.headers.update(headers)
+    try:
+        params = request.query_params
+        if any(key not in RecurringMentionsRequest.model_fields or len(params.getlist(key)) != 1 for key in params):
+            raise ValueError('invalid_report_parameters')
+        plan = RecurringMentionsRequest(expected_generation=expected_generation,
+            expected_projection_digest=expected_projection_digest, phrase_id=phrase_id,
+            expected_normalization_sha256=expected_normalization_sha256, row_offset=row_offset, row_limit=row_limit,
+            evidence_offset=evidence_offset, evidence_limit=evidence_limit)
+        return await insights_service.fetch_literal_findings(policy, plan)
+    except AnalyticsError as error:
+        failure = _analytics_http_error(error)
+        failure.headers = headers
+        raise failure from None
+    except (TypeError, ValueError):
+        raise HTTPException(422, detail={'code': 'analytics_findings_request_invalid',
+            'message': 'The report request is invalid.', 'availability': 'unavailable'}, headers=headers) from None
+
+
 class _ObservationReadRoute(APIRoute):
     def get_route_handler(self):
         handler = super().get_route_handler()
@@ -378,6 +408,11 @@ class _ObservationReadRoute(APIRoute):
                     headers={'Cache-Control': 'no-store'}) from None
 
         return protected
+
+
+router.add_api_route('/findings/recurring-mentions', recurring_mentions, methods=['GET'],
+                     response_model=RecurringMentionsReport, operation_id='fetchRecurringMentions',
+                     responses=PROTECTED_ERROR_RESPONSES, route_class_override=_ObservationReadRoute)
 
 
 async def get_observation_links(request: Request, response: Response,

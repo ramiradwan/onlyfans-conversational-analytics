@@ -283,7 +283,7 @@ class HistoryAnalyticsSource:
 
     def read_evidence_message(
         self, account_id: str, location: EvidenceLocation, budget: QuestionBudget,
-        *, exclude_system: bool = False,
+        *, exclude_system: bool = False, incoming_participant: bool = False,
     ) -> EvidenceMessage | None:
         """Read one live, undeleted source by its indexed canonical identity."""
 
@@ -299,7 +299,8 @@ class HistoryAnalyticsSource:
             token = self._identity_cache.token(connection, account_id)
             if token is None:
                 raise EvidenceUnavailable()
-            row = _read_evidence_row(connection, account_id, location, exclude_system=exclude_system)
+            row = _read_evidence_row(connection, account_id, location, exclude_system=exclude_system,
+                                     incoming_participant=incoming_participant)
             return row, f"{token.schema}:{token.value}:{token.revision}"
 
         scoped = getattr(self._question_scope_local, "connection", None)
@@ -601,34 +602,82 @@ class HistoryAnalyticsSource:
         return parsed.isoformat()
 
 
-def read_transaction_evidence(connection, account_id, location, budget, *, exclude_system=False):
+def read_transaction_evidence(connection, account_id, location, budget, *, exclude_system=False, incoming_participant=False):
     """Resolve live evidence on the caller's existing canonical transaction."""
     location = EvidenceLocation.model_validate(location)
     budget.consume(2)
-    row = _read_evidence_row(connection, account_id, location, exclude_system=exclude_system)
+    row = _read_evidence_row(connection, account_id, location, exclude_system=exclude_system,
+                             incoming_participant=incoming_participant)
     budget.check()
     if row is None:
         return None
+    return _transaction_message(account_id, location, row)
+
+
+def _transaction_message(account_id, location, row):
     return EvidenceMessage(account_id=account_id, location=location, source_revision=row[0],
         text=row[1], sent_at=row[2], direction=row[3], sender_id=row[4],
         upstream_updated_at=row[5], content_hash=row[6], stream_epoch=row[7], source_sequence=row[8])
 
 
-def _read_evidence_row(connection, account_id, location, *, exclude_system):
+_EVIDENCE_COLUMNS = """h.canonical_revision,m.text,m.sent_at,m.direction,
+    m.sender_platform_user_id,m.upstream_updated_at,m.content_hash,m.winning_stream_epoch,m.winning_source_seq"""
+_EVIDENCE_TABLES = """account_messages AS m
+    JOIN account_heads AS h ON h.creator_account_id=m.creator_account_id
+    JOIN account_chats AS c ON c.creator_account_id=m.creator_account_id AND c.chat_id=m.chat_id"""
+_EVIDENCE_TEXT_BOUNDS = "length(m.text)<=? AND length(CAST(m.text AS BLOB))<=?"
+
+
+def read_incoming_participant_evidence(connection, account_id, locations, budget):
+    """Read a bounded page of live messages from known correspondents in this transaction."""
+    if len(locations) > 64:
+        raise ValueError("incoming_evidence_page_limit")
+    requested = {}
+    for item in locations:
+        loc = EvidenceLocation.model_validate(item)
+        requested[(loc.conversation_id, loc.message_id)] = loc
+    budget.check()
+    if not requested:
+        return {}
+    budget.consume(2 * len(requested))
+    result = {}
+    for row in _incoming_participant_rows(connection, account_id, requested):
+        budget.check()
+        key = row["chat_id"], row["message_id"]
+        result[key] = _transaction_message(account_id, requested[key], row)
+    budget.check()
+    return result
+
+
+def _incoming_participant_rows(connection, account_id, requested):
+    from app.analytics.query_facts import imported_history_kind
+
+    placeholders = ",".join("(?,?)" for _ in requested)
+    params = [part for key in requested for part in key]
+    rows = connection.execute(
+        f"""WITH requested(chat,message) AS (VALUES {placeholders})
+            SELECT {_EVIDENCE_COLUMNS},m.event_kind_json,m.chat_id,m.message_id
+              FROM {_EVIDENCE_TABLES}
+              JOIN requested ON requested.chat=m.chat_id AND requested.message=m.message_id
+             WHERE m.creator_account_id=? AND m.direction='inbound'
+               AND length(trim(m.sender_platform_user_id))>0
+               AND m.sender_platform_user_id=c.platform_user_id
+               AND {_EVIDENCE_TEXT_BOUNDS} {_LIVE_EVIDENCE}""",
+        (*params, account_id, MAX_EVIDENCE_TEXT_CHARS, 4 * MAX_EVIDENCE_TEXT_CHARS),
+    )
+    for row in rows:
+        if row["sender_platform_user_id"].strip() and imported_history_kind(row["event_kind_json"], row["chat_id"]) != "system":
+            yield row
+
+
+def _read_evidence_row(connection, account_id, location, *, exclude_system, incoming_participant=False):
+    if incoming_participant:
+        return next(_incoming_participant_rows(connection, account_id, [(location.conversation_id, location.message_id)]), None)
     kind_column = ",m.event_kind_json" if exclude_system else ""
     row = connection.execute(
-        f"""SELECT h.canonical_revision,m.text,m.sent_at,m.direction,
-                  m.sender_platform_user_id,m.upstream_updated_at,
-                  m.content_hash,m.winning_stream_epoch,m.winning_source_seq{kind_column}
-             FROM account_messages AS m
-             JOIN account_heads AS h
-               ON h.creator_account_id=m.creator_account_id
-             JOIN account_chats AS c
-               ON c.creator_account_id=m.creator_account_id AND c.chat_id=m.chat_id
+        f"""SELECT {_EVIDENCE_COLUMNS}{kind_column} FROM {_EVIDENCE_TABLES}
             WHERE m.creator_account_id=? AND m.message_id=? AND m.chat_id=?
-               AND length(m.text)<=?
-               AND length(CAST(m.text AS BLOB))<=?
-               {_LIVE_EVIDENCE}
+              AND {_EVIDENCE_TEXT_BOUNDS} {_LIVE_EVIDENCE}
             LIMIT 1""",
         (
             account_id,

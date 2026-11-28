@@ -236,7 +236,7 @@ def read(resources, policy, request, *, cancellation_check=None):
     from app.analytics.nlp_read_projection import read as read_saved
     stamp = None
 
-    def project(*args, connection):
+    def project(*args, connection, canonical_scope):
         nonlocal stamp
         stamp = content_stamp(connection)
         if stamp is None:

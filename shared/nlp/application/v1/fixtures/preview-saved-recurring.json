@@ -1,0 +1,217 @@
+{
+  "schema_version": "text-analysis-preview-saved.v2",
+  "scope": {
+    "schema_version": "text-analysis-preview-scope.v2",
+    "cutoff": "2026-10-25T00:00:00Z",
+    "lower_exclusive": "2026-07-27T00:00:00Z",
+    "directions": "inbound",
+    "message_cap": 100,
+    "source_count": 2,
+    "earliest": "2026-10-25T00:00:00Z",
+    "latest": "2026-10-25T00:00:00Z",
+    "inventory_sha256": "36e1300edd4e8fdd634322c01a466b4353ae2f927381cc72569c45109d142226"
+  },
+  "disclosure": {
+    "profile_sha256": "fecb7782ae8d66b5176c24b18d06c61d7acb9abf34de652a67407b8986aee13b",
+    "languages": [
+      "en"
+    ],
+    "tasks": [
+      {
+        "task": "concept_mentions",
+        "task_contract": "concept_mentions.v1",
+        "taxonomy": {
+          "policy_id": "taxonomy",
+          "revision": "1",
+          "sha256": "49a8ed7c48e45d451bea1754d1f10f9341de34915df0515d0dda7d3a6316ca09"
+        },
+        "enabled_ids": [
+          "concept.synthetic"
+        ],
+        "score_policy": {
+          "kind": "probability",
+          "semantics_id": "model_score_not_accuracy",
+          "calibration": "not_calibrated",
+          "calibration_sha256": null
+        }
+      }
+    ],
+    "presentation": {
+      "policy_id": "presentation",
+      "revision": "1",
+      "sha256": "bfac314fefdc07451af1792a81cbaeda24a9363f7d4d4b7ff2938c4231ea7e36"
+    },
+    "selection_policy": {
+      "policy_id": "text-analysis-recurring-mentions-preview-selection.v1",
+      "revision": "1",
+      "sha256": "b4b7db4c4ff91fa0971b5d5a2f0b1bf523b657a09b197952ab7987a684580630"
+    },
+    "output_profile": "urn:bridge-clean:text-analysis-preview-output-policy:v1",
+    "output_version": 1
+  },
+  "output": {
+    "job_id": "00000000-0000-4000-8000-000000000002",
+    "contribution_id": "00000000-0000-4000-8000-000000000003",
+    "spec_sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+    "input_inventory_sha256": "36e1300edd4e8fdd634322c01a466b4353ae2f927381cc72569c45109d142226",
+    "profile_sha256": "fecb7782ae8d66b5176c24b18d06c61d7acb9abf34de652a67407b8986aee13b",
+    "selection_policy": {
+      "policy_id": "text-analysis-recurring-mentions-preview-selection.v1",
+      "revision": "1",
+      "sha256": "b4b7db4c4ff91fa0971b5d5a2f0b1bf523b657a09b197952ab7987a684580630"
+    },
+    "schema_version": "text-analysis-preview.v2",
+    "source_count": 2,
+    "examination": [
+      {
+        "ordinal": 0,
+        "task": "concept_mentions",
+        "assessment": "assessed",
+        "reason": "none",
+        "coverage": {
+          "source_codepoints": 11,
+          "examined": [
+            {
+              "start": 0,
+              "end": 11
+            }
+          ],
+          "excluded": [],
+          "limits_reached": []
+        }
+      },
+      {
+        "ordinal": 1,
+        "task": "concept_mentions",
+        "assessment": "assessed",
+        "reason": "none",
+        "coverage": {
+          "source_codepoints": 11,
+          "examined": [
+            {
+              "start": 0,
+              "end": 11
+            }
+          ],
+          "excluded": [],
+          "limits_reached": []
+        }
+      }
+    ],
+    "tasks": [
+      {
+        "task": "concept_mentions",
+        "eligible": 2,
+        "assessed": 2,
+        "partial": 0,
+        "uncertain": 0,
+        "unsupported": 0,
+        "failed": 0,
+        "unprocessed": 0
+      }
+    ],
+    "summaries": [
+      {
+        "kind": "recurring_mention",
+        "literal_key": "echo",
+        "supporting_senders": 2,
+        "supporting_messages": 2,
+        "occurrences": 4,
+        "complete_supporting_messages": 2,
+        "partial_supporting_messages": 0,
+        "ranking_scope": "frozen_scope",
+        "additional_phrases": 0,
+        "evidence": [
+          {
+            "ordinal": 1,
+            "source": {
+              "account_scope": "a1:5954294138b859b700c6c7f57c6307cc6bb1ba38433965370a4d2e9866b2062d",
+              "source_ref": "m1:a7e232b3ccf5af96d15354be9cc0b37f10f3050e3b3e19bafa23e8a353d361c0",
+              "source_version": "568d3256dc0b31ad8e2fdf5f54cef4e987c8788b991eb87b2d2418ec4f6b3723",
+              "speaker_ref": "p1:51a15f992e082d42a17b22c9e1f323e8c40b296c2ba6b48ddf7fc4777596f7ab"
+            },
+            "reference": {
+              "account_ref": "a1:5954294138b859b700c6c7f57c6307cc6bb1ba38433965370a4d2e9866b2062d",
+              "conversation_ref": "c1:01870d33b689c1be44b7b25c0980378758e30ee4402a71189b3603e41298f90a",
+              "message_ref": "m1:a7e232b3ccf5af96d15354be9cc0b37f10f3050e3b3e19bafa23e8a353d361c0",
+              "source_revision": 7,
+              "source_version_digest": "sha256:568d3256dc0b31ad8e2fdf5f54cef4e987c8788b991eb87b2d2418ec4f6b3723",
+              "sent_at": "2026-10-25T00:00:00Z",
+              "span": {
+                "start": 2,
+                "end": 6
+              }
+            },
+            "assessment": "complete"
+          },
+          {
+            "ordinal": 1,
+            "source": {
+              "account_scope": "a1:5954294138b859b700c6c7f57c6307cc6bb1ba38433965370a4d2e9866b2062d",
+              "source_ref": "m1:a7e232b3ccf5af96d15354be9cc0b37f10f3050e3b3e19bafa23e8a353d361c0",
+              "source_version": "568d3256dc0b31ad8e2fdf5f54cef4e987c8788b991eb87b2d2418ec4f6b3723",
+              "speaker_ref": "p1:51a15f992e082d42a17b22c9e1f323e8c40b296c2ba6b48ddf7fc4777596f7ab"
+            },
+            "reference": {
+              "account_ref": "a1:5954294138b859b700c6c7f57c6307cc6bb1ba38433965370a4d2e9866b2062d",
+              "conversation_ref": "c1:01870d33b689c1be44b7b25c0980378758e30ee4402a71189b3603e41298f90a",
+              "message_ref": "m1:a7e232b3ccf5af96d15354be9cc0b37f10f3050e3b3e19bafa23e8a353d361c0",
+              "source_revision": 7,
+              "source_version_digest": "sha256:568d3256dc0b31ad8e2fdf5f54cef4e987c8788b991eb87b2d2418ec4f6b3723",
+              "sent_at": "2026-10-25T00:00:00Z",
+              "span": {
+                "start": 7,
+                "end": 11
+              }
+            },
+            "assessment": "complete"
+          },
+          {
+            "ordinal": 0,
+            "source": {
+              "account_scope": "a1:5954294138b859b700c6c7f57c6307cc6bb1ba38433965370a4d2e9866b2062d",
+              "source_ref": "m1:eea4e11a896824fdcc91ab589158cb327cfbfaaa36b0b82a433a0a2b359f2a7e",
+              "source_version": "80d1dd62247c66a50cc583e19ffda78363237d2554ab24124e5ad61394e03d69",
+              "speaker_ref": "p1:232acef1f3c6156e906bd0bd71aa296ad0302c257eb5077a196efe27434044e7"
+            },
+            "reference": {
+              "account_ref": "a1:5954294138b859b700c6c7f57c6307cc6bb1ba38433965370a4d2e9866b2062d",
+              "conversation_ref": "c1:981e06f08656abc7b6034b46e2af5801f2e4face458da11a9b37a1813d736949",
+              "message_ref": "m1:eea4e11a896824fdcc91ab589158cb327cfbfaaa36b0b82a433a0a2b359f2a7e",
+              "source_revision": 7,
+              "source_version_digest": "sha256:80d1dd62247c66a50cc583e19ffda78363237d2554ab24124e5ad61394e03d69",
+              "sent_at": "2026-10-25T00:00:00Z",
+              "span": {
+                "start": 2,
+                "end": 6
+              }
+            },
+            "assessment": "complete"
+          },
+          {
+            "ordinal": 0,
+            "source": {
+              "account_scope": "a1:5954294138b859b700c6c7f57c6307cc6bb1ba38433965370a4d2e9866b2062d",
+              "source_ref": "m1:eea4e11a896824fdcc91ab589158cb327cfbfaaa36b0b82a433a0a2b359f2a7e",
+              "source_version": "80d1dd62247c66a50cc583e19ffda78363237d2554ab24124e5ad61394e03d69",
+              "speaker_ref": "p1:232acef1f3c6156e906bd0bd71aa296ad0302c257eb5077a196efe27434044e7"
+            },
+            "reference": {
+              "account_ref": "a1:5954294138b859b700c6c7f57c6307cc6bb1ba38433965370a4d2e9866b2062d",
+              "conversation_ref": "c1:981e06f08656abc7b6034b46e2af5801f2e4face458da11a9b37a1813d736949",
+              "message_ref": "m1:eea4e11a896824fdcc91ab589158cb327cfbfaaa36b0b82a433a0a2b359f2a7e",
+              "source_revision": 7,
+              "source_version_digest": "sha256:80d1dd62247c66a50cc583e19ffda78363237d2554ab24124e5ad61394e03d69",
+              "sent_at": "2026-10-25T00:00:00Z",
+              "span": {
+                "start": 7,
+                "end": 11
+              }
+            },
+            "assessment": "complete"
+          }
+        ]
+      }
+    ]
+  }
+}

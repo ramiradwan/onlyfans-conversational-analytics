@@ -287,6 +287,7 @@ class DependencyService:
     @contextmanager
     def publication(self, profile):
         # Short authority gate spans the actual analytics commit. No model job holds it.
+        self._require_execution_owner(profile)
         require(self.preparation_admission is None, 'nlp_authenticated_command_required')
         with self.gate:
             require(self.ready(profile), 'nlp_dependency_unavailable')

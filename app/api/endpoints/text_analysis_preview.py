@@ -9,12 +9,12 @@ from app.api.activation import require_activated_runtime
 from app.api.dependencies import get_authenticated_account_session, account_bound_to_session
 from app.api.security import verify_csrf_token, verify_same_origin
 from app.models.text_analysis_jobs import PreviewConfirmation
-from app.models.text_analysis_preview import PreviewContribution
+from app.models.text_analysis_preview import ShownPreview
 from app.models.question_evidence import QuestionEvidence
 from app.models.text_analysis_preview_execution import (
     PreviewPrepareRequest,
     PreviewOutcome,
-    PreviewSavedEnvelope,
+    SavedPreview,
     PreviewSavedPage,
 )
 from app.services.text_analysis_preview import preview_service
@@ -45,7 +45,7 @@ def _evidence_request_schema():
     return {'requestBody': {'required': True, 'content': {'application/json': {'schema': expand(schema)}}}}
 
 
-@router.get('/results/{contribution_id}', response_model=PreviewContribution)
+@router.get('/results/{contribution_id}', response_model=ShownPreview)
 def shown(contribution_id: str, policy=Depends(get_authenticated_account_session)):
     try:
         return _service(policy).read_shown(policy, contribution_id)
@@ -53,7 +53,7 @@ def shown(contribution_id: str, policy=Depends(get_authenticated_account_session
         raise HTTPException(409, detail={'code': 'text_analysis_preview_refused'}) from None
 
 
-@router.get('/results/{contribution_id}/view', response_model=PreviewSavedEnvelope)
+@router.get('/results/{contribution_id}/view', response_model=SavedPreview)
 def saved_view(contribution_id: str, policy=Depends(get_authenticated_account_session)):
     try:
         return _service(policy).read_saved_view(policy, contribution_id)

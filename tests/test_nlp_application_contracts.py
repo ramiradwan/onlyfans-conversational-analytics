@@ -10,7 +10,7 @@ from app.models.text_analysis_client import ClientIntentPut, ClientIntentRecord,
 from app.models.text_analysis_enrollment import EnrollmentCommand, EnrollmentCommandResult, EnrollmentView
 from app.models.text_analysis_jobs import PreviewConfirmation
 from app.models.text_analysis_preview_execution import (
-    PreviewOutcome, PreviewPrepareRequest, PreviewSavedEnvelope, PreviewSavedPage,
+    PreviewOutcome, PreviewPrepareRequest, PreviewSavedEnvelope, PreviewSavedPage, RecurringMentionSavedEnvelope,
 )
 from tools.generate_nlp_contracts import documents_application, fixtures_application
 
@@ -21,6 +21,7 @@ MODELS = {
     'enrollment-result': EnrollmentCommandResult, 'preview-prepare': PreviewPrepareRequest,
     'preview-outcome': PreviewOutcome, 'preview-confirmation': PreviewConfirmation,
     'preview-saved': PreviewSavedEnvelope, 'preview-saved-partial': PreviewSavedEnvelope,
+    'preview-saved-recurring': RecurringMentionSavedEnvelope,
     'client-enrollment-intent': ClientIntentPut, 'client-enrollment-record': ClientIntentRecord,
     'client-prepare-intent': ClientIntentPut, 'client-confirm-intent': ClientIntentPut,
     'client-intent-page': ClientIntentPage, 'preview-saved-page': PreviewSavedPage,
