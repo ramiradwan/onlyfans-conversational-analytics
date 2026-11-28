@@ -447,7 +447,7 @@ def test_windows_backend_bench_repeats_the_product_ci_shard() -> None:
     assert bench["concurrency"] == {"group": "${{ github.workflow }}-${{ github.ref }}", "cancel-in-progress": False}
 
 
-@pytest.mark.parametrize("fault", ["step", "wheel", "wheel-before-plan", "workers", "extra-job"])
+@pytest.mark.parametrize("fault", ["step", "wheel", "wheel-before-plan", "workers", "extra-job", "old-python-pin"])
 def test_windows_backend_bench_falsifiers(fault: str) -> None:
     bench = deepcopy(_bench_document())
     jobs = bench["jobs"]
@@ -460,6 +460,9 @@ def test_windows_backend_bench_falsifiers(fault: str) -> None:
     elif fault == "workers":
         lane = next(step for step in jobs["windows-full-regression"]["steps"] if "CI_TEST_LANE" in step.get("env", {}))
         lane["env"]["CI_PYTEST_WORKERS"] = "8"
+    elif fault == "old-python-pin":
+        setup = next(step for step in jobs["fixed-sqlcipher-wheel"]["steps"] if step["name"] == "Setup Python")
+        setup["uses"] = "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97"
     else:
         jobs["backend-fast"] = _workflow_document()["jobs"]["backend-fast"]
     with pytest.raises(AssertionError):
