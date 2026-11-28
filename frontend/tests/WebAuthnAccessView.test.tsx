@@ -98,6 +98,7 @@ it('discards the earlier Open if an admitted session is already live', async () 
 it.each(['Lock saved data', 'Lock Dipsy'])('claims one native Open for saved data and stays locked after returning to that view via %s', async action => {
   const handle = nativeOpen(true);
   const events = new EventTarget();
+  const subscribe = vi.spyOn(events, 'addEventListener');
   const close = vi.fn();
   vi.stubGlobal('EventSource', class {
     constructor(path: string) { expect(path).toBe('/api/v1/saved-data/session/events'); }
@@ -125,6 +126,7 @@ it.each(['Lock saved data', 'Lock Dipsy'])('claims one native Open for saved dat
   if (action === 'Lock saved data') {
     fireEvent.click(screen.getByRole('button', { name: 'Lock saved data' }));
   } else {
+    await waitFor(() => expect(subscribe).toHaveBeenCalledWith('access', expect.any(Function)));
     await act(async () => { events.dispatchEvent(new MessageEvent('access', { data: '{"access":"locked"}' })); });
   }
   expect(await screen.findByRole('button', { name: 'Unlock saved data' })).toBeTruthy();
