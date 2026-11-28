@@ -1,12 +1,10 @@
 """Select installed workers from the prepared profile and verified account authority."""
 from dataclasses import dataclass, replace
-import hashlib
 from typing import ClassVar
 
 from app.core.optional_execution import installed_execution_release, require_optional_execution
 from app.nlp.execution_parameters import execution_parameters
 from app.nlp.preview_parameters import preview_parameters
-from app.persistence.text_analysis_authority import TextAnalysisCurrentEvidence, trust_digest
 from app.persistence.text_analysis_installed import InstalledTextAnalysisRecords
 from app.persistence.text_analysis_enrollment import TextAnalysisEnrollmentStore
 from app.persistence.text_analysis_preview import TextAnalysisPreviewStore
@@ -38,17 +36,7 @@ class _Selection:
         return InstalledTextAnalysisRecords(owner.release, owner.authority, owner.pair_owner, owner.schemas)
 
     def evidence(self, policy, context):
-        from app.persistence.nlp_dependencies import DependencyPersistence
-        owner = self.installed_authorities
-        with self.authority.database.transaction() as db:
-            self.lifecycle.validate(db,policy,context,self.kind)
-            state = DependencyPersistence._authority(db)
-            row = db.execute('SELECT version FROM text_analysis_authority_references WHERE reference_id=?',
-                             (context.reference_id,)).fetchone()
-            return TextAnalysisCurrentEvidence(owner.release.trust,trust_digest(owner.release.trust),
-                policy.authorization_epoch.value,row['version'],state['epoch'],state['trust_sha256'],state['catalog_sha256'],
-                hashlib.sha256(encode_run_context(context)).hexdigest(),context.activation_lineage_sha256,
-                context.seat_id,context.installation_key_id,context.installation_key_jkt,False)
+        return self.authority.installed_current_evidence(policy, context, lifecycle=self.lifecycle, kind=self.kind)
 
     def choose(self, digest, identity, dependencies, *, selection_policy=None):
         selection, _ = self._choose(digest, identity, dependencies, selection_policy)
@@ -90,8 +78,7 @@ class _Selection:
         with self.authority.database.transaction() as db:
             ref = owner.current_in(db, identity, self.kind, for_execution=True)
             _need(ref is not None)
-            state = db.execute('SELECT state FROM text_analysis_authority_references WHERE reference_id=?',
-                               (ref.reference_id,)).fetchone()['state']
+            state = self.authority.reference_state_in(db, ref.reference_id)
         context = TextAnalysisRunContext(reference_id=ref.reference_id, compact_jws_sha256=ref.compact_jws_sha256,
             principal_id=identity.principal_id, creator_account_id=identity.creator_account_id,
             organization_id=identity.organization_id, installation_id=identity.installation_id,

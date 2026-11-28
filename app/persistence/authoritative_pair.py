@@ -269,6 +269,21 @@ class AuthoritativePairOwner:
     def validate_in(self, auth_db, canonical_db):
         return self.validate_read_in(auth_db, canonical_db)
 
+    def validate_text_analysis_access_in(self, auth_db, canonical_db, *, require_established: bool) -> None:
+        """Permit a passive read before the first protected delivery establishes the pair."""
+        self.validate_auth_in(auth_db)
+        if not self.canonical_database.owns_connection(canonical_db) or not canonical_db.in_transaction:
+            _deny()
+        if (auth_db.execute('SELECT 1 FROM authoritative_pair').fetchone()
+                or canonical_db.execute('SELECT 1 FROM authoritative_pair').fetchone()):
+            pair_identity_in(auth_db, canonical_db, self.installation_id)
+            return
+        if (require_established
+                or auth_db.execute('SELECT 1 FROM text_analysis_authority_references LIMIT 1').fetchone()
+                or auth_db.execute('SELECT 1 FROM text_analysis_deliveries LIMIT 1').fetchone()
+                or canonical_db.execute('SELECT 1 FROM text_analysis_preview_admissions LIMIT 1').fetchone()):
+            raise RuntimeAuthorizationDenied('text_analysis_delivery_unavailable')
+
     def establish(self):
         self.root_lease.assert_current(self.root)
         with self.auth_database.dependency_authority_gate, self.auth_database.transaction() as auth_db:

@@ -395,7 +395,7 @@ async def recurring_mentions(request: Request, response: Response,
             'message': 'The report request is invalid.', 'availability': 'unavailable'}, headers=headers) from None
 
 
-class _ObservationReadRoute(APIRoute):
+class _ProtectedFindingsReadRoute(APIRoute):
     def get_route_handler(self):
         handler = super().get_route_handler()
 
@@ -412,7 +412,7 @@ class _ObservationReadRoute(APIRoute):
 
 router.add_api_route('/findings/recurring-mentions', recurring_mentions, methods=['GET'],
                      response_model=RecurringMentionsReport, operation_id='fetchRecurringMentions',
-                     responses=PROTECTED_ERROR_RESPONSES, route_class_override=_ObservationReadRoute)
+                     responses=PROTECTED_ERROR_RESPONSES, route_class_override=_ProtectedFindingsReadRoute)
 
 
 async def get_observation_links(request: Request, response: Response,
@@ -461,7 +461,7 @@ async def get_observation_links(request: Request, response: Response,
 
 router.add_api_route('/findings/observations', get_observation_links, methods=['GET'],
     response_model=ObservationLinksResponse, operation_id='fetchObservationLinks',
-    responses=PROTECTED_ERROR_RESPONSES, route_class_override=_ObservationReadRoute)
+                     responses=PROTECTED_ERROR_RESPONSES, route_class_override=_ProtectedFindingsReadRoute)
 
 
 def _question_schema(model):

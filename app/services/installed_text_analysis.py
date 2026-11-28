@@ -16,33 +16,16 @@ class InstalledTextAnalysisAuthorities(InstalledTextAnalysisRecords):
     def _session(self, policy, *, write=False):
         auth = self.authority.authentication
         with auth.database.dependency_authority_gate:
-            identity = TextAnalysisIdentityOwner(auth).capture(policy)
+            sessions = TextAnalysisIdentityOwner(auth)
+            identity = sessions.capture(policy)
             _need(identity.installation_id == self.pair_owner.installation_id)
             with auth.database.transaction() as db, self.pair_owner.canonical_database.read() as canonical_db:
                 canonical_db.execute('BEGIN')
-                def check_pair():
-                    left = db.execute('SELECT 1 FROM authoritative_pair').fetchone()
-                    right = canonical_db.execute('SELECT 1 FROM authoritative_pair').fetchone()
-                    if left or right:
-                        self.pair_owner.validate_read_in(db, canonical_db)
-                    else:
-                        self.pair_owner.validate_auth_in(db)
-                        _need(not write and not db.execute('SELECT 1 FROM text_analysis_authority_references LIMIT 1').fetchone()
-                              and not db.execute('SELECT 1 FROM text_analysis_deliveries LIMIT 1').fetchone()
-                              and not canonical_db.execute('SELECT 1 FROM text_analysis_preview_admissions LIMIT 1').fetchone())
-                check_pair()
-                def current():
-                    session = auth._require_session_current(db, policy.identity.session_id, auth._clock())
-                    key = auth.installation_key_reference(connection=db)
-                    _need(key and (key.installation_key_id, key.installation_key_jkt) ==
-                          (identity.installation_key_id, identity.installation_key_jkt)
-                          and (session['principal_id'],session['creator_account_id'],session['role']) ==
-                          (identity.principal_id,identity.creator_account_id,identity.role)
-                          and set(auth._session_grants(db, policy.identity.session_id)) == set(identity.grant_reference_ids))
-                current()
+                self.pair_owner.validate_text_analysis_access_in(db, canonical_db, require_established=write)
+                sessions.require_current_session_in(db, policy, identity)
                 yield db, canonical_db, identity
-                current()
-                check_pair()
+                sessions.require_current_session_in(db, policy, identity)
+                self.pair_owner.validate_text_analysis_access_in(db, canonical_db, require_established=write)
 
     def acquisition_basis(self, policy, *, refresh=False):
         """Read the retained release; only an explicit acquisition can fetch its signed descriptor."""
@@ -156,9 +139,7 @@ class InstalledTextAnalysisAuthorities(InstalledTextAnalysisRecords):
             admission = canonical_db.execute('SELECT * FROM text_analysis_preview_admissions WHERE installation_id=? AND permit_id=?',
                                              (identity.installation_id, ref.object_id)).fetchone()
             if admission is None:
-                staged = db.execute('SELECT state FROM text_analysis_authority_references WHERE reference_id=?',
-                                    (ref.reference_id,)).fetchone()
-                _need(staged is not None and staged['state'] == 'staged')
+                _need(self.authority.reference_state_in(db, ref.reference_id) == 'staged')
                 return 'available'
             _need((admission['reference_id'], admission['compact_jws_sha256'], admission['issuance_id']) ==
                   (ref.reference_id, ref.compact_jws_sha256, ref.issuance_id))

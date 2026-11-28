@@ -41,6 +41,15 @@ _SIGNED_OBJECT_VERIFIERS = frozenset(
     }
 )
 
+# These readers audit persisted deliveries and adopted replacements. Keep their
+# table access explicit while applying all the other non-kernel checks to them.
+_AUDIT_TABLES = {
+    "persistence/text_analysis_delivery_audit.py": {
+        "bridge_sessions", "webauthn_credentials", "verified_grant_references", "text_analysis_authority_references",
+    },
+    "persistence/text_analysis_installed_reissue.py": {"text_analysis_authority_references"},
+}
+
 
 def _is_kernel_path(path: Path) -> bool:
     normalized = path.as_posix()
@@ -71,7 +80,7 @@ def _root_name(node: ast.AST) -> str | None:
     return node.id if isinstance(node, ast.Name) else None
 
 
-def _module_violations(path: Path) -> list[str]:
+def _module_violations(path: Path, permitted_tables) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     violations: set[str] = set()
 
@@ -80,7 +89,8 @@ def _module_violations(path: Path) -> list[str]:
             violations.add(f"imports signed-object verifier {node.module}")
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             normalized = node.value.lower()
-            for table in _AUTHORITY_TABLES:
+            permitted_reads = permitted_tables if normalized.lstrip().startswith('select ') else set()
+            for table in _AUTHORITY_TABLES - permitted_reads:
                 if table in normalized:
                     violations.add(f"references authorization row {table}")
 
@@ -121,7 +131,7 @@ def _runtime_policy_boundary_violations(brain_root: Path) -> list[str]:
         relative = path.relative_to(brain_root)
         if _is_kernel_path(relative):
             continue
-        references = _module_violations(path)
+        references = _module_violations(path, _AUDIT_TABLES.get(relative.as_posix(), set()))
         if references:
             violations.append(f"{relative.as_posix()}: {references}")
     return violations
@@ -147,6 +157,22 @@ def test_guard_rejects_endpoint_role_decision(tmp_path: Path) -> None:
 
     assert _runtime_policy_boundary_violations(tmp_path / "app") == [
         "api/endpoint.py: ['line 2 makes a role decision outside the kernel']"
+    ]
+
+
+def test_delivery_auditors_are_limited_to_their_own_tables(tmp_path: Path) -> None:
+    root = tmp_path / "app"
+    (root / "persistence").mkdir(parents=True)
+    for module, tables in _AUDIT_TABLES.items():
+        queries = tuple(f"SELECT * FROM {table}" for table in sorted(tables))
+        (root / module).write_text(f"QUERIES = {queries!r}\n", encoding="utf-8")
+    assert _runtime_policy_boundary_violations(root) == []
+    for module in _AUDIT_TABLES:
+        (root / module).write_text('READ = "SELECT * FROM runtime_tickets"\n'
+                                  'WRITE = "DELETE FROM text_analysis_authority_references"\n', encoding="utf-8")
+    assert _runtime_policy_boundary_violations(root) == [
+        f"{name}: ['references authorization row runtime_tickets', 'references authorization row text_analysis_authority_references']"
+        for name in sorted(_AUDIT_TABLES)
     ]
 
 

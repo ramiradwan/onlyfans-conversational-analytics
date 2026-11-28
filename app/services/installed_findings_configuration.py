@@ -23,18 +23,7 @@ class InstalledExecutionConfiguration:
     release: ExecutionRelease
 
     def installation_id(self):
-        auth = self.authentication
-        with auth.database.read() as db:
-            key = auth.installation_key_reference(connection=db)
-            if key is None:
-                return None
-            rows = db.execute(
-                "SELECT DISTINCT installation_id FROM verified_grant_references "
-                "WHERE grant_type='installation_grant' AND revoked_at IS NULL AND compact_jws IS NOT NULL "
-                "AND installation_key_id=? AND installation_key_jkt=? LIMIT 2",
-                (key.installation_key_id, key.installation_key_jkt),
-            ).fetchall()
-        return rows[0][0] if len(rows) == 1 else None
+        return self.authentication.installation_id_for_active_key()
 
     def bind(self, source, dependencies):
         from app.services.text_analysis_execution import TextAnalysisExecutionService

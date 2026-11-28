@@ -146,17 +146,40 @@ class TextAnalysisAuthorityStore:
 
     def fixture_current_evidence(self, policy: RuntimePolicy, context: TextAnalysisRunContext,
                                  *, trust: TextAnalysisTrust) -> TextAnalysisCurrentEvidence:
-        from app.persistence.nlp_dependencies import DependencyPersistence
         with self.database.dependency_authority_gate, self.database.read() as db:
-            state = DependencyPersistence._authority(db)
-            row = db.execute('SELECT version FROM text_analysis_authority_references WHERE reference_id=?',
-                             (context.reference_id,)).fetchone()
-            if row is None:
-                raise ValueError('text_analysis_reference_unavailable')
-            return TextAnalysisCurrentEvidence(trust, trust_digest(trust), policy.authorization_epoch.value,
-                row['version'], state['epoch'], state['trust_sha256'], state['catalog_sha256'],
-                hashlib.sha256(encode_run_context(context)).hexdigest(), context.activation_lineage_sha256,
-                context.seat_id, context.installation_key_id, context.installation_key_jkt, True)
+            return self._current_evidence_in(db, policy, context, trust, fixture_only=True)
+
+    def installed_current_evidence(self, policy: RuntimePolicy, context: TextAnalysisRunContext, *, lifecycle,
+                                   kind: str) -> TextAnalysisCurrentEvidence:
+        from app.persistence.text_analysis_installed import InstalledTextAnalysisRecords
+        if type(lifecycle) is not InstalledTextAnalysisRecords or lifecycle.authority is not self:
+            raise RuntimeAuthorizationDenied('text_analysis_auth_owner_mismatch')
+        with self.database.transaction() as db:
+            lifecycle.validate(db, policy, context, kind)
+            return self._current_evidence_in(db, policy, context, lifecycle.release.trust, fixture_only=False)
+
+    @staticmethod
+    def _current_evidence_in(db, policy, context, trust, *, fixture_only):
+        from app.persistence.nlp_dependencies import DependencyPersistence
+        state = DependencyPersistence._authority(db)
+        row = db.execute('SELECT version FROM text_analysis_authority_references WHERE reference_id=?',
+                         (context.reference_id,)).fetchone()
+        if row is None:
+            raise ValueError('text_analysis_reference_unavailable')
+        return TextAnalysisCurrentEvidence(trust, trust_digest(trust), policy.authorization_epoch.value,
+            row['version'], state['epoch'], state['trust_sha256'], state['catalog_sha256'],
+            hashlib.sha256(encode_run_context(context)).hexdigest(), context.activation_lineage_sha256,
+            context.seat_id, context.installation_key_id, context.installation_key_jkt, fixture_only)
+
+    def reference_state_in(self, connection, reference_id: str) -> str:
+        """Read the activation state alongside verification on the same AUTH transaction."""
+        if not self.database.owns_connection(connection) or not connection.in_transaction:
+            raise RuntimeAuthorizationDenied('text_analysis_auth_owner_mismatch')
+        row = connection.execute('SELECT state FROM text_analysis_authority_references WHERE reference_id=?',
+                                 (reference_id,)).fetchone()
+        if row is None:
+            raise RuntimeAuthorizationDenied('text_analysis_delivery_unavailable')
+        return row['state']
 
     def validate_saved_preview_reference_in(self, auth_connection, *, reference_id: str,
                                            compact_jws_sha256: str, permit_id: str,

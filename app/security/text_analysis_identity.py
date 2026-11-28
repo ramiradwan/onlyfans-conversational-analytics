@@ -39,6 +39,20 @@ class TextAnalysisIdentityOwner:
             raise ValueError('text_analysis_authentication_owner_required')
         self.authentication = authentication
 
+    def require_current_session_in(self, db, policy: RuntimePolicy, identity: EnrollmentIdentity) -> None:
+        """Recheck the captured session, key and grants on the held AUTH transaction."""
+        auth = self.authentication
+        if not auth.database.owns_connection(db) or not db.in_transaction:
+            _deny()
+        session = auth._require_session_current(db, policy.identity.session_id, auth._clock())
+        key = auth.installation_key_reference(connection=db)
+        if (key is None or (key.installation_key_id, key.installation_key_jkt) !=
+                (identity.installation_key_id, identity.installation_key_jkt)
+                or (session['principal_id'], session['creator_account_id'], session['role']) !=
+                (identity.principal_id, identity.creator_account_id, identity.role)
+                or set(auth._session_grants(db, policy.identity.session_id)) != set(identity.grant_reference_ids)):
+            raise RuntimeAuthorizationDenied('text_analysis_delivery_unavailable')
+
     def _not_revoked(self, identity: EnrollmentIdentity) -> None:
         scopes = ((RevocationScopeType.PRINCIPAL, identity.principal_id),
                   (RevocationScopeType.CREATOR_ACCOUNT, identity.creator_account_id),
