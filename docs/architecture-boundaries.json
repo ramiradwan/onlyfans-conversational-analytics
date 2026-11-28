@@ -724,6 +724,7 @@
         "app/analytics/exchange_*.py",
         "app/analytics/nlp_literals.py",
         "app/analytics/nlp_literal_read.py",
+        "app/analytics/recurring_mentions.py",
         "app/analytics/nlp_observation_read.py",
         "app/analytics/nlp_contribution_replay.py",
         "app/analytics/nlp_contribution_sources.py",
