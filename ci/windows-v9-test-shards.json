@@ -330,6 +330,9 @@
     "tests/test_installation_continuation_client.py": 7,
     "tests/test_installation_continuation_owner.py": 1,
     "tests/test_installation_key.py": 8,
+    "tests/test_installed_text_analysis.py": 2,
+    "tests/test_installed_text_analysis_pair.py": 2,
+    "tests/test_installed_text_analysis_reissue.py": 2,
     "tests/test_integrity_cost_contract.py": 1,
     "tests/test_integrity_fallback_modes.py": 7,
     "tests/test_integrity_ready_handoff.py": 1,
@@ -413,6 +416,7 @@
     "tests/test_packaging_build_mode.py": 8,
     "tests/test_packaging_policy.py": 7,
     "tests/test_packaging_smoke.py": 5,
+    "tests/test_paid_insights_status.py": 4,
     "tests/test_passive_capture_identity_configuration.py": 4,
     "tests/test_pending_question_safety.py": 5,
     "tests/test_permit_consumption.py": 7,
@@ -462,6 +466,8 @@
     "tests/test_readiness_identity.py": 2,
     "tests/test_recovered_update_reuse.py": 8,
     "tests/test_recovery_publication_boundaries.py": 6,
+    "tests/test_recurring_mentions.py": 2,
+    "tests/test_recurring_mentions_preview.py": 4,
     "tests/test_redemption_journal_workspace.py": 8,
     "tests/test_reference_sql_component.py": 4,
     "tests/test_registered_continuation_context.py": 8,
@@ -610,6 +616,9 @@
     "tests/test_hosted_origin_resolution.py": 2,
     "tests/test_installation_authority_recovery_owner.py": 2,
     "tests/test_installation_key.py": 2,
+    "tests/test_installed_text_analysis.py": 3,
+    "tests/test_installed_text_analysis_pair.py": 5,
+    "tests/test_installed_text_analysis_reissue.py": 3,
     "tests/test_knowledge_contributions.py": 5,
     "tests/test_local_database_encryption.py": 2,
     "tests/test_lost_enrollment_evidence.py": 1,
@@ -703,33 +712,42 @@
   },
   "maintenance": {
     "method": "preserve existing owners; allocate new files by selected node count",
-    "inventory_sha256": "6d29342db1c2d4da2f7008e7ef9c055bde480c30a47d6230c6beaea07cf6192d",
+    "inventory_sha256": "5d3510e0eef3da1a278e22f928626aac8ac7f343abda760d75b00ffc8ba346d2",
     "changes": {
       "full": {
         "added": [
-          "tests/test_conversation_graph_sources.py"
+          "tests/test_installed_text_analysis.py",
+          "tests/test_installed_text_analysis_pair.py",
+          "tests/test_installed_text_analysis_reissue.py",
+          "tests/test_paid_insights_status.py",
+          "tests/test_recurring_mentions.py",
+          "tests/test_recurring_mentions_preview.py"
         ],
         "removed": [],
         "modeled_load": {
-          "1": 1332,
-          "2": 1122,
+          "1": 1333,
+          "2": 1134,
           "3": 2415,
-          "4": 1120,
-          "5": 2436,
+          "4": 1137,
+          "5": 2437,
           "6": 1378,
-          "7": 3387,
-          "8": 2948
+          "7": 3389,
+          "8": 2951
         }
       },
       "platform": {
-        "added": [],
+        "added": [
+          "tests/test_installed_text_analysis.py",
+          "tests/test_installed_text_analysis_pair.py",
+          "tests/test_installed_text_analysis_reissue.py"
+        ],
         "removed": [],
         "modeled_load": {
-          "1": 425,
+          "1": 427,
           "2": 439,
-          "3": 411,
+          "3": 429,
           "4": 483,
-          "5": 423
+          "5": 435
         }
       },
       "analytics": {
