@@ -187,9 +187,11 @@ def test_preexisting_system_finding_blocks_cached_counts_until_rescan(ready, mon
 
     # Recreate a published inventory built with the former admission rule.
     read_row = canonical_source._read_evidence_row
+    def include_system_events(db, account, location, *, exclude_system, incoming_participant=False):
+        return read_row(db, account, location, exclude_system=False, incoming_participant=incoming_participant)
+
     with monkeypatch.context() as old:
-        old.setattr(canonical_source, '_read_evidence_row', lambda db, account, location, *, exclude_system:
-                    read_row(db, account, location, exclude_system=False))
+        old.setattr(canonical_source, '_read_evidence_row', include_system_events)
         assert ready.runner.reconcile(ACCOUNT)
         published = ready.runner.publish_pending(ACCOUNT)
     identity = source.read_identity(ACCOUNT)

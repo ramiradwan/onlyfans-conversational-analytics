@@ -86,7 +86,8 @@ def test_report_http_entry_rejects_extra_scope_and_reopens_without_inference(api
     scheduler.request_recovery.assert_not_awaited()
 
 
-def test_removing_a_sender_retires_the_old_evidence_and_the_recurrence(ready):
+@pytest.mark.parametrize("change", ["edit", "erase"])
+def test_edit_or_erasure_retires_the_old_evidence_and_the_recurrence(ready, change):
     from app.persistence.retention import CreatorVaultRetention
 
     projection = _add_second_sender(ready)
@@ -98,8 +99,17 @@ def test_removing_a_sender_retires_the_old_evidence_and_the_recurrence(ready):
     with pytest.raises(EvidenceUnavailable):
         ready.resources.resolve(other_account, removed)
 
-    retention = CreatorVaultRetention(ready.fixture.repositories.database, clock=lambda: ready.fixture.clock.now)
-    assert retention.delete_participant(ACCOUNT, "counterpart-two") > 0
+    database = ready.fixture.repositories.database
+    if change == "edit":
+        with database.transaction() as db:
+            cursor = db.execute("UPDATE account_messages SET text=?, content_hash='edited-hash', winning_source_seq=10 "
+                                "WHERE creator_account_id=? AND chat_id='chat-1' AND message_id='m-1-0'",
+                                ("😀 wave wave case0", ACCOUNT))
+            assert cursor.rowcount == 1
+            advance(db)
+    else:
+        retention = CreatorVaultRetention(database, clock=lambda: ready.fixture.clock.now)
+        assert retention.delete_participant(ACCOUNT, "counterpart-two") > 0
     with pytest.raises(EvidenceUnavailable):
         ready.resources.resolve(ready.policy, removed)
     with pytest.raises(ProjectionUnavailable):
